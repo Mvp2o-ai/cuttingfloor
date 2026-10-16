@@ -938,6 +938,112 @@ describe('nested timelines', () => {
   });
 });
 
+describe('transitions', () => {
+  const AV = 'm_aaaaaaaaaaaaaaaaaaaaaaaaav';
+  /** Linked A/V clips at 0–100 (source 50–150) and 100–150 (source 50–100). */
+  const two = () =>
+    edit(
+      start(),
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 50, out: 150 } } },
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 50, out: 100 } } },
+    ).doc;
+
+  it('overlaps the clips by default, crossfading the linked sound at the same cut', () => {
+    const { doc, results } = edit(two(), {
+      tool: 'transition.add',
+      args: { clip_id: 'c4', kind: 'dissolve', duration_frames: 20 },
+    });
+    // 10 frames come off each side of the cut and the second clip moves 20 earlier.
+    expect(layout(doc, 0)).toEqual([
+      [0, 90, 50],
+      [90, 130, 60],
+    ]);
+    expect(layout(doc, 1)).toEqual([
+      [0, 90, 50],
+      [90, 130, 60],
+    ]);
+    const view = toView('tl_x', doc);
+    expect(view.tracks[0]?.transitions).toEqual([
+      {
+        id: results[0]?.clip_ids?.[0],
+        from_clip_id: 'c4',
+        to_clip_id: 'c7',
+        kind: 'dissolve',
+        start: 80,
+        end: 100,
+      },
+    ]);
+    expect(view.tracks[1]?.transitions?.[0]).toMatchObject({
+      kind: 'crossfade',
+      start: 80,
+      end: 100,
+    });
+    expect(toView('tl_x', fromView(view, resolve))).toEqual({ ...view, parent: null });
+  });
+
+  it('uses handles without moving anything, and refuses when there is no source past the cut', () => {
+    const { doc } = edit(two(), {
+      tool: 'transition.add',
+      args: { clip_id: 'c4', kind: 'wipe_left', duration_frames: 20, mode: 'handles' },
+    });
+    expect(layout(doc, 0)).toEqual([
+      [0, 100, 50],
+      [100, 150, 50],
+    ]);
+    const tight = edit(
+      start(),
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 200, out: 250 } } },
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 0, out: 50 } } },
+    ).doc;
+    expect(() =>
+      edit(tight, {
+        tool: 'transition.add',
+        args: { clip_id: 'c4', kind: 'dissolve', duration_frames: 10, mode: 'handles' },
+      }),
+    ).toThrow(/no source past its end/);
+  });
+
+  it('takes crossfades on audio only, and needs touching clips', () => {
+    expect(() =>
+      edit(two(), {
+        tool: 'transition.add',
+        args: { clip_id: 'c4', kind: 'crossfade', duration_frames: 10 },
+      }),
+    ).toThrow(/for audio tracks/);
+    const apart = edit(two(), { tool: 'clip.move', args: { clip_id: 'c7', to_frame: 120 } }).doc;
+    expect(() =>
+      edit(apart, {
+        tool: 'transition.add',
+        args: { clip_id: 'c4', kind: 'dissolve', duration_frames: 10 },
+      }),
+    ).toThrow(/no cut/);
+  });
+
+  it('drops a transition an edit breaks, and says so', () => {
+    const { doc, results } = edit(two(), {
+      tool: 'transition.add',
+      args: { clip_id: 'c4', kind: 'slide_left', duration_frames: 10 },
+    });
+    const id = results[0]?.clip_ids?.[0] ?? '';
+    const moved = edit(doc, { tool: 'clip.move', args: { clip_id: 'c7', to_frame: 140 } });
+    expect(moved.outcome.warnings).toContain(
+      `Transition ${id} was removed: its clips no longer touch`,
+    );
+    expect(toView('tl_x', moved.doc).tracks[0]?.transitions).toBeUndefined();
+    const longer = edit(doc, {
+      tool: 'transition.set',
+      args: { transition_id: id, kind: 'push_up', duration_frames: 16 },
+    }).doc;
+    expect(toView('tl_x', longer).tracks[0]?.transitions?.[0]).toMatchObject({
+      kind: 'push_up',
+      start: 87,
+      end: 103,
+    });
+    const gone = edit(doc, { tool: 'transition.remove', args: { transition_id: id } }).doc;
+    expect(toView('tl_x', gone).tracks[0]?.transitions).toBeUndefined();
+  });
+});
+
 describe('time and views', () => {
   it('keeps clip times when the frame rate changes', () => {
     let { doc } = edit(start(), {

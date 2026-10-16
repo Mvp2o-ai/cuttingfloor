@@ -111,6 +111,19 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
     description:
       'Remove everything in a frame range on the given tracks (default all unlocked) and close the gap. For cutting out silences, filler words or mistakes across all tracks at once.',
   },
+  'transition.add': {
+    title: 'Add transition',
+    description:
+      'Transition at the cut after a clip, into the clip that touches it (video://catalog/transitions). Linked audio gets a crossfade at the same cut. mode overlap (default) overlaps the clips and moves later clips earlier; handles uses source past the cut and moves nothing.',
+  },
+  'transition.set': {
+    title: 'Set transition',
+    description: "Change a transition's kind or duration.",
+  },
+  'transition.remove': {
+    title: 'Remove transition',
+    description: 'Remove a transition; the cut becomes a hard cut.',
+  },
   'clip.set_transform': {
     title: 'Set transform',
     description:

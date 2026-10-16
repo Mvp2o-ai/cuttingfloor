@@ -15,7 +15,7 @@ import {
   TRANSFORM_NUMBERS,
 } from '@cuttingfloor/schema';
 import { toViewAnim } from './animate.ts';
-import { applyEdit, nestedRef, timelineEnd } from './edit.ts';
+import { applyEdit, assertTransitions, nestedRef, timelineEnd, transitionHalves } from './edit.ts';
 import { span } from './speed.ts';
 import { framesToTicks, ticksPerFrame, ticksToFrames } from './time.ts';
 
@@ -105,6 +105,23 @@ function bodyView(doc: NestedDoc): NestedView {
         enabled: c.enabled,
         ...propsView(c, ticksPerFrame(fps)),
       })),
+      ...(t.transitions
+        ? {
+            transitions: t.transitions.map((tr) => {
+              const a = t.clips.find((c) => c.id === tr.a);
+              const cut = a ? a.start + a.duration : 0;
+              const { before, after } = transitionHalves(tr.duration, ticksPerFrame(fps));
+              return {
+                id: tr.id,
+                from_clip_id: tr.a,
+                to_clip_id: tr.b,
+                kind: tr.kind,
+                start: f(cut - before),
+                end: f(cut + after),
+              };
+            }),
+          }
+        : {}),
     })),
     media: Object.fromEntries(
       Object.entries(doc.media).map(([id, m]) => [
@@ -172,6 +189,9 @@ export function fromView(input: TimelineInput, media: MediaLookup): TimelineDoc 
   const body = bodyFromView(input, media, build);
   const doc: TimelineDoc = { ...body, parent: null, op: null };
   if (Object.keys(nested).length) doc.nested = nested;
+  assertTransitions(doc);
+  for (const n of Object.values(nested))
+    assertTransitions({ ...n, parent: null, op: null, nested });
   replayProps(doc, input.tracks);
   for (const key of Object.keys(views)) {
     const n = nested[key];
@@ -274,7 +294,15 @@ function bodyFromView(
         );
       }
     }
-    doc.tracks.push({ ...track, clips });
+    const { transitions: views, ...rest } = track;
+    const transitions = (views ?? []).map((tr) => ({
+      id: tr.id,
+      a: tr.from_clip_id,
+      b: tr.to_clip_id,
+      kind: tr.kind,
+      duration: t(tr.end - tr.start),
+    }));
+    doc.tracks.push({ ...rest, clips, ...(transitions.length ? { transitions } : {}) });
   }
   // Continue numbering after the highest id in the input.
   let max = 0;
@@ -356,7 +384,7 @@ export function diff(a: TimelineDoc, b: TimelineDoc): Change[] {
   const tracksA = new Map(a.tracks.map((t) => [t.id, t]));
   const tracksB = new Map(b.tracks.map((t) => [t.id, t]));
   const props = (t: TimelineDoc['tracks'][number]) =>
-    JSON.stringify([t.kind, t.name, t.muted, t.hidden, t.locked]);
+    JSON.stringify([t.kind, t.name, t.muted, t.hidden, t.locked, t.transitions ?? []]);
   for (const [id, t] of tracksB) {
     const before = tracksA.get(id);
     if (!before) out.push({ id, type: 'track', change: 'added' });

@@ -284,6 +284,32 @@ describe('MLT compiler', () => {
     expect(xml.indexOf('id="n1_main"')).toBeLessThan(xml.indexOf('<tractor id="main"'));
   });
 
+  it('plays both clips of a transition on separate sub-tracks', () => {
+    const cut = edit([
+      { tool: 'clip.split', args: { clip_id: 'c4', at_frame: 20 } },
+      {
+        tool: 'transition.add',
+        args: { clip_id: 'c4', kind: 'dissolve', duration_frames: 6, mode: 'handles' },
+      },
+    ]);
+    const xml = compile(cut);
+    // The video track gets a second lane for the clip after the cut, and so does the audio.
+    expect(xml).toContain('<playlist id="track0_1">');
+    expect(xml).toContain('<playlist id="track1_1">');
+    // The clip before the cut runs 3 frames past it; the clip after starts 3 frames early.
+    expect(xml).toMatch(
+      /<playlist id="track0"><blank length="10"\/><entry producer="m_\w+_v" in="5" out="17">/,
+    );
+    expect(xml).toMatch(
+      /<playlist id="track0_1"><blank length="17"\/><entry producer="m_\w+_v" in="12" out="29">/,
+    );
+    // The incoming clip fades in over the 6 frames; its sound fades in with it.
+    expect(xml).toMatch(
+      /<transition in="17" out="34">.*<property name="rect">0=80 0 480 360 0\.0833;/,
+    );
+    expect(xml).toContain('<property name="level">12=-100;');
+  });
+
   it('refuses to compile with offline media', () => {
     expect(() => compileMlt(doc, { width: 640, height: 360, sources: new Map() })).toThrow(
       /not available/,

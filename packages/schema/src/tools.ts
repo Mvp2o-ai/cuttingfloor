@@ -10,6 +10,7 @@ import {
   MASK_LIMITS,
   MaskShape,
   TRANSFORM_LIMITS,
+  TransitionKind,
 } from './compositing.ts';
 import { ToolError } from './errors.ts';
 import { JobId, MediaId, TimelineId } from './ids.ts';
@@ -211,6 +212,23 @@ export const EditArgs = {
   }),
   'range.lift': z.object({ range: FrameRange, track_ids: TrackIds }),
   'range.extract': z.object({ range: FrameRange, track_ids: TrackIds }),
+  'transition.add': z.object({
+    clip_id: z.string().describe('The clip before the cut; the clip after it must touch it'),
+    kind: TransitionKind.describe('video://catalog/transitions; crossfade on audio tracks'),
+    duration_frames: z.number().int().min(2).max(10_000),
+    mode: z
+      .enum(['overlap', 'handles'])
+      .default('overlap')
+      .describe(
+        'overlap: the clips overlap by the duration and later clips move earlier; handles: use source past the cut, nothing moves',
+      ),
+  }),
+  'transition.set': z.object({
+    transition_id: z.string(),
+    kind: TransitionKind.optional(),
+    duration_frames: z.number().int().min(2).max(10_000).optional(),
+  }),
+  'transition.remove': z.object({ transition_id: z.string() }),
   'clip.set_transform': TransformArgs.extend({ clip_id: z.string() }),
   'clip.set_blend': z.object({ clip_id: z.string(), mode: BlendMode }),
   'clip.set_mask': z.object({

@@ -6,6 +6,7 @@ import {
   type LOOP_ANIMATIONS,
   MASK_SHAPES,
   type MaskShape,
+  type TransitionKind,
 } from '@cuttingfloor/schema';
 import {
   type McpServer,
@@ -65,7 +66,37 @@ const LOOPS: Record<(typeof LOOP_ANIMATIONS)[number], string> = {
   flicker: 'Dims at random',
 };
 
+const TRANSITIONS: Record<TransitionKind, string> = {
+  dissolve: 'The next clip fades in over the last',
+  dip_to_black: 'Fades to black and up into the next clip',
+  dip_to_white: 'Fades to white and back down into the next clip',
+  wipe_left: 'An edge moves left, revealing the next clip from the right',
+  wipe_right: 'An edge moves right, revealing the next clip from the left',
+  wipe_up: 'An edge moves up, revealing the next clip from the bottom',
+  wipe_down: 'An edge moves down, revealing the next clip from the top',
+  slide_left: 'The next clip slides in from the right, over the last',
+  slide_right: 'The next clip slides in from the left, over the last',
+  slide_up: 'The next clip slides up from below, over the last',
+  slide_down: 'The next clip slides down from above, over the last',
+  push_left: 'The next clip pushes the last out to the left',
+  push_right: 'The next clip pushes the last out to the right',
+  push_up: 'The next clip pushes the last out upwards',
+  push_down: 'The next clip pushes the last out downwards',
+  zoom_in: 'The next clip grows into place as it fades in',
+  zoom_out: 'The last clip grows away as the next fades in',
+  iris: 'The next clip opens from a circle in the centre',
+  spin: 'The next clip spins in from small',
+  crossfade: 'Audio only: equal-power fade from one clip into the next',
+};
+
 const CATALOGS: Record<string, { title: string; body: unknown }> = {
+  transitions: {
+    title: 'Transitions',
+    body: {
+      note: 'transition.add at the cut after a clip, centred on the cut. Linked audio gets a crossfade automatically.',
+      kinds: TRANSITIONS,
+    },
+  },
   eases: {
     title: 'Keyframe easing',
     body: {

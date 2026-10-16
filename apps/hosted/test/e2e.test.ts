@@ -1237,6 +1237,292 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     }, 60_000);
   });
 
+  describe('transitions', () => {
+    const ids: Record<string, string> = {};
+
+    async function colours(timelineId: string, frame: number, points: Array<[number, number]>) {
+      const res = await call(client, 'render.frames', {
+        timeline_id: timelineId,
+        frames: [frame],
+        layout: 'single',
+        format: 'png',
+        long_edge: 1280,
+      });
+      if (res.isError) throw new Error(JSON.stringify(res.structured));
+      const image = Buffer.from((res.content[0]?.data as string) ?? '', 'base64');
+      return Promise.all(points.map(async ([x, y]) => pixel(image, x, y)));
+    }
+
+    /** Green 0–50 cutting to blue 50–100, with a 20-frame transition centred on the cut. */
+    async function cut(kind: string): Promise<string> {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: kind,
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+        tracks: { video: 1, audio: 0 },
+      });
+      return (
+        await ok<{ timeline_id: string }>(client, 'edit.batch', {
+          timeline_id,
+          preview: 'none',
+          ops: [
+            {
+              tool: 'clip.add',
+              args: {
+                track_id: 't1',
+                media_id: ids.green,
+                av: 'video',
+                source: { in: 0, out: 50 },
+              },
+            },
+            {
+              tool: 'clip.add',
+              args: {
+                track_id: 't1',
+                media_id: ids.blue,
+                av: 'video',
+                source: { in: 25, out: 75 },
+              },
+            },
+            {
+              tool: 'transition.add',
+              args: {
+                clip_id: { $ref: 'ops[0].clip_id' },
+                kind,
+                duration_frames: 20,
+                mode: 'handles',
+              },
+            },
+          ],
+        })
+      ).timeline_id;
+    }
+
+    beforeAll(async () => {
+      const m = env.mediaDir;
+      for (const [name, colour] of [
+        ['green2', '0x00ff00'],
+        ['blue', '0x0000ff'],
+      ] as const) {
+        await ff([
+          '-f',
+          'lavfi',
+          '-i',
+          `color=c=${colour}:size=1280x720:rate=25`,
+          '-t',
+          '4',
+          '-pix_fmt',
+          'yuv420p',
+          join(m, `${name}.mp4`),
+        ]);
+        ids[name === 'green2' ? 'green' : name] = (
+          await importMedia({ path: join(m, `${name}.mp4`) })
+        ).media_id;
+      }
+      // A steady tone and silence, each with a picture, for the crossfade.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=black:size=320x180:rate=25',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:sample_rate=48000',
+        '-t',
+        '4',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'pcm_s16le',
+        '-shortest',
+        join(m, 'tone4.mov'),
+      ]);
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=black:size=320x180:rate=25',
+        '-f',
+        'lavfi',
+        '-i',
+        'anullsrc=r=48000:cl=stereo',
+        '-t',
+        '4',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'pcm_s16le',
+        '-shortest',
+        join(m, 'quiet.mov'),
+      ]);
+      ids.tone = (await importMedia({ path: join(m, 'tone4.mov') })).media_id;
+      ids.quiet = (await importMedia({ path: join(m, 'quiet.mov') })).media_id;
+    }, 300_000);
+
+    it('dissolves, and leaves both sides untouched outside the transition', async () => {
+      const t = await cut('dissolve');
+      expect((await colours(t, 39, [[640, 360]])).map(colour)).toEqual(['green']);
+      expect((await colours(t, 60, [[640, 360]])).map(colour)).toEqual(['blue']);
+      const [[r, g, b] = [0, 0, 0]] = await colours(t, 50, [[640, 360]]);
+      expect(r).toBeLessThan(40);
+      expect(g).toBeGreaterThan(80);
+      expect(g).toBeLessThan(180);
+      expect(b).toBeGreaterThan(80);
+      expect(b).toBeLessThan(180);
+    }, 120_000);
+
+    it('wipes, slides, pushes and opens an iris', async () => {
+      const wipe = await cut('wipe_right');
+      expect(
+        (
+          await colours(wipe, 50, [
+            [200, 360],
+            [1100, 360],
+          ])
+        ).map(colour),
+      ).toEqual(['blue', 'green']);
+      const slide = await cut('slide_left');
+      // The incoming clip is a little past halfway in from the right.
+      expect(
+        (
+          await colours(slide, 50, [
+            [300, 360],
+            [1200, 360],
+          ])
+        ).map(colour),
+      ).toEqual(['green', 'blue']);
+      const push = await cut('push_up');
+      // Green is pushed up and out; blue comes up behind it from the bottom.
+      expect(
+        (
+          await colours(push, 50, [
+            [640, 100],
+            [640, 650],
+          ])
+        ).map(colour),
+      ).toEqual(['green', 'blue']);
+      const iris = await cut('iris');
+      expect(
+        (
+          await colours(iris, 50, [
+            [640, 360],
+            [40, 40],
+          ])
+        ).map(colour),
+      ).toEqual(['blue', 'green']);
+    }, 180_000);
+
+    it('zooms and spins, and renders every kind', async () => {
+      // Zoom in: the incoming clip is half faded in at the cut, so the centre is a mix.
+      const [[, g1, b1] = [0, 0, 0]] = await colours(await cut('zoom_in'), 50, [[640, 360]]);
+      expect(Math.min(g1, b1)).toBeGreaterThan(60);
+      // Spin: the incoming clip, still turning and small, covers the centre but not the corner.
+      expect(
+        (
+          await colours(await cut('spin'), 52, [
+            [640, 360],
+            [20, 20],
+          ])
+        ).map(colour),
+      ).toEqual(['blue', 'green']);
+      const kinds = [
+        'dissolve',
+        'dip_to_black',
+        'dip_to_white',
+        'wipe_left',
+        'wipe_right',
+        'wipe_up',
+        'wipe_down',
+        'slide_left',
+        'slide_right',
+        'slide_up',
+        'slide_down',
+        'push_left',
+        'push_right',
+        'push_up',
+        'push_down',
+        'zoom_in',
+        'zoom_out',
+        'iris',
+        'spin',
+      ];
+      for (const kind of kinds) {
+        const t = await cut(kind);
+        const before = (await colours(t, 35, [[640, 360]])).map(colour);
+        const after = (await colours(t, 65, [[640, 360]])).map(colour);
+        expect([kind, ...before, ...after]).toEqual([kind, 'green', 'blue']);
+      }
+    }, 300_000);
+
+    it('dips to white at the cut', async () => {
+      const dip = await cut('dip_to_white');
+      expect((await colours(dip, 50, [[640, 360]])).map(colour)).toEqual(['white']);
+      expect((await colours(dip, 41, [[640, 360]])).map(colour)).toEqual(['green']);
+      expect((await colours(dip, 59, [[640, 360]])).map(colour)).toEqual(['blue']);
+    }, 120_000);
+
+    it('crossfades linked sound with an equal-power curve', async () => {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'crossfade',
+        sequence: { width: 320, height: 180, fps: { num: 25, den: 1 } },
+      });
+      const faded = await ok<{ timeline_id: string }>(client, 'edit.batch', {
+        timeline_id,
+        preview: 'none',
+        ops: [
+          {
+            tool: 'clip.add',
+            args: { track_id: 't1', media_id: ids.tone, source: { in: 0, out: 50 } },
+          },
+          {
+            tool: 'clip.add',
+            args: { track_id: 't1', media_id: ids.quiet, source: { in: 25, out: 75 } },
+          },
+          {
+            tool: 'transition.add',
+            args: {
+              clip_id: { $ref: 'ops[0].clip_id' },
+              kind: 'dissolve',
+              duration_frames: 50,
+              mode: 'handles',
+            },
+          },
+        ],
+      });
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: faded.timeline_id,
+        preset: 'web_1080p_h264',
+      });
+      const done = (await waitJob(started.job_id)) as { result?: { file: string } };
+      if (!done.result) throw new Error(JSON.stringify(done));
+      const { stdout } = await exec(
+        'ffmpeg',
+        ['-v', 'error', '-i', done.result.file, '-ac', '1', '-ar', '48000', '-f', 's16le', '-'],
+        { encoding: 'buffer', maxBuffer: 256 * 1024 * 1024 },
+      );
+      const pcm = new Int16Array(stdout.buffer, stdout.byteOffset, stdout.length >> 1);
+      const rms = (fromS: number, toS: number) => {
+        let sum = 0;
+        let n = 0;
+        for (let i = Math.round(fromS * 48_000); i < Math.round(toS * 48_000); i++) {
+          sum += (pcm[i] ?? 0) ** 2;
+          n++;
+        }
+        return Math.sqrt(sum / n);
+      };
+      // The fade runs 1–3 s: full before, about 0.71 at the middle, silent after.
+      const full = rms(0.2, 0.9);
+      expect(rms(1.95, 2.05) / full).toBeGreaterThan(0.55);
+      expect(rms(1.95, 2.05) / full).toBeLessThan(0.85);
+      expect(rms(2.7, 2.9) / full).toBeLessThan(0.4);
+      expect(rms(3.2, 3.8) / full).toBeLessThan(0.02);
+    }, 180_000);
+  });
+
   it('refuses crafted media', async () => {
     for (const file of ['evil.m3u8', 'fake.mp4']) {
       const started = await ok<{ job_id: string }>(client, 'media.import', {
