@@ -6,7 +6,7 @@
 # Engines come from Debian trixie (FFmpeg 7.1, MLT 7.30) on a base image pinned by digest;
 # Dependabot moves the digest. video://server/health reports the exact engine versions.
 
-FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS base
+FROM node:25-trixie-slim@sha256:aabbe39553d15ede8a97cc60c9e1a97034ff772afcf696ea42b94e7f5f2ec71b AS base
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt tini fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/* \
