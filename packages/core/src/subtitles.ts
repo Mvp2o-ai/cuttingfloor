@@ -22,15 +22,18 @@ function seconds(m: RegExpExecArray): number {
   );
 }
 
-const stripTags = (s: string) =>
-  s
-    .replace(/<[^>]*>/g, '')
-    .replace(/\{\\[^}]*\}/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ')
-    .trim();
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', nbsp: ' ', quot: '"' };
+
+/** Caption text without markup: tags removed until none are left, entities decoded once. */
+function stripTags(s: string): string {
+  let out = s;
+  let before: string;
+  do {
+    before = out;
+    out = out.replace(/<[^<>]*>/g, '').replace(/\{\\[^{}]*\}/g, '');
+  } while (out !== before);
+  return out.replace(/&(amp|lt|gt|nbsp|quot);/g, (_, e: string) => ENTITIES[e] ?? '').trim();
+}
 
 /** Words timed by WebVTT inline timestamps, if the cue has any. */
 function inlineWords(raw: string, start: number, end: number): Cue['words'] {
