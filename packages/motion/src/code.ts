@@ -378,7 +378,7 @@ async function listOutputs(job: CodeJob): Promise<CodeDone['outputs']> {
 
 export async function dropCodeJob(job: CodeJob): Promise<void> {
   if (job.timer) clearTimeout(job.timer);
-  await rm(job.dir, { recursive: true, force: true });
+  await rm(job.dir, { recursive: true, force: true, maxRetries: 10 }).catch(() => undefined);
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {

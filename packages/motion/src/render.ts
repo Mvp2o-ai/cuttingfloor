@@ -67,7 +67,9 @@ async function openPage(
     pipe: true,
     userDataDir: profile,
     args: [
-      `--window-size=${job.width},${job.height}`,
+      // Headless Chromium stops answering repeated screenshots of a window under about 80 px
+      // tall; the viewport and capture clip stay at the job size.
+      `--window-size=${Math.max(job.width, 256)},${Math.max(job.height, 256)}`,
       '--force-device-scale-factor=1',
       '--force-color-profile=srgb',
       '--font-render-hinting=none',

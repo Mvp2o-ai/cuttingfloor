@@ -270,7 +270,11 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
             : 'video/mp4',
       };
     } finally {
-      if (!keep) await rm(dir, { recursive: true, force: true });
+      // Killed Chromium processes can still be writing their profile; retry rather than let
+      // ENOTEMPTY replace the render's own error.
+      if (!keep) {
+        await rm(dir, { recursive: true, force: true, maxRetries: 10 }).catch(() => undefined);
+      }
     }
   }
 
