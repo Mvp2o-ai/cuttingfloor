@@ -333,6 +333,9 @@ out['/data'] = fs.readdirSync('/data').length ? 'has files' : 'empty';
 out['other jobs in /tmp'] = fs.readdirSync('/tmp').filter((d) => !process.cwd().endsWith(d)).length ? 'visible' : 'none';
 let worker = 'invisible';
 for (const pid of fs.readdirSync('/proc').filter((p) => /^\\d+$/.test(p))) {
+  // /proc lists the container's PIDs, but kill() takes this namespace's: container PID 1
+  // (docker-init ... motion-worker) is this script's own PID here.
+  if (Number(pid) === process.pid) continue;
   try {
     if (fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8').includes('motion-worker')) {
       try { process.kill(Number(pid), 'SIGTERM'); worker = 'killed'; } catch { worker = 'listed, not signalable'; }
