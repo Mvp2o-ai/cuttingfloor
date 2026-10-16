@@ -1821,6 +1821,32 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(rms(right.left, 0.5, 2.5)).toBeLessThan(rms(right.right, 0.5, 2.5) * 0.1);
     }, 240_000);
 
+    it('shifts pitch and cuts highs with audio effects', async () => {
+      const crossings = (x: Float64Array) => {
+        let n = 0;
+        for (let i = 1; i < x.length; i++) if ((x[i - 1] ?? 0) < 0 !== (x[i] ?? 0) < 0) n++;
+        return n / 2 / (x.length / 48_000);
+      };
+      const up = await exportPcm(
+        await tone([
+          { tool: 'filter.add', args: { clip_id: 'c6', name: 'pitch', params: { semitones: 12 } } },
+        ]),
+      );
+      const hz = crossings(up.left.subarray(24_000, 120_000));
+      expect(hz).toBeGreaterThan(600);
+      expect(hz).toBeLessThan(720);
+      const plain = await exportPcm(await tone([]));
+      const muffled = await exportPcm(
+        await tone([
+          {
+            tool: 'filter.add',
+            args: { clip_id: 'c6', name: 'lowpass', params: { frequency: 200 } },
+          },
+        ]),
+      );
+      expect(rms(muffled.left, 0.5, 2.5)).toBeLessThan(rms(plain.left, 0.5, 2.5) * 0.7);
+    }, 240_000);
+
     it('fades in', async () => {
       const faded = await exportPcm(
         await tone([{ tool: 'audio.fade', args: { clip_id: 'c6', in_frames: 25 } }]),
@@ -1867,6 +1893,154 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       );
       expect(report.checks.find((c) => c.check === 'loudness')?.status).toBe('pass');
     }, 240_000);
+  });
+
+  describe('effects', () => {
+    const ids: Record<string, string> = {};
+
+    async function rgb(timelineId: string, f: number, x: number, y: number) {
+      const res = await call(client, 'render.frames', {
+        timeline_id: timelineId,
+        frames: [f],
+        layout: 'single',
+        format: 'png',
+        long_edge: 1280,
+      });
+      if (res.isError) throw new Error(JSON.stringify(res.structured));
+      return pixel(Buffer.from((res.content[0]?.data as string) ?? '', 'base64'), x, y);
+    }
+
+    async function build(ops: Array<{ tool: string; args: Record<string, unknown> }>, tracks = 3) {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'effects',
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+        tracks: { video: tracks, audio: 0 },
+      });
+      return (
+        await ok<{ timeline_id: string }>(client, 'edit.batch', {
+          timeline_id,
+          preview: 'none',
+          ops,
+        })
+      ).timeline_id;
+    }
+
+    beforeAll(async () => {
+      const m = env.mediaDir;
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=0xff0000:size=1280x720:rate=25',
+        '-t',
+        '3',
+        '-pix_fmt',
+        'yuv420p',
+        join(m, 'red169.mp4'),
+      ]);
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=0x00ff00:size=1280x720:rate=25,drawbox=x=480:y=260:w=320:h=200:color=white:t=fill',
+        '-t',
+        '3',
+        '-pix_fmt',
+        'yuv420p',
+        join(m, 'screen.mp4'),
+      ]);
+      // A 2×2×2 LUT that sends every colour to blue.
+      const cube = ['LUT_3D_SIZE 2', ...Array.from({ length: 8 }, () => '0 0 1')].join('\n');
+      await writeFile(join(m, 'blue.cube'), `${cube}\n`);
+      ids.red = (await importMedia({ path: join(m, 'red169.mp4') })).media_id;
+      ids.screen = (await importMedia({ path: join(m, 'screen.mp4') })).media_id;
+      const lut = await importMedia({ path: join(m, 'blue.cube') });
+      expect(lut).toMatchObject({ kind: 'lut', status: 'ready' });
+      ids.lut = lut.media_id;
+    }, 180_000);
+
+    it('greys a clip, keys out a green screen and applies a LUT', async () => {
+      const grey = await build([
+        {
+          tool: 'clip.add',
+          args: { track_id: 't1', media_id: ids.red, av: 'video', source: { in: 0, out: 50 } },
+        },
+        { tool: 'filter.add', args: { clip_id: { $ref: 'ops[0].clip_id' }, name: 'grayscale' } },
+      ]);
+      const [r, g, b] = await rgb(grey, 10, 640, 360);
+      expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThan(12);
+      const keyed = await build([
+        {
+          tool: 'clip.add',
+          args: { track_id: 't1', media_id: ids.red, av: 'video', source: { in: 0, out: 50 } },
+        },
+        {
+          tool: 'clip.add',
+          args: { track_id: 't2', media_id: ids.screen, av: 'video', source: { in: 0, out: 50 } },
+        },
+        {
+          tool: 'filter.add',
+          args: {
+            clip_id: { $ref: 'ops[1].clip_id' },
+            name: 'chroma_key',
+            params: { color: '#00FF00' },
+          },
+        },
+      ]);
+      expect(colour(await rgb(keyed, 10, 100, 100))).toBe('red');
+      expect(colour(await rgb(keyed, 10, 640, 360))).toBe('white');
+      const looked = await build([
+        {
+          tool: 'clip.add',
+          args: { track_id: 't1', media_id: ids.red, av: 'video', source: { in: 0, out: 50 } },
+        },
+        {
+          tool: 'filter.add',
+          args: { clip_id: { $ref: 'ops[0].clip_id' }, name: 'lut', params: { media_id: ids.lut } },
+        },
+      ]);
+      expect(colour(await rgb(looked, 10, 640, 360))).toBe('blue');
+    }, 180_000);
+
+    it('changes only what is below an adjustment clip, only while it runs, and the whole timeline', async () => {
+      const adjusted = await build([
+        {
+          tool: 'clip.add',
+          args: { track_id: 't1', media_id: ids.red, av: 'video', source: { in: 0, out: 50 } },
+        },
+        { tool: 'adjustment.add', args: { track_id: 't2', at_frame: 10, duration_frames: 10 } },
+        { tool: 'filter.add', args: { clip_id: { $ref: 'ops[1].clip_id' }, name: 'invert' } },
+        {
+          tool: 'clip.add',
+          args: {
+            track_id: 't3',
+            media_id: ids.red,
+            av: 'video',
+            at_frame: 0,
+            source: { in: 0, out: 50 },
+          },
+        },
+        {
+          tool: 'clip.set_transform',
+          args: { clip_id: { $ref: 'ops[3].clip_id' }, scale: 0.25, x: 0.15, y: 0.15 },
+        },
+      ]);
+      // Inside the zone the red below inverts to cyan; the small red clip above stays red.
+      expect(colour(await rgb(adjusted, 15, 900, 500))).not.toBe('red');
+      expect(colour(await rgb(adjusted, 15, 190, 110))).toBe('red');
+      expect(colour(await rgb(adjusted, 30, 900, 500))).toBe('red');
+      const inverted = await build([
+        {
+          tool: 'clip.add',
+          args: { track_id: 't1', media_id: ids.red, av: 'video', source: { in: 0, out: 50 } },
+        },
+        { tool: 'filter.add', args: { timeline: true, name: 'invert' } },
+      ]);
+      const [r, g, b] = await rgb(inverted, 30, 640, 360);
+      expect(r).toBeLessThan(40);
+      expect(g).toBeGreaterThan(200);
+      expect(b).toBeGreaterThan(200);
+    }, 180_000);
   });
 
   it('refuses crafted media', async () => {
