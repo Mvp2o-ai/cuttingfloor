@@ -48,8 +48,14 @@ describe('JobRunner', () => {
     const queued = await store.create({ owner: 'o', tool: 't' });
     runner.start(running, forever);
     runner.start(queued, forever);
-    await new Promise((r) => setTimeout(r, 50));
-    expect((await store.get(queued.id, 'o'))?.statusMessage).toBe('queued');
+    // Wait for the runner to record the second job as queued; a fixed sleep raced it on slow
+    // CI runners.
+    let message: string | undefined;
+    for (let i = 0; i < 200 && message !== 'queued'; i++) {
+      message = (await store.get(queued.id, 'o'))?.statusMessage;
+      if (message !== 'queued') await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(message).toBe('queued');
     expect((await runner.cancel(queued.id, 'o'))?.status).toBe('cancelled');
     expect((await runner.cancel(running.id, 'o'))?.status).toBe('cancelled');
     // The slot is free again.
