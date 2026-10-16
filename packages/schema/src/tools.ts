@@ -122,7 +122,12 @@ export const EditArgs = {
       .optional()
       .describe('Start where this clip ends (instead of at_frame)'),
     source: z
-      .object({ in: frame, out: frame })
+      .union([
+        z.object({ in: frame, out: frame }),
+        z
+          .object({ words: z.tuple([z.number().int().min(0), z.number().int().min(0)]) })
+          .describe('Transcript words i to j (inclusive), from media.get include transcript'),
+      ])
       .optional()
       .describe('Source range in sequence frames, out exclusive. Default: the whole media'),
     duration_frames: z
@@ -239,6 +244,14 @@ export const EditArgs = {
       )
       .max(5000)
       .optional(),
+    from_transcript: z
+      .object({
+        clip_id: z.string().describe('A clip whose media has a transcript (media.analyze)'),
+        max_words: z.number().int().min(1).max(30).default(6).describe('Words per caption at most'),
+        max_chars: z.number().int().min(8).max(200).default(36),
+      })
+      .optional()
+      .describe("Captions from the clip's transcript, timed where its words play"),
     srt: z.string().max(2_000_000).optional().describe('SubRip text instead of segments'),
     vtt: z.string().max(2_000_000).optional().describe('WebVTT text instead of segments'),
     offset_frames: z
@@ -451,6 +464,70 @@ export const MediaImportInput = z.object({
   idempotency_key: z.string().min(1).max(200).optional(),
 });
 
+export const ANALYSES = ['transcript', 'beats', 'faces'] as const;
+
+export const MediaRefInput = z.object({
+  media_id: MediaId,
+  include: z
+    .array(z.enum(ANALYSES))
+    .optional()
+    .describe('Also return these analyses in full (otherwise only their summaries)'),
+});
+
+export const MediaAnalyzeInput = z.object({
+  media_id: MediaId,
+  kind: z
+    .enum(['transcript', 'beats', 'faces', 'track'])
+    .describe(
+      'transcript: words with times (whisper.cpp, local); beats: tempo and beat times; faces: faces over time and a focus path for reframing; track: follow a region',
+    ),
+  model: z
+    .enum(['tiny', 'base', 'small'])
+    .default('base')
+    .describe('transcript: speed vs accuracy'),
+  language: z.string().min(2).max(8).default('auto').describe("transcript: e.g. 'en', or 'auto'"),
+  region: z
+    .object({
+      at_seconds: z.number().min(0),
+      x: z.number().min(0).max(1),
+      y: z.number().min(0).max(1),
+      w: z.number().min(0.005).max(1),
+      h: z.number().min(0.005).max(1),
+    })
+    .optional()
+    .describe(
+      'track: the box to follow (top-left x, y and size, fractions of the picture) and when',
+    ),
+  until_seconds: z.number().min(0).optional().describe('track: stop here. Default: the end'),
+  idempotency_key: z.string().min(1).max(200).optional(),
+});
+
+export const Transcript = z.object({
+  model: z.string(),
+  language: z.string(),
+  text: z.string(),
+  words: z.array(
+    z.object({ text: z.string(), start: z.number(), end: z.number(), confidence: z.number() }),
+  ),
+});
+export const BeatsAnalysis = z.object({
+  bpm: z.number(),
+  beats: z.array(z.number()),
+  downbeats: z.array(z.number()),
+});
+export const FacesAnalysis = z.object({
+  rate: z.number(),
+  frames: z.array(
+    z.object({
+      time: z.number(),
+      faces: z.array(
+        z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number(), score: z.number() }),
+      ),
+    }),
+  ),
+  focus: z.array(z.object({ time: z.number(), x: z.number(), y: z.number() })),
+});
+
 export const MediaStatus = z.enum(['importing', 'processing', 'ready', 'failed']);
 
 export const MediaInfo = z.object({
@@ -481,11 +558,22 @@ export const MediaInfo = z.object({
       silences: z.array(z.object({ start: z.number(), end: z.number() })),
     })
     .nullable(),
+  analyses: z
+    .object({
+      transcript: z
+        .object({ model: z.string(), language: z.string(), words: z.number() })
+        .optional(),
+      beats: z.object({ bpm: z.number(), beats: z.number() }).optional(),
+      faces: z.object({ rate: z.number(), frames_with_faces: z.number() }).optional(),
+    })
+    .optional()
+    .describe('Summaries of media.analyze results; media.get include returns them in full'),
+  transcript: Transcript.optional(),
+  beats: BeatsAnalysis.optional(),
+  faces: FacesAnalysis.optional(),
   error: ToolError.optional(),
 });
 export type MediaInfo = z.infer<typeof MediaInfo>;
-
-export const MediaRefInput = z.object({ media_id: MediaId });
 
 // Jobs
 export const JobStatus = z.enum(['working', 'completed', 'failed', 'cancelled']);

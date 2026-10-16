@@ -12,11 +12,12 @@ export {
 export {
   applyEdit,
   clipSource,
+  type FactsResolver,
+  type MediaFacts,
   type MediaResolver,
   nestedRef,
   newTimeline,
   type OpOutcome,
-  type SilenceResolver,
   type TimelineResolver,
   timelineEnd,
   transitionHalves,

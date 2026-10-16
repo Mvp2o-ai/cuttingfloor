@@ -7,6 +7,8 @@ export const BIN = {
   ffprobe: process.env.CUTTINGFLOOR_FFPROBE ?? 'ffprobe',
   melt: process.env.CUTTINGFLOOR_MELT ?? 'melt',
   fcScan: 'fc-scan',
+  whisper: process.env.CUTTINGFLOOR_WHISPER ?? 'whisper-cli',
+  vision: process.env.CUTTINGFLOOR_VISION ?? 'cf-vision',
   fcList: 'fc-list',
 };
 

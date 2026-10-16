@@ -23,6 +23,12 @@ export interface MediaRecord {
   mezzanine: string | null;
   proxy: string | null;
   analysis: MediaInfo['analysis'];
+  /** media.analyze results, kept with the media. */
+  analyses?: {
+    transcript?: NonNullable<MediaInfo['transcript']>;
+    beats?: NonNullable<MediaInfo['beats']>;
+    faces?: NonNullable<MediaInfo['faces']>;
+  };
   error?: ToolError;
   created_at: string;
   updated_at: string;
@@ -274,8 +280,34 @@ export function mediaRef(record: MediaRecord): MediaRef | undefined {
   };
 }
 
-export function mediaInfo(record: MediaRecord): MediaInfo {
+export function mediaInfo(
+  record: MediaRecord,
+  include: Array<'transcript' | 'beats' | 'faces'> = [],
+): MediaInfo {
   const p = record.probe;
+  const a = record.analyses;
+  const analyses = a
+    ? {
+        ...(a.transcript
+          ? {
+              transcript: {
+                model: a.transcript.model,
+                language: a.transcript.language,
+                words: a.transcript.words.length,
+              },
+            }
+          : {}),
+        ...(a.beats ? { beats: { bpm: a.beats.bpm, beats: a.beats.beats.length } } : {}),
+        ...(a.faces
+          ? {
+              faces: {
+                rate: a.faces.rate,
+                frames_with_faces: a.faces.frames.filter((f) => f.faces.length).length,
+              },
+            }
+          : {}),
+      }
+    : undefined;
   return {
     media_id: record.media_id,
     name: record.name,
@@ -291,6 +323,8 @@ export function mediaInfo(record: MediaRecord): MediaInfo {
     codecs: { video: p?.video?.codec ?? null, audio: p?.audio?.codec ?? null },
     conform: record.conform,
     analysis: record.analysis,
+    ...(analyses && Object.keys(analyses).length ? { analyses } : {}),
+    ...Object.fromEntries(include.flatMap((k) => (a?.[k] ? [[k, a[k]]] : []))),
     ...(record.error ? { error: record.error } : {}),
   };
 }

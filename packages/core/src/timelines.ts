@@ -7,9 +7,9 @@ import {
 } from '@cuttingfloor/schema';
 import {
   applyEdit,
+  type FactsResolver,
   type MediaResolver,
   type OpOutcome,
-  type SilenceResolver,
   type TimelineResolver,
 } from './edit.ts';
 import { timelineIdOf } from './hash.ts';
@@ -108,7 +108,7 @@ export function runEdits(
   media: MediaResolver,
   record: TimelineOp,
   timelines?: TimelineResolver,
-  silences?: SilenceResolver,
+  facts?: FactsResolver,
 ): EditOutcome {
   const doc = structuredClone(base);
   const results: EditOutcome['results'] = [];
@@ -124,7 +124,7 @@ export function runEdits(
       );
     }
     try {
-      last = applyEdit(doc, op.tool, parsed.data as never, media, timelines, silences);
+      last = applyEdit(doc, op.tool, parsed.data as never, media, timelines, facts);
     } catch (error) {
       if (error instanceof CfError && ops.length > 1) {
         throw new CfError(error.code, `ops[${index}] (${op.tool}): ${error.message}`, {

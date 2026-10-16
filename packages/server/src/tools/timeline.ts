@@ -2,6 +2,7 @@ import {
   type BatchOp,
   diff,
   fromView,
+  type MediaFacts,
   newTimeline,
   runEdits,
   ticksPerFrame,
@@ -29,12 +30,12 @@ import {
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import {
   assertOnline,
+  factsResolver,
   framesUri,
   mediaIdsIn,
   mediaResolver,
   nestedIdsIn,
   previewFrames,
-  silenceResolver,
   sourcesFor,
   timelineImage,
   timelineResolver,
@@ -481,10 +482,17 @@ async function applyAndReply(
   const base = await rt.timelines.get(owner, baseId);
   const media = await mediaResolver(rt, owner, mediaIdsIn(ops));
   const nestable = await timelineResolver(rt, owner, nestedIdsIn(ops));
-  // Ducking reads the silences found at import, so only then are media records loaded.
-  const quiet = ops.some((o) => o.tool === 'audio.duck')
-    ? await silenceResolver(rt, owner, base, mediaIdsIn(ops))
-    : new Map<string, Array<{ start: number; end: number }>>();
+  // Ducking, transcript captions and word-range clips read what import and media.analyze
+  // found; only those load the media records.
+  const needsFacts = ops.some(
+    (o) =>
+      o.tool === 'audio.duck' ||
+      (o.tool === 'caption.add' && 'from_transcript' in o.args) ||
+      (o.tool === 'clip.add' && JSON.stringify(o.args.source ?? '').includes('"words"')),
+  );
+  const facts = needsFacts
+    ? await factsResolver(rt, owner, base, mediaIdsIn(ops))
+    : new Map<string, MediaFacts>();
   const { doc, outcome, results } = runEdits(
     base,
     baseId,
@@ -492,7 +500,7 @@ async function applyAndReply(
     (id) => media.get(id),
     record,
     (id) => nestable.get(id),
-    (id) => quiet.get(id),
+    (id) => facts.get(id),
   );
   const id = await rt.timelines.put(owner, doc);
   const warnings = [...outcome.warnings];
