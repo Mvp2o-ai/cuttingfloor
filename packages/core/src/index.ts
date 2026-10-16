@@ -23,6 +23,25 @@ export {
   transitionHalves,
 } from './edit.ts';
 export { canonicalJson, randomId, timelineIdOf } from './hash.ts';
+export {
+  cueTime,
+  fcpTime,
+  INTERCHANGE_FILES,
+  INTERCHANGE_FORMATS,
+  type InterchangeFormat,
+  type InterchangeMedia,
+  type InterchangeMediaResolver,
+  type InterchangeResult,
+  isDropFrame,
+  timecode,
+  toEdl,
+  toFcpxml,
+  toOtio,
+  toSrt,
+  toVtt,
+  writeInterchange,
+  xmlEscape,
+} from './interchange/index.ts';
 export { frameSource, meanRate, played, ratePoints, span, subclip } from './speed.ts';
 export { type Cue, parseSubtitles } from './subtitles.ts';
 export {
