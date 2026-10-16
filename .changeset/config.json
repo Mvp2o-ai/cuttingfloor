@@ -6,7 +6,7 @@
   "baseBranch": "main",
   "privatePackages": {
     "version": true,
-    "tag": true
+    "tag": false
   },
   "ignore": [
     "@cuttingfloor/schema",
