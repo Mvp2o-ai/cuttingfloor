@@ -1,13 +1,30 @@
 import { spawn } from 'node:child_process';
+import { availableParallelism } from 'node:os';
 import { CfError } from '@cuttingfloor/schema';
 import { BIN } from './exec.ts';
 
-// create.cutout: people cut out of their background. FFmpeg decodes frames at the matting size,
-// cf-vision runs MODNet (Apache-2.0) on each and writes an 8-bit matte, and a second FFmpeg
-// scales the mattes back up and merges them as alpha over the original frames: ProRes 4444 for
-// video (sound kept), PNG for a picture.
+// create.cutout: a subject cut out of its background. FFmpeg decodes frames at the matting size,
+// a matting model writes an 8-bit matte per frame, and a second FFmpeg scales the mattes back up
+// and merges them as alpha over the original frames: ProRes 4444 for video (sound kept), PNG for
+// a picture. Two models: MODNet (Apache-2.0; people only, fast enough for video) in cf-vision,
+// and BiRefNet lite (MIT; any subject, about a second a frame on a CPU) in cf-segment.
 
 const MODELS = process.env.CUTTINGFLOOR_MATTE_MODELS ?? '/usr/share/cuttingfloor/models';
+
+export type CutoutModel = 'modnet' | 'birefnet';
+
+/** The model names kept in recipes, so a model change makes new media. */
+export const CUTOUT_MODELS: Record<CutoutModel, string> = {
+  modnet: 'modnet-fa2fa546',
+  birefnet: 'birefnet-lite-de15b22b',
+};
+
+/** BiRefNet's input: the picture fitted within 1024 (it resizes to 1024 × 1024 itself). */
+export function segmentSize(width: number, height: number) {
+  const k = Math.min(1, 1024 / Math.max(width, height));
+  const even = (n: number) => Math.max(2, Math.round((n * k) / 2) * 2);
+  return { w: even(width), h: even(height) };
+}
 
 /** The fixed MODNet size nearest the picture's shape. */
 export function matteSize(width: number, height: number) {
@@ -32,9 +49,17 @@ export interface CutoutSource {
 export function cutout(
   src: CutoutSource,
   dest: string,
-  options: { smooth?: number; signal?: AbortSignal; onProgress?: (fraction: number) => void } = {},
+  options: {
+    model?: CutoutModel;
+    smooth?: number;
+    signal?: AbortSignal;
+    onProgress?: (fraction: number) => void;
+  } = {},
 ): Promise<void> {
-  const size = matteSize(src.width, src.height);
+  const model = options.model ?? 'modnet';
+  const size =
+    model === 'birefnet' ? segmentSize(src.width, src.height) : matteSize(src.width, src.height);
+  const smooth = String(src.image ? 0 : (options.smooth ?? 0.3));
   const rate = src.fps ? `${src.fps.num}/${src.fps.den}` : '25';
   const input = ['-hide_banner', '-nostdin', '-v', 'error', '-protocol_whitelist', 'file,pipe'];
   const decode = [
@@ -88,17 +113,30 @@ export function cutout(
   ];
   return new Promise((resolve, reject) => {
     const ff = spawn(BIN.ffmpeg, decode, { stdio: ['ignore', 'pipe', 'pipe'] });
-    const cv = spawn(
-      BIN.vision,
-      [
-        'matte',
-        `${MODELS}/modnet-${size.name}.onnx`,
-        String(size.w),
-        String(size.h),
-        String(src.image ? 0 : (options.smooth ?? 0.3)),
-      ],
-      { stdio: ['pipe', 'pipe', 'pipe'] },
-    );
+    const cv =
+      model === 'birefnet'
+        ? spawn(
+            BIN.segment,
+            [
+              `${MODELS}/birefnet-lite.onnx`,
+              String(size.w),
+              String(size.h),
+              smooth,
+              String(Math.max(1, Math.floor(availableParallelism() / 2))),
+            ],
+            { stdio: ['pipe', 'pipe', 'pipe'] },
+          )
+        : spawn(
+            BIN.vision,
+            [
+              'matte',
+              `${MODELS}/modnet-${(size as ReturnType<typeof matteSize>).name}.onnx`,
+              String(size.w),
+              String(size.h),
+              smooth,
+            ],
+            { stdio: ['pipe', 'pipe', 'pipe'] },
+          );
     const out = spawn(BIN.ffmpeg, merge, { stdio: ['pipe', 'ignore', 'pipe'] });
     ff.stdout.pipe(cv.stdin);
     cv.stdout.pipe(out.stdin);

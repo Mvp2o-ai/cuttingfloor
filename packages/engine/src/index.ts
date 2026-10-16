@@ -8,7 +8,14 @@ export { type Loudness, measureMix, renderWaveform } from './audio.ts';
 export { analyseBeats, type Beats, estimateTempo, onsetEnvelope, trackBeats } from './beats.ts';
 export { compositeFor, rotoFilters } from './composite.ts';
 export { gradientPosition, type MatteSpec, renderMatte } from './create.ts';
-export { type CutoutSource, cutout, matteSize } from './cutout.ts';
+export {
+  CUTOUT_MODELS,
+  type CutoutModel,
+  type CutoutSource,
+  cutout,
+  matteSize,
+  segmentSize,
+} from './cutout.ts';
 export { BIN, engineVersions, installedFonts, run } from './exec.ts';
 export { download, isBlockedAddress } from './fetch.ts';
 export {

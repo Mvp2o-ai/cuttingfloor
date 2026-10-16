@@ -2219,7 +2219,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(Number(/mean_volume: (-?[\d.]+) dB/.exec(stderr)?.[1])).toBeGreaterThan(-35);
     }, 300_000);
 
-    it('cuts a person out of a picture and out of a video, keeping the sound', async () => {
+    it('cuts a person out of a picture and a video (keeping the sound), and any subject out of a picture', async () => {
       const m = env.mediaDir;
       await exec('cp', [join(import.meta.dirname, 'fixtures', 'face.jpg'), join(m, 'cutout.jpg')]);
       await ff([
@@ -2268,7 +2268,10 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       const file = async (id: string) => (await env.runtime.media.get('local', id)).file as string;
 
       const picture = await importMedia({ path: join(m, 'cutout.jpg') });
-      const still = await create('create.cutout', { media_id: picture.media_id });
+      const still = await create('create.cutout', {
+        media_id: picture.media_id,
+        subject: 'people',
+      });
       expect(still).toMatchObject({ kind: 'image', width: 480, height: 600 });
       const png = await file(still.media_id);
       expect(await alpha(png, 295, 160)).toBeGreaterThan(200); // face
@@ -2286,7 +2289,29 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(Number(v?.nb_read_packets)).toBe(25);
       expect(await alpha(mov, 295, 160)).toBeGreaterThan(200);
       expect(await alpha(mov, 80, 200)).toBeLessThan(60);
-    }, 300_000);
+
+      // Any subject (BiRefNet, the default for pictures): the person, and an object.
+      const any = await create('create.cutout', { media_id: picture.media_id });
+      expect(any.media_id).not.toBe(still.media_id);
+      const anyPng = await file(any.media_id);
+      expect(await alpha(anyPng, 295, 160)).toBeGreaterThan(200); // face
+      expect(await alpha(anyPng, 330, 330)).toBeGreaterThan(200); // suit
+      expect(await alpha(anyPng, 10, 10)).toBeLessThan(60); // sky
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        "color=c=0x6f8fae:size=640x480,format=rgb24,geq=r='if(lt(hypot(X-320\\,Y-260)\\,130)\\,225\\,111+X/20)':g='if(lt(hypot(X-320\\,Y-260)\\,130)\\,40\\,143)':b='if(lt(hypot(X-320\\,Y-260)\\,130)\\,50\\,174-Y/20)'",
+        '-frames:v',
+        '1',
+        join(m, 'ball.png'),
+      ]);
+      const ball = await importMedia({ path: join(m, 'ball.png') });
+      const cut = await file((await create('create.cutout', { media_id: ball.media_id })).media_id);
+      expect(await alpha(cut, 320, 260)).toBeGreaterThan(200); // the ball
+      expect(await alpha(cut, 20, 20)).toBeLessThan(60); // the backdrop
+      expect(await alpha(cut, 620, 460)).toBeLessThan(60);
+    }, 600_000);
 
     it.skipIf(!chromium)(
       'renders an HTML still with assets, transparent where unpainted',

@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  CUTOUT_MODELS,
+  type CutoutModel,
   cutout,
   KOKORO,
   type MediaRecord,
@@ -324,11 +326,11 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
     'create.cutout',
     {
-      title: 'Cut out people',
+      title: 'Cut out a subject',
       description:
-        'People without their background (MODNet, local): ProRes 4444 with alpha and the sound, or a PNG, to lay over a new background. For people only. Long-running: a task, or {job_id, media_id} for job.get.',
+        'A subject without its background, local: ProRes 4444 with alpha and the sound, or a PNG, to lay over a new background. subject any (BiRefNet) cuts out products, animals or objects; people (MODNet) is fast enough for long video. Long-running: a task, or {job_id, media_id} for job.get.',
       inputSchema: CreateCutoutInput,
-      annotations: annotations('Cut out people'),
+      annotations: annotations('Cut out a subject'),
     },
     guard(async (args, ctx) => {
       const owner = deps.owner();
@@ -342,8 +344,10 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       }
       const picture = renderPicture(source, 'export');
       const image = p.kind === 'image';
+      const model: CutoutModel =
+        args.subject === 'any' || (args.subject === 'auto' && image) ? 'birefnet' : 'modnet';
       const recipe = {
-        model: 'modnet-fa2fa546',
+        model: CUTOUT_MODELS[model],
         source: source.fingerprint ?? source.media_id,
         smooth: image ? 0 : args.smooth,
       };
@@ -366,7 +370,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
               duration: p.duration,
             },
             dest,
-            { smooth: args.smooth, signal, onProgress: (f) => progress(f, 'matting') },
+            { model, smooth: args.smooth, signal, onProgress: (f) => progress(f, 'matting') },
           );
           return dest;
         },
