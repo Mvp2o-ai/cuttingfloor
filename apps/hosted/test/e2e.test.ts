@@ -974,6 +974,52 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       ).toEqual(['white', 'green', 'green']);
     }, 120_000);
 
+    it('composites a nested timeline, transparent where it is empty', async () => {
+      // Inner: the 4:3 red picture alone on a 16:9 timeline, so its sides are empty.
+      const { timeline_id: blank } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'inner',
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+        tracks: { video: 1, audio: 0 },
+      });
+      const inner = await ok<{ timeline_id: string }>(client, 'clip.add', {
+        timeline_id: blank,
+        track_id: 't1',
+        media_id: ids.red43,
+        av: 'video',
+        source: { in: 0, out: 50 },
+        preview: 'none',
+      });
+      const outer = await ok<{ timeline_id: string }>(client, 'edit.batch', {
+        timeline_id: base,
+        preview: 'none',
+        ops: [
+          { tool: 'clip.remove', args: { clip_id: 'c4' } },
+          {
+            tool: 'clip.add',
+            args: { track_id: 't2', nested_timeline_id: inner.timeline_id, at_frame: 0 },
+          },
+          { tool: 'clip.set_transform', args: { clip_id: { $ref: 'ops[1].clip_id' }, scale: 0.5 } },
+        ],
+      });
+      // Half size: the nested frame spans 320–960; its red picture 400–880; green shows through
+      // the nested timeline's empty sides.
+      expect(
+        await look(outer.timeline_id, 10, [
+          [640, 360],
+          [360, 360],
+          [100, 360],
+        ]),
+      ).toEqual(['red', 'green', 'green']);
+      const view = await ok<{ nested: Record<string, { duration: number }> }>(
+        client,
+        'timeline.get',
+        {
+          timeline_id: outer.timeline_id,
+        },
+      );
+      expect(Object.values(view.nested)[0]?.duration).toBe(50);
+    }, 120_000);
+
     it('exports what the preview shows', async () => {
       const pip = await withEdit('clip.set_transform', {
         clip_id: 'c4',
@@ -1003,6 +1049,192 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       );
       expect(fromExport).toEqual(await look(pip, 10, points));
     }, 180_000);
+  });
+
+  describe('timing', () => {
+    let ramp = '';
+    let beep = '';
+
+    /** Source frame shown at each timeline frame: the fixture's luma is 16 + 2·frame. */
+    async function sourceFrames(timelineId: string, frames: number[]): Promise<number[]> {
+      const res = await call(client, 'render.frames', {
+        timeline_id: timelineId,
+        frames,
+        layout: 'single',
+        format: 'png',
+        long_edge: 320,
+      });
+      if (res.isError) throw new Error(JSON.stringify(res.structured));
+      const images = res.content
+        .filter((c) => c.type === 'image')
+        .map((c) => Buffer.from(c.data as string, 'base64'));
+      const lumas = await Promise.all(images.map((img) => regionStats(img, '64:64:128:58')));
+      return lumas.map((l) => Math.round((l.y - 16) / 2));
+    }
+
+    /** A timeline holding one clip of the ramp fixture, plus `ops` applied to it (clip c4). */
+    async function withClip(
+      ops: Array<{ tool: string; args: Record<string, unknown> }>,
+      media = ramp,
+    ) {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'timing',
+        sequence: { width: 320, height: 180, fps: { num: 25, den: 1 } },
+      });
+      return (
+        await ok<{ timeline_id: string }>(client, 'edit.batch', {
+          timeline_id,
+          preview: 'none',
+          ops: [{ tool: 'clip.add', args: { track_id: 't1', media_id: media } }, ...ops],
+        })
+      ).timeline_id;
+    }
+
+    /** Exports a timeline's sound and returns it as mono 48 kHz samples. */
+    async function exportedAudio(timelineId: string): Promise<Int16Array> {
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: timelineId,
+        preset: 'web_1080p_h264',
+      });
+      const done = (await waitJob(started.job_id)) as { result?: { file: string } };
+      if (!done.result) throw new Error(JSON.stringify(done));
+      const { stdout } = await exec(
+        'ffmpeg',
+        ['-v', 'error', '-i', done.result.file, '-ac', '1', '-ar', '48000', '-f', 's16le', '-'],
+        { encoding: 'buffer', maxBuffer: 256 * 1024 * 1024 },
+      );
+      return new Int16Array(stdout.buffer, stdout.byteOffset, stdout.length >> 1);
+    }
+
+    const pitch = (pcm: Int16Array) => {
+      let crossings = 0;
+      for (let i = 1; i < pcm.length; i++)
+        if ((pcm[i - 1] ?? 0) < 0 !== (pcm[i] ?? 0) < 0) crossings++;
+      return crossings / 2 / (pcm.length / 48_000);
+    };
+
+    beforeAll(async () => {
+      const m = env.mediaDir;
+      // 100 frames whose luma is 16 + 2·frame, with a steady 440 Hz tone.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'nullsrc=size=320x180:rate=25',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:sample_rate=48000',
+        '-t',
+        '4',
+        '-vf',
+        "geq=lum='16+2*N':cb=128:cr=128",
+        '-c:v',
+        'libx264',
+        '-qp',
+        '0',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'pcm_s16le',
+        '-shortest',
+        join(m, 'ramp.mov'),
+      ]);
+      // 4 s of silence with a beep from 0.5 to 0.7 s.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=black:size=320x180:rate=25',
+        '-f',
+        'lavfi',
+        '-i',
+        "sine=frequency=1000:sample_rate=48000,volume=enable='not(between(t,0.5,0.7))':volume=0",
+        '-t',
+        '4',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'pcm_s16le',
+        '-shortest',
+        join(m, 'beep.mov'),
+      ]);
+      ramp = (await importMedia({ path: join(m, 'ramp.mov') })).media_id;
+      beep = (await importMedia({ path: join(m, 'beep.mov') })).media_id;
+    }, 300_000);
+
+    it('plays twice as fast, in reverse and through a ramp, frame-exact', async () => {
+      const fast = await withClip([{ tool: 'clip.set_speed', args: { clip_id: 'c4', rate: 2 } }]);
+      expect(await sourceFrames(fast, [0, 10, 40, 49])).toEqual([0, 20, 80, 98]);
+      const back = await withClip([
+        { tool: 'clip.set_speed', args: { clip_id: 'c4', reverse: true } },
+      ]);
+      expect(await sourceFrames(back, [0, 10, 99])).toEqual([99, 89, 0]);
+      const ramped = await withClip([
+        {
+          tool: 'clip.set_speed',
+          args: {
+            clip_id: 'c4',
+            curve: [
+              { at: 0, rate: 1 },
+              { at: 0.5, rate: 3 },
+              { at: 1, rate: 1 },
+            ],
+          },
+        },
+      ]);
+      const seen = await sourceFrames(ramped, [0, 10, 20, 30, 40, 49]);
+      // Slow at the ends, fast in the middle: the steps grow, then shrink.
+      const steps = seen.slice(1).map((v, i) => v - (seen[i] as number));
+      expect(seen[0]).toBe(0);
+      expect(steps[2]).toBeGreaterThan(steps[0] as number);
+      expect(steps[4]).toBeLessThan(steps[2] as number);
+      expect(seen[5]).toBeGreaterThan(95);
+    }, 120_000);
+
+    it('holds a freeze frame and carries on after it', async () => {
+      const frozen = await withClip([
+        { tool: 'clip.freeze', args: { clip_id: 'c4', at_frame: 30, duration_frames: 10 } },
+      ]);
+      expect(await sourceFrames(frozen, [29, 30, 39, 40, 41])).toEqual([29, 30, 30, 30, 31]);
+    }, 60_000);
+
+    it('keeps pitch when sped up unless told not to', async () => {
+      const kept = await withClip([{ tool: 'clip.set_speed', args: { clip_id: 'c4', rate: 2 } }]);
+      // Zero crossings through AAC read a little high; the point is ~440 against ~880.
+      const keptHz = pitch(await exportedAudio(kept));
+      expect(keptHz).toBeGreaterThan(400);
+      expect(keptHz).toBeLessThan(500);
+      const chipmunk = await withClip([
+        { tool: 'clip.set_speed', args: { clip_id: 'c4', rate: 2, preserve_pitch: false } },
+      ]);
+      const chipmunkHz = pitch(await exportedAudio(chipmunk));
+      expect(chipmunkHz).toBeGreaterThan(820);
+      expect(chipmunkHz).toBeLessThan(960);
+    }, 180_000);
+
+    it('plays sound backwards', async () => {
+      const back = await withClip(
+        [{ tool: 'clip.set_speed', args: { clip_id: 'c4', reverse: true } }],
+        beep,
+      );
+      const pcm = await exportedAudio(back);
+      const peak = pcm.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+      expect(peak).toBeGreaterThan(1000);
+      const loud = pcm.findIndex((v) => Math.abs(v) > peak / 2);
+      // The beep at 0.5–0.7 s comes out at 3.3–3.5 s.
+      expect(loud / 48_000).toBeGreaterThan(3.2);
+      expect(loud / 48_000).toBeLessThan(3.4);
+    }, 120_000);
+
+    it('extracts a range and closes the gap', async () => {
+      const cut = await withClip([
+        { tool: 'range.extract', args: { range: { start: 20, end: 60 } } },
+      ]);
+      expect(await sourceFrames(cut, [19, 20, 59])).toEqual([19, 60, 99]);
+    }, 60_000);
   });
 
   it('refuses crafted media', async () => {

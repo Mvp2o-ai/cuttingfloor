@@ -6,10 +6,13 @@ import {
   MASK_DEFAULTS,
   MASK_NUMBERS,
   type MediaRef,
+  type NestedDoc,
   type Sequence,
   type StoredAnimatable,
+  type StoredAnimation,
   type StoredClip,
   type StoredMask,
+  type StoredSpeed,
   type StoredTrack,
   type StoredTransform,
   type TimelineDoc,
@@ -18,10 +21,31 @@ import {
   type TrackKind,
 } from '@cuttingfloor/schema';
 import { checkKeyframes, toStoredAnim } from './animate.ts';
+import { extended, frameSource, meanRate, span, subclip } from './speed.ts';
 import { framesToTicks, ticksPerFrame } from './time.ts';
 
 /** Looks up media an edit refers to. Returns undefined for unknown ids. */
 export type MediaResolver = (mediaId: string) => MediaRef | undefined;
+
+/** Looks up a stored timeline an edit nests. Returns undefined for unknown or expired ids. */
+export type TimelineResolver = (timelineId: string) => TimelineDoc | undefined;
+
+/** What a nested timeline looks like as a source: its length and whether it has picture and sound. */
+export function nestedRef(n: NestedDoc): MediaRef {
+  const has = (kind: TrackKind) =>
+    n.tracks.some((t) => t.kind === kind && t.clips.some((c) => c.enabled));
+  return { name: n.name, duration: timelineEnd(n), video: has('video'), audio: has('audio') };
+}
+
+/** What a clip plays: its media, or the timeline it nests. */
+export function clipSource(
+  doc: Pick<TimelineDoc, 'media' | 'nested'>,
+  clip: StoredClip,
+): MediaRef | undefined {
+  if (clip.type === 'media') return doc.media[clip.media_id];
+  const nested = doc.nested?.[clip.timeline];
+  return nested ? nestedRef(nested) : undefined;
+}
 
 export interface OpOutcome {
   clip_id?: string;
@@ -68,9 +92,15 @@ export function applyEdit<T extends EditTool>(
   tool: T,
   args: EditArgsOf<T>,
   media: MediaResolver,
+  timelines: TimelineResolver = () => undefined,
 ): OpOutcome {
   const handlers: {
-    [K in EditTool]: (doc: TimelineDoc, a: EditArgsOf<K>, m: MediaResolver) => OpOutcome;
+    [K in EditTool]: (
+      doc: TimelineDoc,
+      a: EditArgsOf<K>,
+      m: MediaResolver,
+      t: TimelineResolver,
+    ) => OpOutcome;
   } = {
     'timeline.set_sequence': setSequence,
     'track.add': trackAdd,
@@ -84,6 +114,14 @@ export function applyEdit<T extends EditTool>(
     'clip.link': clipLink,
     'clip.unlink': clipUnlink,
     'clip.set_enabled': clipSetEnabled,
+    'clip.set_speed': clipSetSpeed,
+    'clip.freeze': clipFreeze,
+    'clip.roll': clipRoll,
+    'clip.slip': clipSlip,
+    'clip.slide': clipSlide,
+    'clip.replace': clipReplace,
+    'range.lift': (d, a) => rangeRemove(d, a, false),
+    'range.extract': (d, a) => rangeRemove(d, a, true),
     'clip.set_transform': clipSetTransform,
     'clip.set_blend': clipSetBlend,
     'clip.set_mask': clipSetMask,
@@ -93,8 +131,9 @@ export function applyEdit<T extends EditTool>(
     d: TimelineDoc,
     a: EditArgsOf<T>,
     m: MediaResolver,
+    t: TimelineResolver,
   ) => OpOutcome;
-  const outcome = handler(doc, args, media);
+  const outcome = handler(doc, args, media, timelines);
   pruneMedia(doc);
   return outcome;
 }
@@ -183,33 +222,72 @@ function removeClip(track: StoredTrack, clip: StoredClip): void {
   track.clips = track.clips.filter((c) => c !== clip);
 }
 
-/** Clears [from, to) on a track, cutting clips that cross the edges (overwrite edit). */
-function clearRange(doc: TimelineDoc, track: StoredTrack, from: number, to: number): void {
+/** A copy of `c` showing a different part of its source: new `in`, duration and speed. */
+function retimed(
+  c: StoredClip,
+  timing: { in: number; duration: number; speed?: StoredSpeed | undefined },
+  extra: { id?: string; start?: number } = {},
+): StoredClip {
+  const copy: StoredClip = { ...c, ...extra, in: timing.in, duration: timing.duration };
+  if (timing.speed) copy.speed = timing.speed;
+  else delete copy.speed;
+  return copy;
+}
+
+/** Changes a clip's timing in place. */
+function setTiming(
+  c: StoredClip,
+  timing: { in: number; duration: number; speed?: StoredSpeed | undefined },
+): void {
+  c.in = timing.in;
+  c.duration = timing.duration;
+  if (timing.speed) c.speed = timing.speed;
+  else delete c.speed;
+}
+
+/** Moves one edge of a clip by `delta` ticks (positive is later), cutting or growing its content. */
+function moveEdge(c: StoredClip, edge: 'start' | 'end', delta: number): void {
+  if (delta === 0) return;
+  const grow = edge === 'end' ? delta > 0 : delta < 0;
+  const by = Math.abs(delta);
+  if (c.duration - (grow ? 0 : by) <= 0) {
+    throw new CfError('bad_request', `Trim would leave clip ${c.id} with no frames`);
+  }
+  if (grow) setTiming(c, extended(c, edge, by));
+  else setTiming(c, edge === 'end' ? subclip(c, 0, c.duration - by) : subclip(c, by, c.duration));
+  if (edge === 'start') c.start += delta;
+}
+
+/**
+ * Clears [from, to) on a track, cutting clips that cross the edges (overwrite edit). Returns
+ * the right-hand pieces it made from clips that crossed `from`.
+ */
+function clearRange(doc: TimelineDoc, track: StoredTrack, from: number, to: number): StoredClip[] {
   const kept: StoredClip[] = [];
+  const made: StoredClip[] = [];
   for (const c of track.clips) {
     const cEnd = end(c);
     if (cEnd <= from || c.start >= to) {
       kept.push(c);
       continue;
     }
-    const left = c.start < from ? { ...c, duration: from - c.start } : undefined;
+    const left = c.start < from ? retimed(c, subclip(c, 0, from - c.start)) : undefined;
     if (left) kept.push(left);
     if (cEnd > to) {
-      const cut = to - c.start;
-      const right = {
-        ...c,
+      const right = retimed(c, subclip(c, to - c.start, c.duration), {
         id: left ? nextId(doc, 'c') : c.id,
         start: to,
-        in: c.in + cut,
-        duration: cEnd - to,
-      };
-      if (left) splitAnimation(left, right);
-      else dropAnimation(right, 'in');
+      });
+      if (left) {
+        splitAnimation(left, right);
+        made.push(right);
+      } else dropAnimation(right, 'in');
       kept.push(right);
     } else if (left) dropAnimation(left, 'out');
   }
   track.clips = kept;
   sortTrack(track);
+  return made;
 }
 
 /** Splits the clip that crosses `at`, if any. Returns the new right-hand clip. */
@@ -217,14 +295,8 @@ function splitTrackAt(doc: TimelineDoc, track: StoredTrack, at: number): StoredC
   const c = track.clips.find((x) => x.start < at && end(x) > at);
   if (!c) return undefined;
   const left = at - c.start;
-  const right: StoredClip = {
-    ...c,
-    id: nextId(doc, 'c'),
-    start: at,
-    in: c.in + left,
-    duration: c.duration - left,
-  };
-  c.duration = left;
+  const right = retimed(c, subclip(c, left, c.duration), { id: nextId(doc, 'c'), start: at });
+  setTiming(c, subclip(c, 0, left));
   splitAnimation(c, right);
   track.clips.push(right);
   sortTrack(track);
@@ -293,7 +365,7 @@ function neighbours(track: StoredTrack, clip: StoredClip): { prevEnd: number; ne
 }
 
 function checkSourceRange(doc: TimelineDoc, clip: StoredClip): void {
-  const media = doc.media[clip.media_id];
+  const media = clipSource(doc, clip);
   if (clip.in < 0) {
     throw new CfError(
       'bad_request',
@@ -303,7 +375,9 @@ function checkSourceRange(doc: TimelineDoc, clip: StoredClip): void {
       },
     );
   }
-  if (media?.duration != null && clip.in + clip.duration > media.duration) {
+  // A freeze frame covers no source span but still needs the frame it holds.
+  const last = clip.in + Math.max(span(clip), 1);
+  if (media?.duration != null && last > media.duration) {
     const tpf = ticksPerFrame(doc.sequence.fps);
     throw new CfError('bad_request', `Clip ${clip.id} would run past the end of its media`, {
       hint: `The media is ${Math.floor(media.duration / tpf)} frames long`,
@@ -311,10 +385,23 @@ function checkSourceRange(doc: TimelineDoc, clip: StoredClip): void {
   }
 }
 
-/** Removes media entries no clip uses, so equal timelines hash equal. */
+/** Removes media and nested timelines no clip uses, so equal timelines hash equal. */
 function pruneMedia(doc: TimelineDoc): void {
-  const used = new Set(doc.tracks.flatMap((t) => t.clips.map((c) => c.media_id)));
+  const clips = doc.tracks.flatMap((t) => t.clips);
+  const used = new Set(clips.flatMap((c) => (c.type === 'media' ? [c.media_id] : [])));
   for (const id of Object.keys(doc.media)) if (!used.has(id)) delete doc.media[id];
+  if (!doc.nested) return;
+  const reached = new Set<string>();
+  const visit = (cs: StoredClip[]) => {
+    for (const c of cs) {
+      if (c.type !== 'timeline' || reached.has(c.timeline)) continue;
+      reached.add(c.timeline);
+      visit(doc.nested?.[c.timeline]?.tracks.flatMap((t) => t.clips) ?? []);
+    }
+  };
+  visit(clips);
+  for (const key of Object.keys(doc.nested)) if (!reached.has(key)) delete doc.nested[key];
+  if (!Object.keys(doc.nested).length) delete doc.nested;
 }
 
 /** Drops link ids that no longer join at least two clips. */
@@ -364,14 +451,40 @@ function trackSet(doc: TimelineDoc, a: EditArgsOf<'track.set'>): OpOutcome {
   return ok(first ? first.start : 0, { track_id: track.id });
 }
 
-function clipAdd(doc: TimelineDoc, a: EditArgsOf<'clip.add'>, resolve: MediaResolver): OpOutcome {
-  const media = resolve(a.media_id);
+/** Copies a timeline into `doc.nested` (with everything it nests) and returns its key. */
+function nest(doc: TimelineDoc, id: string, resolveTimeline: TimelineResolver): string {
+  const source = resolveTimeline(id);
+  if (!source) {
+    throw new CfError('not_found', `No timeline ${id} to nest`, {
+      hint: 'Timelines expire 24 hours after last use; timeline.load brings one back',
+    });
+  }
+  const { parent: _p, op: _o, nested, ...body } = source;
+  doc.nested = { ...doc.nested, ...nested, [id]: body };
+  if (!timelineEnd(body)) {
+    throw new CfError('bad_request', `Timeline ${id} is empty, so there is nothing to nest`);
+  }
+  return id;
+}
+
+function clipAdd(
+  doc: TimelineDoc,
+  a: EditArgsOf<'clip.add'>,
+  resolve: MediaResolver,
+  resolveTimeline: TimelineResolver,
+): OpOutcome {
+  if (Boolean(a.media_id) === Boolean(a.nested_timeline_id)) {
+    throw new CfError('bad_request', 'Give media_id or nested_timeline_id, not both');
+  }
+  const key = a.nested_timeline_id ? nest(doc, a.nested_timeline_id, resolveTimeline) : undefined;
+  const mediaId = a.media_id ?? '';
+  const media = key ? nestedRef(doc.nested?.[key] as NestedDoc) : resolve(mediaId);
   if (!media) {
-    throw new CfError('not_found', `No media ${a.media_id}`, {
+    throw new CfError('not_found', `No media ${mediaId}`, {
       hint: 'Import it first with media.import; media expires 7 days after last use',
     });
   }
-  doc.media[a.media_id] = media;
+  if (!key) doc.media[mediaId] = media;
   const primary = getTrack(doc, a.track_id);
   const kinds: TrackKind[] =
     a.av === 'linked'
@@ -440,9 +553,10 @@ function clipAdd(doc: TimelineDoc, a: EditArgsOf<'clip.add'>, resolve: MediaReso
   for (const [kind, track] of targets) {
     const clip: StoredClip = {
       id: nextId(doc, 'c'),
-      type: 'media',
+      ...(key
+        ? { type: 'timeline' as const, timeline: key }
+        : { type: 'media' as const, media_id: mediaId }),
       kind,
-      media_id: a.media_id,
       start,
       in: inTicks,
       duration,
@@ -508,9 +622,7 @@ function clipTrim(doc: TimelineDoc, a: EditArgsOf<'clip.trim'>): OpOutcome {
     const oldEnd = end(clip);
     const { prevEnd, nextStart } = neighbours(track, clip);
     if (a.edge === 'end') {
-      clip.duration += delta;
-      if (clip.duration <= 0)
-        throw new CfError('bad_request', `Trim would leave clip ${clip.id} with no frames`);
+      moveEdge(clip, 'end', delta);
       checkSourceRange(doc, clip);
       if (a.ripple) shiftFrom(track, oldEnd, delta, clip);
       else if (end(clip) > nextStart) {
@@ -520,18 +632,13 @@ function clipTrim(doc: TimelineDoc, a: EditArgsOf<'clip.trim'>): OpOutcome {
       }
     } else if (a.ripple) {
       // Ripple head trim: the clip keeps its position, its content shifts, later clips follow.
-      clip.in += delta;
-      clip.duration -= delta;
-      if (clip.duration <= 0)
-        throw new CfError('bad_request', `Trim would leave clip ${clip.id} with no frames`);
+      const start = clip.start;
+      moveEdge(clip, 'start', delta);
+      clip.start = start;
       checkSourceRange(doc, clip);
       shiftFrom(track, oldEnd, -delta, clip);
     } else {
-      clip.start += delta;
-      clip.in += delta;
-      clip.duration -= delta;
-      if (clip.duration <= 0)
-        throw new CfError('bad_request', `Trim would leave clip ${clip.id} with no frames`);
+      moveEdge(clip, 'start', delta);
       if (clip.start < 0)
         throw new CfError('bad_request', 'Trim would move the clip before frame 0');
       checkSourceRange(doc, clip);
@@ -599,6 +706,298 @@ function clipSetEnabled(doc: TimelineDoc, a: EditArgsOf<'clip.set_enabled'>): Op
   assertUnlocked(track);
   clip.enabled = a.enabled;
   return ok(clip.start, { clip_id: clip.id });
+}
+
+/** The clip a timing edit applies to, plus its linked clips, all unlocked. */
+function unlockedGroup(doc: TimelineDoc, clipId: string): { ref: Located; members: Located[] } {
+  const members = group(doc, clipId);
+  const ref = members.find((m) => m.clip.id === clipId);
+  if (!ref) throw new CfError('not_found', `No clip ${clipId}`);
+  for (const m of members) assertUnlocked(m.track);
+  return { ref, members };
+}
+
+function isStill(doc: TimelineDoc, clip: StoredClip): boolean {
+  return clip.type === 'media' && doc.media[clip.media_id]?.duration === null;
+}
+
+/** Speed runs through a remapped media file, so nested timelines refuse it. */
+function assertRetimable(clip: StoredClip, what: string): void {
+  if (clip.type === 'timeline') {
+    throw new CfError(
+      'bad_request',
+      `${what} applies to media clips; ${clip.id} is a nested timeline`,
+      {
+        hint: 'Change the speed of the clips inside the nested timeline, then nest it again',
+      },
+    );
+  }
+}
+
+function clipSetSpeed(doc: TimelineDoc, a: EditArgsOf<'clip.set_speed'>): OpOutcome {
+  if (a.rate !== undefined && a.curve) {
+    throw new CfError('bad_request', 'Give rate or curve, not both');
+  }
+  if (a.curve) {
+    const first = a.curve[0];
+    const last = a.curve[a.curve.length - 1];
+    if (
+      first?.at !== 0 ||
+      last?.at !== 1 ||
+      a.curve.some((p, i) => i && p.at <= (a.curve?.[i - 1]?.at ?? 0))
+    ) {
+      throw new CfError('bad_request', 'A speed curve runs from at 0 to at 1 in increasing order', {
+        hint: 'e.g. [{at: 0, rate: 1}, {at: 0.5, rate: 4}, {at: 1, rate: 1}]',
+      });
+    }
+  }
+  const { ref, members } = unlockedGroup(doc, a.clip_id);
+  for (const m of members) assertRetimable(m.clip, 'clip.set_speed');
+  if (isStill(doc, ref.clip)) {
+    throw new CfError('bad_request', `Clip ${a.clip_id} is a still image, which has no speed`, {
+      hint: 'Change its length with clip.trim instead',
+    });
+  }
+  const tpf = ticksPerFrame(doc.sequence.fps);
+  for (const { track, clip } of members) {
+    const oldEnd = end(clip);
+    const sourceSpan = Math.max(span(clip), tpf);
+    const old = clip.speed;
+    const reverse = a.reverse ?? old?.reverse;
+    const pitch = a.preserve_pitch ?? old?.preserve_pitch;
+    let duration = clip.duration;
+    let speed: StoredSpeed = {};
+    if (a.rate !== undefined || a.curve) {
+      // The clip keeps the same source span and gets as long as the new speed makes it.
+      const mean = a.curve ? meanRate(a.curve) : (a.rate as number);
+      // Whole frames, rounded down so the clip never reaches past the source it had.
+      duration = Math.max(tpf, Math.floor(sourceSpan / mean / tpf) * tpf);
+      if (a.curve) {
+        speed = { curve: a.curve.map((p) => ({ t: Math.round(p.at * duration), rate: p.rate })) };
+      } else if (a.rate !== 1) speed = { rate: a.rate as number };
+    } else if (old?.curve) speed = { curve: old.curve };
+    else if (old?.rate !== undefined) speed = { rate: old.rate };
+    if (reverse) speed.reverse = true;
+    if (pitch === false) speed.preserve_pitch = false;
+    clip.duration = duration;
+    if (Object.keys(speed).length) clip.speed = speed;
+    else delete clip.speed;
+    checkSourceRange(doc, clip);
+    const delta = end(clip) - oldEnd;
+    if (a.ripple) shiftFrom(track, oldEnd, delta, clip);
+    else if (delta > 0 && end(clip) > neighbours(track, clip).nextStart) {
+      throw new CfError(
+        'bad_request',
+        `Clip ${clip.id} would overlap the next clip at this speed`,
+        {
+          hint: 'Use ripple: true to push later clips, or make room first',
+        },
+      );
+    }
+    sortTrack(track);
+  }
+  return ok(ref.clip.start, {
+    clip_id: ref.clip.id,
+    clip_ids: members.map((m) => m.clip.id),
+    temporal: true,
+  });
+}
+
+function clipFreeze(doc: TimelineDoc, a: EditArgsOf<'clip.freeze'>): OpOutcome {
+  const { ref, members } = unlockedGroup(doc, a.clip_id);
+  const video = members.find((m) => m.clip.kind === 'video');
+  if (!video) {
+    throw new CfError('bad_request', `Clip ${a.clip_id} has no picture to freeze`);
+  }
+  assertRetimable(video.clip, 'clip.freeze');
+  const fps = doc.sequence.fps;
+  const at = framesToTicks(a.at_frame, fps);
+  const v = video.clip;
+  if (at < v.start || at >= end(v)) {
+    throw new CfError('bad_request', `Frame ${a.at_frame} is not inside clip ${v.id}`, {
+      hint: `The clip covers frames ${v.start / ticksPerFrame(fps)} to ${end(v) / ticksPerFrame(fps) - 1}`,
+    });
+  }
+  const tpf = ticksPerFrame(fps);
+  const held = Math.round(frameSource(v, tpf, Math.round((at - v.start) / tpf)));
+  const duration = framesToTicks(a.duration_frames, fps);
+  const tracks = [...new Set(members.map((m) => m.track))];
+  const rights: StoredClip[] = [];
+  for (const track of tracks) {
+    const right = splitTrackAt(doc, track, at);
+    if (right) rights.push(right);
+  }
+  const link = rights.length > 1 ? nextId(doc, 'l') : null;
+  for (const r of rights) r.link = link;
+  // Everything from the frame on moves later on the clip's tracks; its sound has a gap there.
+  for (const track of tracks) shiftFrom(track, at, duration);
+  const { speed: _s, animation: _a, ...look } = v;
+  const frozen: StoredClip = {
+    ...look,
+    id: nextId(doc, 'c'),
+    start: at,
+    in: held,
+    duration,
+    link: null,
+    speed: { rate: 0 },
+  };
+  video.track.clips.push(frozen);
+  sortTrack(video.track);
+  tidyLinks(doc);
+  return ok(at, { clip_id: frozen.id, temporal: true });
+}
+
+/** The clip on the same track that starts exactly where `clip` ends, and the one that ends where it starts. */
+function touching(
+  track: StoredTrack,
+  clip: StoredClip,
+): { before?: StoredClip; after?: StoredClip } {
+  const before = track.clips.find((c) => c !== clip && end(c) === clip.start);
+  const after = track.clips.find((c) => c !== clip && c.start === end(clip));
+  return { ...(before ? { before } : {}), ...(after ? { after } : {}) };
+}
+
+function clipRoll(doc: TimelineDoc, a: EditArgsOf<'clip.roll'>): OpOutcome {
+  const { ref, members } = unlockedGroup(doc, a.clip_id);
+  const to = framesToTicks(a.to_frame, doc.sequence.fps);
+  const delta = to - end(ref.clip);
+  if (!touching(ref.track, ref.clip).after) {
+    throw new CfError(
+      'bad_request',
+      `No clip starts where ${a.clip_id} ends, so there is no cut to roll`,
+      {
+        hint: 'Use clip.trim to move one edge on its own',
+      },
+    );
+  }
+  const changed: string[] = [];
+  for (const { track, clip } of members) {
+    const { after } = touching(track, clip);
+    if (after) {
+      assertUnlocked(track);
+      moveEdge(after, 'start', delta);
+      checkSourceRange(doc, after);
+      changed.push(after.id);
+    } else if (delta > 0 && end(clip) + delta > neighbours(track, clip).nextStart) {
+      throw new CfError(
+        'bad_request',
+        `Rolling would push linked clip ${clip.id} into the next clip`,
+      );
+    }
+    moveEdge(clip, 'end', delta);
+    checkSourceRange(doc, clip);
+    changed.push(clip.id);
+    sortTrack(track);
+  }
+  return ok(to, { clip_id: ref.clip.id, clip_ids: changed, temporal: true });
+}
+
+function clipSlip(doc: TimelineDoc, a: EditArgsOf<'clip.slip'>): OpOutcome {
+  const { ref, members } = unlockedGroup(doc, a.clip_id);
+  const by = framesToTicks(a.by_frames, doc.sequence.fps);
+  for (const { clip } of members) {
+    if (isStill(doc, clip)) continue;
+    clip.in += by;
+    checkSourceRange(doc, clip);
+  }
+  return ok(ref.clip.start, {
+    clip_id: ref.clip.id,
+    clip_ids: members.map((m) => m.clip.id),
+    temporal: true,
+  });
+}
+
+function clipSlide(doc: TimelineDoc, a: EditArgsOf<'clip.slide'>): OpOutcome {
+  const { ref, members } = unlockedGroup(doc, a.clip_id);
+  const delta = framesToTicks(a.to_frame, doc.sequence.fps) - ref.clip.start;
+  const changed: string[] = [];
+  for (const { track, clip } of members) {
+    const { before, after } = touching(track, clip);
+    const { prevEnd, nextStart } = neighbours(track, clip);
+    if (!before && clip.start + delta < prevEnd) {
+      throw new CfError('bad_request', `Sliding clip ${clip.id} would overlap the clip before it`);
+    }
+    if (!after && end(clip) + delta > nextStart) {
+      throw new CfError('bad_request', `Sliding clip ${clip.id} would overlap the clip after it`);
+    }
+    if (clip.start + delta < 0)
+      throw new CfError('bad_request', 'The slide would move the clip before frame 0');
+    if (before) {
+      moveEdge(before, 'end', delta);
+      checkSourceRange(doc, before);
+      changed.push(before.id);
+    }
+    if (after) {
+      moveEdge(after, 'start', delta);
+      checkSourceRange(doc, after);
+      changed.push(after.id);
+    }
+    clip.start += delta;
+    changed.push(clip.id);
+    sortTrack(track);
+  }
+  return ok(ref.clip.start, { clip_id: ref.clip.id, clip_ids: changed, temporal: true });
+}
+
+function clipReplace(
+  doc: TimelineDoc,
+  a: EditArgsOf<'clip.replace'>,
+  resolve: MediaResolver,
+): OpOutcome {
+  const { track, clip: found } = locate(doc, a.clip_id);
+  assertUnlocked(track);
+  const media = resolve(a.media_id);
+  if (!media) {
+    throw new CfError('not_found', `No media ${a.media_id}`, {
+      hint: 'Import it first with media.import; media expires 7 days after last use',
+    });
+  }
+  if (found.kind === 'video' ? !media.video : !media.audio) {
+    throw new CfError(
+      'bad_request',
+      `Media ${a.media_id} has no ${found.kind} for clip ${found.id}`,
+    );
+  }
+  doc.media[a.media_id] = media;
+  // The clip keeps its place and look; a nested timeline swapped for media becomes a media clip.
+  const { timeline: _t, media_id: _m, ...look } = { timeline: '', media_id: '', ...found };
+  const clip: StoredClip = {
+    ...look,
+    type: 'media',
+    media_id: a.media_id,
+    in: framesToTicks(a.source_in ?? 0, doc.sequence.fps),
+  };
+  track.clips = track.clips.map((c) => (c === found ? clip : c));
+  if (media.duration === null) delete clip.speed;
+  checkSourceRange(doc, clip);
+  return ok(clip.start, { clip_id: clip.id });
+}
+
+function rangeRemove(doc: TimelineDoc, a: EditArgsOf<'range.lift'>, ripple: boolean): OpOutcome {
+  const fps = doc.sequence.fps;
+  const from = framesToTicks(a.range.start, fps);
+  const to = framesToTicks(a.range.end, fps);
+  const tracks = a.track_ids
+    ? a.track_ids.map((id) => getTrack(doc, id))
+    : doc.tracks.filter((t) => !t.locked);
+  for (const t of tracks) assertUnlocked(t);
+  const before = new Set(doc.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+  // Pieces cut off the right of a linked clip form their own link group.
+  const relinked = new Map<string, string>();
+  for (const track of tracks) {
+    for (const piece of clearRange(doc, track, from, to)) {
+      if (!piece.link) continue;
+      const link = relinked.get(piece.link) ?? nextId(doc, 'l');
+      relinked.set(piece.link, link);
+      piece.link = link;
+    }
+    if (ripple) shiftFrom(track, to, from - to);
+  }
+  tidyLinks(doc);
+  const removed = [...before].filter(
+    (id) => !doc.tracks.some((t) => t.clips.some((c) => c.id === id)),
+  );
+  return ok(from, { clip_ids: removed, temporal: true });
 }
 
 function videoClip(doc: TimelineDoc, clipId: string, tool: string): Located {
@@ -699,7 +1098,7 @@ function clipSetMask(doc: TimelineDoc, a: EditArgsOf<'clip.set_mask'>): OpOutcom
 function clipSetAnimation(doc: TimelineDoc, a: EditArgsOf<'clip.set_animation'>): OpOutcome {
   const { clip } = videoClip(doc, a.clip_id, 'clip.set_animation');
   const fps = doc.sequence.fps;
-  const anim = { ...clip.animation };
+  const anim: StoredAnimation = { ...clip.animation };
   for (const part of ['in', 'out'] as const) {
     const v = a[part];
     if (v === null) delete anim[part];
@@ -726,6 +1125,6 @@ function clipSetAnimation(doc: TimelineDoc, a: EditArgsOf<'clip.set_animation'>)
 }
 
 /** Timeline length in ticks. */
-export function timelineEnd(doc: TimelineDoc): number {
+export function timelineEnd(doc: Pick<TimelineDoc, 'tracks'>): number {
   return doc.tracks.reduce((max, t) => Math.max(max, trackEnd(t)), 0);
 }

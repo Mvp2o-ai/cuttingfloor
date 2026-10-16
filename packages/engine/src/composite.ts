@@ -343,8 +343,9 @@ export function rotoFilters(
       Math.min(out.width / src.width, out.height / src.height) * Math.min(src.width, src.height);
     let spline: string;
     if (maskAnimates(clip)) {
-      // Keyed by source frame, which is how rotoscoping positions keyframes.
-      const start = Math.round(clip.in / tpf);
+      // rotoscoping keys keyframes by producer position: the source frame for a plain
+      // producer, the clip frame for a retimed chain (which starts at 0).
+      const start = clip.speed ? 0 : Math.round(clip.in / tpf);
       const keys: Record<string, BPoint[]> = {};
       for (let i = 0; i < n; i++)
         keys[String(start + i)] = maskSpline(mask, maskAt(clip, tpf, i), src);

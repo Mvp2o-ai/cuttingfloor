@@ -21,9 +21,7 @@ const frame = z.number().int().nonnegative();
 export const Preview = z
   .enum(['inline', 'link', 'none'])
   .default('link')
-  .describe(
-    'inline: the result image in this response; link: a resource URI that renders on read; none: no preview',
-  );
+  .describe('inline: image in the result; link: URI that renders on read; none');
 
 const Mode = z
   .enum(['overwrite', 'insert'])
@@ -77,6 +75,16 @@ export const MaskArgs = z.object({
     .describe('polygon: [x, y] corners in the clip picture, 0–1'),
 });
 
+const FrameRange = z
+  .object({ start: frame, end: frame })
+  .refine((r) => r.end > r.start, { message: 'end must be after start (end is exclusive)' })
+  .describe('Timeline frames, end exclusive');
+const TrackIds = z
+  .array(z.string())
+  .min(1)
+  .optional()
+  .describe('Tracks to act on. Default: every unlocked track');
+
 const InOut = z.object({
   name: InOutAnimation,
   duration_frames: z.number().int().positive().max(100_000),
@@ -102,7 +110,10 @@ export const EditArgs = {
     track_id: z
       .string()
       .describe('Track for the clip; a linked A/V clip puts its other half on link_track_id'),
-    media_id: MediaId,
+    media_id: MediaId.optional(),
+    nested_timeline_id: TimelineId.optional().describe(
+      'Instead of media: nest another timeline as one clip (a compound clip)',
+    ),
     at_frame: frame.optional().describe('Where the clip starts. Default: after the last clip'),
     after_clip_id: z
       .string()
@@ -156,6 +167,50 @@ export const EditArgs = {
   'clip.link': z.object({ clip_ids: z.array(z.string()).min(2) }),
   'clip.unlink': z.object({ clip_id: z.string() }),
   'clip.set_enabled': z.object({ clip_id: z.string(), enabled: z.boolean() }),
+  'clip.set_speed': z.object({
+    clip_id: z.string(),
+    rate: z.number().min(0.05).max(100).optional().describe('Constant speed: 2 = twice as fast'),
+    curve: z
+      .array(z.object({ at: z.number().min(0).max(1), rate: z.number().min(0.05).max(100) }))
+      .min(2)
+      .max(32)
+      .optional()
+      .describe(
+        'Speed ramp: rates at fractions of the clip (first at 0, last at 1), linear between',
+      ),
+    reverse: z.boolean().optional(),
+    preserve_pitch: z.boolean().optional().describe('Keep voices at their pitch (default true)'),
+    ripple: z
+      .boolean()
+      .default(true)
+      .describe('Move later clips as the clip gets longer or shorter'),
+  }),
+  'clip.freeze': z.object({
+    clip_id: z.string(),
+    at_frame: frame.describe('Timeline frame to hold'),
+    duration_frames: z.number().int().positive().max(1_000_000),
+  }),
+  'clip.roll': z.object({
+    clip_id: z.string().describe('The clip before the cut'),
+    to_frame: frame.describe('New position of the cut'),
+  }),
+  'clip.slip': z.object({
+    clip_id: z.string(),
+    by_frames: z
+      .number()
+      .int()
+      .min(-10_000_000)
+      .max(10_000_000)
+      .describe('Positive shows later source'),
+  }),
+  'clip.slide': z.object({ clip_id: z.string(), to_frame: frame }),
+  'clip.replace': z.object({
+    clip_id: z.string(),
+    media_id: MediaId,
+    source_in: frame.optional().describe('Source frame the clip starts at. Default 0'),
+  }),
+  'range.lift': z.object({ range: FrameRange, track_ids: TrackIds }),
+  'range.extract': z.object({ range: FrameRange, track_ids: TrackIds }),
   'clip.set_transform': TransformArgs.extend({ clip_id: z.string() }),
   'clip.set_blend': z.object({ clip_id: z.string(), mode: BlendMode }),
   'clip.set_mask': z.object({

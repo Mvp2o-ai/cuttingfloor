@@ -8,8 +8,18 @@ export {
   transformAnimates,
   transformAt,
 } from './animate.ts';
-export { applyEdit, type MediaResolver, newTimeline, type OpOutcome, timelineEnd } from './edit.ts';
+export {
+  applyEdit,
+  clipSource,
+  type MediaResolver,
+  nestedRef,
+  newTimeline,
+  type OpOutcome,
+  type TimelineResolver,
+  timelineEnd,
+} from './edit.ts';
 export { canonicalJson, randomId, timelineIdOf } from './hash.ts';
+export { frameSource, meanRate, played, ratePoints, span, subclip } from './speed.ts';
 export {
   framesToTicks,
   secondsToTicks,

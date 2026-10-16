@@ -4,19 +4,33 @@ import {
   type ClipView,
   EditArgs,
   MASK_NUMBERS,
+  type NestedDoc,
+  NestedView,
+  SpeedView,
   type StoredClip,
+  type StoredSpeed,
   type TimelineDoc,
   type TimelineInput,
   type TimelineView,
   TRANSFORM_NUMBERS,
 } from '@cuttingfloor/schema';
 import { toViewAnim } from './animate.ts';
-import { applyEdit, timelineEnd } from './edit.ts';
+import { applyEdit, nestedRef, timelineEnd } from './edit.ts';
+import { span } from './speed.ts';
 import { framesToTicks, ticksPerFrame, ticksToFrames } from './time.ts';
 
-/** A clip's compositing settings in tool form (frames from the clip start). */
+/** A clip's speed and compositing settings in tool form (frames from the clip start). */
 function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
   const out: Partial<ClipView> = {};
+  if (c.speed) {
+    const { rate, curve, reverse, preserve_pitch } = c.speed;
+    out.speed = {
+      ...(curve ? { curve: curve.map((p) => ({ at: p.t / c.duration, rate: p.rate })) } : {}),
+      ...(rate !== undefined ? { rate } : {}),
+      ...(reverse ? { reverse } : {}),
+      ...(preserve_pitch === false ? { preserve_pitch } : {}),
+    };
+  }
   if (c.transform) {
     const { fit, flip, crop } = c.transform;
     const t: NonNullable<ClipView['transform']> = {};
@@ -63,13 +77,11 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
   return out;
 }
 
-/** The frame-based view tools return. */
-export function toView(id: string, doc: TimelineDoc): TimelineView {
+/** The frame-based view of a timeline's body (no ids, history or nesting). */
+function bodyView(doc: NestedDoc): NestedView {
   const fps = doc.sequence.fps;
   const f = (t: number) => ticksToFrames(t, fps);
   return {
-    timeline_id: id,
-    parent: doc.parent,
     name: doc.name,
     sequence: doc.sequence,
     duration: f(timelineEnd(doc)),
@@ -85,10 +97,10 @@ export function toView(id: string, doc: TimelineDoc): TimelineView {
         type: c.type,
         kind: c.kind,
         track_id: t.id,
-        media_id: c.media_id,
+        ...(c.type === 'media' ? { media_id: c.media_id } : { nested_timeline: c.timeline }),
         start: f(c.start),
         end: f(c.start + c.duration),
-        source: { in: f(c.in), out: f(c.in + c.duration) },
+        source: { in: f(c.in), out: f(c.in + span(c)) },
         link: c.link,
         enabled: c.enabled,
         ...propsView(c, ticksPerFrame(fps)),
@@ -108,17 +120,78 @@ export function toView(id: string, doc: TimelineDoc): TimelineView {
   };
 }
 
+/** The frame-based view tools return. */
+export function toView(id: string, doc: TimelineDoc): TimelineView {
+  const nested = doc.nested
+    ? Object.fromEntries(Object.entries(doc.nested).map(([k, n]) => [k, bodyView(n)]))
+    : undefined;
+  return {
+    timeline_id: id,
+    parent: doc.parent,
+    ...bodyView(doc),
+    ...(nested ? { nested } : {}),
+  };
+}
+
+type MediaLookup = (id: string) => TimelineDoc['media'][string] | undefined;
+
 /**
  * Rebuilds a document from a view (timeline.load). Media facts come from the server's media
  * records, not from the caller, so a loaded timeline can't claim media it doesn't have.
+ * Nested timelines rebuild the same way, each checked on its own.
  */
-export function fromView(
-  input: TimelineInput,
-  media: (id: string) => TimelineDoc['media'][string] | undefined,
-): TimelineDoc {
+export function fromView(input: TimelineInput, media: MediaLookup): TimelineDoc {
+  const views = input.nested ?? {};
+  const nested: Record<string, NestedDoc> = {};
+  const building = new Set<string>();
+  const build = (key: string): NestedDoc => {
+    const done = nested[key];
+    if (done) return done;
+    const raw = views[key];
+    if (!raw) {
+      throw new CfError(
+        'bad_request',
+        `Nested timeline ${key} is not in the timeline's nested map`,
+      );
+    }
+    const parsed = NestedView.safeParse(raw);
+    if (!parsed.success) {
+      throw new CfError(
+        'bad_request',
+        `Nested timeline ${key}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+      );
+    }
+    const view = parsed.data;
+    if (building.has(key))
+      throw new CfError('bad_request', `Nested timeline ${key} contains itself`);
+    building.add(key);
+    const body = bodyFromView(view, media, build);
+    nested[key] = body;
+    return body;
+  };
+  const body = bodyFromView(input, media, build);
+  const doc: TimelineDoc = { ...body, parent: null, op: null };
+  if (Object.keys(nested).length) doc.nested = nested;
+  replayProps(doc, input.tracks);
+  for (const key of Object.keys(views)) {
+    const n = nested[key];
+    if (!n) continue;
+    const scratch: TimelineDoc = { ...n, parent: null, op: null, nested: { ...nested } };
+    replayProps(scratch, NestedView.parse(views[key]).tracks);
+    const { parent: _p, op: _o, nested: _n, ...replayed } = scratch;
+    nested[key] = replayed;
+  }
+  return doc;
+}
+
+function bodyFromView(
+  input: Pick<TimelineInput, 'name' | 'sequence' | 'tracks'>,
+  media: MediaLookup,
+  nestedBody: (key: string) => NestedDoc,
+): NestedDoc {
   const fps = input.sequence.fps;
   const t = (frames: number) => framesToTicks(frames, fps);
-  const doc: TimelineDoc = {
+  const doc: NestedDoc = {
     format: 'cuttingfloor.timeline',
     version: 2,
     name: input.name,
@@ -126,8 +199,6 @@ export function fromView(
     tracks: [],
     media: {},
     next_id: 1,
-    parent: null,
-    op: null,
   };
   const ids = new Set<string>();
   const claim = (id: string) => {
@@ -148,36 +219,48 @@ export function fromView(
           `Clip ${c.id} is ${c.kind} on ${track.kind} track ${track.id}`,
         );
       if (c.end <= c.start) throw new CfError('bad_request', `Clip ${c.id} has no frames`);
-      if (c.source.out - c.source.in !== c.end - c.start) {
+      const speed = speedFromView(c.id, c.speed, t(c.end - c.start));
+      const expected = c.end - c.start;
+      if (!speed && c.source.out - c.source.in !== expected) {
         throw new CfError(
           'bad_request',
           `Clip ${c.id}: source range length must equal its timeline length`,
+          { hint: 'Give the clip a speed if it plays faster or slower than its source' },
         );
       }
-      const ref = media(c.media_id);
-      if (!ref) {
+      const isNested = c.type === 'timeline';
+      const key = isNested ? (c.nested_timeline ?? '') : (c.media_id ?? '');
+      if (!key) {
         throw new CfError(
-          'media_offline',
-          `Media ${c.media_id} used by clip ${c.id} is not available`,
-          {
-            hint: 'Import the file again with media.import and replace the media_id in the timeline',
-          },
+          'bad_request',
+          `Clip ${c.id} needs ${isNested ? 'nested_timeline' : 'media_id'}`,
         );
+      }
+      const ref = isNested ? nestedRef(nestedBody(key)) : media(key);
+      if (!ref) {
+        throw new CfError('media_offline', `Media ${key} used by clip ${c.id} is not available`, {
+          hint: 'Import the file again with media.import and replace the media_id in the timeline',
+        });
       }
       if ((c.kind === 'video' && !ref.video) || (c.kind === 'audio' && !ref.audio)) {
-        throw new CfError('bad_request', `Media ${c.media_id} has no ${c.kind} for clip ${c.id}`);
+        throw new CfError(
+          'bad_request',
+          `${isNested ? 'Timeline' : 'Media'} ${key} has no ${c.kind} for clip ${c.id}`,
+        );
       }
-      doc.media[c.media_id] = ref;
+      if (!isNested) doc.media[key] = ref;
       clips.push({
         id: c.id,
-        type: 'media',
+        ...(isNested
+          ? { type: 'timeline' as const, timeline: key }
+          : { type: 'media' as const, media_id: key }),
         kind: c.kind,
-        media_id: c.media_id,
         start: t(c.start),
         in: t(c.source.in),
         duration: t(c.end - c.start),
         link: c.link,
         enabled: c.enabled,
+        ...(speed ? { speed } : {}),
       });
     }
     clips.sort((a, b) => a.start - b.start);
@@ -191,8 +274,7 @@ export function fromView(
         );
       }
     }
-    // Locks are restored after compositing settings are replayed below.
-    doc.tracks.push({ ...track, locked: false, clips });
+    doc.tracks.push({ ...track, clips });
   }
   // Continue numbering after the highest id in the input.
   let max = 0;
@@ -200,26 +282,45 @@ export function fromView(
     const n = Number(/^[a-z](\d+)$/.exec(id)?.[1] ?? 0);
     if (n > max) max = n;
   }
-  for (const t of doc.tracks)
-    for (const c of t.clips) {
+  for (const tr of doc.tracks)
+    for (const c of tr.clips) {
       const n = Number(/^l(\d+)$/.exec(c.link ?? '')?.[1] ?? 0);
       if (n > max) max = n;
     }
   doc.next_id = max + 1;
-  replayProps(doc, input);
-  for (const track of sorted) {
-    const stored = doc.tracks.find((t) => t.id === track.id);
-    if (stored) stored.locked = track.locked;
-  }
   return doc;
+}
+
+/** A clip's speed from its view, with ramp points converted back to ticks. */
+function speedFromView(clipId: string, value: unknown, duration: number): StoredSpeed | undefined {
+  if (value === undefined) return undefined;
+  const parsed = SpeedView.safeParse(value);
+  if (!parsed.success) {
+    throw new CfError(
+      'bad_request',
+      `Clip ${clipId}: speed: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+    );
+  }
+  const { rate, curve, reverse, preserve_pitch } = parsed.data;
+  const speed: StoredSpeed = {
+    ...(curve
+      ? { curve: curve.map((p) => ({ t: Math.round(p.at * duration), rate: p.rate })) }
+      : {}),
+    ...(rate !== undefined && !curve ? { rate } : {}),
+    ...(reverse ? { reverse } : {}),
+    ...(preserve_pitch === false ? { preserve_pitch } : {}),
+  };
+  return Object.keys(speed).length ? speed : undefined;
 }
 
 /**
  * Applies each clip's compositing settings through the same validated edits the tools use, so
- * a loaded timeline can't hold values a tool would refuse.
+ * a loaded timeline can't hold values a tool would refuse. Locks go back on afterwards.
  */
-function replayProps(doc: TimelineDoc, input: TimelineInput): void {
+function replayProps(doc: TimelineDoc, tracks: TimelineInput['tracks']): void {
   const none = () => undefined;
+  const locked = new Map(doc.tracks.map((t) => [t.id, t.locked]));
+  for (const t of doc.tracks) t.locked = false;
   const run = <
     T extends 'clip.set_transform' | 'clip.set_blend' | 'clip.set_mask' | 'clip.set_animation',
   >(
@@ -235,13 +336,14 @@ function replayProps(doc: TimelineDoc, input: TimelineInput): void {
     }
     applyEdit(doc, tool, parsed.data as never, none);
   };
-  for (const track of input.tracks)
+  for (const track of tracks)
     for (const c of track.clips) {
       if (c.transform) run('clip.set_transform', { clip_id: c.id, ...c.transform });
       if (c.blend) run('clip.set_blend', { clip_id: c.id, mode: c.blend });
       if (c.mask) run('clip.set_mask', { clip_id: c.id, mask: c.mask });
       if (c.animation) run('clip.set_animation', { clip_id: c.id, ...c.animation });
     }
+  for (const t of doc.tracks) t.locked = locked.get(t.id) ?? false;
 }
 
 /** Structural diff between two documents. Every edit result's `changed[]` is this diff. */
