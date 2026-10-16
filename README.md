@@ -14,7 +14,7 @@ A headless video editor for agents, as an MCP server. An agent imports footage, 
 docker compose up -d          # local mode: one node on 127.0.0.1:8787, plus the motion sandbox
 ```
 
-Compose starts two containers from the same image: `cuttingfloor` (the server) and `cuttingfloor-motion`, the sandbox where agent-written HTML for `create.motion` and `create.still` runs. The sandbox has no route out, no data volume, no capabilities, a read-only filesystem and fixed CPU, memory and process limits; Chromium's own sandbox stays on inside it, using the seccomp profile at `tools/motion/seccomp.json` (Docker's default plus namespace creation). Run compose from a checkout of this repository so that file is there.
+Compose starts two containers from the same image: `cuttingfloor` (the server) and `cuttingfloor-motion`, the sandbox where agent-written code runs: HTML for `create.motion` and `create.still`, and `code.run` scripts. The sandbox has no route out, no data volume, no capabilities, a read-only filesystem and fixed CPU, memory and process limits. Chromium's own sandbox stays on inside it, and each script runs in its own user, PID and network namespaces with no network at all; both use the seccomp profile at `tools/motion/seccomp.json` (Docker's default plus namespace creation). Run compose from a checkout of this repository so that file is there.
 
 Connect an MCP client over Streamable HTTP:
 
@@ -52,10 +52,12 @@ On Docker Desktop for Mac, raise the memory limit for long 4K timelines; bind-mo
 8. Audio: `audio.set_gain` (dB, with keyframes for rides), `audio.set_pan`, `audio.fade`, `audio.duck` (lowers a music track wherever the other tracks have sound, as gain keyframes you can see), `audio.set_master`, and `audio.set_loudness` to hit a loudness target such as -14 LUFS with peaks under -1 dBTP. Audio edits preview as a waveform image with the measured loudness.
 9. Effects: `filter.add` on a clip, every clip on a track, or the whole timeline: colour (brightness, contrast, saturation, exposure, temperature, curves, LUTs imported as `.cube`), blur, sharpen, vignette, grain, glitch, pixelate, chroma key; for sound EQ, compressor, noise reduction, de-esser, dialogue enhance, reverb, echo, pitch. `adjustment.add` adds a clip whose effects change everything below it while it runs. The list with params is at `video://catalog/effects`.
 10. Composite: put a clip on a higher video track, then `clip.set_transform` (position, scale, rotation, opacity, crop, flip, fit; any number can take keyframes with easing), `clip.set_mask` (rectangle, ellipse, linear, mirror, heart, star, polygon), `clip.set_blend` and `clip.set_animation` (entrance, exit and loop presets). The accepted names are resources at `video://catalog/{name}`.
-11. Create: `create.motion` renders animated HTML (a HyperFrames composition with a GSAP timeline; GSAP is provided) to a video with alpha, for lower thirds, animated titles, callouts and kinetic type. `create.still` renders an HTML page to a PNG, and `create.matte` makes a solid or gradient picture. Each returns a `media_id` for `clip.add`; the same recipe returns the same media. Pages can't reach the network, so images and fonts go in as `assets` (imported media) and are referred to as `assets/<name>`. `create.voiceover` speaks English text in one of 28 Kokoro voices on the CPU (the model, about 350 MB, downloads once) and times every word, so `caption.add {from_transcript}` captions it exactly. `create.cutout` removes the background behind people in a video or picture (MODNet), keeping the sound.
-12. Look: `preview: "inline"` on any edit returns the image; `render.frames` returns up to 16 frames as a contact sheet.
-13. `qa.check` runs exact checks: gaps, offline media, black frames, silence, loudness, frame count.
-14. `export.video` with `web_1080p_h264` or `master_prores_422hq`. The result has a signed download URL and, locally, the file in your exports folder.
+11. Create: `create.motion` renders any animated HTML to a video with alpha, frame-exactly: CSS animations and transitions, the Web Animations API, SVG, canvas or WebGL drawn in `requestAnimationFrame`, timers, or a `window.__seek(seconds)` the page defines all run on a virtual clock the renderer steps one frame at a time. anime.js, three.js, Lottie and D3 load from `lib/` (`<script src="lib/anime.umd.min.js">`). `create.still` renders an HTML page to a PNG, and `create.matte` makes a solid or gradient picture. Each returns a `media_id` for `clip.add`; the same recipe returns the same media. Pages can't reach the network, so images and fonts go in as `assets` (imported media) and are referred to as `assets/<name>`. `create.voiceover` speaks English text in one of 28 Kokoro voices on the CPU (the model, about 350 MB, downloads once) and times every word, so `caption.add {from_transcript}` captions it exactly. `create.cutout` removes the background behind a subject: `any` (BiRefNet; products, animals, objects, people; the default for pictures) or `people` (MODNet; fast enough for video, the default there), keeping the sound.
+12. Code: `code.run` runs a Node, Python or bash script in the sandbox for anything the tools don't cover: procedural or data-driven edits, generated graphics, custom FFmpeg or MLT work. Inside it every tool is a function, `cf.domain.verb(args)` (`import { cf } from 'cuttingfloor'`; Python `from cuttingfloor import cf`; bash `cf clip.trim '{...}'`), acting on the same media and timelines with the same checks. `importFile(path)` brings a file the script made in as media at once, and `motion()` / `still()` render pages right there. Inputs arrive in `in/`; files left in `out/` come back as media, and `*.timeline.json` as timelines. So a script can lay down 300 beat-synced cuts and the agent refines them with single tools, or the tools build the edit and a script does the one odd thing.
+13. Look: `preview: "inline"` on any edit returns the image; `render.frames` returns up to 16 frames as a contact sheet, or up to 4 at full size (`size: "full"`) for thumbnails.
+14. `qa.check` runs exact checks: gaps, offline media, black frames, silence, loudness, frame count.
+15. `export.video` with a preset: `web_1080p_h264`, `master_prores_422hq`, `social_9x16_h264`, `web_1080p_av1`, `gif`, `audio_wav_48k` or `audio_mp3`, and `overrides` for size, frame rate, bitrate or quality (`video://catalog/presets`). The result has a signed download URL and, locally, the file in your exports folder.
+16. `export.timeline` hands the edit to another editor as FCPXML (Final Cut Pro, Resolve), OTIO (Premiere, Resolve) or a CMX 3600 EDL, or writes the captions as SRT or VTT, with `warnings` for what the format can't carry. `media: "collect"` zips the media alongside. `timeline.get` stays the lossless copy.
 
 Time is integer frames at the sequence rate, end-exclusive. `timeline.get` returns the whole timeline as JSON; `timeline.load` restores it after it expires. `video://server/health` reports engine versions and limits.
 
@@ -69,7 +71,7 @@ The same image with `CUTTINGFLOOR_MODE=hosted`: no path imports (URLs only), no 
 | `CUTTINGFLOOR_MAX_JOBS` | cores ÷ 4 | Concurrent imports, exports and QA runs |
 | `CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS` | `24` | Signed download link lifetime |
 | `CUTTINGFLOOR_MAX_DOWNLOAD_BYTES` | 10 GiB | URL import size cap |
-| `CUTTINGFLOOR_MOTION_URL` | unset (compose sets it) | The motion sandbox for `create.motion` and `create.still`; without it those tools explain how to start one |
+| `CUTTINGFLOOR_MOTION_URL` | unset (compose sets it) | The sandbox for `create.motion`, `create.still` and `code.run`; without it those tools explain how to start one |
 
 ## Develop
 
@@ -77,7 +79,8 @@ The same image with `CUTTINGFLOOR_MODE=hosted`: no path imports (URLs only), no 
 pnpm install && pnpm check       # lint, typecheck, unit and protocol tests (Node 24+, pnpm 10)
 docker build --target test .     # everything, including engine and end-to-end tests
 docker build -t cuttingfloor:dev . && node scripts/smoke-image.ts cuttingfloor:dev
-node scripts/smoke-motion.ts cuttingfloor:dev   # the motion sandbox in compose, attacked
+node scripts/smoke-motion.ts cuttingfloor:dev   # the sandbox in compose, attacked (pages and scripts)
+node packages/sdk/scripts/generate.ts           # after changing a tool: regenerate the SDK's types
 ```
 
 ## Layout
@@ -90,8 +93,9 @@ node scripts/smoke-motion.ts cuttingfloor:dev   # the motion sandbox in compose,
 | `packages/schema` | Zod schemas for every tool, the timeline document and errors |
 | `packages/core` | Timeline document, edit math, content hashing, storage with TTLs |
 | `packages/engine` | FFmpeg and MLT as subprocesses: probe, conform, proxies, frames, export, QA |
-| `packages/motion` | The motion sandbox's worker: HyperFrames and Chromium renders, one at a time |
-| `tools/` | Native helpers built into the image (`cf-vision`) and the motion sandbox's Chromium wrapper and seccomp profile |
+| `packages/motion` | The sandbox worker: pages rendered frame by frame on a virtual clock, and `code.run` scripts in their own namespaces, one at a time |
+| `packages/sdk` | `cf.domain.verb(args)` for scripts, generated from the tool registry, plus the Python module and the `cf` command |
+| `tools/` | Native helpers built into the image (`cf-vision`, `cf-segment`) and the sandbox's Chromium wrapper and seccomp profile |
 | `packages/jobs` | File-backed job store and runner behind MCP Tasks and `job.*` |
 | `packages/credentials` | Bring-your-own provider keys |
 
