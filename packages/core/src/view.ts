@@ -15,14 +15,22 @@ import {
   type TimelineView,
   TRANSFORM_NUMBERS,
 } from '@cuttingfloor/schema';
-import { toViewAnim } from './animate.ts';
+import { toStoredAnim, toViewAnim } from './animate.ts';
 import { applyEdit, assertTransitions, nestedRef, timelineEnd, transitionHalves } from './edit.ts';
 import { span } from './speed.ts';
 import { framesToTicks, ticksPerFrame, ticksToFrames } from './time.ts';
 
-/** A clip's speed and compositing settings in tool form (frames from the clip start). */
+/** A clip's speed, audio and compositing settings in tool form (frames from the clip start). */
 function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
   const out: Partial<ClipView> = {};
+  if (c.gain !== undefined) out.gain = toViewAnim(c.gain, c, tpf);
+  if (c.pan !== undefined) out.pan = c.pan;
+  if (c.fade) {
+    out.fade = {
+      ...(c.fade.in ? { in_frames: Math.round(c.fade.in / tpf) } : {}),
+      ...(c.fade.out ? { out_frames: Math.round(c.fade.out / tpf) } : {}),
+    };
+  }
   if (c.speed) {
     const { rate, curve, reverse, preserve_pitch } = c.speed;
     out.speed = {
@@ -173,6 +181,14 @@ export function toView(id: string, doc: TimelineDoc): TimelineView {
     timeline_id: id,
     parent: doc.parent,
     ...bodyView(doc),
+    ...(doc.master
+      ? {
+          master: {
+            gain_db: doc.master.gain,
+            ...(doc.master.limit !== undefined ? { limit_db: doc.master.limit } : {}),
+          },
+        }
+      : {}),
     ...(nested ? { nested } : {}),
   };
 }
@@ -216,6 +232,14 @@ export function fromView(input: TimelineInput, media: MediaLookup): TimelineDoc 
   const body = bodyFromView(input, media, build);
   const doc: TimelineDoc = { ...body, parent: null, op: null };
   if (Object.keys(nested).length) doc.nested = nested;
+  if (input.master) {
+    applyEdit(
+      doc,
+      'audio.set_master',
+      { gain_db: input.master.gain_db, limit_db: input.master.limit_db ?? null },
+      () => undefined,
+    );
+  }
   assertTransitions(doc);
   for (const n of Object.values(nested))
     assertTransitions({ ...n, parent: null, op: null, nested });
@@ -422,8 +446,36 @@ function replayProps(doc: TimelineDoc, tracks: TimelineInput['tracks']): void {
     }
     applyEdit(doc, tool, parsed.data as never, none);
   };
+  const tpf = ticksPerFrame(doc.sequence.fps);
   for (const track of tracks)
     for (const c of track.clips) {
+      // Audio settings belong to this one clip, so they are checked and set directly rather
+      // than replayed (audio.set_gain would reach its linked clips too).
+      const stored = doc.tracks.flatMap((t) => t.clips).find((x) => x.id === c.id);
+      if (stored && (c.gain !== undefined || c.pan !== undefined || c.fade)) {
+        const g =
+          c.gain === undefined
+            ? undefined
+            : EditArgs['audio.set_gain'].safeParse({ clip_id: c.id, gain_db: c.gain });
+        const p =
+          c.pan === undefined
+            ? undefined
+            : EditArgs['audio.set_pan'].safeParse({ clip_id: c.id, pan: c.pan });
+        if ((g && !g.success) || (p && !p.success)) {
+          throw new CfError('bad_request', `Clip ${c.id}: gain or pan is not valid`, {
+            hint: 'gain is dB (-60 to 24), pan -1 to 1, each a number or {keyframes}',
+          });
+        }
+        if (g?.success && g.data.gain_db !== undefined && g.data.gain_db !== null)
+          stored.gain = toStoredAnim(g.data.gain_db, stored, tpf);
+        if (p?.success && p.data.pan) stored.pan = p.data.pan;
+        if (c.fade) {
+          stored.fade = {
+            ...(c.fade.in_frames ? { in: Math.round(c.fade.in_frames) * tpf } : {}),
+            ...(c.fade.out_frames ? { out: Math.round(c.fade.out_frames) * tpf } : {}),
+          };
+        }
+      }
       if (c.transform) run('clip.set_transform', { clip_id: c.id, ...c.transform });
       if (c.blend) run('clip.set_blend', { clip_id: c.id, mode: c.blend });
       if (c.mask) run('clip.set_mask', { clip_id: c.id, mask: c.mask });

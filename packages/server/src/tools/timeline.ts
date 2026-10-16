@@ -1,10 +1,20 @@
-import { type BatchOp, diff, fromView, newTimeline, runEdits, toView } from '@cuttingfloor/core';
+import {
+  type BatchOp,
+  diff,
+  fromView,
+  newTimeline,
+  runEdits,
+  ticksPerFrame,
+  toView,
+} from '@cuttingfloor/core';
+import { lengthFrames, measureMix } from '@cuttingfloor/engine';
 import {
   BatchInput,
   CfError,
   EDIT_TOOLS,
   type EditTool,
   editInput,
+  LoudnessInput,
   TimelineCreateInput,
   TimelineDiffInput,
   TimelineDiffResult,
@@ -18,15 +28,20 @@ import {
 } from '@cuttingfloor/schema';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import {
+  assertOnline,
   framesUri,
   mediaIdsIn,
   mediaResolver,
   nestedIdsIn,
   previewFrames,
+  silenceResolver,
+  sourcesFor,
   timelineImage,
   timelineResolver,
+  timelineWaveform,
+  waveformUri,
 } from '../render.ts';
-import { guard, ok } from '../result.ts';
+import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 
 const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }> = {
@@ -125,6 +140,29 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
     title: 'Set text',
     description:
       "Change a title's or caption's text, or restyle many at once (clip_ids, or every one on track_id). The style is merged; null turns an outline, shadow, box or highlight off. Highlight modes and fonts: video://catalog/text and video://catalog/fonts.",
+  },
+  'audio.set_gain': {
+    title: 'Set gain',
+    description:
+      "Volume of an audio clip (or a video clip's linked audio) in dB; keyframes ride it up and down. The preview is a waveform of the clip with the measured loudness.",
+  },
+  'audio.set_pan': {
+    title: 'Set pan',
+    description: "Place a clip's sound left (-1) to right (1).",
+  },
+  'audio.fade': {
+    title: 'Fade audio',
+    description: "Fade a clip's sound in from its start and out to its end. null removes a fade.",
+  },
+  'audio.duck': {
+    title: 'Duck under speech',
+    description:
+      'Lower a track (usually music) wherever the other audio tracks have sound, using the silences found at import; writes gain keyframes on its clips that you can see and change.',
+  },
+  'audio.set_master': {
+    title: 'Set master',
+    description:
+      'Gain (dB) and limiter ceiling (dBFS) on the whole mix. audio.set_loudness sets both from a measured loudness target.',
   },
   'transition.add': {
     title: 'Add transition',
@@ -317,6 +355,8 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
     );
   }
 
+  registerLoudness(server, deps);
+
   server.registerTool(
     'edit.batch',
     {
@@ -339,6 +379,79 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
   );
 }
 
+/** Timelines up to this long set loudness in the call; longer ones become a task or job. */
+const LOUDNESS_INLINE_SECONDS = 60;
+
+function registerLoudness(server: McpServer, deps: ServerDeps): void {
+  const rt = deps.runtime;
+  server.registerTool(
+    'audio.set_loudness',
+    {
+      title: 'Set loudness',
+      description:
+        'Measure the mix and set the master gain and a limiter so the whole timeline lands on target_lufs (default -14, the usual for online video) with peaks under true_peak_db. Returns the edit result plus measured {before_lufs, lufs, true_peak_db}. Short timelines answer at once; longer ones return a task or job.',
+      inputSchema: LoudnessInput,
+      annotations: {
+        title: 'Set loudness',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    guard(async (args, ctx) => {
+      const owner = deps.owner();
+      const base = await rt.timelines.get(owner, args.timeline_id);
+      const work = async ({ signal }: { signal: AbortSignal }) => {
+        const { sources, offline } = await sourcesFor(rt, owner, base, 'export');
+        assertOnline(offline);
+        // Measure without any master, set the gain, then measure again and correct once
+        // (the limiter takes a little off the top).
+        const { master: _m, ...bare } = base;
+        const before = await measureMix(bare, sources, { signal });
+        if (before.lufs === null) {
+          throw new CfError('bad_request', 'The timeline has no measurable sound', {
+            hint: 'Add audio, or unmute its tracks',
+          });
+        }
+        const limit = Math.round((args.true_peak_db - 0.5) * 10) / 10;
+        let gain = Math.round((args.target_lufs - before.lufs) * 100) / 100;
+        let after = await measureMix({ ...bare, master: { gain, limit } }, sources, { signal });
+        if (after.lufs !== null) {
+          gain = Math.round((gain + args.target_lufs - after.lufs) * 100) / 100;
+          after = await measureMix({ ...bare, master: { gain, limit } }, sources, { signal });
+        }
+        return applyAndReply(
+          deps,
+          args.timeline_id,
+          args.preview,
+          [{ tool: 'audio.set_master', args: { gain_db: gain, limit_db: limit } }],
+          {
+            tool: 'audio.set_loudness',
+            args: { target_lufs: args.target_lufs, true_peak_db: args.true_peak_db },
+          },
+          false,
+          { measured: { before_lufs: before.lufs, lufs: after.lufs, true_peak_db: after.peak } },
+        );
+      };
+      const seconds = (lengthFrames(base) * ticksPerFrame(base.sequence.fps)) / 705_600_000;
+      if (seconds <= LOUDNESS_INLINE_SECONDS) {
+        const signal =
+          (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal ??
+          new AbortController().signal;
+        return work({ signal });
+      }
+      const job = await rt.jobs.store.create({
+        owner,
+        tool: 'audio.set_loudness',
+        statusMessage: 'measuring',
+      });
+      rt.jobs.start(job, work as never);
+      return jobReply(job, ctx);
+    }),
+  );
+}
+
 async function applyAndReply(
   deps: ServerDeps,
   baseId: string,
@@ -346,12 +459,17 @@ async function applyAndReply(
   ops: BatchOp[],
   record: { tool: string; args: unknown },
   batch = false,
+  extra: Record<string, unknown> = {},
 ): Promise<CallToolResult> {
   const rt = deps.runtime;
   const owner = deps.owner();
   const base = await rt.timelines.get(owner, baseId);
   const media = await mediaResolver(rt, owner, mediaIdsIn(ops));
   const nestable = await timelineResolver(rt, owner, nestedIdsIn(ops));
+  // Ducking reads the silences found at import, so only then are media records loaded.
+  const quiet = ops.some((o) => o.tool === 'audio.duck')
+    ? await silenceResolver(rt, owner, base, mediaIdsIn(ops))
+    : new Map<string, Array<{ start: number; end: number }>>();
   const { doc, outcome, results } = runEdits(
     base,
     baseId,
@@ -359,23 +477,61 @@ async function applyAndReply(
     (id) => media.get(id),
     record,
     (id) => nestable.get(id),
+    (id) => quiet.get(id),
   );
   const id = await rt.timelines.put(owner, doc);
   const warnings = [...outcome.warnings];
-  const frames = previewFrames(doc, outcome.focus, outcome.temporal);
   const content: CallToolResult['content'] = [];
-  let previewRef: { uri: string; frames: number[]; status: 'ready' | 'pending' } | null = null;
-  if (preview !== 'none' && frames.length) {
-    previewRef = { uri: framesUri('timeline', id, frames), frames, status: 'pending' };
-    if (preview === 'inline') {
-      try {
-        const image = await timelineImage(rt, owner, id, doc, frames);
-        content.push({ type: 'image', data: image.toString('base64'), mimeType: 'image/webp' });
-        previewRef.status = 'ready';
-      } catch (error) {
-        warnings.push(
-          `Preview not rendered: ${error instanceof CfError ? error.message : String(error)}`,
-        );
+  let previewRef: {
+    uri: string;
+    frames: number[];
+    status: 'ready' | 'pending';
+    loudness?: { lufs: number | null; true_peak_db: number | null };
+  } | null = null;
+  const fail = (error: unknown) =>
+    warnings.push(
+      `Preview not rendered: ${error instanceof CfError ? error.message : String(error)}`,
+    );
+  if (outcome.audio && preview !== 'none') {
+    // Audio edits show the sound of the span they changed, with its measured loudness.
+    const tpf = ticksPerFrame(doc.sequence.fps);
+    const span = {
+      start: Math.round(outcome.audio.start / tpf),
+      end: Math.min(lengthFrames(doc), Math.round(outcome.audio.end / tpf)),
+    };
+    if (span.end > span.start) {
+      previewRef = {
+        uri: waveformUri(id, span),
+        frames: [span.start, span.end],
+        status: 'pending',
+      };
+      if (preview === 'inline') {
+        try {
+          const wave = await timelineWaveform(rt, owner, id, doc, span);
+          content.push({
+            type: 'image',
+            data: wave.image.toString('base64'),
+            mimeType: 'image/webp',
+          });
+          previewRef.status = 'ready';
+          previewRef.loudness = { lufs: wave.lufs, true_peak_db: wave.peak };
+        } catch (error) {
+          fail(error);
+        }
+      }
+    }
+  } else {
+    const frames = previewFrames(doc, outcome.focus, outcome.temporal);
+    if (preview !== 'none' && frames.length) {
+      previewRef = { uri: framesUri('timeline', id, frames), frames, status: 'pending' };
+      if (preview === 'inline') {
+        try {
+          const image = await timelineImage(rt, owner, id, doc, frames);
+          content.push({ type: 'image', data: image.toString('base64'), mimeType: 'image/webp' });
+          previewRef.status = 'ready';
+        } catch (error) {
+          fail(error);
+        }
       }
     }
   }
@@ -388,6 +544,7 @@ async function applyAndReply(
     ...(outcome.track_id ? { track_id: outcome.track_id } : {}),
     preview: previewRef,
     warnings,
+    ...extra,
     ...(batch ? { results } : {}),
   };
   return ok(structured, content);

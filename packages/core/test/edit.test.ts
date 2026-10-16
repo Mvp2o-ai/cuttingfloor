@@ -12,6 +12,7 @@ import {
   migrate,
   newTimeline,
   runEdits,
+  sample,
   span,
   TimelineStore,
   timelineIdOf,
@@ -1146,6 +1147,120 @@ describe('text', () => {
     expect(() =>
       edit(textStart(), { tool: 'caption.add', args: { track_id: 't2', srt, vtt } }),
     ).toThrow(/exactly one/);
+  });
+});
+
+describe('audio', () => {
+  const AV = 'm_aaaaaaaaaaaaaaaaaaaaaaaaav';
+  const AUD = 'm_aaaaaaaaaaaaaaaaaaaaaaaaud';
+  const base = () =>
+    edit(start(), {
+      tool: 'clip.add',
+      args: { track_id: 't1', media_id: AV, source: { in: 0, out: 100 } },
+    }).doc;
+
+  it("sets gain on a video clip's linked sound, pans and fades", () => {
+    const { doc, outcome } = edit(
+      base(),
+      { tool: 'audio.set_gain', args: { clip_id: 'c4', gain_db: -6 } },
+      {
+        tool: 'audio.set_pan',
+        args: {
+          clip_id: 'c5',
+          pan: 0.5,
+        },
+      },
+      { tool: 'audio.fade', args: { clip_id: 'c5', in_frames: 10, out_frames: 20 } },
+    );
+    const view = toView('tl_x', doc).tracks[1]?.clips[0];
+    expect(view).toMatchObject({
+      gain: -6,
+      pan: 0.5,
+      fade: { in_frames: 10, out_frames: 20 },
+    });
+    expect(toView('tl_x', doc).tracks[0]?.clips[0]).not.toHaveProperty('gain');
+    expect(outcome.audio).toEqual({ start: 0, end: framesToTicks(100, fps) });
+    const reset = edit(doc, { tool: 'audio.set_gain', args: { clip_id: 'c5', gain_db: null } }).doc;
+    expect(reset.tracks[1]?.clips[0]).not.toHaveProperty('gain');
+    expect(
+      () =>
+        edit(start(), {
+          tool: 'clip.add',
+          args: { track_id: 't1', media_id: 'm_aaaaaaaaaaaaaaaaaaaaaaavid' },
+        }) &&
+        edit(
+          edit(start(), {
+            tool: 'clip.add',
+            args: { track_id: 't1', media_id: 'm_aaaaaaaaaaaaaaaaaaaaaaavid' },
+          }).doc,
+          { tool: 'audio.set_gain', args: { clip_id: 'c3', gain_db: -3 } },
+        ),
+    ).toThrow(/has no sound/);
+  });
+
+  it('ducks a music track where the others have sound, as gain keyframes', () => {
+    const { doc } = runEdits(
+      newTimeline('t', seq, { video: 0, audio: 2 }),
+      'tl_parent',
+      [
+        {
+          tool: 'clip.add',
+          args: { track_id: 't1', media_id: AV, av: 'audio', source: { in: 0, out: 100 } },
+        },
+        { tool: 'clip.add', args: { track_id: 't2', media_id: AUD, source: { in: 0, out: 100 } } },
+        {
+          tool: 'audio.duck',
+          args: { track_id: 't2', amount_db: -12, attack_frames: 5, release_frames: 10 },
+        },
+      ],
+      resolve,
+      { tool: 'test', args: null },
+      undefined,
+      // The speech is silent for its first and last second (frames 0–25 and 75–100).
+      (id) =>
+        id === AV
+          ? [
+              { start: 0, end: 1 },
+              { start: 3, end: 10 },
+            ]
+          : undefined,
+    );
+    const music = doc.tracks[1]?.clips[0];
+    const at = (f: number) => sample(music?.gain, 0, framesToTicks(f, fps));
+    expect(at(10)).toBe(0);
+    expect(at(22)).toBeLessThan(0);
+    expect(at(22)).toBeGreaterThan(-12);
+    expect(at(50)).toBe(-12);
+    expect(at(80)).toBeGreaterThan(-12);
+    expect(at(95)).toBe(0);
+  });
+
+  it('sets the master and round-trips everything through timeline.load', () => {
+    const { doc } = edit(
+      base(),
+      { tool: 'audio.set_master', args: { gain_db: 4.5, limit_db: -1.5 } },
+      {
+        tool: 'audio.set_gain',
+        args: {
+          clip_id: 'c5',
+          gain_db: {
+            keyframes: [
+              { frame: 0, value: 0 },
+              { frame: 99, value: -20 },
+            ],
+          },
+        },
+      },
+      { tool: 'audio.fade', args: { clip_id: 'c5', out_frames: 12 } },
+    );
+    const view = toView('tl_x', doc);
+    expect(view.master).toEqual({ gain_db: 4.5, limit_db: -1.5 });
+    expect(toView('tl_x', fromView(view, resolve))).toEqual({ ...view, parent: null });
+    const cleared = edit(doc, {
+      tool: 'audio.set_master',
+      args: { gain_db: null, limit_db: null },
+    }).doc;
+    expect(cleared.master).toBeUndefined();
   });
 });
 

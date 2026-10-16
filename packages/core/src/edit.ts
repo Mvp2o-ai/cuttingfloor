@@ -17,12 +17,13 @@ import {
   type StoredTransform,
   type StoredTransition,
   type TextStyle,
+  TICKS_PER_SECOND,
   type TimelineDoc,
   TRANSFORM_DEFAULTS,
   TRANSFORM_NUMBERS,
   type TrackKind,
 } from '@cuttingfloor/schema';
-import { checkKeyframes, toStoredAnim } from './animate.ts';
+import { checkKeyframes, sample, toStoredAnim } from './animate.ts';
 import { extended, frameSource, meanRate, span, subclip } from './speed.ts';
 import { parseSubtitles } from './subtitles.ts';
 import { framesToTicks, ticksPerFrame } from './time.ts';
@@ -32,6 +33,11 @@ export type MediaResolver = (mediaId: string) => MediaRef | undefined;
 
 /** Looks up a stored timeline an edit nests. Returns undefined for unknown or expired ids. */
 export type TimelineResolver = (timelineId: string) => TimelineDoc | undefined;
+
+/** Silent spans (source seconds) found in a media item at import; undefined when unknown. */
+export type SilenceResolver = (
+  mediaId: string,
+) => Array<{ start: number; end: number }> | undefined;
 
 /** What a nested timeline looks like as a source: its length and whether it has picture and sound. */
 export function nestedRef(n: NestedDoc): MediaRef {
@@ -62,6 +68,8 @@ export interface OpOutcome {
   focus: number;
   /** Temporal edits preview as a filmstrip around `focus`; others as a still. */
   temporal: boolean;
+  /** Audio edits preview as a waveform of this timeline span (ticks). */
+  audio?: { start: number; end: number };
   warnings: string[];
 }
 
@@ -100,6 +108,7 @@ export function applyEdit<T extends EditTool>(
   args: EditArgsOf<T>,
   media: MediaResolver,
   timelines: TimelineResolver = () => undefined,
+  silences: SilenceResolver = () => undefined,
 ): OpOutcome {
   const handlers: {
     [K in EditTool]: (
@@ -107,6 +116,7 @@ export function applyEdit<T extends EditTool>(
       a: EditArgsOf<K>,
       m: MediaResolver,
       t: TimelineResolver,
+      s: SilenceResolver,
     ) => OpOutcome;
   } = {
     'timeline.set_sequence': setSequence,
@@ -132,6 +142,11 @@ export function applyEdit<T extends EditTool>(
     'title.add': titleAdd,
     'caption.add': captionAdd,
     'text.set': textSet,
+    'audio.set_gain': audioSetGain,
+    'audio.set_pan': audioSetPan,
+    'audio.fade': audioFade,
+    'audio.duck': (d, a, _m, _t, sil) => audioDuck(d, a, sil),
+    'audio.set_master': audioSetMaster,
     'transition.add': transitionAdd,
     'transition.set': transitionSet,
     'transition.remove': transitionRemove,
@@ -145,8 +160,9 @@ export function applyEdit<T extends EditTool>(
     a: EditArgsOf<T>,
     m: MediaResolver,
     t: TimelineResolver,
+    s: SilenceResolver,
   ) => OpOutcome;
-  const outcome = handler(doc, args, media, timelines);
+  const outcome = handler(doc, args, media, timelines, silences);
   pruneMedia(doc);
   outcome.warnings.push(...tidyTransitions(doc));
   return outcome;
@@ -1014,6 +1030,148 @@ function rangeRemove(doc: TimelineDoc, a: EditArgsOf<'range.lift'>, ripple: bool
     (id) => !doc.tracks.some((t) => t.clips.some((c) => c.id === id)),
   );
   return ok(from, { clip_ids: removed, temporal: true });
+}
+
+// ----------------------------------------------------------------------------------- audio
+
+/** The audio clips an audio edit applies to: the clip, or its linked audio. */
+function audioMembers(doc: TimelineDoc, clipId: string): StoredClip[] {
+  const { members } = unlockedGroup(doc, clipId);
+  const audio = members.filter((m) => m.clip.kind === 'audio');
+  if (!audio.length) {
+    throw new CfError('bad_request', `Clip ${clipId} has no sound`, {
+      hint: 'Pick an audio clip, or a video clip linked to one',
+    });
+  }
+  return audio.map((m) => m.clip);
+}
+
+const audioOutcome = (clips: StoredClip[]): OpOutcome =>
+  ok(clips[0]?.start ?? 0, {
+    clip_id: clips[0]?.id ?? '',
+    clip_ids: clips.map((c) => c.id),
+    audio: {
+      start: Math.min(...clips.map((c) => c.start)),
+      end: Math.max(...clips.map((c) => end(c))),
+    },
+  });
+
+function audioSetGain(doc: TimelineDoc, a: EditArgsOf<'audio.set_gain'>): OpOutcome {
+  const clips = audioMembers(doc, a.clip_id);
+  const tpf = ticksPerFrame(doc.sequence.fps);
+  for (const clip of clips) setAnimatable(clip, 'gain', a.gain_db, 0, clip, tpf);
+  return audioOutcome(clips);
+}
+
+function audioSetPan(doc: TimelineDoc, a: EditArgsOf<'audio.set_pan'>): OpOutcome {
+  const clips = audioMembers(doc, a.clip_id);
+  for (const clip of clips) {
+    if (a.pan === null || a.pan === 0) delete clip.pan;
+    else clip.pan = a.pan;
+  }
+  return audioOutcome(clips);
+}
+
+function audioFade(doc: TimelineDoc, a: EditArgsOf<'audio.fade'>): OpOutcome {
+  const clips = audioMembers(doc, a.clip_id);
+  const fps = doc.sequence.fps;
+  for (const clip of clips) {
+    const fade: { in?: number | undefined; out?: number | undefined } = { ...clip.fade };
+    for (const [part, frames] of [
+      ['in', a.in_frames],
+      ['out', a.out_frames],
+    ] as const) {
+      if (frames === null) delete fade[part];
+      else if (frames !== undefined) fade[part] = framesToTicks(frames, fps);
+    }
+    if (Object.keys(fade).length) clip.fade = fade;
+    else delete clip.fade;
+  }
+  return audioOutcome(clips);
+}
+
+function audioSetMaster(doc: TimelineDoc, a: EditArgsOf<'audio.set_master'>): OpOutcome {
+  const gain = a.gain_db === null ? 0 : (a.gain_db ?? doc.master?.gain ?? 0);
+  const limit = a.limit_db === null ? undefined : (a.limit_db ?? doc.master?.limit);
+  if (!gain && limit === undefined) delete doc.master;
+  else doc.master = { gain, ...(limit !== undefined ? { limit } : {}) };
+  return ok(0, { audio: { start: 0, end: timelineEnd(doc) } });
+}
+
+/**
+ * Lowers a track wherever the tracks above it have sound, as gain keyframes on its clips:
+ * speech is everything outside the silences found at import, the duck starts `attack` frames
+ * before it and recovers over `release` frames after it.
+ */
+function audioDuck(
+  doc: TimelineDoc,
+  a: EditArgsOf<'audio.duck'>,
+  silences: SilenceResolver,
+): OpOutcome {
+  const target = getTrack(doc, a.track_id);
+  if (target.kind !== 'audio')
+    throw new CfError('bad_request', `Track ${target.id} is not an audio track`);
+  assertUnlocked(target);
+  const under = a.under_track_ids
+    ? a.under_track_ids.map((id) => getTrack(doc, id))
+    : doc.tracks.filter((t) => t.kind === 'audio' && t !== target);
+  if (!under.length)
+    throw new CfError('bad_request', 'There is no other audio track to duck under');
+  const tpf = ticksPerFrame(doc.sequence.fps);
+  const len = Math.round(timelineEnd(doc) / tpf);
+  const active = new Uint8Array(len);
+  for (const track of under) {
+    if (track.kind !== 'audio')
+      throw new CfError('bad_request', `Track ${track.id} is not an audio track`);
+    if (track.muted) continue;
+    for (const clip of track.clips) {
+      if (!clip.enabled) continue;
+      const quiet = clip.type === 'media' ? (silences(clip.media_id) ?? []) : [];
+      const start = Math.round(clip.start / tpf);
+      const n = Math.round(clip.duration / tpf);
+      for (let i = 0; i < n && start + i < len; i++) {
+        const s = frameSource(clip, tpf, i) / TICKS_PER_SECOND;
+        if (!quiet.some((q) => s >= q.start && s < q.end)) active[start + i] = 1;
+      }
+    }
+  }
+  // Envelope 0–1: a backward pass ramps in before speech, a forward pass recovers after.
+  const env = new Float64Array(len);
+  let level = 0;
+  for (let f = len - 1; f >= 0; f--) {
+    level = active[f] ? 1 : Math.max(0, level - 1 / Math.max(1, a.attack_frames));
+    env[f] = level;
+  }
+  level = 0;
+  for (let f = 0; f < len; f++) {
+    level = active[f] ? 1 : Math.max(0, level - 1 / Math.max(1, a.release_frames));
+    env[f] = Math.max(env[f] ?? 0, level);
+  }
+  const changed: StoredClip[] = [];
+  for (const clip of target.clips) {
+    const start = Math.round(clip.start / tpf);
+    const n = Math.round(clip.duration / tpf);
+    const points: Array<[number, number]> = [];
+    let any = false;
+    for (let i = 0; i < n; i++) {
+      const t = Math.round(frameSource(clip, tpf, i));
+      const duck = (env[start + i] ?? 0) * a.amount_db;
+      if (duck) any = true;
+      points.push([t, Math.round((sample(clip.gain, 0, t) + duck) * 100) / 100]);
+    }
+    if (!any) continue;
+    const kept = points.filter((p, i) => {
+      const prev = points[i - 1];
+      const next = points[i + 1];
+      return !prev || !next || prev[1] !== p[1] || next[1] !== p[1];
+    });
+    clip.gain = { keyframes: kept.map(([t, value]) => ({ t, value })) };
+    changed.push(clip);
+  }
+  if (!changed.length) {
+    return { ...ok(0), warnings: ['Nothing to duck under: the other tracks are silent or empty'] };
+  }
+  return audioOutcome(changed);
 }
 
 // ------------------------------------------------------------------------------------ text

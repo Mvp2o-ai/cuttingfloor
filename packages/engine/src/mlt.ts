@@ -1,6 +1,12 @@
 import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
-import { frameSource, type TransformState, ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
+import {
+  frameSource,
+  sample,
+  type TransformState,
+  ticksPerFrame,
+  timelineEnd,
+} from '@cuttingfloor/core';
 import {
   CfError,
   type NestedDoc,
@@ -10,7 +16,14 @@ import {
 } from '@cuttingfloor/schema';
 import { compositeFor, type RenderSpan, rotoFilters, type SourceSize } from './composite.ts';
 import { buildAss } from './text.ts';
-import { applyEffects, clipPlan, crossfadeLevels, planTrack, revealSpline } from './transitions.ts';
+import {
+  applyEffects,
+  clipPlan,
+  crossfadeGain,
+  type Effect,
+  planTrack,
+  revealSpline,
+} from './transitions.ts';
 
 export interface MltSource {
   path: string;
@@ -173,7 +186,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
         const keyBase = chained || generated || media?.image ? cp.head : frame(c.in);
         const filters = src
           ? clipFilters(c, tpf, n, src, out, span, keyBase, revealSpline(cp.effects, keyBase))
-          : gainFilter(crossfadeLevels(cp.effects, keyBase));
+          : audioFilters(c, tpf, n, span, keyBase, cp.effects);
         let entry: string;
         if (generated) {
           // Text is libass over a transparent layer of the clip's own length; its script is
@@ -259,7 +272,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
       ? ` in="${o.range.start}" out="${o.range.end - 1}"`
       : ` in="0" out="${len - 1}"`;
     parts.push(
-      `<tractor id="${id}"${inOut}><multitrack>${trackXml.join('')}</multitrack>${transitions.join('')}</tractor>`,
+      `<tractor id="${id}"${inOut}><multitrack>${trackXml.join('')}</multitrack>${transitions.join('')}${id === 'main' ? masterFilters(doc) : ''}</tractor>`,
     );
     return parts;
   }
@@ -317,9 +330,67 @@ function retimedChain(
   return `<chain id="${id}" out="${n + span.head + span.tail - 1}">${prop('mlt_service', 'avformat')}${prop('resource', path)}${prop(only, -1)}${prop('seekable', 1)}<link>${prop('mlt_service', 'timeremap')}${prop('time_map', map)}${prop('image_mode', 'nearest')}${prop('pitch', pitch)}</link></chain>`;
 }
 
-/** A volume filter for a clip's crossfades, if it has any. */
-function gainFilter(levels: string | undefined): string {
-  return levels ? `<filter>${prop('mlt_service', 'volume')}${prop('level', levels)}</filter>` : '';
+/** Keyframes "key=value;..." keeping only the corners of straight runs; one value if constant. */
+function curve(points: Array<[number, number]>): string | undefined {
+  if (!points.length) return undefined;
+  const first = points[0]?.[1];
+  if (points.every((p) => p[1] === first)) return String(first);
+  const kept = points.filter((p, i) => {
+    const a = points[i - 1];
+    const b = points[i + 1];
+    return !a || !b || Math.abs(p[1] - (a[1] + b[1]) / 2) > 0.005;
+  });
+  return kept.map(([k, v]) => `${k}=${v}`).join(';');
+}
+
+/**
+ * Volume and pan for an audio clip over its render span: gain (dB, keyframed on the source),
+ * fades and transition crossfades combined into one level curve; keys are producer positions.
+ */
+function audioFilters(
+  c: StoredClip,
+  tpf: number,
+  n: number,
+  span: RenderSpan,
+  keyBase: number,
+  effects: Effect[],
+): string {
+  const fadeIn = c.fade?.in ? Math.round(c.fade.in / tpf) : 0;
+  const fadeOut = c.fade?.out ? Math.round(c.fade.out / tpf) : 0;
+  const levels: Array<[number, number]> = [];
+  for (let i = -span.head; i < n + span.tail; i++) {
+    const t = frameSource(c, tpf, i);
+    let g = crossfadeGain(effects, i);
+    if (fadeIn && i < fadeIn) g *= Math.max(0, (i + 0.5) / fadeIn);
+    if (fadeOut && i >= n - fadeOut) g *= Math.max(0, (n - i - 0.5) / fadeOut);
+    const db = sample(c.gain, 0, t) + (g <= 0 ? -100 : 20 * Math.log10(g));
+    levels.push([keyBase + i, Math.max(-100, Math.round(db * 100) / 100)]);
+  }
+  const level = curve(levels);
+  return [
+    level && level !== '0'
+      ? `<filter>${prop('mlt_service', 'volume')}${prop('level', level)}</filter>`
+      : '',
+    // panner's balance: start 0 is full left, 1 full right (its animated `split` is ignored
+    // in MLT 7.30, so pan is a constant).
+    c.pan
+      ? `<filter>${prop('mlt_service', 'panner')}${prop('channel', -1)}${prop('start', Math.round(((c.pan + 1) / 2) * 1000) / 1000)}</filter>`
+      : '',
+  ].join('');
+}
+
+/** Master gain and limiter on the top-level mix. */
+function masterFilters(doc: TimelineDoc): string {
+  const m = doc.master;
+  if (!m) return '';
+  const gain = m.gain
+    ? `<filter>${prop('mlt_service', 'volume')}${prop('level', m.gain)}</filter>`
+    : '';
+  const limit =
+    m.limit !== undefined
+      ? `<filter>${prop('mlt_service', 'avfilter.alimiter')}${prop('av.limit', Math.round(10 ** (m.limit / 20) * 10_000) / 10_000)}${prop('av.level', 0)}${prop('av.attack', 5)}${prop('av.release', 50)}</filter>`
+      : '';
+  return gain + limit;
 }
 
 /** Flip, crop, mask and transition-reveal filters on a clip's playlist entry. */

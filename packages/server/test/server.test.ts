@@ -6,7 +6,7 @@ import { call, connect, ok, SEQ_720P25, type TestEnv, testRuntime } from './help
 
 const anyResult = z.object({}).passthrough();
 /** tools/list as JSON, in bytes (about 4 bytes per token). */
-const BUDGET_BYTES = 80_000;
+const BUDGET_BYTES = 88_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -25,6 +25,12 @@ describe('protocol surface', () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
+        'audio.duck',
+        'audio.fade',
+        'audio.set_gain',
+        'audio.set_loudness',
+        'audio.set_master',
+        'audio.set_pan',
         'caption.add',
         'clip.add',
         'clip.freeze',

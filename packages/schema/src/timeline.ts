@@ -1,6 +1,7 @@
 import * as z from 'zod/v4';
 import {
   BlendMode,
+  StoredAnimatable,
   StoredAnimation,
   StoredMask,
   StoredTransform,
@@ -63,6 +64,16 @@ const clipFields = {
   link: z.string().nullable(),
   enabled: z.boolean(),
   speed: StoredSpeed.optional(),
+  // Audio; absent means unchanged. Gain in dB animates like transform values; pan is -1 (left)
+  // to 1 (right); fades are lengths in ticks.
+  gain: StoredAnimatable.optional(),
+  pan: z.number().min(-1).max(1).optional(),
+  fade: z
+    .object({
+      in: z.number().int().positive().optional(),
+      out: z.number().int().positive().optional(),
+    })
+    .optional(),
   // Video compositing; absent means the default.
   transform: StoredTransform.optional(),
   blend: BlendMode.optional(),
@@ -134,6 +145,10 @@ export const TimelineDoc = z.object({
   ...docFields,
   parent: z.string().nullable(),
   op: TimelineOp.nullable(),
+  /** The mix's master gain (dB) and limiter ceiling (dBFS). Absent means untouched. */
+  master: z
+    .object({ gain: z.number().min(-60).max(40), limit: z.number().min(-20).max(0).optional() })
+    .optional(),
   /** Timelines its clips nest, at any depth, by key. Absent when there are none. */
   nested: z.record(z.string(), NestedDoc).optional(),
 });
@@ -176,6 +191,11 @@ export const ClipView = z.object({
   link: z.string().nullable().describe('Link group: linked clips move, trim and split together'),
   enabled: z.boolean(),
   speed: settings('clip.set_speed').optional(),
+  gain: z.unknown().optional().describe('dB, as audio.set_gain takes it'),
+  pan: z.number().optional().describe('-1 left to 1 right'),
+  fade: z
+    .object({ in_frames: z.number().optional(), out_frames: z.number().optional() })
+    .optional(),
   transform: settings('clip.set_transform').optional(),
   blend: BlendMode.optional(),
   mask: settings('clip.set_mask mask').optional(),
@@ -229,6 +249,7 @@ export const TimelineView = z.object({
   timeline_id: z.string(),
   parent: z.string().nullable(),
   ...viewFields,
+  master: z.object({ gain_db: z.number(), limit_db: z.number().optional() }).optional(),
   // Loose here to keep timeline.get and timeline.load small; timeline.load checks each entry
   // against NestedView.
   nested: z
