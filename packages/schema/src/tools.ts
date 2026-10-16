@@ -259,6 +259,34 @@ export const EditArgs = {
     text: z.string().min(1).max(2000).optional().describe('Only with a single clip'),
     style: TextStyle.optional().describe("Merged into each clip's style; null fields reset"),
   }),
+  'audio.set_gain': z.object({
+    clip_id: z.string().describe('An audio clip, or a video clip whose linked audio to change'),
+    gain_db: animatable(-60, 24).describe('dB; 0 leaves it as it is; keyframes for rides'),
+  }),
+  'audio.set_pan': z.object({
+    clip_id: z.string(),
+    pan: z.number().min(-1).max(1).nullable().describe('-1 left, 0 centre, 1 right; null resets'),
+  }),
+  'audio.fade': z.object({
+    clip_id: z.string(),
+    in_frames: z.number().int().positive().max(1_000_000).nullable().optional(),
+    out_frames: z.number().int().positive().max(1_000_000).nullable().optional(),
+  }),
+  'audio.duck': z.object({
+    track_id: z.string().describe('The audio track to lower, usually music'),
+    under_track_ids: z
+      .array(z.string())
+      .min(1)
+      .optional()
+      .describe('Tracks whose sound triggers it. Default: every other audio track'),
+    amount_db: z.number().min(-60).max(-1).default(-12),
+    attack_frames: z.number().int().min(0).max(1000).default(5),
+    release_frames: z.number().int().min(0).max(1000).default(15),
+  }),
+  'audio.set_master': z.object({
+    gain_db: z.number().min(-60).max(40).nullable().optional(),
+    limit_db: z.number().min(-20).max(0).nullable().optional().describe('Limiter ceiling, dBFS'),
+  }),
   'transition.add': z.object({
     clip_id: z.string().describe('The clip before the cut; the clip after it must touch it'),
     kind: TransitionKind.describe('video://catalog/transitions; crossfade on audio tracks'),
@@ -309,8 +337,12 @@ export function editInput<T extends EditTool>(tool: T) {
 
 export const PreviewRef = z.object({
   uri: z.string(),
-  frames: z.array(frame),
+  frames: z.array(frame).describe('Frames shown; for a waveform, the start and end of its span'),
   status: z.enum(['ready', 'pending']),
+  loudness: z
+    .object({ lufs: z.number().nullable(), true_peak_db: z.number().nullable() })
+    .optional()
+    .describe('Measured for audio edits, over the waveform span'),
 });
 
 export const EditResult = z.object({
@@ -515,6 +547,13 @@ export const ExportResult = z.object({
   frames: z.number(),
   preset: ExportPreset,
   mime_type: z.string(),
+});
+
+export const LoudnessInput = z.object({
+  timeline_id: TimelineId,
+  preview: Preview,
+  target_lufs: z.number().min(-40).max(-5).default(-14),
+  true_peak_db: z.number().min(-9).max(0).default(-1),
 });
 
 export const QaCheckInput = z.object({

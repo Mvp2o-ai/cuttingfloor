@@ -4,6 +4,7 @@
  * See plans/spec.md §7–§8.
  */
 
+export { type Loudness, measureMix, renderWaveform } from './audio.ts';
 export { compositeFor, rotoFilters } from './composite.ts';
 export { BIN, engineVersions, installedFonts, run } from './exec.ts';
 export { download, isBlockedAddress } from './fetch.ts';

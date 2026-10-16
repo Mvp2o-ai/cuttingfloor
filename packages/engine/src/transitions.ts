@@ -233,20 +233,15 @@ export function revealSpline(effects: Effect[], keyBase: number): string | undef
 }
 
 /**
- * Gain keyframes (dB) for an audio clip's crossfades, keyed by producer position: an
- * equal-power fade out over the cut for the clip before it, in for the clip after.
+ * Linear gain (0–1) of an audio clip's crossfades at frame `i`: an equal-power fade out over
+ * the cut for the clip before it, in for the clip after; 1 elsewhere.
  */
-export function crossfadeLevels(effects: Effect[], keyBase: number): string | undefined {
-  const fades = effects.filter((e) => e.kind === 'crossfade');
-  if (!fades.length) return undefined;
-  const points: string[] = [];
-  const db = (g: number) => Math.max(-100, Math.round(2000 * Math.log10(Math.max(g, 1e-5))) / 100);
-  for (const e of fades) {
-    for (let i = e.start; i <= e.end; i++) {
-      const p = Math.min(1, Math.max(0, (i - e.start) / (e.end - e.start)));
-      const g = e.role === 'b' ? Math.sin((p * Math.PI) / 2) : Math.cos((p * Math.PI) / 2);
-      points.push(`${keyBase + i}=${db(g)}`);
-    }
+export function crossfadeGain(effects: Effect[], i: number): number {
+  let g = 1;
+  for (const e of effects) {
+    if (e.kind !== 'crossfade' || i < e.start || i >= e.end) continue;
+    const p = (i - e.start) / (e.end - e.start);
+    g *= e.role === 'b' ? Math.sin((p * Math.PI) / 2) : Math.cos((p * Math.PI) / 2);
   }
-  return points.join(';');
+  return g;
 }

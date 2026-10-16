@@ -15,6 +15,7 @@ export {
   nestedRef,
   newTimeline,
   type OpOutcome,
+  type SilenceResolver,
   type TimelineResolver,
   timelineEnd,
   transitionHalves,

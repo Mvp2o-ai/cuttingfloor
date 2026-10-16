@@ -356,6 +356,28 @@ describe('MLT compiler', () => {
     expect(ass).toMatch(/Dialogue: 0,0:00:00\.00,0:00:02\.00,Box,/);
   });
 
+  it('folds gain, fades and pan into each audio clip, and the master onto the mix', () => {
+    const xml = compile(
+      edit([
+        { tool: 'track.set', args: { track_id: 't2', muted: false } },
+        { tool: 'audio.set_gain', args: { clip_id: 'c5', gain_db: -6 } },
+        { tool: 'audio.fade', args: { clip_id: 'c5', in_frames: 4 } },
+        { tool: 'audio.set_pan', args: { clip_id: 'c5', pan: 1 } },
+        { tool: 'audio.set_master', args: { gain_db: 3, limit_db: -1.5 } },
+      ]),
+    );
+    // Source frames 5–29: a 4-frame fade into -6 dB, then flat.
+    expect(xml).toMatch(
+      /<property name="level">5=-24\.06;6=-14\.52;7=-10\.08;8=-7\.16;9=-6;29=-6<\/property>/,
+    );
+    expect(xml).toContain(
+      '<property name="mlt_service">panner</property><property name="channel">-1</property><property name="start">1</property>',
+    );
+    expect(xml).toMatch(
+      /<\/transition><filter><property name="mlt_service">volume<\/property><property name="level">3<\/property><\/filter><filter><property name="mlt_service">avfilter\.alimiter<\/property><property name="av\.limit">0\.8414<\/property><property name="av\.level">0<\/property>.*<\/tractor>/,
+    );
+  });
+
   it('refuses to compile with offline media', () => {
     expect(() => compileMlt(doc, { width: 640, height: 360, sources: new Map() })).toThrow(
       /not available/,

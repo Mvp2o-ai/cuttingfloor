@@ -9,7 +9,7 @@ import {
   ProtocolErrorCode,
   ResourceTemplate,
 } from '@modelcontextprotocol/server';
-import { timelineImage } from './render.ts';
+import { timelineImage, timelineWaveform } from './render.ts';
 import { jobView } from './result.ts';
 import type { ServerDeps } from './server.ts';
 import { SERVER_VERSION } from './version.ts';
@@ -53,6 +53,41 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
       };
       return {
         contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(body) }],
+      };
+    },
+  );
+
+  server.registerResource(
+    'timeline-waveform',
+    new ResourceTemplate('video://timeline/{timeline_id}/waveform/{spec}', { list: undefined }),
+    {
+      title: 'Timeline waveform',
+      description:
+        'The mix of a timeline span as a waveform image: {spec} is start_end frames plus .webp or .png, e.g. 0_250.webp',
+      mimeType: 'image/webp',
+    },
+    async (uri, vars) => {
+      const m = /^(\d+)_(\d+)\.(webp|png)$/.exec(String(vars.spec));
+      if (!m)
+        throw new ProtocolError(ProtocolErrorCode.InvalidParams, 'Spec is start_end.webp or .png');
+      const id = String(vars.timeline_id);
+      const owner = deps.owner();
+      const format = m[3] as 'webp' | 'png';
+      const doc = await mustExist(() => rt.timelines.get(owner, id));
+      const wave = await mustExist(() =>
+        timelineWaveform(
+          rt,
+          owner,
+          id,
+          doc,
+          { start: Number(m[1]), end: Number(m[2]) },
+          { format },
+        ),
+      );
+      return {
+        contents: [
+          { uri: uri.href, mimeType: `image/${format}`, blob: wave.image.toString('base64') },
+        ],
       };
     },
   );

@@ -7,6 +7,7 @@ import {
   mediaRef,
   renderPicture,
   renderTimelineFrames,
+  renderWaveform,
 } from '@cuttingfloor/engine';
 import { CfError, type MediaRef, type TimelineDoc } from '@cuttingfloor/schema';
 import type { Runtime } from './runtime.ts';
@@ -189,4 +190,76 @@ export async function timelineImage(
   await mkdir(dirname(cacheFile), { recursive: true });
   await writeFile(cacheFile, image);
   return image;
+}
+
+export function waveformUri(
+  id: string,
+  range: { start: number; end: number },
+  format: 'webp' | 'png' = 'webp',
+): string {
+  return `video://timeline/${id}/waveform/${range.start}_${range.end}.${format}`;
+}
+
+/**
+ * Renders (or reads from cache) a waveform of a timeline span with its loudness. Cached by
+ * timeline id, a content hash, so entries never go stale.
+ */
+export async function timelineWaveform(
+  rt: Runtime,
+  owner: string,
+  timelineId: string,
+  doc: TimelineDoc,
+  range: { start: number; end: number },
+  options: { format?: 'webp' | 'png'; signal?: AbortSignal } = {},
+): Promise<{ image: Buffer; lufs: number | null; peak: number | null }> {
+  const format = options.format ?? 'webp';
+  const base = rt.ws.path('cache', 'frames', `${timelineId}-wave-${range.start}_${range.end}`);
+  try {
+    const [image, meta] = await Promise.all([
+      readFile(`${base}.${format}`),
+      readFile(`${base}.json`, 'utf8'),
+    ]);
+    return { image, ...(JSON.parse(meta) as { lufs: number | null; peak: number | null }) };
+  } catch {
+    // not cached yet
+  }
+  const length = lengthFrames(doc);
+  if (range.end <= range.start || range.end > length) {
+    throw new CfError(
+      'bad_request',
+      `Span ${range.start}–${range.end} is not inside the timeline`,
+      {
+        hint: `The timeline has ${length} frames`,
+      },
+    );
+  }
+  const { sources, offline } = await sourcesFor(rt, owner, doc, 'preview');
+  assertOnline(offline);
+  const wave = await renderWaveform(doc, sources, range, {
+    format,
+    ...(options.signal ? { signal: options.signal } : {}),
+  });
+  await mkdir(dirname(base), { recursive: true });
+  await writeFile(`${base}.${format}`, wave.image);
+  await writeFile(`${base}.json`, JSON.stringify({ lufs: wave.lufs, peak: wave.peak }));
+  return wave;
+}
+
+/** Silent spans per media item (from import analysis), for audio.duck. */
+export async function silenceResolver(
+  rt: Runtime,
+  owner: string,
+  doc: TimelineDoc,
+  more: Iterable<string> = [],
+): Promise<Map<string, Array<{ start: number; end: number }>>> {
+  const out = new Map<string, Array<{ start: number; end: number }>>();
+  const ids = new Set([
+    ...doc.tracks.flatMap((t) => t.clips.flatMap((c) => (c.type === 'media' ? [c.media_id] : []))),
+    ...more,
+  ]);
+  for (const id of ids) {
+    const record = await rt.media.find(owner, id);
+    if (record?.analysis) out.set(id, record.analysis.silences);
+  }
+  return out;
 }
