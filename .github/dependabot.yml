@@ -8,6 +8,19 @@ updates:
         patterns: ['@modelcontextprotocol/*']
       dev:
         dependency-type: development
+    # Stable tool lines over the newest majors (plans/README.md): TypeScript 6, Vitest 4,
+    # Node 24 types. Majors move by hand.
+    ignore:
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
+      - dependency-name: vitest
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+  # Moves the pinned base image digest (Node and the Debian FFmpeg/MLT engines).
+  - package-ecosystem: docker
     directory: /
     schedule: { interval: weekly }

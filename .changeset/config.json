@@ -2,7 +2,19 @@
   "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "access": "public",
+  "access": "restricted",
   "baseBranch": "main",
-  "ignore": []
+  "privatePackages": {
+    "version": true,
+    "tag": true
+  },
+  "ignore": [
+    "@cuttingfloor/schema",
+    "@cuttingfloor/core",
+    "@cuttingfloor/jobs",
+    "@cuttingfloor/credentials",
+    "@cuttingfloor/engine",
+    "@cuttingfloor/server",
+    "@cuttingfloor/hosted"
+  ]
 }
