@@ -38,6 +38,7 @@ async function testRuntime(): Promise<TestEnv> {
     maxDownloadBytes: 1024 ** 3,
     allowPrivateUrls: true,
     inlineMaxBytes: 32 * 1024 ** 2,
+    ...(process.env.CUTTINGFLOOR_MODELS ? { modelsDir: process.env.CUTTINGFLOOR_MODELS } : {}),
   });
   await runtime.start({ sweep: false });
   return { runtime, dir, mediaDir, exportsDir };
@@ -2041,6 +2042,184 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(g).toBeGreaterThan(200);
       expect(b).toBeGreaterThan(200);
     }, 180_000);
+  });
+
+  describe('analysis', () => {
+    async function analyze(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+      const started = await ok<{ job_id: string }>(client, 'media.analyze', args);
+      const done = (await waitJob(started.job_id, 600_000)) as {
+        result?: Record<string, unknown>;
+        error?: unknown;
+      };
+      if (!done.result) throw new Error(`analyze failed: ${JSON.stringify(done)}`);
+      return done.result;
+    }
+
+    it('transcribes speech into timed words and captions a clip from them', async () => {
+      const m = env.mediaDir;
+      await exec('espeak-ng', [
+        '-s',
+        '140',
+        '-w',
+        join(m, 'speech-raw.wav'),
+        'The quick brown fox jumps over the lazy dog.',
+      ]);
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=black:size=320x180:rate=25',
+        '-i',
+        join(m, 'speech-raw.wav'),
+        '-shortest',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        join(m, 'speech.mp4'),
+      ]);
+      const media = await importMedia({ path: join(m, 'speech.mp4') });
+      const res = await analyze({
+        media_id: media.media_id,
+        kind: 'transcript',
+        model: 'tiny',
+        language: 'en',
+      });
+      const transcript = res.transcript as {
+        words: Array<{ text: string; start: number; end: number }>;
+      };
+      const text = transcript.words.map((w) => w.text.toLowerCase()).join(' ');
+      expect(text).toMatch(/quick/);
+      expect(text).toMatch(/fox/);
+      expect(text).toMatch(/dog/);
+      const fox = transcript.words.find((w) => /fox/i.test(w.text));
+      const quick = transcript.words.find((w) => /quick/i.test(w.text));
+      expect(fox && quick && fox.start > quick.start).toBe(true);
+      const info = await ok<{ analyses: { transcript: { words: number } } }>(client, 'media.get', {
+        media_id: media.media_id,
+      });
+      expect(info.analyses.transcript.words).toBe(transcript.words.length);
+
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'captions',
+        sequence: { width: 320, height: 180, fps: { num: 25, den: 1 } },
+        tracks: { video: 2, audio: 1 },
+      });
+      const captioned = await ok<{ timeline_id: string; clip_ids: string[] }>(
+        client,
+        'edit.batch',
+        {
+          timeline_id,
+          preview: 'none',
+          ops: [
+            { tool: 'clip.add', args: { track_id: 't1', media_id: media.media_id } },
+            {
+              tool: 'caption.add',
+              args: {
+                track_id: 't2',
+                from_transcript: { clip_id: { $ref: 'ops[0].clip_id' }, max_words: 3 },
+              },
+            },
+          ],
+        },
+      );
+      const view = await ok<{
+        tracks: Array<{ clips: Array<{ text?: string; words?: unknown[] }> }>;
+      }>(client, 'timeline.get', {
+        timeline_id: captioned.timeline_id,
+      });
+      const captions = view.tracks[1]?.clips ?? [];
+      expect(captions.length).toBeGreaterThanOrEqual(3);
+      expect(captions.every((c) => (c.words?.length ?? 0) <= 3)).toBe(true);
+    }, 600_000);
+
+    it('finds the beat of a click track', async () => {
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        "aevalsrc=exprs='if(lt(mod(t-0.25\\,0.5)\\,0.02)\\,sin(2*PI*1500*t)\\,0)':s=44100:d=10",
+        '-c:a',
+        'pcm_s16le',
+        join(env.mediaDir, 'clicks.wav'),
+      ]);
+      const media = await importMedia({ path: join(env.mediaDir, 'clicks.wav') });
+      const res = await analyze({ media_id: media.media_id, kind: 'beats' });
+      const beats = res.beats as { bpm: number; beats: number[] };
+      expect(beats.bpm).toBeGreaterThan(117);
+      expect(beats.bpm).toBeLessThan(123);
+      const inside = beats.beats.filter((t) => t > 1 && t < 9);
+      expect(
+        inside.every((t) => Math.abs((t - 0.25) / 0.5 - Math.round((t - 0.25) / 0.5)) * 0.5 < 0.05),
+      ).toBe(true);
+    }, 300_000);
+
+    it('finds a face, and follows a region as the picture moves', async () => {
+      const m = env.mediaDir;
+      await exec('cp', [join(import.meta.dirname, 'fixtures', 'face.jpg'), join(m, 'face.jpg')]);
+      await ff([
+        '-loop',
+        '1',
+        '-i',
+        join(m, 'face.jpg'),
+        '-t',
+        '2',
+        '-r',
+        '25',
+        '-vf',
+        'scale=480:600',
+        '-pix_fmt',
+        'yuv420p',
+        join(m, 'face.mp4'),
+      ]);
+      const faceMedia = await importMedia({ path: join(m, 'face.mp4') });
+      const res = await analyze({ media_id: faceMedia.media_id, kind: 'faces' });
+      const faces = res.faces as {
+        frames: Array<{ faces: Array<{ x: number; y: number; w: number; h: number }> }>;
+        focus: Array<{ x: number; y: number }>;
+      };
+      expect(faces.frames.filter((f) => f.faces.length === 1).length).toBeGreaterThan(5);
+      const face = faces.frames[0]?.faces[0];
+      // The face is in the upper middle of the portrait.
+      expect(face && face.x + face.w / 2).toBeGreaterThan(0.35);
+      expect(face && face.x + face.w / 2).toBeLessThan(0.75);
+      expect(face && face.y + face.h / 2).toBeLessThan(0.5);
+
+      // A 640×360 window panning down the portrait at 60 px/s: content moves up.
+      await ff([
+        '-loop',
+        '1',
+        '-i',
+        join(m, 'face.jpg'),
+        '-t',
+        '3',
+        '-r',
+        '25',
+        '-vf',
+        'scale=640:800,crop=640:360:0:60+t*60',
+        '-pix_fmt',
+        'yuv420p',
+        join(m, 'pan.mp4'),
+      ]);
+      const pan = await importMedia({ path: join(m, 'pan.mp4') });
+      const tracked = await analyze({
+        media_id: pan.media_id,
+        kind: 'track',
+        region: { at_seconds: 0, x: 0.35, y: 0.25, w: 0.3, h: 0.5 },
+        until_seconds: 2,
+      });
+      const points = (
+        tracked.track as { points: Array<{ time: number; y: number; found: boolean }> }
+      ).points;
+      expect(points.length).toBeGreaterThan(40);
+      const first = points[0];
+      const later = points.find((p) => p.time >= 1.9);
+      // 2 s × 60 px = 120 px of 360 is a third of the frame.
+      expect(first && later && first.y - later.y).toBeGreaterThan(0.2);
+      expect(first && later && first.y - later.y).toBeLessThan(0.45);
+    }, 300_000);
   });
 
   it('refuses crafted media', async () => {
