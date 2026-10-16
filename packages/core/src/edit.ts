@@ -3,6 +3,9 @@ import {
   CfError,
   type EditArgsOf,
   type EditTool,
+  EFFECTS,
+  type EffectSpec,
+  effectParamsSchema,
   MASK_DEFAULTS,
   MASK_NUMBERS,
   type MediaRef,
@@ -11,6 +14,7 @@ import {
   type StoredAnimatable,
   type StoredAnimation,
   type StoredClip,
+  type StoredEffect,
   type StoredMask,
   type StoredSpeed,
   type StoredTrack,
@@ -23,7 +27,7 @@ import {
   TRANSFORM_NUMBERS,
   type TrackKind,
 } from '@cuttingfloor/schema';
-import { checkKeyframes, sample, toStoredAnim } from './animate.ts';
+import { checkKeyframes, sample, toStoredAnim, toViewAnim } from './animate.ts';
 import { extended, frameSource, meanRate, span, subclip } from './speed.ts';
 import { parseSubtitles } from './subtitles.ts';
 import { framesToTicks, ticksPerFrame } from './time.ts';
@@ -147,6 +151,10 @@ export function applyEdit<T extends EditTool>(
     'audio.fade': audioFade,
     'audio.duck': (d, a, _m, _t, sil) => audioDuck(d, a, sil),
     'audio.set_master': audioSetMaster,
+    'filter.add': filterAdd,
+    'filter.set': filterSet,
+    'filter.remove': filterRemove,
+    'adjustment.add': adjustmentAdd,
     'transition.add': transitionAdd,
     'transition.set': transitionSet,
     'transition.remove': transitionRemove,
@@ -310,6 +318,7 @@ function clearRange(doc: TimelineDoc, track: StoredTrack, from: number, to: numb
       });
       if (left) {
         splitAnimation(left, right);
+        renumberEffects(doc, right);
         made.push(right);
       } else dropAnimation(right, 'in');
       kept.push(right);
@@ -326,11 +335,17 @@ function splitTrackAt(doc: TimelineDoc, track: StoredTrack, at: number): StoredC
   if (!c) return undefined;
   const left = at - c.start;
   const right = retimed(c, subclip(c, left, c.duration), { id: nextId(doc, 'c'), start: at });
+  renumberEffects(doc, right);
   setTiming(c, subclip(c, 0, left));
   splitAnimation(c, right);
   track.clips.push(right);
   sortTrack(track);
   return right;
+}
+
+/** A copied clip gets its own effect ids, so every effect id stays unique. */
+function renumberEffects(doc: TimelineDoc, clip: StoredClip): void {
+  if (clip.effects) clip.effects = clip.effects.map((e) => ({ ...e, id: nextId(doc, 'f') }));
 }
 
 /** An entrance stays on the left half of a cut, an exit on the right half. */
@@ -489,7 +504,8 @@ function nest(doc: TimelineDoc, id: string, resolveTimeline: TimelineResolver): 
       hint: 'Timelines expire 24 hours after last use; timeline.load brings one back',
     });
   }
-  const { parent: _p, op: _o, nested, ...body } = source;
+  // A nested timeline keeps its own effects; its master belongs to it as a top level only.
+  const { parent: _p, op: _o, nested, master: _master, ...body } = source;
   doc.nested = { ...doc.nested, ...nested, [id]: body };
   if (!timelineEnd(body)) {
     throw new CfError('bad_request', `Timeline ${id} is empty, so there is nothing to nest`);
@@ -873,6 +889,7 @@ function clipFreeze(doc: TimelineDoc, a: EditArgsOf<'clip.freeze'>): OpOutcome {
     link: null,
     speed: { rate: 0 },
   };
+  renumberEffects(doc, frozen);
   video.track.clips.push(frozen);
   sortTrack(video.track);
   tidyLinks(doc);
@@ -1030,6 +1047,201 @@ function rangeRemove(doc: TimelineDoc, a: EditArgsOf<'range.lift'>, ripple: bool
     (id) => !doc.tracks.some((t) => t.clips.some((c) => c.id === id)),
   );
   return ok(from, { clip_ids: removed, temporal: true });
+}
+
+// --------------------------------------------------------------------------------- effects
+
+type EffectHome =
+  | { scope: 'clip'; track: StoredTrack; clip: StoredClip }
+  | { scope: 'track'; track: StoredTrack }
+  | { scope: 'timeline' };
+
+function effectsOf(doc: TimelineDoc, home: EffectHome): StoredEffect[] {
+  if (home.scope === 'clip') return home.clip.effects ?? [];
+  if (home.scope === 'track') return home.track.effects ?? [];
+  return doc.effects ?? [];
+}
+
+function setEffectsOf(doc: TimelineDoc, home: EffectHome, effects: StoredEffect[]): void {
+  const target = home.scope === 'clip' ? home.clip : home.scope === 'track' ? home.track : doc;
+  if (effects.length) target.effects = effects;
+  else delete target.effects;
+}
+
+/**
+ * Checks an effect's params against the registry and stores them: keyframes become source
+ * ticks on a clip and timeline ticks on a track or the timeline. Returns the stored params.
+ */
+export function storeEffectParams(
+  doc: TimelineDoc,
+  home: EffectHome,
+  name: string,
+  params: Record<string, unknown>,
+  resolve: MediaResolver,
+): Record<string, unknown> {
+  const spec = (EFFECTS as Record<string, EffectSpec>)[name];
+  const schema = effectParamsSchema(name);
+  if (!spec || !schema) {
+    throw new CfError('bad_request', `No effect named ${name}`, {
+      hint: 'The effects are listed at video://catalog/effects',
+    });
+  }
+  const kind =
+    home.scope === 'clip' ? home.clip.kind : home.scope === 'track' ? home.track.kind : spec.kind;
+  if (spec.kind !== kind) {
+    throw new CfError('bad_request', `${name} is a ${spec.kind} effect; this is ${kind}`);
+  }
+  const parsed = schema.safeParse(params);
+  if (!parsed.success) {
+    throw new CfError(
+      'bad_request',
+      `${name}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'params'}: ${i.message}`).join('; ')}`,
+      { hint: 'See video://catalog/effects for its params and ranges' },
+    );
+  }
+  const tpf = ticksPerFrame(doc.sequence.fps);
+  // Keyframes on a clip ride its source; elsewhere they are timeline frames.
+  const origin = home.scope === 'clip' ? home.clip : { in: 0 };
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(parsed.data as Record<string, unknown>)) {
+    if (value === undefined) continue;
+    const p = spec.params[key];
+    if (p?.kind === 'media') {
+      const ref = resolve(value as string);
+      if (ref?.kind !== 'lut') {
+        throw new CfError('bad_request', `${value} is not an imported LUT`, {
+          hint: 'Import the .cube file with media.import and use its media_id',
+        });
+      }
+      out[key] = value;
+    } else if (p?.kind === 'number' && typeof value === 'object') {
+      checkKeyframes(key, value as Animatable);
+      out[key] = toStoredAnim(value as Animatable, origin, tpf);
+    } else out[key] = value;
+  }
+  return out;
+}
+
+function findEffect(doc: TimelineDoc, id: string): { home: EffectHome; effect: StoredEffect } {
+  for (const track of doc.tracks) {
+    const onTrack = track.effects?.find((e) => e.id === id);
+    if (onTrack) return { home: { scope: 'track', track }, effect: onTrack };
+    for (const clip of track.clips) {
+      const onClip = clip.effects?.find((e) => e.id === id);
+      if (onClip) return { home: { scope: 'clip', track, clip }, effect: onClip };
+    }
+  }
+  const onTimeline = doc.effects?.find((e) => e.id === id);
+  if (onTimeline) return { home: { scope: 'timeline' }, effect: onTimeline };
+  throw new CfError('not_found', `No filter ${id}`, {
+    hint: 'timeline.get lists effects with their ids',
+  });
+}
+
+function homeFocus(doc: TimelineDoc, home: EffectHome): number {
+  if (home.scope === 'clip') return home.clip.start;
+  if (home.scope === 'track') return home.track.clips[0]?.start ?? 0;
+  return 0;
+}
+
+function filterAdd(
+  doc: TimelineDoc,
+  a: EditArgsOf<'filter.add'>,
+  resolve: MediaResolver,
+): OpOutcome {
+  const given = [a.clip_id, a.track_id, a.timeline || undefined].filter(
+    (x) => x !== undefined,
+  ).length;
+  if (given !== 1)
+    throw new CfError('bad_request', 'Give one of clip_id, track_id or timeline: true');
+  let home: EffectHome;
+  if (a.clip_id) {
+    const { track, clip } = locate(doc, a.clip_id);
+    assertUnlocked(track);
+    home = { scope: 'clip', track, clip };
+  } else if (a.track_id) {
+    const track = getTrack(doc, a.track_id);
+    assertUnlocked(track);
+    home = { scope: 'track', track };
+  } else home = { scope: 'timeline' };
+  const params = storeEffectParams(doc, home, a.name, a.params, resolve);
+  const effect: StoredEffect = { id: nextId(doc, 'f'), name: a.name, params };
+  setEffectsOf(doc, home, [...effectsOf(doc, home), effect]);
+  const kind = (EFFECTS as Record<string, EffectSpec>)[a.name]?.kind;
+  const outcome = ok(homeFocus(doc, home), { clip_id: effect.id });
+  if (kind === 'audio' && home.scope === 'clip') {
+    outcome.audio = { start: home.clip.start, end: end(home.clip) };
+  }
+  return outcome;
+}
+
+function filterSet(
+  doc: TimelineDoc,
+  a: EditArgsOf<'filter.set'>,
+  resolve: MediaResolver,
+): OpOutcome {
+  const { home, effect } = findEffect(doc, a.filter_id);
+  if (home.scope !== 'timeline') assertUnlocked(home.track);
+  const replaced: StoredEffect = { ...effect };
+  if (a.params) {
+    // Merge into the tool-form params, then store them again so everything is checked.
+    const tpf = ticksPerFrame(doc.sequence.fps);
+    const origin = home.scope === 'clip' ? home.clip : { in: 0 };
+    const current = Object.fromEntries(
+      Object.entries(effect.params).map(([k, v]) => [
+        k,
+        v && typeof v === 'object' ? toViewAnim(v as StoredAnimatable, origin, tpf) : v,
+      ]),
+    );
+    replaced.params = storeEffectParams(
+      doc,
+      home,
+      effect.name,
+      { ...current, ...a.params },
+      resolve,
+    );
+  }
+  if (a.enabled === false) replaced.enabled = false;
+  else if (a.enabled === true) delete replaced.enabled;
+  setEffectsOf(
+    doc,
+    home,
+    effectsOf(doc, home).map((e) => (e === effect ? replaced : e)),
+  );
+  return ok(homeFocus(doc, home), { clip_id: effect.id });
+}
+
+function filterRemove(doc: TimelineDoc, a: EditArgsOf<'filter.remove'>): OpOutcome {
+  const { home, effect } = findEffect(doc, a.filter_id);
+  if (home.scope !== 'timeline') assertUnlocked(home.track);
+  setEffectsOf(
+    doc,
+    home,
+    effectsOf(doc, home).filter((e) => e !== effect),
+  );
+  return ok(homeFocus(doc, home), { clip_id: effect.id });
+}
+
+function adjustmentAdd(doc: TimelineDoc, a: EditArgsOf<'adjustment.add'>): OpOutcome {
+  const track = getTrack(doc, a.track_id);
+  if (track.kind !== 'video') {
+    throw new CfError('bad_request', `Adjustment clips go on a video track; ${track.id} is audio`);
+  }
+  assertUnlocked(track);
+  const fps = doc.sequence.fps;
+  const start = a.at_frame !== undefined ? framesToTicks(a.at_frame, fps) : trackEnd(track);
+  const clip: StoredClip = {
+    id: nextId(doc, 'c'),
+    type: 'adjustment',
+    kind: 'video',
+    start,
+    in: 0,
+    duration: framesToTicks(a.duration_frames, fps),
+    link: null,
+    enabled: true,
+  };
+  place(doc, track, clip, 'overwrite');
+  return ok(start, { clip_id: clip.id });
 }
 
 // ----------------------------------------------------------------------------------- audio

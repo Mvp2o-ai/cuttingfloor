@@ -270,6 +270,7 @@ export function mediaRef(record: MediaRecord): MediaRef | undefined {
     duration: p.duration === null ? null : secondsToTicks(p.duration),
     video: Boolean(p.video),
     audio: Boolean(p.audio),
+    ...(p.kind === 'font' || p.kind === 'lut' ? { kind: p.kind } : {}),
   };
 }
 

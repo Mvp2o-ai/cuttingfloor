@@ -287,6 +287,24 @@ export const EditArgs = {
     gain_db: z.number().min(-60).max(40).nullable().optional(),
     limit_db: z.number().min(-20).max(0).nullable().optional().describe('Limiter ceiling, dBFS'),
   }),
+  'filter.add': z.object({
+    clip_id: z.string().optional().describe('Apply to one clip (or an adjustment clip)'),
+    track_id: z.string().optional().describe('Or to every clip on a track'),
+    timeline: z.boolean().optional().describe('Or true for the whole picture or mix'),
+    name: z.string().min(1).max(60).describe('An effect from video://catalog/effects'),
+    params: z.record(z.string(), z.unknown()).default({}).describe('As the catalogue lists them'),
+  }),
+  'filter.set': z.object({
+    filter_id: z.string(),
+    params: z.record(z.string(), z.unknown()).optional().describe('Merged into its params'),
+    enabled: z.boolean().optional(),
+  }),
+  'filter.remove': z.object({ filter_id: z.string() }),
+  'adjustment.add': z.object({
+    track_id: z.string().describe('A video track; the effects reach every track below it'),
+    at_frame: frame.optional().describe('Default: after the last clip on the track'),
+    duration_frames: z.number().int().positive().max(10_000_000),
+  }),
   'transition.add': z.object({
     clip_id: z.string().describe('The clip before the cut; the clip after it must touch it'),
     kind: TransitionKind.describe('video://catalog/transitions; crossfade on audio tracks'),
@@ -441,7 +459,7 @@ export const MediaInfo = z.object({
   status: MediaStatus.describe(
     'importing: not probed yet; processing: usable in edits, proxy still rendering; ready; failed',
   ),
-  kind: z.enum(['video', 'audio', 'image', 'font']).nullable(),
+  kind: z.enum(['video', 'audio', 'image', 'font', 'lut']).nullable(),
   font_family: z
     .string()
     .optional()

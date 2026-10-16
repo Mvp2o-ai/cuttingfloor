@@ -21,19 +21,30 @@ export async function sourcesFor(
 ): Promise<{ sources: Map<string, MltSource>; offline: string[] }> {
   const sources = new Map<string, MltSource>();
   const offline: string[] = [];
-  // Media the clips play, and fonts their text is set in.
+  // Media the clips play, fonts their text is set in, and LUTs their effects use.
+  const luts = (effects: Array<{ name: string; params: Record<string, unknown> }> | undefined) =>
+    (effects ?? []).flatMap((e) =>
+      e.name === 'lut' && typeof e.params.media_id === 'string' ? [e.params.media_id] : [],
+    );
+  const bodies = [doc, ...Object.values(doc.nested ?? {})];
+  const effectMedia = bodies.flatMap((body) => [
+    ...luts(body.effects),
+    ...body.tracks.flatMap((t) => [...luts(t.effects), ...t.clips.flatMap((c) => luts(c.effects))]),
+  ]);
   const ids = new Set(
-    [doc, ...Object.values(doc.nested ?? {})].flatMap((body) =>
-      body.tracks.flatMap((t) =>
-        t.clips.flatMap((c) => {
-          if (!c.enabled) return [];
-          if (c.type === 'media') return [c.media_id];
-          if ((c.type === 'title' || c.type === 'caption') && c.style?.font_media_id)
-            return [c.style.font_media_id];
-          return [];
-        }),
-      ),
-    ),
+    [doc, ...Object.values(doc.nested ?? {})]
+      .flatMap((body) =>
+        body.tracks.flatMap((t) =>
+          t.clips.flatMap((c) => {
+            if (!c.enabled) return [];
+            if (c.type === 'media') return [c.media_id];
+            if ((c.type === 'title' || c.type === 'caption') && c.style?.font_media_id)
+              return [c.style.font_media_id];
+            return [];
+          }),
+        ),
+      )
+      .concat(effectMedia),
   );
   for (const id of ids) {
     const record = await rt.media.find(owner, id);

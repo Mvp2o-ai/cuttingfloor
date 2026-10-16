@@ -164,6 +164,21 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
     description:
       'Gain (dB) and limiter ceiling (dBFS) on the whole mix. audio.set_loudness sets both from a measured loudness target.',
   },
+  'filter.add': {
+    title: 'Add effect',
+    description:
+      'Apply an effect from video://catalog/effects (colour, LUT, blur, vignette, chroma key, glitch; EQ, compressor, denoise, pitch and more) to a clip, every clip on a track, or the whole timeline. Number params take keyframes. Returns its id as clip_id.',
+  },
+  'filter.set': {
+    title: 'Set effect',
+    description: "Change an effect's params (merged) or turn it off and on.",
+  },
+  'filter.remove': { title: 'Remove effect', description: 'Take an effect off.' },
+  'adjustment.add': {
+    title: 'Add adjustment clip',
+    description:
+      'An empty clip on a video track whose effects (filter.add with its clip_id) change everything below it while it runs: a colour grade or blur over a stretch of the edit.',
+  },
   'transition.add': {
     title: 'Add transition',
     description:

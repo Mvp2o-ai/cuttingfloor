@@ -5,7 +5,7 @@ import { BIN, run } from './exec.ts';
 /** What import needs to know about a file. Durations are seconds. */
 export interface Probe {
   format: string;
-  kind: 'video' | 'audio' | 'image' | 'font';
+  kind: 'video' | 'audio' | 'image' | 'font' | 'lut';
   /** Font family, for fonts. */
   family?: string;
   duration: number | null;
@@ -112,9 +112,34 @@ async function probeFont(path: string, signal?: AbortSignal): Promise<Probe | un
   return { format: 'font', kind: 'font', family, duration: null, video: null, audio: null };
 }
 
+const MAX_LUT_BYTES = 32 * 1024 * 1024;
+
+/** A .cube 3D LUT: text with a LUT_3D_SIZE line near the top. */
+async function probeLut(path: string): Promise<Probe | undefined> {
+  const handle = await open(path, 'r');
+  try {
+    const head = Buffer.alloc(4096);
+    const { bytesRead } = await handle.read(head, 0, head.length, 0);
+    const text = head.subarray(0, bytesRead).toString('latin1');
+    const size = /^\s*LUT_3D_SIZE\s+(\d+)\s*$/m.exec(text);
+    if (!size) return undefined;
+    const n = Number(size[1]);
+    if (n < 2 || n > 256)
+      throw new CfError('bad_request', `LUT_3D_SIZE ${n} is out of range (2 to 256)`);
+    if ((await handle.stat()).size > MAX_LUT_BYTES) {
+      throw new CfError('limit_exceeded', 'LUT files are limited to 32 MB');
+    }
+    return { format: 'cube', kind: 'lut', duration: null, video: null, audio: null };
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function probe(path: string, signal?: AbortSignal): Promise<Probe> {
   const font = await probeFont(path, signal);
   if (font) return font;
+  const lut = await probeLut(path);
+  if (lut) return lut;
   let out: string;
   try {
     ({ stdout: out } = await run(

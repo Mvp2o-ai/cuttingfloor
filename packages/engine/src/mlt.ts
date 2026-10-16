@@ -15,6 +15,7 @@ import {
   type TimelineDoc,
 } from '@cuttingfloor/schema';
 import { compositeFor, type RenderSpan, rotoFilters, type SourceSize } from './composite.ts';
+import { effectFilters, keysOutColour } from './effects.ts';
 import { buildAss } from './text.ts';
 import {
   applyEffects,
@@ -135,6 +136,23 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
   x.push('</mlt>');
   return x.join('\n');
 
+  /** A timeline's own effects, over its whole picture and mix. */
+  function timelineEffects(body: NestedDoc, len: number): string {
+    return (body.effects ?? [])
+      .map((e) =>
+        effectFilters(e, {
+          width,
+          height,
+          from: 0,
+          to: len,
+          key: (i) => i,
+          at: (v, i) => sample(v, 0, i * tpf),
+          path: (id) => options.sources.get(id)?.path,
+        }),
+      )
+      .join('');
+  }
+
   /** The XML for one timeline body as a tractor with the given id. */
   function tractor(
     body: NestedDoc,
@@ -156,6 +174,47 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
     const out = { width, height };
     let index = 0;
     body.tracks.forEach((t, ti) => {
+      // Adjustment clips: everything below this track becomes one sub-tractor whose output
+      // their effects filter over their own ranges; this track and those above composite on it.
+      const zones = t.clips.filter(
+        (c) =>
+          c.type === 'adjustment' &&
+          c.enabled &&
+          c.effects?.length &&
+          t.kind === 'video' &&
+          !t.hidden,
+      );
+      if (zones.length) {
+        const sub = `${prefix}below${ti}`;
+        const filters = zones
+          .map((z) => {
+            const s = frame(z.start);
+            const n = frame(z.start + z.duration) - s;
+            const fx = (z.effects ?? [])
+              .map((e) =>
+                effectFilters(e, {
+                  width,
+                  height,
+                  from: 0,
+                  to: n,
+                  key: (i) => i,
+                  at: (v, i) => sample(v, 0, z.in + i * tpf),
+                  path: (id) => options.sources.get(id)?.path,
+                }),
+              )
+              .join('');
+            // Tractor filters with a range count keyframes from the start of that range.
+            return fx.replace(/<filter>/g, `<filter in="${s}" out="${s + n - 1}">`);
+          })
+          .join('');
+        parts.push(
+          `<tractor id="${sub}" in="0" out="${len - 1}"><multitrack>${trackXml.join('')}</multitrack>${transitions.join('')}${filters}</tractor>`,
+        );
+        trackXml.length = 0;
+        trackXml.push(`<track producer="${sub}"/>`);
+        transitions.length = 0;
+        index = 0;
+      }
       // A track with transitions spreads its clips over sub-tracks so the two clips at a cut
       // can play at once; the clip after a cut is always on the sub-track above.
       const plan = planTrack(t, tpf);
@@ -172,7 +231,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
       for (const c of [...t.clips].sort((a, b) => a.start - b.start)) {
         const s = frame(c.start);
         const e = frame(c.start + c.duration);
-        if (e <= s || !c.enabled) continue;
+        if (e <= s || !c.enabled || c.type === 'adjustment') continue;
         const cp = clipPlan(plan, c.id);
         const n = e - s;
         const from = s - cp.head;
@@ -184,9 +243,31 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
         // Producer position of the clip's first frame, which is what filter keyframes count.
         const generated = c.type === 'title' || c.type === 'caption';
         const keyBase = chained || generated || media?.image ? cp.head : frame(c.in);
-        const filters = src
-          ? clipFilters(c, tpf, n, src, out, span, keyBase, revealSpline(cp.effects, keyBase))
-          : audioFilters(c, tpf, n, span, keyBase, cp.effects);
+        // The track's effects, then the clip's: clip keyframes ride the source, track
+        // keyframes the timeline.
+        const fx = [
+          ...(t.effects ?? []).map((e) => ({ e, onClip: false })),
+          ...(c.effects ?? []).map((e) => ({ e, onClip: true })),
+        ];
+        const fxXml = fx
+          .map(({ e, onClip }) =>
+            effectFilters(e, {
+              width,
+              height,
+              from: -cp.head,
+              to: n + cp.tail,
+              key: (i) => keyBase + i,
+              at: (v, i) => sample(v, 0, onClip ? frameSource(c, tpf, i) : c.start + i * tpf),
+              path: (id) => options.sources.get(id)?.path,
+            }),
+          )
+          .join('');
+        // A chroma key makes its own transparency, which masks must then keep.
+        const keyed = src && keysOutColour(fx.map((x) => x.e)) ? { ...src, alpha: true } : src;
+        const filters = keyed
+          ? fxXml +
+            clipFilters(c, tpf, n, keyed, out, span, keyBase, revealSpline(cp.effects, keyBase))
+          : fxXml + audioFilters(c, tpf, n, span, keyBase, cp.effects);
         let entry: string;
         if (generated) {
           // Text is libass over a transparent layer of the clip's own length; its script is
@@ -272,7 +353,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
       ? ` in="${o.range.start}" out="${o.range.end - 1}"`
       : ` in="0" out="${len - 1}"`;
     parts.push(
-      `<tractor id="${id}"${inOut}><multitrack>${trackXml.join('')}</multitrack>${transitions.join('')}${id === 'main' ? masterFilters(doc) : ''}</tractor>`,
+      `<tractor id="${id}"${inOut}><multitrack>${trackXml.join('')}</multitrack>${transitions.join('')}${timelineEffects(body, len)}${id === 'main' ? masterFilters(doc) : ''}</tractor>`,
     );
     return parts;
   }
@@ -289,7 +370,7 @@ function sourceSize(
   w: number,
   h: number,
 ): SourceSize {
-  if (c.type === 'title' || c.type === 'caption') return { width: w, height: h, alpha: true };
+  if (c.type !== 'media' && c.type !== 'timeline') return { width: w, height: h, alpha: true };
   if (c.type === 'timeline') {
     // A nested timeline is a picture of its own sequence size, transparent where it is empty.
     const seq = nested[c.timeline]?.sequence;

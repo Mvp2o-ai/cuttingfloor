@@ -1264,6 +1264,122 @@ describe('audio', () => {
   });
 });
 
+describe('effects', () => {
+  const AV = 'm_aaaaaaaaaaaaaaaaaaaaaaaaav';
+  const LUT = 'm_aaaaaaaaaaaaaaaaaaaaaaalut';
+  const withLut: MediaResolver = (id) =>
+    id === LUT
+      ? { name: 'look.cube', duration: null, video: false, audio: false, kind: 'lut' }
+      : resolve(id);
+  const run = (doc: TimelineDoc, ...ops: BatchOp[]) =>
+    runEdits(doc, 'tl_parent', ops, withLut, { tool: 'test', args: null });
+  const base = () =>
+    run(newTimeline('t', seq, { video: 2, audio: 1 }), {
+      tool: 'clip.add',
+      args: { track_id: 't1', media_id: AV, source: { in: 0, out: 100 } },
+    }).doc;
+
+  it('adds effects to a clip, a track and the timeline, checked against the registry', () => {
+    const { doc, results } = run(
+      base(),
+      {
+        tool: 'filter.add',
+        args: {
+          clip_id: 'c5',
+          name: 'blur',
+          params: {
+            radius: {
+              keyframes: [
+                { frame: 0, value: 0 },
+                { frame: 50, value: 0.05 },
+              ],
+            },
+          },
+        },
+      },
+      { tool: 'filter.add', args: { track_id: 't1', name: 'lut', params: { media_id: LUT } } },
+      { tool: 'filter.add', args: { timeline: true, name: 'vignette', params: {} } },
+      { tool: 'filter.add', args: { clip_id: 'c6', name: 'compressor', params: { ratio: 6 } } },
+    );
+    const ids = results.map((r) => r.clip_id);
+    expect(new Set(ids).size).toBe(4);
+    const view = toView('tl_x', doc);
+    expect(view.tracks[0]?.clips[0]?.effects).toEqual([
+      {
+        id: ids[0],
+        name: 'blur',
+        params: {
+          radius: {
+            keyframes: [
+              { frame: 0, value: 0 },
+              { frame: 50, value: 0.05 },
+            ],
+          },
+        },
+      },
+    ]);
+    expect(view.tracks[0]?.effects?.[0]).toMatchObject({ name: 'lut', params: { media_id: LUT } });
+    expect(view.effects?.[0]).toMatchObject({ name: 'vignette' });
+    expect(toView('tl_x', fromView(view, withLut))).toEqual({ ...view, parent: null });
+    expect(() =>
+      run(base(), { tool: 'filter.add', args: { clip_id: 'c5', name: 'nope' } }),
+    ).toThrow(/No effect named/);
+    expect(() =>
+      run(base(), { tool: 'filter.add', args: { clip_id: 'c6', name: 'blur' } }),
+    ).toThrow(/video effect/);
+    expect(() =>
+      run(base(), {
+        tool: 'filter.add',
+        args: { clip_id: 'c5', name: 'saturation', params: { amount: 9 } },
+      }),
+    ).toThrow(/amount/);
+    expect(() =>
+      run(base(), {
+        tool: 'filter.add',
+        args: { clip_id: 'c5', name: 'lut', params: { media_id: AV } },
+      }),
+    ).toThrow(/not an imported LUT/);
+  });
+
+  it('sets, turns off and removes an effect, and gives split halves their own ids', () => {
+    let { doc, results } = run(base(), {
+      tool: 'filter.add',
+      args: { clip_id: 'c5', name: 'saturation', params: { amount: 0.5 } },
+    });
+    const id = results[0]?.clip_id ?? '';
+    doc = run(doc, {
+      tool: 'filter.set',
+      args: { filter_id: id, params: { amount: 2 }, enabled: false },
+    }).doc;
+    expect(toView('tl_x', doc).tracks[0]?.clips[0]?.effects).toEqual([
+      { id, name: 'saturation', params: { amount: 2 }, enabled: false },
+    ]);
+    doc = run(doc, { tool: 'clip.split', args: { clip_id: 'c5', at_frame: 40 } }).doc;
+    const [left, right] = toView('tl_x', doc).tracks[0]?.clips ?? [];
+    expect(left?.effects?.[0]?.id).toBe(id);
+    expect(right?.effects?.[0]?.id).not.toBe(id);
+    doc = run(doc, { tool: 'filter.remove', args: { filter_id: id } }).doc;
+    expect(toView('tl_x', doc).tracks[0]?.clips[0]?.effects).toBeUndefined();
+  });
+
+  it('adds adjustment clips, and keeps effect and transition ids unique after a load', () => {
+    let { doc } = run(base(), {
+      tool: 'adjustment.add',
+      args: { track_id: 't2', at_frame: 10, duration_frames: 30 },
+    });
+    doc = run(doc, { tool: 'filter.add', args: { clip_id: 'c7', name: 'grayscale' } }).doc;
+    expect(toView('tl_x', doc).tracks[1]?.clips[0]).toMatchObject({
+      type: 'adjustment',
+      start: 10,
+      end: 40,
+    });
+    const loaded = fromView(toView('tl_x', doc), withLut);
+    const next = run(loaded, { tool: 'filter.add', args: { clip_id: 'c7', name: 'sepia' } });
+    const effectIds = toView('tl_x', next.doc).tracks[1]?.clips[0]?.effects?.map((e) => e.id);
+    expect(new Set(effectIds).size).toBe(2);
+  });
+});
+
 describe('time and views', () => {
   it('keeps clip times when the frame rate changes', () => {
     let { doc } = edit(start(), {

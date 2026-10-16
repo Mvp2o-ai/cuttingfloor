@@ -3,6 +3,7 @@ import {
   BLEND_MODES,
   type BlendMode,
   EASES,
+  EFFECTS,
   type HIGHLIGHTS,
   type IN_OUT_ANIMATIONS,
   type LOOP_ANIMATIONS,
@@ -108,6 +109,38 @@ const REVEAL_TEXT: Record<(typeof TEXT_REVEALS)[number], string> = {
 };
 
 const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<unknown>) }> = {
+  effects: {
+    title: 'Effects',
+    body: {
+      note: 'filter.add {clip_id | track_id | timeline: true, name, params}. Video effects go on video clips, tracks or the timeline (and adjustment clips); audio effects on audio. Numbers marked animatable take {keyframes: [{frame, value, ease}]}.',
+      effects: Object.fromEntries(
+        Object.entries(EFFECTS).map(([name, spec]) => [
+          name,
+          {
+            kind: spec.kind,
+            about: spec.about,
+            params: Object.fromEntries(
+              Object.entries(spec.params).map(([k, p]) => [
+                k,
+                p.kind === 'number'
+                  ? {
+                      range: [p.min, p.max],
+                      default: p.default,
+                      animatable: Boolean(p.animatable),
+                      about: p.about,
+                    }
+                  : p.kind === 'choice'
+                    ? { one_of: p.values, default: p.default, about: p.about }
+                    : p.kind === 'colour'
+                      ? { colour: true, default: p.default, about: p.about }
+                      : { media_id: true, about: p.about },
+              ]),
+            ),
+          },
+        ]),
+      ),
+    },
+  },
   text: {
     title: 'Text styles',
     body: {

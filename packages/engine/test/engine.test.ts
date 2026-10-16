@@ -378,6 +378,65 @@ describe('MLT compiler', () => {
     );
   });
 
+  it('compiles effects on clips, under masks, in adjustment zones and on the timeline', () => {
+    const fx = runEdits(
+      newTimeline('t', seq, { video: 2, audio: 0 }),
+      'tl_q',
+      [
+        {
+          tool: 'clip.add',
+          args: {
+            track_id: 't1',
+            media_id: id,
+            av: 'video',
+            at_frame: 10,
+            source: { in: 5, out: 30 },
+          },
+        },
+        {
+          tool: 'filter.add',
+          args: {
+            clip_id: 'c3',
+            name: 'blur',
+            params: {
+              radius: {
+                keyframes: [
+                  { frame: 0, value: 0 },
+                  { frame: 10, value: 0.1 },
+                ],
+              },
+            },
+          },
+        },
+        {
+          tool: 'filter.add',
+          args: { clip_id: 'c3', name: 'chroma_key', params: { color: '#00FF00' } },
+        },
+        { tool: 'clip.set_mask', args: { clip_id: 'c3', mask: { shape: 'ellipse' } } },
+        { tool: 'adjustment.add', args: { track_id: 't2', at_frame: 12, duration_frames: 8 } },
+        { tool: 'filter.add', args: { clip_id: 'c6', name: 'grayscale' } },
+        { tool: 'filter.add', args: { timeline: true, name: 'invert' } },
+      ],
+      () => media,
+      { tool: 'x', args: null },
+    ).doc;
+    const xml = compile(fx);
+    // Blur sigma is half the radius in pixels at 360 high, keyed by source frame (from 5).
+    expect(xml).toContain('<property name="av.sigma">5=0;15=18;29=18</property>');
+    expect(xml).toContain(
+      '<property name="mlt_service">chroma</property><property name="key">0x00FF00ff</property>',
+    );
+    // The key makes transparency the mask must keep: no clear operation.
+    expect(xml).not.toContain('<property name="alpha_operation">clear</property>');
+    // Everything below the adjustment track is one sub-tractor with a ranged filter.
+    expect(xml).toMatch(
+      /<tractor id="below1" in="0" out="34">.*<filter in="12" out="19"><property name="mlt_service">avfilter\.hue<\/property><property name="av\.s">0<\/property><\/filter><\/tractor>/,
+    );
+    expect(xml).toMatch(
+      /<tractor id="main".*<track producer="below1"\/>.*<property name="mlt_service">avfilter\.negate<\/property>.*<\/tractor>/,
+    );
+  });
+
   it('refuses to compile with offline media', () => {
     expect(() => compileMlt(doc, { width: 640, height: 360, sources: new Map() })).toThrow(
       /not available/,
