@@ -17,10 +17,12 @@ RUN corepack enable
 WORKDIR /app
 
 FROM base AS build
+# The pnpm store is a BuildKit cache mount: warm locally, empty on a fresh CI runner even when
+# layers come from cache, so installs prefer the store but may download.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm fetch
 COPY . .
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --offline --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prefer-offline --frozen-lockfile
 
 # `docker build --target test .` runs lint, typecheck and every test, engine tests included.
 FROM build AS test
@@ -32,7 +34,7 @@ RUN pnpm check
 FROM build AS prod
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     rm -rf node_modules packages/*/node_modules apps/*/node_modules \
- && pnpm install --offline --frozen-lockfile --prod
+ && pnpm install --prefer-offline --frozen-lockfile --prod
 
 FROM base AS runtime
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8787 CUTTINGFLOOR_DATA=/data CUTTINGFLOOR_MEDIA_ROOTS=/media,/samples
