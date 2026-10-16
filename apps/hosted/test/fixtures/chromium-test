@@ -1,0 +1,9 @@
+#!/bin/sh
+# Tests only: Chromium for the motion worker when the tests run as root inside `docker build`,
+# where there are no user namespaces for Chromium's sandbox. The network stays off as in
+# tools/motion/cf-chromium. The real sandbox is checked in its compose service by
+# scripts/smoke-motion.ts.
+exec /usr/bin/chromium --no-sandbox \
+  --proxy-server=socks5://127.0.0.1:9 \
+  --host-resolver-rules="MAP * ~NOTFOUND, EXCLUDE localhost" \
+  "$@"
