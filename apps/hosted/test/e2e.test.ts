@@ -1700,6 +1700,175 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     }, 180_000);
   });
 
+  describe('audio', () => {
+    const ids: Record<string, string> = {};
+
+    /** Exports a timeline and returns its sound as stereo 48 kHz samples. */
+    async function exportPcm(
+      timelineId: string,
+    ): Promise<{ left: Float64Array; right: Float64Array }> {
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: timelineId,
+        preset: 'web_1080p_h264',
+        overwrite: true,
+      });
+      const done = (await waitJob(started.job_id)) as { result?: { file: string } };
+      if (!done.result) throw new Error(JSON.stringify(done));
+      const { stdout } = await exec(
+        'ffmpeg',
+        ['-v', 'error', '-i', done.result.file, '-ac', '2', '-ar', '48000', '-f', 's16le', '-'],
+        { encoding: 'buffer', maxBuffer: 256 * 1024 * 1024 },
+      );
+      const pcm = new Int16Array(stdout.buffer, stdout.byteOffset, stdout.length >> 1);
+      const left = new Float64Array(pcm.length / 2);
+      const right = new Float64Array(pcm.length / 2);
+      for (let i = 0; i < left.length; i++) {
+        left[i] = pcm[2 * i] ?? 0;
+        right[i] = pcm[2 * i + 1] ?? 0;
+      }
+      return { left, right };
+    }
+
+    const rms = (x: Float64Array, fromS: number, toS: number) => {
+      let sum = 0;
+      const a = Math.round(fromS * 48_000);
+      const b = Math.min(x.length, Math.round(toS * 48_000));
+      for (let i = a; i < b; i++) sum += (x[i] ?? 0) ** 2;
+      return Math.sqrt(sum / Math.max(1, b - a));
+    };
+
+    /** A timeline with a linked clip of the steady tone (c5 picture, c6 sound) plus `ops`. */
+    async function tone(ops: Array<{ tool: string; args: Record<string, unknown> }>) {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'audio',
+        sequence: { width: 320, height: 180, fps: { num: 25, den: 1 } },
+        tracks: { video: 1, audio: 2 },
+      });
+      return (
+        await ok<{ timeline_id: string }>(client, 'edit.batch', {
+          timeline_id,
+          preview: 'none',
+          ops: [
+            {
+              tool: 'clip.add',
+              args: { track_id: 't1', media_id: ids.tone, source: { in: 0, out: 75 } },
+            },
+            ...ops,
+          ],
+        })
+      ).timeline_id;
+    }
+
+    beforeAll(async () => {
+      const m = env.mediaDir;
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=black:size=320x180:rate=25',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=330:sample_rate=48000',
+        '-t',
+        '4',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'pcm_s16le',
+        '-shortest',
+        join(m, 'steady.mov'),
+      ]);
+      // Speech: silence with a burst of sound from 1 to 2 s.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        "sine=frequency=1000:sample_rate=48000,volume=enable='not(between(t,1,2))':volume=0",
+        '-t',
+        '4',
+        '-c:a',
+        'pcm_s16le',
+        join(m, 'speech.wav'),
+      ]);
+      ids.tone = (await importMedia({ path: join(m, 'steady.mov') })).media_id;
+      ids.speech = (await importMedia({ path: join(m, 'speech.wav') })).media_id;
+    }, 180_000);
+
+    it('lowers by gain, previews a waveform with loudness, and pans', async () => {
+      const plain = await exportPcm(await tone([]));
+      const quieter = await tone([]);
+      const res = await call(client, 'audio.set_gain', {
+        timeline_id: quieter,
+        clip_id: 'c5',
+        gain_db: -6,
+        preview: 'inline',
+      });
+      expect(res.isError).toBe(false);
+      expect(res.content.some((c) => c.type === 'image')).toBe(true);
+      const preview = res.structured.preview as { uri: string; loudness: { lufs: number } };
+      expect(preview.uri).toMatch(/\/waveform\/0_75\.webp$/);
+      expect(preview.loudness.lufs).toBeLessThan(-10);
+      const half = await exportPcm(res.structured.timeline_id as string);
+      const ratio = rms(half.left, 0.5, 2.5) / rms(plain.left, 0.5, 2.5);
+      expect(ratio).toBeGreaterThan(0.45);
+      expect(ratio).toBeLessThan(0.56);
+      const right = await exportPcm(
+        await tone([{ tool: 'audio.set_pan', args: { clip_id: 'c6', pan: 1 } }]),
+      );
+      expect(rms(right.left, 0.5, 2.5)).toBeLessThan(rms(right.right, 0.5, 2.5) * 0.1);
+    }, 240_000);
+
+    it('fades in', async () => {
+      const faded = await exportPcm(
+        await tone([{ tool: 'audio.fade', args: { clip_id: 'c6', in_frames: 25 } }]),
+      );
+      expect(rms(faded.left, 0, 0.2)).toBeLessThan(rms(faded.left, 1.5, 2.5) * 0.35);
+    }, 120_000);
+
+    it('ducks music under speech', async () => {
+      const ducked = await tone([
+        {
+          tool: 'clip.add',
+          args: { track_id: 't3', media_id: ids.speech, at_frame: 0, source: { in: 0, out: 75 } },
+        },
+        { tool: 'audio.duck', args: { track_id: 't2', amount_db: -12 } },
+        // Listen to the music alone.
+        { tool: 'track.set', args: { track_id: 't3', muted: true } },
+      ]);
+      const music = await exportPcm(ducked);
+      const before = rms(music.left, 0.2, 0.6);
+      expect(rms(music.left, 1.3, 1.7) / before).toBeGreaterThan(0.2);
+      expect(rms(music.left, 1.3, 1.7) / before).toBeLessThan(0.3);
+      expect(rms(music.left, 2.6, 2.9) / before).toBeGreaterThan(0.9);
+    }, 120_000);
+
+    it('sets loudness to a target with peaks under the ceiling', async () => {
+      const res = await ok<{
+        timeline_id: string;
+        measured: { lufs: number; true_peak_db: number };
+      }>(client, 'audio.set_loudness', {
+        timeline_id: await tone([]),
+        target_lufs: -16,
+        true_peak_db: -1,
+        preview: 'none',
+      });
+      expect(Math.abs(res.measured.lufs + 16)).toBeLessThan(0.7);
+      expect(res.measured.true_peak_db).toBeLessThanOrEqual(-1);
+      const report = await ok<{ checks: Array<{ check: string; status: string }> }>(
+        client,
+        'qa.check',
+        {
+          timeline_id: res.timeline_id,
+          loudness_target_lufs: -16,
+        },
+      );
+      expect(report.checks.find((c) => c.check === 'loudness')?.status).toBe('pass');
+    }, 240_000);
+  });
+
   it('refuses crafted media', async () => {
     for (const file of ['evil.m3u8', 'fake.mp4']) {
       const started = await ok<{ job_id: string }>(client, 'media.import', {
