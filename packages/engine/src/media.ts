@@ -219,7 +219,7 @@ export class MediaLibrary {
         record.proxy = proxy;
         await this.save(owner, record);
       }
-      if (p.kind !== 'image') {
+      if (p.kind === 'video' || p.kind === 'audio') {
         progress(0.9, 'analysing');
         record.analysis = await analyse(record.proxy ?? file, p, signal);
       }
@@ -280,6 +280,7 @@ export function mediaInfo(record: MediaRecord): MediaInfo {
     name: record.name,
     status: record.status,
     kind: p?.kind ?? null,
+    ...(p?.family ? { font_family: p.family } : {}),
     duration_seconds: p?.duration ?? null,
     fps: p?.video?.fps ?? null,
     width: p?.video ? (p.video.rotation % 180 ? p.video.height : p.video.width) : null,
@@ -303,7 +304,14 @@ export function hasAlpha(p: Probe): boolean {
 export function renderPicture(
   record: MediaRecord,
   purpose: 'preview' | 'export',
-): { path: string; image: boolean; width: number | null; height: number | null; alpha: boolean } {
+): {
+  path: string;
+  image: boolean;
+  width: number | null;
+  height: number | null;
+  alpha: boolean;
+  family?: string;
+} {
   const p = record.probe;
   const v = p?.video;
   const upright = v ? v.rotation % 180 === 0 : true;
@@ -313,6 +321,7 @@ export function renderPicture(
     width: v ? (upright ? v.width : v.height) : null,
     height: v ? (upright ? v.height : v.width) : null,
     alpha: p ? hasAlpha(p) : false,
+    ...(p?.family ? { family: p.family } : {}),
   };
 }
 

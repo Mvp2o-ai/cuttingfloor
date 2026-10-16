@@ -6,7 +6,7 @@ A headless video editor for agents, as an MCP server. An agent imports footage, 
 - **Nothing is stored for you.** Timelines, media and outputs live in a cache with a time limit (24 hours for timelines, 7 days for media and exports). Export to keep work.
 - **One Docker image** runs locally (free) and hosted. Engines (FFmpeg, MLT) ship inside it; Docker is the only thing you install.
 
-> Status: Phase 3 in progress. Import, timelines, clip editing, timing (speed, ramps, reverse, freeze frames, roll/slip/slide, range extract, nested timelines), transitions, compositing (transforms, keyframes, masks, blend modes, animations), previews, exact QA checks and H.264/ProRes export work end to end. Titles and captions, audio tools, effects, `create.*` and NLE interchange come next.
+> Status: Phase 3 in progress. Import, timelines, clip editing, timing (speed, ramps, reverse, freeze frames, roll/slip/slide, range extract, nested timelines), transitions, titles and captions, compositing (transforms, keyframes, masks, blend modes, animations), previews, exact QA checks and H.264/ProRes export work end to end. Audio tools, effects, `create.*` and NLE interchange come next.
 
 ## Run it
 
@@ -45,10 +45,11 @@ On Docker Desktop for Mac, raise the memory limit for long 4K timelines; bind-mo
 3. Edit: `clip.add`, `clip.trim` (with `side` for J/L cuts), `clip.split`, `clip.move`, `clip.remove` (with `ripple`), `clip.link`, `track.*`, or `edit.batch` to apply many edits at once, using `{"$ref": "ops[0].clip_id"}` for ids made earlier in the batch.
 4. Time: `clip.set_speed` (constant rate, a speed-ramp `curve`, `reverse`; pitch is kept), `clip.freeze`, `clip.roll`, `clip.slip`, `clip.slide`, `clip.replace`, and `range.extract` / `range.lift` to cut a span out of every track at once. `clip.add {nested_timeline_id}` nests a whole timeline as one clip.
 5. Transition: `transition.add` at the cut after a clip: dissolve, dip to black or white, wipes, slides, pushes, zooms, iris and spin. Linked audio crossfades at the same cut. By default the clips overlap and later clips move earlier; `mode: "handles"` uses source past the cut and moves nothing.
-6. Composite: put a clip on a higher video track, then `clip.set_transform` (position, scale, rotation, opacity, crop, flip, fit; any number can take keyframes with easing), `clip.set_mask` (rectangle, ellipse, linear, mirror, heart, star, polygon), `clip.set_blend` and `clip.set_animation` (entrance, exit and loop presets). The accepted names are resources at `video://catalog/{name}`.
-7. Look: `preview: "inline"` on any edit returns the image; `render.frames` returns up to 16 frames as a contact sheet.
-8. `qa.check` runs exact checks: gaps, offline media, black frames, silence, loudness, frame count.
-9. `export.video` with `web_1080p_h264` or `master_prores_422hq`. The result has a signed download URL and, locally, the file in your exports folder.
+6. Text: `title.add` and `caption.add` (from segments with word timings, or from SRT/VTT) put text on a video track, rendered with libass: font, size, colour, outline, shadow, box, karaoke and word highlights, typewriter and word reveals. `text.set` restyles many at once. Fonts are listed at `video://catalog/fonts`; import your own `.ttf`/`.otf` with `media.import` and use it with `font_media_id`.
+7. Composite: put a clip on a higher video track, then `clip.set_transform` (position, scale, rotation, opacity, crop, flip, fit; any number can take keyframes with easing), `clip.set_mask` (rectangle, ellipse, linear, mirror, heart, star, polygon), `clip.set_blend` and `clip.set_animation` (entrance, exit and loop presets). The accepted names are resources at `video://catalog/{name}`.
+8. Look: `preview: "inline"` on any edit returns the image; `render.frames` returns up to 16 frames as a contact sheet.
+9. `qa.check` runs exact checks: gaps, offline media, black frames, silence, loudness, frame count.
+10. `export.video` with `web_1080p_h264` or `master_prores_422hq`. The result has a signed download URL and, locally, the file in your exports folder.
 
 Time is integer frames at the sequence rate, end-exclusive. `timeline.get` returns the whole timeline as JSON; `timeline.load` restores it after it expires. `video://server/health` reports engine versions and limits.
 

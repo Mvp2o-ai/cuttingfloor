@@ -1044,6 +1044,111 @@ describe('transitions', () => {
   });
 });
 
+describe('text', () => {
+  const textStart = () => newTimeline('t', seq, { video: 2, audio: 0 });
+
+  it('adds a styled title and restyles it, with null resetting a field', () => {
+    let { doc } = edit(textStart(), {
+      tool: 'title.add',
+      args: {
+        track_id: 't2',
+        text: 'Hello',
+        at_frame: 10,
+        style: { size: 0.1, box: { color: '#000000AA', padding: 0.3 } },
+      },
+    });
+    expect(layout(doc, 1)).toEqual([[10, 85, 0]]);
+    expect(doc.tracks[1]?.clips[0]).toMatchObject({
+      type: 'title',
+      text: 'Hello',
+      style: { size: 0.1 },
+    });
+    doc = edit(doc, {
+      tool: 'text.set',
+      args: { clip_ids: ['c3'], text: 'Hi', style: { color: '#FF0000', box: null } },
+    }).doc;
+    expect(doc.tracks[1]?.clips[0]).toMatchObject({
+      text: 'Hi',
+      style: { size: 0.1, color: '#FF0000' },
+    });
+    expect(doc.tracks[1]?.clips[0]).toHaveProperty('style.box', null);
+    expect(() =>
+      edit(textStart(), { tool: 'title.add', args: { track_id: 't9', text: 'x' } }),
+    ).toThrow(/No track/);
+  });
+
+  it('adds captions from segments with word timings that ride along with trims', () => {
+    let { doc, results } = edit(textStart(), {
+      tool: 'caption.add',
+      args: {
+        track_id: 't2',
+        segments: [
+          {
+            start_frame: 0,
+            end_frame: 50,
+            text: 'one two',
+            words: [
+              { text: 'one', start_frame: 5, end_frame: 20 },
+              { text: 'two', start_frame: 25, end_frame: 45 },
+            ],
+          },
+          { start_frame: 60, end_frame: 90, text: 'three' },
+        ],
+        style: { highlight: { mode: 'word', color: '#FFE000' } },
+      },
+    });
+    expect(results[0]?.clip_ids).toEqual(['c3', 'c4']);
+    const view = () => toView('tl_x', doc).tracks[1]?.clips[0];
+    expect(view()?.words).toEqual([
+      { text: 'one', start: 5, end: 20 },
+      { text: 'two', start: 25, end: 45 },
+    ]);
+    doc = edit(doc, {
+      tool: 'clip.trim',
+      args: { clip_id: 'c3', edge: 'start', to_frame: 10 },
+    }).doc;
+    // The words stay on the same timeline frames, so from the new start they are 10 earlier.
+    expect(view()?.words).toEqual([
+      { text: 'one', start: -5, end: 10 },
+      { text: 'two', start: 15, end: 35 },
+    ]);
+    const v = toView('tl_x', doc);
+    expect(toView('tl_x', fromView(v, resolve))).toEqual({ ...v, parent: null });
+    doc = edit(doc, { tool: 'text.set', args: { track_id: 't2', style: { size: 0.05 } } }).doc;
+    expect(
+      doc.tracks[1]?.clips.map((c) => (c as { style?: { size?: number } }).style?.size),
+    ).toEqual([0.05, 0.05]);
+  });
+
+  it('reads SubRip and WebVTT, including WebVTT word timestamps', () => {
+    const srt =
+      '1\n00:00:01,000 --> 00:00:02,000\n<i>Hello</i> there\n\n2\n00:00:02,500 --> 00:00:04,000\nSecond line\n';
+    const { doc } = edit(textStart(), {
+      tool: 'caption.add',
+      args: { track_id: 't2', srt, offset_frames: 5 },
+    });
+    expect(layout(doc, 1)).toEqual([
+      [30, 55, 0],
+      [68, 105, 0],
+    ]);
+    expect(toView('tl_x', doc).tracks[1]?.clips[0]?.text).toBe('Hello there');
+    const vtt =
+      'WEBVTT\n\n00:01.000 --> 00:02.000\n<00:01.000>Hello <00:01.400>big <00:01.800>world\n';
+    const fromVtt = edit(textStart(), { tool: 'caption.add', args: { track_id: 't2', vtt } }).doc;
+    expect(toView('tl_x', fromVtt).tracks[1]?.clips[0]?.words).toEqual([
+      { text: 'Hello', start: 0, end: 10 },
+      { text: 'big', start: 10, end: 20 },
+      { text: 'world', start: 20, end: 25 },
+    ]);
+    expect(() =>
+      edit(textStart(), { tool: 'caption.add', args: { track_id: 't2', vtt: 'nope' } }),
+    ).toThrow(/WEBVTT/);
+    expect(() =>
+      edit(textStart(), { tool: 'caption.add', args: { track_id: 't2', srt, vtt } }),
+    ).toThrow(/exactly one/);
+  });
+});
+
 describe('time and views', () => {
   it('keeps clip times when the frame rate changes', () => {
     let { doc } = edit(start(), {

@@ -1,11 +1,14 @@
+import { installedFonts } from '@cuttingfloor/engine';
 import {
   BLEND_MODES,
   type BlendMode,
   EASES,
+  type HIGHLIGHTS,
   type IN_OUT_ANIMATIONS,
   type LOOP_ANIMATIONS,
   MASK_SHAPES,
   type MaskShape,
+  type TEXT_REVEALS,
   type TransitionKind,
 } from '@cuttingfloor/schema';
 import {
@@ -89,7 +92,37 @@ const TRANSITIONS: Record<TransitionKind, string> = {
   crossfade: 'Audio only: equal-power fade from one clip into the next',
 };
 
-const CATALOGS: Record<string, { title: string; body: unknown }> = {
+const HIGHLIGHT_TEXT: Record<(typeof HIGHLIGHTS)[number], string> = {
+  none: 'No highlight',
+  karaoke: 'Each word turns to the highlight colour as it is spoken, and stays',
+  fill: 'Like karaoke, but the colour sweeps across each word',
+  word: 'Only the word being spoken is in the highlight colour',
+  pop: 'The word being spoken is in the highlight colour and grows a little',
+};
+
+const REVEAL_TEXT: Record<(typeof TEXT_REVEALS)[number], string> = {
+  none: 'All at once',
+  typewriter: 'Letter by letter over reveal_frames',
+  word_fade: 'Word by word, each fading in',
+  word_pop: 'Word by word, each popping up from nothing',
+};
+
+const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<unknown>) }> = {
+  text: {
+    title: 'Text styles',
+    body: {
+      note: 'Sizes are fractions of the frame height (size) or of the text size (outline, shadow, box padding, letter_spacing); x, y and max_width are fractions of the frame. Captions default to bold white Inter with a black outline at the bottom; titles to bold white Inter with a soft shadow in the centre. Highlights need caption word timings.',
+      highlight: HIGHLIGHT_TEXT,
+      reveal: REVEAL_TEXT,
+    },
+  },
+  fonts: {
+    title: 'Fonts',
+    body: async () => ({
+      note: 'Families text styles can name. Import other .ttf/.otf files with media.import and set font_media_id.',
+      families: await installedFonts(),
+    }),
+  },
   transitions: {
     title: 'Transitions',
     body: {
@@ -153,7 +186,13 @@ export function registerCatalogs(server: McpServer): void {
       }
       return {
         contents: [
-          { uri: uri.href, mimeType: 'application/json', text: JSON.stringify(entry.body) },
+          {
+            uri: uri.href,
+            mimeType: 'application/json',
+            text: JSON.stringify(
+              typeof entry.body === 'function' ? await entry.body() : entry.body,
+            ),
+          },
         ],
       };
     },

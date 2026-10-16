@@ -22,6 +22,7 @@ const INSTRUCTIONS = `cuttingfloor is a headless video editor. Typical flow (to 
 3. Every edit returns a NEW timeline_id; keep using the latest one. Older ids stay valid, so going back is just using an older id. An edit result is {timeline_id, parent, changed: [{id, type, change}], clip_id?, clip_ids?, track_id?, preview: {uri, frames, status} | null, warnings}.
    Timing: clip.set_speed (rate, ramp curve, reverse), clip.freeze, clip.roll / slip / slide, clip.replace, range.lift / range.extract (cut a span out of every track at once). Nest a timeline as one clip with clip.add {nested_timeline_id}.
    Transitions: transition.add at the cut after a clip (dissolve, dips, wipes, slides, pushes, zooms, iris, spin; linked audio crossfades).
+   Text: title.add and caption.add (segments, SRT or VTT; word timings drive highlights) on a video track; text.set restyles many at once.
    Overlays and picture-in-picture: put a clip on a higher video track, then clip.set_transform, clip.set_mask, clip.set_blend and clip.set_animation. Catalogues of accepted names are resources at video://catalog/{name}.
 4. Look at the result with preview: "inline" on an edit, or render.frames.
 5. qa.check, then export.video (long-running) for a signed download URL.

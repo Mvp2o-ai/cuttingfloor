@@ -310,6 +310,52 @@ describe('MLT compiler', () => {
     expect(xml).toContain('<property name="level">12=-100;');
   });
 
+  it('writes text as an ASS script over a transparent layer', () => {
+    const titled = runEdits(
+      newTimeline('t', seq, { video: 1, audio: 0 }),
+      'tl_z',
+      [
+        {
+          tool: 'caption.add',
+          args: {
+            track_id: 't1',
+            segments: [
+              {
+                start_frame: 0,
+                end_frame: 50,
+                text: 'a {b} c',
+                words: [
+                  { text: 'a', start_frame: 5, end_frame: 15 },
+                  { text: '{b}\\n', start_frame: 20, end_frame: 30 },
+                ],
+              },
+            ],
+            style: {
+              highlight: { mode: 'karaoke', color: '#FFE000' },
+              box: { color: '#00000080', padding: 0.2 },
+            },
+          },
+        },
+      ],
+      () => media,
+      { tool: 'x', args: null },
+    ).doc;
+    const files = new Map<string, string>();
+    const xml = compileMlt(titled, { width: 640, height: 360, sources: new Map(), files });
+    expect(xml).toMatch(
+      /<producer id="c2_text" in="0" out="49"><property name="mlt_service">color<\/property><property name="resource">0x00000000<\/property>.*<property name="mlt_service">avfilter\.ass<\/property><property name="av\.filename">c2_text\.ass<\/property><property name="av\.alpha">1<\/property>/,
+    );
+    const ass = files.get('c2_text.ass') ?? '';
+    expect(ass).toContain('PlayResX: 640');
+    // Karaoke: sung colour is the highlight, waiting colour the text colour; 0.2 s lead, then
+    // each word's turn lasts until the next starts.
+    expect(ass).toMatch(/Style: Text,Inter,21\.6,&H0000E0FF,&H00FFFFFF,/);
+    expect(ass).toContain('{\\k20}{\\k60}a {\\k40}');
+    // User text can't open override blocks or escapes.
+    expect(ass).toContain('\uFF5Bb\uFF5D\\\u2060n');
+    expect(ass).toMatch(/Dialogue: 0,0:00:00\.00,0:00:02\.00,Box,/);
+  });
+
   it('refuses to compile with offline media', () => {
     expect(() => compileMlt(doc, { width: 640, height: 360, sources: new Map() })).toThrow(
       /not available/,

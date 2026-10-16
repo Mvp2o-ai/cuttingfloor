@@ -20,10 +20,17 @@ export async function sourcesFor(
 ): Promise<{ sources: Map<string, MltSource>; offline: string[] }> {
   const sources = new Map<string, MltSource>();
   const offline: string[] = [];
+  // Media the clips play, and fonts their text is set in.
   const ids = new Set(
     [doc, ...Object.values(doc.nested ?? {})].flatMap((body) =>
       body.tracks.flatMap((t) =>
-        t.clips.flatMap((c) => (c.enabled && c.type === 'media' ? [c.media_id] : [])),
+        t.clips.flatMap((c) => {
+          if (!c.enabled) return [];
+          if (c.type === 'media') return [c.media_id];
+          if ((c.type === 'title' || c.type === 'caption') && c.style?.font_media_id)
+            return [c.style.font_media_id];
+          return [];
+        }),
       ),
     ),
   );
