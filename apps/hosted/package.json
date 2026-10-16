@@ -2,19 +2,23 @@
   "name": "@cuttingfloor/hosted",
   "version": "0.0.0",
   "private": true,
-  "description": "Hosted mode: Streamable HTTP, OAuth 2.1, multi-tenant.",
+  "description": "The HTTP node: Streamable HTTP MCP, signed output downloads, bearer API keys in hosted mode.",
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",
     "@modelcontextprotocol/node": "2.1.1",
     "@cuttingfloor/server": "workspace:*",
-    "@cuttingfloor/jobs": "workspace:*",
     "@cuttingfloor/credentials": "workspace:*"
   },
   "scripts": {
     "start": "node src/main.ts"
   },
   "exports": {
-    ".": "./src/main.ts"
+    ".": "./src/main.ts",
+    "./http": "./src/http.ts"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
+    "@modelcontextprotocol/ext-tasks": "0.2.2"
   }
 }

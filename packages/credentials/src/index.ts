@@ -1,9 +1,11 @@
+import { readFile } from 'node:fs/promises';
+
 /**
  * Provider credentials (bring your own key). Rules, from plans/spec.md §12:
- * - no key ever passes through a tool argument, result, error, log or project file;
- * - keys are per provider, validated on save, resolved when a job starts;
- * - local mode reads Docker secrets, the environment, then /data/keys.enc;
- *   hosted mode keeps one encrypted object per tenant.
+ * - no key ever passes through a tool argument, result, error, log or stored file;
+ * - keys are per provider and resolved when a job starts;
+ * - local mode reads Docker secrets, then the environment; hosted mode takes them from the
+ *   client's request headers and never stores them.
  */
 export type ProviderId =
   | 'typesafe'
@@ -29,40 +31,50 @@ export const PROVIDER_ENV: Record<ProviderId, string> = {
   bfl: 'BFL_API_KEY',
 };
 
-export type CredentialStatus = { configured: boolean; status?: 'ok' | 'invalid' };
+export type CredentialStatus = { configured: boolean; source?: 'secret' | 'env' };
 
 export interface CredentialStore {
   status(owner: string, provider: ProviderId): Promise<CredentialStatus>;
   /** For the server's own provider calls only; never returned to an MCP client. */
   resolve(owner: string, provider: ProviderId): Promise<string | undefined>;
-  set(owner: string, provider: ProviderId, key: string): Promise<void>;
-  remove(owner: string, provider: ProviderId): Promise<void>;
 }
 
 /**
- * Reads keys from the environment only. The local store layers Docker secrets and
- * /data/keys.enc (written by the local keys page) on top.
+ * Local mode: Docker secrets (`/run/secrets/<env name lower-cased>`), then the environment
+ * (`.env` next to compose.yaml). Single user, so `owner` is ignored.
  */
-export class EnvCredentialStore implements CredentialStore {
+export class LocalCredentialStore implements CredentialStore {
   readonly #env: NodeJS.ProcessEnv;
+  readonly #secrets: boolean;
+  readonly #secretsDir: string;
 
-  constructor(env: NodeJS.ProcessEnv = process.env) {
+  constructor(env: NodeJS.ProcessEnv = process.env, secrets = true, secretsDir = '/run/secrets') {
     this.#env = env;
+    this.#secrets = secrets;
+    this.#secretsDir = secretsDir;
+  }
+
+  async #lookup(
+    provider: ProviderId,
+  ): Promise<{ key: string; source: 'secret' | 'env' } | undefined> {
+    const name = PROVIDER_ENV[provider];
+    if (this.#secrets) {
+      const secret = await readFile(`${this.#secretsDir}/${name.toLowerCase()}`, 'utf8').then(
+        (s) => s.trim(),
+        () => '',
+      );
+      if (secret) return { key: secret, source: 'secret' };
+    }
+    const env = this.#env[name]?.trim();
+    return env ? { key: env, source: 'env' } : undefined;
   }
 
   async status(_owner: string, provider: ProviderId): Promise<CredentialStatus> {
-    return { configured: Boolean(this.#env[PROVIDER_ENV[provider]]) };
+    const found = await this.#lookup(provider);
+    return found ? { configured: true, source: found.source } : { configured: false };
   }
 
   async resolve(_owner: string, provider: ProviderId): Promise<string | undefined> {
-    return this.#env[PROVIDER_ENV[provider]] || undefined;
-  }
-
-  async set(): Promise<void> {
-    throw new Error('Environment keys are read-only; set them in .env or on the keys page.');
-  }
-
-  async remove(): Promise<void> {
-    throw new Error('Environment keys are read-only; unset the variable.');
+    return (await this.#lookup(provider))?.key;
   }
 }

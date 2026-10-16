@@ -19,9 +19,6 @@
       "path": "../credentials"
     },
     {
-      "path": "../providers"
-    },
-    {
       "path": "../engine"
     }
   ]
