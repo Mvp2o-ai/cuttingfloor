@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { open, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PROVIDER_ENV, type ProviderId } from '@cuttingfloor/credentials';
 import { engineVersions, renderMediaFrames, renderSource } from '@cuttingfloor/engine';
@@ -162,14 +162,19 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
         : name.endsWith('.mov')
           ? 'video/quicktime'
           : 'application/octet-stream';
-      const { size } = await stat(file);
-      if (size > rt.config.inlineMaxBytes) {
-        const { url } = await rt.signOutput(owner, id, name);
-        return { contents: [{ uri: uri.href, mimeType: 'text/uri-list', text: url }] };
+      // Size and bytes come from one open handle, so the file can't change in between.
+      const handle = await open(file, 'r');
+      try {
+        const { size } = await handle.stat();
+        if (size > rt.config.inlineMaxBytes) {
+          const { url } = await rt.signOutput(owner, id, name);
+          return { contents: [{ uri: uri.href, mimeType: 'text/uri-list', text: url }] };
+        }
+        const blob = (await handle.readFile()).toString('base64');
+        return { contents: [{ uri: uri.href, mimeType, blob }] };
+      } finally {
+        await handle.close();
       }
-      return {
-        contents: [{ uri: uri.href, mimeType, blob: (await readFile(file)).toString('base64') }],
-      };
     },
   );
 }

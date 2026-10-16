@@ -306,12 +306,12 @@ export function renderSource(record: MediaRecord, purpose: 'preview' | 'export')
 /** Size + BLAKE3 of the first, middle and last 4 MB. */
 export async function fingerprint(path: string): Promise<string> {
   const CHUNK = 4 * 1024 * 1024;
-  const { size } = await stat(path);
-  const hasher = await createBLAKE3();
-  hasher.init();
-  hasher.update(String(size));
   const handle = await open(path, 'r');
   try {
+    const { size } = await handle.stat();
+    const hasher = await createBLAKE3();
+    hasher.init();
+    hasher.update(String(size));
     const offsets = size <= 3 * CHUNK ? [0] : [0, Math.floor(size / 2 - CHUNK / 2), size - CHUNK];
     for (const offset of offsets) {
       const length = size <= 3 * CHUNK ? size : CHUNK;
@@ -319,10 +319,10 @@ export async function fingerprint(path: string): Promise<string> {
       await handle.read(buf, 0, length, offset);
       hasher.update(buf);
     }
+    return hasher.digest('hex').slice(0, 40);
   } finally {
     await handle.close();
   }
-  return hasher.digest('hex').slice(0, 40);
 }
 
 async function exists(path: string): Promise<boolean> {

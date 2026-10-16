@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { createServer as createPlainServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { Runtime } from '@cuttingfloor/server';
@@ -381,7 +381,8 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`)));
 
     fileServer = createPlainServer(async (req, res) => {
-      const body = await readFile(join(env.mediaDir, (req.url ?? '/').slice(1))).catch(() => null);
+      // Serve only plain file names from the fixture folder.
+      const body = await readFile(join(env.mediaDir, basename(req.url ?? '/'))).catch(() => null);
       if (!body) res.writeHead(404).end();
       else res.writeHead(200, { 'content-length': body.length }).end(body);
     });
@@ -680,6 +681,12 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     const masterDone = await waitJob(master.job_id);
     if (!masterDone.result) throw new Error(`master export: ${JSON.stringify(masterDone)}`);
     const mres = masterDone.result as { file: string; frames: number };
+    // The output resource answers with the bytes (or the signed URL when large).
+    const out = await client.readResource({ uri: `video://jobs/${master.job_id}/output` });
+    const first = out.contents[0] as { blob?: string; text?: string; mimeType?: string };
+    if (first.blob)
+      expect(Buffer.from(first.blob, 'base64').length).toBe((await stat(mres.file)).size);
+    else expect(first.text).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/outputs\//);
     const mprobe = await ffprobe(mres.file);
     expect(mprobe.streams.find((s) => s.codec_type === 'video')).toMatchObject({
       codec_name: 'prores',
