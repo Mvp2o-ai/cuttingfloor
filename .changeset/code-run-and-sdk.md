@@ -1,5 +1,0 @@
----
-"cuttingfloor": minor
----
-
-`code.run` runs a Node, Python or bash script in the sandbox, sharing the workspace with the tools: inside it every tool is `cf.domain.verb(args)` (the new SDK, generated from the tool registry; Python `from cuttingfloor import cf`; bash `cf domain.verb '{json}'`), inputs arrive in `in/`, `importFile(path)` brings a made file in as media at once, and files left in `out/` come back as media or (`*.timeline.json`) timelines. Scripts run in their own user, PID and network namespaces with no network; their tool calls travel back over the job's own stream and run as the caller, so the sandbox still can't reach the server. `create.motion` now renders any animated page frame-exactly on a virtual clock (CSS animations and transitions, Web Animations, SVG, `requestAnimationFrame`, timers, `window.__seek`), with anime.js, three.js, Lottie and D3 bundled under `lib/`; HyperFrames and GSAP are gone. The image adds Python (numpy, Pillow, OpenCV) for scripts, and the sandbox's memory limit rises to 4 GB.

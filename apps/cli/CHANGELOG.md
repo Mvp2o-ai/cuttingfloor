@@ -1,5 +1,17 @@
 # cuttingfloor
 
+## 0.11.0
+
+### Minor Changes
+
+- edf2072: `code.run` runs a Node, Python or bash script in the sandbox, sharing the workspace with the tools: inside it every tool is `cf.domain.verb(args)` (the new SDK, generated from the tool registry; Python `from cuttingfloor import cf`; bash `cf domain.verb '{json}'`), inputs arrive in `in/`, `importFile(path)` brings a made file in as media at once, and files left in `out/` come back as media or (`*.timeline.json`) timelines. Scripts run in their own user, PID and network namespaces with no network; their tool calls travel back over the job's own stream and run as the caller, so the sandbox still can't reach the server. `create.motion` now renders any animated page frame-exactly on a virtual clock (CSS animations and transitions, Web Animations, SVG, `requestAnimationFrame`, timers, `window.__seek`), with anime.js, three.js, Lottie and D3 bundled under `lib/`; HyperFrames and GSAP are gone. The image adds Python (numpy, Pillow, OpenCV) for scripts, and the sandbox's memory limit rises to 4 GB.
+- 94ee94b: `create.cutout` cuts out any subject, not just people: `subject: "any"` uses BiRefNet lite (MIT, on ONNX Runtime) for products, animals and objects, and is the default for pictures; `subject: "people"` keeps MODNet, fast enough for video and the default there.
+- a62d003: Export: `export.video` adds the `social_9x16_h264`, `web_1080p_av1`, `gif`, `audio_wav_48k` and `audio_mp3` presets and `overrides` for size, frame rate, bitrate and quality (`video://catalog/presets`). `export.timeline` writes the edit as FCPXML, OTIO or a CMX 3600 EDL, or the captions as SRT or VTT, listing what each format can't carry; `media: "collect"` zips the media alongside. `render.frames {size: "full"}` renders up to four frames at full size from the original media.
+
+### Patch Changes
+
+- b7cbff8: Previews of real footage, and exports of media bigger than the sequence (4K in a 1080p timeline), no longer come out garbled: full-frame clips are kept off a shortcut in MLT's qtblend that returned the picture at its source size. Those renders also use far less memory.
+
 ## 0.10.0
 
 ### Minor Changes
