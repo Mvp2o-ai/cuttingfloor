@@ -1,6 +1,6 @@
 import * as z from 'zod/v4';
 import {
-  animatable,
+  AnimatableValue,
   BlendMode,
   Crop,
   Fit,
@@ -31,7 +31,7 @@ const Mode = z
   .describe('overwrite replaces what is underneath; insert pushes later clips right');
 
 const anim = (limits: readonly [number, number], text: string) =>
-  animatable(limits[0], limits[1]).optional().describe(text);
+  AnimatableValue.optional().describe(`${text}; ${limits[0]} to ${limits[1]}`);
 
 export const TransformArgs = z.object({
   x: anim(TRANSFORM_LIMITS.x, 'Centre x, 0 = left edge, 1 = right edge (default 0.5)'),
@@ -40,7 +40,7 @@ export const TransformArgs = z.object({
   scale_x: anim(TRANSFORM_LIMITS.scale_x, 'Extra horizontal stretch (default 1)'),
   scale_y: anim(TRANSFORM_LIMITS.scale_y, 'Extra vertical stretch (default 1)'),
   rotation: anim(TRANSFORM_LIMITS.rotation, 'Degrees clockwise (default 0)'),
-  opacity: anim(TRANSFORM_LIMITS.opacity, '0 to 1 (default 1)'),
+  opacity: anim(TRANSFORM_LIMITS.opacity, 'Opacity (default 1)'),
   fit: Fit.nullable().optional(),
   flip: Flip.nullable().optional(),
   crop: Crop.nullable().optional(),
@@ -261,7 +261,7 @@ export const EditArgs = {
   }),
   'audio.set_gain': z.object({
     clip_id: z.string().describe('An audio clip, or a video clip whose linked audio to change'),
-    gain_db: animatable(-60, 24).describe('dB; 0 leaves it as it is; keyframes for rides'),
+    gain_db: AnimatableValue.describe('dB, -60 to 24; 0 leaves it as it is; keyframes for rides'),
   }),
   'audio.set_pan': z.object({
     clip_id: z.string(),
@@ -286,6 +286,24 @@ export const EditArgs = {
   'audio.set_master': z.object({
     gain_db: z.number().min(-60).max(40).nullable().optional(),
     limit_db: z.number().min(-20).max(0).nullable().optional().describe('Limiter ceiling, dBFS'),
+  }),
+  'filter.add': z.object({
+    clip_id: z.string().optional().describe('Apply to one clip (or an adjustment clip)'),
+    track_id: z.string().optional().describe('Or to every clip on a track'),
+    timeline: z.boolean().optional().describe('Or true for the whole picture or mix'),
+    name: z.string().min(1).max(60).describe('An effect from video://catalog/effects'),
+    params: z.record(z.string(), z.unknown()).default({}).describe('As the catalogue lists them'),
+  }),
+  'filter.set': z.object({
+    filter_id: z.string(),
+    params: z.record(z.string(), z.unknown()).optional().describe('Merged into its params'),
+    enabled: z.boolean().optional(),
+  }),
+  'filter.remove': z.object({ filter_id: z.string() }),
+  'adjustment.add': z.object({
+    track_id: z.string().describe('A video track; the effects reach every track below it'),
+    at_frame: frame.optional().describe('Default: after the last clip on the track'),
+    duration_frames: z.number().int().positive().max(10_000_000),
   }),
   'transition.add': z.object({
     clip_id: z.string().describe('The clip before the cut; the clip after it must touch it'),
@@ -441,7 +459,7 @@ export const MediaInfo = z.object({
   status: MediaStatus.describe(
     'importing: not probed yet; processing: usable in edits, proxy still rendering; ready; failed',
   ),
-  kind: z.enum(['video', 'audio', 'image', 'font']).nullable(),
+  kind: z.enum(['video', 'audio', 'image', 'font', 'lut']).nullable(),
   font_family: z
     .string()
     .optional()

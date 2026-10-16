@@ -8,6 +8,7 @@ import {
   StoredTransition,
   TransitionKind,
 } from './compositing.ts';
+import { StoredEffect } from './effects.ts';
 import { Sequence } from './sequence.ts';
 import { StoredWord, TextStyle } from './text.ts';
 
@@ -23,6 +24,8 @@ export const MediaRef = z.object({
   duration: ticks.nullable(),
   video: z.boolean(),
   audio: z.boolean(),
+  /** Media that is not a picture or sound: fonts for text, LUTs for effects. */
+  kind: z.enum(['font', 'lut']).optional(),
 });
 export type MediaRef = z.infer<typeof MediaRef>;
 
@@ -74,6 +77,8 @@ const clipFields = {
       out: z.number().int().positive().optional(),
     })
     .optional(),
+  /** Effects on this clip, in order. */
+  effects: z.array(StoredEffect).optional(),
   // Video compositing; absent means the default.
   transform: StoredTransform.optional(),
   blend: BlendMode.optional(),
@@ -97,6 +102,8 @@ export const StoredClip = z.discriminatedUnion('type', [
     text: z.string(),
     style: TextStyle.optional(),
   }),
+  // An adjustment clip has no picture: its effects apply to everything below it while it runs.
+  z.object({ ...clipFields, type: z.literal('adjustment') }),
   z.object({
     ...clipFields,
     type: z.literal('caption'),
@@ -116,6 +123,8 @@ export const StoredTrack = z.object({
   locked: z.boolean(),
   clips: z.array(StoredClip),
   transitions: z.array(StoredTransition).optional(),
+  /** Effects on every clip of the track. */
+  effects: z.array(StoredEffect).optional(),
 });
 export type StoredTrack = z.infer<typeof StoredTrack>;
 
@@ -135,6 +144,8 @@ const docFields = {
   tracks: z.array(StoredTrack),
   media: z.record(z.string(), MediaRef),
   next_id: z.number().int().positive(),
+  /** Effects on the whole picture (video) and the whole mix (audio). */
+  effects: z.array(StoredEffect).optional(),
 };
 
 /** A timeline nested in another. Nesting is flattened: every level lives in the root's map. */
@@ -167,7 +178,7 @@ const settings = (tool: string) =>
 /** The timeline as tools show it: integer frames at the sequence rate, end exclusive. */
 export const ClipView = z.object({
   id: z.string(),
-  type: z.enum(['media', 'timeline', 'title', 'caption']).default('media'),
+  type: z.enum(['media', 'timeline', 'title', 'caption', 'adjustment']).default('media'),
   kind: TrackKind,
   track_id: z.string(),
   media_id: z.string().optional().describe('For media clips'),
@@ -196,6 +207,10 @@ export const ClipView = z.object({
   fade: z
     .object({ in_frames: z.number().optional(), out_frames: z.number().optional() })
     .optional(),
+  effects: z
+    .array(z.record(z.string(), z.unknown()))
+    .optional()
+    .describe('{id, name, params, enabled}; params as video://catalog/effects lists them'),
   transform: settings('clip.set_transform').optional(),
   blend: BlendMode.optional(),
   mask: settings('clip.set_mask mask').optional(),
@@ -224,6 +239,7 @@ export const TrackView = z.object({
     )
     .optional()
     .describe('Transitions at cuts, frames end exclusive'),
+  effects: z.array(z.record(z.string(), z.unknown())).optional().describe('Effects on every clip'),
 });
 export type TrackView = z.infer<typeof TrackView>;
 
@@ -240,6 +256,10 @@ const viewFields = {
   duration: frame.describe('Timeline length in frames'),
   tracks: z.array(TrackView).describe('Video tracks bottom to top, then audio tracks'),
   media: z.record(z.string(), MediaRefView),
+  effects: z
+    .array(z.record(z.string(), z.unknown()))
+    .optional()
+    .describe('Effects on the whole picture and mix'),
 };
 
 export const NestedView = z.object(viewFields);

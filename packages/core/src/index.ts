@@ -1,5 +1,6 @@
 export {
   easeFn,
+  isAnimated,
   type MaskState,
   maskAnimates,
   maskAt,

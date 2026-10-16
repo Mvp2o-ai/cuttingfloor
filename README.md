@@ -6,7 +6,7 @@ A headless video editor for agents, as an MCP server. An agent imports footage, 
 - **Nothing is stored for you.** Timelines, media and outputs live in a cache with a time limit (24 hours for timelines, 7 days for media and exports). Export to keep work.
 - **One Docker image** runs locally (free) and hosted. Engines (FFmpeg, MLT) ship inside it; Docker is the only thing you install.
 
-> Status: Phase 3 in progress. Import, timelines, clip editing, timing (speed, ramps, reverse, freeze frames, roll/slip/slide, range extract, nested timelines), transitions, titles and captions, audio (gain, pan, fades, ducking, loudness), compositing (transforms, keyframes, masks, blend modes, animations), previews, exact QA checks and H.264/ProRes export work end to end. Effects, `create.*` and NLE interchange come next.
+> Status: Phase 3 in progress. Import, timelines, clip editing, timing (speed, ramps, reverse, freeze frames, roll/slip/slide, range extract, nested timelines), transitions, titles and captions, audio (gain, pan, fades, ducking, loudness), effects (colour, LUTs, blur, chroma key and more; EQ, compressor, denoise, pitch), compositing (transforms, keyframes, masks, blend modes, animations), previews, exact QA checks and H.264/ProRes export work end to end. Analysis (transcripts, beats, faces), `create.*` and NLE interchange come next.
 
 ## Run it
 
@@ -47,10 +47,11 @@ On Docker Desktop for Mac, raise the memory limit for long 4K timelines; bind-mo
 5. Transition: `transition.add` at the cut after a clip: dissolve, dip to black or white, wipes, slides, pushes, zooms, iris and spin. Linked audio crossfades at the same cut. By default the clips overlap and later clips move earlier; `mode: "handles"` uses source past the cut and moves nothing.
 6. Text: `title.add` and `caption.add` (from segments with word timings, or from SRT/VTT) put text on a video track, rendered with libass: font, size, colour, outline, shadow, box, karaoke and word highlights, typewriter and word reveals. `text.set` restyles many at once. Fonts are listed at `video://catalog/fonts`; import your own `.ttf`/`.otf` with `media.import` and use it with `font_media_id`.
 7. Audio: `audio.set_gain` (dB, with keyframes for rides), `audio.set_pan`, `audio.fade`, `audio.duck` (lowers a music track wherever the other tracks have sound, as gain keyframes you can see), `audio.set_master`, and `audio.set_loudness` to hit a loudness target such as -14 LUFS with peaks under -1 dBTP. Audio edits preview as a waveform image with the measured loudness.
-8. Composite: put a clip on a higher video track, then `clip.set_transform` (position, scale, rotation, opacity, crop, flip, fit; any number can take keyframes with easing), `clip.set_mask` (rectangle, ellipse, linear, mirror, heart, star, polygon), `clip.set_blend` and `clip.set_animation` (entrance, exit and loop presets). The accepted names are resources at `video://catalog/{name}`.
-9. Look: `preview: "inline"` on any edit returns the image; `render.frames` returns up to 16 frames as a contact sheet.
-10. `qa.check` runs exact checks: gaps, offline media, black frames, silence, loudness, frame count.
-11. `export.video` with `web_1080p_h264` or `master_prores_422hq`. The result has a signed download URL and, locally, the file in your exports folder.
+8. Effects: `filter.add` on a clip, every clip on a track, or the whole timeline: colour (brightness, contrast, saturation, exposure, temperature, curves, LUTs imported as `.cube`), blur, sharpen, vignette, grain, glitch, pixelate, chroma key; for sound EQ, compressor, noise reduction, de-esser, dialogue enhance, reverb, echo, pitch. `adjustment.add` adds a clip whose effects change everything below it while it runs. The list with params is at `video://catalog/effects`.
+9. Composite: put a clip on a higher video track, then `clip.set_transform` (position, scale, rotation, opacity, crop, flip, fit; any number can take keyframes with easing), `clip.set_mask` (rectangle, ellipse, linear, mirror, heart, star, polygon), `clip.set_blend` and `clip.set_animation` (entrance, exit and loop presets). The accepted names are resources at `video://catalog/{name}`.
+10. Look: `preview: "inline"` on any edit returns the image; `render.frames` returns up to 16 frames as a contact sheet.
+11. `qa.check` runs exact checks: gaps, offline media, black frames, silence, loudness, frame count.
+12. `export.video` with `web_1080p_h264` or `master_prores_422hq`. The result has a signed download URL and, locally, the file in your exports folder.
 
 Time is integer frames at the sequence rate, end-exclusive. `timeline.get` returns the whole timeline as JSON; `timeline.load` restores it after it expires. `video://server/health` reports engine versions and limits.
 

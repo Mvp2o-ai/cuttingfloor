@@ -7,7 +7,9 @@ import {
   type NestedDoc,
   NestedView,
   SpeedView,
+  type StoredAnimatable,
   type StoredClip,
+  type StoredEffect,
   type StoredSpeed,
   TextStyle,
   type TimelineDoc,
@@ -16,13 +18,22 @@ import {
   TRANSFORM_NUMBERS,
 } from '@cuttingfloor/schema';
 import { toStoredAnim, toViewAnim } from './animate.ts';
-import { applyEdit, assertTransitions, nestedRef, timelineEnd, transitionHalves } from './edit.ts';
+import {
+  applyEdit,
+  assertTransitions,
+  nestedRef,
+  storeEffectParams,
+  timelineEnd,
+  transitionHalves,
+} from './edit.ts';
 import { span } from './speed.ts';
 import { framesToTicks, ticksPerFrame, ticksToFrames } from './time.ts';
 
 /** A clip's speed, audio and compositing settings in tool form (frames from the clip start). */
 function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
   const out: Partial<ClipView> = {};
+  const effects = effectsView(c.effects, c, tpf);
+  if (effects) out.effects = effects;
   if (c.gain !== undefined) out.gain = toViewAnim(c.gain, c, tpf);
   if (c.pan !== undefined) out.pan = c.pan;
   if (c.fade) {
@@ -109,7 +120,29 @@ function sourceView(c: StoredClip, tpf: number): Partial<ClipView> {
           : {}),
         ...(c.style ? { style: c.style } : {}),
       };
+    case 'adjustment':
+      return {};
   }
+}
+
+/** Effects as tools show them: keyframes in frames from the clip (or timeline) start. */
+function effectsView(
+  effects: StoredEffect[] | undefined,
+  origin: Pick<StoredClip, 'in'>,
+  tpf: number,
+): Array<Record<string, unknown>> | undefined {
+  if (!effects) return undefined;
+  return effects.map((e) => ({
+    id: e.id,
+    name: e.name,
+    params: Object.fromEntries(
+      Object.entries(e.params).map(([k, v]) => [
+        k,
+        v && typeof v === 'object' ? toViewAnim(v as StoredAnimatable, origin, tpf) : v,
+      ]),
+    ),
+    ...(e.enabled === false ? { enabled: false } : {}),
+  }));
 }
 
 /** The frame-based view of a timeline's body (no ids, history or nesting). */
@@ -140,6 +173,7 @@ function bodyView(doc: NestedDoc): NestedView {
         enabled: c.enabled,
         ...propsView(c, ticksPerFrame(fps)),
       })),
+      ...(t.effects ? { effects: effectsView(t.effects, { in: 0 }, ticksPerFrame(fps)) } : {}),
       ...(t.transitions
         ? {
             transitions: t.transitions.map((tr) => {
@@ -158,6 +192,7 @@ function bodyView(doc: NestedDoc): NestedView {
           }
         : {}),
     })),
+    ...(doc.effects ? { effects: effectsView(doc.effects, { in: 0 }, ticksPerFrame(fps)) } : {}),
     media: Object.fromEntries(
       Object.entries(doc.media).map(([id, m]) => [
         id,
@@ -244,11 +279,14 @@ export function fromView(input: TimelineInput, media: MediaLookup): TimelineDoc 
   for (const n of Object.values(nested))
     assertTransitions({ ...n, parent: null, op: null, nested });
   replayProps(doc, input.tracks);
+  loadEffects(doc, input.tracks, input.effects, media);
   for (const key of Object.keys(views)) {
     const n = nested[key];
     if (!n) continue;
+    const view = NestedView.parse(views[key]);
     const scratch: TimelineDoc = { ...n, parent: null, op: null, nested: { ...nested } };
-    replayProps(scratch, NestedView.parse(views[key]).tracks);
+    replayProps(scratch, view.tracks);
+    loadEffects(scratch, view.tracks, view.effects, media);
     const { parent: _p, op: _o, nested: _n, ...replayed } = scratch;
     nested[key] = replayed;
   }
@@ -313,6 +351,12 @@ function bodyFromView(
         clips.push(textClip(c, common, t));
         continue;
       }
+      if (c.type === 'adjustment') {
+        if (c.kind !== 'video')
+          throw new CfError('bad_request', `Adjustment clip ${c.id} must be on a video track`);
+        clips.push({ ...common, type: 'adjustment' });
+        continue;
+      }
       const isNested = c.type === 'timeline';
       const key = isNested ? (c.nested_timeline ?? '') : (c.media_id ?? '');
       if (!key) {
@@ -352,7 +396,7 @@ function bodyFromView(
         );
       }
     }
-    const { transitions: views, ...rest } = track;
+    const { transitions: views, effects: _effects, ...rest } = track;
     const transitions = (views ?? []).map((tr) => ({
       id: tr.id,
       a: tr.from_clip_id,
@@ -368,13 +412,75 @@ function bodyFromView(
     const n = Number(/^[a-z](\d+)$/.exec(id)?.[1] ?? 0);
     if (n > max) max = n;
   }
-  for (const tr of doc.tracks)
+  for (const tr of doc.tracks) {
     for (const c of tr.clips) {
       const n = Number(/^l(\d+)$/.exec(c.link ?? '')?.[1] ?? 0);
       if (n > max) max = n;
     }
+    for (const x of tr.transitions ?? [])
+      max = Math.max(max, Number(/^x(\d+)$/.exec(x.id)?.[1] ?? 0));
+  }
   doc.next_id = max + 1;
   return doc;
+}
+
+const EFFECT_ID = /^f(\d+)$/;
+
+/**
+ * Effects from a view, checked and stored like filter.add stores them, keeping their ids;
+ * numbering then continues after the highest effect id.
+ */
+function loadEffects(
+  doc: TimelineDoc,
+  tracks: TimelineInput['tracks'],
+  timeline: Array<Record<string, unknown>> | undefined,
+  media: MediaLookup,
+): void {
+  let max = 0;
+  const convert = (
+    home: Parameters<typeof storeEffectParams>[1],
+    views: unknown,
+  ): StoredEffect[] | undefined => {
+    if (!Array.isArray(views) || !views.length) return undefined;
+    return views.map((raw) => {
+      const v = raw as { id?: unknown; name?: unknown; params?: unknown; enabled?: unknown };
+      const id = typeof v.id === 'string' ? v.id : '';
+      const m = EFFECT_ID.exec(id);
+      if (!m)
+        throw new CfError('bad_request', `Effect id ${String(v.id)} is not valid`, {
+          hint: 'Effect ids look like f12',
+        });
+      max = Math.max(max, Number(m[1]));
+      const params = storeEffectParams(
+        doc,
+        home,
+        String(v.name),
+        (v.params ?? {}) as Record<string, unknown>,
+        media,
+      );
+      return {
+        id,
+        name: String(v.name),
+        params,
+        ...(v.enabled === false ? { enabled: false } : {}),
+      };
+    });
+  };
+  for (const tv of tracks) {
+    const track = doc.tracks.find((t) => t.id === tv.id);
+    if (!track) continue;
+    const onTrack = convert({ scope: 'track', track }, tv.effects);
+    if (onTrack) track.effects = onTrack;
+    for (const cv of tv.clips) {
+      const clip = track.clips.find((c) => c.id === cv.id);
+      if (!clip) continue;
+      const onClip = convert({ scope: 'clip', track, clip }, cv.effects);
+      if (onClip) clip.effects = onClip;
+    }
+  }
+  const onTimeline = convert({ scope: 'timeline' }, timeline);
+  if (onTimeline) doc.effects = onTimeline;
+  doc.next_id = Math.max(doc.next_id, max + 1);
 }
 
 type ClipCommon = Omit<Extract<StoredClip, { type: 'media' }>, 'type' | 'media_id'>;
