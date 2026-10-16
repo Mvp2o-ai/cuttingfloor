@@ -83,7 +83,7 @@ export function toSrt(doc: TimelineDoc): InterchangeResult {
 }
 
 const vttEscape = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/-->/g, '--&gt;');
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** Writes caption clips (or titles) as WebVTT, with word timings as inline timestamps. */
 export function toVtt(doc: TimelineDoc): InterchangeResult {

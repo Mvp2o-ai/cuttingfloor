@@ -195,5 +195,5 @@ export function toEdl(doc: TimelineDoc, resolve: InterchangeMediaResolver): Inte
         if (!(t.kind === 'audio' && channels.includes(t)))
           w.add('Transitions outside the main track were dropped', tr.id);
 
-  return { text: `${out.join('\n').replace(/\n+$/, '')}\n`, warnings: w.list() };
+  return { text: `${out.join('\n').trimEnd()}\n`, warnings: w.list() };
 }

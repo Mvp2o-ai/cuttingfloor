@@ -4,6 +4,7 @@ import { createWriteStream } from 'node:fs';
 import {
   lstat,
   mkdir,
+  mkdtemp,
   readdir,
   realpath,
   rename,
@@ -66,7 +67,7 @@ const deny = new Set<string>(CODE_DENIED_TOOLS);
 
 export async function newCodeJob(scratch: string): Promise<CodeJob> {
   const id = randomBytes(12).toString('hex');
-  const dir = join(scratch, `cfc${id}`);
+  const dir = await mkdtemp(join(scratch, `cfc${id}-`));
   for (const d of ['in', 'out', 'tmp', '.cf/bin', 'node_modules']) {
     await mkdir(join(dir, d), { recursive: true });
   }
@@ -214,7 +215,7 @@ export async function runCode(
       }
     }
     const script = SCRIPT[request.language];
-    await writeFile(join(job.dir, script.file), request.script);
+    await writeFile(join(job.dir, script.file), request.script, { flag: 'wx', mode: 0o600 });
     send({ progress: 0.05, message: 'running' });
     return await execute(job, script.run, token, request.timeout_seconds, isolation, signal);
   } finally {
