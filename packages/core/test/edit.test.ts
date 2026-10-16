@@ -640,6 +640,26 @@ describe('compositing', () => {
     expect(back.tracks[0]?.locked).toBe(true);
   });
 
+  it("refuses values outside each field's range", () => {
+    expect(() =>
+      edit(base(), { tool: 'clip.set_transform', args: { clip_id: 'c3', opacity: 2 } }),
+    ).toThrow(/opacity 2 is out of range/);
+    expect(() =>
+      edit(base(), {
+        tool: 'clip.set_transform',
+        args: {
+          clip_id: 'c3',
+          scale: {
+            keyframes: [
+              { frame: 0, value: 1 },
+              { frame: 5, value: 50 },
+            ],
+          },
+        },
+      }),
+    ).toThrow(/scale 50 is out of range/);
+  });
+
   it('migrates version 1 documents', () => {
     const v2 = base();
     const v1 = {

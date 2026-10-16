@@ -1,6 +1,6 @@
 import * as z from 'zod/v4';
 import {
-  animatable,
+  AnimatableValue,
   BlendMode,
   Crop,
   Fit,
@@ -31,7 +31,7 @@ const Mode = z
   .describe('overwrite replaces what is underneath; insert pushes later clips right');
 
 const anim = (limits: readonly [number, number], text: string) =>
-  animatable(limits[0], limits[1]).optional().describe(text);
+  AnimatableValue.optional().describe(`${text}; ${limits[0]} to ${limits[1]}`);
 
 export const TransformArgs = z.object({
   x: anim(TRANSFORM_LIMITS.x, 'Centre x, 0 = left edge, 1 = right edge (default 0.5)'),
@@ -40,7 +40,7 @@ export const TransformArgs = z.object({
   scale_x: anim(TRANSFORM_LIMITS.scale_x, 'Extra horizontal stretch (default 1)'),
   scale_y: anim(TRANSFORM_LIMITS.scale_y, 'Extra vertical stretch (default 1)'),
   rotation: anim(TRANSFORM_LIMITS.rotation, 'Degrees clockwise (default 0)'),
-  opacity: anim(TRANSFORM_LIMITS.opacity, '0 to 1 (default 1)'),
+  opacity: anim(TRANSFORM_LIMITS.opacity, 'Opacity (default 1)'),
   fit: Fit.nullable().optional(),
   flip: Flip.nullable().optional(),
   crop: Crop.nullable().optional(),
@@ -261,7 +261,7 @@ export const EditArgs = {
   }),
   'audio.set_gain': z.object({
     clip_id: z.string().describe('An audio clip, or a video clip whose linked audio to change'),
-    gain_db: animatable(-60, 24).describe('dB; 0 leaves it as it is; keyframes for rides'),
+    gain_db: AnimatableValue.describe('dB, -60 to 24; 0 leaves it as it is; keyframes for rides'),
   }),
   'audio.set_pan': z.object({
     clip_id: z.string(),

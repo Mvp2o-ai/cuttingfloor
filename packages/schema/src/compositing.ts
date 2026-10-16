@@ -69,6 +69,31 @@ export function animatable(min: number, max: number) {
   ]);
 }
 
+/**
+ * The animatable shape tool definitions share: one `Animatable` entry in their JSON Schema
+ * `$defs`, referenced by every field, instead of a copy per field. Each field's range is
+ * checked by the edit that applies it.
+ */
+export const AnimatableValue = z
+  .union([
+    z.number(),
+    z.object({
+      keyframes: z
+        .array(
+          z.object({
+            frame: z.number().int().min(-1_000_000).max(100_000_000),
+            value: z.number(),
+            ease: EaseName.optional(),
+          }),
+        )
+        .min(1)
+        .max(MAX_KEYFRAMES)
+        .describe('frame is relative to the clip start; ease from video://catalog/eases'),
+    }),
+    z.null(),
+  ])
+  .meta({ id: 'Animatable' });
+
 /** Stored form: keyframe times in source ticks. */
 export const StoredAnimatable = z.union([
   z.number(),

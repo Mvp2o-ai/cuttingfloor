@@ -7,6 +7,7 @@ import {
   type EffectSpec,
   effectParamsSchema,
   MASK_DEFAULTS,
+  MASK_LIMITS,
   MASK_NUMBERS,
   type MediaRef,
   type NestedDoc,
@@ -24,6 +25,7 @@ import {
   TICKS_PER_SECOND,
   type TimelineDoc,
   TRANSFORM_DEFAULTS,
+  TRANSFORM_LIMITS,
   TRANSFORM_NUMBERS,
   type TrackKind,
 } from '@cuttingfloor/schema';
@@ -1271,7 +1273,7 @@ const audioOutcome = (clips: StoredClip[]): OpOutcome =>
 function audioSetGain(doc: TimelineDoc, a: EditArgsOf<'audio.set_gain'>): OpOutcome {
   const clips = audioMembers(doc, a.clip_id);
   const tpf = ticksPerFrame(doc.sequence.fps);
-  for (const clip of clips) setAnimatable(clip, 'gain', a.gain_db, 0, clip, tpf);
+  for (const clip of clips) setAnimatable(clip, 'gain', a.gain_db, 0, clip, tpf, [-60, 24]);
   return audioOutcome(clips);
 }
 
@@ -1768,7 +1770,10 @@ function videoClip(doc: TimelineDoc, clipId: string, tool: string): Located {
   return found;
 }
 
-/** Sets an animatable field: undefined keeps it, null resets it, defaults are not stored. */
+/**
+ * Sets an animatable field: undefined keeps it, null resets it, defaults are not stored.
+ * Values outside `limits` are refused (tool schemas share one shape without ranges).
+ */
 function setAnimatable<K extends string>(
   target: Partial<Record<K, StoredAnimatable | undefined>>,
   key: K,
@@ -1776,9 +1781,18 @@ function setAnimatable<K extends string>(
   fallback: number,
   clip: StoredClip,
   tpf: number,
+  limits: readonly [number, number],
 ): void {
   if (value === undefined) return;
   checkKeyframes(key, value);
+  const values =
+    value === null ? [] : typeof value === 'number' ? [value] : value.keyframes.map((k) => k.value);
+  const bad = values.find((v) => v < limits[0] || v > limits[1]);
+  if (bad !== undefined) {
+    throw new CfError('bad_request', `${key} ${bad} is out of range`, {
+      hint: `${key} goes from ${limits[0]} to ${limits[1]}`,
+    });
+  }
   if (value === null || value === fallback) {
     delete target[key];
     return;
@@ -1791,7 +1805,7 @@ function clipSetTransform(doc: TimelineDoc, a: EditArgsOf<'clip.set_transform'>)
   const tpf = ticksPerFrame(doc.sequence.fps);
   const t: StoredTransform = { ...clip.transform };
   for (const key of TRANSFORM_NUMBERS) {
-    setAnimatable(t, key, a[key], TRANSFORM_DEFAULTS[key], clip, tpf);
+    setAnimatable(t, key, a[key], TRANSFORM_DEFAULTS[key], clip, tpf, TRANSFORM_LIMITS[key]);
   }
   if (a.fit !== undefined) {
     if (a.fit === null || a.fit === 'contain') delete t.fit;
@@ -1838,7 +1852,8 @@ function clipSetMask(doc: TimelineDoc, a: EditArgsOf<'clip.set_mask'>): OpOutcom
   }
   const tpf = ticksPerFrame(doc.sequence.fps);
   const mask: StoredMask = { shape: m.shape };
-  for (const key of MASK_NUMBERS) setAnimatable(mask, key, m[key], MASK_DEFAULTS[key], clip, tpf);
+  for (const key of MASK_NUMBERS)
+    setAnimatable(mask, key, m[key], MASK_DEFAULTS[key], clip, tpf, MASK_LIMITS[key]);
   if (m.feather) mask.feather = m.feather;
   if (m.corner_radius) mask.corner_radius = m.corner_radius;
   if (m.invert) mask.invert = true;
