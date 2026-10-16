@@ -68,7 +68,11 @@ async function ok<T = Record<string, unknown>>(
   args: Record<string, unknown>,
 ): Promise<T> {
   const res = await call(c, name, args);
-  if (res.isError) throw new Error(`${name} failed: ${JSON.stringify(res.structured)}`);
+  if (res.isError) {
+    // Protocol-level failures (e.g. an output that fails its schema) carry only text.
+    const text = res.content.map((c) => (c.type === 'text' ? String(c.text) : '')).join(' ');
+    throw new Error(`${name} failed: ${JSON.stringify(res.structured)} ${text}`);
+  }
   return res.structured as T;
 }
 
@@ -216,10 +220,16 @@ async function waitJob(jobId: string, timeoutMs = 240_000): Promise<Record<strin
 async function importMedia(
   source: Record<string, string>,
 ): Promise<Record<string, unknown> & { media_id: string }> {
-  const started = await ok<{ job_id: string; media_id: string }>(client, 'media.import', {
+  const started = await ok<{ job_id?: string; media_id: string }>(client, 'media.import', {
     source,
   });
   expect(started.media_id).toMatch(/^m_/);
+  // A file with the same content as an earlier import answers at once, with no job.
+  if (!started.job_id) {
+    return ok<Record<string, unknown> & { media_id: string }>(client, 'media.get', {
+      media_id: started.media_id,
+    });
+  }
   const done = await waitJob(started.job_id);
   if (done.status !== 'completed' || done.error)
     throw new Error(`import failed: ${JSON.stringify(done.error)}`);
