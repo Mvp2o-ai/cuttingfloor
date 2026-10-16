@@ -15,7 +15,7 @@ export interface MotionDocument {
 }
 
 const REMOTE =
-  /(?:\b(?:src|href|srcset|poster|action|data)\s*=\s*["']?\s*|url\(\s*["']?|@import\s+["']?)(?:https?:|ftp:|wss?:|file:|\/\/)/i;
+  /(?:\b(?:src|href|srcset|poster|action|data)\s*=\s*(?:["']\s*)?|url\(\s*["']?|@import\s+["']?)(?:https?:|ftp:|wss?:|file:|\/\/)/i;
 const REMOTE_JS =
   /\b(?:fetch\s*\(|new\s+(?:XMLHttpRequest|WebSocket|EventSource|RTCPeerConnection)\b|importScripts\s*\(|sendBeacon\s*\()/;
 
@@ -72,7 +72,7 @@ export function assertOffline(html: string): void {
   if (js) {
     throw new CfError(
       'bad_request',
-      `The HTML uses ${js[0].replace(/[\s(]+$/, '')}, and there is no network to reach`,
+      `The HTML uses ${js[0].replace('(', '').trim()}, and there is no network to reach`,
       {
         hint: 'Build everything in the page itself; pass images and fonts as assets',
       },
