@@ -1,0 +1,17 @@
+{
+  "name": "@cuttingfloor/motion",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Motion graphics: HyperFrames compositions rendered by Chromium, run only inside the motion sandbox (the motion-worker role).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@cuttingfloor/schema": "workspace:*",
+    "@hyperframes/lint": "0.8.165",
+    "@hyperframes/producer": "0.8.165",
+    "gsap": "3.15.0",
+    "puppeteer-core": "25.14.0"
+  }
+}

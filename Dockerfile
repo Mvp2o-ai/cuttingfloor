@@ -36,7 +36,7 @@ FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt tini fontconfig \
       fonts-dejavu-core fonts-inter fonts-montserrat fonts-open-sans fonts-lato fonts-bebas-neue \
-      fonts-lobster fonts-comic-neue fonts-firacode fonts-noto-core \
+      fonts-lobster fonts-comic-neue fonts-firacode fonts-noto-core chromium \
  && rm -rf /var/lib/apt/lists/* \
  # Web font copies are useless to libass, and Montserrat ships twice; one TrueType set stays.
  && find /usr/share/fonts -name '*.woff*' -delete && rm -rf /usr/share/fonts/opentype/montserrat \
@@ -44,13 +44,18 @@ RUN apt-get update \
  && fc-list : family | grep -q '^Inter' \
  && ffmpeg -hide_banner -encoders | grep -q prores_ks \
  && melt -query transitions | grep -q qtblend \
- && melt -query filters | grep -q rotoscoping
+ && melt -query filters | grep -q rotoscoping \
+ && chromium --version
 COPY --from=whisper /src/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=vision /cf-vision /usr/local/bin/cf-vision
 COPY --from=vision /yunet.onnx /usr/share/cuttingfloor/models/face_detection_yunet_2023mar.onnx
+# Chromium for the motion sandbox (create.motion, create.still), only ever started by the
+# motion-worker role through this wrapper, which keeps its sandbox on and its network off.
+COPY tools/motion/cf-chromium /usr/local/bin/cf-chromium
 RUN cf-vision 2>&1 | grep -q usage
 # MLT's Qt modules (qtblend) need a display variable to load; Qt itself renders offscreen.
-ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true QT_QPA_PLATFORM=offscreen DISPLAY=:0
+ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true QT_QPA_PLATFORM=offscreen DISPLAY=:0 \
+    PUPPETEER_SKIP_DOWNLOAD=1
 RUN corepack enable
 WORKDIR /app
 

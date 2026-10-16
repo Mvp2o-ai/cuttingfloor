@@ -1,0 +1,18 @@
+#!/bin/sh
+# Chromium for the motion sandbox. Renderers pass --no-sandbox (and --no-zygote, which needs it);
+# this drops them so Chromium's own sandbox stays on inside the container, and turns the network
+# off: every host fails to resolve and everything but loopback goes to a proxy that isn't there.
+# The page is served from loopback by the renderer; nothing else is reachable.
+for arg; do
+  shift
+  case "$arg" in
+    --no-sandbox|--disable-setuid-sandbox|--no-zygote|--single-process|--proxy-server=*|--host-resolver-rules=*|--proxy-bypass-list=*) ;;
+    *) set -- "$@" "$arg" ;;
+  esac
+done
+exec /usr/bin/chromium \
+  --proxy-server=socks5://127.0.0.1:9 \
+  --host-resolver-rules="MAP * ~NOTFOUND, EXCLUDE localhost" \
+  --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
+  --disable-background-networking \
+  "$@"
