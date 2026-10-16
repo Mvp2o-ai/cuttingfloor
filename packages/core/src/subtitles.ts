@@ -24,14 +24,20 @@ function seconds(m: RegExpExecArray): number {
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', nbsp: ' ', quot: '"' };
 
-/** Caption text without markup: tags removed until none are left, entities decoded once. */
+/**
+ * Caption text without markup: everything between < and > is dropped (as are stray angle
+ * brackets), ASS override blocks too, then entities are decoded once. The result only ever
+ * reaches libass, escaped, but it is plain text either way.
+ */
 function stripTags(s: string): string {
-  let out = s;
-  let before: string;
-  do {
-    before = out;
-    out = out.replace(/<[^<>]*>/g, '').replace(/\{\\[^{}]*\}/g, '');
-  } while (out !== before);
+  let out = '';
+  let depth = 0;
+  for (const ch of s) {
+    if (ch === '<') depth++;
+    else if (ch === '>') depth = Math.max(0, depth - 1);
+    else if (!depth) out += ch;
+  }
+  out = out.replace(/\{\\[^{}]*\}/g, '');
   return out.replace(/&(amp|lt|gt|nbsp|quot);/g, (_, e: string) => ENTITIES[e] ?? '').trim();
 }
 
