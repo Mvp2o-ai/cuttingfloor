@@ -159,20 +159,32 @@ export function cutout(
     const timer = setTimeout(kill, 4 * 60 * 60_000);
     options.signal?.addEventListener('abort', kill, { once: true });
     const codes: Array<number | null> = [];
+    let killed = false;
     let closed = 0;
     for (const p of [ff, cv, out]) {
       p.on('error', (e) => {
         kill();
         reject(new CfError('engine_error', `Could not start the cut-out: ${e.message}`));
       });
-      p.on('close', (code) => {
+      p.on('close', (code, sig) => {
         codes.push(code);
+        if (p === cv && (sig === 'SIGKILL' || code === 137)) killed = true;
         closed += 1;
         if (closed < 3) return;
         clearTimeout(timer);
         options.signal?.removeEventListener('abort', kill);
         if (options.signal?.aborted) return reject(new CfError('cancelled', 'Cancelled'));
         if (codes.every((c) => c === 0)) return resolve();
+        if (killed) {
+          return reject(
+            new CfError('limit_exceeded', 'The matting model ran out of memory', {
+              hint:
+                model === 'birefnet'
+                  ? 'subject any (BiRefNet) needs about 3 GB free: give Docker more memory (Docker Desktop: Settings, Resources), or use subject people'
+                  : 'Give Docker more memory, or cut out a shorter or smaller clip',
+            }),
+          );
+        }
         reject(
           new CfError('engine_error', 'The cut-out failed', {
             detail: { stderr: errors.trim().split('\n').slice(-5).join('\n') },

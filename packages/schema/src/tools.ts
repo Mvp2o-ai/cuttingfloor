@@ -715,7 +715,7 @@ export const CreateCutoutInput = z.object({
     .enum(['auto', 'people', 'any'])
     .default('auto')
     .describe(
-      'people: MODNet, fast, for video of people; any: BiRefNet, any subject (products, animals, objects), about 1 s a frame; auto: any for pictures, people for video',
+      'people: MODNet, fast, for video of people; any: BiRefNet, any subject (products, animals, objects), about 1 s a frame and 3 GB of memory; auto: any for pictures, people for video',
     ),
   smooth: z.number().min(0).max(0.9).default(0.3).describe('Video: steadies the edge'),
   ...createCommon,
