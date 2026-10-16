@@ -16,6 +16,7 @@ import type { BlendMode, StoredClip, StoredMask } from '@cuttingfloor/schema';
 // - With an explicit rect and distort=1, qtblend takes the clip at its own aspect, and its
 //   filters (rotoscoping included) see that unpadded picture. Without a rect, qtblend fits the
 //   picture itself and filters may see a letterboxed frame, so the rect is always given.
+// - A full-frame, fully opaque rect must not reach qtblend as opacity 1 (fillsFrame below).
 // - rotoscoping keyframes are positions in the source (the producer's frame numbers), and
 //   alpha_operation=min treats a frame without an alpha channel as fully transparent, so the
 //   first spline uses `clear` unless the source carries alpha.
@@ -74,7 +75,23 @@ function rectFor(clip: StoredClip, s: TransformState, src: SourceSize, out: Fram
   const dh = fh * s.scale * s.scale_y;
   const cx = s.x * W;
   const cy = s.y * H;
-  return [r2(cx - dw / 2), r2(cy - dh / 2), r2(dw), r2(dh), r4(s.opacity)];
+  const rect = [r2(cx - dw / 2), r2(cy - dh / 2), r2(dw), r2(dh), r4(s.opacity)];
+  return fillsFrame(rect, out) ? [...rect.slice(0, 4), FULL_FRAME_OPACITY] : rect;
+}
+
+/**
+ * A rect that is the whole frame at full opacity sends MLT 7.30's qtblend down a shortcut that,
+ * with distort=1, hands back the source picture at its own size instead of the frame's: any
+ * source bigger than the frame (every preview proxy, 4K in a 1080p export) comes out garbled.
+ * Opacity just under 1 keeps it on the drawing path, and Qt's raster engine rounds it to fully
+ * opaque (qRound(0.9999 × 256) = 256).
+ */
+const FULL_FRAME_OPACITY = 0.9999;
+
+function fillsFrame(rect: number[], out: Frame): boolean {
+  const [x = 0, y = 0, w = 0, h = 0, o = 0] = rect;
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.5;
+  return near(x, 0) && near(y, 0) && near(w, out.width) && near(h, out.height) && o >= 1;
 }
 
 /**
