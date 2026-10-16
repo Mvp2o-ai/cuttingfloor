@@ -6,7 +6,7 @@ import { call, connect, ok, SEQ_720P25, type TestEnv, testRuntime } from './help
 
 const anyResult = z.object({}).passthrough();
 /** tools/list as JSON, in bytes (about 4 bytes per token). */
-const BUDGET_BYTES = 104_000;
+const BUDGET_BYTES = 110_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -51,12 +51,14 @@ describe('protocol surface', () => {
         'clip.split',
         'clip.trim',
         'clip.unlink',
+        'code.run',
         'create.cutout',
         'create.matte',
         'create.motion',
         'create.still',
         'create.voiceover',
         'edit.batch',
+        'export.timeline',
         'export.video',
         'filter.add',
         'filter.remove',

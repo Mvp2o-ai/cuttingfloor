@@ -8,3 +8,5 @@ coverage/
 .DS_Store
 # Local planning docs for whoever is building this; not published.
 plans/
+# Agent worktrees
+.claude/worktrees/

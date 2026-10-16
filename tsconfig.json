@@ -23,6 +23,9 @@
       "path": "packages/server"
     },
     {
+      "path": "packages/sdk"
+    },
+    {
       "path": "apps/cli"
     },
     {

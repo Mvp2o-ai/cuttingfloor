@@ -8,7 +8,14 @@ export { type Loudness, measureMix, renderWaveform } from './audio.ts';
 export { analyseBeats, type Beats, estimateTempo, onsetEnvelope, trackBeats } from './beats.ts';
 export { compositeFor, rotoFilters } from './composite.ts';
 export { gradientPosition, type MatteSpec, renderMatte } from './create.ts';
-export { type CutoutSource, cutout, matteSize } from './cutout.ts';
+export {
+  CUTOUT_MODELS,
+  type CutoutModel,
+  type CutoutSource,
+  cutout,
+  matteSize,
+  segmentSize,
+} from './cutout.ts';
 export { BIN, engineVersions, installedFonts, run } from './exec.ts';
 export { download, isBlockedAddress } from './fetch.ts';
 export {
@@ -25,9 +32,18 @@ export {
   renderSource,
 } from './media.ts';
 export { compileMlt, lengthFrames, type MltSource, scaledSize } from './mlt.ts';
+export {
+  fitBox,
+  type Overrides,
+  PRESET_NAMES,
+  PRESETS,
+  type PresetName,
+  presetCatalog,
+  resolvePreset,
+} from './presets.ts';
 export { conformReasons, type Probe, probe, standardRate } from './probe.ts';
 export { type QaReport, qaCheck } from './qa.ts';
-export { exportTimeline, PRESETS, renderMediaFrames, renderTimelineFrames } from './render.ts';
+export { exportTimeline, renderMediaFrames, renderTimelineFrames } from './render.ts';
 export {
   ensureModel,
   type Transcript,

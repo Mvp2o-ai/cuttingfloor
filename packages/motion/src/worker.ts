@@ -1,24 +1,33 @@
 import { spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CfError, MOTION_LIMITS, type MotionEvent, MotionRequest } from '@cuttingfloor/schema';
-import { motionDocument, stillDocument } from './document.ts';
+import {
+  CfError,
+  type CodeEvent,
+  CodeRequest,
+  MOTION_LIMITS,
+  type MotionEvent,
+  MotionRequest,
+} from '@cuttingfloor/schema';
+import { type CodeJob, deliverFile, dropCodeJob, newCodeJob, replyTo, runCode } from './code.ts';
+import { pageDocument } from './document.ts';
+import { reap } from './reap.ts';
 import type { MotionJob } from './render.ts';
 
-// cuttingfloor motion-worker: renders HyperFrames motion graphics and HTML stills for the main
-// server. It runs in its own container with no route out, no data volume and no secrets (§8.1).
-// One render at a time, each in a fresh process group with a fresh browser profile, killed when
-// it ends or overruns. POST /render answers with NDJSON progress, then GET /jobs/<id> streams the
-// file once and deletes it.
+// cuttingfloor motion-worker: the sandbox. It renders motion graphics and HTML stills, and runs
+// code.run scripts, for the main server. It runs in its own container with no route out, no data
+// volume and no secrets (§8.1). One job at a time, each in a fresh process group (renders: a
+// fresh browser profile; scripts: their own namespaces), killed when it ends or overruns.
+// POST /render answers with NDJSON progress, then GET /jobs/<id> streams the file once and
+// deletes it. POST /run streams a script's events; the main server answers its tool calls and
+// file requests on /jobs/<id>/reply|files/<rid> and fetches out/ files, all with the job secret.
 
 const JOB = fileURLToPath(new URL('./job.ts', import.meta.url));
-const GSAP = createRequire(import.meta.url).resolve('gsap/dist/gsap.min.js');
 const MAX_BODY = Math.ceil(MOTION_LIMITS.maxAssetBytes * 1.4) + MOTION_LIMITS.maxHtmlBytes + 65_536;
 const KEEP_MS = 10 * 60_000;
 
@@ -44,12 +53,38 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
     string,
     { file: string; dir: string; type: string; timer: NodeJS.Timeout }
   >();
+  const codeJobs = new Map<string, CodeJob>();
   let queue: Promise<void> = Promise.resolve();
   let waiting = 0;
 
+  /** Runs work after everything queued before it, one job at a time. */
+  function enqueue(work: () => Promise<void>): Promise<void> {
+    waiting += 1;
+    const run = queue.then(async () => {
+      waiting -= 1;
+      await work();
+    });
+    queue = run.catch(() => undefined);
+    return run;
+  }
+
+  /** Nothing another owner made may be on disk while a script runs. */
+  async function purge(): Promise<void> {
+    for (const [id, entry] of outputs) {
+      clearTimeout(entry.timer);
+      outputs.delete(id);
+      await rm(entry.dir, { recursive: true, force: true });
+    }
+    for (const [id, job] of codeJobs) {
+      codeJobs.delete(id);
+      await dropCodeJob(job);
+    }
+  }
+
   const server = createServer((req, res) => {
     void handle(req, res).catch((error) => {
-      if (!res.headersSent) json(res, 500, { error: errorBody(error) });
+      if (!res.headersSent)
+        json(res, error instanceof CfError ? 400 : 500, { error: errorBody(error) });
       else res.end();
     });
   });
@@ -74,21 +109,18 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
       await rm(entry.dir, { recursive: true, force: true });
       return;
     }
+    const code =
+      /^\/jobs\/([0-9a-f]{24})(?:\/(reply|files|out|upload)\/([A-Za-z0-9._-]{1,128}))?$/.exec(
+        url.pathname,
+      );
+    if (code) return codeRoute(req, res, code[1] as string, code[2], code[3]);
+    if (req.method === 'POST' && url.pathname === '/run') return run(req, res);
     if (req.method !== 'POST' || url.pathname !== '/render') {
       return json(res, 404, { error: { code: 'not_found', message: 'Not found' } });
     }
-    const body = await readBody(req);
+    const body = await readBody(req, MAX_BODY);
     const parsed = MotionRequest.safeParse(body);
-    if (!parsed.success) {
-      return json(res, 400, {
-        error: {
-          code: 'bad_request',
-          message: parsed.error.issues
-            .map((i) => `${i.path.join('.') || 'request'}: ${i.message}`)
-            .join('; '),
-        },
-      });
-    }
+    if (!parsed.success) return badRequest(res, parsed.error.issues);
     const request = parsed.data;
     const bytes = request.assets.reduce((n, a) => n + Math.floor((a.data.length * 3) / 4), 0);
     if (bytes > MOTION_LIMITS.maxAssetBytes) {
@@ -103,10 +135,8 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
     const send = (e: MotionEvent) => res.write(`${JSON.stringify(e)}\n`);
     const abort = new AbortController();
     res.on('close', () => abort.abort());
-    waiting += 1;
-    if (waiting > 1) send({ progress: 0, message: `waiting (${waiting - 1} ahead)` });
-    const run = queue.then(async () => {
-      waiting -= 1;
+    if (waiting > 0) send({ progress: 0, message: `waiting (${waiting} ahead)` });
+    await enqueue(async () => {
       if (abort.signal.aborted) return;
       try {
         const done = await render(request, send, abort.signal);
@@ -123,8 +153,87 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
       }
       res.end();
     });
-    queue = run.catch(() => undefined);
-    await run;
+  }
+
+  async function run(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const parsed = CodeRequest.safeParse(await readBody(req, 1024 * 1024));
+    if (!parsed.success) return badRequest(res, parsed.error.issues);
+    res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
+    const send = (e: CodeEvent) => {
+      if (!res.writableEnded) res.write(`${JSON.stringify(e)}\n`);
+    };
+    const abort = new AbortController();
+    res.on('close', () => abort.abort());
+    if (waiting > 0) send({ progress: 0, message: `waiting (${waiting} ahead)` });
+    await enqueue(async () => {
+      if (abort.signal.aborted) return;
+      await purge();
+      const job = await newCodeJob(scratch);
+      codeJobs.set(job.id, job);
+      send({ job: { id: job.id, secret: job.secret } });
+      try {
+        send({ done: await runCode(job, parsed.data, send, abort.signal) });
+        job.timer = setTimeout(() => {
+          codeJobs.delete(job.id);
+          void dropCodeJob(job);
+        }, KEEP_MS);
+        job.timer.unref();
+      } catch (error) {
+        codeJobs.delete(job.id);
+        await dropCodeJob(job);
+        send({ error: errorBody(error) });
+      }
+      res.end();
+    });
+  }
+
+  async function codeRoute(
+    req: IncomingMessage,
+    res: ServerResponse,
+    id: string,
+    what: string | undefined,
+    rid: string | undefined,
+  ): Promise<void> {
+    const job = codeJobs.get(id);
+    const given = Buffer.from(String(req.headers['x-cf-secret'] ?? ''));
+    const secret = Buffer.from(job?.secret ?? '');
+    if (!job || given.length !== secret.length || !timingSafeEqual(given, secret)) {
+      return json(res, 404, { error: { code: 'not_found', message: 'No such job' } });
+    }
+    if (req.method === 'DELETE' && !what) {
+      codeJobs.delete(id);
+      await dropCodeJob(job);
+      return json(res, 200, { ok: true });
+    }
+    if (req.method === 'POST' && what === 'reply' && rid) {
+      replyTo(job, rid, (await readBody(req, 64 * 1024 * 1024)) as never);
+      return json(res, 200, { ok: true });
+    }
+    if (req.method === 'PUT' && what === 'files' && rid) {
+      await deliverFile(job, rid, String(req.headers['x-cf-name'] ?? rid), req);
+      return json(res, 200, { ok: true });
+    }
+    if (req.method === 'GET' && what === 'out' && rid && job.outputs.has(rid)) {
+      const file = join(job.dir, 'out', rid);
+      const s = await stat(file);
+      res.writeHead(200, {
+        'content-type': 'application/octet-stream',
+        'content-length': s.size,
+      });
+      createReadStream(file).pipe(res);
+      await new Promise<void>((resolve) => res.on('close', resolve));
+      return;
+    }
+    const upload = what === 'upload' && rid ? job.uploads.get(rid) : undefined;
+    if (req.method === 'GET' && upload) {
+      job.uploads.delete(rid as string);
+      const s = await stat(upload);
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': s.size });
+      createReadStream(upload).pipe(res);
+      await new Promise<void>((resolve) => res.on('close', resolve));
+      return;
+    }
+    json(res, 404, { error: { code: 'not_found', message: 'Not found' } });
   }
 
   async function render(
@@ -147,18 +256,7 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
       for (const a of request.assets) {
         await writeFile(join(dir, 'assets', a.name), Buffer.from(a.data, 'base64'));
       }
-      if (request.kind === 'motion') {
-        const doc = motionDocument(request.html, job);
-        Object.assign(job, { width: doc.width, height: doc.height, duration: doc.duration });
-        await lint(doc.html);
-        await copyFile(GSAP, join(dir, 'gsap.min.js'));
-        await writeFile(join(dir, 'index.html'), doc.html);
-      } else {
-        await writeFile(
-          join(dir, 'index.html'),
-          stillDocument(request.html, job.width, job.height),
-        );
-      }
+      await writeFile(join(dir, 'index.html'), pageDocument(request.html, job.width, job.height));
       await writeFile(join(dir, 'job.json'), JSON.stringify(job));
       const file = await runJob(dir, options.timeoutMs ?? motionTimeout(job), send, signal);
       keep = true;
@@ -172,7 +270,11 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
             : 'video/mp4',
       };
     } finally {
-      if (!keep) await rm(dir, { recursive: true, force: true });
+      // Killed Chromium processes can still be writing their profile; retry rather than let
+      // ENOTEMPTY replace the render's own error.
+      if (!keep) {
+        await rm(dir, { recursive: true, force: true, maxRetries: 10 }).catch(() => undefined);
+      }
     }
   }
 
@@ -180,55 +282,6 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
     server.once('error', reject);
     server.listen(options.port, options.host ?? '0.0.0.0', () => resolve(server));
   });
-}
-
-async function lint(html: string): Promise<void> {
-  const { lintHyperframeHtml } = await import('@hyperframes/lint');
-  const result = await lintHyperframeHtml(html, { host: 'cli' });
-  const errors = result.findings.filter((f) => f.severity === 'error');
-  if (errors.length) {
-    throw new CfError(
-      'bad_request',
-      `The composition has ${errors.length} problem(s): ${errors[0]?.message}`,
-      {
-        hint: errors[0]?.fixHint ?? 'Fix the findings and try again',
-        detail: {
-          findings: errors.slice(0, 10).map((f) => ({
-            code: f.code,
-            message: f.message,
-            ...(f.line ? { line: f.line } : {}),
-            ...(f.fixHint ? { fix: f.fixHint } : {}),
-          })),
-        },
-      },
-    );
-  }
-}
-
-/**
- * Kills every process carrying this job's marker. Chromium starts in its own session (Puppeteer
- * launches it detached), so the job's process group alone doesn't reach it; the environment
- * marker does, and its sandboxed children die with their browser.
- */
-async function reap(marker: string): Promise<void> {
-  const needle = Buffer.from(`${marker}\0`);
-  let pids: string[];
-  try {
-    pids = (await readdir('/proc')).filter((p) => /^\d+$/.test(p));
-  } catch {
-    return; // No /proc (macOS): the process group kill is all there is.
-  }
-  await Promise.all(
-    pids.map(async (pid) => {
-      if (Number(pid) === process.pid) return;
-      try {
-        if ((await readFile(`/proc/${pid}/environ`)).includes(needle))
-          process.kill(Number(pid), 'SIGKILL');
-      } catch {
-        // Gone, or not ours to read.
-      }
-    }),
-  );
 }
 
 /** Runs job.ts in its own process group and kills everything it started when it ends. */
@@ -340,7 +393,7 @@ function runJob(
           'render_failed',
           `The page did not render: ${outcome.failed ?? `exit ${code ?? sig}`}`,
           {
-            hint: 'Check the HTML: the composition contract (a paused GSAP timeline in window.__timelines), scripts that throw, or assets that are missing',
+            hint: 'Check the HTML: scripts that throw, window.__seek or window.__ready failing, or assets that are missing',
             detail: {
               ...(outcome.console?.length ? { console: outcome.console.slice(-10) } : {}),
               ...(stderr.trim() ? { stderr: stderr.trim().split('\n').slice(-6).join('\n') } : {}),
@@ -352,12 +405,12 @@ function runJob(
   });
 }
 
-async function readBody(req: IncomingMessage): Promise<unknown> {
+async function readBody(req: IncomingMessage, limit: number): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req as AsyncIterable<Buffer>) {
     size += chunk.length;
-    if (size > MAX_BODY) throw new CfError('limit_exceeded', 'The request is too large');
+    if (size > limit) throw new CfError('limit_exceeded', 'The request is too large');
     chunks.push(chunk);
   }
   try {
@@ -370,6 +423,15 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
 function errorBody(error: unknown): NonNullable<Extract<MotionEvent, { error: unknown }>['error']> {
   if (error instanceof CfError) return error.toJSON();
   return { code: 'engine_error', message: (error as Error).message };
+}
+
+function badRequest(res: ServerResponse, issues: Array<{ path: PropertyKey[]; message: string }>) {
+  json(res, 400, {
+    error: {
+      code: 'bad_request',
+      message: issues.map((i) => `${i.path.join('.') || 'request'}: ${i.message}`).join('; '),
+    },
+  });
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {

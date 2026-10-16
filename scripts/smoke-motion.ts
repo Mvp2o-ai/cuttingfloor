@@ -1,7 +1,10 @@
-// The motion sandbox as users run it: compose.yaml's two services, driven over MCP. Checks that
+// The sandbox as users run it: compose.yaml's two services, driven over MCP. Checks that
 // create.motion and create.still work with Chromium's sandbox on, and that agent-written HTML
 // can't reach the network, the host, the main container or its data, and that a fork bomb and
-// a memory hog fail cleanly with a typed error and leave the sandbox working (spec §8.1).
+// a memory hog fail cleanly with a typed error and leave the sandbox working (spec §8.1). Then
+// the same for code.run scripts in their namespaces: tools work through the SDK, nothing else is
+// reachable, the socket wants its token, nothing outlives the job, and abuse fails cleanly
+// (spec §21.9).
 //
 //   node scripts/smoke-motion.ts [image]      (default ghcr.io/mvp2o-ai/cuttingfloor:latest)
 //
@@ -54,6 +57,25 @@ async function call(tool: string, args: Record<string, unknown>) {
   return res.structuredContent ?? {};
 }
 
+interface CodeOutcome {
+  stdout?: string;
+  error?: { code: string; message: string; detail?: Record<string, unknown> };
+}
+
+/** Runs a code.run script to the end: its stdout, or the typed error it failed with. */
+async function code(args: Record<string, unknown>): Promise<CodeOutcome> {
+  const started = await call('code.run', args);
+  for (let i = 0; i < 1200; i++) {
+    const job = await call('job.get', { job_id: started.job_id });
+    if (job.status !== 'working') {
+      if (job.error) return { error: job.error as CodeOutcome['error'] & object };
+      return { stdout: (job.result as { stdout: string }).stdout };
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error('code.run never finished');
+}
+
 /** Runs a create.* tool to the end: the media it made, or the typed error it failed with. */
 async function create(tool: string, args: Record<string, unknown>): Promise<Outcome> {
   const started = await call(tool, args);
@@ -102,8 +124,7 @@ async function columns(mediaId: string, n: number): Promise<string[]> {
 
 /** A page that tries each URL with a synchronous request and paints a column per result. */
 function probePage(urls: string[]): string {
-  return `<div id="probes" class="clip" data-start="0" data-duration="1" data-track-index="0"
-  style="position:absolute;inset:0;display:flex"></div>
+  return `<div id="probes" style="position:absolute;inset:0;display:flex"></div>
 <script>
   const Request = window['XMLHttp' + 'Request'];
   const probes = document.getElementById('probes');
@@ -118,11 +139,6 @@ function probePage(urls: string[]): string {
     const col = document.createElement('div');
     col.style.cssText = 'flex:1;background:' + (reached ? '#ffffff' : '#000000');
     probes.appendChild(col);
-  }
-  if (window.gsap) {
-    const tl = gsap.timeline({ paused: true });
-    tl.to('#probes', { opacity: 1, duration: 1 });
-    window.__timelines = { main: tl };
   }
 </script>`;
 }
@@ -189,8 +205,7 @@ try {
   });
   expect(Boolean(still.media_id), `create.still ${JSON.stringify(still.error ?? '')}`);
   const anim = await create('create.motion', {
-    html: `<div id="b" class="clip" data-start="0" data-duration="1" data-track-index="0" style="position:absolute;inset:0;background:#fff"></div>
-<script>const tl = gsap.timeline({ paused: true }); tl.from('#b', { opacity: 0, duration: 1 }); window.__timelines = { main: tl };</script>`,
+    html: `<style>@keyframes in { from { opacity: 0 } }</style><div style="position:absolute;inset:0;background:#fff;animation:in 1s"></div>`,
     duration_seconds: 1,
     width: 320,
     height: 180,
@@ -262,6 +277,126 @@ try {
   expect(
     Boolean(after.media_id),
     `the sandbox still renders afterwards ${JSON.stringify(after.error ?? '')}`,
+  );
+  expect(
+    docker('inspect', '-f', '{{.State.Running}}', motion) === 'true',
+    'the motion container is still up',
+  );
+
+  step('code.run: tools through the SDK, in its own namespaces');
+  const sdk = await code({
+    script: `import { cf } from 'cuttingfloor';
+const { timeline_id } = await cf.timeline.create({ name: 'smoke', sequence: { width: 640, height: 360, fps: { num: 25, den: 1 } } });
+console.log(JSON.stringify({ timeline_id }));`,
+  });
+  expect(
+    /"timeline_id":"tl_/.test(sdk.stdout ?? ''),
+    `SDK call from a script ${JSON.stringify(sdk.error ?? '')}`,
+  );
+  // PID 1 of the container (its init) shares the worker's namespaces.
+  const workerNs = docker(
+    'exec',
+    motion,
+    'readlink',
+    '/proc/1/ns/pid',
+    '/proc/1/ns/net',
+    '/proc/1/ns/user',
+  );
+  const scriptNs = await code({
+    language: 'bash',
+    script: 'readlink /proc/self/ns/pid /proc/self/ns/net /proc/self/ns/user',
+  });
+  const mine = (scriptNs.stdout ?? '').trim().split('\n');
+  const theirs = workerNs.split('\n');
+  expect(
+    mine.length === 3 && mine.every((l, i) => l && l !== theirs[i]),
+    `own PID, network and user namespaces (${mine.join(' ')})`,
+  );
+
+  step('code.run: a script reaches nothing');
+  const reach = await code({
+    script: `const targets = ${JSON.stringify([
+      ['a public host by name', 'http://example.com/'],
+      ['a public host by address', 'http://1.1.1.1/'],
+      ['the main container by name', 'http://cuttingfloor:8787/healthz'],
+      ['the main container by address', `http://${mainIp}:8787/healthz`],
+      ['the sandbox worker', 'http://127.0.0.1:8790/healthz'],
+      ['the host machine', 'http://host.docker.internal:8787/'],
+      ['cloud metadata', 'http://169.254.169.254/latest/meta-data/'],
+    ])};
+const out = {};
+for (const [label, url] of targets) {
+  out[label] = await fetch(url, { signal: AbortSignal.timeout(3000) }).then(() => 'reached', () => 'blocked');
+}
+const fs = await import('node:fs');
+out['/data'] = fs.readdirSync('/data').length ? 'has files' : 'empty';
+out['other jobs in /tmp'] = fs.readdirSync('/tmp').filter((d) => !process.cwd().endsWith(d)).length ? 'visible' : 'none';
+let worker = 'invisible';
+for (const pid of fs.readdirSync('/proc').filter((p) => /^\\d+$/.test(p))) {
+  // /proc lists the container's PIDs, but kill() takes this namespace's: container PID 1
+  // (docker-init ... motion-worker) is this script's own PID here.
+  if (Number(pid) === process.pid) continue;
+  try {
+    if (fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8').includes('motion-worker')) {
+      try { process.kill(Number(pid), 'SIGTERM'); worker = 'killed'; } catch { worker = 'listed, not signalable'; }
+    }
+  } catch {}
+}
+out.worker = worker;
+const http = await import('node:http');
+out['socket without its token'] = await new Promise((resolve) => {
+  const req = http.request({ socketPath: process.env.CF_SOCKET, path: '/call', method: 'POST' }, (res) => resolve(String(res.statusCode)));
+  req.on('error', () => resolve('error'));
+  req.end('{"tool":"timeline.create","args":{}}');
+});
+console.log(JSON.stringify(out));`,
+  });
+  const seen = JSON.parse(reach.stdout?.trim() || '{}') as Record<string, string>;
+  if (reach.error) expect(false, `reach script ran: ${JSON.stringify(reach.error)}`);
+  for (const [label, value] of Object.entries(seen)) {
+    const good = ['blocked', 'empty', 'none', '401', 'listed, not signalable', 'invisible'];
+    expect(good.includes(value), `code.run: ${label} → ${value}`);
+  }
+
+  step('code.run: nothing outlives the job, abuse fails cleanly');
+  await code({
+    language: 'bash',
+    script: "setsid sh -c 'sleep 4; touch /tmp/escaped' >/dev/null 2>&1 < /dev/null & echo started",
+  });
+  await new Promise((r) => setTimeout(r, 6000));
+  expect(
+    !docker('exec', motion, 'sh', '-c', 'ls /tmp').includes('escaped'),
+    'a detached child dies with its script',
+  );
+  const failedTyped = (o: CodeOutcome) =>
+    Boolean(o.error && ['limit_exceeded', 'code_failed'].includes(o.error.code));
+  const spin = await code({ language: 'bash', script: 'while :; do :; done', timeout_seconds: 3 });
+  expect(spin.error?.code === 'limit_exceeded', `spinning → ${JSON.stringify(spin.error ?? spin)}`);
+  const forks = await code({
+    language: 'bash',
+    script: 'f() { f | f & }; f; sleep 5',
+    timeout_seconds: 20,
+  });
+  expect(
+    failedTyped(forks) || Boolean(forks.stdout !== undefined),
+    `fork bomb → ${JSON.stringify(forks.error ?? 'contained')}`,
+  );
+  const memory = await code({
+    language: 'python',
+    script: 'chunks = []\nwhile True:\n    chunks.append(bytearray(64 * 1024 * 1024))',
+    timeout_seconds: 60,
+  });
+  expect(failedTyped(memory), `memory hog → ${JSON.stringify(memory.error ?? memory)}`);
+  const disk = await code({
+    language: 'bash',
+    script: 'dd if=/dev/zero of=out/fill bs=1M count=100000 2>&1 | tail -1; exit 1',
+    timeout_seconds: 120,
+  });
+  expect(failedTyped(disk), `filling the disk → ${JSON.stringify(disk.error?.code ?? disk)}`);
+  const recovered = await code({ language: 'bash', script: 'echo fine; ls /tmp | wc -l' });
+  expect(
+    (recovered.stdout ?? '').startsWith('fine'),
+    `the sandbox runs scripts afterwards ${JSON.stringify(recovered.error ?? '')}`,
   );
   expect(
     docker('inspect', '-f', '{{.State.Running}}', motion) === 'true',

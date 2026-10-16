@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { CfError, type TimelineDoc } from '@cuttingfloor/schema';
 import { BIN, run } from './exec.ts';
 import { lengthFrames, type MltSource, scaledSize, writeMltProject } from './mlt.ts';
+import { ffmpegArgs, meltArgs, type Overrides, type PresetName, resolvePreset } from './presets.ts';
 
 export interface ImageOptions {
   longEdge: number;
@@ -166,68 +167,20 @@ async function encodeImages(dir: string, pngs: string[], options: ImageOptions):
   return out;
 }
 
-export interface ExportPresetSpec {
-  extension: string;
-  mime: string;
-  size: (w: number, h: number) => { width: number; height: number };
-  consumer: string[];
-}
-
-export const PRESETS: Record<'web_1080p_h264' | 'master_prores_422hq', ExportPresetSpec> = {
-  web_1080p_h264: {
-    extension: 'mp4',
-    mime: 'video/mp4',
-    size: (w, h) => {
-      const scale = w >= h ? Math.min(1920 / w, 1080 / h) : Math.min(1080 / w, 1920 / h);
-      const even = (n: number) => Math.max(2, Math.round((n * scale) / 2) * 2);
-      return { width: even(w), height: even(h) };
-    },
-    consumer: [
-      'vcodec=libx264',
-      'preset=medium',
-      'crf=20',
-      'pix_fmt=yuv420p',
-      'g=120',
-      'acodec=aac',
-      'ab=192k',
-      'f=mp4',
-      'movflags=+faststart',
-      'color_primaries=bt709',
-      'color_trc=bt709',
-      'colorspace=709',
-    ],
-  },
-  master_prores_422hq: {
-    extension: 'mov',
-    mime: 'video/quicktime',
-    size: (w, h) => ({ width: w, height: h }),
-    consumer: [
-      'vcodec=prores_ks',
-      'vprofile=3',
-      'vendor=apl0',
-      'pix_fmt=yuv422p10le',
-      'acodec=pcm_s24le',
-      'f=mov',
-      'color_primaries=bt709',
-      'color_trc=bt709',
-      'colorspace=709',
-    ],
-  },
-};
-
-/** Exports a timeline (or a frame range) with melt. Reports progress as a fraction. */
+/** Exports a timeline (or a frame range) with melt, plus an FFmpeg pass for GIFs and rate changes. */
 export async function exportTimeline(
   doc: TimelineDoc,
-  preset: keyof typeof PRESETS,
+  preset: PresetName,
   sources: Map<string, MltSource>,
   dest: string,
   options: {
     range?: { start: number; end: number };
+    overrides?: Overrides;
     signal?: AbortSignal;
     onProgress?: (fraction: number) => void;
   },
-): Promise<{ frames: number }> {
-  const spec = PRESETS[preset];
+): Promise<{ frames: number; width: number | null; height: number | null }> {
+  const { spec, settings, width, height } = resolvePreset(preset, doc.sequence, options.overrides);
   const length = lengthFrames(doc);
   if (length === 0)
     throw new CfError('bad_request', 'The timeline is empty', {
@@ -240,12 +193,24 @@ export async function exportTimeline(
       `Range ${range.start}-${range.end} is not inside the timeline (0-${length})`,
     );
   }
-  const size = spec.size(doc.sequence.width, doc.sequence.height);
+  const fps = spec.gif ? (options.overrides?.fps ?? spec.gif.fps) : options.overrides?.fps;
+  // A second pass: melt writes a lossless file, FFmpeg makes the output from it.
+  const twoPass = Boolean(spec.gif || fps);
   const dir = await mkdtemp(join(tmpdir(), 'cf-export-'));
   try {
-    const project = await writeMltProject(dir, doc, { ...size, sources, range });
+    const project = await writeMltProject(dir, doc, { width, height, sources, range });
     await mkdir(join(dest, '..'), { recursive: true });
     const total = range.end - range.start;
+    const share = twoPass ? 0.8 : 1;
+    const first = twoPass ? join(dir, 'master.mkv') : dest;
+    const consumer = twoPass
+      ? meltArgs({
+          vcodec: 'ffv1',
+          pix_fmt: 'yuv444p',
+          ...(spec.gif ? { an: '1' } : { acodec: 'pcm_s24le' }),
+          f: 'matroska',
+        })
+      : meltArgs({ ...settings, ...(spec.audioOnly ? { vn: '1' } : {}) });
     await run(
       BIN.melt,
       [
@@ -253,11 +218,11 @@ export async function exportTimeline(
         '-progress',
         ...project,
         '-consumer',
-        `avformat:${dest}`,
-        ...spec.consumer,
-        `width=${size.width}`,
-        `height=${size.height}`,
-        `frequency=${doc.sequence.audio_rate}`,
+        `avformat:${first}`,
+        ...consumer,
+        `width=${width}`,
+        `height=${height}`,
+        `frequency=${spec.audioOnly && preset === 'audio_wav_48k' ? 48000 : doc.sequence.audio_rate}`,
         `channels=${doc.sequence.channels}`,
         'real_time=-1',
         'progressive=1',
@@ -268,11 +233,42 @@ export async function exportTimeline(
         ...(options.signal ? { signal: options.signal } : {}),
         onLine: (line) => {
           const m = /Current Frame:\s+(\d+)/.exec(line);
-          if (m && options.onProgress) options.onProgress(Math.min(1, Number(m[1]) / total));
+          if (m && options.onProgress)
+            options.onProgress(share * Math.min(1, Number(m[1]) / total));
         },
       },
     );
-    return { frames: total };
+    if (!twoPass) {
+      return {
+        frames: spec.audioOnly ? 0 : total,
+        width: spec.audioOnly ? null : width,
+        height: spec.audioOnly ? null : height,
+      };
+    }
+    const rate = fps as number;
+    const vf = spec.gif
+      ? `fps=${rate},split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4`
+      : `fps=${rate}`;
+    await run(
+      BIN.ffmpeg,
+      [
+        '-hide_banner',
+        '-nostdin',
+        '-v',
+        'error',
+        '-y',
+        '-i',
+        first,
+        ...(spec.gif
+          ? ['-filter_complex', vf, '-loop', '0', '-f', 'gif']
+          : ['-vf', vf, ...ffmpegArgs(settings)]),
+        dest,
+      ],
+      { ...(options.signal ? { signal: options.signal } : {}), timeoutMs: 4 * 60 * 60_000 },
+    );
+    options.onProgress?.(1);
+    const seconds = (total * doc.sequence.fps.den) / doc.sequence.fps.num;
+    return { frames: Math.round(seconds * rate), width, height };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

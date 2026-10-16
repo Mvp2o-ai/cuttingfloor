@@ -20,6 +20,8 @@ services:
       CUTTINGFLOOR_EXPORTS: /exports
       # Shown in export results so you know where the file landed on your machine.
       CUTTINGFLOOR_EXPORTS_HOST_PATH: ${CUTTINGFLOOR_EXPORTS:-${HOME}/cuttingfloor/exports}
+      # So export.timeline (FCPXML, OTIO, EDL) points your editor at the files on your machine.
+      CUTTINGFLOOR_MEDIA_HOST_PATH: ${CUTTINGFLOOR_MEDIA:-${HOME}/Movies}
       CUTTINGFLOOR_MOTION_URL: http://motion:8790
     volumes:
       # Timelines, imported media, proxies, jobs and outputs (each with a time limit).
@@ -29,10 +31,11 @@ services:
       # Where finished exports are written.
       - ${CUTTINGFLOOR_EXPORTS:-${HOME}/cuttingfloor/exports}:/exports
 
-  # The motion sandbox: the one place agent-written HTML runs (create.motion, create.still).
-  # Same image; no route out, no data volume, no secrets, nothing writable but a small tmpfs,
-  # no capabilities, fixed CPU, memory and process limits. Chromium's own sandbox stays on, which
-  # needs the seccomp profile next to this file (Docker's default plus namespace creation).
+  # The sandbox: the one place agent-written code runs (create.motion, create.still, code.run).
+  # Same image; no route out, no data volume, no secrets, nothing writable but a tmpfs, no
+  # capabilities, fixed CPU, memory and process limits. Chromium's sandbox and code.run's
+  # namespaces need the seccomp profile next to this file (Docker's default plus namespace
+  # creation). Memory stays above the tmpfs size, so a full disk is an error, not an OOM.
   motion:
     image: ${CUTTINGFLOOR_IMAGE:-ghcr.io/mvp2o-ai/cuttingfloor:latest}
     container_name: ${CUTTINGFLOOR_NAME:-cuttingfloor}-motion
@@ -55,8 +58,8 @@ services:
       - seccomp=./tools/motion/seccomp.json
     init: true
     cpus: 2
-    mem_limit: 2g
-    memswap_limit: 2g
+    mem_limit: 4g
+    memswap_limit: 4g
     pids_limit: 256
     shm_size: 1g
 

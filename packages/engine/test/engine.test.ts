@@ -170,7 +170,8 @@ describe('MLT compiler', () => {
     const fill = compile(
       edit([{ tool: 'clip.set_transform', args: { clip_id: 'c4', fit: 'fill' } }]),
     );
-    expect(fill).toContain('<property name="rect">0 0 640 360 1</property>');
+    // Full frame stays just under opacity 1, off qtblend's shortcut (see composite.ts).
+    expect(fill).toContain('<property name="rect">0 0 640 360 0.9999</property>');
     const cover = compile(
       edit([{ tool: 'clip.set_transform', args: { clip_id: 'c4', fit: 'cover' } }]),
     );

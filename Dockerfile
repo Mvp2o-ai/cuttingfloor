@@ -39,6 +39,29 @@ RUN g++ -O2 -std=c++17 /src/vision.cpp -o /cf-vision $(pkg-config --cflags --lib
  && strip /cf-vision \
  && curl -fsSL -o /yunet.onnx "$YUNET_URL" \
  && echo "$YUNET_SHA256  /yunet.onnx" | sha256sum -c -
+# cf-segment (tools/vision/segment.cpp): BiRefNet lite (MIT) for create.cutout of any subject,
+# on ONNX Runtime's prebuilt CPU release for the target architecture. All pinned and checked.
+ARG TARGETARCH
+ARG ORT_VERSION=1.30.0
+ARG ORT_AMD64_SHA256=a5ed5a3cac51fbb2e90da632ae43d19212faaa20e76484e62bcb7c23ddb3b3fd
+ARG ORT_ARM64_SHA256=e16a27a8ed330bbc698df7330b0cf56e722f354e3bcc92118682c74ef3c3e3da
+ARG BIREFNET_URL=https://huggingface.co/onnx-community/BiRefNet_lite-ONNX/resolve/de15b22ba131738a16dff04aab8bdf8dc32e3ac1/onnx/model.onnx
+ARG BIREFNET_SHA256=5600024376f572a557870a5eb0afb1e5961636bef4e1e22132025467d0f03333
+RUN case "$TARGETARCH" in \
+      amd64) asset=x64; sum=$ORT_AMD64_SHA256 ;; \
+      arm64) asset=aarch64; sum=$ORT_ARM64_SHA256 ;; \
+      *) echo "unsupported $TARGETARCH" && exit 1 ;; \
+    esac \
+ && curl -fsSL -o /ort.tgz "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/onnxruntime-linux-$asset-$ORT_VERSION.tgz" \
+ && echo "$sum  /ort.tgz" | sha256sum -c - \
+ && mkdir -p /opt/onnxruntime && tar -xzf /ort.tgz -C /opt/onnxruntime --strip-components=1 \
+ && curl -fsSL -o /models/birefnet-lite.onnx "$BIREFNET_URL" \
+ && echo "$BIREFNET_SHA256  /models/birefnet-lite.onnx" | sha256sum -c -
+COPY tools/vision/segment.cpp /src/segment.cpp
+RUN g++ -O2 -std=c++17 /src/segment.cpp -o /cf-segment -I/opt/onnxruntime/include \
+      $(pkg-config --cflags --libs opencv4) -L/opt/onnxruntime/lib -lonnxruntime \
+      -Wl,-rpath,/opt/onnxruntime/lib \
+ && strip /cf-segment
 
 # sherpa-onnx's offline TTS for local voiceover (Kokoro voices; Apache-2.0, with espeak-ng
 # built in), the prebuilt release for each architecture, checked against pinned SHA-256s. The
@@ -67,6 +90,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt tini fontconfig \
       fonts-dejavu-core fonts-inter fonts-montserrat fonts-open-sans fonts-lato fonts-bebas-neue \
       fonts-lobster fonts-comic-neue fonts-firacode fonts-noto-core chromium bzip2 \
+      python3 python3-numpy python3-pil python3-opencv zip \
  && rm -rf /var/lib/apt/lists/* \
  # Web font copies are useless to libass, and Montserrat ships twice; one TrueType set stays.
  && find /usr/share/fonts -name '*.woff*' -delete && rm -rf /usr/share/fonts/opentype/montserrat \
@@ -75,17 +99,22 @@ RUN apt-get update \
  && ffmpeg -hide_banner -encoders | grep -q prores_ks \
  && melt -query transitions | grep -q qtblend \
  && melt -query filters | grep -q rotoscoping \
- && chromium --version
+ && chromium --version \
+ && python3 -c 'import numpy, PIL, cv2' \
+ && unshare --version
 COPY --from=whisper /src/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=tts /opt/sherpa-onnx /opt/sherpa-onnx
 RUN ln -s /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts /usr/local/bin/sherpa-onnx-offline-tts
 COPY --from=vision /cf-vision /usr/local/bin/cf-vision
 COPY --from=vision /yunet.onnx /usr/share/cuttingfloor/models/face_detection_yunet_2023mar.onnx
 COPY --from=vision /models/ /usr/share/cuttingfloor/models/
-# Chromium for the motion sandbox (create.motion, create.still), only ever started by the
+COPY --from=vision /opt/onnxruntime/lib/ /opt/onnxruntime/lib/
+COPY --from=vision /cf-segment /usr/local/bin/cf-segment
+# Chromium for the sandbox (create.motion, create.still, code.run), only ever started by the
 # motion-worker role through this wrapper, which keeps its sandbox on and its network off.
+# Python (numpy, Pillow, OpenCV) is for code.run scripts.
 COPY tools/motion/cf-chromium /usr/local/bin/cf-chromium
-RUN cf-vision 2>&1 | grep -q usage
+RUN cf-vision 2>&1 | grep -q usage && cf-segment 2>&1 | grep -q usage
 # MLT's Qt modules (qtblend) need a display variable to load; Qt itself renders offscreen.
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true QT_QPA_PLATFORM=offscreen DISPLAY=:0 \
     PUPPETEER_SKIP_DOWNLOAD=1

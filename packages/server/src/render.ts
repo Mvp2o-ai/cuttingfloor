@@ -171,14 +171,22 @@ export async function timelineImage(
   timelineId: string,
   doc: TimelineDoc,
   frames: number[],
-  options: { longEdge?: number; format?: 'webp' | 'png'; signal?: AbortSignal } = {},
+  options: {
+    longEdge?: number;
+    format?: 'webp' | 'png';
+    signal?: AbortSignal;
+    /** Full size from the original media instead of preview size from proxies. */
+    full?: boolean;
+  } = {},
 ): Promise<Buffer> {
-  const longEdge = options.longEdge ?? 640;
+  const longEdge = options.full
+    ? Math.max(doc.sequence.width, doc.sequence.height)
+    : (options.longEdge ?? 640);
   const format = options.format ?? 'webp';
   const cacheFile = rt.ws.path(
     'cache',
     'frames',
-    `${timelineId}-${frames.join('_')}-${longEdge}.${format}`,
+    `${timelineId}-${frames.join('_')}-${longEdge}${options.full ? '-full' : ''}.${format}`,
   );
   try {
     return await readFile(cacheFile);
@@ -189,7 +197,12 @@ export async function timelineImage(
     throw new CfError('bad_request', 'The timeline is empty', {
       hint: 'Add a clip with clip.add first',
     });
-  const { sources, offline } = await sourcesFor(rt, owner, doc, 'preview');
+  const { sources, offline } = await sourcesFor(
+    rt,
+    owner,
+    doc,
+    options.full ? 'export' : 'preview',
+  );
   assertOnline(offline);
   const [image] = await renderTimelineFrames(doc, frames, sources, {
     longEdge,

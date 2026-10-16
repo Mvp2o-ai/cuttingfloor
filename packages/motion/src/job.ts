@@ -23,10 +23,7 @@ try {
   say({ done: file });
   process.exit(0);
 } catch (error) {
-  const e = error as Error & { errorDetails?: { browserConsoleTail?: string[] } };
-  say({
-    failed: e.message,
-    ...(e.errorDetails?.browserConsoleTail ? { console: e.errorDetails.browserConsoleTail } : {}),
-  });
+  const e = error as Error & { console?: string[] };
+  say({ failed: e.message, ...(e.console?.length ? { console: e.console } : {}) });
   process.exit(1);
 }

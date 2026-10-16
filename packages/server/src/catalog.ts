@@ -1,4 +1,4 @@
-import { installedFonts } from '@cuttingfloor/engine';
+import { installedFonts, presetCatalog } from '@cuttingfloor/engine';
 import {
   BLEND_MODES,
   type BlendMode,
@@ -109,6 +109,13 @@ const REVEAL_TEXT: Record<(typeof TEXT_REVEALS)[number], string> = {
 };
 
 const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<unknown>) }> = {
+  presets: {
+    title: 'Export presets',
+    body: {
+      note: 'export.video {preset, overrides?}. overrides: width/height (a box; aspect kept), fps, bitrate (e.g. "8M") or crf, where the preset takes them. export.timeline writes fcpxml, otio, edl, srt or vtt.',
+      presets: presetCatalog(),
+    },
+  },
   effects: {
     title: 'Effects',
     body: {

@@ -4,7 +4,9 @@ import { registerCatalogs } from './catalog.ts';
 import { registerResources } from './resources.ts';
 import type { Runtime } from './runtime.ts';
 import { registerTasks } from './tasks.ts';
+import { registerCodeTools } from './tools/code.ts';
 import { registerCreateTools } from './tools/create.ts';
+import { registerInterchangeTools } from './tools/interchange.ts';
 import { registerMediaTools } from './tools/media.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { registerTimelineTools } from './tools/timeline.ts';
@@ -28,9 +30,10 @@ const INSTRUCTIONS = `cuttingfloor is a headless video editor. Typical flow (to 
    Effects: filter.add on a clip, a track or the whole timeline (video://catalog/effects: colour, LUTs, blur, vignette, chroma key, glitch; EQ, compressor, denoise, pitch); adjustment.add for effects over everything below for a stretch.
    Analysis: media.analyze {kind: transcript | beats | faces | track} turns media into data: cut by words (clip.add source {words}), caption from a transcript (caption.add from_transcript), cut on beats, reframe on the faces' focus, pin a title to a tracked object.
    Overlays and picture-in-picture: put a clip on a higher video track, then clip.set_transform, clip.set_mask, clip.set_blend and clip.set_animation. Catalogues of accepted names are resources at video://catalog/{name}.
-   Create: create.motion (animated HTML + GSAP, rendered with alpha in a sandbox), create.still (HTML to a PNG) create.matte (solid or gradient) create.voiceover (speech with timed words) and create.cutout (people without their background) make new media to place with clip.add.
+   Create: create.motion (any animated HTML, rendered frame-exactly with alpha in a sandbox), create.still (HTML to a PNG), create.matte (solid or gradient), create.voiceover (speech with timed words) and create.cutout (a subject without its background) make new media to place with clip.add.
+   Code: code.run runs a node/python/bash script in the sandbox for anything the tools don't cover. Inside it, cf.domain.verb(args) calls these same tools on the same media and timelines, and files written to out/ come back as media or timelines, so code and tools hand work to each other.
 4. Look at the result with preview: "inline" on an edit, or render.frames.
-5. qa.check, then export.video (long-running) for a signed download URL.
+5. qa.check, then export.video (long-running) for a signed download URL: presets for web, masters, 9:16 social, AV1, GIF and audio, with size/fps/bitrate overrides (video://catalog/presets). export.timeline hands the edit to another editor (FCPXML, OTIO, EDL) or writes captions (SRT, VTT).
 Time is integer frames at the sequence rate; ranges are end-exclusive. Timelines expire 24 h after last use (timeline.get + timeline.load restores one); media and outputs after 7 days.`;
 
 /** Builds one MCP server instance over the shared runtime. Transports live in apps/. */
@@ -45,6 +48,8 @@ export function createServer(deps: ServerDeps): McpServer {
   registerTimelineTools(server, deps);
   registerMediaTools(server, deps);
   registerCreateTools(server, deps);
+  registerCodeTools(server, deps);
   registerRenderTools(server, deps);
+  registerInterchangeTools(server, deps);
   return server;
 }
