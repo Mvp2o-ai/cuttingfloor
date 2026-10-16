@@ -1523,6 +1523,173 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     }, 180_000);
   });
 
+  describe('text', () => {
+    let green = '';
+
+    async function frame(timelineId: string, f: number): Promise<Buffer> {
+      const res = await call(client, 'render.frames', {
+        timeline_id: timelineId,
+        frames: [f],
+        layout: 'single',
+        format: 'png',
+        long_edge: 1280,
+      });
+      if (res.isError) throw new Error(JSON.stringify(res.structured));
+      return Buffer.from((res.content[0]?.data as string) ?? '', 'base64');
+    }
+
+    /** A green 2 s timeline with a second video track for text, plus `ops`. */
+    async function onGreen(ops: Array<{ tool: string; args: Record<string, unknown> }>) {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'text',
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+        tracks: { video: 2, audio: 0 },
+      });
+      return (
+        await ok<{ timeline_id: string }>(client, 'edit.batch', {
+          timeline_id,
+          preview: 'none',
+          ops: [
+            {
+              tool: 'clip.add',
+              args: { track_id: 't1', media_id: green, av: 'video', source: { in: 0, out: 50 } },
+            },
+            ...ops,
+          ],
+        })
+      ).timeline_id;
+    }
+
+    beforeAll(async () => {
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=0x00ff00:size=1280x720:rate=25',
+        '-t',
+        '3',
+        '-pix_fmt',
+        'yuv420p',
+        join(env.mediaDir, 'green3.mp4'),
+      ]);
+      green = (await importMedia({ path: join(env.mediaDir, 'green3.mp4') })).media_id;
+    }, 120_000);
+
+    it('sets a title on a box over the picture', async () => {
+      const t = await onGreen([
+        {
+          tool: 'title.add',
+          args: {
+            track_id: 't2',
+            text: 'HELLO',
+            at_frame: 0,
+            duration_frames: 50,
+            style: {
+              size: 0.2,
+              color: '#FFFFFF',
+              box: { color: '#000000', padding: 0.4 },
+              shadow: null,
+            },
+          },
+        },
+      ]);
+      const image = await frame(t, 10);
+      const across = await Promise.all(
+        [440, 520, 600, 680, 760, 840].map(async (x) => colour(await pixel(image, x, 360))),
+      );
+      expect(across.every((c) => c === 'white' || c === 'black')).toBe(true);
+      expect(across).toContain('white');
+      expect(colour(await pixel(image, 40, 40))).toBe('green');
+    }, 120_000);
+
+    it('moves a caption highlight from word to word in time', async () => {
+      const t = await onGreen([
+        {
+          tool: 'caption.add',
+          args: {
+            track_id: 't2',
+            segments: [
+              {
+                start_frame: 0,
+                end_frame: 50,
+                text: 'AAAA BBBB',
+                words: [
+                  { text: 'AAAA', start_frame: 0, end_frame: 25 },
+                  { text: 'BBBB', start_frame: 25, end_frame: 50 },
+                ],
+              },
+            ],
+            style: { size: 0.15, outline: null, highlight: { mode: 'word', color: '#FF0000' } },
+          },
+        },
+      ]);
+      const redness = async (f: number) => {
+        const image = await frame(t, f);
+        const band = (x: number) => regionStats(image, `300:80:${x}:540`);
+        return { left: (await band(320)).v, right: (await band(660)).v };
+      };
+      const early = await redness(10);
+      const late = await redness(40);
+      expect(early.left).toBeGreaterThan(early.right + 10);
+      expect(late.right).toBeGreaterThan(late.left + 10);
+    }, 120_000);
+
+    it('reads SRT, types a title out, and sets text in an imported font', async () => {
+      const srt =
+        '1\n00:00:00,000 --> 00:00:01,000\nFirst\n\n2\n00:00:01,000 --> 00:00:02,000\nSecond\n';
+      const subs = await ok<{ timeline_id: string; clip_ids: string[] }>(client, 'caption.add', {
+        timeline_id: await onGreen([]),
+        track_id: 't2',
+        srt,
+        preview: 'none',
+      });
+      expect(subs.clip_ids).toHaveLength(2);
+      const band = async (t: string, f: number) => regionStats(await frame(t, f), '160:48:560:600');
+      // White text over green pulls the band's chroma towards neutral: V rises from green's.
+      const plain = await band(await onGreen([]), 10);
+      expect((await band(subs.timeline_id, 10)).v).toBeGreaterThan(plain.v + 5);
+
+      const typed = await onGreen([
+        {
+          tool: 'title.add',
+          args: {
+            track_id: 't2',
+            text: 'TYPEWRITER',
+            at_frame: 0,
+            duration_frames: 50,
+            style: { size: 0.15, reveal: 'typewriter', reveal_frames: 20, shadow: null },
+          },
+        },
+      ]);
+      const mid = (f: number) => frame(typed, f).then((img) => regionStats(img, '900:120:190:300'));
+      expect((await mid(0)).v).toBeCloseTo(plain.v, 0);
+      expect((await mid(30)).v).toBeGreaterThan(plain.v + 5);
+
+      await exec('cp', [
+        '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf',
+        join(env.mediaDir, 'serif.ttf'),
+      ]);
+      const font = await importMedia({ path: join(env.mediaDir, 'serif.ttf') });
+      expect(font).toMatchObject({ kind: 'font', font_family: 'DejaVu Serif', status: 'ready' });
+      const serif = await onGreen([
+        {
+          tool: 'title.add',
+          args: {
+            track_id: 't2',
+            text: 'Serif',
+            at_frame: 0,
+            duration_frames: 50,
+            style: { font_media_id: font.media_id },
+          },
+        },
+      ]);
+      expect((await mid30(serif)).v).toBeGreaterThan(plain.v + 5);
+      async function mid30(t: string) {
+        return regionStats(await frame(t, 30), '200:60:540:330');
+      }
+    }, 180_000);
+  });
+
   it('refuses crafted media', async () => {
     for (const file of ['evil.m3u8', 'fake.mp4']) {
       const started = await ok<{ job_id: string }>(client, 'media.import', {
