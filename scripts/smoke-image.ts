@@ -112,7 +112,7 @@ try {
     await new Promise((r) => setTimeout(r, 500));
   }
 
-  step('HTTP: health, import, edit, export, download');
+  step('HTTP: health, import, edit, composite, export, download');
   const http = new Client({ name: 'smoke-http', version: '0' });
   await http.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)));
   const health = await http.readResource({ uri: 'video://server/health' });
@@ -131,12 +131,47 @@ try {
     name: 'Smoke',
     sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
   });
-  const edited = await call(http, 'clip.add', {
+  const cut = await call(http, 'clip.add', {
     timeline_id: created.timeline_id,
     track_id: 't1',
     media_id: started.media_id,
     preview: 'inline',
   });
+  // Picture-in-picture over it: Qt compositing (qtblend) and masks (rotoscoping) in the image.
+  const edited = await call(http, 'edit.batch', {
+    timeline_id: cut.timeline_id,
+    preview: 'inline',
+    ops: [
+      { tool: 'track.add', args: { kind: 'video' } },
+      {
+        tool: 'clip.add',
+        args: {
+          track_id: { $ref: 'ops[0].track_id' },
+          media_id: sample.media_id,
+          av: 'video',
+          at_frame: 0,
+          source: { in: 0, out: 100 },
+        },
+      },
+      {
+        tool: 'clip.set_transform',
+        args: { clip_id: { $ref: 'ops[1].clip_id' }, scale: 0.35, x: 0.78, y: 0.22, rotation: -4 },
+      },
+      {
+        tool: 'clip.set_mask',
+        args: {
+          clip_id: { $ref: 'ops[1].clip_id' },
+          mask: { shape: 'rectangle', width: 1, height: 1, corner_radius: 0.15 },
+        },
+      },
+      {
+        tool: 'clip.set_animation',
+        args: { clip_id: { $ref: 'ops[1].clip_id' }, in: { name: 'pop', duration_frames: 12 } },
+      },
+    ],
+  });
+  if ((edited.preview as { status: string }).status !== 'ready')
+    throw new Error(`composite preview did not render: ${JSON.stringify(edited.warnings)}`);
   const exported = await call(http, 'export.video', {
     timeline_id: edited.timeline_id,
     preset: 'web_1080p_h264',

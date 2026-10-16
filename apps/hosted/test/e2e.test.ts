@@ -167,6 +167,31 @@ async function regionStats(
   return { y: get('YAVG'), u: get('UAVG'), v: get('VAVG') };
 }
 
+/** RGB of one pixel of an image. */
+async function pixel(image: Buffer, x: number, y: number): Promise<[number, number, number]> {
+  const file = join(env.dir, `px-${Math.random().toString(36).slice(2)}.png`);
+  await writeFile(file, image);
+  const { stdout } = await exec(
+    'ffmpeg',
+    ['-v', 'error', '-i', file, '-vf', `crop=1:1:${x}:${y},format=rgb24`, '-f', 'rawvideo', '-'],
+    { encoding: 'buffer' },
+  );
+  return [stdout[0] ?? -1, stdout[1] ?? -1, stdout[2] ?? -1];
+}
+
+/** Rough colour name of an RGB pixel, so assertions read as what a viewer sees. */
+function colour([r, g, b]: [number, number, number]): string {
+  const hi = (v: number) => v > 170;
+  const lo = (v: number) => v < 70;
+  if (hi(r) && hi(g) && hi(b)) return 'white';
+  if (lo(r) && lo(g) && lo(b)) return 'black';
+  if (hi(r) && lo(g) && lo(b)) return 'red';
+  if (lo(r) && hi(g) && lo(b)) return 'green';
+  if (lo(r) && lo(g) && hi(b)) return 'blue';
+  if (hi(r) && hi(g) && lo(b)) return 'yellow';
+  return `rgb(${r},${g},${b})`;
+}
+
 let env: TestEnv;
 let http: Server;
 let base: string;
@@ -616,6 +641,370 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     expect(lumas.map((l) => Math.round((l.y - 16) / 8))).toEqual([7, 12, 24]);
   }, 120_000);
 
+  describe('compositing', () => {
+    let base = '';
+    const ids: Record<string, string> = {};
+
+    /** One frame of a timeline as a 1280×720 PNG. */
+    async function frameImage(timelineId: string, frame: number): Promise<Buffer> {
+      const res = await call(client, 'render.frames', {
+        timeline_id: timelineId,
+        frames: [frame],
+        layout: 'single',
+        format: 'png',
+        long_edge: 1280,
+      });
+      if (res.isError) throw new Error(JSON.stringify(res.structured));
+      const image = res.content.find((c) => c.type === 'image');
+      return Buffer.from((image?.data as string) ?? '', 'base64');
+    }
+
+    /** Names the colour at each point of a frame. */
+    async function look(
+      timelineId: string,
+      frame: number,
+      points: Array<[number, number]>,
+    ): Promise<string[]> {
+      const image = await frameImage(timelineId, frame);
+      return Promise.all(points.map(async ([x, y]) => colour(await pixel(image, x, y))));
+    }
+
+    /** One edit on top of the base timeline (green V1 under red 4:3 on V2, 50 frames). */
+    async function withEdit(tool: string, args: Record<string, unknown>): Promise<string> {
+      return (
+        await ok<{ timeline_id: string }>(client, tool, {
+          timeline_id: base,
+          preview: 'none',
+          ...args,
+        })
+      ).timeline_id;
+    }
+
+    beforeAll(async () => {
+      const m = env.mediaDir;
+      // Fixtures, made one at a time to keep memory low: a 4:3 red picture, a 16:9 green
+      // one, a 4:3 picture split red | blue, and a white disc on transparency (ProRes 4444,
+      // so it keeps its alpha).
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=red:size=640x480:rate=25',
+        '-t',
+        '3',
+        '-pix_fmt',
+        'yuv420p',
+        join(m, 'red43.mp4'),
+      ]);
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=0x00ff00:size=1280x720:rate=25',
+        '-t',
+        '3',
+        '-pix_fmt',
+        'yuv420p',
+        join(m, 'green.mp4'),
+      ]);
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        "color=c=red:size=640x480:rate=25,format=rgb24,geq=r='if(lt(X,320),255,0)':g=0:b='if(lt(X,320),0,255)'",
+        '-t',
+        '3',
+        '-pix_fmt',
+        'yuv444p',
+        join(m, 'halves.mp4'),
+      ]);
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        "color=c=white:size=640x480:rate=25,format=rgba,geq=r=255:g=255:b=255:a='if(lt(hypot(X-320,Y-240),200),255,0)'",
+        '-t',
+        '3',
+        '-c:v',
+        'prores_ks',
+        '-profile:v',
+        '4',
+        '-pix_fmt',
+        'yuva444p10le',
+        join(m, 'disc.mov'),
+      ]);
+      for (const name of ['red43', 'green', 'halves'])
+        ids[name] = (await importMedia({ path: join(env.mediaDir, `${name}.mp4`) })).media_id;
+      ids.disc = (await importMedia({ path: join(env.mediaDir, 'disc.mov') })).media_id;
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'compositing',
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+        tracks: { video: 2, audio: 0 },
+      });
+      base = (
+        await ok<{ timeline_id: string }>(client, 'edit.batch', {
+          timeline_id,
+          preview: 'none',
+          ops: [
+            {
+              tool: 'clip.add',
+              args: {
+                track_id: 't1',
+                media_id: ids.green,
+                av: 'video',
+                source: { in: 0, out: 50 },
+              },
+            },
+            {
+              tool: 'clip.add',
+              args: {
+                track_id: 't2',
+                media_id: ids.red43,
+                av: 'video',
+                source: { in: 0, out: 50 },
+              },
+            },
+          ],
+        })
+      ).timeline_id;
+    }, 300_000);
+
+    it('fits a picture with its aspect kept and transparent bars', async () => {
+      expect(
+        await look(base, 10, [
+          [100, 360],
+          [640, 360],
+          [1180, 360],
+        ]),
+      ).toEqual(['green', 'red', 'green']);
+    }, 60_000);
+
+    it('positions, scales and rotates', async () => {
+      // Half size at the top-left quarter: 480×360 centred on (320, 180).
+      const pip = await withEdit('clip.set_transform', {
+        clip_id: 'c4',
+        scale: 0.5,
+        x: 0.25,
+        y: 0.25,
+      });
+      expect(
+        await look(pip, 10, [
+          [320, 180],
+          [100, 100],
+          [640, 360],
+          [700, 180],
+        ]),
+      ).toEqual(['red', 'red', 'green', 'green']);
+      // A quarter turn makes the half-size picture 360 wide and 480 tall about the centre.
+      const turned = await withEdit('clip.set_transform', {
+        clip_id: 'c4',
+        scale: 0.5,
+        rotation: 90,
+      });
+      expect(
+        await look(turned, 10, [
+          [640, 150],
+          [430, 360],
+          [500, 360],
+        ]),
+      ).toEqual(['red', 'green', 'red']);
+    }, 60_000);
+
+    it('animates with keyframes and fades', async () => {
+      const moving = await withEdit('clip.set_transform', {
+        clip_id: 'c4',
+        scale: 0.25,
+        x: {
+          keyframes: [
+            { frame: 0, value: 0.125 },
+            { frame: 40, value: 0.875 },
+          ],
+        },
+      });
+      // 240×180 boxes: at frame 0 centred on x 160; at frame 20 on x 640; at frame 40 on x 1120.
+      expect(
+        await look(moving, 0, [
+          [160, 360],
+          [640, 360],
+        ]),
+      ).toEqual(['red', 'green']);
+      expect(
+        await look(moving, 20, [
+          [160, 360],
+          [640, 360],
+        ]),
+      ).toEqual(['green', 'red']);
+      expect(
+        await look(moving, 45, [
+          [1120, 360],
+          [640, 360],
+        ]),
+      ).toEqual(['red', 'green']);
+      const half = await withEdit('clip.set_transform', { clip_id: 'c4', opacity: 0.5 });
+      // Half red over green.
+      const [r, g] = await pixel(await frameImage(half, 10), 640, 360);
+      expect(r).toBeGreaterThan(90);
+      expect(r).toBeLessThan(165);
+      expect(g).toBeGreaterThan(90);
+      expect(g).toBeLessThan(165);
+      const faded = await withEdit('clip.set_animation', {
+        clip_id: 'c4',
+        in: { name: 'fade', duration_frames: 10 },
+      });
+      expect(await look(faded, 0, [[640, 360]])).toEqual(['green']);
+      expect(await look(faded, 20, [[640, 360]])).toEqual(['red']);
+    }, 120_000);
+
+    it('blends', async () => {
+      const multiplied = await withEdit('clip.set_blend', { clip_id: 'c4', mode: 'multiply' });
+      expect(
+        await look(multiplied, 10, [
+          [640, 360],
+          [100, 360],
+        ]),
+      ).toEqual(['black', 'green']);
+      const screened = await withEdit('clip.set_blend', { clip_id: 'c4', mode: 'screen' });
+      expect(await look(screened, 10, [[640, 360]])).toEqual(['yellow']);
+    }, 60_000);
+
+    it('masks, inverts and crops in the picture, never in the bars', async () => {
+      // An ellipse half the picture's size: the picture's corner area shows V1 through.
+      const ellipse = await withEdit('clip.set_mask', {
+        clip_id: 'c4',
+        mask: { shape: 'ellipse' },
+      });
+      expect(
+        await look(ellipse, 10, [
+          [640, 360],
+          [200, 40],
+          [100, 360],
+        ]),
+      ).toEqual(['red', 'green', 'green']);
+      const inverted = await withEdit('clip.set_mask', {
+        clip_id: 'c4',
+        mask: { shape: 'ellipse', invert: true },
+      });
+      expect(
+        await look(inverted, 10, [
+          [640, 360],
+          [200, 40],
+          [100, 360],
+        ]),
+      ).toEqual(['green', 'red', 'green']);
+      // A linear mask keeps the lower half; the bars beside it stay clear.
+      const linear = await withEdit('clip.set_mask', { clip_id: 'c4', mask: { shape: 'linear' } });
+      expect(
+        await look(linear, 10, [
+          [640, 200],
+          [640, 600],
+          [100, 600],
+        ]),
+      ).toEqual(['green', 'red', 'green']);
+      // Cropping the left half hides it and leaves the right half where it was.
+      const cropped = await withEdit('clip.set_transform', { clip_id: 'c4', crop: { left: 0.5 } });
+      expect(
+        await look(cropped, 10, [
+          [300, 360],
+          [900, 360],
+          [100, 360],
+        ]),
+      ).toEqual(['green', 'red', 'green']);
+    }, 120_000);
+
+    it('flips', async () => {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'clip.add', {
+        timeline_id: base,
+        track_id: 't2',
+        media_id: ids.halves,
+        av: 'video',
+        at_frame: 0,
+        source: { in: 0, out: 50 },
+        preview: 'none',
+      });
+      expect(
+        await look(timeline_id, 10, [
+          [400, 360],
+          [880, 360],
+        ]),
+      ).toEqual(['red', 'blue']);
+      const flipped = await ok<{ timeline_id: string }>(client, 'clip.set_transform', {
+        timeline_id,
+        clip_id: 'c5',
+        flip: 'horizontal',
+        preview: 'none',
+      });
+      expect(
+        await look(flipped.timeline_id, 10, [
+          [400, 360],
+          [880, 360],
+        ]),
+      ).toEqual(['blue', 'red']);
+    }, 60_000);
+
+    it("keeps a picture's own transparency under a mask", async () => {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'clip.add', {
+        timeline_id: base,
+        track_id: 't2',
+        media_id: ids.disc,
+        av: 'video',
+        at_frame: 0,
+        source: { in: 0, out: 50 },
+        preview: 'none',
+      });
+      // Disc of radius 200 source px = 300 px on screen, centred; transparent around it.
+      expect(
+        await look(timeline_id, 10, [
+          [640, 360],
+          [200, 40],
+        ]),
+      ).toEqual(['white', 'green']);
+      const masked = await ok<{ timeline_id: string }>(client, 'clip.set_mask', {
+        timeline_id,
+        clip_id: 'c5',
+        mask: { shape: 'rectangle', x: 0.25, width: 0.5, height: 1 },
+        preview: 'none',
+      });
+      // Left half of the disc stays, right half is masked, and the transparent corners stay clear.
+      expect(
+        await look(masked.timeline_id, 10, [
+          [500, 360],
+          [780, 360],
+          [200, 40],
+        ]),
+      ).toEqual(['white', 'green', 'green']);
+    }, 120_000);
+
+    it('exports what the preview shows', async () => {
+      const pip = await withEdit('clip.set_transform', {
+        clip_id: 'c4',
+        scale: 0.5,
+        x: 0.25,
+        y: 0.25,
+        rotation: 10,
+      });
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: pip,
+        preset: 'web_1080p_h264',
+        range: { start: 10, end: 12 },
+      });
+      const done = (await waitJob(started.job_id)) as { result?: { file?: string } };
+      const file = done.result?.file ?? '';
+      const still = join(env.dir, 'export-frame.png');
+      await ff(['-i', file, '-frames:v', '1', '-vf', 'scale=1280:720', still]);
+      const exported = await readFile(still);
+      const points: Array<[number, number]> = [
+        [320, 180],
+        [640, 360],
+        [200, 150],
+        [900, 600],
+      ];
+      const fromExport = await Promise.all(
+        points.map(async ([x, y]) => colour(await pixel(exported, x, y))),
+      );
+      expect(fromExport).toEqual(await look(pip, 10, points));
+    }, 180_000);
+  });
+
   it('refuses crafted media', async () => {
     for (const file of ['evil.m3u8', 'fake.mp4']) {
       const started = await ok<{ job_id: string }>(client, 'media.import', {
@@ -644,6 +1033,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     expect(repeat.job_id).toBe(started.job_id);
     const done = await waitJob(started.job_id);
     expect(done.status).toBe('completed');
+    if (!done.result) throw new Error(`web export: ${JSON.stringify(done)}`);
     const result = done.result as { url: string; file: string; frames: number; bytes: number };
     expect(result.frames).toBe(175);
     const probe = await ffprobe(result.file);
@@ -846,6 +1236,103 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     expect(p95(stills)).toBeLessThan(1000 * scale);
     expect(p95(strips)).toBeLessThan(2000 * scale);
   }, 180_000);
+
+  it('measures preview latency on the heavy reference timeline', async () => {
+    // Spec §21.7 heavy class: 6 video tracks of 20 clips each, every clip transformed with
+    // keyframes, half masked, a third blended. Budget: p95 still ≤ 2 s, filmstrip ≤ 4 s.
+    const scale = Number(process.env.CUTTINGFLOOR_BENCH_SCALE ?? 1);
+    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      name: 'heavy',
+      sequence: { width: 1920, height: 1080, fps: { num: 25, den: 1 } },
+      tracks: { video: 6, audio: 0 },
+    });
+    // One batch per track keeps each under edit.batch's 200-op limit.
+    let t = timeline_id;
+    for (let track = 1; track <= 6; track++) {
+      const ops: Array<{ tool: string; args: Record<string, unknown> }> = [];
+      for (let i = 0; i < 20; i++) {
+        const ref = { $ref: `ops[${ops.length}].clip_id` };
+        ops.push({
+          tool: 'clip.add',
+          args: {
+            track_id: `t${track}`,
+            media_id: track % 2 ? media.av : media.card,
+            av: 'video',
+            at_frame: i * 15,
+            ...(track % 2 ? { source: { in: i * 3, out: i * 3 + 15 } } : { duration_frames: 15 }),
+          },
+        });
+        ops.push({
+          tool: 'clip.set_transform',
+          args: {
+            clip_id: ref,
+            scale: 1 - track * 0.1,
+            x: {
+              keyframes: [
+                { frame: 0, value: 0.3 },
+                { frame: 14, value: 0.7, ease: 'cubic_in_out' },
+              ],
+            },
+            rotation: track * 3,
+          },
+        });
+        if (i % 2)
+          ops.push({
+            tool: 'clip.set_mask',
+            args: {
+              clip_id: ref,
+              mask: {
+                shape: 'rectangle',
+                width: 0.8,
+                height: 0.8,
+                corner_radius: 0.2,
+                feather: 0.02,
+              },
+            },
+          });
+        if (i % 3 === 0)
+          ops.push({ tool: 'clip.set_blend', args: { clip_id: ref, mode: 'screen' } });
+      }
+      t = (
+        await ok<{ timeline_id: string }>(client, 'edit.batch', {
+          timeline_id: t,
+          ops,
+          preview: 'none',
+        })
+      ).timeline_id;
+    }
+    const stills: number[] = [];
+    const strips: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      const clipId = `c${7 + i * 2}`;
+      let started = Date.now();
+      const moved = await call(client, 'clip.set_transform', {
+        timeline_id: t,
+        clip_id: clipId,
+        y: 0.4 + i * 0.01,
+        preview: 'inline',
+      });
+      stills.push(Date.now() - started);
+      expect(
+        moved.content.some((c) => c.type === 'image'),
+        JSON.stringify(moved.structured),
+      ).toBe(true);
+      started = Date.now();
+      const animated = await call(client, 'clip.set_animation', {
+        timeline_id: moved.structured.timeline_id,
+        clip_id: clipId,
+        in: { name: 'pop', duration_frames: 6 },
+        preview: 'inline',
+      });
+      strips.push(Date.now() - started);
+      t = animated.structured.timeline_id as string;
+    }
+    const p95 = (xs: number[]) =>
+      [...xs].sort((a, b) => a - b)[Math.ceil(xs.length * 0.95) - 1] ?? 0;
+    console.log(`heavy preview p95: still ${p95(stills)} ms, filmstrip ${p95(strips)} ms`);
+    expect(p95(stills)).toBeLessThan(2000 * scale);
+    expect(p95(strips)).toBeLessThan(4000 * scale);
+  }, 300_000);
 
   it('cancels a running job', async () => {
     const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
