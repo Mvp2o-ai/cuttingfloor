@@ -54,13 +54,19 @@ export function fitBox(w: number, h: number, boxW: number, boxH: number) {
   return { width: even(w * scale), height: even(h * scale) };
 }
 
+/** w × h scaled (up or down) to fit a box: presets named for a size deliver that size. */
+function fitTo(w: number, h: number, boxW: number, boxH: number) {
+  const scale = Math.min(boxW / w, boxH / h);
+  return { width: even(w * scale), height: even(h * scale) };
+}
+
 const BT709 = { color_primaries: 'bt709', color_trc: 'bt709', colorspace: '709' };
 
 export const PRESETS: Record<PresetName, PresetSpec> = {
   web_1080p_h264: {
     extension: 'mp4',
     mime: 'video/mp4',
-    size: (w, h) => (w >= h ? fitBox(w, h, 1920, 1080) : fitBox(w, h, 1080, 1920)),
+    size: (w, h) => (w >= h ? fitTo(w, h, 1920, 1080) : fitTo(w, h, 1080, 1920)),
     settings: {
       vcodec: 'libx264',
       preset: 'medium',
@@ -93,7 +99,7 @@ export const PRESETS: Record<PresetName, PresetSpec> = {
   social_9x16_h264: {
     extension: 'mp4',
     mime: 'video/mp4',
-    size: (w, h) => fitBox(w, h, 1080, 1920),
+    size: (w, h) => fitTo(w, h, 1080, 1920),
     check: (w, h) =>
       Math.abs(w / h - 9 / 16) > 0.01
         ? `social_9x16_h264 needs a 9:16 sequence; this one is ${w}×${h}`
@@ -119,7 +125,7 @@ export const PRESETS: Record<PresetName, PresetSpec> = {
   web_1080p_av1: {
     extension: 'mp4',
     mime: 'video/mp4',
-    size: (w, h) => (w >= h ? fitBox(w, h, 1920, 1080) : fitBox(w, h, 1080, 1920)),
+    size: (w, h) => (w >= h ? fitTo(w, h, 1920, 1080) : fitTo(w, h, 1080, 1920)),
     settings: {
       vcodec: 'libsvtav1',
       preset: '8',
