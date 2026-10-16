@@ -1,0 +1,6 @@
+name: Feature
+description: Suggest a capability
+body:
+  - type: textarea
+    attributes: { label: What should an agent be able to do }
+    validations: { required: true }

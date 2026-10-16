@@ -1,0 +1,28 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist/types"
+  },
+  "include": ["src", "test"],
+  "references": [
+    {
+      "path": "../schema"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../jobs"
+    },
+    {
+      "path": "../credentials"
+    },
+    {
+      "path": "../providers"
+    },
+    {
+      "path": "../engine"
+    }
+  ]
+}

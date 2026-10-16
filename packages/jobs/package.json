@@ -1,0 +1,13 @@
+{
+  "name": "@cuttingfloor/jobs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Durable job store behind both MCP Tasks and the job.* tools. Job id = task id.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@cuttingfloor/schema": "workspace:*"
+  }
+}

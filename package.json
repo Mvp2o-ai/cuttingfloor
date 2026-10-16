@@ -1,0 +1,27 @@
+{
+  "name": "cuttingfloor-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.7",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "build": "pnpm -r --filter ./apps/* build",
+    "dev:stdio": "node apps/cli/src/main.ts mcp",
+    "inspect": "npx @modelcontextprotocol/inspector node apps/cli/src/main.ts mcp",
+    "check": "pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@modelcontextprotocol/client": "2.3.1",
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3",
+    "vitest": "4.1.12",
+    "@changesets/cli": "2.31.1"
+  }
+}

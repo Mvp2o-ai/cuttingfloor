@@ -1,0 +1,13 @@
+{
+  "name": "@cuttingfloor/schema",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Zod schemas shared by every package: ids, the project document, tool inputs and typed errors.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

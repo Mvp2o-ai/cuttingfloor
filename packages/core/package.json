@@ -1,0 +1,13 @@
+{
+  "name": "@cuttingfloor/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Project store: the .vproj folder, op log, snapshots and crash-safe commits.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@cuttingfloor/schema": "workspace:*"
+  }
+}

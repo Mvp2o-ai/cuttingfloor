@@ -1,0 +1,8 @@
+name: Bug
+description: Something doesn't work
+body:
+  - type: textarea
+    attributes: { label: What happened, description: Tool call, arguments and result if you have them }
+    validations: { required: true }
+  - type: input
+    attributes: { label: Version and mode, placeholder: "0.1.0, local (macOS)" }

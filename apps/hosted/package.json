@@ -1,0 +1,17 @@
+{
+  "name": "@cuttingfloor/hosted",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Hosted mode: Streamable HTTP, OAuth 2.1, multi-tenant.",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "@modelcontextprotocol/node": "2.1.1",
+    "@cuttingfloor/server": "workspace:*",
+    "@cuttingfloor/jobs": "workspace:*",
+    "@cuttingfloor/credentials": "workspace:*"
+  },
+  "scripts": {
+    "start": "node src/main.ts"
+  }
+}

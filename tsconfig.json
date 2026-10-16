@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/schema" },
+    { "path": "packages/core" },
+    { "path": "packages/jobs" },
+    { "path": "packages/credentials" },
+    { "path": "packages/providers" },
+    { "path": "packages/engine" },
+    { "path": "packages/server" },
+    { "path": "apps/cli" },
+    { "path": "apps/hosted" }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "cuttingfloor",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local mode: `cuttingfloor mcp` (stdio front), `cuttingfloor daemon`, `cuttingfloor keys`.",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "@cuttingfloor/server": "workspace:*",
+    "@cuttingfloor/jobs": "workspace:*",
+    "@cuttingfloor/credentials": "workspace:*"
+  },
+  "scripts": {
+    "start": "node src/main.ts"
+  },
+  "bin": {
+    "cuttingfloor": "./src/main.ts"
+  }
+}
