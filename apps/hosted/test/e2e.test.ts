@@ -4,8 +4,10 @@ import { createServer as createPlainServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
+import { startMotionWorker } from '@cuttingfloor/motion';
 import { Runtime } from '@cuttingfloor/server';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import {
@@ -22,7 +24,7 @@ interface TestEnv {
   exportsDir: string;
 }
 
-async function testRuntime(): Promise<TestEnv> {
+async function testRuntime(motionUrl: string | null = null): Promise<TestEnv> {
   const dir = await mkdtemp(join(tmpdir(), 'cf-e2e-'));
   const mediaDir = join(dir, 'media');
   const exportsDir = join(dir, 'exports');
@@ -38,6 +40,7 @@ async function testRuntime(): Promise<TestEnv> {
     maxDownloadBytes: 1024 ** 3,
     allowPrivateUrls: true,
     inlineMaxBytes: 32 * 1024 ** 2,
+    motionUrl,
     ...(process.env.CUTTINGFLOOR_MODELS ? { modelsDir: process.env.CUTTINGFLOOR_MODELS } : {}),
   });
   await runtime.start({ sweep: false });
@@ -92,6 +95,26 @@ async function enginesAvailable(): Promise<boolean> {
 const engines = await enginesAvailable();
 if (!engines && process.env.CUTTINGFLOOR_REQUIRE_ENGINES) {
   throw new Error('CUTTINGFLOOR_REQUIRE_ENGINES is set but ffmpeg/melt are missing');
+}
+
+// The motion worker runs in-process here with a test Chromium (no sandbox: tests run as root in
+// docker build); the sandbox itself is checked in its container by scripts/smoke-motion.ts.
+const chromium = await exec('/usr/bin/chromium', ['--version']).then(
+  () => true,
+  () => false,
+);
+if (engines && !chromium && process.env.CUTTINGFLOOR_REQUIRE_ENGINES) {
+  throw new Error('CUTTINGFLOOR_REQUIRE_ENGINES is set but Chromium is missing');
+}
+let motionWorker: Server | undefined;
+
+async function startTestMotion(): Promise<string | null> {
+  if (!chromium) return null;
+  process.env.CUTTINGFLOOR_CHROMIUM = fileURLToPath(
+    new URL('./fixtures/chromium-test', import.meta.url),
+  );
+  motionWorker = await startMotionWorker({ port: 0, host: '127.0.0.1' });
+  return `http://127.0.0.1:${(motionWorker.address() as AddressInfo).port}`;
 }
 
 const ff = (args: string[]) => exec('ffmpeg', ['-v', 'error', '-y', ...args]);
@@ -241,7 +264,7 @@ const media: Record<string, string> = {};
 
 describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
   beforeAll(async () => {
-    env = await testRuntime();
+    env = await testRuntime(await startTestMotion());
     const m = env.mediaDir;
     await Promise.all([
       ff([
@@ -430,6 +453,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     await client?.close();
     http?.close();
     fileServer?.close();
+    motionWorker?.close();
   });
 
   it('imports and conforms media as jobs', async () => {
@@ -2042,6 +2066,206 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(g).toBeGreaterThan(200);
       expect(b).toBeGreaterThan(200);
     }, 180_000);
+  });
+
+  describe('create', () => {
+    const ids: Record<string, string> = {};
+
+    async function made(tool: string, args: Record<string, unknown>) {
+      const started = await ok<{ job_id?: string; media_id: string }>(client, tool, args);
+      // A recipe made before answers at once with the media, with no job.
+      const done = (
+        started.job_id
+          ? await waitJob(started.job_id, 300_000)
+          : { status: 'completed', result: started }
+      ) as {
+        status: string;
+        result?: Record<string, unknown> & { media_id: string };
+        error?: { code: string; message: string };
+      };
+      return { started, done };
+    }
+
+    async function create(tool: string, args: Record<string, unknown>) {
+      const { done } = await made(tool, args);
+      if (!done.result) throw new Error(`${tool} failed: ${JSON.stringify(done.error)}`);
+      return done.result;
+    }
+
+    /** Red video on V1 and the created media over it on V2, as a 1280×720 frame. */
+    async function over(mediaId: string, frame: number, length = 50): Promise<Buffer> {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'create',
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+        tracks: { video: 2, audio: 0 },
+      });
+      const built = await ok<{ timeline_id: string }>(client, 'edit.batch', {
+        timeline_id,
+        preview: 'none',
+        ops: [
+          { tool: 'clip.add', args: { track_id: 't1', media_id: ids.red, av: 'video' } },
+          {
+            tool: 'clip.add',
+            args: { track_id: 't2', media_id: mediaId, at_frame: 0, duration_frames: length },
+          },
+        ],
+      });
+      const res = await call(client, 'render.frames', {
+        timeline_id: built.timeline_id,
+        frames: [frame],
+        layout: 'single',
+        format: 'png',
+        long_edge: 1280,
+      });
+      if (res.isError) throw new Error(JSON.stringify(res.structured));
+      const image = res.content.find((c) => c.type === 'image');
+      return Buffer.from((image?.data as string) ?? '', 'base64');
+    }
+
+    const look = async (image: Buffer, points: Array<[number, number]>) =>
+      Promise.all(points.map(async ([x, y]) => colour(await pixel(image, x, y))));
+
+    beforeAll(async () => {
+      const m = env.mediaDir;
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=red:size=1280x720:rate=25',
+        '-t',
+        '4',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        join(m, 'red.mp4'),
+      ]);
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=0x00ff00:size=64x64',
+        '-frames:v',
+        '1',
+        join(m, 'green.png'),
+      ]);
+      ids.red = (await importMedia({ path: join(m, 'red.mp4') })).media_id;
+      ids.green = (await importMedia({ path: join(m, 'green.png') })).media_id;
+    }, 120_000);
+
+    it('makes solid and gradient mattes, once per recipe', async () => {
+      const gradient = { from: '#000000', to: '#ffffff', angle: 90 };
+      const first = await create('create.matte', { gradient, width: 1280, height: 720 });
+      expect(first).toMatchObject({ kind: 'image', width: 1280, height: 720, status: 'ready' });
+      // Left to right: black at the left edge, white at the right.
+      const frame = await over(first.media_id, 0);
+      const [left, right] = await Promise.all([pixel(frame, 4, 360), pixel(frame, 1275, 360)]);
+      expect(left[0]).toBeLessThan(20);
+      expect(right[0]).toBeGreaterThan(235);
+      const mid = await pixel(frame, 640, 360);
+      expect(mid[0]).toBeGreaterThan(100);
+      expect(mid[0]).toBeLessThan(156);
+
+      const again = await made('create.matte', { gradient, width: 1280, height: 720 });
+      expect(again.started.media_id).toBe(first.media_id);
+      expect(again.done.status).toBe('completed');
+
+      const half = await create('create.matte', { color: '#0000ff80', width: 320, height: 180 });
+      expect(half).toMatchObject({ kind: 'image', width: 320, height: 180 });
+      const bad = await call(client, 'create.matte', { width: 320, height: 180 });
+      expect(bad.isError).toBe(true);
+    });
+
+    it.skipIf(!chromium)(
+      'renders an HTML still with assets, transparent where unpainted',
+      async () => {
+        const still = await create('create.still', {
+          html: `<div style="position:absolute;left:0;top:0;width:640px;height:720px;background:#0000ff"></div>
+<img src="assets/g.png" style="position:absolute;right:0;top:0;width:320px;height:180px">`,
+          width: 1280,
+          height: 720,
+          assets: [{ name: 'g.png', media_id: ids.green }],
+        });
+        expect(still).toMatchObject({ kind: 'image', width: 1280, height: 720 });
+        const frame = await over(still.media_id, 10);
+        // Blue on the left, the green asset top right, the red video showing through elsewhere.
+        expect(
+          await look(frame, [
+            [300, 400],
+            [1200, 60],
+            [1000, 500],
+          ]),
+        ).toEqual(['blue', 'green', 'red']);
+      },
+      180_000,
+    );
+
+    it.skipIf(!chromium)(
+      'renders a GSAP motion graphic with alpha that moves over video',
+      async () => {
+        const motion = await create('create.motion', {
+          html: `<div id="box" class="clip" data-start="0" data-duration="2" data-track-index="0"
+  style="position:absolute;left:0;top:260px;width:200px;height:200px;background:#ffffff"></div>
+<script>
+  const tl = gsap.timeline({ paused: true });
+  tl.fromTo('#box', { x: 40 }, { x: 1040, duration: 2, ease: 'none' });
+  window.__timelines = window.__timelines || {};
+  window.__timelines.main = tl;
+</script>`,
+          duration_seconds: 2,
+          width: 1280,
+          height: 720,
+          fps: 25,
+        });
+        expect(motion).toMatchObject({ kind: 'video', width: 1280, height: 720 });
+        expect(motion.duration_seconds as number).toBeCloseTo(2, 1);
+        // Box at x 40–240 at the start, x 1040–1240 at the end; red video everywhere else.
+        expect(
+          await look(await over(motion.media_id, 0), [
+            [140, 360],
+            [1140, 360],
+            [640, 100],
+          ]),
+        ).toEqual(['white', 'red', 'red']);
+        expect(
+          await look(await over(motion.media_id, 49), [
+            [140, 360],
+            [1140, 360],
+          ]),
+        ).toEqual(['red', 'white']);
+      },
+      180_000,
+    );
+
+    it.skipIf(!chromium)(
+      'refuses network references and reports broken pages',
+      async () => {
+        const remote = await call(client, 'create.motion', {
+          html: '<img src="https://example.com/logo.png">',
+          duration_seconds: 1,
+        });
+        // Checked in the worker, so it surfaces as the job's error.
+        const job = remote.isError
+          ? { error: remote.structured }
+          : await waitJob((remote.structured as { job_id: string }).job_id);
+        expect((job.error as { code: string }).code).toBe('bad_request');
+
+        const broken = await made('create.still', {
+          html: '<script>throw new Error("boom")</script><p>still renders</p>',
+          width: 320,
+          height: 180,
+        });
+        expect(broken.done.status).toBe('completed');
+
+        const video = await call(client, 'create.still', {
+          html: '<img src="assets/v.mp4">',
+          assets: [{ name: 'v.mp4', media_id: ids.red }],
+        });
+        expect(video.isError).toBe(true);
+        expect((video.structured as { code: string }).code).toBe('bad_request');
+      },
+      120_000,
+    );
   });
 
   describe('analysis', () => {

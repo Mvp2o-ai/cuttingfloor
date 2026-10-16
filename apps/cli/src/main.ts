@@ -10,6 +10,10 @@ const USAGE = `cuttingfloor ${SERVER_VERSION}
   mcp        MCP over stdio. Inside the running container (docker exec -i cuttingfloor
              cuttingfloor mcp) it forwards to the serving process, so long jobs outlive
              the client; with no server running it serves in-process.
+  motion-worker
+             Render motion graphics and HTML stills for a serving process. Runs only in
+             the motion sandbox container (compose service \`motion\`): it executes
+             agent-written HTML.
   version    Print the version
 `;
 
@@ -30,6 +34,13 @@ switch (command) {
     await runtime.start({ sweep: false });
     const credentials = new LocalCredentialStore();
     serveStdio(() => createServer({ runtime, credentials, owner: () => 'local' }));
+    break;
+  }
+  case 'motion-worker': {
+    const { startMotionWorker } = await import('@cuttingfloor/motion');
+    const port = Number(process.env.PORT ?? 8790);
+    await startMotionWorker({ port, host: process.env.HOST ?? '0.0.0.0' });
+    process.stderr.write(`motion worker on :${port}\n`);
     break;
   }
   case 'version':

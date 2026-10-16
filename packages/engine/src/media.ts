@@ -13,7 +13,8 @@ export interface MediaRecord {
   media_id: string;
   name: string;
   status: 'importing' | 'processing' | 'ready' | 'failed';
-  source: { path: string } | { url: string };
+  /** Where it came from: a path, a URL, or a create.* tool and the hash of its recipe. */
+  source: { path: string } | { url: string } | { created: string; recipe: string };
   /** The original: the user's file in place, or the downloaded copy. */
   file: string | null;
   size: number | null;
@@ -126,6 +127,17 @@ export class MediaLibrary {
       : undefined;
   }
 
+  /** Created media made from the same recipe, while it lives. */
+  async findByRecipe(owner: string, recipe: string): Promise<MediaRecord | undefined> {
+    return this.findByFingerprint(owner, `recipe-${recipe}`);
+  }
+
+  async rememberRecipe(owner: string, recipe: string, mediaId: string): Promise<void> {
+    await this.#ws.writeJson(this.#ws.ownerDir(owner, 'media-index', `recipe-${recipe}.json`), {
+      media_id: mediaId,
+    });
+  }
+
   /** Creates the record a new import fills in. */
   async create(
     owner: string,
@@ -139,7 +151,9 @@ export class MediaLibrary {
         name ??
         ('path' in source
           ? basename(source.path)
-          : decodeURIComponent(new URL(source.url).pathname.split('/').pop() || 'download')),
+          : 'url' in source
+            ? decodeURIComponent(new URL(source.url).pathname.split('/').pop() || 'download')
+            : source.created),
       status: 'importing',
       source,
       file: null,
@@ -184,8 +198,10 @@ export class MediaLibrary {
             ),
         });
         record.file = dest;
-      } else {
+      } else if ('path' in record.source) {
         record.file = await this.resolvePath(record.source.path);
+      } else if (!record.file) {
+        throw new CfError('engine_error', `Created media ${record.media_id} has no file`);
       }
       const file = record.file;
       record.size = (await stat(file)).size;

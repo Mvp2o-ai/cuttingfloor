@@ -72,6 +72,8 @@ jobs:
           cache-from: type=gha
       - name: HTTP, stdio via docker exec, restart
         run: node scripts/smoke-image.ts cuttingfloor:ci
+      - name: Motion sandbox (compose), Chromium sandboxed, nothing reachable, abuse contained
+        run: node scripts/smoke-motion.ts cuttingfloor:ci
 
   publish:
     name: Publish to GHCR

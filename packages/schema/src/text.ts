@@ -5,7 +5,7 @@ import { MediaId } from './ids.ts';
 // positions fractions of the frame, so text lands the same at every render size.
 
 // Checked at run time rather than as a schema pattern: it repeats in every colour field.
-const Colour = z.string().refine((v) => /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(v), {
+export const Colour = z.string().refine((v) => /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(v), {
   message: 'a colour is #RRGGBB or #RRGGBBAA',
 });
 

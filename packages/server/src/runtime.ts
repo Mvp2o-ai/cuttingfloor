@@ -23,6 +23,8 @@ export interface RuntimeConfig {
   inlineMaxBytes: number;
   /** Where downloaded models (transcription) live. Default: `models` under the data root. */
   modelsDir?: string;
+  /** The motion sandbox (cuttingfloor motion-worker) for create.motion and create.still. */
+  motionUrl: string | null;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
@@ -50,6 +52,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     allowPrivateUrls: env.CUTTINGFLOOR_ALLOW_PRIVATE_URLS === '1',
     inlineMaxBytes: Number(env.CUTTINGFLOOR_INLINE_MAX_BYTES ?? 32 * 1024 ** 2),
     ...(env.CUTTINGFLOOR_MODELS ? { modelsDir: env.CUTTINGFLOOR_MODELS } : {}),
+    motionUrl: env.CUTTINGFLOOR_MOTION_URL?.replace(/\/$/, '') || null,
   };
 }
 

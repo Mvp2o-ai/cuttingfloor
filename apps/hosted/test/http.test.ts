@@ -37,6 +37,7 @@ beforeAll(async () => {
     maxDownloadBytes: 1024,
     allowPrivateUrls: false,
     inlineMaxBytes: 1024,
+    motionUrl: null,
   });
   await runtime.start({ sweep: false });
 });
