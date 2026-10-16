@@ -14,8 +14,9 @@ import {
 } from './compositing.ts';
 import { ToolError } from './errors.ts';
 import { JobId, MediaId, TimelineId } from './ids.ts';
+import { ASSET_NAME, MOTION_LIMITS } from './motion.ts';
 import { Sequence } from './sequence.ts';
-import { TextStyle } from './text.ts';
+import { Colour, TextStyle } from './text.ts';
 import { Change, TimelineInput, TimelineView, TrackKind } from './timeline.ts';
 
 const frame = z.number().int().nonnegative();
@@ -574,6 +575,75 @@ export const MediaInfo = z.object({
   error: ToolError.optional(),
 });
 export type MediaInfo = z.infer<typeof MediaInfo>;
+
+// Create: new media from a recipe. Always a job; the result is a media_id for clip.add.
+const createCommon = {
+  name: z.string().min(1).max(200).optional(),
+  idempotency_key: z.string().min(1).max(200).optional(),
+};
+const size = (fallback: number) =>
+  z.int().min(MOTION_LIMITS.minSize).max(MOTION_LIMITS.maxSize).default(fallback);
+const MotionAssets = z
+  .array(
+    z.object({
+      name: z.string().regex(ASSET_NAME).describe('The page refers to it as assets/<name>'),
+      media_id: MediaId.describe('An imported image or font'),
+    }),
+  )
+  .max(MOTION_LIMITS.maxAssets)
+  .default([]);
+
+export const CreateMotionInput = z.object({
+  html: z
+    .string()
+    .min(1)
+    .max(MOTION_LIMITS.maxHtmlBytes)
+    .describe(
+      'HyperFrames composition body: elements, <style>, and a <script> that builds a paused GSAP timeline and sets window.__timelines.main = tl. Timed elements need class="clip" data-start data-duration data-track-index. Or a whole HyperFrames document.',
+    ),
+  duration_seconds: z.number().positive().max(MOTION_LIMITS.maxSeconds),
+  width: size(1920),
+  height: size(1080),
+  fps: z.number().positive().max(MOTION_LIMITS.maxFps).default(30),
+  transparent: z
+    .boolean()
+    .default(true)
+    .describe('Alpha (ProRes 4444) so it composites over video; false gives H.264'),
+  assets: MotionAssets,
+  ...createCommon,
+});
+
+export const CreateStillInput = z.object({
+  html: z
+    .string()
+    .min(1)
+    .max(MOTION_LIMITS.maxHtmlBytes)
+    .describe('An HTML page or fragment, laid out at width × height'),
+  width: size(1920),
+  height: size(1080),
+  transparent: z.boolean().default(true).describe('Unpainted areas stay transparent'),
+  assets: MotionAssets,
+  ...createCommon,
+});
+
+export const CreateMatteInput = z
+  .object({
+    color: Colour.optional().describe('A solid colour'),
+    gradient: z
+      .object({
+        from: Colour,
+        to: Colour,
+        angle: z.number().min(0).max(360).default(180).describe('Degrees; 180 runs top to bottom'),
+        kind: z.enum(['linear', 'radial']).default('linear'),
+      })
+      .optional(),
+    width: size(1920),
+    height: size(1080),
+    ...createCommon,
+  })
+  .refine((m) => Boolean(m.color) !== Boolean(m.gradient), {
+    message: 'Give either color or gradient',
+  });
 
 // Jobs
 export const JobStatus = z.enum(['working', 'completed', 'failed', 'cancelled']);

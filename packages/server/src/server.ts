@@ -4,6 +4,7 @@ import { registerCatalogs } from './catalog.ts';
 import { registerResources } from './resources.ts';
 import type { Runtime } from './runtime.ts';
 import { registerTasks } from './tasks.ts';
+import { registerCreateTools } from './tools/create.ts';
 import { registerMediaTools } from './tools/media.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { registerTimelineTools } from './tools/timeline.ts';
@@ -27,6 +28,7 @@ const INSTRUCTIONS = `cuttingfloor is a headless video editor. Typical flow (to 
    Effects: filter.add on a clip, a track or the whole timeline (video://catalog/effects: colour, LUTs, blur, vignette, chroma key, glitch; EQ, compressor, denoise, pitch); adjustment.add for effects over everything below for a stretch.
    Analysis: media.analyze {kind: transcript | beats | faces | track} turns media into data: cut by words (clip.add source {words}), caption from a transcript (caption.add from_transcript), cut on beats, reframe on the faces' focus, pin a title to a tracked object.
    Overlays and picture-in-picture: put a clip on a higher video track, then clip.set_transform, clip.set_mask, clip.set_blend and clip.set_animation. Catalogues of accepted names are resources at video://catalog/{name}.
+   Create: create.motion (animated HTML + GSAP, rendered with alpha in a sandbox), create.still (HTML to a PNG) and create.matte (solid or gradient) make new media to place with clip.add.
 4. Look at the result with preview: "inline" on an edit, or render.frames.
 5. qa.check, then export.video (long-running) for a signed download URL.
 Time is integer frames at the sequence rate; ranges are end-exclusive. Timelines expire 24 h after last use (timeline.get + timeline.load restores one); media and outputs after 7 days.`;
@@ -42,6 +44,7 @@ export function createServer(deps: ServerDeps): McpServer {
   registerCatalogs(server);
   registerTimelineTools(server, deps);
   registerMediaTools(server, deps);
+  registerCreateTools(server, deps);
   registerRenderTools(server, deps);
   return server;
 }

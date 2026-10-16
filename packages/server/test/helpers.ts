@@ -29,6 +29,7 @@ export async function testRuntime(overrides: Partial<RuntimeConfig> = {}): Promi
     maxDownloadBytes: 1024 ** 3,
     allowPrivateUrls: true,
     inlineMaxBytes: 32 * 1024 ** 2,
+    motionUrl: null,
     ...overrides,
   });
   await runtime.start({ sweep: false });
