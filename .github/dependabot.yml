@@ -20,7 +20,11 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
-  # Moves the pinned base image digest (Node and the Debian FFmpeg/MLT engines).
+  # Moves the pinned base image digest (Node and the Debian FFmpeg/MLT engines). Node stays on
+  # the 24 LTS line; majors move by hand.
   - package-ecosystem: docker
     directory: /
     schedule: { interval: weekly }
+    ignore:
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
