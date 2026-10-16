@@ -5,6 +5,8 @@ import * as z from 'zod/v4';
 import { call, connect, ok, SEQ_720P25, type TestEnv, testRuntime } from './helpers.ts';
 
 const anyResult = z.object({}).passthrough();
+/** tools/list as JSON, in bytes (about 4 bytes per token). */
+const BUDGET_BYTES = 56_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -18,7 +20,7 @@ describe('protocol surface', () => {
     expect(client.getInstructions()).toMatch(/timeline_id/);
   });
 
-  it('lists the Phase 1 tools, each annotated', async () => {
+  it('lists the tools, each annotated', async () => {
     const client = await connect(env.runtime);
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
@@ -27,7 +29,11 @@ describe('protocol surface', () => {
         'clip.link',
         'clip.move',
         'clip.remove',
+        'clip.set_animation',
+        'clip.set_blend',
         'clip.set_enabled',
+        'clip.set_mask',
+        'clip.set_transform',
         'clip.split',
         'clip.trim',
         'clip.unlink',
@@ -56,6 +62,28 @@ describe('protocol surface', () => {
       expect(typeof tool.annotations?.readOnlyHint, tool.name).toBe('boolean');
       expect(typeof tool.annotations?.openWorldHint, tool.name).toBe('boolean');
     }
+  });
+
+  it('keeps tool definitions inside the size budget', async () => {
+    // Every connection pays for tools/list in tokens. Raise this deliberately, not by drift
+    // (spec §21.5): catalogues belong in video://catalog resources, not in tool schemas.
+    const client = await connect(env.runtime);
+    const { tools } = await client.listTools();
+    expect(JSON.stringify(tools).length).toBeLessThan(BUDGET_BYTES);
+  });
+
+  it('serves catalogues as resources', async () => {
+    const client = await connect(env.runtime);
+    const { resources } = await client.listResources();
+    expect(resources.map((r) => r.uri)).toEqual(
+      expect.arrayContaining(['video://catalog/eases', 'video://catalog/animations']),
+    );
+    const res = await client.readResource({ uri: 'video://catalog/blend_modes' });
+    const first = res.contents[0];
+    expect(JSON.parse(first && 'text' in first ? first.text : '{}')).toHaveProperty('screen');
+    await expect(client.readResource({ uri: 'video://catalog/nope' })).rejects.toThrow(
+      /Unknown catalogue/,
+    );
   });
 
   it('serves health without key values', async () => {

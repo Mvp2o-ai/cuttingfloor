@@ -1,4 +1,16 @@
 import * as z from 'zod/v4';
+import {
+  animatable,
+  BlendMode,
+  Crop,
+  Fit,
+  Flip,
+  InOutAnimation,
+  LoopAnimation,
+  MASK_LIMITS,
+  MaskShape,
+  TRANSFORM_LIMITS,
+} from './compositing.ts';
 import { ToolError } from './errors.ts';
 import { JobId, MediaId, TimelineId } from './ids.ts';
 import { Sequence } from './sequence.ts';
@@ -17,6 +29,58 @@ const Mode = z
   .enum(['overwrite', 'insert'])
   .default('overwrite')
   .describe('overwrite replaces what is underneath; insert pushes later clips right');
+
+const anim = (limits: readonly [number, number], text: string) =>
+  animatable(limits[0], limits[1]).optional().describe(text);
+
+export const TransformArgs = z.object({
+  x: anim(TRANSFORM_LIMITS.x, 'Centre x, 0 = left edge, 1 = right edge (default 0.5)'),
+  y: anim(TRANSFORM_LIMITS.y, 'Centre y, 0 = top, 1 = bottom (default 0.5)'),
+  scale: anim(TRANSFORM_LIMITS.scale, 'Size relative to the fit (default 1)'),
+  scale_x: anim(TRANSFORM_LIMITS.scale_x, 'Extra horizontal stretch (default 1)'),
+  scale_y: anim(TRANSFORM_LIMITS.scale_y, 'Extra vertical stretch (default 1)'),
+  rotation: anim(TRANSFORM_LIMITS.rotation, 'Degrees clockwise (default 0)'),
+  opacity: anim(TRANSFORM_LIMITS.opacity, '0 to 1 (default 1)'),
+  fit: Fit.nullable().optional(),
+  flip: Flip.nullable().optional(),
+  crop: Crop.nullable().optional(),
+});
+
+export const MaskArgs = z.object({
+  shape: MaskShape,
+  x: anim(MASK_LIMITS.x, 'Mask centre x in the clip picture, 0–1 (default 0.5)'),
+  y: anim(MASK_LIMITS.y, 'Mask centre y in the clip picture, 0–1 (default 0.5)'),
+  width: anim(MASK_LIMITS.width, 'Fraction of the picture width (default 0.5)'),
+  height: anim(
+    MASK_LIMITS.height,
+    'Fraction of the picture height (default 0.5); band thickness for mirror',
+  ),
+  rotation: anim(MASK_LIMITS.rotation, 'Degrees clockwise; for linear, the edge angle'),
+  feather: z
+    .number()
+    .min(0)
+    .max(0.5)
+    .optional()
+    .describe('Soft edge as a fraction of the picture short side'),
+  corner_radius: z
+    .number()
+    .min(0)
+    .max(0.5)
+    .optional()
+    .describe('rectangle: corner radius as a fraction of its short side'),
+  invert: z.boolean().optional().describe('Keep the outside instead'),
+  points: z
+    .array(z.tuple([z.number().min(-4).max(5), z.number().min(-4).max(5)]))
+    .min(3)
+    .max(64)
+    .optional()
+    .describe('polygon: [x, y] corners in the clip picture, 0–1'),
+});
+
+const InOut = z.object({
+  name: InOutAnimation,
+  duration_frames: z.number().int().positive().max(100_000),
+});
 
 // Edit operations. Each tool takes `{timeline_id, preview}` plus these args; edit.batch takes
 // the args alone, by tool name.
@@ -92,6 +156,26 @@ export const EditArgs = {
   'clip.link': z.object({ clip_ids: z.array(z.string()).min(2) }),
   'clip.unlink': z.object({ clip_id: z.string() }),
   'clip.set_enabled': z.object({ clip_id: z.string(), enabled: z.boolean() }),
+  'clip.set_transform': TransformArgs.extend({ clip_id: z.string() }),
+  'clip.set_blend': z.object({ clip_id: z.string(), mode: BlendMode }),
+  'clip.set_mask': z.object({
+    clip_id: z.string(),
+    mask: MaskArgs.nullable().describe('null removes the mask'),
+  }),
+  'clip.set_animation': z.object({
+    clip_id: z.string(),
+    in: InOut.nullable().optional().describe('Entrance, from the clip start'),
+    out: InOut.nullable().optional().describe('Exit, ending at the clip end'),
+    loop: z
+      .object({
+        name: LoopAnimation,
+        period_frames: z.number().int().positive().max(100_000).optional(),
+        strength: z.number().min(0).max(5).default(1),
+      })
+      .nullable()
+      .optional()
+      .describe('Repeats for the whole clip'),
+  }),
 } as const;
 export type EditTool = keyof typeof EditArgs;
 export const EDIT_TOOLS = Object.keys(EditArgs) as EditTool[];

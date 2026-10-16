@@ -83,6 +83,7 @@ describe('MLT compiler', () => {
     color: 'bt709' as const,
   };
   const id = 'm_aaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const pic = { path: '/a', image: false, width: 640, height: 480, alpha: false };
   const media = { name: 'a', duration: framesToTicks(100, fps), video: true, audio: true };
   const { doc } = runEdits(
     newTimeline('t', seq, { video: 1, audio: 1 }),
@@ -102,15 +103,18 @@ describe('MLT compiler', () => {
     const xml = compileMlt(doc, {
       width: 640,
       height: 360,
-      sources: new Map([[id, { path: '/m/a&b.mov', image: false }]]),
+      sources: new Map([[id, { ...pic, path: '/m/a&b.mov' }]]),
     });
     expect(xml).toContain('<property name="mlt_service">avformat</property>');
     expect(xml).toContain('/m/a&amp;b.mov');
     expect(xml).toContain(
-      '<blank length="10"/><entry producer="m_aaaaaaaaaaaaaaaaaaaaaaaaaa_v" in="5" out="29"/>',
+      '<blank length="10"/><entry producer="m_aaaaaaaaaaaaaaaaaaaaaaaaaa_v" in="5" out="29"></entry>',
     );
     expect(xml).toMatch(/hide="both"/);
-    expect(xml).toContain('<property name="mlt_service">affine</property>');
+    // Each video clip composites itself over its own range, fitted with its aspect kept.
+    expect(xml).toContain(
+      '<transition in="10" out="34"><property name="mlt_service">qtblend</property><property name="a_track">0</property><property name="b_track">1</property><property name="rect">80 0 480 360 1</property>',
+    );
     expect(xml).not.toMatch(/ante|post|melt_file|xml:/);
   });
 
@@ -118,13 +122,120 @@ describe('MLT compiler', () => {
     const xml = compileMlt(doc, {
       width: 640,
       height: 360,
-      sources: new Map([[id, { path: '/a', image: false }]]),
+      sources: new Map([[id, pic]]),
       frames: [12, 20],
     });
     expect(xml).toContain('producer="frames"');
     expect(xml).toContain(
       '<entry producer="main" in="12" out="12"/><entry producer="main" in="20" out="20"/>',
     );
+  });
+
+  const edit = (ops: Array<{ tool: string; args: Record<string, unknown> }>) =>
+    runEdits(doc, 'tl_x', ops as never, () => media, { tool: 'x', args: null }).doc;
+  const compile = (d: typeof doc, source = pic) =>
+    compileMlt(d, { width: 640, height: 360, sources: new Map([[id, source]]) });
+
+  it('bakes keyframed transforms per frame and keeps only the corners of straight runs', () => {
+    const xml = compile(
+      edit([
+        {
+          tool: 'clip.set_transform',
+          args: {
+            clip_id: 'c4',
+            scale: 0.5,
+            x: {
+              keyframes: [
+                { frame: 0, value: 0.25 },
+                { frame: 10, value: 0.75 },
+              ],
+            },
+            rotation: 90,
+            opacity: 0.5,
+          },
+        },
+      ]),
+    );
+    // A 4:3 picture in 16:9 fits 480×360; half size is 240×180, centred at x 160 → 480.
+    expect(xml).toContain(
+      '<property name="rect">0=40 90 240 180 0.5;10=360 90 240 180 0.5;24=360 90 240 180 0.5</property>',
+    );
+    expect(xml).toContain('<property name="rotation">90</property>');
+  });
+
+  it('fills and covers the frame', () => {
+    const fill = compile(
+      edit([{ tool: 'clip.set_transform', args: { clip_id: 'c4', fit: 'fill' } }]),
+    );
+    expect(fill).toContain('<property name="rect">0 0 640 360 1</property>');
+    const cover = compile(
+      edit([{ tool: 'clip.set_transform', args: { clip_id: 'c4', fit: 'cover' } }]),
+    );
+    expect(cover).toContain('<property name="rect">0 -60 640 480 1</property>');
+  });
+
+  it('maps blend modes to qtblend composition modes', () => {
+    const xml = compile(
+      edit([{ tool: 'clip.set_blend', args: { clip_id: 'c4', mode: 'screen' } }]),
+    );
+    expect(xml).toContain('<property name="compositing">14</property>');
+  });
+
+  it("masks in the picture's own space", () => {
+    const xml = compile(
+      edit([
+        {
+          tool: 'clip.set_mask',
+          args: {
+            clip_id: 'c4',
+            mask: { shape: 'rectangle', x: 0.25, width: 0.5, height: 1, invert: true },
+          },
+        },
+      ]),
+    );
+    const rotos = [
+      ...xml.matchAll(
+        /<property name="alpha_operation">(\w+)<\/property><property name="invert">(\d)<\/property>/g,
+      ),
+    ].map((m) => `${m[1]}/${m[2]}`);
+    expect(rotos).toEqual(['clear/1']);
+    // The mask's left edge is the picture's left edge.
+    expect(xml).toContain('[[0,0],[0,0],[0,0]]');
+    expect(xml).toContain('<property name="rect">80 0 480 360 1</property>');
+  });
+
+  it('keeps an existing alpha channel under a mask', () => {
+    const xml = compile(
+      edit([{ tool: 'clip.set_mask', args: { clip_id: 'c4', mask: { shape: 'ellipse' } } }]),
+      { ...pic, alpha: true },
+    );
+    expect(xml).toContain('<property name="alpha_operation">min</property>');
+    expect(xml).not.toContain('<property name="alpha_operation">clear</property>');
+  });
+
+  it('keys animated masks by source frame', () => {
+    const xml = compile(
+      edit([
+        {
+          tool: 'clip.set_mask',
+          args: {
+            clip_id: 'c4',
+            mask: {
+              shape: 'ellipse',
+              x: {
+                keyframes: [
+                  { frame: 0, value: 0.2 },
+                  { frame: 24, value: 0.8 },
+                ],
+              },
+            },
+          },
+        },
+      ]),
+    );
+    // The clip starts at source frame 5.
+    expect(xml).toMatch(/\{&quot;5&quot;:\[\[\[/);
+    expect(xml).toContain('&quot;29&quot;:');
   });
 
   it('refuses to compile with offline media', () => {

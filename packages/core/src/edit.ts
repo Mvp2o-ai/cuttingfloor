@@ -1,14 +1,23 @@
 import {
+  type Animatable,
   CfError,
   type EditArgsOf,
   type EditTool,
+  MASK_DEFAULTS,
+  MASK_NUMBERS,
   type MediaRef,
   type Sequence,
+  type StoredAnimatable,
   type StoredClip,
+  type StoredMask,
   type StoredTrack,
+  type StoredTransform,
   type TimelineDoc,
+  TRANSFORM_DEFAULTS,
+  TRANSFORM_NUMBERS,
   type TrackKind,
 } from '@cuttingfloor/schema';
+import { checkKeyframes, toStoredAnim } from './animate.ts';
 import { framesToTicks, ticksPerFrame } from './time.ts';
 
 /** Looks up media an edit refers to. Returns undefined for unknown ids. */
@@ -36,7 +45,7 @@ export function newTimeline(
   ticksPerFrame(sequence.fps);
   const doc: TimelineDoc = {
     format: 'cuttingfloor.timeline',
-    version: 1,
+    version: 2,
     name,
     sequence,
     tracks: [],
@@ -75,6 +84,10 @@ export function applyEdit<T extends EditTool>(
     'clip.link': clipLink,
     'clip.unlink': clipUnlink,
     'clip.set_enabled': clipSetEnabled,
+    'clip.set_transform': clipSetTransform,
+    'clip.set_blend': clipSetBlend,
+    'clip.set_mask': clipSetMask,
+    'clip.set_animation': clipSetAnimation,
   };
   const handler = handlers[tool] as (
     d: TimelineDoc,
@@ -179,17 +192,21 @@ function clearRange(doc: TimelineDoc, track: StoredTrack, from: number, to: numb
       kept.push(c);
       continue;
     }
-    if (c.start < from) kept.push({ ...c, duration: from - c.start });
+    const left = c.start < from ? { ...c, duration: from - c.start } : undefined;
+    if (left) kept.push(left);
     if (cEnd > to) {
       const cut = to - c.start;
-      kept.push({
+      const right = {
         ...c,
-        id: c.start < from ? nextId(doc, 'c') : c.id,
+        id: left ? nextId(doc, 'c') : c.id,
         start: to,
         in: c.in + cut,
         duration: cEnd - to,
-      });
-    }
+      };
+      if (left) splitAnimation(left, right);
+      else dropAnimation(right, 'in');
+      kept.push(right);
+    } else if (left) dropAnimation(left, 'out');
   }
   track.clips = kept;
   sortTrack(track);
@@ -208,9 +225,23 @@ function splitTrackAt(doc: TimelineDoc, track: StoredTrack, at: number): StoredC
     duration: c.duration - left,
   };
   c.duration = left;
+  splitAnimation(c, right);
   track.clips.push(right);
   sortTrack(track);
   return right;
+}
+
+/** An entrance stays on the left half of a cut, an exit on the right half. */
+function splitAnimation(left: StoredClip, right: StoredClip): void {
+  dropAnimation(left, 'out');
+  dropAnimation(right, 'in');
+}
+
+function dropAnimation(clip: StoredClip, part: 'in' | 'out'): void {
+  if (!clip.animation?.[part]) return;
+  const { [part]: _gone, ...rest } = clip.animation;
+  if (Object.keys(rest).length) clip.animation = rest;
+  else delete clip.animation;
 }
 
 /** Moves every clip starting at or after `at` by `delta` (except `skip`). */
@@ -409,6 +440,7 @@ function clipAdd(doc: TimelineDoc, a: EditArgsOf<'clip.add'>, resolve: MediaReso
   for (const [kind, track] of targets) {
     const clip: StoredClip = {
       id: nextId(doc, 'c'),
+      type: 'media',
       kind,
       media_id: a.media_id,
       start,
@@ -567,6 +599,130 @@ function clipSetEnabled(doc: TimelineDoc, a: EditArgsOf<'clip.set_enabled'>): Op
   assertUnlocked(track);
   clip.enabled = a.enabled;
   return ok(clip.start, { clip_id: clip.id });
+}
+
+function videoClip(doc: TimelineDoc, clipId: string, tool: string): Located {
+  const found = locate(doc, clipId);
+  if (found.clip.kind !== 'video') {
+    const partner = found.clip.link
+      ? doc.tracks
+          .flatMap((t) => t.clips)
+          .find((c) => c.link === found.clip.link && c.kind === 'video')
+      : undefined;
+    throw new CfError('bad_request', `${tool} applies to video clips; ${clipId} is audio`, {
+      hint: partner ? `Use its linked video clip ${partner.id}` : 'Pick a clip on a video track',
+    });
+  }
+  assertUnlocked(found.track);
+  return found;
+}
+
+/** Sets an animatable field: undefined keeps it, null resets it, defaults are not stored. */
+function setAnimatable<K extends string>(
+  target: Partial<Record<K, StoredAnimatable | undefined>>,
+  key: K,
+  value: Animatable | null | undefined,
+  fallback: number,
+  clip: StoredClip,
+  tpf: number,
+): void {
+  if (value === undefined) return;
+  checkKeyframes(key, value);
+  if (value === null || value === fallback) {
+    delete target[key];
+    return;
+  }
+  target[key] = toStoredAnim(value, clip, tpf);
+}
+
+function clipSetTransform(doc: TimelineDoc, a: EditArgsOf<'clip.set_transform'>): OpOutcome {
+  const { clip } = videoClip(doc, a.clip_id, 'clip.set_transform');
+  const tpf = ticksPerFrame(doc.sequence.fps);
+  const t: StoredTransform = { ...clip.transform };
+  for (const key of TRANSFORM_NUMBERS) {
+    setAnimatable(t, key, a[key], TRANSFORM_DEFAULTS[key], clip, tpf);
+  }
+  if (a.fit !== undefined) {
+    if (a.fit === null || a.fit === 'contain') delete t.fit;
+    else t.fit = a.fit;
+  }
+  if (a.flip !== undefined) {
+    if (a.flip === null || a.flip === 'none') delete t.flip;
+    else t.flip = a.flip;
+  }
+  if (a.crop !== undefined) {
+    const c = a.crop;
+    if (c === null || (!c.left && !c.right && !c.top && !c.bottom)) delete t.crop;
+    else t.crop = c;
+  }
+  if (Object.keys(t).length) clip.transform = t;
+  else delete clip.transform;
+  return ok(clip.start, { clip_id: clip.id });
+}
+
+function clipSetBlend(doc: TimelineDoc, a: EditArgsOf<'clip.set_blend'>): OpOutcome {
+  const { clip } = videoClip(doc, a.clip_id, 'clip.set_blend');
+  if (a.mode === 'normal') delete clip.blend;
+  else clip.blend = a.mode;
+  return ok(clip.start, { clip_id: clip.id });
+}
+
+function clipSetMask(doc: TimelineDoc, a: EditArgsOf<'clip.set_mask'>): OpOutcome {
+  const { clip } = videoClip(doc, a.clip_id, 'clip.set_mask');
+  if (!a.mask) {
+    delete clip.mask;
+    return ok(clip.start, { clip_id: clip.id });
+  }
+  const m = a.mask;
+  if (m.shape === 'polygon' && !m.points) {
+    throw new CfError('bad_request', 'A polygon mask needs points', {
+      hint: 'Give points: [[x, y], ...] with at least 3 corners in the clip picture (0–1)',
+    });
+  }
+  if (m.shape !== 'polygon' && m.points) {
+    throw new CfError('bad_request', `points apply only to polygon masks, not ${m.shape}`);
+  }
+  if (m.corner_radius && m.shape !== 'rectangle') {
+    throw new CfError('bad_request', 'corner_radius applies only to rectangle masks');
+  }
+  const tpf = ticksPerFrame(doc.sequence.fps);
+  const mask: StoredMask = { shape: m.shape };
+  for (const key of MASK_NUMBERS) setAnimatable(mask, key, m[key], MASK_DEFAULTS[key], clip, tpf);
+  if (m.feather) mask.feather = m.feather;
+  if (m.corner_radius) mask.corner_radius = m.corner_radius;
+  if (m.invert) mask.invert = true;
+  if (m.points) mask.points = m.points;
+  clip.mask = mask;
+  return ok(clip.start, { clip_id: clip.id });
+}
+
+function clipSetAnimation(doc: TimelineDoc, a: EditArgsOf<'clip.set_animation'>): OpOutcome {
+  const { clip } = videoClip(doc, a.clip_id, 'clip.set_animation');
+  const fps = doc.sequence.fps;
+  const anim = { ...clip.animation };
+  for (const part of ['in', 'out'] as const) {
+    const v = a[part];
+    if (v === null) delete anim[part];
+    else if (v) anim[part] = { name: v.name, duration: framesToTicks(v.duration_frames, fps) };
+  }
+  if (a.loop === null) delete anim.loop;
+  else if (a.loop) {
+    const period = a.loop.period_frames ?? Math.max(1, Math.round(fps.num / fps.den));
+    anim.loop = {
+      name: a.loop.name,
+      period: framesToTicks(period, fps),
+      strength: a.loop.strength,
+    };
+  }
+  const warnings: string[] = [];
+  if ((anim.in?.duration ?? 0) + (anim.out?.duration ?? 0) > clip.duration) {
+    warnings.push(
+      `The entrance and exit together are longer than clip ${clip.id}, so they overlap`,
+    );
+  }
+  if (Object.keys(anim).length) clip.animation = anim;
+  else delete clip.animation;
+  return ok(clip.start, { clip_id: clip.id, temporal: true, warnings });
 }
 
 /** Timeline length in ticks. */

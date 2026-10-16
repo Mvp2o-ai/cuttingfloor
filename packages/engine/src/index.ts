@@ -3,10 +3,13 @@
  * FFmpeg for probe, conform, proxies and analysis; MLT's `melt` for timeline frames and exports.
  * See plans/spec.md §7–§8.
  */
+
+export { compositeFor, rotoFilters } from './composite.ts';
 export { BIN, engineVersions, run } from './exec.ts';
 export { download, isBlockedAddress } from './fetch.ts';
 export {
   fingerprint,
+  hasAlpha,
   MEDIA_TTL_MS,
   type MediaConfig,
   MediaLibrary,
@@ -14,6 +17,7 @@ export {
   mediaInfo,
   mediaRef,
   type Progress,
+  renderPicture,
   renderSource,
 } from './media.ts';
 export { compileMlt, lengthFrames, type MltSource, scaledSize } from './mlt.ts';

@@ -1,4 +1,5 @@
 import * as z from 'zod/v4';
+import { BlendMode, StoredAnimation, StoredMask, StoredTransform } from './compositing.ts';
 import { Sequence } from './sequence.ts';
 
 export const TrackKind = z.enum(['video', 'audio']);
@@ -19,6 +20,7 @@ export type MediaRef = z.infer<typeof MediaRef>;
 /** Stored clip. All times are ticks (TICKS_PER_SECOND). `start` is on the timeline, `in` in the source. */
 export const StoredClip = z.object({
   id: z.string(),
+  type: z.literal('media'),
   kind: TrackKind,
   media_id: z.string(),
   start: ticks,
@@ -26,6 +28,11 @@ export const StoredClip = z.object({
   duration: z.number().int().positive(),
   link: z.string().nullable(),
   enabled: z.boolean(),
+  // Video compositing; absent means the default.
+  transform: StoredTransform.optional(),
+  blend: BlendMode.optional(),
+  mask: StoredMask.optional(),
+  animation: StoredAnimation.optional(),
 });
 export type StoredClip = z.infer<typeof StoredClip>;
 
@@ -50,7 +57,7 @@ export type TimelineOp = z.infer<typeof TimelineOp>;
  */
 export const TimelineDoc = z.object({
   format: z.literal('cuttingfloor.timeline'),
-  version: z.literal(1),
+  version: z.literal(2),
   name: z.string(),
   sequence: Sequence,
   tracks: z.array(StoredTrack),
@@ -63,9 +70,18 @@ export type TimelineDoc = z.infer<typeof TimelineDoc>;
 
 const frame = z.number().int().nonnegative();
 
+/**
+ * Compositing settings in a clip view, in the same shape the clip.set_* tools take. Kept loose
+ * here so timeline.get and timeline.load stay small; timeline.load checks every value by
+ * replaying them through those tools.
+ */
+const settings = (tool: string) =>
+  z.record(z.string(), z.unknown()).describe(`As ${tool} takes it`);
+
 /** The timeline as tools show it: integer frames at the sequence rate, end exclusive. */
 export const ClipView = z.object({
   id: z.string(),
+  type: z.literal('media').default('media'),
   kind: TrackKind,
   track_id: z.string(),
   media_id: z.string(),
@@ -76,6 +92,10 @@ export const ClipView = z.object({
     .describe('Source range in sequence frames from the start of the media, out exclusive'),
   link: z.string().nullable().describe('Link group: linked clips move, trim and split together'),
   enabled: z.boolean(),
+  transform: settings('clip.set_transform').optional(),
+  blend: BlendMode.optional(),
+  mask: settings('clip.set_mask mask').optional(),
+  animation: settings('clip.set_animation').optional(),
 });
 export type ClipView = z.infer<typeof ClipView>;
 

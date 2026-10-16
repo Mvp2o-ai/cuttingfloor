@@ -64,6 +64,26 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
     title: 'Enable/disable clip',
     description: 'A disabled clip stays on the timeline but renders as a gap.',
   },
+  'clip.set_transform': {
+    title: 'Set transform',
+    description:
+      'Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; eases are listed at video://catalog/eases. Omitted fields keep their value; null resets one.',
+  },
+  'clip.set_blend': {
+    title: 'Set blend mode',
+    description:
+      'How a video clip mixes with the tracks below: normal, multiply, screen, overlay and more (video://catalog/blend_modes).',
+  },
+  'clip.set_mask': {
+    title: 'Set mask',
+    description:
+      'Show only part of a video clip: rectangle (rounded), ellipse, linear, mirror, heart, star or polygon, with feather and invert. Position, size, rotation and feather animate like transform values. null removes the mask.',
+  },
+  'clip.set_animation': {
+    title: 'Set animation',
+    description:
+      'Entrance, exit and loop presets layered over the clip transform (video://catalog/animations): e.g. in {name: "pop", duration_frames: 12}, loop {name: "float"}. null removes one.',
+  },
 };
 
 // Edit results share one shape, described here rather than as 13 copies of an output schema
