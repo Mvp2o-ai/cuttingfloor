@@ -17,6 +17,7 @@ export {
   type OpOutcome,
   type TimelineResolver,
   timelineEnd,
+  transitionHalves,
 } from './edit.ts';
 export { canonicalJson, randomId, timelineIdOf } from './hash.ts';
 export { frameSource, meanRate, played, ratePoints, span, subclip } from './speed.ts';

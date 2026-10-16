@@ -39,8 +39,15 @@ export function rateAt(points: RatePoint[], t: number): number {
   return points[points.length - 1]?.rate ?? 1;
 }
 
-/** Source ticks played from the clip start to tick `t`: the integral of the rate. */
+/**
+ * Source ticks played from the clip start to tick `t`: the integral of the rate. Before the
+ * start and past the end it continues at the edge rate (a transition plays source there).
+ */
 export function played(points: RatePoint[], t: number): number {
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (first && t < first.t) return first.rate * (t - first.t);
+  if (last && t > last.t) return played(points, last.t) + last.rate * (t - last.t);
   let sum = 0;
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1] as RatePoint;

@@ -228,3 +228,40 @@ export const StoredAnimation = z.object({
     .optional(),
 });
 export type StoredAnimation = z.infer<typeof StoredAnimation>;
+
+/** Transitions between two touching clips on one track (video), centred on the cut. */
+export const VIDEO_TRANSITIONS = [
+  'dissolve',
+  'dip_to_black',
+  'dip_to_white',
+  'wipe_left',
+  'wipe_right',
+  'wipe_up',
+  'wipe_down',
+  'slide_left',
+  'slide_right',
+  'slide_up',
+  'slide_down',
+  'push_left',
+  'push_right',
+  'push_up',
+  'push_down',
+  'zoom_in',
+  'zoom_out',
+  'iris',
+  'spin',
+] as const;
+export const TRANSITION_KINDS = [...VIDEO_TRANSITIONS, 'crossfade'] as const;
+export const TransitionKind = z.enum(TRANSITION_KINDS);
+export type TransitionKind = z.infer<typeof TransitionKind>;
+
+export const StoredTransition = z.object({
+  id: z.string(),
+  /** The clip before the cut and the clip after it, touching on the same track. */
+  a: z.string(),
+  b: z.string(),
+  kind: TransitionKind,
+  /** Ticks, centred on the cut: the first half plays over the end of `a`'s source past the cut. */
+  duration: z.number().int().positive(),
+});
+export type StoredTransition = z.infer<typeof StoredTransition>;

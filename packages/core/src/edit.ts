@@ -15,6 +15,7 @@ import {
   type StoredSpeed,
   type StoredTrack,
   type StoredTransform,
+  type StoredTransition,
   type TimelineDoc,
   TRANSFORM_DEFAULTS,
   TRANSFORM_NUMBERS,
@@ -122,6 +123,9 @@ export function applyEdit<T extends EditTool>(
     'clip.replace': clipReplace,
     'range.lift': (d, a) => rangeRemove(d, a, false),
     'range.extract': (d, a) => rangeRemove(d, a, true),
+    'transition.add': transitionAdd,
+    'transition.set': transitionSet,
+    'transition.remove': transitionRemove,
     'clip.set_transform': clipSetTransform,
     'clip.set_blend': clipSetBlend,
     'clip.set_mask': clipSetMask,
@@ -135,6 +139,7 @@ export function applyEdit<T extends EditTool>(
   ) => OpOutcome;
   const outcome = handler(doc, args, media, timelines);
   pruneMedia(doc);
+  outcome.warnings.push(...tidyTransitions(doc));
   return outcome;
 }
 
@@ -998,6 +1003,203 @@ function rangeRemove(doc: TimelineDoc, a: EditArgsOf<'range.lift'>, ripple: bool
     (id) => !doc.tracks.some((t) => t.clips.some((c) => c.id === id)),
   );
   return ok(from, { clip_ids: removed, temporal: true });
+}
+
+// ------------------------------------------------------------------------------ transitions
+
+interface Cut {
+  track: StoredTrack;
+  a: StoredClip;
+  b: StoredClip;
+}
+
+/** Frames of a transition before and after its cut (the first half rounds down). */
+export function transitionHalves(duration: number, tpf: number): { before: number; after: number } {
+  const frames = Math.round(duration / tpf);
+  const before = Math.floor(frames / 2);
+  return { before: before * tpf, after: (frames - before) * tpf };
+}
+
+/**
+ * Why a transition can't play, or undefined when it can: both clips on its track, touching,
+ * enabled, with enough source past the cut on each side.
+ */
+function transitionProblem(
+  doc: TimelineDoc,
+  track: StoredTrack,
+  tr: StoredTransition,
+): string | undefined {
+  const a = track.clips.find((c) => c.id === tr.a);
+  const b = track.clips.find((c) => c.id === tr.b);
+  if (!a || !b) return 'one of its clips is gone';
+  if (end(a) !== b.start) return 'its clips no longer touch';
+  if (!a.enabled || !b.enabled) return 'one of its clips is disabled';
+  const tpf = ticksPerFrame(doc.sequence.fps);
+  const { before, after } = transitionHalves(tr.duration, tpf);
+  if (b.duration < after || a.duration < before) return 'it is longer than one of its clips';
+  const short = (c: StoredClip, edge: 'start' | 'end', by: number) => {
+    if (by === 0) return false;
+    const grown = retimed(c, extended(c, edge, by));
+    try {
+      checkSourceRange(doc, grown);
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  if (short(a, 'end', after)) return `clip ${a.id} has no source past its end to play into it`;
+  if (short(b, 'start', before))
+    return `clip ${b.id} has no source before its start to play into it`;
+  return undefined;
+}
+
+/** Refuses a document holding a transition that can't play (timeline.load). */
+export function assertTransitions(doc: TimelineDoc): void {
+  for (const track of doc.tracks)
+    for (const tr of track.transitions ?? []) {
+      const problem = transitionProblem(doc, track, tr);
+      if (problem) throw new CfError('bad_request', `Transition ${tr.id} can't play: ${problem}`);
+    }
+}
+
+/** Drops transitions an edit made impossible, saying why. */
+function tidyTransitions(doc: TimelineDoc): string[] {
+  const warnings: string[] = [];
+  for (const track of doc.tracks) {
+    if (!track.transitions) continue;
+    track.transitions = track.transitions.filter((tr) => {
+      const problem = transitionProblem(doc, track, tr);
+      if (problem) warnings.push(`Transition ${tr.id} was removed: ${problem}`);
+      return !problem;
+    });
+    if (!track.transitions.length) delete track.transitions;
+  }
+  return warnings;
+}
+
+function findTransition(
+  doc: TimelineDoc,
+  id: string,
+): { track: StoredTrack; tr: StoredTransition } {
+  for (const track of doc.tracks) {
+    const tr = track.transitions?.find((x) => x.id === id);
+    if (tr) return { track, tr };
+  }
+  const ids = doc.tracks.flatMap((t) => (t.transitions ?? []).map((x) => x.id));
+  throw new CfError('not_found', `No transition ${id}`, {
+    hint: ids.length ? `Transitions: ${ids.join(', ')}` : 'The timeline has no transitions',
+  });
+}
+
+function checkKind(track: StoredTrack, kind: StoredTransition['kind']): void {
+  if ((track.kind === 'audio') !== (kind === 'crossfade')) {
+    throw new CfError(
+      'bad_request',
+      track.kind === 'audio'
+        ? `Audio tracks take crossfade transitions, not ${kind}`
+        : 'crossfade is for audio tracks; video takes dissolve, wipes, slides and the rest',
+      { hint: 'See video://catalog/transitions' },
+    );
+  }
+}
+
+/** Sets a transition on a cut, replacing one already there, and checks it can play. */
+function putTransition(
+  doc: TimelineDoc,
+  cut: Cut,
+  kind: StoredTransition['kind'],
+  duration: number,
+): string {
+  const existing = cut.track.transitions?.find((t) => t.a === cut.a.id && t.b === cut.b.id);
+  const tr: StoredTransition = {
+    id: existing?.id ?? nextId(doc, 'x'),
+    a: cut.a.id,
+    b: cut.b.id,
+    kind,
+    duration,
+  };
+  const problem = transitionProblem(doc, cut.track, tr);
+  if (problem) {
+    throw new CfError('bad_request', `The transition can't play: ${problem}`, {
+      hint: "Use a shorter duration, mode: 'overlap', or trim the clips to leave source past the cut",
+    });
+  }
+  cut.track.transitions = [...(cut.track.transitions ?? []).filter((t) => t !== existing), tr].sort(
+    (x, y) =>
+      cut.track.clips.findIndex((c) => c.id === x.a) -
+      cut.track.clips.findIndex((c) => c.id === y.a),
+  );
+  return tr.id;
+}
+
+function transitionAdd(doc: TimelineDoc, a: EditArgsOf<'transition.add'>): OpOutcome {
+  const { ref, members } = unlockedGroup(doc, a.clip_id);
+  const next = touching(ref.track, ref.clip).after;
+  if (!next) {
+    throw new CfError(
+      'bad_request',
+      `No clip starts where ${a.clip_id} ends, so there is no cut for a transition`,
+      {
+        hint: 'Move the clips so they touch; for a fade from or to black use clip.set_animation with fade',
+      },
+    );
+  }
+  checkKind(ref.track, a.kind);
+  const tpf = ticksPerFrame(doc.sequence.fps);
+  const duration = framesToTicks(a.duration_frames, doc.sequence.fps);
+  const { before, after } = transitionHalves(duration, tpf);
+  // The same cut on every track of the link group, where the next clip there touches too.
+  const cuts: Cut[] = [];
+  for (const m of members) {
+    const b = m === ref ? next : touching(m.track, m.clip).after;
+    if (!b || (m !== ref && next.link && b.link !== next.link)) continue;
+    assertUnlocked(m.track);
+    cuts.push({ track: m.track, a: m.clip, b });
+  }
+  if (a.mode === 'overlap') {
+    // Free source on each side of the cut by overlapping the clips; later clips move earlier.
+    for (const cut of cuts) {
+      if (cut.a.duration <= after || cut.b.duration <= before) {
+        throw new CfError('bad_request', 'The transition is longer than one of its clips', {
+          hint: 'Use a shorter duration',
+        });
+      }
+      const cutAt = end(cut.a);
+      moveEdge(cut.a, 'end', -after);
+      moveEdge(cut.b, 'start', before);
+      shiftFrom(cut.track, cutAt + before, -(before + after));
+      checkSourceRange(doc, cut.a);
+      checkSourceRange(doc, cut.b);
+    }
+  }
+  const ids = cuts.map((cut) =>
+    putTransition(doc, cut, cut.track.kind === 'audio' ? 'crossfade' : a.kind, duration),
+  );
+  const focus = end(ref.clip);
+  return ok(focus, { clip_ids: ids, temporal: true, ...(ids[0] ? { clip_id: ids[0] } : {}) });
+}
+
+function transitionSet(doc: TimelineDoc, a: EditArgsOf<'transition.set'>): OpOutcome {
+  const { track, tr } = findTransition(doc, a.transition_id);
+  assertUnlocked(track);
+  const kind = a.kind ?? tr.kind;
+  checkKind(track, kind);
+  const duration = a.duration_frames
+    ? framesToTicks(a.duration_frames, doc.sequence.fps)
+    : tr.duration;
+  const clipA = track.clips.find((c) => c.id === tr.a) as StoredClip;
+  const clipB = track.clips.find((c) => c.id === tr.b) as StoredClip;
+  putTransition(doc, { track, a: clipA, b: clipB }, kind, duration);
+  return ok(end(clipA), { clip_id: tr.id, temporal: true });
+}
+
+function transitionRemove(doc: TimelineDoc, a: EditArgsOf<'transition.remove'>): OpOutcome {
+  const { track, tr } = findTransition(doc, a.transition_id);
+  assertUnlocked(track);
+  track.transitions = track.transitions?.filter((t) => t !== tr);
+  if (!track.transitions?.length) delete track.transitions;
+  const clipA = track.clips.find((c) => c.id === tr.a);
+  return ok(clipA ? end(clipA) : 0, { clip_id: tr.id, temporal: true });
 }
 
 function videoClip(doc: TimelineDoc, clipId: string, tool: string): Located {

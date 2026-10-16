@@ -1,5 +1,12 @@
 import * as z from 'zod/v4';
-import { BlendMode, StoredAnimation, StoredMask, StoredTransform } from './compositing.ts';
+import {
+  BlendMode,
+  StoredAnimation,
+  StoredMask,
+  StoredTransform,
+  StoredTransition,
+  TransitionKind,
+} from './compositing.ts';
 import { Sequence } from './sequence.ts';
 
 export const TrackKind = z.enum(['video', 'audio']);
@@ -81,6 +88,7 @@ export const StoredTrack = z.object({
   hidden: z.boolean(),
   locked: z.boolean(),
   clips: z.array(StoredClip),
+  transitions: z.array(StoredTransition).optional(),
 });
 export type StoredTrack = z.infer<typeof StoredTrack>;
 
@@ -161,6 +169,19 @@ export const TrackView = z.object({
   hidden: z.boolean(),
   locked: z.boolean(),
   clips: z.array(ClipView),
+  transitions: z
+    .array(
+      z.object({
+        id: z.string(),
+        from_clip_id: z.string(),
+        to_clip_id: z.string(),
+        kind: TransitionKind,
+        start: frame,
+        end: frame,
+      }),
+    )
+    .optional()
+    .describe('Transitions at cuts, frames end exclusive'),
 });
 export type TrackView = z.infer<typeof TrackView>;
 

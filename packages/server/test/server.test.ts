@@ -6,7 +6,7 @@ import { call, connect, ok, SEQ_720P25, type TestEnv, testRuntime } from './help
 
 const anyResult = z.object({}).passthrough();
 /** tools/list as JSON, in bytes (about 4 bytes per token). */
-const BUDGET_BYTES = 64_000;
+const BUDGET_BYTES = 70_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -63,6 +63,9 @@ describe('protocol surface', () => {
         'track.add',
         'track.remove',
         'track.set',
+        'transition.add',
+        'transition.remove',
+        'transition.set',
       ].sort(),
     );
     for (const tool of tools) {

@@ -107,16 +107,27 @@ export interface ClipComposite {
   compositing: number;
 }
 
-/** qtblend properties for a clip `n` frames long, with keyframes relative to the clip start. */
+/** The frames a clip renders: its own `n`, plus `head` before and `tail` after for transitions. */
+export interface RenderSpan {
+  head: number;
+  tail: number;
+}
+
+/**
+ * qtblend properties for a clip `n` frames long over its render span. Keyframes count from the
+ * start of the span; `adjust` changes each frame's transform (transitions).
+ */
 export function compositeFor(
   clip: StoredClip,
   tpf: number,
   n: number,
   src: SourceSize,
   out: Frame,
+  span: RenderSpan = { head: 0, tail: 0 },
+  adjust?: (i: number, s: TransformState) => void,
 ): ClipComposite {
   const compositing = COMPOSITING[clip.blend ?? 'normal'];
-  if (!transformAnimates(clip)) {
+  if (!transformAnimates(clip) && !adjust) {
     const s = transformAt(clip, tpf, 0, n);
     return {
       rect: rectFor(clip, s, src, out).join(' '),
@@ -126,10 +137,13 @@ export function compositeFor(
   }
   const rects: number[][] = [];
   const rots: number[][] = [];
-  for (let i = 0; i < n; i++) {
+  for (let i = -span.head; i < n + span.tail; i++) {
     const s = transformAt(clip, tpf, i, n);
-    rects.push([i, ...rectFor(clip, s, src, out)]);
-    rots.push([i, r2(s.rotation)]);
+    adjust?.(i, s);
+    s.opacity = Math.min(1, Math.max(0, s.opacity));
+    const j = i + span.head;
+    rects.push([j, ...rectFor(clip, s, src, out)]);
+    rots.push([j, r2(s.rotation)]);
   }
   const first = rots[0]?.[1] ?? 0;
   const steady = rots.every((p) => p[1] === first);
@@ -314,13 +328,19 @@ export interface RotoFilter {
   operation: 'clear' | 'min';
 }
 
-/** rotoscoping filters for a clip's crop and mask, in the order they apply. */
+/**
+ * rotoscoping filters for a clip's crop, mask and transition reveal, in the order they apply.
+ * Keyframes are producer positions: `keyBase` is the position of the clip's first frame.
+ */
 export function rotoFilters(
   clip: StoredClip,
   tpf: number,
   n: number,
   src: SourceSize,
   out: Frame,
+  span: RenderSpan = { head: 0, tail: 0 },
+  keyBase = 0,
+  reveal?: string,
 ): RotoFilter[] {
   const filters: RotoFilter[] = [];
   const op = () => (filters.length || src.alpha ? 'min' : 'clear');
@@ -343,12 +363,9 @@ export function rotoFilters(
       Math.min(out.width / src.width, out.height / src.height) * Math.min(src.width, src.height);
     let spline: string;
     if (maskAnimates(clip)) {
-      // rotoscoping keys keyframes by producer position: the source frame for a plain
-      // producer, the clip frame for a retimed chain (which starts at 0).
-      const start = clip.speed ? 0 : Math.round(clip.in / tpf);
       const keys: Record<string, BPoint[]> = {};
-      for (let i = 0; i < n; i++)
-        keys[String(start + i)] = maskSpline(mask, maskAt(clip, tpf, i), src);
+      for (let i = -span.head; i < n + span.tail; i++)
+        keys[String(keyBase + i)] = maskSpline(mask, maskAt(clip, tpf, i), src);
       spline = JSON.stringify(keys);
     } else {
       spline = JSON.stringify(maskSpline(mask, maskAt(clip, tpf, 0), src));
@@ -360,5 +377,6 @@ export function rotoFilters(
       operation: op(),
     });
   }
+  if (reveal) filters.push({ spline: reveal, invert: false, feather: 0, operation: op() });
   return filters;
 }
