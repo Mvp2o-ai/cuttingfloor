@@ -32,6 +32,9 @@ importers:
       '@cuttingfloor/credentials':
         specifier: workspace:*
         version: link:../../packages/credentials
+      '@cuttingfloor/hosted':
+        specifier: workspace:*
+        version: link:../hosted
       '@cuttingfloor/jobs':
         specifier: workspace:*
         version: link:../../packages/jobs

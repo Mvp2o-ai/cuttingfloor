@@ -2,31 +2,40 @@
 
 A headless, agent-native video editor exposed as an MCP server. An agent cuts, grades, titles, mixes and exports through granular editing tools. Every edit returns its visual or audible result, every edit is a revision, and the cut hands off to Premiere, Resolve or Final Cut.
 
-- **Local mode:** stdio, free, runs on your machine. Footage never leaves it unless you use a provider that needs it to.
-- **Hosted mode:** Streamable HTTP with OAuth. Render offload, cloud ingest, teams.
+- **Hosted mode:** Streamable HTTP with OAuth, on Hetzner. Render offload, cloud ingest, teams.
+- **Local mode:** the same Docker image as one node on your machine, free. Footage never leaves it unless you use a provider that needs it to.
 
 > Status: scaffold. Nothing edits video yet.
 
 ## Run it
 
-Requires Node 24+ and pnpm 10. Local builds target macOS on Apple silicon; hosted runs in Docker on Linux.
+The only requirement is Docker.
 
 ```sh
-pnpm install
-pnpm check            # lint, typecheck, test
-pnpm dev:stdio        # the MCP server over stdio
-pnpm inspect          # the same, under the MCP Inspector
+docker compose up -d          # local mode: one node on 127.0.0.1:8787
 ```
 
-MCP client config (local):
+Connect an MCP client over HTTP:
 
 ```json
-{
-  "mcpServers": {
-    "cuttingfloor": { "command": "node", "args": ["/path/to/cuttingfloor/apps/cli/src/main.ts", "mcp"] }
-  }
-}
+{ "mcpServers": { "cuttingfloor": { "url": "http://127.0.0.1:8787/mcp" } } }
 ```
+
+Or over stdio, for clients that only launch commands:
+
+```json
+{ "mcpServers": { "cuttingfloor": { "command": "docker", "args": ["exec", "-i", "cuttingfloor", "cuttingfloor", "mcp"] } } }
+```
+
+Footage is read from `$CUTTINGFLOOR_MEDIA` (default `~/Movies`, mounted read-only). Projects and exports go to `$CUTTINGFLOOR_PROJECTS` (default `~/cuttingfloor`). Provider keys go in a `.env` next to `compose.yaml` (see `.env.example`).
+
+## Develop
+
+```sh
+docker build --target test .  # lint, typecheck and tests, inside the image
+```
+
+Or on the host with Node 24+ and pnpm 10: `pnpm install && pnpm check`.
 
 ## Layout
 
@@ -45,7 +54,7 @@ MCP client config (local):
 
 ## Provider keys
 
-Some tools call third-party services with your own key (Jev for QA; ElevenLabs, Deepgram, OpenAI and others for `create.*`). Keys are never passed through tools. Locally they come from the environment variables in `.env.example` or the OS keychain.
+Some tools call third-party services with your own key (Jev for QA; ElevenLabs, Deepgram, OpenAI and others for `create.*`). Keys are never passed through tools. Locally they come from `.env`, Docker secrets or the local keys page.
 
 ## Licence
 

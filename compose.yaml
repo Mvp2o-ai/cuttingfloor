@@ -1,0 +1,25 @@
+# Local mode: the same image hosted runs, as a single node on your machine.
+#   docker compose up -d
+# MCP clients connect to http://127.0.0.1:8787/mcp, or over stdio with
+#   docker exec -i cuttingfloor cuttingfloor mcp
+services:
+  cuttingfloor:
+    image: ghcr.io/mvp2o-ai/cuttingfloor:latest
+    build: .
+    container_name: cuttingfloor
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      CUTTINGFLOOR_MODE: local
+    volumes:
+      - cuttingfloor-data:/data
+      # Footage the editor may read (read-only), and where projects and exports live.
+      - ${CUTTINGFLOOR_MEDIA:-${HOME}/Movies}:/media/videos:ro
+      - ${CUTTINGFLOOR_PROJECTS:-${HOME}/cuttingfloor}:/projects
+
+volumes:
+  cuttingfloor-data:

@@ -2,7 +2,8 @@
  * Provider credentials (bring your own key). Rules, from plans/spec.md §12:
  * - no key ever passes through a tool argument, result, error, log or project file;
  * - keys are per provider, validated on save, resolved when a job starts;
- * - local mode keeps them in the OS keychain; hosted mode encrypts them per tenant.
+ * - local mode reads Docker secrets, the environment, then /data/keys.enc;
+ *   hosted mode keeps one encrypted object per tenant.
  */
 export type ProviderId =
   | 'typesafe'
@@ -15,7 +16,7 @@ export type ProviderId =
   | 'google'
   | 'bfl';
 
-/** Environment variable each provider's key is read from in local mode. */
+/** Environment variable (and Docker secret name, lower-cased) for each provider in local mode. */
 export const PROVIDER_ENV: Record<ProviderId, string> = {
   typesafe: 'TYPESAFE_API_KEY',
   elevenlabs: 'ELEVENLABS_API_KEY',
@@ -39,8 +40,8 @@ export interface CredentialStore {
 }
 
 /**
- * Reads keys from the environment only. The daemon's store layers the OS keychain
- * (@napi-rs/keyring) on top; `cuttingfloor keys set` writes there.
+ * Reads keys from the environment only. The local store layers Docker secrets and
+ * /data/keys.enc (written by the local keys page) on top.
  */
 export class EnvCredentialStore implements CredentialStore {
   readonly #env: NodeJS.ProcessEnv;
@@ -58,7 +59,7 @@ export class EnvCredentialStore implements CredentialStore {
   }
 
   async set(): Promise<void> {
-    throw new Error('Environment keys are read-only; use `cuttingfloor keys set <provider>`.');
+    throw new Error('Environment keys are read-only; set them in .env or on the keys page.');
   }
 
   async remove(): Promise<void> {

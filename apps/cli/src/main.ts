@@ -6,7 +6,8 @@ import { serveStdio } from '@modelcontextprotocol/server/stdio';
 
 const USAGE = `cuttingfloor <command>
 
-  mcp                 Run the MCP server over stdio (what MCP clients launch)
+  serve               Run the MCP server over Streamable HTTP (the container's default)
+  mcp                 Run the MCP server over stdio
   daemon start|stop|status|logs
                       The per-user daemon that owns jobs and workers (not built yet)
   keys set|list|test|remove <provider>
@@ -24,6 +25,9 @@ switch (command) {
     serveStdio(() => createServer({ jobs, credentials, owner: () => 'local' }));
     break;
   }
+  case 'serve':
+    await import('@cuttingfloor/hosted');
+    break;
   case 'daemon':
   case 'keys':
     process.stderr.write(`cuttingfloor ${command}: not built yet\n`);
