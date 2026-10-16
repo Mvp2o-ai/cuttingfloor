@@ -6,13 +6,15 @@ A headless video editor for agents, as an MCP server. An agent imports footage, 
 - **Nothing is stored for you.** Timelines, media and outputs live in a cache with a time limit (24 hours for timelines, 7 days for media and exports). Export to keep work.
 - **One Docker image** runs locally (free) and hosted. Engines (FFmpeg, MLT) ship inside it; Docker is the only thing you install.
 
-> Status: Phase 3 in progress. Import, timelines, clip editing, timing (speed, ramps, reverse, freeze frames, roll/slip/slide, range extract, nested timelines), transitions, titles and captions, audio (gain, pan, fades, ducking, loudness), effects (colour, LUTs, blur, chroma key and more; EQ, compressor, denoise, pitch), analysis (transcripts, beats, faces, tracking), compositing (transforms, keyframes, masks, blend modes, animations), previews, exact QA checks and H.264/ProRes export work end to end. `create.*` (motion graphics, voiceover, cutouts) and NLE interchange come next.
+> Status: Phase 3 in progress. Import, timelines, clip editing, timing (speed, ramps, reverse, freeze frames, roll/slip/slide, range extract, nested timelines), transitions, titles and captions, audio (gain, pan, fades, ducking, loudness), effects (colour, LUTs, blur, chroma key and more; EQ, compressor, denoise, pitch), analysis (transcripts, beats, faces, tracking), compositing (transforms, keyframes, masks, blend modes, animations), motion graphics and HTML stills (sandboxed), mattes, previews, exact QA checks and H.264/ProRes export work end to end. Voiceover, cutouts, provider tools and NLE interchange come next.
 
 ## Run it
 
 ```sh
-docker compose up -d          # local mode: one node on 127.0.0.1:8787
+docker compose up -d          # local mode: one node on 127.0.0.1:8787, plus the motion sandbox
 ```
+
+Compose starts two containers from the same image: `cuttingfloor` (the server) and `cuttingfloor-motion`, the sandbox where agent-written HTML for `create.motion` and `create.still` runs. The sandbox has no route out, no data volume, no capabilities, a read-only filesystem and fixed CPU, memory and process limits; Chromium's own sandbox stays on inside it, using the seccomp profile at `tools/motion/seccomp.json` (Docker's default plus namespace creation). Run compose from a checkout of this repository so that file is there.
 
 Connect an MCP client over Streamable HTTP:
 
@@ -50,9 +52,10 @@ On Docker Desktop for Mac, raise the memory limit for long 4K timelines; bind-mo
 8. Audio: `audio.set_gain` (dB, with keyframes for rides), `audio.set_pan`, `audio.fade`, `audio.duck` (lowers a music track wherever the other tracks have sound, as gain keyframes you can see), `audio.set_master`, and `audio.set_loudness` to hit a loudness target such as -14 LUFS with peaks under -1 dBTP. Audio edits preview as a waveform image with the measured loudness.
 9. Effects: `filter.add` on a clip, every clip on a track, or the whole timeline: colour (brightness, contrast, saturation, exposure, temperature, curves, LUTs imported as `.cube`), blur, sharpen, vignette, grain, glitch, pixelate, chroma key; for sound EQ, compressor, noise reduction, de-esser, dialogue enhance, reverb, echo, pitch. `adjustment.add` adds a clip whose effects change everything below it while it runs. The list with params is at `video://catalog/effects`.
 10. Composite: put a clip on a higher video track, then `clip.set_transform` (position, scale, rotation, opacity, crop, flip, fit; any number can take keyframes with easing), `clip.set_mask` (rectangle, ellipse, linear, mirror, heart, star, polygon), `clip.set_blend` and `clip.set_animation` (entrance, exit and loop presets). The accepted names are resources at `video://catalog/{name}`.
-11. Look: `preview: "inline"` on any edit returns the image; `render.frames` returns up to 16 frames as a contact sheet.
-12. `qa.check` runs exact checks: gaps, offline media, black frames, silence, loudness, frame count.
-13. `export.video` with `web_1080p_h264` or `master_prores_422hq`. The result has a signed download URL and, locally, the file in your exports folder.
+11. Create: `create.motion` renders animated HTML (a HyperFrames composition with a GSAP timeline; GSAP is provided) to a video with alpha, for lower thirds, animated titles, callouts and kinetic type. `create.still` renders an HTML page to a PNG, and `create.matte` makes a solid or gradient picture. Each returns a `media_id` for `clip.add`; the same recipe returns the same media. Pages can't reach the network, so images and fonts go in as `assets` (imported media) and are referred to as `assets/<name>`.
+12. Look: `preview: "inline"` on any edit returns the image; `render.frames` returns up to 16 frames as a contact sheet.
+13. `qa.check` runs exact checks: gaps, offline media, black frames, silence, loudness, frame count.
+14. `export.video` with `web_1080p_h264` or `master_prores_422hq`. The result has a signed download URL and, locally, the file in your exports folder.
 
 Time is integer frames at the sequence rate, end-exclusive. `timeline.get` returns the whole timeline as JSON; `timeline.load` restores it after it expires. `video://server/health` reports engine versions and limits.
 
@@ -66,6 +69,7 @@ The same image with `CUTTINGFLOOR_MODE=hosted`: no path imports (URLs only), no 
 | `CUTTINGFLOOR_MAX_JOBS` | cores ÷ 4 | Concurrent imports, exports and QA runs |
 | `CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS` | `24` | Signed download link lifetime |
 | `CUTTINGFLOOR_MAX_DOWNLOAD_BYTES` | 10 GiB | URL import size cap |
+| `CUTTINGFLOOR_MOTION_URL` | unset (compose sets it) | The motion sandbox for `create.motion` and `create.still`; without it those tools explain how to start one |
 
 ## Develop
 
@@ -73,18 +77,21 @@ The same image with `CUTTINGFLOOR_MODE=hosted`: no path imports (URLs only), no 
 pnpm install && pnpm check       # lint, typecheck, unit and protocol tests (Node 24+, pnpm 10)
 docker build --target test .     # everything, including engine and end-to-end tests
 docker build -t cuttingfloor:dev . && node scripts/smoke-image.ts cuttingfloor:dev
+node scripts/smoke-motion.ts cuttingfloor:dev   # the motion sandbox in compose, attacked
 ```
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `apps/cli` | `cuttingfloor serve` (HTTP) and `cuttingfloor mcp` (stdio) |
+| `apps/cli` | `cuttingfloor serve` (HTTP), `cuttingfloor mcp` (stdio) and `cuttingfloor motion-worker` (the sandbox role) |
 | `apps/hosted` | The HTTP node: MCP endpoint, signed downloads, API keys |
 | `packages/server` | MCP tools, resources and the Tasks adapter |
 | `packages/schema` | Zod schemas for every tool, the timeline document and errors |
 | `packages/core` | Timeline document, edit math, content hashing, storage with TTLs |
 | `packages/engine` | FFmpeg and MLT as subprocesses: probe, conform, proxies, frames, export, QA |
+| `packages/motion` | The motion sandbox's worker: HyperFrames and Chromium renders, one at a time |
+| `tools/` | Native helpers built into the image (`cf-vision`) and the motion sandbox's Chromium wrapper and seccomp profile |
 | `packages/jobs` | File-backed job store and runner behind MCP Tasks and `job.*` |
 | `packages/credentials` | Bring-your-own provider keys |
 
