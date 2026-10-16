@@ -4,14 +4,17 @@ import { join } from 'node:path';
 import {
   type BatchOp,
   diff,
+  easeFn,
   framesToTicks,
   fromView,
   type MediaResolver,
+  migrate,
   newTimeline,
   runEdits,
   TimelineStore,
   timelineIdOf,
   toView,
+  transformAt,
   Workspace,
 } from '@cuttingfloor/core';
 import { CfError, type MediaRef, type TimelineDoc } from '@cuttingfloor/schema';
@@ -478,6 +481,170 @@ describe('edit.batch', () => {
         { tool: 'track.add', args: { kind: 'audio' } },
       ),
     ).toThrow(/has not run yet/);
+  });
+});
+
+describe('compositing', () => {
+  const V = 'm_aaaaaaaaaaaaaaaaaaaaaaavid';
+  const tpf = framesToTicks(1, fps);
+  const base = () =>
+    edit(start(), {
+      tool: 'clip.add',
+      args: { track_id: 't1', media_id: V, source: { in: 20, out: 60 } },
+    }).doc;
+  const clip = (doc: TimelineDoc, id: string) => {
+    const c = doc.tracks.flatMap((t) => t.clips).find((x) => x.id === id);
+    if (!c) throw new Error(`no ${id}`);
+    return c;
+  };
+
+  it('eases from 0 to 1, with back and elastic overshooting on the way', () => {
+    for (const name of [
+      'linear',
+      'smooth',
+      'cubic_in_out',
+      'expo_out',
+      'back_out',
+      'bounce_in',
+      'elastic_out',
+    ] as const) {
+      expect(easeFn(name)(0)).toBeCloseTo(0, 6);
+      expect(easeFn(name)(1)).toBeCloseTo(1, 6);
+    }
+    expect(Math.max(...[0.6, 0.7, 0.8].map(easeFn('back_out')))).toBeGreaterThan(1);
+    expect(easeFn('hold')(0.99)).toBe(0);
+  });
+
+  it('stores keyframes on the content, so they survive a head trim and a split', () => {
+    let doc = edit(base(), {
+      tool: 'clip.set_transform',
+      args: {
+        clip_id: 'c3',
+        x: {
+          keyframes: [
+            { frame: 0, value: 0 },
+            { frame: 20, value: 1, ease: 'linear' },
+          ],
+        },
+      },
+    }).doc;
+    // Source frame 30 is clip frame 10 of a clip that starts at source frame 20: halfway.
+    expect(transformAt(clip(doc, 'c3'), tpf, 10, 40).x).toBeCloseTo(0.5);
+    doc = edit(doc, {
+      tool: 'clip.trim',
+      args: { clip_id: 'c3', edge: 'start', to_frame: 10 },
+    }).doc;
+    // After trimming 10 frames off the head, the same content is at clip frame 0.
+    expect(transformAt(clip(doc, 'c3'), tpf, 0, 30).x).toBeCloseTo(0.5);
+    const view = toView('tl_x', doc).tracks[0]?.clips[0];
+    expect(view?.transform?.x).toEqual({
+      keyframes: [
+        { frame: -10, value: 0 },
+        { frame: 10, value: 1 },
+      ],
+    });
+    doc = edit(doc, { tool: 'clip.split', args: { clip_id: 'c3', at_frame: 20 } }).doc;
+    const right = toView('tl_x', doc).tracks[0]?.clips[1];
+    expect(right?.transform?.x).toEqual({
+      keyframes: [
+        { frame: -20, value: 0 },
+        { frame: 0, value: 1 },
+      ],
+    });
+  });
+
+  it('omits defaults, so resetting returns to the same timeline', async () => {
+    const plain = base();
+    const moved = edit(plain, {
+      tool: 'clip.set_transform',
+      args: { clip_id: 'c3', scale: 0.5, fit: 'cover' },
+    }).doc;
+    expect(clip(moved, 'c3').transform).toEqual({ scale: 0.5, fit: 'cover' });
+    const reset = edit(moved, {
+      tool: 'clip.set_transform',
+      args: { clip_id: 'c3', scale: null, fit: 'contain' },
+    }).doc;
+    expect(clip(reset, 'c3').transform).toBeUndefined();
+    const strip = (d: TimelineDoc) => ({ ...d, parent: null, op: null });
+    expect(await timelineIdOf(strip(reset))).toBe(await timelineIdOf(strip(plain)));
+  });
+
+  it('keeps an entrance on the left of a cut and an exit on the right', () => {
+    let doc = edit(base(), {
+      tool: 'clip.set_animation',
+      args: {
+        clip_id: 'c3',
+        in: { name: 'fade', duration_frames: 5 },
+        out: { name: 'slide_left', duration_frames: 5 },
+      },
+    }).doc;
+    expect(transformAt(clip(doc, 'c3'), tpf, 0, 40).opacity).toBe(0);
+    expect(transformAt(clip(doc, 'c3'), tpf, 39, 40).x).toBeLessThan(0);
+    doc = edit(doc, { tool: 'clip.split', args: { clip_id: 'c3', at_frame: 20 } }).doc;
+    const [left, right] = doc.tracks[0]?.clips ?? [];
+    expect(Object.keys(left?.animation ?? {})).toEqual(['in']);
+    expect(Object.keys(right?.animation ?? {})).toEqual(['out']);
+  });
+
+  it('refuses compositing on audio clips and names the linked video clip', () => {
+    const { doc } = edit(start(), {
+      tool: 'clip.add',
+      args: {
+        track_id: 't1',
+        media_id: 'm_aaaaaaaaaaaaaaaaaaaaaaaaav',
+        source: { in: 0, out: 10 },
+      },
+    });
+    expect(() =>
+      edit(doc, { tool: 'clip.set_blend', args: { clip_id: 'c5', mode: 'screen' } }),
+    ).toThrow(expect.objectContaining({ hint: 'Use its linked video clip c4' }));
+  });
+
+  it('checks masks and round-trips every setting through timeline.load', () => {
+    expect(() =>
+      edit(base(), { tool: 'clip.set_mask', args: { clip_id: 'c3', mask: { shape: 'polygon' } } }),
+    ).toThrow(/needs points/);
+    const { doc } = edit(
+      base(),
+      {
+        tool: 'clip.set_transform',
+        args: {
+          clip_id: 'c3',
+          rotation: {
+            keyframes: [
+              { frame: 0, value: 0 },
+              { frame: 9, value: 45, ease: 'back_out' },
+            ],
+          },
+          flip: 'horizontal',
+          crop: { left: 0.1 },
+        },
+      },
+      { tool: 'clip.set_blend', args: { clip_id: 'c3', mode: 'multiply' } },
+      {
+        tool: 'clip.set_mask',
+        args: { clip_id: 'c3', mask: { shape: 'star', feather: 0.05, invert: true } },
+      },
+      {
+        tool: 'clip.set_animation',
+        args: { clip_id: 'c3', loop: { name: 'pulse', period_frames: 25 } },
+      },
+      { tool: 'track.set', args: { track_id: 't1', locked: true } },
+    );
+    const view = toView('tl_x', doc);
+    const back = fromView(view, resolve);
+    expect(toView('tl_x', back)).toEqual({ ...view, parent: null });
+    expect(back.tracks[0]?.locked).toBe(true);
+  });
+
+  it('migrates version 1 documents', () => {
+    const v2 = base();
+    const v1 = {
+      ...v2,
+      version: 1 as const,
+      tracks: v2.tracks.map((t) => ({ ...t, clips: t.clips.map(({ type: _t, ...c }) => c) })),
+    };
+    expect(migrate(v1 as never)).toEqual(v2);
   });
 });
 

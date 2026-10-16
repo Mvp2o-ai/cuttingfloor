@@ -11,8 +11,10 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt tini fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/* \
  && ffmpeg -hide_banner -encoders | grep -q prores_ks \
- && melt -query transitions | grep -q affine
-ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true QT_QPA_PLATFORM=offscreen
+ && melt -query transitions | grep -q qtblend \
+ && melt -query filters | grep -q rotoscoping
+# MLT's Qt modules (qtblend) need a display variable to load; Qt itself renders offscreen.
+ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true QT_QPA_PLATFORM=offscreen DISPLAY=:0
 RUN corepack enable
 WORKDIR /app
 

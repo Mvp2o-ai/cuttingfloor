@@ -1,11 +1,17 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
-import { CfError, type TimelineDoc } from '@cuttingfloor/schema';
+import { CfError, type StoredClip, type TimelineDoc } from '@cuttingfloor/schema';
+import { compositeFor, rotoFilters, type SourceSize } from './composite.ts';
 
 export interface MltSource {
   path: string;
   image: boolean;
+  /** Display size of the picture (after rotation); null for audio-only media. */
+  width: number | null;
+  height: number | null;
+  /** Whether the picture carries an alpha channel. */
+  alpha: boolean;
 }
 
 export interface CompileOptions {
@@ -22,8 +28,9 @@ export interface CompileOptions {
 /**
  * Compiles a timeline to MLT XML. Only the server writes MLT XML: producers are always forced
  * (`avformat`, `pixbuf`), and no service that runs commands or loads files by name is emitted.
- * Track 0 is a black background; video tracks composite bottom to top with `affine` (fit,
- * aspect kept); audio tracks are summed with `mix`.
+ * Track 0 is a black background. Each video clip composites itself over the tracks below with
+ * a `qtblend` transition over its own range (transform, opacity, blend mode); crop and masks
+ * are `rotoscoping` filters on the clip. Audio tracks are summed with `mix`.
  */
 export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
   const fps = doc.sequence.fps;
@@ -71,8 +78,10 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
 
   const trackXml: string[] = ['<track producer="bg"/>'];
   const transitions: string[] = [];
+  const out = { width, height };
   doc.tracks.forEach((t, i) => {
     const pid = `track${i}`;
+    const index = i + 1;
     const entries: string[] = [];
     let cursor = 0;
     for (const c of [...t.clips].sort((a, b) => a.start - b.start)) {
@@ -82,9 +91,12 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
       if (s > cursor) entries.push(`<blank length="${s - cursor}"/>`);
       if (c.enabled) {
         const inF = frame(c.in);
+        const src = c.kind === 'video' ? sourceSize(c, options, width, height) : undefined;
+        const filters = src ? clipFilters(c, tpf, e - s, src, out) : '';
         entries.push(
-          `<entry producer="${c.media_id}_${c.kind[0]}" in="${inF}" out="${inF + (e - s) - 1}"/>`,
+          `<entry producer="${c.media_id}_${c.kind[0]}" in="${inF}" out="${inF + (e - s) - 1}">${filters}</entry>`,
         );
+        if (src && !t.hidden) transitions.push(clipTransition(c, tpf, s, e, index, src, out));
       } else {
         entries.push(`<blank length="${e - s}"/>`);
       }
@@ -96,12 +108,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
     trackXml.push(
       `<track producer="${pid}" hide="${off ? 'both' : t.kind === 'video' ? 'audio' : 'video'}"/>`,
     );
-    const index = i + 1;
-    if (t.kind === 'video') {
-      transitions.push(
-        `<transition><property name="mlt_service">affine</property><property name="a_track">0</property><property name="b_track">${index}</property><property name="always_active">1</property></transition>`,
-      );
-    } else {
+    if (t.kind === 'audio') {
       transitions.push(
         `<transition><property name="mlt_service">mix</property><property name="a_track">0</property><property name="b_track">${index}</property><property name="always_active">1</property><property name="sum">1</property></transition>`,
       );
@@ -120,6 +127,55 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
   }
   x.push('</mlt>');
   return x.join('\n');
+}
+
+const prop = (name: string, value: string | number) =>
+  `<property name="${name}">${esc(String(value))}</property>`;
+
+/** The picture size the compositor works from; the canvas size when the source has none. */
+function sourceSize(c: StoredClip, options: CompileOptions, w: number, h: number): SourceSize {
+  const src = options.sources.get(c.media_id);
+  return {
+    width: src?.width ?? w,
+    height: src?.height ?? h,
+    alpha: src?.alpha ?? false,
+  };
+}
+
+/** Flip, crop and mask filters on a clip's playlist entry. */
+function clipFilters(
+  c: StoredClip,
+  tpf: number,
+  n: number,
+  src: SourceSize,
+  out: { width: number; height: number },
+): string {
+  const parts: string[] = [];
+  const flip = c.transform?.flip;
+  if (flip === 'horizontal' || flip === 'both')
+    parts.push(`<filter>${prop('mlt_service', 'avfilter.hflip')}</filter>`);
+  if (flip === 'vertical' || flip === 'both')
+    parts.push(`<filter>${prop('mlt_service', 'avfilter.vflip')}</filter>`);
+  for (const f of rotoFilters(c, tpf, n, src, out)) {
+    parts.push(
+      `<filter>${prop('mlt_service', 'rotoscoping')}${prop('mode', 'alpha')}${prop('alpha_operation', f.operation)}${prop('invert', f.invert ? 1 : 0)}${prop('feather', f.feather)}${prop('feather_passes', 2)}${prop('spline', f.spline)}</filter>`,
+    );
+  }
+  return parts.join('');
+}
+
+/** The qtblend transition that composites one clip over everything below it. */
+function clipTransition(
+  c: StoredClip,
+  tpf: number,
+  s: number,
+  e: number,
+  index: number,
+  src: SourceSize,
+  out: { width: number; height: number },
+): string {
+  const comp = compositeFor(c, tpf, e - s, src, out);
+  return `<transition in="${s}" out="${e - 1}">${prop('mlt_service', 'qtblend')}${prop('a_track', 0)}${prop('b_track', index)}${prop('rect', comp.rect)}${prop('distort', 1)}${prop('rotate_center', 1)}${comp.rotation ? prop('rotation', comp.rotation) : ''}${comp.compositing ? prop('compositing', comp.compositing) : ''}</transition>`;
 }
 
 /**

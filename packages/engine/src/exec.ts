@@ -31,7 +31,9 @@ export function run(bin: string, args: string[], options: RunOptions = {}): Prom
     }
     const child = spawn(bin, args, {
       cwd: options.cwd,
-      env: { ...process.env, QT_QPA_PLATFORM: 'offscreen', ...options.env },
+      // MLT's Qt modules (qtblend) refuse to load without a display variable; Qt itself renders
+      // offscreen and never connects to it.
+      env: { DISPLAY: ':0', ...process.env, QT_QPA_PLATFORM: 'offscreen', ...options.env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';

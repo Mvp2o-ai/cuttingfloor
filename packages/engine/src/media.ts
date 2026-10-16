@@ -294,6 +294,28 @@ export function mediaInfo(record: MediaRecord): MediaInfo {
 }
 
 /** Which file each render reads: proxies for previews, the mezzanine or original for exports. */
+/** Whether a probed picture carries an alpha channel. */
+export function hasAlpha(p: Probe): boolean {
+  return /^(yuva|rgba|bgra|argb|abgr|gbrap|ya)/.test(p.video?.pix_fmt ?? '');
+}
+
+/** The picture a render reads for this media, with what the compositor needs to know about it. */
+export function renderPicture(
+  record: MediaRecord,
+  purpose: 'preview' | 'export',
+): { path: string; image: boolean; width: number | null; height: number | null; alpha: boolean } {
+  const p = record.probe;
+  const v = p?.video;
+  const upright = v ? v.rotation % 180 === 0 : true;
+  return {
+    path: renderSource(record, purpose),
+    image: p?.kind === 'image',
+    width: v ? (upright ? v.width : v.height) : null,
+    height: v ? (upright ? v.height : v.width) : null,
+    alpha: p ? hasAlpha(p) : false,
+  };
+}
+
 export function renderSource(record: MediaRecord, purpose: 'preview' | 'export'): string {
   const file =
     purpose === 'preview'
@@ -366,7 +388,12 @@ async function conform(
       'zscale=t=bt709:m=bt709:r=tv',
     );
   }
-  filters.push(`fps=${v.fps.num}/${v.fps.den}`, 'format=yuv422p10le');
+  const alpha = hasAlpha(p);
+  // ProRes 4444 keeps an alpha channel; 422 HQ is the mezzanine otherwise.
+  filters.push(
+    `fps=${v.fps.num}/${v.fps.den}`,
+    alpha ? 'format=yuva444p10le' : 'format=yuv422p10le',
+  );
   const args = [
     ...INPUT,
     '-y',
@@ -381,7 +408,7 @@ async function conform(
     '-c:v',
     'prores_ks',
     '-profile:v',
-    '3',
+    alpha ? '4' : '3',
     '-vendor',
     'apl0',
     '-color_primaries',
@@ -421,11 +448,9 @@ async function makeProxy(
     '-map',
     '0:a:0?',
     '-vf',
-    `fps=${v.fps.num}/${v.fps.den},scale='if(gte(iw,ih),-2,540)':'if(gte(iw,ih),540,-2)':flags=bicubic,format=yuvj422p`,
-    '-c:v',
-    'mjpeg',
-    '-q:v',
-    '4',
+    `fps=${v.fps.num}/${v.fps.den},scale='if(gte(iw,ih),-2,540)':'if(gte(iw,ih),540,-2)':flags=bicubic,format=${hasAlpha(p) ? 'rgba' : 'yuvj422p'}`,
+    // MJPEG has no alpha; pictures with one get an all-intra PNG proxy instead.
+    ...(hasAlpha(p) ? ['-c:v', 'png'] : ['-c:v', 'mjpeg', '-q:v', '4']),
     '-c:a',
     'pcm_s16le',
     '-ar',

@@ -44,7 +44,10 @@ export class TimelineStore {
   }
 
   async find(owner: string, id: string): Promise<TimelineDoc | undefined> {
-    return this.#ws.readJson<TimelineDoc>(this.#file(owner, id), { touch: true });
+    const doc = await this.#ws.readJson<TimelineDoc | V1Doc>(this.#file(owner, id), {
+      touch: true,
+    });
+    return doc && migrate(doc);
   }
 
   async sweep(ttlMs = TIMELINE_TTL_MS): Promise<number> {
@@ -54,6 +57,19 @@ export class TimelineStore {
     }
     return n;
   }
+}
+
+/** A version 1 document: clips had no `type` and no compositing settings. */
+type V1Doc = Omit<TimelineDoc, 'version'> & { version: 1 };
+
+/** Brings a stored document up to the current version. Its id stays the handle it was stored under. */
+export function migrate(doc: TimelineDoc | V1Doc): TimelineDoc {
+  if (doc.version === 2) return doc;
+  return {
+    ...doc,
+    version: 2,
+    tracks: doc.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => ({ ...c, type: 'media' })) })),
+  };
 }
 
 export interface BatchOp {

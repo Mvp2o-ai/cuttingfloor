@@ -6,7 +6,7 @@ A headless video editor for agents, as an MCP server. An agent imports footage, 
 - **Nothing is stored for you.** Timelines, media and outputs live in a cache with a time limit (24 hours for timelines, 7 days for media and exports). Export to keep work.
 - **One Docker image** runs locally (free) and hosted. Engines (FFmpeg, MLT) ship inside it; Docker is the only thing you install.
 
-> Status: Phase 1. Import, timelines, clip editing, previews, exact QA checks and H.264/ProRes export work end to end. Transitions, filters, titles, audio tools, `create.*` and NLE interchange come next.
+> Status: Phase 3 in progress. Import, timelines, clip editing, compositing (transforms, keyframes, masks, blend modes, animations), previews, exact QA checks and H.264/ProRes export work end to end. Speed and timing tools, transitions, titles and captions, audio tools, effects, `create.*` and NLE interchange come next.
 
 ## Run it
 
@@ -43,9 +43,10 @@ On Docker Desktop for Mac, raise the memory limit for long 4K timelines; bind-mo
 1. `media.import` each file. It's long-running: a task for clients that support MCP Tasks, otherwise a `job_id` to poll with `job.get`. The `media_id` is usable once the job reports `processing`.
 2. `timeline.create` with a sequence (`{width, height, fps: {num, den}}`).
 3. Edit: `clip.add`, `clip.trim` (with `side` for J/L cuts), `clip.split`, `clip.move`, `clip.remove` (with `ripple`), `clip.link`, `track.*`, or `edit.batch` to apply many edits at once, using `{"$ref": "ops[0].clip_id"}` for ids made earlier in the batch.
-4. Look: `preview: "inline"` on any edit returns the image; `render.frames` returns up to 16 frames as a contact sheet.
-5. `qa.check` runs exact checks: gaps, offline media, black frames, silence, loudness, frame count.
-6. `export.video` with `web_1080p_h264` or `master_prores_422hq`. The result has a signed download URL and, locally, the file in your exports folder.
+4. Composite: put a clip on a higher video track, then `clip.set_transform` (position, scale, rotation, opacity, crop, flip, fit; any number can take keyframes with easing), `clip.set_mask` (rectangle, ellipse, linear, mirror, heart, star, polygon), `clip.set_blend` and `clip.set_animation` (entrance, exit and loop presets). The accepted names are resources at `video://catalog/{name}`.
+5. Look: `preview: "inline"` on any edit returns the image; `render.frames` returns up to 16 frames as a contact sheet.
+6. `qa.check` runs exact checks: gaps, offline media, black frames, silence, loudness, frame count.
+7. `export.video` with `web_1080p_h264` or `master_prores_422hq`. The result has a signed download URL and, locally, the file in your exports folder.
 
 Time is integer frames at the sequence rate, end-exclusive. `timeline.get` returns the whole timeline as JSON; `timeline.load` restores it after it expires. `video://server/health` reports engine versions and limits.
 

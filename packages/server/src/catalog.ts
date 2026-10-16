@@ -1,0 +1,130 @@
+import {
+  BLEND_MODES,
+  type BlendMode,
+  EASES,
+  type IN_OUT_ANIMATIONS,
+  type LOOP_ANIMATIONS,
+  MASK_SHAPES,
+  type MaskShape,
+} from '@cuttingfloor/schema';
+import {
+  type McpServer,
+  ProtocolError,
+  ProtocolErrorCode,
+  ResourceTemplate,
+} from '@modelcontextprotocol/server';
+
+// Catalogues are data, not tools: the names a tool accepts plus what each one does, read as
+// resources so tool definitions stay small (spec §21.5).
+
+const BLEND: Record<BlendMode, string> = {
+  normal: 'Covers what is below',
+  add: 'Adds light; black disappears (glows, light leaks)',
+  multiply: 'Darkens; white disappears (shadows, paper textures)',
+  screen: 'Lightens; black disappears (flares, smoke, sparks)',
+  overlay: 'Multiply on darks, screen on lights (contrast textures)',
+  darken: 'Keeps the darker of the two',
+  lighten: 'Keeps the lighter of the two',
+  color_dodge: 'Brightens below by the clip, strongly',
+  color_burn: 'Darkens below by the clip, strongly',
+  hard_light: 'Overlay driven by the clip',
+  soft_light: 'Gentle overlay',
+  difference: 'Absolute difference; inverts under white',
+  exclusion: 'Softer difference',
+};
+
+const MASKS: Record<MaskShape, string> = {
+  rectangle: 'x, y, width, height, rotation, corner_radius',
+  ellipse: 'x, y, width, height, rotation',
+  linear: 'Keeps everything below a line through x, y; rotation turns the line',
+  mirror: 'Keeps a band of thickness height through x, y; rotation turns it',
+  heart: 'x, y, width, height, rotation',
+  star: 'Five points; x, y, width, height, rotation',
+  polygon: 'points: [[x, y], ...] corners in the clip picture',
+};
+
+const IN_OUT: Record<(typeof IN_OUT_ANIMATIONS)[number], string> = {
+  fade: 'Opacity from 0',
+  zoom_in: 'Grows into place while fading in; as an exit, grows while fading out',
+  zoom_out: 'Shrinks into place while fading in; as an exit, shrinks away',
+  slide_left: 'Moves left into place from the right; as an exit, leaves to the left',
+  slide_right: 'Moves right into place from the left; as an exit, leaves to the right',
+  slide_up: 'Rises into place from below; as an exit, leaves upwards',
+  slide_down: 'Drops into place from above; as an exit, leaves downwards',
+  pop: 'Scales up from nothing with an overshoot',
+  spin: 'Turns a full circle while growing',
+  drop: 'Falls in and bounces',
+};
+
+const LOOPS: Record<(typeof LOOP_ANIMATIONS)[number], string> = {
+  pulse: 'Breathes in size',
+  sway: 'Rocks side to side',
+  shake: 'Jitters in place (camera shake)',
+  float: 'Bobs up and down',
+  spin: 'Turns continuously; strength sets turns per period',
+  flicker: 'Dims at random',
+};
+
+const CATALOGS: Record<string, { title: string; body: unknown }> = {
+  eases: {
+    title: 'Keyframe easing',
+    body: {
+      note: 'A keyframe ease shapes the move into the next keyframe. Default linear. hold jumps at the next keyframe.',
+      eases: EASES,
+    },
+  },
+  blend_modes: {
+    title: 'Blend modes',
+    body: Object.fromEntries(BLEND_MODES.map((m) => [m, BLEND[m]])),
+  },
+  mask_shapes: {
+    title: 'Mask shapes',
+    body: {
+      note: 'Positions and sizes are fractions of the clip picture (0–1). feather is a fraction of its short side.',
+      shapes: Object.fromEntries(MASK_SHAPES.map((m) => [m, MASKS[m]])),
+    },
+  },
+  animations: {
+    title: 'Animation presets',
+    body: {
+      note: 'Presets layer over the clip transform: in runs from the clip start, out ends at the clip end, loop repeats every period_frames (default 1 s) at strength (default 1).',
+      in_out: IN_OUT,
+      loop: LOOPS,
+    },
+  },
+};
+
+export function registerCatalogs(server: McpServer): void {
+  server.registerResource(
+    'catalog',
+    new ResourceTemplate('video://catalog/{name}', {
+      list: async () => ({
+        resources: Object.entries(CATALOGS).map(([name, c]) => ({
+          uri: `video://catalog/${name}`,
+          name,
+          title: c.title,
+          mimeType: 'application/json',
+        })),
+      }),
+    }),
+    {
+      title: 'Catalogues',
+      description: `Names tools accept and what each does: ${Object.keys(CATALOGS).join(', ')}`,
+      mimeType: 'application/json',
+    },
+    async (uri, vars) => {
+      const entry = CATALOGS[String(vars.name)];
+      if (!entry) {
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
+          `Unknown catalogue ${String(vars.name)}; try ${Object.keys(CATALOGS).join(', ')}`,
+        );
+      }
+      return {
+        contents: [
+          { uri: uri.href, mimeType: 'application/json', text: JSON.stringify(entry.body) },
+        ],
+      };
+    },
+  );
+}

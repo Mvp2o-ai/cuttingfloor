@@ -5,7 +5,7 @@ import {
   lengthFrames,
   type MltSource,
   mediaRef,
-  renderSource,
+  renderPicture,
   renderTimelineFrames,
 } from '@cuttingfloor/engine';
 import { CfError, type MediaRef, type TimelineDoc } from '@cuttingfloor/schema';
@@ -36,7 +36,7 @@ export async function sourcesFor(
         detail: { media_id: id },
       });
     }
-    sources.set(id, { path: renderSource(record, purpose), image: record.probe?.kind === 'image' });
+    sources.set(id, renderPicture(record, purpose));
   }
   return { sources, offline };
 }
