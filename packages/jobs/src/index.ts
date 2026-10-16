@@ -236,7 +236,27 @@ export class JobRunner {
   async #run(job: Job, work: JobWork, controller: AbortController): Promise<void> {
     if (this.#active >= this.#concurrency) {
       await this.store.update(job, { statusMessage: 'queued' });
-      await new Promise<void>((resolve) => this.#queue.push(resolve));
+      // Wait for a slot; a job cancelled while queued leaves without ever taking one.
+      const granted = await new Promise<boolean>((resolve) => {
+        const take = () => resolve(true);
+        this.#queue.push(take);
+        controller.signal.addEventListener(
+          'abort',
+          () => {
+            const at = this.#queue.indexOf(take);
+            if (at >= 0) {
+              this.#queue.splice(at, 1);
+              resolve(false);
+            }
+          },
+          { once: true },
+        );
+      });
+      if (!granted) {
+        const latest = (await this.store.get(job.id, job.owner)) ?? job;
+        await this.store.update(latest, { status: 'cancelled', statusMessage: 'cancelled' });
+        return;
+      }
     } else {
       this.#active += 1;
     }
