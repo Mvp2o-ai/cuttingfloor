@@ -9,6 +9,7 @@ import {
   SpeedView,
   type StoredClip,
   type StoredSpeed,
+  TextStyle,
   type TimelineDoc,
   type TimelineInput,
   type TimelineView,
@@ -77,6 +78,32 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
   return out;
 }
 
+/** What a clip plays, as tools show it. */
+function sourceView(c: StoredClip, tpf: number): Partial<ClipView> {
+  switch (c.type) {
+    case 'media':
+      return { media_id: c.media_id };
+    case 'timeline':
+      return { nested_timeline: c.timeline };
+    case 'title':
+      return { text: c.text, ...(c.style ? { style: c.style } : {}) };
+    case 'caption':
+      return {
+        text: c.text,
+        ...(c.words
+          ? {
+              words: c.words.map((w) => ({
+                text: w.text,
+                start: Math.round((w.t - c.in) / tpf),
+                end: Math.round((w.end - c.in) / tpf),
+              })),
+            }
+          : {}),
+        ...(c.style ? { style: c.style } : {}),
+      };
+  }
+}
+
 /** The frame-based view of a timeline's body (no ids, history or nesting). */
 function bodyView(doc: NestedDoc): NestedView {
   const fps = doc.sequence.fps;
@@ -97,7 +124,7 @@ function bodyView(doc: NestedDoc): NestedView {
         type: c.type,
         kind: c.kind,
         track_id: t.id,
-        ...(c.type === 'media' ? { media_id: c.media_id } : { nested_timeline: c.timeline }),
+        ...sourceView(c, ticksPerFrame(fps)),
         start: f(c.start),
         end: f(c.start + c.duration),
         source: { in: f(c.in), out: f(c.in + span(c)) },
@@ -248,6 +275,20 @@ function bodyFromView(
           { hint: 'Give the clip a speed if it plays faster or slower than its source' },
         );
       }
+      const common = {
+        id: c.id,
+        kind: c.kind,
+        start: t(c.start),
+        in: t(c.source.in),
+        duration: t(c.end - c.start),
+        link: c.link,
+        enabled: c.enabled,
+        ...(speed ? { speed } : {}),
+      };
+      if (c.type === 'title' || c.type === 'caption') {
+        clips.push(textClip(c, common, t));
+        continue;
+      }
       const isNested = c.type === 'timeline';
       const key = isNested ? (c.nested_timeline ?? '') : (c.media_id ?? '');
       if (!key) {
@@ -270,17 +311,10 @@ function bodyFromView(
       }
       if (!isNested) doc.media[key] = ref;
       clips.push({
-        id: c.id,
+        ...common,
         ...(isNested
           ? { type: 'timeline' as const, timeline: key }
           : { type: 'media' as const, media_id: key }),
-        kind: c.kind,
-        start: t(c.start),
-        in: t(c.source.in),
-        duration: t(c.end - c.start),
-        link: c.link,
-        enabled: c.enabled,
-        ...(speed ? { speed } : {}),
       });
     }
     clips.sort((a, b) => a.start - b.start);
@@ -317,6 +351,30 @@ function bodyFromView(
     }
   doc.next_id = max + 1;
   return doc;
+}
+
+type ClipCommon = Omit<Extract<StoredClip, { type: 'media' }>, 'type' | 'media_id'>;
+
+/** A title or caption from its view: text and style checked like the tools check them. */
+function textClip(c: ClipView, common: ClipCommon, t: (frames: number) => number): StoredClip {
+  if (c.kind !== 'video')
+    throw new CfError('bad_request', `Text clip ${c.id} must be on a video track`);
+  if (!c.text) throw new CfError('bad_request', `Clip ${c.id} needs text`);
+  const style = c.style === undefined ? undefined : TextStyle.safeParse(c.style);
+  if (style && !style.success) {
+    throw new CfError(
+      'bad_request',
+      `Clip ${c.id}: style: ${style.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+    );
+  }
+  const styled = style?.data ? { style: style.data } : {};
+  if (c.type === 'title') return { ...common, type: 'title', text: c.text, ...styled };
+  const words = c.words?.map((w) => ({
+    text: w.text,
+    t: common.in + t(w.start),
+    end: common.in + t(w.end),
+  }));
+  return { ...common, type: 'caption', text: c.text, ...(words ? { words } : {}), ...styled };
 }
 
 /** A clip's speed from its view, with ramp points converted back to ticks. */

@@ -1,5 +1,5 @@
-import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, symlink, writeFile } from 'node:fs/promises';
+import { extname, join } from 'node:path';
 import { frameSource, type TransformState, ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
 import {
   CfError,
@@ -9,6 +9,7 @@ import {
   type TimelineDoc,
 } from '@cuttingfloor/schema';
 import { compositeFor, type RenderSpan, rotoFilters, type SourceSize } from './composite.ts';
+import { buildAss } from './text.ts';
 import { applyEffects, clipPlan, crossfadeLevels, planTrack, revealSpline } from './transitions.ts';
 
 export interface MltSource {
@@ -19,6 +20,8 @@ export interface MltSource {
   height: number | null;
   /** Whether the picture carries an alpha channel. */
   alpha: boolean;
+  /** Fonts only: the family libass knows the file by. */
+  family?: string;
 }
 
 export interface CompileOptions {
@@ -30,6 +33,10 @@ export interface CompileOptions {
   frames?: number[];
   /** Frame range for exports, end exclusive. */
   range?: { start: number; end: number };
+  /** Filled with the side files the XML refers to (text scripts), by file name. */
+  files?: Map<string, string>;
+  /** A folder of imported fonts for libass, when text uses them. */
+  fontsDir?: string;
 }
 
 /**
@@ -162,12 +169,34 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
         const media = c.type === 'media' ? options.sources.get(c.media_id) : undefined;
         const chained = c.type === 'media' && Boolean(c.speed) && Boolean(media) && !media?.image;
         // Producer position of the clip's first frame, which is what filter keyframes count.
-        const keyBase = chained ? cp.head : media?.image ? cp.head : frame(c.in);
+        const generated = c.type === 'title' || c.type === 'caption';
+        const keyBase = chained || generated || media?.image ? cp.head : frame(c.in);
         const filters = src
           ? clipFilters(c, tpf, n, src, out, span, keyBase, revealSpline(cp.effects, keyBase))
           : gainFilter(crossfadeLevels(cp.effects, keyBase));
         let entry: string;
-        if (chained && media) {
+        if (generated) {
+          // Text is libass over a transparent layer of the clip's own length; its script is
+          // timed from the start of the render span.
+          const pid = `${prefix}${c.id}_text`;
+          const file = `${pid}.ass`;
+          options.files?.set(
+            file,
+            buildAss(c, {
+              width,
+              height,
+              fps,
+              tpf,
+              head: cp.head,
+              length,
+              fontFamily: (id) => options.sources.get(id)?.family,
+            }),
+          );
+          parts.push(
+            `<producer id="${pid}" in="0" out="${length - 1}">${prop('mlt_service', 'color')}${prop('resource', '0x00000000')}${prop('length', length)}<filter>${prop('mlt_service', 'avfilter.ass')}${prop('av.filename', file)}${prop('av.alpha', 1)}${options.fontsDir ? prop('av.fontsdir', options.fontsDir) : ''}</filter></producer>`,
+          );
+          entry = `<entry producer="${pid}" in="0" out="${length - 1}">${filters}</entry>`;
+        } else if (chained && media) {
           // A retimed clip is its own chain: the timeremap link maps each clip frame to a
           // source time, which covers speed, ramps, reverse and freeze frames.
           const chain = `${prefix}${c.id}_${c.kind[0]}`;
@@ -177,7 +206,9 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
           const producer =
             c.type === 'media'
               ? `${c.media_id}_${c.kind[0]}`
-              : (tractors.get(c.timeline) as string);
+              : c.type === 'timeline'
+                ? (tractors.get(c.timeline) as string)
+                : '';
           // A still has no timeline of its own: any frame of it is the picture.
           const inF = media?.image ? 0 : frame(c.in) - cp.head;
           entry = `<entry producer="${producer}" in="${inF}" out="${inF + length - 1}">${filters}</entry>`;
@@ -245,6 +276,7 @@ function sourceSize(
   w: number,
   h: number,
 ): SourceSize {
+  if (c.type === 'title' || c.type === 'caption') return { width: w, height: h, alpha: true };
   if (c.type === 'timeline') {
     // A nested timeline is a picture of its own sequence size, transparent where it is empty.
     const seq = nested[c.timeline]?.sequence;
@@ -358,7 +390,21 @@ export async function writeMltProject(
     'colorspace=709',
   ].join('\n');
   await writeFile(join(dir, 'profile'), `${profile}\n`);
-  await writeFile(join(dir, 'timeline.mlt'), compileMlt(doc, options));
+  // Imported fonts the text uses, gathered where libass looks for them.
+  const fonts = [...options.sources].filter(([, src]) => src.family);
+  let fontsDir: string | undefined;
+  if (fonts.length) {
+    fontsDir = join(dir, 'fonts');
+    await mkdir(fontsDir);
+    for (const [id, src] of fonts)
+      await symlink(src.path, join(fontsDir, `${id}${extname(src.path) || '.ttf'}`));
+  }
+  const files = new Map<string, string>();
+  await writeFile(
+    join(dir, 'timeline.mlt'),
+    compileMlt(doc, { ...options, files, ...(fontsDir ? { fontsDir } : {}) }),
+  );
+  for (const [name, content] of files) await writeFile(join(dir, name), content);
   // melt ignores in/out on the root tractor; the range is applied as producer arguments.
   const range = options.range ? [`in=${options.range.start}`, `out=${options.range.end - 1}`] : [];
   return ['-profile', join(dir, 'profile'), 'timeline.mlt', ...range];

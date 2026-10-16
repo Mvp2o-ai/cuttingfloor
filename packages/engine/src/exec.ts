@@ -6,6 +6,8 @@ export const BIN = {
   ffmpeg: process.env.CUTTINGFLOOR_FFMPEG ?? 'ffmpeg',
   ffprobe: process.env.CUTTINGFLOOR_FFPROBE ?? 'ffprobe',
   melt: process.env.CUTTINGFLOOR_MELT ?? 'melt',
+  fcScan: 'fc-scan',
+  fcList: 'fc-list',
 };
 
 export interface RunOptions {
@@ -113,4 +115,16 @@ export async function engineVersions(): Promise<Record<string, string | null>> {
     first(BIN.melt, ['--version']),
   ]);
   return { ffmpeg, melt };
+}
+
+let fonts: Promise<string[]> | undefined;
+
+/** Font families installed in the image (what text styles can name), from fontconfig. */
+export function installedFonts(): Promise<string[]> {
+  fonts ??= run(BIN.fcList, [':', 'family'], { timeoutMs: 30_000 })
+    .then(({ stdout }) =>
+      [...new Set(stdout.split('\n').flatMap((l) => l.split(',')[0]?.trim() || []))].sort(),
+    )
+    .catch(() => []);
+  return fonts;
 }

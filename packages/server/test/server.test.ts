@@ -6,7 +6,7 @@ import { call, connect, ok, SEQ_720P25, type TestEnv, testRuntime } from './help
 
 const anyResult = z.object({}).passthrough();
 /** tools/list as JSON, in bytes (about 4 bytes per token). */
-const BUDGET_BYTES = 70_000;
+const BUDGET_BYTES = 80_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -25,6 +25,7 @@ describe('protocol surface', () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
+        'caption.add',
         'clip.add',
         'clip.freeze',
         'clip.link',
@@ -54,12 +55,14 @@ describe('protocol surface', () => {
         'range.extract',
         'range.lift',
         'render.frames',
+        'text.set',
         'timeline.create',
         'timeline.diff',
         'timeline.get',
         'timeline.history',
         'timeline.load',
         'timeline.set_sequence',
+        'title.add',
         'track.add',
         'track.remove',
         'track.set',

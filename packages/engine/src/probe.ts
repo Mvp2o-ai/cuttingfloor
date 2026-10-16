@@ -1,10 +1,13 @@
+import { open } from 'node:fs/promises';
 import { CfError } from '@cuttingfloor/schema';
 import { BIN, run } from './exec.ts';
 
 /** What import needs to know about a file. Durations are seconds. */
 export interface Probe {
   format: string;
-  kind: 'video' | 'audio' | 'image';
+  kind: 'video' | 'audio' | 'image' | 'font';
+  /** Font family, for fonts. */
+  family?: string;
   duration: number | null;
   video: {
     codec: string;
@@ -82,7 +85,36 @@ interface FfStream {
   tags?: { rotate?: string };
 }
 
+const FONT_MAGIC = ['00010000', '4f54544f', '74746366', '74727565']; // TrueType, OTTO, ttcf, true
+const MAX_FONT_BYTES = 64 * 1024 * 1024;
+
+/** A TrueType/OpenType font (by its first bytes), with the family fontconfig reads from it. */
+async function probeFont(path: string, signal?: AbortSignal): Promise<Probe | undefined> {
+  const handle = await open(path, 'r');
+  let magic: string;
+  let size: number;
+  try {
+    const head = Buffer.alloc(4);
+    await handle.read(head, 0, 4, 0);
+    magic = head.toString('hex');
+    size = (await handle.stat()).size;
+  } finally {
+    await handle.close();
+  }
+  if (!FONT_MAGIC.includes(magic)) return undefined;
+  if (size > MAX_FONT_BYTES) throw new CfError('limit_exceeded', 'Font files are limited to 64 MB');
+  const { stdout } = await run(BIN.fcScan, ['--format', '%{family[0]}\n', path], {
+    timeoutMs: 30_000,
+    ...(signal ? { signal } : {}),
+  }).catch(() => ({ stdout: '' }));
+  const family = stdout.split('\n')[0]?.trim();
+  if (!family) throw new CfError('bad_request', 'The font file could not be read');
+  return { format: 'font', kind: 'font', family, duration: null, video: null, audio: null };
+}
+
 export async function probe(path: string, signal?: AbortSignal): Promise<Probe> {
+  const font = await probeFont(path, signal);
+  if (font) return font;
   let out: string;
   try {
     ({ stdout: out } = await run(

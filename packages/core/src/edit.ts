@@ -16,6 +16,7 @@ import {
   type StoredTrack,
   type StoredTransform,
   type StoredTransition,
+  type TextStyle,
   type TimelineDoc,
   TRANSFORM_DEFAULTS,
   TRANSFORM_NUMBERS,
@@ -23,6 +24,7 @@ import {
 } from '@cuttingfloor/schema';
 import { checkKeyframes, toStoredAnim } from './animate.ts';
 import { extended, frameSource, meanRate, span, subclip } from './speed.ts';
+import { parseSubtitles } from './subtitles.ts';
 import { framesToTicks, ticksPerFrame } from './time.ts';
 
 /** Looks up media an edit refers to. Returns undefined for unknown ids. */
@@ -44,8 +46,12 @@ export function clipSource(
   clip: StoredClip,
 ): MediaRef | undefined {
   if (clip.type === 'media') return doc.media[clip.media_id];
-  const nested = doc.nested?.[clip.timeline];
-  return nested ? nestedRef(nested) : undefined;
+  if (clip.type === 'timeline') {
+    const nested = doc.nested?.[clip.timeline];
+    return nested ? nestedRef(nested) : undefined;
+  }
+  // Text is generated: a picture with no natural length.
+  return { name: clip.type, duration: null, video: true, audio: false };
 }
 
 export interface OpOutcome {
@@ -123,6 +129,9 @@ export function applyEdit<T extends EditTool>(
     'clip.replace': clipReplace,
     'range.lift': (d, a) => rangeRemove(d, a, false),
     'range.extract': (d, a) => rangeRemove(d, a, true),
+    'title.add': titleAdd,
+    'caption.add': captionAdd,
+    'text.set': textSet,
     'transition.add': transitionAdd,
     'transition.set': transitionSet,
     'transition.remove': transitionRemove,
@@ -503,7 +512,9 @@ function clipAdd(
       'bad_request',
       `Track ${primary.id} is a ${primary.kind} track, but this clip has no ${primary.kind}`,
       {
-        hint: `The media has ${has || 'no streams'}; pick a matching track or set av`,
+        hint: has
+          ? `The media has ${has}; pick a matching track or set av`
+          : 'It has no picture or sound: a font is used through font_media_id in a text style',
       },
     );
   }
@@ -1003,6 +1014,175 @@ function rangeRemove(doc: TimelineDoc, a: EditArgsOf<'range.lift'>, ripple: bool
     (id) => !doc.tracks.some((t) => t.clips.some((c) => c.id === id)),
   );
   return ok(from, { clip_ids: removed, temporal: true });
+}
+
+// ------------------------------------------------------------------------------------ text
+
+function textTrack(doc: TimelineDoc, trackId: string): StoredTrack {
+  const track = getTrack(doc, trackId);
+  if (track.kind !== 'video') {
+    throw new CfError('bad_request', `Text goes on a video track; ${track.id} is audio`, {
+      hint: `Video tracks: ${
+        doc.tracks
+          .filter((t) => t.kind === 'video')
+          .map((t) => t.id)
+          .join(', ') || 'none (track.add one)'
+      }`,
+    });
+  }
+  assertUnlocked(track);
+  return track;
+}
+
+/**
+ * Applies a style patch: a value sets a field and an absent field stays. null turns an
+ * outline, shadow, box or highlight off (it overrides the default), so it is kept.
+ */
+function mergeStyle(
+  base: TextStyle | undefined,
+  patch: TextStyle | undefined,
+): TextStyle | undefined {
+  if (!patch) return base;
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(patch)) if (v !== undefined) out[k] = v;
+  return Object.keys(out).length ? (out as TextStyle) : undefined;
+}
+
+function titleAdd(doc: TimelineDoc, a: EditArgsOf<'title.add'>): OpOutcome {
+  const track = textTrack(doc, a.track_id);
+  const fps = doc.sequence.fps;
+  const start = a.at_frame !== undefined ? framesToTicks(a.at_frame, fps) : trackEnd(track);
+  const duration = framesToTicks(a.duration_frames ?? Math.round((3 * fps.num) / fps.den), fps);
+  const style = mergeStyle(undefined, a.style);
+  const clip: StoredClip = {
+    id: nextId(doc, 'c'),
+    type: 'title',
+    kind: 'video',
+    text: a.text,
+    ...(style ? { style } : {}),
+    start,
+    in: 0,
+    duration,
+    link: null,
+    enabled: true,
+  };
+  place(doc, track, clip, 'overwrite');
+  return ok(start, { clip_id: clip.id });
+}
+
+function captionAdd(doc: TimelineDoc, a: EditArgsOf<'caption.add'>): OpOutcome {
+  const given = [a.segments, a.srt, a.vtt].filter((x) => x !== undefined).length;
+  if (given !== 1) {
+    throw new CfError('bad_request', 'Give exactly one of segments, srt or vtt');
+  }
+  const track = textTrack(doc, a.track_id);
+  const fps = doc.sequence.fps;
+  const tpf = ticksPerFrame(fps);
+  const toFrame = (sec: number) => Math.round((sec * fps.num) / fps.den) + a.offset_frames;
+  const segments =
+    a.segments ??
+    parseSubtitles((a.srt ?? a.vtt) as string, a.srt !== undefined ? 'srt' : 'vtt').map((cue) => ({
+      start_frame: toFrame(cue.start),
+      end_frame: toFrame(cue.end),
+      text: cue.text,
+      ...(cue.words
+        ? {
+            words: cue.words.map((w) => ({
+              text: w.text,
+              start_frame: toFrame(w.start),
+              end_frame: toFrame(w.end),
+            })),
+          }
+        : {}),
+    }));
+  const style = mergeStyle(undefined, a.style);
+  const ids: string[] = [];
+  for (const seg of segments) {
+    if (seg.start_frame < 0) {
+      throw new CfError(
+        'bad_request',
+        `A caption starts before frame 0 (${seg.text.slice(0, 40)})`,
+        {
+          hint: 'Use offset_frames to move them later',
+        },
+      );
+    }
+    if (seg.end_frame <= seg.start_frame) {
+      throw new CfError('bad_request', `Caption "${seg.text.slice(0, 40)}" ends before it starts`);
+    }
+    const start = seg.start_frame * tpf;
+    const words = seg.words?.map((w) => {
+      if (w.end_frame < w.start_frame) {
+        throw new CfError('bad_request', `Word "${w.text}" ends before it starts`);
+      }
+      // Word times are on the caption's own clock, which starts at 0.
+      return {
+        text: w.text,
+        t: (w.start_frame - seg.start_frame) * tpf,
+        end: (w.end_frame - seg.start_frame) * tpf,
+      };
+    });
+    const clip: StoredClip = {
+      id: nextId(doc, 'c'),
+      type: 'caption',
+      kind: 'video',
+      text: seg.text,
+      ...(words?.length ? { words } : {}),
+      ...(style ? { style } : {}),
+      start,
+      in: 0,
+      duration: (seg.end_frame - seg.start_frame) * tpf,
+      link: null,
+      enabled: true,
+    };
+    place(doc, track, clip, 'overwrite');
+    ids.push(clip.id);
+  }
+  const first = segments[0];
+  return ok(first ? first.start_frame * tpf : 0, {
+    clip_ids: ids,
+    ...(ids[0] ? { clip_id: ids[0] } : {}),
+  });
+}
+
+function textSet(doc: TimelineDoc, a: EditArgsOf<'text.set'>): OpOutcome {
+  if (Boolean(a.clip_ids) === Boolean(a.track_id)) {
+    throw new CfError('bad_request', 'Give clip_ids or track_id');
+  }
+  const targets: Located[] = a.track_id
+    ? (() => {
+        const track = getTrack(doc, a.track_id);
+        return track.clips
+          .filter((c) => c.type === 'title' || c.type === 'caption')
+          .map((clip) => ({ track, clip }));
+      })()
+    : (a.clip_ids ?? []).map((id) => locate(doc, id));
+  if (!targets.length)
+    throw new CfError('bad_request', `Track ${a.track_id} has no titles or captions`);
+  if (a.text !== undefined && targets.length !== 1) {
+    throw new CfError('bad_request', 'text changes one clip at a time', {
+      hint: 'Give a single clip id',
+    });
+  }
+  for (const { track, clip } of targets) {
+    if (clip.type !== 'title' && clip.type !== 'caption') {
+      throw new CfError('bad_request', `Clip ${clip.id} is not a title or caption`);
+    }
+    assertUnlocked(track);
+    if (a.text !== undefined) {
+      clip.text = a.text;
+      // New text no longer matches the old word timings.
+      if (clip.type === 'caption') delete clip.words;
+    }
+    const style = mergeStyle(clip.style, a.style);
+    if (style) clip.style = style;
+    else delete clip.style;
+  }
+  const first = targets[0]?.clip;
+  return ok(first?.start ?? 0, {
+    clip_ids: targets.map((t) => t.clip.id),
+    ...(first ? { clip_id: first.id } : {}),
+  });
 }
 
 // ------------------------------------------------------------------------------ transitions

@@ -111,6 +111,21 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
     description:
       'Remove everything in a frame range on the given tracks (default all unlocked) and close the gap. For cutting out silences, filler words or mistakes across all tracks at once.',
   },
+  'title.add': {
+    title: 'Add title',
+    description:
+      'Text on a video track, over the tracks below: styled with font, size, colour, outline, shadow and box, placed by x/y, revealed with a typewriter or word animation. It is a clip, so transforms, masks, animations and transitions apply.',
+  },
+  'caption.add': {
+    title: 'Add captions',
+    description:
+      'Captions on a video track from segments (with optional word timings for highlights) or from SRT/VTT text. One clip per caption; returns their clip_ids. Burned in when exported.',
+  },
+  'text.set': {
+    title: 'Set text',
+    description:
+      "Change a title's or caption's text, or restyle many at once (clip_ids, or every one on track_id). The style is merged; null turns an outline, shadow, box or highlight off. Highlight modes and fonts: video://catalog/text and video://catalog/fonts.",
+  },
   'transition.add': {
     title: 'Add transition',
     description:

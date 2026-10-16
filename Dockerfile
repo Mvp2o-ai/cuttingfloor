@@ -8,8 +8,14 @@
 
 FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS base
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg melt tini fonts-dejavu-core \
+ && apt-get install -y --no-install-recommends ffmpeg melt tini fontconfig \
+      fonts-dejavu-core fonts-inter fonts-montserrat fonts-open-sans fonts-lato fonts-bebas-neue \
+      fonts-lobster fonts-comic-neue fonts-firacode fonts-noto-core \
  && rm -rf /var/lib/apt/lists/* \
+ # Web font copies are useless to libass, and Montserrat ships twice; one TrueType set stays.
+ && find /usr/share/fonts -name '*.woff*' -delete && rm -rf /usr/share/fonts/opentype/montserrat \
+ && fc-cache -f \
+ && fc-list : family | grep -q '^Inter' \
  && ffmpeg -hide_banner -encoders | grep -q prores_ks \
  && melt -query transitions | grep -q qtblend \
  && melt -query filters | grep -q rotoscoping

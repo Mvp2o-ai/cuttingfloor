@@ -15,6 +15,7 @@ import {
 import { ToolError } from './errors.ts';
 import { JobId, MediaId, TimelineId } from './ids.ts';
 import { Sequence } from './sequence.ts';
+import { TextStyle } from './text.ts';
 import { Change, TimelineInput, TimelineView, TrackKind } from './timeline.ts';
 
 const frame = z.number().int().nonnegative();
@@ -212,6 +213,52 @@ export const EditArgs = {
   }),
   'range.lift': z.object({ range: FrameRange, track_ids: TrackIds }),
   'range.extract': z.object({ range: FrameRange, track_ids: TrackIds }),
+  'title.add': z.object({
+    track_id: z.string().describe('A video track; text composites over the tracks below'),
+    text: z.string().min(1).max(2000).describe('Line breaks with \\n'),
+    at_frame: frame.optional().describe('Default: after the last clip on the track'),
+    duration_frames: z.number().int().positive().max(1_000_000).optional().describe('Default 3 s'),
+    style: TextStyle.optional(),
+  }),
+  'caption.add': z.object({
+    track_id: z.string().describe('A video track for the captions, usually the top one'),
+    segments: z
+      .array(
+        z.object({
+          start_frame: frame,
+          end_frame: frame,
+          text: z.string().min(1).max(2000),
+          words: z
+            .array(
+              z.object({ text: z.string().min(1).max(200), start_frame: frame, end_frame: frame }),
+            )
+            .max(500)
+            .optional()
+            .describe('Word timings for highlights, timeline frames'),
+        }),
+      )
+      .max(5000)
+      .optional(),
+    srt: z.string().max(2_000_000).optional().describe('SubRip text instead of segments'),
+    vtt: z.string().max(2_000_000).optional().describe('WebVTT text instead of segments'),
+    offset_frames: z
+      .number()
+      .int()
+      .min(-1_000_000)
+      .max(1_000_000)
+      .default(0)
+      .describe('Shifts srt/vtt times'),
+    style: TextStyle.optional(),
+  }),
+  'text.set': z.object({
+    clip_ids: z.array(z.string()).min(1).max(5000).optional().describe('Titles or captions'),
+    track_id: z
+      .string()
+      .optional()
+      .describe('Instead of clip_ids: every title and caption on a track'),
+    text: z.string().min(1).max(2000).optional().describe('Only with a single clip'),
+    style: TextStyle.optional().describe("Merged into each clip's style; null fields reset"),
+  }),
   'transition.add': z.object({
     clip_id: z.string().describe('The clip before the cut; the clip after it must touch it'),
     kind: TransitionKind.describe('video://catalog/transitions; crossfade on audio tracks'),
@@ -362,7 +409,11 @@ export const MediaInfo = z.object({
   status: MediaStatus.describe(
     'importing: not probed yet; processing: usable in edits, proxy still rendering; ready; failed',
   ),
-  kind: z.enum(['video', 'audio', 'image']).nullable(),
+  kind: z.enum(['video', 'audio', 'image', 'font']).nullable(),
+  font_family: z
+    .string()
+    .optional()
+    .describe('Fonts: the family; use font_media_id in a text style to set text in it'),
   duration_seconds: z.number().nullable(),
   fps: z.object({ num: z.number(), den: z.number() }).nullable(),
   width: z.number().nullable(),

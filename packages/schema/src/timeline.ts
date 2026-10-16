@@ -8,6 +8,7 @@ import {
   TransitionKind,
 } from './compositing.ts';
 import { Sequence } from './sequence.ts';
+import { StoredWord, TextStyle } from './text.ts';
 
 export const TrackKind = z.enum(['video', 'audio']);
 export type TrackKind = z.infer<typeof TrackKind>;
@@ -77,6 +78,21 @@ const clipFields = {
 export const StoredClip = z.discriminatedUnion('type', [
   z.object({ ...clipFields, type: z.literal('media'), media_id: z.string() }),
   z.object({ ...clipFields, type: z.literal('timeline'), timeline: z.string() }),
+  // Generated pictures: text over transparency. `in` places the text's own clock, so a trim
+  // keeps caption words on time.
+  z.object({
+    ...clipFields,
+    type: z.literal('title'),
+    text: z.string(),
+    style: TextStyle.optional(),
+  }),
+  z.object({
+    ...clipFields,
+    type: z.literal('caption'),
+    text: z.string(),
+    words: z.array(StoredWord).optional(),
+    style: TextStyle.optional(),
+  }),
 ]);
 export type StoredClip = z.infer<typeof StoredClip>;
 
@@ -136,7 +152,7 @@ const settings = (tool: string) =>
 /** The timeline as tools show it: integer frames at the sequence rate, end exclusive. */
 export const ClipView = z.object({
   id: z.string(),
-  type: z.enum(['media', 'timeline']).default('media'),
+  type: z.enum(['media', 'timeline', 'title', 'caption']).default('media'),
   kind: TrackKind,
   track_id: z.string(),
   media_id: z.string().optional().describe('For media clips'),
@@ -144,6 +160,12 @@ export const ClipView = z.object({
     .string()
     .optional()
     .describe("For nested timelines (compound clips): a key of the view's `nested` map"),
+  text: z.string().optional().describe('For titles and captions'),
+  words: z
+    .array(z.object({ text: z.string(), start: z.number().int(), end: z.number().int() }))
+    .optional()
+    .describe('Caption word timings, frames from the clip start'),
+  style: settings('text.set style').optional(),
   start: frame.describe('First frame on the timeline'),
   end: frame.describe('Frame after the last one (exclusive)'),
   source: z
