@@ -9,6 +9,8 @@ export const BIN = {
   fcScan: 'fc-scan',
   whisper: process.env.CUTTINGFLOOR_WHISPER ?? 'whisper-cli',
   vision: process.env.CUTTINGFLOOR_VISION ?? 'cf-vision',
+  tts: process.env.CUTTINGFLOOR_TTS ?? 'sherpa-onnx-offline-tts',
+  tar: 'tar',
   fcList: 'fc-list',
 };
 

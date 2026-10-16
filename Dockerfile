@@ -24,19 +24,49 @@ RUN apt-get update \
 FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS vision
 ARG YUNET_URL=https://media.githubusercontent.com/media/opencv/opencv_zoo/47534e27c9851bb1128ccc0102f1145e27f23f98/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
 ARG YUNET_SHA256=8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4
+# MODNet (Apache-2.0) for create.cutout, pinned, then fixed to three working sizes for OpenCV DNN.
+ARG MODNET_URL=https://huggingface.co/Xenova/modnet/resolve/fa2fa546052fba4c08921230a26cc69a333fca12/onnx/model.onnx
+ARG MODNET_SHA256=07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9
 RUN apt-get update \
- && apt-get install -y --no-install-recommends g++ pkg-config libopencv-dev libopencv-contrib-dev curl ca-certificates
+ && apt-get install -y --no-install-recommends g++ pkg-config libopencv-dev libopencv-contrib-dev curl ca-certificates \
+      python3-onnx
+COPY tools/vision/modnet-static.py /src/modnet-static.py
+RUN curl -fsSL -o /modnet.onnx "$MODNET_URL" \
+ && echo "$MODNET_SHA256  /modnet.onnx" | sha256sum -c - \
+ && mkdir /models && python3 /src/modnet-static.py /modnet.onnx /models
 COPY tools/vision/vision.cpp /src/vision.cpp
 RUN g++ -O2 -std=c++17 /src/vision.cpp -o /cf-vision $(pkg-config --cflags --libs opencv4) \
  && strip /cf-vision \
  && curl -fsSL -o /yunet.onnx "$YUNET_URL" \
  && echo "$YUNET_SHA256  /yunet.onnx" | sha256sum -c -
 
+# sherpa-onnx's offline TTS for local voiceover (Kokoro voices; Apache-2.0, with espeak-ng
+# built in), the prebuilt release for each architecture, checked against pinned SHA-256s. The
+# Kokoro model downloads on first use, like the whisper models.
+FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS tts
+ARG TARGETARCH
+ARG SHERPA_VERSION=v1.13.8
+ARG SHERPA_AMD64_SHA256=c0bdb7907d3a74bba1d55d22bf4d9fa75586cf1530614ebe88a27b9118e015c4
+ARG SHERPA_ARM64_SHA256=4e3734f82bc1379fd91f219f5869c7e9d03b7a4f7561907d8abca4849c51a789
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates bzip2 \
+ && case "$TARGETARCH" in \
+      amd64) asset=linux-x64-shared; sum=$SHERPA_AMD64_SHA256 ;; \
+      arm64) asset=linux-aarch64-shared-cpu; sum=$SHERPA_ARM64_SHA256 ;; \
+      *) echo "unsupported $TARGETARCH" && exit 1 ;; \
+    esac \
+ && curl -fsSL -o /sherpa.tar.bz2 "https://github.com/k2-fsa/sherpa-onnx/releases/download/$SHERPA_VERSION/sherpa-onnx-$SHERPA_VERSION-$asset.tar.bz2" \
+ && echo "$sum  /sherpa.tar.bz2" | sha256sum -c - \
+ && mkdir -p /src /opt/sherpa-onnx/bin /opt/sherpa-onnx/lib \
+ && tar -xjf /sherpa.tar.bz2 -C /src --strip-components=1 \
+ && cp /src/bin/sherpa-onnx-offline-tts /opt/sherpa-onnx/bin/ \
+ && cp -L /src/lib/libonnxruntime.so* /opt/sherpa-onnx/lib/ \
+ && /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts --help >/dev/null 2>&1 || /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts 2>&1 | grep -qi usage
+
 FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS base
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt tini fontconfig \
       fonts-dejavu-core fonts-inter fonts-montserrat fonts-open-sans fonts-lato fonts-bebas-neue \
-      fonts-lobster fonts-comic-neue fonts-firacode fonts-noto-core chromium \
+      fonts-lobster fonts-comic-neue fonts-firacode fonts-noto-core chromium bzip2 \
  && rm -rf /var/lib/apt/lists/* \
  # Web font copies are useless to libass, and Montserrat ships twice; one TrueType set stays.
  && find /usr/share/fonts -name '*.woff*' -delete && rm -rf /usr/share/fonts/opentype/montserrat \
@@ -47,8 +77,11 @@ RUN apt-get update \
  && melt -query filters | grep -q rotoscoping \
  && chromium --version
 COPY --from=whisper /src/build/bin/whisper-cli /usr/local/bin/whisper-cli
+COPY --from=tts /opt/sherpa-onnx /opt/sherpa-onnx
+RUN ln -s /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts /usr/local/bin/sherpa-onnx-offline-tts
 COPY --from=vision /cf-vision /usr/local/bin/cf-vision
 COPY --from=vision /yunet.onnx /usr/share/cuttingfloor/models/face_detection_yunet_2023mar.onnx
+COPY --from=vision /models/ /usr/share/cuttingfloor/models/
 # Chromium for the motion sandbox (create.motion, create.still), only ever started by the
 # motion-worker role through this wrapper, which keeps its sandbox on and its network off.
 COPY tools/motion/cf-chromium /usr/local/bin/cf-chromium
@@ -67,15 +100,18 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm fetch
 COPY . .
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prefer-offline --frozen-lockfile
 
-# Test-only: espeak-ng speaks the transcript fixtures, and the tiny whisper model is fetched
-# once here (checksummed) so test runs don't download it.
+# Test-only: espeak-ng speaks the transcript fixtures, and the tiny whisper model and the Kokoro
+# voice model are fetched once here (checksummed) so test runs don't download them.
 FROM build AS testenv
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends espeak-ng curl ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /opt/models \
  && curl -fsSL -o /opt/models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin \
- && echo "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21  /opt/models/ggml-tiny.bin" | sha256sum -c -
+ && echo "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21  /opt/models/ggml-tiny.bin" | sha256sum -c - \
+ && curl -fsSL -o /tmp/kokoro.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2 \
+ && echo "c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298  /tmp/kokoro.tar.bz2" | sha256sum -c - \
+ && tar -xjf /tmp/kokoro.tar.bz2 -C /opt/models --no-same-owner && rm /tmp/kokoro.tar.bz2
 ENV CUTTINGFLOOR_MODELS=/opt/models
 
 # `docker build --target test .` runs lint, typecheck and every test, engine tests included.

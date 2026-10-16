@@ -626,6 +626,52 @@ export const CreateStillInput = z.object({
   ...createCommon,
 });
 
+/** Kokoro's English voices, in speaker-id order: a = American, b = British; f/m = female/male. */
+export const VOICES = [
+  'af_alloy',
+  'af_aoede',
+  'af_bella',
+  'af_heart',
+  'af_jessica',
+  'af_kore',
+  'af_nicole',
+  'af_nova',
+  'af_river',
+  'af_sarah',
+  'af_sky',
+  'am_adam',
+  'am_echo',
+  'am_eric',
+  'am_fenrir',
+  'am_liam',
+  'am_michael',
+  'am_onyx',
+  'am_puck',
+  'am_santa',
+  'bf_alice',
+  'bf_emma',
+  'bf_isabella',
+  'bf_lily',
+  'bm_daniel',
+  'bm_fable',
+  'bm_george',
+  'bm_lewis',
+] as const;
+
+export const CreateVoiceoverInput = z.object({
+  text: z.string().trim().min(1).max(5000).describe('What to say, in English'),
+  voice: z.enum(VOICES).default('af_heart').describe('a/b: American/British; f/m: female/male'),
+  speed: z.number().min(0.5).max(2).default(1),
+  words: z.boolean().default(true).describe('Time each word'),
+  ...createCommon,
+});
+
+export const CreateCutoutInput = z.object({
+  media_id: MediaId,
+  smooth: z.number().min(0).max(0.9).default(0.3).describe('Video: steadies the edge'),
+  ...createCommon,
+});
+
 export const CreateMatteInput = z
   .object({
     color: Colour.optional().describe('A solid colour'),

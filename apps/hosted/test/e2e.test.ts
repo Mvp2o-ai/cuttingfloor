@@ -2176,6 +2176,105 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(bad.isError).toBe(true);
     });
 
+    it('speaks a voiceover with every word timed to the text as written', async () => {
+      const text = 'Welcome to cutting floor. Every word here is timed, even 2026.';
+      const voice = await create('create.voiceover', { text, voice: 'bm_george' });
+      expect(voice).toMatchObject({ kind: 'audio', has_audio: true, status: 'ready' });
+      const seconds = voice.duration_seconds as number;
+      expect(seconds).toBeGreaterThan(2);
+      expect(seconds).toBeLessThan(12);
+      const info = await ok<{
+        transcript: { words: Array<{ text: string; start: number; end: number }> };
+      }>(client, 'media.get', { media_id: voice.media_id, include: ['transcript'] });
+      const words = info.transcript.words;
+      expect(words.map((w) => w.text)).toEqual(text.split(' '));
+      for (let i = 1; i < words.length; i++) {
+        expect(words[i]?.start).toBeGreaterThanOrEqual(words[i - 1]?.start ?? 0);
+      }
+      expect(words.at(-1)?.end).toBeLessThanOrEqual(seconds + 0.25);
+      // Speech, not silence: loud enough to hear.
+      const { stderr } = await exec('ffmpeg', [
+        '-hide_banner',
+        '-i',
+        (await env.runtime.media.get('local', voice.media_id)).file as string,
+        '-af',
+        'volumedetect',
+        '-f',
+        'null',
+        '-',
+      ]);
+      expect(Number(/mean_volume: (-?[\d.]+) dB/.exec(stderr)?.[1])).toBeGreaterThan(-35);
+    }, 300_000);
+
+    it('cuts a person out of a picture and out of a video, keeping the sound', async () => {
+      const m = env.mediaDir;
+      await exec('cp', [join(import.meta.dirname, 'fixtures', 'face.jpg'), join(m, 'cutout.jpg')]);
+      await ff([
+        '-loop',
+        '1',
+        '-i',
+        join(m, 'cutout.jpg'),
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=330:sample_rate=48000',
+        '-t',
+        '1',
+        '-r',
+        '25',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-shortest',
+        join(m, 'cutout.mp4'),
+      ]);
+      /** Alpha (0–255) at a point of a file's first frame. */
+      const alpha = async (file: string, x: number, y: number) => {
+        const { stdout } = await exec(
+          'ffmpeg',
+          [
+            '-v',
+            'error',
+            '-i',
+            file,
+            '-frames:v',
+            '1',
+            '-vf',
+            `crop=1:1:${x}:${y},format=rgba`,
+            '-f',
+            'rawvideo',
+            '-',
+          ],
+          { encoding: 'buffer' },
+        );
+        return stdout[3] ?? -1;
+      };
+      const file = async (id: string) => (await env.runtime.media.get('local', id)).file as string;
+
+      const picture = await importMedia({ path: join(m, 'cutout.jpg') });
+      const still = await create('create.cutout', { media_id: picture.media_id });
+      expect(still).toMatchObject({ kind: 'image', width: 480, height: 600 });
+      const png = await file(still.media_id);
+      expect(await alpha(png, 295, 160)).toBeGreaterThan(200); // face
+      expect(await alpha(png, 330, 330)).toBeGreaterThan(200); // suit
+      expect(await alpha(png, 80, 200)).toBeLessThan(60); // moon
+      expect(await alpha(png, 10, 10)).toBeLessThan(60); // sky
+
+      const clip = await importMedia({ path: join(m, 'cutout.mp4') });
+      const video = await create('create.cutout', { media_id: clip.media_id });
+      expect(video).toMatchObject({ kind: 'video', has_audio: true, width: 480, height: 600 });
+      const mov = await file(video.media_id);
+      const probe = await ffprobe(mov);
+      const v = probe.streams.find((st) => st.codec_type === 'video');
+      expect(v?.codec_name).toBe('prores');
+      expect(Number(v?.nb_read_packets)).toBe(25);
+      expect(await alpha(mov, 295, 160)).toBeGreaterThan(200);
+      expect(await alpha(mov, 80, 200)).toBeLessThan(60);
+    }, 300_000);
+
     it.skipIf(!chromium)(
       'renders an HTML still with assets, transparent where unpainted',
       async () => {

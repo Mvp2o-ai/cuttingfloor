@@ -2,10 +2,14 @@
 //
 //   cf-vision faces MODEL WIDTH HEIGHT
 //   cf-vision track WIDTH HEIGHT X Y W H
+//   cf-vision matte MODEL WIDTH HEIGHT SMOOTH
 //
-// Both read raw BGR24 frames of WIDTH x HEIGHT on stdin and write one JSON line per frame:
+// Each reads raw BGR24 frames of WIDTH x HEIGHT on stdin. faces and track write one JSON line
+// per frame:
 //   faces: [[x, y, w, h, score], ...]   (pixels, YuNet face detector)
 //   track: [x, y, w, h, found]           (pixels, CSRT tracker; the first frame is the box given)
+// matte writes one 8-bit alpha frame of WIDTH x HEIGHT per frame (MODNet at that fixed size;
+// SMOOTH 0–0.9 blends in the previous frame's matte to steady video).
 // Nothing else is read or written, so it can run with no network and no files but the model.
 
 #include <cstdio>
@@ -15,6 +19,7 @@
 #include <vector>
 
 #include <opencv2/core.hpp>
+#include <opencv2/dnn.hpp>
 #include <opencv2/objdetect.hpp>
 #include <opencv2/tracking.hpp>
 
@@ -29,7 +34,8 @@ static bool readFrame(std::vector<unsigned char>& buf) {
 }
 
 static int usage() {
-  std::cerr << "usage: cf-vision faces MODEL W H | cf-vision track W H X Y BW BH\n";
+  std::cerr << "usage: cf-vision faces MODEL W H | cf-vision track W H X Y BW BH | "
+               "cf-vision matte MODEL W H SMOOTH\n";
   return 2;
 }
 
@@ -81,6 +87,32 @@ int main(int argc, char** argv) {
       std::cout << "[" << box.x << "," << box.y << "," << box.width << "," << box.height << ","
                 << (found ? 1 : 0) << "]\n";
     }
+    return 0;
+  }
+  if (mode == "matte" && argc == 6) {
+    int w = std::atoi(argv[3]);
+    int h = std::atoi(argv[4]);
+    double smooth = std::atof(argv[5]);
+    if (w <= 0 || h <= 0 || smooth < 0 || smooth > 0.9) return usage();
+    cv::dnn::Net net = cv::dnn::readNetFromONNX(argv[2]);
+    std::vector<unsigned char> buf(static_cast<size_t>(w) * h * 3);
+    cv::Mat previous;
+    while (readFrame(buf)) {
+      cv::Mat img(h, w, CV_8UC3, buf.data());
+      // RGB scaled to [-1, 1], as MODNet was trained.
+      cv::Mat blob = cv::dnn::blobFromImage(img, 1.0 / 127.5, cv::Size(w, h),
+                                            cv::Scalar(127.5, 127.5, 127.5), true, false);
+      net.setInput(blob);
+      cv::Mat out = net.forward();
+      cv::Mat matte(h, w, CV_32F, out.ptr<float>());
+      matte = matte.clone();
+      if (smooth > 0 && !previous.empty()) cv::addWeighted(previous, smooth, matte, 1 - smooth, 0, matte);
+      previous = matte;
+      cv::Mat bytes;
+      matte.convertTo(bytes, CV_8U, 255.0);
+      std::fwrite(bytes.data, 1, bytes.total(), stdout);
+    }
+    std::fflush(stdout);
     return 0;
   }
   return usage();

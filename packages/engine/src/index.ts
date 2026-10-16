@@ -8,6 +8,7 @@ export { type Loudness, measureMix, renderWaveform } from './audio.ts';
 export { analyseBeats, type Beats, estimateTempo, onsetEnvelope, trackBeats } from './beats.ts';
 export { compositeFor, rotoFilters } from './composite.ts';
 export { gradientPosition, type MatteSpec, renderMatte } from './create.ts';
+export { type CutoutSource, cutout, matteSize } from './cutout.ts';
 export { BIN, engineVersions, installedFonts, run } from './exec.ts';
 export { download, isBlockedAddress } from './fetch.ts';
 export {
@@ -35,3 +36,11 @@ export {
   type WhisperModel,
 } from './transcribe.ts';
 export { detectFaces, type Faces, type TrackPoint, trackRegion } from './vision.ts';
+export {
+  alignWords,
+  ensureVoiceModel,
+  KOKORO,
+  speak,
+  type Voice,
+  voiceWords,
+} from './voice.ts';
