@@ -9,7 +9,7 @@ A headless, agent-native video editor exposed as an MCP server. An agent cuts, g
 
 ## Run it
 
-Requires Node 24+ and pnpm 10.
+Requires Node 24+ and pnpm 10. Local builds target macOS on Apple silicon; hosted runs in Docker on Linux.
 
 ```sh
 pnpm install
