@@ -14,15 +14,53 @@ export interface MotionDocument {
   duration: number;
 }
 
-const GSAP_SCRIPT = /<script\b[^>]*\bsrc\s*=\s*["'][^"']*gsap[^"']*["'][^>]*>\s*<\/script>/gi;
 const REMOTE =
   /(?:\b(?:src|href|srcset|poster|action|data)\s*=\s*["']?\s*|url\(\s*["']?|@import\s+["']?)(?:https?:|ftp:|wss?:|file:|\/\/)/i;
 const REMOTE_JS =
   /\b(?:fetch\s*\(|new\s+(?:XMLHttpRequest|WebSocket|EventSource|RTCPeerConnection)\b|importScripts\s*\(|sendBeacon\s*\()/;
 
+/**
+ * The HTML without its GSAP script tags (any CDN's): the image serves GSAP itself. A linear scan,
+ * not a regex, so hostile input can't make it slow. Not a sanitizer: the page runs sandboxed.
+ */
+function withoutGsap(html: string): string {
+  const lower = html.toLowerCase();
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const start = lower.indexOf('<script', from);
+    const open = start === -1 ? -1 : lower.indexOf('>', start);
+    const close = open === -1 ? -1 : lower.indexOf('</script>', open);
+    if (close === -1) break;
+    const tag = lower.slice(start, open + 1);
+    const empty = lower.slice(open + 1, close).trim() === '';
+    out += html.slice(
+      from,
+      tag.includes('src') && tag.includes('gsap') && empty ? start : close + 9,
+    );
+    from = close + 9;
+  }
+  return out + html.slice(from);
+}
+
+/** Where the first `<name …>` opening tag ends, or -1. */
+function afterOpenTag(html: string, name: string): number {
+  const lower = html.toLowerCase();
+  for (let i = lower.indexOf(`<${name}`); i !== -1; i = lower.indexOf(`<${name}`, i + 1)) {
+    if (/[\s/>]/.test(lower[i + name.length + 1] ?? '')) {
+      const end = lower.indexOf('>', i);
+      return end === -1 ? -1 : end + 1;
+    }
+  }
+  return -1;
+}
+
+const insertAt = (html: string, at: number, text: string) =>
+  `${html.slice(0, at)}${text}${html.slice(at)}`;
+
 /** Throws when the HTML reaches for anything outside itself and its assets. */
 export function assertOffline(html: string): void {
-  const stripped = html.replace(GSAP_SCRIPT, '');
+  const stripped = withoutGsap(html);
   const remote = REMOTE.exec(stripped);
   if (remote) {
     throw new CfError('bad_request', 'The HTML refers to something on the network', {
@@ -54,11 +92,10 @@ export function motionDocument(
       const m = new RegExp(`data-${name}\\s*=\\s*["']?([0-9.]+)`).exec(html);
       return m ? Number(m[1]) : undefined;
     };
-    const doc = html.replace(GSAP_SCRIPT, '');
+    const doc = withoutGsap(html);
+    const head = afterOpenTag(doc, 'head');
     return {
-      html: /<head[^>]*>/i.test(doc)
-        ? doc.replace(/<head[^>]*>/i, (h) => `${h}${gsap}`)
-        : `${gsap}${doc}`,
+      html: head === -1 ? `${gsap}${doc}` : insertAt(doc, head, gsap),
       width: attr('width') ?? options.width,
       height: attr('height') ?? options.height,
       duration: attr('duration') ?? options.duration,
@@ -74,7 +111,7 @@ export function motionDocument(
 <style>html,body{margin:0;padding:0;background:transparent}#root{position:relative;overflow:hidden;width:${width}px;height:${height}px}</style>
 </head><body>
 <div id="root" data-composition-id="${COMPOSITION_ID}" data-start="0" data-duration="${duration}" data-width="${width}" data-height="${height}">
-${html.replace(GSAP_SCRIPT, '')}
+${withoutGsap(html)}
 </div>
 </body></html>
 `,
@@ -85,10 +122,9 @@ ${html.replace(GSAP_SCRIPT, '')}
 export function stillDocument(html: string, width: number, height: number): string {
   assertOffline(html);
   const base = `<style>html,body{margin:0;padding:0;background:transparent;width:${width}px;height:${height}px;overflow:hidden}</style>`;
-  if (/<html[\s>]/i.test(html)) {
-    return /<head[^>]*>/i.test(html)
-      ? html.replace(/<head[^>]*>/i, (h) => `${h}${base}`)
-      : html.replace(/<html[^>]*>/i, (h) => `${h}<head>${base}</head>`);
-  }
+  const head = afterOpenTag(html, 'head');
+  if (head !== -1) return insertAt(html, head, base);
+  const root = afterOpenTag(html, 'html');
+  if (root !== -1) return insertAt(html, root, `<head>${base}</head>`);
   return `<!doctype html><html><head><meta charset="utf-8">${base}</head><body>${html}</body></html>`;
 }

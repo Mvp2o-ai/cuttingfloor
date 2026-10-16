@@ -53,6 +53,18 @@ describe('motion documents', () => {
     }
   });
 
+  it('handles upper-case tags and hostile input in linear time', () => {
+    const doc = motionDocument(
+      '<HTML><HEAD></HEAD><BODY><div data-composition-id="x"></div><SCRIPT SRC="https://cdn.test/GSAP.js"></SCRIPT></BODY></HTML>',
+      { width: 100, height: 100, duration: 1 },
+    );
+    expect(doc.html).toContain('<HEAD><script src="gsap.min.js"></script></HEAD>');
+    expect(doc.html).not.toContain('cdn.test');
+    const started = performance.now();
+    stillDocument(`${'<head'.repeat(50_000)}${'<script src=gsap'.repeat(20_000)}`, 10, 10);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   it('lays a still out at its size on a transparent page', () => {
     const doc = stillDocument('<h1>Title</h1>', 640, 360);
     expect(doc).toContain('width:640px;height:360px');
