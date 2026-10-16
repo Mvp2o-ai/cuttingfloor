@@ -238,6 +238,52 @@ describe('MLT compiler', () => {
     expect(xml).toContain('&quot;29&quot;:');
   });
 
+  it('plays retimed clips through timeremap chains', () => {
+    const fast = compile(edit([{ tool: 'clip.set_speed', args: { clip_id: 'c4', rate: 2 } }]));
+    // Source frames 5–29 at 25 fps, twice as fast: 12 frames from 0.2 s, 0.08 s apart.
+    expect(fast).toContain('<chain id="c4_v" out="11">');
+    expect(fast).toContain('<property name="time_map">0=0.2;11=1.08</property>');
+    expect(fast).toContain('<entry producer="c4_v" in="0" out="11">');
+    // The linked audio is retimed too, with its pitch kept.
+    expect(fast).toMatch(/<chain id="c5_a" out="11">.*<property name="pitch">1<\/property>/);
+    const back = compile(
+      edit([{ tool: 'clip.set_speed', args: { clip_id: 'c4', reverse: true } }]),
+    );
+    // Reversed: the first frame is source frame 29, the last is 5.
+    expect(back).toContain('<property name="time_map">0=1.16;24=0.2</property>');
+    const held = compile(
+      edit([{ tool: 'clip.freeze', args: { clip_id: 'c4', at_frame: 20, duration_frames: 5 } }]),
+    );
+    expect(held).toContain('<property name="time_map">0=0.6</property>');
+  });
+
+  it('compiles a nested timeline once, as a tractor over transparency', () => {
+    const outer = runEdits(
+      newTimeline('outer', seq, { video: 1, audio: 1 }),
+      'tl_y',
+      [
+        {
+          tool: 'clip.add',
+          args: { track_id: 't1', nested_timeline_id: 'tl_00000000000000000000000000000001' },
+        },
+        {
+          tool: 'clip.add',
+          args: { track_id: 't1', nested_timeline_id: 'tl_00000000000000000000000000000001' },
+        },
+      ],
+      () => media,
+      { tool: 'x', args: null },
+      () => doc,
+    ).doc;
+    const xml = compile(outer);
+    expect(xml.match(/<tractor id="n1_main"/g)).toHaveLength(1);
+    expect(xml).toContain(
+      '<producer id="n1_base" in="0" out="34"><property name="mlt_service">color</property><property name="resource">0x00000000</property>',
+    );
+    expect(xml).toMatch(/<entry producer="n1_main" in="0" out="34">/);
+    expect(xml.indexOf('id="n1_main"')).toBeLessThan(xml.indexOf('<tractor id="main"'));
+  });
+
   it('refuses to compile with offline media', () => {
     expect(() => compileMlt(doc, { width: 640, height: 360, sources: new Map() })).toThrow(
       /not available/,

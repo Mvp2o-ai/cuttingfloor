@@ -11,6 +11,7 @@ import {
   TRANSFORM_NUMBERS,
   type TransformNumber,
 } from '@cuttingfloor/schema';
+import { frameSource } from './speed.ts';
 
 // Animatable values: easing, sampling, conversion between the frame-based tool view and the
 // stored form (source ticks), and the animation presets layered over a clip's transform.
@@ -247,7 +248,8 @@ function applyLoop(name: string, i: number, period: number, k: number, s: Transf
  * frame's source time, then any in/out/loop animation applied on top.
  */
 export function transformAt(clip: StoredClip, tpf: number, i: number, n: number): TransformState {
-  const t = clip.in + i * tpf;
+  // Keyframes live on the source, so a sped-up or reversed clip carries them along.
+  const t = frameSource(clip, tpf, i);
   const s = {} as TransformState;
   for (const key of TRANSFORM_NUMBERS) {
     s[key] = sample(clip.transform?.[key], TRANSFORM_DEFAULTS[key], t);
@@ -267,7 +269,7 @@ export function transformAnimates(clip: StoredClip): boolean {
 }
 
 export function maskAt(clip: StoredClip, tpf: number, i: number): MaskState {
-  const t = clip.in + i * tpf;
+  const t = frameSource(clip, tpf, i);
   const s = {} as MaskState;
   for (const key of MASK_NUMBERS) s[key] = sample(clip.mask?.[key], MASK_DEFAULTS[key], t);
   return s;

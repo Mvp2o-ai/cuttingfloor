@@ -5,7 +5,7 @@ import {
   type TimelineDoc,
   type TimelineOp,
 } from '@cuttingfloor/schema';
-import { applyEdit, type MediaResolver, type OpOutcome } from './edit.ts';
+import { applyEdit, type MediaResolver, type OpOutcome, type TimelineResolver } from './edit.ts';
 import { timelineIdOf } from './hash.ts';
 import type { Workspace } from './workspace.ts';
 
@@ -68,7 +68,14 @@ export function migrate(doc: TimelineDoc | V1Doc): TimelineDoc {
   return {
     ...doc,
     version: 2,
-    tracks: doc.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => ({ ...c, type: 'media' })) })),
+    tracks: doc.tracks.map((t) => ({
+      ...t,
+      clips: t.clips.map((c) => ({
+        ...c,
+        type: 'media' as const,
+        media_id: (c as { media_id: string }).media_id,
+      })),
+    })),
   };
 }
 
@@ -94,6 +101,7 @@ export function runEdits(
   ops: BatchOp[],
   media: MediaResolver,
   record: TimelineOp,
+  timelines?: TimelineResolver,
 ): EditOutcome {
   const doc = structuredClone(base);
   const results: EditOutcome['results'] = [];
@@ -109,7 +117,7 @@ export function runEdits(
       );
     }
     try {
-      last = applyEdit(doc, op.tool, parsed.data as never, media);
+      last = applyEdit(doc, op.tool, parsed.data as never, media, timelines);
     } catch (error) {
       if (error instanceof CfError && ops.length > 1) {
         throw new CfError(error.code, `ops[${index}] (${op.tool}): ${error.message}`, {

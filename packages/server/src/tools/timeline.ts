@@ -17,7 +17,15 @@ import {
   TimelineRef,
 } from '@cuttingfloor/schema';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
-import { framesUri, mediaIdsIn, mediaResolver, previewFrames, timelineImage } from '../render.ts';
+import {
+  framesUri,
+  mediaIdsIn,
+  mediaResolver,
+  nestedIdsIn,
+  previewFrames,
+  timelineImage,
+  timelineResolver,
+} from '../render.ts';
 import { guard, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 
@@ -64,6 +72,45 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
     title: 'Enable/disable clip',
     description: 'A disabled clip stays on the timeline but renders as a gap.',
   },
+  'clip.set_speed': {
+    title: 'Set speed',
+    description:
+      'Speed up, slow down, ramp or reverse a clip and its linked clips. rate is constant; curve is a speed ramp over the clip. The clip keeps its source and its length changes; ripple (default) moves later clips. Pitch is kept unless preserve_pitch is false.',
+  },
+  'clip.freeze': {
+    title: 'Freeze frame',
+    description:
+      'Hold the frame at at_frame for duration_frames: the clip splits there, a freeze frame goes in, and later clips on its tracks move later.',
+  },
+  'clip.roll': {
+    title: 'Roll edit',
+    description:
+      'Move the cut between a clip and the clip right after it: one gets longer, the other shorter, nothing else moves.',
+  },
+  'clip.slip': {
+    title: 'Slip edit',
+    description: 'Show earlier or later source in a clip without moving or resizing it.',
+  },
+  'clip.slide': {
+    title: 'Slide edit',
+    description:
+      'Move a clip between its neighbours: the clip before it and the clip after it change length so nothing else moves.',
+  },
+  'clip.replace': {
+    title: 'Replace media',
+    description:
+      'Swap the media in a clip, keeping its place, length, speed and look. Starts at source_in (default 0).',
+  },
+  'range.lift': {
+    title: 'Lift range',
+    description:
+      'Remove everything in a frame range on the given tracks (default all unlocked), leaving a gap.',
+  },
+  'range.extract': {
+    title: 'Extract range',
+    description:
+      'Remove everything in a frame range on the given tracks (default all unlocked) and close the gap. For cutting out silences, filler words or mistakes across all tracks at once.',
+  },
   'clip.set_transform': {
     title: 'Set transform',
     description:
@@ -88,8 +135,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
 
 // Edit results share one shape, described here rather than as 13 copies of an output schema
 // (packages/schema EditResult/BatchResult define it; tests hold results to it).
-const RETURNS =
-  'Returns {timeline_id (the new one), parent, changed: [{id, type, change}], clip_id?, clip_ids?, track_id?, preview: {uri, frames, status} | null, warnings}.';
+const RETURNS = 'Returns the edit result (see the server instructions).';
 
 export function registerTimelineTools(server: McpServer, deps: ServerDeps): void {
   const { runtime: rt } = deps;
@@ -277,7 +323,15 @@ async function applyAndReply(
   const owner = deps.owner();
   const base = await rt.timelines.get(owner, baseId);
   const media = await mediaResolver(rt, owner, mediaIdsIn(ops));
-  const { doc, outcome, results } = runEdits(base, baseId, ops, (id) => media.get(id), record);
+  const nestable = await timelineResolver(rt, owner, nestedIdsIn(ops));
+  const { doc, outcome, results } = runEdits(
+    base,
+    baseId,
+    ops,
+    (id) => media.get(id),
+    record,
+    (id) => nestable.get(id),
+  );
   const id = await rt.timelines.put(owner, doc);
   const warnings = [...outcome.warnings];
   const frames = previewFrames(doc, outcome.focus, outcome.temporal);

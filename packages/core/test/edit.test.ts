@@ -5,12 +5,14 @@ import {
   type BatchOp,
   diff,
   easeFn,
+  frameSource,
   framesToTicks,
   fromView,
   type MediaResolver,
   migrate,
   newTimeline,
   runEdits,
+  span,
   TimelineStore,
   timelineIdOf,
   toView,
@@ -645,6 +647,294 @@ describe('compositing', () => {
       tracks: v2.tracks.map((t) => ({ ...t, clips: t.clips.map(({ type: _t, ...c }) => c) })),
     };
     expect(migrate(v1 as never)).toEqual(v2);
+  });
+});
+
+describe('timing', () => {
+  const AV = 'm_aaaaaaaaaaaaaaaaaaaaaaaaav';
+  const tpf = framesToTicks(1, fps);
+  /** A linked A/V clip at 0–100 (source 50–150) followed by one at 100–150 (source 0–50). */
+  const two = () =>
+    edit(
+      start(),
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 50, out: 150 } } },
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 0, out: 50 } } },
+    ).doc;
+  const clipView = (doc: TimelineDoc, id: string) =>
+    toView('tl_x', doc)
+      .tracks.flatMap((t) => t.clips)
+      .find((c) => c.id === id);
+  const at = (doc: TimelineDoc, id: string, frame: number) => {
+    const c = doc.tracks.flatMap((t) => t.clips).find((x) => x.id === id);
+    if (!c) throw new Error(`no ${id}`);
+    return frameSource(c, tpf, frame) / tpf;
+  };
+
+  it('speeds a linked clip up and ripples what follows', () => {
+    const doc = edit(two(), { tool: 'clip.set_speed', args: { clip_id: 'c4', rate: 2 } }).doc;
+    expect(layout(doc, 0)).toEqual([
+      [0, 50, 50],
+      [50, 100, 0],
+    ]);
+    expect(layout(doc, 1)).toEqual([
+      [0, 50, 50],
+      [50, 100, 0],
+    ]);
+    expect(clipView(doc, 'c4')).toMatchObject({ speed: { rate: 2 }, source: { in: 50, out: 150 } });
+    expect(at(doc, 'c4', 10)).toBe(70);
+  });
+
+  it('ramps keep their source exactly through a split', () => {
+    let doc = edit(two(), {
+      tool: 'clip.set_speed',
+      args: {
+        clip_id: 'c4',
+        curve: [
+          { at: 0, rate: 1 },
+          { at: 0.5, rate: 3 },
+          { at: 1, rate: 1 },
+        ],
+      },
+    }).doc;
+    // Mean rate 2: the 100 source frames take 50 timeline frames.
+    expect(layout(doc, 0)[0]).toEqual([0, 50, 50]);
+    const before = [5, 20, 30, 45].map((f) => at(doc, 'c4', f));
+    doc = edit(doc, { tool: 'clip.split', args: { clip_id: 'c4', at_frame: 25 } }).doc;
+    const right = doc.tracks[0]?.clips[1]?.id ?? '';
+    expect([at(doc, 'c4', 5), at(doc, 'c4', 20), at(doc, right, 5), at(doc, right, 20)]).toEqual(
+      before.map((v) => expect.closeTo(v, 6)),
+    );
+    expect(
+      span(doc.tracks[0]?.clips[0] as never) + span(doc.tracks[0]?.clips[1] as never),
+    ).toBeCloseTo(100 * tpf, -2);
+  });
+
+  it('reverses: the clip plays its source from the end, and trims cut from the right end', () => {
+    let doc = edit(two(), { tool: 'clip.set_speed', args: { clip_id: 'c4', reverse: true } }).doc;
+    // Its first frame is the source's last frame (149), its last frame the first (50).
+    expect(at(doc, 'c4', 0)).toBe(149);
+    expect(at(doc, 'c4', 99)).toBe(50);
+    doc = edit(doc, {
+      tool: 'clip.trim',
+      args: { clip_id: 'c4', edge: 'end', to_frame: 90, ripple: true },
+    }).doc;
+    // Trimming the tail of a reversed clip removes the start of its source.
+    expect(clipView(doc, 'c4')?.source).toEqual({ in: 60, out: 150 });
+    expect(at(doc, 'c4', 0)).toBe(149);
+  });
+
+  it('freezes a frame, splitting the clip and opening a gap in its sound', () => {
+    const { doc, results } = edit(two(), {
+      tool: 'clip.freeze',
+      args: { clip_id: 'c4', at_frame: 40, duration_frames: 25 },
+    });
+    const frozen = results[0]?.clip_id ?? '';
+    expect(layout(doc, 0)).toEqual([
+      [0, 40, 50],
+      [40, 65, 90],
+      [65, 125, 90],
+      [125, 175, 0],
+    ]);
+    expect(layout(doc, 1)).toEqual([
+      [0, 40, 50],
+      [65, 125, 90],
+      [125, 175, 0],
+    ]);
+    expect(clipView(doc, frozen)).toMatchObject({ speed: { rate: 0 }, link: null });
+    expect([at(doc, frozen, 0), at(doc, frozen, 24)]).toEqual([90, 90]);
+  });
+
+  it('rolls, slips and slides', () => {
+    // The next clip starts at source 0, so the cut can only roll later.
+    const rolled = edit(two(), { tool: 'clip.roll', args: { clip_id: 'c4', to_frame: 110 } }).doc;
+    expect(layout(rolled, 0)).toEqual([
+      [0, 110, 50],
+      [110, 150, 10],
+    ]);
+    expect(layout(rolled, 1)).toEqual([
+      [0, 110, 50],
+      [110, 150, 10],
+    ]);
+    expect(() => edit(two(), { tool: 'clip.roll', args: { clip_id: 'c4', to_frame: 90 } })).toThrow(
+      /before the beginning of its media/,
+    );
+    const slipped = edit(two(), { tool: 'clip.slip', args: { clip_id: 'c4', by_frames: -20 } }).doc;
+    expect(layout(slipped, 0)[0]).toEqual([0, 100, 30]);
+    expect(layout(slipped, 1)[0]).toEqual([0, 100, 30]);
+    const three = edit(two(), { tool: 'clip.split', args: { clip_id: 'c4', at_frame: 50 } }).doc;
+    const middle = three.tracks[0]?.clips[1]?.id ?? '';
+    const slid = edit(three, { tool: 'clip.slide', args: { clip_id: middle, to_frame: 60 } }).doc;
+    expect(layout(slid, 0)).toEqual([
+      [0, 60, 50],
+      [60, 110, 100],
+      [110, 150, 10],
+    ]);
+    expect(layout(slid, 1)).toEqual([
+      [0, 60, 50],
+      [60, 110, 100],
+      [110, 150, 10],
+    ]);
+  });
+
+  it('replaces media in place', () => {
+    const doc = edit(two(), {
+      tool: 'clip.replace',
+      args: { clip_id: 'c4', media_id: 'm_aaaaaaaaaaaaaaaaaaaaaaavid', source_in: 0 },
+    }).doc;
+    expect(clipView(doc, 'c4')).toMatchObject({
+      media_id: 'm_aaaaaaaaaaaaaaaaaaaaaaavid',
+      start: 0,
+      end: 100,
+    });
+    expect(() =>
+      edit(two(), {
+        tool: 'clip.replace',
+        args: { clip_id: 'c5', media_id: 'm_aaaaaaaaaaaaaaaaaaaaaaavid' },
+      }),
+    ).toThrow(/has no audio/);
+  });
+
+  it('extracts a range across tracks, relinking what is cut off', () => {
+    const { doc } = edit(two(), { tool: 'range.extract', args: { range: { start: 30, end: 60 } } });
+    expect(layout(doc, 0)).toEqual([
+      [0, 30, 50],
+      [30, 70, 110],
+      [70, 120, 0],
+    ]);
+    expect(layout(doc, 1)).toEqual([
+      [0, 30, 50],
+      [30, 70, 110],
+      [70, 120, 0],
+    ]);
+    const [l1, r1] = doc.tracks[0]?.clips ?? [];
+    const [l2, r2] = doc.tracks[1]?.clips ?? [];
+    expect(l1?.link).toBe(l2?.link);
+    expect(r1?.link).toBe(r2?.link);
+    expect(l1?.link).not.toBe(r1?.link);
+    const lifted = edit(two(), {
+      tool: 'range.lift',
+      args: { range: { start: 30, end: 60 }, track_ids: ['t1'] },
+    }).doc;
+    expect(layout(lifted, 0)).toEqual([
+      [0, 30, 50],
+      [60, 100, 110],
+      [100, 150, 0],
+    ]);
+    expect(layout(lifted, 1)).toEqual([
+      [0, 100, 50],
+      [100, 150, 0],
+    ]);
+  });
+
+  it('round-trips speed through timeline.load', () => {
+    const { doc } = edit(
+      two(),
+      {
+        tool: 'clip.set_speed',
+        args: {
+          clip_id: 'c4',
+          curve: [
+            { at: 0, rate: 0.5 },
+            { at: 1, rate: 2 },
+          ],
+          reverse: true,
+          preserve_pitch: false,
+        },
+      },
+      { tool: 'clip.freeze', args: { clip_id: 'c7', at_frame: 90, duration_frames: 10 } },
+    );
+    const view = toView('tl_x', doc);
+    expect(toView('tl_x', fromView(view, resolve))).toEqual({ ...view, parent: null });
+  });
+});
+
+describe('nested timelines', () => {
+  const AV = 'm_aaaaaaaaaaaaaaaaaaaaaaaaav';
+  const inner = () =>
+    edit(
+      start(),
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 0, out: 40 } } },
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 100, out: 120 } } },
+    ).doc;
+  const nestIn = (outer: TimelineDoc, store: Record<string, TimelineDoc>, ...ops: BatchOp[]) =>
+    runEdits(outer, 'tl_parent', ops, resolve, { tool: 'test', args: null }, (id) => store[id]);
+
+  it('nests a timeline as a linked compound clip that stands alone', () => {
+    const store = { tl_00000000000000000000000000000001: inner() };
+    const { doc } = nestIn(start(), store, {
+      tool: 'clip.add',
+      args: { track_id: 't1', nested_timeline_id: 'tl_00000000000000000000000000000001' },
+    });
+    expect(layout(doc, 0)).toEqual([[0, 60, 0]]);
+    expect(layout(doc, 1)).toEqual([[0, 60, 0]]);
+    expect(Object.keys(doc.nested ?? {})).toEqual(['tl_00000000000000000000000000000001']);
+    expect(doc.media).toEqual({});
+    const view = toView('tl_x', doc);
+    expect(view.tracks[0]?.clips[0]).toMatchObject({
+      type: 'timeline',
+      nested_timeline: 'tl_00000000000000000000000000000001',
+    });
+    expect(view.nested?.tl_00000000000000000000000000000001?.duration).toBe(60);
+    expect(toView('tl_x', fromView(view, resolve))).toEqual({ ...view, parent: null });
+  });
+
+  it('flattens nesting, edits compound clips like any clip, and drops what is no longer used', () => {
+    const store: Record<string, TimelineDoc> = { tl_00000000000000000000000000000001: inner() };
+    store.tl_00000000000000000000000000000002 = nestIn(start(), store, {
+      tool: 'clip.add',
+      args: { track_id: 't1', nested_timeline_id: 'tl_00000000000000000000000000000001' },
+    }).doc;
+    let { doc } = nestIn(start(), store, {
+      tool: 'clip.add',
+      args: {
+        track_id: 't1',
+        nested_timeline_id: 'tl_00000000000000000000000000000002',
+        av: 'video',
+      },
+    });
+    expect(Object.keys(doc.nested ?? {}).sort()).toEqual([
+      'tl_00000000000000000000000000000001',
+      'tl_00000000000000000000000000000002',
+    ]);
+    doc = edit(doc, {
+      tool: 'clip.trim',
+      args: { clip_id: 'c3', edge: 'start', to_frame: 10 },
+    }).doc;
+    doc = edit(doc, { tool: 'clip.set_transform', args: { clip_id: 'c3', scale: 0.5 } }).doc;
+    expect(layout(doc, 0)).toEqual([[10, 60, 10]]);
+    expect(() => edit(doc, { tool: 'clip.set_speed', args: { clip_id: 'c3', rate: 2 } })).toThrow(
+      /nested timeline/,
+    );
+    doc = edit(doc, { tool: 'clip.replace', args: { clip_id: 'c3', media_id: AV } }).doc;
+    expect(doc.tracks[0]?.clips[0]).toMatchObject({
+      type: 'media',
+      media_id: AV,
+      transform: { scale: 0.5 },
+    });
+    expect(doc.nested).toBeUndefined();
+  });
+
+  it('refuses unknown and empty timelines', () => {
+    expect(() =>
+      nestIn(
+        start(),
+        {},
+        {
+          tool: 'clip.add',
+          args: { track_id: 't1', nested_timeline_id: 'tl_00000000000000000000000000000009' },
+        },
+      ),
+    ).toThrow(/No timeline/);
+    expect(() =>
+      nestIn(
+        start(),
+        { tl_00000000000000000000000000000003: start() },
+        {
+          tool: 'clip.add',
+          args: { track_id: 't1', nested_timeline_id: 'tl_00000000000000000000000000000003' },
+        },
+      ),
+    ).toThrow(/empty/);
   });
 });
 

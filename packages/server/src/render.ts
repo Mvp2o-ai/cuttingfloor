@@ -21,7 +21,11 @@ export async function sourcesFor(
   const sources = new Map<string, MltSource>();
   const offline: string[] = [];
   const ids = new Set(
-    doc.tracks.flatMap((t) => t.clips.filter((c) => c.enabled).map((c) => c.media_id)),
+    [doc, ...Object.values(doc.nested ?? {})].flatMap((body) =>
+      body.tracks.flatMap((t) =>
+        t.clips.flatMap((c) => (c.enabled && c.type === 'media' ? [c.media_id] : [])),
+      ),
+    ),
   );
   for (const id of ids) {
     const record = await rt.media.find(owner, id);
@@ -74,6 +78,33 @@ export async function mediaResolver(
     }
     const ref = mediaRef(record);
     if (ref) out.set(id, ref);
+  }
+  return out;
+}
+
+/** Loads the stored timelines an edit nests, so the synchronous edit math can resolve them. */
+export async function timelineResolver(
+  rt: Runtime,
+  owner: string,
+  ids: Iterable<string>,
+): Promise<Map<string, TimelineDoc>> {
+  const out = new Map<string, TimelineDoc>();
+  for (const id of new Set(ids)) {
+    if (!/^tl_[0-9a-f]{32}$/.test(id)) continue;
+    const doc = await rt.timelines.find(owner, id);
+    if (doc) out.set(id, doc);
+  }
+  return out;
+}
+
+/** Every string value under a `nested_timeline_id` key, anywhere in an args tree. */
+export function nestedIdsIn(value: unknown, out: string[] = []): string[] {
+  if (Array.isArray(value)) for (const v of value) nestedIdsIn(v, out);
+  else if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) {
+      if (k === 'nested_timeline_id' && typeof v === 'string') out.push(v);
+      else nestedIdsIn(v, out);
+    }
   }
   return out;
 }
