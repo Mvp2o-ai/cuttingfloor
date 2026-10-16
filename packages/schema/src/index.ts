@@ -1,3 +1,4 @@
+export * from './code.ts';
 export * from './compositing.ts';
 export * from './effects.ts';
 export * from './errors.ts';

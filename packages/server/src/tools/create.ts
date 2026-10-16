@@ -30,7 +30,7 @@ import type { ServerDeps } from '../server.ts';
 // returns the same media while it lives. HTML runs only in the motion sandbox.
 
 /** Bumped when the output of a recipe would change, so old cached results aren't reused. */
-const RECIPE_VERSION = 'hyperframes-0.8.165/1';
+const RECIPE_VERSION = 'frames-1';
 
 const annotations = (title: string) => ({
   title,
@@ -160,7 +160,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
   };
 
   const sandboxNote = rt.config.motionUrl
-    ? 'Runs in the motion sandbox: no network (inline everything; GSAP is provided), fixed memory and time limits.'
+    ? 'Runs in the sandbox: no network (inline everything, pass images and fonts as assets, load libraries from lib/), fixed memory and time limits.'
     : 'Needs the motion sandbox, which is not running on this server.';
 
   server.registerTool(
@@ -168,7 +168,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Create a motion graphic',
       description: [
-        'Render animated HTML (HyperFrames + GSAP) to a video with alpha: lower thirds, animated titles, callouts, logo stings, kinetic type. Place the media_id with clip.add on a track above the video.',
+        'Render animated HTML to a video with alpha, frame-exactly: lower thirds, animated titles, callouts, logo stings, kinetic type, generated graphics. Place the media_id with clip.add on a track above the video.',
         `Up to ${MOTION_LIMITS.maxSeconds} s, and width × height × fps × seconds up to 30 s of 1080p30.`,
         sandboxNote,
         'Long-running: returns a task, or {job_id, media_id} for job.get. The same recipe returns the same media.',

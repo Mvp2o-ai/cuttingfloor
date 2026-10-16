@@ -51,6 +51,7 @@ describe('protocol surface', () => {
         'clip.split',
         'clip.trim',
         'clip.unlink',
+        'code.run',
         'create.cutout',
         'create.matte',
         'create.motion',

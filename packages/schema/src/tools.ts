@@ -1,4 +1,5 @@
 import * as z from 'zod/v4';
+import { CODE_LIMITS, CodeLanguage } from './code.ts';
 import {
   AnimatableValue,
   BlendMode,
@@ -599,7 +600,7 @@ export const CreateMotionInput = z.object({
     .min(1)
     .max(MOTION_LIMITS.maxHtmlBytes)
     .describe(
-      'HyperFrames composition body: elements, <style>, and a <script> that builds a paused GSAP timeline and sets window.__timelines.main = tl. Timed elements need class="clip" data-start data-duration data-track-index. Or a whole HyperFrames document.',
+      'An animated HTML page or fragment laid out at width × height. Anything that animates in a browser renders frame-exactly: CSS animations and transitions, the Web Animations API, SVG, requestAnimationFrame and timers (canvas, WebGL), window.__seek(seconds) for hand-driven drawing. Libraries load from lib/: anime.umd.min.js, three.module.js, lottie.min.js, d3.min.js.',
     ),
   duration_seconds: z.number().positive().max(MOTION_LIMITS.maxSeconds),
   width: size(1920),
@@ -624,6 +625,48 @@ export const CreateStillInput = z.object({
   transparent: z.boolean().default(true).describe('Unpainted areas stay transparent'),
   assets: MotionAssets,
   ...createCommon,
+});
+
+export const CodeRunInput = z.object({
+  language: CodeLanguage.default('node'),
+  script: z
+    .string()
+    .min(1)
+    .max(CODE_LIMITS.maxScriptBytes)
+    .describe(
+      "The script (node: ES module JS). Inputs are files in in/; write results to out/. `import { cf } from 'cuttingfloor'` (python: `from cuttingfloor import cf`; bash: the `cf` command) calls any tool as cf.domain.verb(args).",
+    ),
+  inputs: z
+    .object({
+      media_ids: z.array(MediaId).max(CODE_LIMITS.maxInputs).default([]),
+      timeline_ids: z.array(TimelineId).max(CODE_LIMITS.maxInputs).default([]),
+    })
+    .default({ media_ids: [], timeline_ids: [] })
+    .describe(
+      'Fetched into in/ before the script starts: media as in/<media_id>.<ext>, timelines as in/<timeline_id>.timeline.json',
+    ),
+  timeout_seconds: z
+    .int()
+    .min(1)
+    .max(CODE_LIMITS.maxTimeoutSeconds)
+    .default(CODE_LIMITS.defaultTimeoutSeconds),
+  idempotency_key: z.string().min(1).max(200).optional(),
+});
+
+export const CodeRunResult = z.object({
+  exit_code: z.int().nullable(),
+  outputs: z.array(
+    z.object({
+      name: z.string(),
+      media_id: MediaId.optional(),
+      timeline_id: TimelineId.optional(),
+      kind: z.string().optional(),
+      error: ToolError.optional(),
+    }),
+  ),
+  stdout: z.string(),
+  stderr: z.string(),
+  seconds: z.number(),
 });
 
 /** Kokoro's English voices, in speaker-id order: a = American, b = British; f/m = female/male. */

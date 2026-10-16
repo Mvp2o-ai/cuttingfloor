@@ -67,6 +67,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt tini fontconfig \
       fonts-dejavu-core fonts-inter fonts-montserrat fonts-open-sans fonts-lato fonts-bebas-neue \
       fonts-lobster fonts-comic-neue fonts-firacode fonts-noto-core chromium bzip2 \
+      python3 python3-numpy python3-pil python3-opencv \
  && rm -rf /var/lib/apt/lists/* \
  # Web font copies are useless to libass, and Montserrat ships twice; one TrueType set stays.
  && find /usr/share/fonts -name '*.woff*' -delete && rm -rf /usr/share/fonts/opentype/montserrat \
@@ -75,15 +76,18 @@ RUN apt-get update \
  && ffmpeg -hide_banner -encoders | grep -q prores_ks \
  && melt -query transitions | grep -q qtblend \
  && melt -query filters | grep -q rotoscoping \
- && chromium --version
+ && chromium --version \
+ && python3 -c 'import numpy, PIL, cv2' \
+ && unshare --version
 COPY --from=whisper /src/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=tts /opt/sherpa-onnx /opt/sherpa-onnx
 RUN ln -s /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts /usr/local/bin/sherpa-onnx-offline-tts
 COPY --from=vision /cf-vision /usr/local/bin/cf-vision
 COPY --from=vision /yunet.onnx /usr/share/cuttingfloor/models/face_detection_yunet_2023mar.onnx
 COPY --from=vision /models/ /usr/share/cuttingfloor/models/
-# Chromium for the motion sandbox (create.motion, create.still), only ever started by the
+# Chromium for the sandbox (create.motion, create.still, code.run), only ever started by the
 # motion-worker role through this wrapper, which keeps its sandbox on and its network off.
+# Python (numpy, Pillow, OpenCV) is for code.run scripts.
 COPY tools/motion/cf-chromium /usr/local/bin/cf-chromium
 RUN cf-vision 2>&1 | grep -q usage
 # MLT's Qt modules (qtblend) need a display variable to load; Qt itself renders offscreen.

@@ -15,9 +15,7 @@
     "@cuttingfloor/core": "workspace:*",
     "@cuttingfloor/jobs": "workspace:*",
     "@cuttingfloor/credentials": "workspace:*",
-    "@cuttingfloor/engine": "workspace:*"
-  },
-  "devDependencies": {
+    "@cuttingfloor/engine": "workspace:*",
     "@modelcontextprotocol/client": "2.3.1"
   }
 }

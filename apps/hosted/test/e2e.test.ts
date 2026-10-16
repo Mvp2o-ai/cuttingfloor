@@ -106,6 +106,19 @@ const chromium = await exec('/usr/bin/chromium', ['--version']).then(
 if (engines && !chromium && process.env.CUTTINGFLOOR_REQUIRE_ENGINES) {
   throw new Error('CUTTINGFLOOR_REQUIRE_ENGINES is set but Chromium is missing');
 }
+// code.run scripts use namespaces where this host allows them; docker build does not.
+const namespaces = await exec('unshare', [
+  '--user',
+  '--map-current-user',
+  '--pid',
+  '--fork',
+  '--net',
+  'true',
+]).then(
+  () => true,
+  () => false,
+);
+if (!namespaces) process.env.CUTTINGFLOOR_CODE_ISOLATION = 'none';
 let motionWorker: Server | undefined;
 
 async function startTestMotion(): Promise<string | null> {
@@ -2300,16 +2313,21 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     );
 
     it.skipIf(!chromium)(
-      'renders a GSAP motion graphic with alpha that moves over video',
+      'renders CSS and requestAnimationFrame animation frame-exactly, with alpha, over video',
       async () => {
         const motion = await create('create.motion', {
-          html: `<div id="box" class="clip" data-start="0" data-duration="2" data-track-index="0"
-  style="position:absolute;left:0;top:260px;width:200px;height:200px;background:#ffffff"></div>
+          html: `<style>@keyframes slide { from { transform: translateX(40px) } to { transform: translateX(1040px) } }</style>
+<div style="position:absolute;left:0;top:260px;width:200px;height:200px;background:#ffffff;animation:slide 2s linear forwards"></div>
+<canvas id="c" width="1280" height="120" style="position:absolute;left:0;top:560px"></canvas>
 <script>
-  const tl = gsap.timeline({ paused: true });
-  tl.fromTo('#box', { x: 40 }, { x: 1040, duration: 2, ease: 'none' });
-  window.__timelines = window.__timelines || {};
-  window.__timelines.main = tl;
+  const ctx = document.getElementById('c').getContext('2d');
+  function draw(now) {
+    ctx.clearRect(0, 0, 1280, 120);
+    ctx.fillStyle = '#0000ff';
+    ctx.fillRect(40 + (1000 * Math.min(now, 2000)) / 2000, 0, 200, 120);
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
 </script>`,
           duration_seconds: 2,
           width: 1280,
@@ -2318,20 +2336,62 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         });
         expect(motion).toMatchObject({ kind: 'video', width: 1280, height: 720 });
         expect(motion.duration_seconds as number).toBeCloseTo(2, 1);
-        // Box at x 40–240 at the start, x 1040–1240 at the end; red video everywhere else.
+        // CSS box at x 40–240 and the canvas box under it at the start; red video elsewhere.
         expect(
           await look(await over(motion.media_id, 0), [
             [140, 360],
+            [140, 620],
             [1140, 360],
             [640, 100],
           ]),
-        ).toEqual(['white', 'red', 'red']);
+        ).toEqual(['white', 'blue', 'red', 'red']);
+        // Frame 49 is t = 1.96 s: both boxes at x 1020–1220 (CSS and canvas agree).
         expect(
           await look(await over(motion.media_id, 49), [
             [140, 360],
-            [1140, 360],
+            [1120, 360],
+            [1120, 620],
           ]),
-        ).toEqual(['red', 'white']);
+        ).toEqual(['red', 'white', 'blue']);
+        // The same recipe renders the same file.
+        const again = await made('create.motion', {
+          html: '<div style="width:10px;height:10px;background:#fff;animation:x 1s"></div><style>@keyframes x{to{opacity:0}}</style>',
+          duration_seconds: 1,
+          width: 320,
+          height: 180,
+        });
+        const twice = await made('create.motion', {
+          html: '<div style="width:10px;height:10px;background:#fff;animation:x 1s"></div><style>@keyframes x{to{opacity:0}}</style>',
+          duration_seconds: 1,
+          width: 320,
+          height: 180,
+        });
+        expect(twice.done.result?.media_id).toBe(again.done.result?.media_id);
+      },
+      180_000,
+    );
+
+    it.skipIf(!chromium)(
+      'loads bundled libraries from lib/',
+      async () => {
+        const motion = await create('create.motion', {
+          html: `<div id="b" style="position:absolute;left:0;top:0;width:100px;height:100px;background:#fff"></div>
+<script src="lib/anime.umd.min.js"></script>
+<script>anime.animate('#b', { x: 500, duration: 1000, ease: 'linear' });</script>`,
+          duration_seconds: 1,
+          width: 640,
+          height: 360,
+          fps: 10,
+        });
+        // Timeline frame 20 (0.8 s) shows the graphic's frame 8: anime.js runs on the virtual
+        // clock, so its box is at x 400–500 of 640, doubled to fill the 1280 frame.
+        const end = await over(motion.media_id, 20);
+        expect(
+          await look(end, [
+            [900, 100],
+            [100, 100],
+          ]),
+        ).toEqual(['white', 'red']);
       },
       180_000,
     );
@@ -2364,6 +2424,462 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         expect((video.structured as { code: string }).code).toBe('bad_request');
       },
       120_000,
+    );
+  });
+
+  describe('export formats', () => {
+    let timelineId = '';
+    let captioned = '';
+    let clipMedia = '';
+
+    async function exported(args: Record<string, unknown>) {
+      const started = await call(client, args.format ? 'export.timeline' : 'export.video', args);
+      if (started.isError)
+        return { error: started.structured as { code: string; message: string } };
+      const job = await waitJob((started.structured as { job_id: string }).job_id, 600_000);
+      if (job.error) return { error: job.error as { code: string; message: string } };
+      const result = job.result as Record<string, unknown> & { uri: string; warnings?: string[] };
+      const id = (started.structured as { job_id: string }).job_id;
+      const dir = env.runtime.ws.ownerDir('local', 'outputs', id);
+      const { readdir } = await import('node:fs/promises');
+      const [name] = await readdir(dir);
+      return { result, file: join(dir, name as string) };
+    }
+
+    beforeAll(async () => {
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=1280x720:rate=25',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:sample_rate=48000',
+        '-t',
+        '3',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-shortest',
+        join(env.mediaDir, 'formats.mp4'),
+      ]);
+      clipMedia = (await importMedia({ path: join(env.mediaDir, 'formats.mp4') })).media_id;
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'formats',
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+        tracks: { video: 2, audio: 1 },
+      });
+      const built = await ok<{ timeline_id: string }>(client, 'edit.batch', {
+        timeline_id,
+        preview: 'none',
+        ops: [
+          {
+            tool: 'clip.add',
+            args: { track_id: 't1', media_id: clipMedia, source: { in: 0, out: 50 } },
+          },
+          {
+            tool: 'clip.add',
+            args: { track_id: 't1', media_id: clipMedia, source: { in: 25, out: 75 } },
+          },
+        ],
+      });
+      timelineId = built.timeline_id;
+      const cap = await ok<{ timeline_id: string }>(client, 'caption.add', {
+        timeline_id: timelineId,
+        track_id: 't2',
+        segments: [
+          { start_frame: 0, end_frame: 25, text: 'Hello there' },
+          { start_frame: 30, end_frame: 60, text: 'General export' },
+        ],
+        preview: 'none',
+      });
+      captioned = cap.timeline_id;
+    }, 300_000);
+
+    it('exports GIF, audio, AV1 and overridden presets; refuses misfits', async () => {
+      const gif = await exported({ timeline_id: timelineId, preset: 'gif' });
+      expect(gif.result?.mime_type).toBe('image/gif');
+      const g = (await ffprobe(gif.file as string)).streams[0];
+      expect(g).toMatchObject({ codec_name: 'gif', width: 640, height: 360 });
+      expect(Number(g?.nb_read_packets)).toBe(60); // 4 s at 15 fps
+
+      const wav = await exported({ timeline_id: timelineId, preset: 'audio_wav_48k' });
+      const w = await ffprobe(wav.file as string);
+      expect(w.streams.map((st) => st.codec_type)).toEqual(['audio']);
+      expect(Number(w.format.duration)).toBeCloseTo(4, 1);
+      const mp3 = await exported({ timeline_id: timelineId, preset: 'audio_mp3' });
+      expect((await ffprobe(mp3.file as string)).streams[0]?.codec_name).toBe('mp3');
+
+      const av1 = await exported({ timeline_id: timelineId, preset: 'web_1080p_av1' });
+      const a = await ffprobe(av1.file as string);
+      expect(a.streams.map((st) => st.codec_name).sort()).toEqual(['av1', 'opus']);
+
+      const small = await exported({
+        timeline_id: timelineId,
+        preset: 'web_1080p_h264',
+        overrides: { width: 640, fps: 10, crf: 28 },
+        filename: 'small',
+      });
+      expect(small.result).toMatchObject({ width: 640, height: 360, frames: 40 });
+      const sv = (await ffprobe(small.file as string)).streams.find(
+        (st) => st.codec_type === 'video',
+      );
+      expect(sv).toMatchObject({ width: 640, height: 360 });
+      expect(Number(sv?.nb_read_packets)).toBe(40);
+
+      const social = await exported({ timeline_id: timelineId, preset: 'social_9x16_h264' });
+      expect(social.error?.code).toBe('bad_request');
+      const prores = await exported({
+        timeline_id: timelineId,
+        preset: 'master_prores_422hq',
+        overrides: { crf: 10 },
+      });
+      expect(prores.error?.code).toBe('bad_request');
+    }, 900_000);
+
+    it('shows footage bigger than the frame as it is, in previews and exports', async () => {
+      // MLT 7.30's qtblend garbles a full-frame source larger than the frame unless it's kept off
+      // its shortcut (composite.ts); solid test colours hide that, so this uses colour bars.
+      const bars = ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan'];
+      const at = (w: number, h: number) =>
+        bars.map(
+          (_, i) => [Math.round(((i + 0.5) * w) / 6), Math.round(h * 0.94)] as [number, number],
+        );
+      const seen = async (png: Buffer, w: number, h: number) =>
+        Promise.all(at(w, h).map(async ([x, y]) => colour(await pixel(png, x, y))));
+      const preview = await call(client, 'render.frames', {
+        timeline_id: timelineId,
+        frames: [10],
+        layout: 'single',
+        format: 'png',
+      });
+      const small = Buffer.from(
+        (preview.content.find((c) => c.type === 'image')?.data as string) ?? '',
+        'base64',
+      );
+      expect(await seen(small, 640, 360)).toEqual(bars);
+      const full = await call(client, 'render.frames', {
+        timeline_id: timelineId,
+        frames: [10],
+        layout: 'single',
+        size: 'full',
+        format: 'png',
+      });
+      const big = Buffer.from(
+        (full.content.find((c) => c.type === 'image')?.data as string) ?? '',
+        'base64',
+      );
+      expect(await seen(big, 1280, 720)).toEqual(bars);
+      const out = await exported({
+        timeline_id: timelineId,
+        preset: 'web_1080p_h264',
+        overrides: { width: 640 },
+        filename: 'bars',
+      });
+      const frame = join(env.dir, 'bars.png');
+      await ff(['-i', out.file as string, '-vf', 'select=eq(n\\,10)', '-frames:v', '1', frame]);
+      expect(await seen(await readFile(frame), 640, 360)).toEqual(bars);
+    }, 300_000);
+
+    it('renders frames at full size from the original media', async () => {
+      const res = await call(client, 'render.frames', {
+        timeline_id: timelineId,
+        frames: [10],
+        layout: 'single',
+        size: 'full',
+        format: 'png',
+      });
+      const png = Buffer.from(
+        (res.content.find((c) => c.type === 'image')?.data as string) ?? '',
+        'base64',
+      );
+      const file = join(env.dir, 'full.png');
+      await writeFile(file, png);
+      expect((await ffprobe(file)).streams[0]).toMatchObject({ width: 1280, height: 720 });
+    }, 120_000);
+
+    it('hands the edit to other editors and writes captions', async () => {
+      const otio = await exported({ timeline_id: captioned, format: 'otio' });
+      const doc = JSON.parse(await readFile(otio.file as string, 'utf8'));
+      expect(doc.OTIO_SCHEMA).toMatch(/^Timeline/);
+      const tracks = doc.tracks.children as Array<{
+        kind: string;
+        children: Array<{ OTIO_SCHEMA: string }>;
+      }>;
+      expect(
+        tracks
+          .find((t) => t.kind === 'Video')
+          ?.children.filter((c) => c.OTIO_SCHEMA.startsWith('Clip')).length,
+      ).toBe(2);
+      expect(JSON.stringify(doc)).toContain('formats.mp4');
+
+      const fcp = await exported({ timeline_id: captioned, format: 'fcpxml' });
+      const xml = await readFile(fcp.file as string, 'utf8');
+      expect(xml).toMatch(/<fcpxml version="1\.1\d"/);
+      expect(xml).toContain('formats.mp4');
+      // xmllint-free well-formedness: Node can't parse XML, FFmpeg can't either; check balance.
+      expect((xml.match(/<spine>/g) ?? []).length).toBe((xml.match(/<\/spine>/g) ?? []).length);
+
+      const edl = await exported({ timeline_id: captioned, format: 'edl' });
+      const text = await readFile(edl.file as string, 'utf8');
+      expect(text).toMatch(/^TITLE: /m);
+      expect(text).toMatch(/^001 /m);
+      expect(text).toMatch(/^002 /m);
+      expect(edl.result?.warnings?.join(' ')).toMatch(/track|caption|title/i);
+
+      const srt = await exported({ timeline_id: captioned, format: 'srt' });
+      expect(await readFile(srt.file as string, 'utf8')).toMatch(
+        /1\n00:00:00,000 --> 00:00:01,000\nHello there/,
+      );
+      const vtt = await exported({ timeline_id: captioned, format: 'vtt' });
+      expect(await readFile(vtt.file as string, 'utf8')).toMatch(/^WEBVTT/);
+
+      const zip = await exported({
+        timeline_id: captioned,
+        format: 'otio',
+        media: 'collect',
+        filename: 'bundle',
+      });
+      expect(zip.result?.mime_type).toBe('application/zip');
+      const { stdout } = await exec('zip', ['-sf', zip.file as string]);
+      expect(stdout).toContain('bundle.otio');
+      expect(stdout).toMatch(/media\/formats\.mp4/);
+    }, 600_000);
+  });
+
+  describe('code', () => {
+    it.skipIf(!chromium)(
+      'a script renders a graphic, imports it, cuts to the beat and previews; tools refine and export',
+      async () => {
+        const m = env.mediaDir;
+        await ff([
+          '-f',
+          'lavfi',
+          '-i',
+          'testsrc2=size=640x360:rate=25',
+          '-f',
+          'lavfi',
+          '-i',
+          "aevalsrc=exprs='if(lt(mod(t-0.25\\,0.5)\\,0.02)\\,sin(2*PI*1500*t)\\,0)':s=44100:d=8",
+          '-t',
+          '8',
+          '-c:v',
+          'libx264',
+          '-pix_fmt',
+          'yuv420p',
+          '-c:a',
+          'aac',
+          '-shortest',
+          join(m, 'beatclip.mp4'),
+        ]);
+        const clip = await importMedia({ path: join(m, 'beatclip.mp4') });
+        const started = await ok<{ job_id: string }>(client, 'code.run', {
+          inputs: { media_ids: [clip.media_id] },
+          timeout_seconds: 600,
+          script: `
+import { existsSync } from 'node:fs';
+import { cf, importFile, motion } from 'cuttingfloor';
+const clip = '${clip.media_id}';
+if (!existsSync('in/' + clip + '.mp4')) throw new Error('input missing');
+// 1. A graphic, rendered right here, imported as media.
+const file = await motion({
+  html: '<style>@keyframes s{from{transform:translateX(0)}to{transform:translateX(440px)}}</style><div style="position:absolute;left:0;top:0;width:200px;height:120px;background:#fff;animation:s 2s linear forwards"></div>',
+  width: 640, height: 360, fps: 25, duration: 2,
+});
+const graphic = await importFile(file, 'box.mov');
+// 2. Cuts on the beat: one beat of picture from every other beat, back to back.
+const { beats } = await cf.media.analyze({ media_id: clip, kind: 'beats' });
+const frames = beats.beats.filter((t) => t > 0.5 && t < 7).map((t) => Math.round(t * 25));
+const { timeline_id: empty } = await cf.timeline.create({
+  name: 'beat cut',
+  sequence: { width: 640, height: 360, fps: { num: 25, den: 1 } },
+  tracks: { video: 2, audio: 1 },
+});
+const ops = [];
+for (let i = 0; i + 1 < frames.length; i += 2) {
+  ops.push({ tool: 'clip.add', args: { track_id: 't1', media_id: clip, source: { in: frames[i], out: frames[i + 1] } } });
+}
+ops.push({ tool: 'clip.add', args: { track_id: 't2', media_id: graphic.media_id, at_frame: 0 } });
+const built = await cf.edit.batch({ timeline_id: empty, ops, preview: 'none' });
+// 3. A preview, through the same tools.
+const preview = await cf.render.frames({ timeline_id: built.timeline_id, frames: [0], layout: 'single', format: 'png' });
+console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 1, graphic: graphic.media_id, preview: preview.images.length }));
+`,
+        });
+        const done = await waitJob(started.job_id, 600_000);
+        if (done.error) throw new Error(`code.run failed: ${JSON.stringify(done.error)}`);
+        const result = done.result as { stdout: string; exit_code: number };
+        expect(result.exit_code).toBe(0);
+        const said = JSON.parse(result.stdout.trim().split('\n').pop() ?? '{}') as {
+          timeline_id: string;
+          cuts: number;
+          graphic: string;
+          preview: number;
+        };
+        expect(said.cuts).toBeGreaterThanOrEqual(5);
+        expect(said.preview).toBe(1);
+        const view = await ok<{
+          tracks: Array<{
+            id: string;
+            clips: Array<{ id: string; start: number; end: number }>;
+          }>;
+        }>(client, 'timeline.get', { timeline_id: said.timeline_id });
+        const cuts = view.tracks.find((t) => t.id === 't1')?.clips ?? [];
+        expect(cuts.length).toBe(said.cuts);
+        // Each cut is one beat long (0.5 s at 120 BPM, give or take a frame).
+        for (const c of cuts) expect(Math.abs(c.end - c.start - 12.5)).toBeLessThanOrEqual(1.5);
+
+        // The agent takes over with individual tools: tighten the last cut, then export.
+        const last = cuts[cuts.length - 1] as { id: string; start: number; end: number };
+        const trimmed = await ok<{ timeline_id: string }>(client, 'clip.trim', {
+          timeline_id: said.timeline_id,
+          clip_id: last.id,
+          edge: 'end',
+          to_frame: last.end - 3,
+          preview: 'none',
+        });
+        const exp = await ok<{ job_id: string }>(client, 'export.video', {
+          timeline_id: trimmed.timeline_id,
+          preset: 'web_1080p_h264',
+        });
+        const exported = await waitJob(exp.job_id, 600_000);
+        expect(exported.status).toBe('completed');
+        const file = (exported.result as { file?: string; local_path?: string }) ?? {};
+        expect(file).toBeTruthy();
+        // The graphic is on top at the start: white top-left in the first frame.
+        const first = await call(client, 'render.frames', {
+          timeline_id: trimmed.timeline_id,
+          frames: [0],
+          layout: 'single',
+          format: 'png',
+        });
+        const image = Buffer.from(
+          (first.content.find((c) => c.type === 'image')?.data as string) ?? '',
+          'base64',
+        );
+        expect(colour(await pixel(image, 20, 20))).toBe('white');
+      },
+      900_000,
+    );
+  });
+
+  describe('code', () => {
+    it.skipIf(!chromium)(
+      'a script renders a graphic, imports it, cuts to the beat and previews; tools refine and export',
+      async () => {
+        const m = env.mediaDir;
+        await ff([
+          '-f',
+          'lavfi',
+          '-i',
+          'testsrc2=size=640x360:rate=25',
+          '-f',
+          'lavfi',
+          '-i',
+          "aevalsrc=exprs='if(lt(mod(t-0.25\\,0.5)\\,0.02)\\,sin(2*PI*1500*t)\\,0)':s=44100:d=8",
+          '-t',
+          '8',
+          '-c:v',
+          'libx264',
+          '-pix_fmt',
+          'yuv420p',
+          '-c:a',
+          'aac',
+          '-shortest',
+          join(m, 'beatclip.mp4'),
+        ]);
+        const clip = await importMedia({ path: join(m, 'beatclip.mp4') });
+        const started = await ok<{ job_id: string }>(client, 'code.run', {
+          inputs: { media_ids: [clip.media_id] },
+          timeout_seconds: 600,
+          script: `
+import { existsSync } from 'node:fs';
+import { cf, importFile, motion } from 'cuttingfloor';
+const clip = '${clip.media_id}';
+if (!existsSync('in/' + clip + '.mp4')) throw new Error('input missing');
+// 1. A graphic, rendered right here, imported as media.
+const file = await motion({
+  html: '<style>@keyframes s{from{transform:translateX(0)}to{transform:translateX(440px)}}</style><div style="position:absolute;left:0;top:0;width:200px;height:120px;background:#fff;animation:s 2s linear forwards"></div>',
+  width: 640, height: 360, fps: 25, duration: 2,
+});
+const graphic = await importFile(file, 'box.mov');
+// 2. Cuts on the beat: one beat of picture from every other beat, back to back.
+const { beats } = await cf.media.analyze({ media_id: clip, kind: 'beats' });
+const frames = beats.beats.filter((t) => t > 0.5 && t < 7).map((t) => Math.round(t * 25));
+const { timeline_id: empty } = await cf.timeline.create({
+  name: 'beat cut',
+  sequence: { width: 640, height: 360, fps: { num: 25, den: 1 } },
+  tracks: { video: 2, audio: 1 },
+});
+const ops = [];
+for (let i = 0; i + 1 < frames.length; i += 2) {
+  ops.push({ tool: 'clip.add', args: { track_id: 't1', media_id: clip, source: { in: frames[i], out: frames[i + 1] } } });
+}
+ops.push({ tool: 'clip.add', args: { track_id: 't2', media_id: graphic.media_id, at_frame: 0 } });
+const built = await cf.edit.batch({ timeline_id: empty, ops, preview: 'none' });
+// 3. A preview, through the same tools.
+const preview = await cf.render.frames({ timeline_id: built.timeline_id, frames: [0], layout: 'single', format: 'png' });
+console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 1, graphic: graphic.media_id, preview: preview.images.length }));
+`,
+        });
+        const done = await waitJob(started.job_id, 600_000);
+        if (done.error) throw new Error(`code.run failed: ${JSON.stringify(done.error)}`);
+        const result = done.result as { stdout: string; exit_code: number };
+        expect(result.exit_code).toBe(0);
+        const said = JSON.parse(result.stdout.trim().split('\n').pop() ?? '{}') as {
+          timeline_id: string;
+          cuts: number;
+          graphic: string;
+          preview: number;
+        };
+        expect(said.cuts).toBeGreaterThanOrEqual(5);
+        expect(said.preview).toBe(1);
+        const view = await ok<{
+          tracks: Array<{
+            id: string;
+            clips: Array<{ id: string; start: number; end: number }>;
+          }>;
+        }>(client, 'timeline.get', { timeline_id: said.timeline_id });
+        const cuts = view.tracks.find((t) => t.id === 't1')?.clips ?? [];
+        expect(cuts.length).toBe(said.cuts);
+        // Each cut is one beat long (0.5 s at 120 BPM, give or take a frame).
+        for (const c of cuts) expect(Math.abs(c.end - c.start - 12.5)).toBeLessThanOrEqual(1.5);
+
+        // The agent takes over with individual tools: tighten the last cut, then export.
+        const last = cuts[cuts.length - 1] as { id: string; start: number; end: number };
+        const trimmed = await ok<{ timeline_id: string }>(client, 'clip.trim', {
+          timeline_id: said.timeline_id,
+          clip_id: last.id,
+          edge: 'end',
+          to_frame: last.end - 3,
+          preview: 'none',
+        });
+        const exp = await ok<{ job_id: string }>(client, 'export.video', {
+          timeline_id: trimmed.timeline_id,
+          preset: 'web_1080p_h264',
+        });
+        const exported = await waitJob(exp.job_id, 600_000);
+        expect(exported.status).toBe('completed');
+        const file = (exported.result as { file?: string; local_path?: string }) ?? {};
+        expect(file).toBeTruthy();
+        // The graphic is on top at the start: white top-left in the first frame.
+        const first = await call(client, 'render.frames', {
+          timeline_id: trimmed.timeline_id,
+          frames: [0],
+          layout: 'single',
+          format: 'png',
+        });
+        const image = Buffer.from(
+          (first.content.find((c) => c.type === 'image')?.data as string) ?? '',
+          'base64',
+        );
+        expect(colour(await pixel(image, 20, 20))).toBe('white');
+      },
+      900_000,
     );
   });
 

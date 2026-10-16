@@ -15,6 +15,8 @@
     "@cuttingfloor/credentials",
     "@cuttingfloor/engine",
     "@cuttingfloor/server",
-    "@cuttingfloor/hosted"
+    "@cuttingfloor/hosted",
+    "@cuttingfloor/motion",
+    "@cuttingfloor/sdk"
   ]
 }

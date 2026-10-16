@@ -1,35 +1,8 @@
-import { lintHyperframeHtml } from '@hyperframes/lint';
 import { describe, expect, it } from 'vitest';
-import { assertOffline, motionDocument, stillDocument } from '../src/index.ts';
+import { clockScript } from '../src/clock.ts';
+import { assertOffline, LIBRARIES, libraryPath, pageDocument } from '../src/index.ts';
 
-const fragment = `<div id="t" class="clip" data-start="0" data-duration="2" data-track-index="0">Hi</div>
-<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
-<script>
-  const tl = gsap.timeline({ paused: true });
-  tl.from('#t', { opacity: 0, duration: 1 });
-  window.__timelines = window.__timelines || {};
-  window.__timelines.main = tl;
-</script>`;
-
-describe('motion documents', () => {
-  it('wraps a fragment as the composition root and serves GSAP locally', async () => {
-    const doc = motionDocument(fragment, { width: 1280, height: 720, duration: 2 });
-    expect(doc).toMatchObject({ width: 1280, height: 720, duration: 2 });
-    expect(doc.html).toContain('data-composition-id="main"');
-    expect(doc.html).toContain('data-width="1280"');
-    expect(doc.html).toContain('<script src="gsap.min.js"></script>');
-    expect(doc.html).not.toContain('cdn.jsdelivr.net');
-    const lint = await lintHyperframeHtml(doc.html, { host: 'cli' });
-    expect(lint.findings.filter((f) => f.severity === 'error')).toEqual([]);
-  });
-
-  it('takes a whole HyperFrames document with its own size and length', () => {
-    const html = `<!doctype html><html><head></head><body><div id="root" data-composition-id="intro" data-start="0" data-duration="3.5" data-width="1080" data-height="1920"></div></body></html>`;
-    const doc = motionDocument(html, { width: 1920, height: 1080, duration: 1 });
-    expect(doc).toMatchObject({ width: 1080, height: 1920, duration: 3.5 });
-    expect(doc.html).toMatch(/<head><script src="gsap.min.js"><\/script>/);
-  });
-
+describe('pages', () => {
   it('refuses anything that reaches for the network or the disk', () => {
     for (const html of [
       '<img src="https://example.com/a.png">',
@@ -37,6 +10,9 @@ describe('motion documents', () => {
       '<style>@import "https://fonts.googleapis.com/css2?family=Inter";</style>',
       '<link href="//cdn.test/x.css" rel="stylesheet">',
       '<iframe src="file:///data/secret.key"></iframe>',
+      '<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>',
+      '<script type="module">import * as THREE from "https://unpkg.com/three";</script>',
+      '<script type="module">const m = await import("https://x.test/m.js");</script>',
       '<script>fetch("/x")</script>',
       '<script>new WebSocket("ws://cuttingfloor:8787")</script>',
       '<script>navigator.sendBeacon("/x")</script>',
@@ -46,31 +22,99 @@ describe('motion documents', () => {
     for (const html of [
       '<img src="assets/logo.png">',
       '<img src="data:image/png;base64,AAAA">',
+      '<script src="lib/anime.umd.min.js"></script>',
+      '<script type="module">import * as THREE from "./lib/three.module.js";</script>',
       '<p>Go fetch the ball</p>',
-      fragment,
     ]) {
       expect(() => assertOffline(html), html).not.toThrow();
     }
   });
 
-  it('handles upper-case tags and hostile input in linear time', () => {
-    const doc = motionDocument(
-      '<HTML><HEAD></HEAD><BODY><div data-composition-id="x"></div><SCRIPT SRC="https://cdn.test/GSAP.js"></SCRIPT></BODY></HTML>',
-      { width: 100, height: 100, duration: 1 },
+  it('lays a page out at its size on a transparent background', () => {
+    const doc = pageDocument('<h1>Title</h1>', 640, 360);
+    expect(doc).toContain('width:640px;height:360px');
+    expect(doc).toContain('background:transparent');
+    expect(pageDocument('<html><head><title>x</title></head><body></body></html>', 10, 10)).toMatch(
+      /<head><style>/,
     );
-    expect(doc.html).toContain('<HEAD><script src="gsap.min.js"></script></HEAD>');
-    expect(doc.html).not.toContain('cdn.test');
+    expect(pageDocument('<HTML><BODY></BODY></HTML>', 10, 10)).toMatch(/<HTML><head><style>/);
+  });
+
+  it('handles hostile input in linear time', () => {
     const started = performance.now();
-    stillDocument(`${'<head'.repeat(50_000)}${'<script src=gsap'.repeat(20_000)}`, 10, 10);
+    pageDocument(`${'<head'.repeat(50_000)}${'<script src=x'.repeat(20_000)}`, 10, 10);
     expect(performance.now() - started).toBeLessThan(1000);
   });
 
-  it('lays a still out at its size on a transparent page', () => {
-    const doc = stillDocument('<h1>Title</h1>', 640, 360);
-    expect(doc).toContain('width:640px;height:360px');
-    expect(doc).toContain('background:transparent');
-    expect(
-      stillDocument('<html><head><title>x</title></head><body></body></html>', 10, 10),
-    ).toMatch(/<head><style>/);
+  it('bundles open-source libraries that resolve', async () => {
+    const { existsSync } = await import('node:fs');
+    for (const name of Object.keys(LIBRARIES))
+      expect(existsSync(libraryPath(name) ?? '')).toBe(true);
+    expect(libraryPath('gsap.min.js')).toBeUndefined();
+  });
+});
+
+interface FakeWindow {
+  setTimeout(f: () => void, ms: number): number;
+  setInterval(f: () => void, ms: number): number;
+  requestAnimationFrame(f: (t: number) => void): number;
+  Date: DateConstructor;
+  __cf: { seek(s: number): Promise<void> };
+}
+
+describe('the virtual clock', () => {
+  /** Runs the clock in a fake window and returns it. */
+  function page() {
+    const win: Record<string, unknown> = {
+      setTimeout,
+      document: { getAnimations: () => [], querySelectorAll: () => [] },
+    };
+    const perf = { now: () => 0 };
+    new Function('window', 'performance', 'document', 'Date', clockScript(7))(
+      win,
+      perf,
+      win.document,
+      Date,
+    );
+    return { win: win as unknown as FakeWindow, perf };
+  }
+
+  it('fires timers and frames on the virtual clock, in order', async () => {
+    const { win, perf } = page();
+    const seen: string[] = [];
+    win.setTimeout(() => seen.push(`t500@${perf.now()}`), 500);
+    win.setInterval(() => seen.push(`i300@${perf.now()}`), 300);
+    win.requestAnimationFrame((t) => seen.push(`raf@${t}`));
+    await win.__cf.seek(0);
+    expect(seen).toEqual(['raf@0']);
+    await win.__cf.seek(0.7);
+    expect(seen).toEqual(['raf@0', 'i300@300', 't500@500', 'i300@600']);
+    expect(perf.now()).toBe(700);
+    expect(win.Date.now()).toBe(1767225600000 + 700);
+  });
+
+  it('seeks Web Animations to their age on the clock', async () => {
+    const anim = {
+      playState: 'running',
+      currentTime: 123,
+      pause() {
+        this.playState = 'paused';
+      },
+    };
+    const win: Record<string, unknown> = {
+      setTimeout,
+      document: { getAnimations: () => [anim], querySelectorAll: () => [] },
+    };
+    new Function('window', 'performance', 'document', 'Date', clockScript(1))(
+      win,
+      { now: () => 0 },
+      win.document,
+      Date,
+    );
+    const cf = win.__cf as { seek(s: number): Promise<void> };
+    await cf.seek(0);
+    expect(anim).toMatchObject({ playState: 'paused', currentTime: 0 });
+    await cf.seek(1.5);
+    expect(anim.currentTime).toBe(1500);
   });
 });
