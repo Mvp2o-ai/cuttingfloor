@@ -29,6 +29,13 @@ export async function sourcesFor(
       offline.push(id);
       continue;
     }
+    // Previews may read the original while it is conformed; exports wait for the mezzanine.
+    if (purpose === 'export' && record.status !== 'ready') {
+      throw new CfError('media_not_ready', `Media ${id} is still processing`, {
+        hint: 'Wait for its media.import job to finish, then export',
+        detail: { media_id: id },
+      });
+    }
     sources.set(id, { path: renderSource(record, purpose), image: record.probe?.kind === 'image' });
   }
   return { sources, offline };
