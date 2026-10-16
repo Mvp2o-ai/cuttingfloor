@@ -25,6 +25,7 @@ const INSTRUCTIONS = `cuttingfloor is a headless video editor. Typical flow (to 
    Text: title.add and caption.add (segments, SRT or VTT; word timings drive highlights) on a video track; text.set restyles many at once.
    Audio: audio.set_gain (keyframes for rides), audio.set_pan, audio.fade, audio.duck (music under speech), audio.set_loudness (e.g. -14 LUFS). Audio edits preview as a waveform with measured loudness.
    Effects: filter.add on a clip, a track or the whole timeline (video://catalog/effects: colour, LUTs, blur, vignette, chroma key, glitch; EQ, compressor, denoise, pitch); adjustment.add for effects over everything below for a stretch.
+   Analysis: media.analyze {kind: transcript | beats | faces | track} turns media into data: cut by words (clip.add source {words}), caption from a transcript (caption.add from_transcript), cut on beats, reframe on the faces' focus, pin a title to a tracked object.
    Overlays and picture-in-picture: put a clip on a higher video track, then clip.set_transform, clip.set_mask, clip.set_blend and clip.set_animation. Catalogues of accepted names are resources at video://catalog/{name}.
 4. Look at the result with preview: "inline" on an edit, or render.frames.
 5. qa.check, then export.video (long-running) for a signed download URL.

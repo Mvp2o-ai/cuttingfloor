@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
+import { type MediaFacts, ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
 import {
   lengthFrames,
   type MltSource,
@@ -256,21 +256,25 @@ export async function timelineWaveform(
   return wave;
 }
 
-/** Silent spans per media item (from import analysis), for audio.duck. */
-export async function silenceResolver(
+/** Silences and transcript words per media item, for edits that use them. */
+export async function factsResolver(
   rt: Runtime,
   owner: string,
   doc: TimelineDoc,
   more: Iterable<string> = [],
-): Promise<Map<string, Array<{ start: number; end: number }>>> {
-  const out = new Map<string, Array<{ start: number; end: number }>>();
+): Promise<Map<string, MediaFacts>> {
+  const out = new Map<string, MediaFacts>();
   const ids = new Set([
     ...doc.tracks.flatMap((t) => t.clips.flatMap((c) => (c.type === 'media' ? [c.media_id] : []))),
     ...more,
   ]);
   for (const id of ids) {
     const record = await rt.media.find(owner, id);
-    if (record?.analysis) out.set(id, record.analysis.silences);
+    if (!record) continue;
+    out.set(id, {
+      ...(record.analysis ? { silences: record.analysis.silences } : {}),
+      ...(record.analyses?.transcript ? { words: record.analyses.transcript.words } : {}),
+    });
   }
   return out;
 }

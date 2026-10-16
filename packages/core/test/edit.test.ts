@@ -1239,10 +1239,12 @@ describe('audio', () => {
       // The speech is silent for its first and last second (frames 0–25 and 75–100).
       (id) =>
         id === AV
-          ? [
-              { start: 0, end: 1 },
-              { start: 3, end: 10 },
-            ]
+          ? {
+              silences: [
+                { start: 0, end: 1 },
+                { start: 3, end: 10 },
+              ],
+            }
           : undefined,
     );
     const music = doc.tracks[1]?.clips[0];
@@ -1397,6 +1399,64 @@ describe('effects', () => {
     const next = run(loaded, { tool: 'filter.add', args: { clip_id: 'c7', name: 'sepia' } });
     const effectIds = toView('tl_x', next.doc).tracks[1]?.clips[0]?.effects?.map((e) => e.id);
     expect(new Set(effectIds).size).toBe(2);
+  });
+});
+
+describe('transcripts', () => {
+  const AV = 'm_aaaaaaaaaaaaaaaaaaaaaaaaav';
+  // Ten words, each 0.4 s long with 0.1 s between, from 1 s.
+  const words = Array.from({ length: 10 }, (_, i) => ({
+    text: i === 4 ? 'end.' : `w${i}`,
+    start: 1 + i * 0.5,
+    end: 1 + i * 0.5 + 0.4,
+  }));
+  const facts = (id: string) => (id === AV ? { words } : undefined);
+  const run = (doc: TimelineDoc, ...ops: BatchOp[]) =>
+    runEdits(doc, 'tl_parent', ops, resolve, { tool: 'test', args: null }, undefined, facts);
+  const textStart = () => newTimeline('t', seq, { video: 2, audio: 1 });
+
+  it('cuts a clip to a range of words', () => {
+    const { doc } = run(textStart(), {
+      tool: 'clip.add',
+      args: { track_id: 't1', media_id: AV, source: { words: [2, 3] } },
+    });
+    // Word 2 starts at 2 s (frame 50); word 3 ends at 2.9 s (frame 72.5, rounded up).
+    expect(layout(doc, 0)).toEqual([[0, 23, 50]]);
+    expect(() =>
+      run(textStart(), {
+        tool: 'clip.add',
+        args: { track_id: 't1', media_id: AV, source: { words: [3, 20] } },
+      }),
+    ).toThrow(/not in the transcript/);
+  });
+
+  it('captions a clip from its transcript, breaking at sentence ends, through a speed change', () => {
+    let { doc } = run(textStart(), {
+      tool: 'clip.add',
+      args: { track_id: 't1', media_id: AV, source: { in: 0, out: 200 } },
+    });
+    doc = run(doc, { tool: 'clip.set_speed', args: { clip_id: 'c5', rate: 2 } }).doc;
+    const { doc: captioned, results } = run(doc, {
+      tool: 'caption.add',
+      args: { track_id: 't2', from_transcript: { clip_id: 'c5', max_words: 4 } },
+    });
+    const clips = toView('tl_x', captioned).tracks[1]?.clips ?? [];
+    // w0–w3 (then "end." closes a sentence on its own line), then w5–w8, then w9.
+    expect(clips.map((c) => c.text)).toEqual(['w0 w1 w2 w3', 'end.', 'w5 w6 w7 w8', 'w9']);
+    // At 2× the first word, at source 1 s (frame 25), plays from timeline frame 12 or 13.
+    expect(clips[0]?.start).toBeGreaterThanOrEqual(12);
+    expect(clips[0]?.start).toBeLessThanOrEqual(13);
+    expect(clips[0]?.words?.length).toBe(4);
+    expect(results[0]?.clip_ids).toHaveLength(4);
+    expect(() =>
+      runEdits(
+        doc,
+        'tl_parent',
+        [{ tool: 'caption.add', args: { track_id: 't2', from_transcript: { clip_id: 'c5' } } }],
+        resolve,
+        { tool: 'test', args: null },
+      ),
+    ).toThrow(/no transcript/);
   });
 });
 

@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
+import { join } from 'node:path';
 import { ownerKey, TimelineStore, Workspace } from '@cuttingfloor/core';
 import { MEDIA_TTL_MS, MediaLibrary } from '@cuttingfloor/engine';
 import { FileJobStore, JobRunner } from '@cuttingfloor/jobs';
@@ -20,6 +21,8 @@ export interface RuntimeConfig {
   allowPrivateUrls: boolean;
   /** Largest output `resources/read` returns inline; bigger ones answer with the signed URL. */
   inlineMaxBytes: number;
+  /** Where downloaded models (transcription) live. Default: `models` under the data root. */
+  modelsDir?: string;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
@@ -46,6 +49,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     maxDownloadBytes: Number(env.CUTTINGFLOOR_MAX_DOWNLOAD_BYTES ?? 10 * 1024 ** 3),
     allowPrivateUrls: env.CUTTINGFLOOR_ALLOW_PRIVATE_URLS === '1',
     inlineMaxBytes: Number(env.CUTTINGFLOOR_INLINE_MAX_BYTES ?? 32 * 1024 ** 2),
+    ...(env.CUTTINGFLOOR_MODELS ? { modelsDir: env.CUTTINGFLOOR_MODELS } : {}),
   };
 }
 
@@ -56,12 +60,15 @@ export class Runtime {
   readonly timelines: TimelineStore;
   readonly media: MediaLibrary;
   readonly jobs: JobRunner;
+  /** Downloaded models, kept across restarts (they are checksummed, not user data). */
+  readonly modelsDir: string;
   #secret: Buffer | undefined;
   #sweeper: NodeJS.Timeout | undefined;
 
   constructor(config: RuntimeConfig) {
     this.config = config;
     this.ws = new Workspace(config.dataDir);
+    this.modelsDir = config.modelsDir ?? join(config.dataDir, 'models');
     this.timelines = new TimelineStore(this.ws);
     this.media = new MediaLibrary(this.ws, {
       roots: config.mediaRoots,

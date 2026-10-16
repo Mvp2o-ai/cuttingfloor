@@ -7,10 +7,13 @@ import {
   compileMlt,
   conformReasons,
   download,
+  estimateTempo,
   isBlockedAddress,
+  onsetEnvelope,
   type Probe,
   scaledSize,
   standardRate,
+  trackBeats,
 } from '@cuttingfloor/engine';
 import { describe, expect, it } from 'vitest';
 
@@ -441,6 +444,32 @@ describe('MLT compiler', () => {
     expect(() => compileMlt(doc, { width: 640, height: 360, sources: new Map() })).toThrow(
       /not available/,
     );
+  });
+});
+
+describe('beats', () => {
+  it('finds 120 BPM and its beats in a click track', () => {
+    const rate = 22_050;
+    const seconds = 12;
+    const samples = new Float32Array(rate * seconds);
+    // A short decaying click every half second, from 0.25 s.
+    for (let beat = 0.25; beat < seconds; beat += 0.5) {
+      const at = Math.round(beat * rate);
+      for (let i = 0; i < 400 && at + i < samples.length; i++) {
+        samples[at + i] = Math.sin(i * 0.9) * Math.exp(-i / 80);
+      }
+    }
+    const env = onsetEnvelope(samples);
+    const bpm = estimateTempo(env);
+    expect(bpm).toBeGreaterThan(118);
+    expect(bpm).toBeLessThan(122);
+    // Beat times as analyseBeats reports them: the middle of each analysis frame.
+    const beats = trackBeats(env, bpm).map((f) => (f * 512 + 512) / rate);
+    const inside = beats.filter((t) => t > 1 && t < 11);
+    // Every beat lands within 40 ms of a click, and none is missed.
+    const offClick = (t: number) => Math.abs((t - 0.25) / 0.5 - Math.round((t - 0.25) / 0.5)) * 0.5;
+    expect(inside.every((t) => offClick(t) < 0.04)).toBe(true);
+    expect(inside.length).toBe(20);
   });
 });
 
