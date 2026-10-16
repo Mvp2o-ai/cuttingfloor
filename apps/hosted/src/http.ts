@@ -9,7 +9,7 @@ import {
 } from 'node:http';
 import { Readable } from 'node:stream';
 import type { CredentialStore } from '@cuttingfloor/credentials';
-import { createServer, type Runtime } from '@cuttingfloor/server';
+import { createServer, outputMime, type Runtime } from '@cuttingfloor/server';
 import { toWebRequest } from '@modelcontextprotocol/node';
 import { createMcpHandler } from '@modelcontextprotocol/server';
 
@@ -127,11 +127,7 @@ async function sendFile(req: IncomingMessage, res: ServerResponse, file: string)
     res.writeHead(404, { 'content-type': 'text/plain' }).end('gone');
     return;
   }
-  const type = file.endsWith('.mp4')
-    ? 'video/mp4'
-    : file.endsWith('.mov')
-      ? 'video/quicktime'
-      : 'application/octet-stream';
+  const type = outputMime(file);
   const name = file.split('/').pop() ?? 'output';
   const headers: Record<string, string | number> = {
     'content-type': type,

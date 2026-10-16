@@ -32,9 +32,18 @@ export {
   renderSource,
 } from './media.ts';
 export { compileMlt, lengthFrames, type MltSource, scaledSize } from './mlt.ts';
+export {
+  fitBox,
+  type Overrides,
+  PRESET_NAMES,
+  PRESETS,
+  type PresetName,
+  presetCatalog,
+  resolvePreset,
+} from './presets.ts';
 export { conformReasons, type Probe, probe, standardRate } from './probe.ts';
 export { type QaReport, qaCheck } from './qa.ts';
-export { exportTimeline, PRESETS, renderMediaFrames, renderTimelineFrames } from './render.ts';
+export { exportTimeline, renderMediaFrames, renderTimelineFrames } from './render.ts';
 export {
   ensureModel,
   type Transcript,

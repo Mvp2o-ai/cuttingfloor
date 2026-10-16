@@ -11,6 +11,8 @@ import type {
   CreateVoiceoverInput,
   EditResult,
   ExportResult,
+  ExportTimelineInput,
+  ExportTimelineResult,
   ExportVideoInput,
   JobListInput,
   JobListResult,
@@ -72,6 +74,7 @@ export type ToolName =
   | 'create.still'
   | 'create.voiceover'
   | 'edit.batch'
+  | 'export.timeline'
   | 'export.video'
   | 'filter.add'
   | 'filter.remove'
@@ -135,6 +138,7 @@ export interface ToolInputs {
   'create.still': z.input<typeof CreateStillInput>;
   'create.voiceover': z.input<typeof CreateVoiceoverInput>;
   'edit.batch': z.input<typeof BatchInput>;
+  'export.timeline': z.input<typeof ExportTimelineInput>;
   'export.video': z.input<typeof ExportVideoInput>;
   'filter.add': z.input<ReturnType<typeof editInput<'filter.add'>>>;
   'filter.remove': z.input<ReturnType<typeof editInput<'filter.remove'>>>;
@@ -199,6 +203,7 @@ export interface ToolOutputs {
   'create.still': z.output<typeof MediaInfo>;
   'create.voiceover': z.output<typeof MediaInfo>;
   'edit.batch': z.output<typeof BatchResult>;
+  'export.timeline': z.output<typeof ExportTimelineResult>;
   'export.video': z.output<typeof ExportResult>;
   'filter.add': z.output<typeof EditResult>;
   'filter.remove': z.output<typeof EditResult>;
@@ -263,6 +268,7 @@ export const TOOL_NAMES: readonly ToolName[] = [
   'create.still',
   'create.voiceover',
   'edit.batch',
+  'export.timeline',
   'export.video',
   'filter.add',
   'filter.remove',

@@ -9,6 +9,7 @@ import {
   ProtocolErrorCode,
   ResourceTemplate,
 } from '@modelcontextprotocol/server';
+import { outputMime } from './mime.ts';
 import { timelineImage, timelineWaveform } from './render.ts';
 import { jobView } from './result.ts';
 import type { ServerDeps } from './server.ts';
@@ -176,7 +177,7 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Job output',
       description:
-        'The file a finished export made. Large files answer with their signed download URL instead of the bytes.',
+        'The file a finished export.video or export.timeline made. Large files answer with their signed download URL instead of the bytes.',
     },
     async (uri, vars) => {
       const owner = deps.owner();
@@ -192,11 +193,7 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
         );
       }
       const file = join(dir, name);
-      const mimeType = name.endsWith('.mp4')
-        ? 'video/mp4'
-        : name.endsWith('.mov')
-          ? 'video/quicktime'
-          : 'application/octet-stream';
+      const mimeType = outputMime(name);
       // Size and bytes come from one open handle, so the file can't change in between.
       const handle = await open(file, 'r');
       try {

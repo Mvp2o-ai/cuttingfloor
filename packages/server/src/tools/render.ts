@@ -4,10 +4,10 @@ import { ticksPerFrame } from '@cuttingfloor/core';
 import {
   exportTimeline,
   lengthFrames,
-  PRESETS,
   qaCheck,
   renderMediaFrames,
   renderSource,
+  resolvePreset,
 } from '@cuttingfloor/engine';
 import type { JobContext } from '@cuttingfloor/jobs';
 import {
@@ -45,7 +45,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Render frames',
       description:
-        'Look at a timeline (or a media file): up to 16 frames as one contact-sheet image (layout grid) or one image each (single). Media frames are numbered at the media frame rate.',
+        'Look at a timeline (or a media file): up to 16 frames as one contact-sheet image (layout grid) or one image each (single). Media frames are numbered at the media frame rate. size full: up to 4 frames at the sequence (or media) size from the original media, for thumbnails and stills to keep.',
       inputSchema: RenderFramesInput,
       outputSchema: RenderFramesResult,
       annotations: { ...readOnly, title: 'Render frames' },
@@ -62,6 +62,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         for (const frames of groups) {
           const data = await timelineImage(rt, owner, args.timeline_id, doc, frames, {
             longEdge: args.long_edge,
+            full: args.size === 'full',
             format: args.format,
             ...(signal ? { signal } : {}),
           });
@@ -76,9 +77,11 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         const fps = record.probe?.video?.fps;
         if (!record.probe?.video || !fps)
           throw new CfError('bad_request', `Media ${args.media_id} has no picture`);
-        const file = renderSource(record, 'preview');
+        const full = args.size === 'full';
+        const file = renderSource(record, full ? 'export' : 'preview');
+        const v = record.probe.video;
         const rendered = await renderMediaFrames(file, fps, args.frames, {
-          longEdge: args.long_edge,
+          longEdge: full ? Math.max(v.width ?? 0, v.height ?? 0) || args.long_edge : args.long_edge,
           format: args.format,
           layout: args.layout,
           ...(signal ? { signal } : {}),
@@ -101,7 +104,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Export video',
       description: [
-        'Render the timeline to a file. Presets: web_1080p_h264 (MP4, H.264/AAC, fits 1920x1080) and master_prores_422hq (MOV, ProRes 422 HQ, PCM, sequence size).',
+        'Render the timeline to a file. Presets: web_1080p_h264 (MP4, fits 1920x1080), master_prores_422hq (MOV, sequence size), social_9x16_h264 (9:16 sequences, 1080x1920), web_1080p_av1 (MP4, AV1/Opus), gif (640 px, 15 fps), audio_wav_48k, audio_mp3. overrides changes size, fps, bitrate or crf (video://catalog/presets).',
         'Long-running: returns a task, or {job_id} for job.get. The result has a signed download URL',
         rt.config.exportsDir
           ? `and the file in the exports folder (${rt.config.exportsDir}).`
@@ -131,7 +134,8 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         });
       const { sources, offline } = await sourcesFor(rt, owner, doc, 'export');
       assertOnline(offline);
-      const spec = PRESETS[args.preset];
+      // Checks the preset fits the sequence and the overrides fit the preset, before any job.
+      const { spec } = resolvePreset(args.preset, doc.sequence, args.overrides);
       const name = `${args.filename ?? defaultName(doc, args.timeline_id)}.${spec.extension}`;
       const exportsDir = rt.config.exportsDir;
       if (exportsDir && !args.overwrite && (await exists(join(exportsDir, name)))) {
@@ -150,8 +154,9 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         await mkdir(outDir, { recursive: true });
         const out = join(outDir, name);
         const started = Date.now();
-        const { frames } = await exportTimeline(doc, args.preset, sources, out, {
+        const { frames, width, height } = await exportTimeline(doc, args.preset, sources, out, {
           ...(args.range ? { range: args.range } : {}),
+          ...(args.overrides ? { overrides: args.overrides } : {}),
           signal,
           onProgress: (f) => {
             const elapsed = (Date.now() - started) / 1000;
@@ -162,22 +167,11 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
             );
           },
         });
-        let file: string | undefined;
-        if (exportsDir) {
-          await mkdir(exportsDir, { recursive: true });
-          const target = join(exportsDir, name);
-          await rm(target, { force: true });
-          await link(out, target).catch(() => copyFile(out, target));
-          file = join(process.env.CUTTINGFLOOR_EXPORTS_HOST_PATH ?? exportsDir, name);
-        }
-        const { url, expiresAt } = await rt.signOutput(owner, job.id, name);
         const result = {
-          url,
-          expires_at: expiresAt,
-          uri: `video://jobs/${job.id}/output`,
-          ...(file ? { file } : {}),
-          bytes: (await stat(out)).size,
+          ...(await publish(rt, owner, job.id, out, name)),
           frames,
+          width,
+          height,
           preset: args.preset,
           mime_type: spec.mime,
         };
@@ -290,7 +284,37 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
   );
 }
 
-function defaultName(doc: TimelineDoc, id: string): string {
+/**
+ * A finished output: hard-linked (or copied) into the exports folder in local mode, and a signed
+ * download URL either way.
+ */
+export async function publish(
+  rt: ServerDeps['runtime'],
+  owner: string,
+  jobId: string,
+  out: string,
+  name: string,
+) {
+  let file: string | undefined;
+  const exportsDir = rt.config.exportsDir;
+  if (exportsDir) {
+    await mkdir(exportsDir, { recursive: true });
+    const target = join(exportsDir, name);
+    await rm(target, { force: true });
+    await link(out, target).catch(() => copyFile(out, target));
+    file = join(process.env.CUTTINGFLOOR_EXPORTS_HOST_PATH ?? exportsDir, name);
+  }
+  const { url, expiresAt } = await rt.signOutput(owner, jobId, name);
+  return {
+    url,
+    expires_at: expiresAt,
+    uri: `video://jobs/${jobId}/output`,
+    ...(file ? { file } : {}),
+    bytes: (await stat(out)).size,
+  };
+}
+
+export function defaultName(doc: TimelineDoc, id: string): string {
   const slug =
     doc.name
       .toLowerCase()
@@ -300,7 +324,7 @@ function defaultName(doc: TimelineDoc, id: string): string {
   return `${slug}-${id.slice(3, 11)}`;
 }
 
-async function exists(path: string): Promise<boolean> {
+export async function exists(path: string): Promise<boolean> {
   try {
     await stat(path);
     return true;

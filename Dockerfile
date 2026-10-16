@@ -90,7 +90,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt tini fontconfig \
       fonts-dejavu-core fonts-inter fonts-montserrat fonts-open-sans fonts-lato fonts-bebas-neue \
       fonts-lobster fonts-comic-neue fonts-firacode fonts-noto-core chromium bzip2 \
-      python3 python3-numpy python3-pil python3-opencv \
+      python3 python3-numpy python3-pil python3-opencv zip \
  && rm -rf /var/lib/apt/lists/* \
  # Web font copies are useless to libass, and Montserrat ships twice; one TrueType set stays.
  && find /usr/share/fonts -name '*.woff*' -delete && rm -rf /usr/share/fonts/opentype/montserrat \

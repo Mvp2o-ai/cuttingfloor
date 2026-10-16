@@ -20,6 +20,8 @@ services:
       CUTTINGFLOOR_EXPORTS: /exports
       # Shown in export results so you know where the file landed on your machine.
       CUTTINGFLOOR_EXPORTS_HOST_PATH: ${CUTTINGFLOOR_EXPORTS:-${HOME}/cuttingfloor/exports}
+      # So export.timeline (FCPXML, OTIO, EDL) points your editor at the files on your machine.
+      CUTTINGFLOOR_MEDIA_HOST_PATH: ${CUTTINGFLOOR_MEDIA:-${HOME}/Movies}
       CUTTINGFLOOR_MOTION_URL: http://motion:8790
     volumes:
       # Timelines, imported media, proxies, jobs and outputs (each with a time limit).

@@ -781,21 +781,53 @@ export const RenderFramesInput = z
       .describe('Timeline frames, or media frames at the media rate'),
     layout: z.enum(['single', 'grid']).default('grid').describe('grid: one contact sheet'),
     long_edge: z.number().int().min(64).max(1920).default(640),
+    size: z
+      .enum(['preview', 'full'])
+      .default('preview')
+      .describe('full: the sequence size from original media (long_edge ignored)'),
     format: z.enum(['webp', 'png']).default('webp'),
   })
   .refine((v) => Boolean(v.timeline_id) !== Boolean(v.media_id), {
     message: 'Give exactly one of timeline_id or media_id',
+  })
+  .refine((v) => v.size !== 'full' || v.frames.length <= 4, {
+    message: 'size full renders up to 4 frames at a time',
   });
 
 export const RenderFramesResult = z.object({
   images: z.array(z.object({ uri: z.string(), frames: z.array(frame) })),
 });
 
-export const ExportPreset = z.enum(['web_1080p_h264', 'master_prores_422hq']);
+export const ExportPreset = z
+  .enum([
+    'web_1080p_h264',
+    'master_prores_422hq',
+    'social_9x16_h264',
+    'web_1080p_av1',
+    'gif',
+    'audio_wav_48k',
+    'audio_mp3',
+  ])
+  .describe('video://catalog/presets lists each with what it takes');
+
+export const ExportOverrides = z
+  .object({
+    width: z.int().min(16).max(7680).optional(),
+    height: z.int().min(16).max(7680).optional(),
+    fps: z.number().positive().max(120).optional(),
+    bitrate: z
+      .string()
+      .regex(/^\d+(\.\d+)?[kM]$/)
+      .optional()
+      .describe('Video bitrate like 8M, instead of constant quality'),
+    crf: z.int().min(0).max(63).optional(),
+  })
+  .describe('Change the preset: a size box (aspect kept), frame rate, bitrate or quality');
 
 export const ExportVideoInput = z.object({
   timeline_id: TimelineId,
   preset: ExportPreset,
+  overrides: ExportOverrides.optional(),
   range: z.object({ start: frame, end: frame }).optional().describe('Frames, end exclusive'),
   filename: z
     .string()
@@ -804,6 +836,38 @@ export const ExportVideoInput = z.object({
     .describe('Output file name without extension. Default: timeline name and id'),
   overwrite: z.boolean().default(false),
   idempotency_key: z.string().min(1).max(200).optional(),
+});
+
+export const ExportTimelineInput = z.object({
+  timeline_id: TimelineId,
+  format: z
+    .enum(['fcpxml', 'otio', 'edl', 'srt', 'vtt'])
+    .describe(
+      'fcpxml: Final Cut Pro, Resolve; otio: Premiere, Resolve, any OTIO app; edl: CMX 3600; srt/vtt: captions',
+    ),
+  media: z
+    .enum(['reference', 'collect'])
+    .default('reference')
+    .describe('reference: point at the media where it is; collect: a .zip with the media in it'),
+  filename: z
+    .string()
+    .regex(/^[\w][\w .-]{0,120}$/)
+    .optional()
+    .describe('Output file name without extension. Default: timeline name and id'),
+  overwrite: z.boolean().default(false),
+  idempotency_key: z.string().min(1).max(200).optional(),
+});
+
+export const ExportTimelineResult = z.object({
+  url: z.string().describe('Signed download URL'),
+  expires_at: z.string(),
+  uri: z.string().describe('MCP resource for the output'),
+  file: z.string().optional().describe('Where it was written in the exports folder (local mode)'),
+  bytes: z.number(),
+  format: z.string(),
+  mime_type: z.string(),
+  media: z.number().describe('Media files referenced (or collected)'),
+  warnings: z.array(z.string()).describe('What the format could not carry'),
 });
 
 export const ExportResult = z.object({
@@ -816,6 +880,8 @@ export const ExportResult = z.object({
     .describe('Where the file was written in the exports folder (local mode)'),
   bytes: z.number(),
   frames: z.number(),
+  width: z.number().nullable().optional(),
+  height: z.number().nullable().optional(),
   preset: ExportPreset,
   mime_type: z.string(),
 });
