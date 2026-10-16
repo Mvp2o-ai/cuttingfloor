@@ -10,9 +10,6 @@
       "path": "../../packages/server"
     },
     {
-      "path": "../../packages/jobs"
-    },
-    {
       "path": "../../packages/credentials"
     }
   ]

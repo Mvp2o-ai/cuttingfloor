@@ -2,12 +2,14 @@
   "name": "@cuttingfloor/engine",
   "version": "0.0.0",
   "private": true,
-  "description": "Engine adapter: IPC to the native frame worker (MLT), FFmpeg job workers and the HyperFrames motion worker.",
+  "description": "Engines as subprocesses: FFmpeg (probe, conform, proxies, analysis) and MLT melt (frames, exports, QA renders).",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@cuttingfloor/schema": "workspace:*"
+    "@cuttingfloor/schema": "workspace:*",
+    "hash-wasm": "4.12.0",
+    "@cuttingfloor/core": "workspace:*"
   }
 }

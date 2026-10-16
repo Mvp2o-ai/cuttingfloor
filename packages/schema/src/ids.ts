@@ -1,15 +1,15 @@
 import * as z from 'zod/v4';
 
-/** Project-scoped handles. Every mutating tool takes `{ project_id, base_revision }`. */
-export const ProjectId = z.string().min(1).describe('Project handle');
-export const Revision = z.number().int().nonnegative().describe('Project revision number');
-export const MediaId = z.string().min(1).describe('Media handle');
-export const JobId = z.string().min(1).describe('Job handle; the same value is the MCP task id');
-
-/** The envelope every mutating tool's input extends. */
-export const MutationEnvelope = z.object({
-  project_id: ProjectId,
-  base_revision: Revision,
-  on_conflict: z.enum(['fail', 'rebase_if_disjoint']).default('fail'),
-});
-export type MutationEnvelope = z.infer<typeof MutationEnvelope>;
+/** Stateless handles. A timeline id is the hash of an immutable timeline document. */
+export const TimelineId = z
+  .string()
+  .regex(/^tl_[0-9a-f]{32}$/)
+  .describe('Timeline handle; every edit returns a new one');
+export const MediaId = z
+  .string()
+  .regex(/^m_[0-9a-z]{26}$/)
+  .describe('Media handle from media.import');
+export const JobId = z
+  .string()
+  .regex(/^j_[0-9a-z]{26}$/)
+  .describe('Job handle; the same value is the MCP task id');

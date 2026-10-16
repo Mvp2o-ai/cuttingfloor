@@ -2,14 +2,14 @@
   "name": "cuttingfloor",
   "version": "0.0.0",
   "private": true,
-  "description": "Local mode: `cuttingfloor mcp` (stdio front), `cuttingfloor daemon`, `cuttingfloor keys`.",
+  "description": "The cuttingfloor command: serve (HTTP) and mcp (stdio).",
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",
     "@cuttingfloor/server": "workspace:*",
-    "@cuttingfloor/jobs": "workspace:*",
     "@cuttingfloor/credentials": "workspace:*",
-    "@cuttingfloor/hosted": "workspace:*"
+    "@cuttingfloor/hosted": "workspace:*",
+    "@modelcontextprotocol/client": "2.3.1"
   },
   "scripts": {
     "start": "node src/main.ts"

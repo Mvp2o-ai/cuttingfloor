@@ -15,11 +15,17 @@ services:
         required: false
     environment:
       CUTTINGFLOOR_MODE: local
+      CUTTINGFLOOR_MEDIA_ROOTS: /media,/samples
+      CUTTINGFLOOR_EXPORTS: /exports
+      # Shown in export results so you know where the file landed on your machine.
+      CUTTINGFLOOR_EXPORTS_HOST_PATH: ${CUTTINGFLOOR_EXPORTS:-${HOME}/cuttingfloor/exports}
     volumes:
+      # Timelines, imported media, proxies, jobs and outputs (each with a time limit).
       - cuttingfloor-data:/data
-      # Footage the editor may read (read-only), and where projects and exports live.
+      # Footage the editor may read, read-only. Import with paths like /media/videos/clip.mp4.
       - ${CUTTINGFLOOR_MEDIA:-${HOME}/Movies}:/media/videos:ro
-      - ${CUTTINGFLOOR_PROJECTS:-${HOME}/cuttingfloor}:/projects
+      # Where finished exports are written.
+      - ${CUTTINGFLOOR_EXPORTS:-${HOME}/cuttingfloor/exports}:/exports
 
 volumes:
   cuttingfloor-data:

@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@cuttingfloor/schema": "workspace:*"
+    "@cuttingfloor/schema": "workspace:*",
+    "@cuttingfloor/core": "workspace:*"
   }
 }

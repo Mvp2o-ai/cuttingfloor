@@ -2,7 +2,7 @@
   "name": "@cuttingfloor/server",
   "version": "0.0.0",
   "private": true,
-  "description": "The MCP server: registers tools and resources on McpServer; transport-agnostic.",
+  "description": "The MCP server: tools, resources and the Tasks adapter over a shared runtime; transport-agnostic.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -15,7 +15,9 @@
     "@cuttingfloor/core": "workspace:*",
     "@cuttingfloor/jobs": "workspace:*",
     "@cuttingfloor/credentials": "workspace:*",
-    "@cuttingfloor/providers": "workspace:*",
     "@cuttingfloor/engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.3.1"
   }
 }

@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@cuttingfloor/schema": "workspace:*"
+    "@cuttingfloor/schema": "workspace:*",
+    "hash-wasm": "4.12.0"
   }
 }

@@ -1,39 +1,51 @@
 #!/usr/bin/env node
-import { EnvCredentialStore } from '@cuttingfloor/credentials';
-import { MemoryJobStore } from '@cuttingfloor/jobs';
-import { createServer } from '@cuttingfloor/server';
+import { LocalCredentialStore } from '@cuttingfloor/credentials';
+import { configFromEnv, createServer, Runtime, SERVER_VERSION } from '@cuttingfloor/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
+import { bridgeStdioToHttp } from './bridge.ts';
 
-const USAGE = `cuttingfloor <command>
+const USAGE = `cuttingfloor ${SERVER_VERSION}
 
-  serve               Run the MCP server over Streamable HTTP (the container's default)
-  mcp                 Run the MCP server over stdio
-  daemon start|stop|status|logs
-                      The per-user daemon that owns jobs and workers (not built yet)
-  keys set|list|test|remove <provider>
-                      Manage provider keys in the OS keychain (not built yet)
+  serve      Run the MCP server over Streamable HTTP (the container's default)
+  mcp        MCP over stdio. Inside the running container (docker exec -i cuttingfloor
+             cuttingfloor mcp) it forwards to the serving process, so long jobs outlive
+             the client; with no server running it serves in-process.
+  version    Print the version
 `;
 
 const [command] = process.argv.slice(2);
 
 switch (command) {
-  case 'mcp': {
-    // Interim: in-process stores. The real front forwards to the daemon over a 0600 socket
-    // (plans/spec.md §3), so jobs outlive the client.
-    const jobs = new MemoryJobStore();
-    const credentials = new EnvCredentialStore();
-    serveStdio(() => createServer({ jobs, credentials, owner: () => 'local' }));
-    break;
-  }
   case 'serve':
     await import('@cuttingfloor/hosted');
     break;
-  case 'daemon':
-  case 'keys':
-    process.stderr.write(`cuttingfloor ${command}: not built yet\n`);
-    process.exit(1);
+  case 'mcp': {
+    const port = Number(process.env.PORT ?? 8787);
+    const url = `http://127.0.0.1:${port}`;
+    if (await reachable(`${url}/healthz`)) {
+      await bridgeStdioToHttp(`${url}/mcp`);
+      break;
+    }
+    const runtime = new Runtime(configFromEnv());
+    await runtime.start({ sweep: false });
+    const credentials = new LocalCredentialStore();
+    serveStdio(() => createServer({ runtime, credentials, owner: () => 'local' }));
+    break;
+  }
+  case 'version':
+  case '--version':
+    process.stdout.write(`${SERVER_VERSION}\n`);
     break;
   default:
     process.stderr.write(USAGE);
-    process.exit(command ? 1 : 0);
+    process.exit(command && command !== 'help' && command !== '--help' ? 1 : 0);
+}
+
+async function reachable(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(1000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
