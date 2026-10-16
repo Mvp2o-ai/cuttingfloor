@@ -1,12 +1,23 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { mediaInfo, renderMatte } from '@cuttingfloor/engine';
+import {
+  cutout,
+  KOKORO,
+  type MediaRecord,
+  mediaInfo,
+  renderMatte,
+  renderPicture,
+  speak,
+  voiceWords,
+} from '@cuttingfloor/engine';
 import {
   CfError,
+  CreateCutoutInput,
   CreateMatteInput,
   CreateMotionInput,
   CreateStillInput,
+  CreateVoiceoverInput,
   MOTION_LIMITS,
   MotionRequest,
 } from '@cuttingfloor/schema';
@@ -43,6 +54,12 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       progress: (f: number, m: string) => void,
       signal: AbortSignal,
     ) => Promise<string>,
+    /** After import: anything else kept with the media (e.g. a voiceover's word timings). */
+    finish?: (
+      record: MediaRecord,
+      progress: (f: number, m: string) => void,
+      signal: AbortSignal,
+    ) => Promise<MediaRecord>,
   ) {
     const owner = deps.owner();
     const store = rt.jobs.store;
@@ -82,12 +99,15 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
     });
     rt.jobs.start(job, async ({ signal, progress }) => {
       const say = (f: number, m: string) => progress(f, `${record.media_id}: ${m}`);
+      const share = finish ? 0.6 : 0.85;
       record.file = await make(
         rt.media.dir(owner, record.media_id),
-        (f, m) => say(0.85 * f, m),
+        (f, m) => say(share * f, m),
         signal,
       );
-      const done = await rt.media.ingest(owner, record, (f, m) => say(0.85 + 0.15 * f, m), signal);
+      let done = await rt.media.ingest(owner, record, (f, m) => say(share + 0.1 * f, m), signal);
+      if (finish)
+        done = await finish(done, (f, m) => say(share + 0.1 + (0.9 - share) * f, m), signal);
       await rt.media.rememberRecipe(owner, hash, done.media_id);
       return ok(mediaInfo(done)) as never;
     });
@@ -248,6 +268,109 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         await renderMatte(dest, spec, signal);
         return dest;
       });
+    }),
+  );
+
+  server.registerTool(
+    'create.voiceover',
+    {
+      title: 'Create a voiceover',
+      description:
+        'English text spoken by a natural voice (Kokoro, local; the model downloads once) as WAV media. words (default) times each word into the media transcript for caption.add {from_transcript}. Long-running: a task, or {job_id, media_id} for job.get.',
+      inputSchema: CreateVoiceoverInput,
+      annotations: annotations('Create a voiceover'),
+    },
+    guard(async (args, ctx) => {
+      const recipe = {
+        model: KOKORO.name,
+        text: args.text,
+        voice: args.voice,
+        speed: args.speed,
+        words: args.words,
+      };
+      return create(
+        ctx,
+        'create.voiceover',
+        args,
+        recipe,
+        async (dir, progress, signal) => {
+          const dest = join(dir, 'source.wav');
+          await speak(args.text, dest, {
+            voice: args.voice,
+            speed: args.speed,
+            modelsDir: rt.modelsDir,
+            signal,
+            onProgress: progress,
+          });
+          return dest;
+        },
+        args.words
+          ? async (record, progress, signal) => {
+              const transcript = await voiceWords(record.file as string, args.text, {
+                modelsDir: rt.modelsDir,
+                signal,
+                onProgress: (f, m) => progress(f, `timing words: ${m}`),
+              });
+              const latest = await rt.media.get(deps.owner(), record.media_id);
+              latest.analyses = { ...latest.analyses, transcript };
+              await rt.media.save(deps.owner(), latest);
+              return latest;
+            }
+          : undefined,
+      );
+    }),
+  );
+
+  server.registerTool(
+    'create.cutout',
+    {
+      title: 'Cut out people',
+      description:
+        'People without their background (MODNet, local): ProRes 4444 with alpha and the sound, or a PNG, to lay over a new background. For people only. Long-running: a task, or {job_id, media_id} for job.get.',
+      inputSchema: CreateCutoutInput,
+      annotations: annotations('Cut out people'),
+    },
+    guard(async (args, ctx) => {
+      const owner = deps.owner();
+      const source = await rt.media.get(owner, args.media_id);
+      const p = source.probe;
+      if (source.status !== 'ready' || !p) {
+        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`);
+      }
+      if (!p.video || (p.kind !== 'video' && p.kind !== 'image')) {
+        throw new CfError('bad_request', `Media ${args.media_id} has no picture to cut out`);
+      }
+      const picture = renderPicture(source, 'export');
+      const image = p.kind === 'image';
+      const recipe = {
+        model: 'modnet-fa2fa546',
+        source: source.fingerprint ?? source.media_id,
+        smooth: image ? 0 : args.smooth,
+      };
+      return create(
+        ctx,
+        'create.cutout',
+        { ...args, name: args.name ?? `${source.name} cutout` },
+        recipe,
+        async (dir, progress, signal) => {
+          const dest = join(dir, image ? 'source.png' : 'source.mov');
+          progress(0, 'matting');
+          await cutout(
+            {
+              file: picture.path,
+              width: picture.width ?? p.video?.width ?? 0,
+              height: picture.height ?? p.video?.height ?? 0,
+              image,
+              ...(p.video?.fps ? { fps: p.video.fps } : {}),
+              audio: Boolean(p.audio),
+              duration: p.duration,
+            },
+            dest,
+            { smooth: args.smooth, signal, onProgress: (f) => progress(f, 'matting') },
+          );
+          return dest;
+        },
+      );
     }),
   );
 }

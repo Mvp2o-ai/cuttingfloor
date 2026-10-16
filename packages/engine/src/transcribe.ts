@@ -45,7 +45,7 @@ export interface Transcript {
   words: TranscriptWord[];
 }
 
-async function sha256(file: string): Promise<string> {
+export async function sha256File(file: string): Promise<string> {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);
   return hash.digest('hex');
@@ -78,7 +78,7 @@ export function ensureModel(
       ...(options.signal ? { signal: options.signal } : {}),
       onProgress: (bytes) => options.onProgress?.(Math.min(1, bytes / spec.bytes)),
     });
-    const digest = await sha256(part);
+    const digest = await sha256File(part);
     if (digest !== spec.sha256) {
       await rm(part, { force: true });
       throw new CfError('engine_error', `The ${name} transcription model failed its checksum`, {
