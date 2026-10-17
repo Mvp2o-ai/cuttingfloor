@@ -13,6 +13,7 @@ import type { JobContext } from '@cuttingfloor/jobs';
 import {
   CfError,
   ExportVideoInput,
+  JobGetInput,
   JobListInput,
   JobListResult,
   JobRef,
@@ -228,17 +229,24 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get job',
       description:
-        'Status, progress and, once completed, the result of a long-running call (media.import, export.video, qa.check). Same record as tasks/get.',
-      inputSchema: JobRef,
+        'Status, progress and, once completed, the result of a long-running call (media.import, create.*, export.video, qa.check). Same record as tasks/get. wait_seconds holds the call until the job finishes or the time is up, so one call usually covers a short job.',
+      inputSchema: JobGetInput,
       outputSchema: JobView,
       annotations: { ...readOnly, title: 'Get job' },
     },
     guard(async (args) => {
-      const job = await rt.jobs.store.get(args.job_id, deps.owner());
+      const owner = deps.owner();
+      const deadline = Date.now() + args.wait_seconds * 1000;
+      let job = await rt.jobs.store.get(args.job_id, owner);
       if (!job)
         throw new CfError('not_found', `No job ${args.job_id}`, {
           hint: 'Finished jobs are kept 7 days',
         });
+      // Reads the stored record, so it waits the same whichever node runs the job.
+      while (job.status === 'working' && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, Math.min(250, deadline - Date.now())));
+        job = (await rt.jobs.store.get(args.job_id, owner)) ?? job;
+      }
       return ok(jobView(job));
     }),
   );

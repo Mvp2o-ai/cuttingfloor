@@ -20,6 +20,31 @@ describe('protocol surface', () => {
     expect(client.getInstructions()).toMatch(/timeline_id/);
   });
 
+  it('advertises open output schemas, so added result fields never break cached clients', async () => {
+    const client = await connect(env.runtime);
+    const { tools } = await client.listTools();
+    const withOutput = tools.filter((t) => t.outputSchema);
+    expect(withOutput.length).toBeGreaterThan(5);
+    for (const t of withOutput) {
+      expect(JSON.stringify(t.outputSchema), t.name).not.toContain('"additionalProperties":false');
+    }
+  });
+
+  it('waits on a job with wait_seconds instead of polling', async () => {
+    const client = await connect(env.runtime, 'waiter');
+    const job = await env.runtime.jobs.store.create({ owner: 'waiter', tool: 'export.video' });
+    setTimeout(() => {
+      void env.runtime.jobs.store.update(job, { status: 'completed', progress: 1 });
+    }, 300);
+    const started = Date.now();
+    const got = await ok<{ status: string }>(client, 'job.get', {
+      job_id: job.id,
+      wait_seconds: 5,
+    });
+    expect(got.status).toBe('completed');
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
   it('lists the tools, each annotated', async () => {
     const client = await connect(env.runtime);
     const { tools } = await client.listTools();
@@ -132,10 +157,15 @@ describe('protocol surface', () => {
 describe('timelines', () => {
   it('creates, edits immutably, and keeps history', async () => {
     const client = await connect(env.runtime);
-    const { timeline_id: t0 } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
-      name: 'Cut',
-      sequence: SEQ_720P25,
-    });
+    const { timeline_id: t0, tracks } = await ok<{
+      timeline_id: string;
+      tracks: Array<{ id: string; kind: string; name: string }>;
+    }>(client, 'timeline.create', { name: 'Cut', sequence: SEQ_720P25 });
+    // The track ids come back, so the first clip.add needs no timeline.get or guess.
+    expect(tracks).toEqual([
+      { id: 't1', kind: 'video', name: 'V1' },
+      { id: 't2', kind: 'audio', name: 'A1' },
+    ]);
     const added = await ok<{
       timeline_id: string;
       track_id: string;

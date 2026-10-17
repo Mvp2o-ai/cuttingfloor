@@ -8,7 +8,7 @@ export const TimelineId = z
 export const MediaId = z
   .string()
   .regex(/^m_[0-9a-z]{26}$/)
-  .describe('Media handle from media.import');
+  .describe('Media handle from media.import or a create.* tool');
 export const JobId = z
   .string()
   .regex(/^j_[0-9a-z]{26}$/)

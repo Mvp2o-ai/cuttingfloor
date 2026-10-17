@@ -19,8 +19,11 @@ export interface ServerDeps {
   owner: () => string;
 }
 
-const INSTRUCTIONS = `cuttingfloor is a headless video editor. Typical flow (to try it, import /samples/sample.mp4 and /samples/card.png where available):
-1. media.import each file (long-running: a task, or poll job.get). Use the media_id once status is processing or ready.
+const INSTRUCTIONS = `cuttingfloor is a headless video editor. It makes video two ways, often both at once:
+- Make new: create.motion (animated HTML), create.still, create.matte and create.voiceover build media from nothing. An image, mockup or page the user shows you is a reference for you to look at and rebuild in HTML, not a file to import.
+- Edit what the user has: media.import their footage, music or logo (a path under the media roots or a URL; to try it, /samples/sample.mp4 and /samples/card.png where available).
+Typical flow:
+1. Get media: create.* for new material, media.import for the user's own files (both long-running: a task, or job.get {job_id, wait_seconds: 50}). Use the media_id once status is processing or ready.
 2. timeline.create with a sequence ({width, height, fps:{num,den}}), then edit: clip.add, clip.trim, clip.split, clip.move, clip.remove, track.* — or edit.batch for many edits at once.
 3. Every edit returns a NEW timeline_id; keep using the latest one. Older ids stay valid, so going back is just using an older id. An edit result is {timeline_id, parent, changed: [{id, type, change}], clip_id?, clip_ids?, track_id?, preview: {uri, frames, status} | null, warnings}.
    Timing: clip.set_speed (rate, ramp curve, reverse), clip.freeze, clip.roll / slip / slide, clip.replace, range.lift / range.extract (cut a span out of every track at once). Nest a timeline as one clip with clip.add {nested_timeline_id}.
@@ -42,6 +45,7 @@ export function createServer(deps: ServerDeps): McpServer {
     { name: SERVER_NAME, version: SERVER_VERSION },
     { instructions: INSTRUCTIONS },
   );
+  openOutputSchemas(server);
   registerTasks(server, deps);
   registerResources(server, deps);
   registerCatalogs(server);
@@ -52,4 +56,54 @@ export function createServer(deps: ServerDeps): McpServer {
   registerRenderTools(server, deps);
   registerInterchangeTools(server, deps);
   return server;
+}
+
+/**
+ * Advertises output schemas without `additionalProperties: false`. Clients cache a tool's output
+ * schema when they connect and validate results against it, so with closed schemas a field added
+ * in a later release fails every result until the client reconnects. Results are still checked
+ * against the full zod schema here.
+ */
+function openOutputSchemas(server: McpServer): void {
+  const register = server.registerTool.bind(server);
+  server.registerTool = ((name: string, config: { outputSchema?: unknown }, handler: unknown) =>
+    register(
+      name,
+      (config.outputSchema
+        ? { ...config, outputSchema: openSchema(config.outputSchema as StandardJson) }
+        : config) as never,
+      handler as never,
+    )) as typeof server.registerTool;
+}
+
+interface StandardJson {
+  '~standard': {
+    jsonSchema: {
+      input: (o: unknown) => Record<string, unknown>;
+      output: (o: unknown) => Record<string, unknown>;
+    };
+  };
+}
+
+function openSchema<S extends StandardJson>(schema: S): S {
+  const std = schema['~standard'];
+  const jsonSchema = {
+    ...std.jsonSchema,
+    output: (options: unknown) => withoutClosedObjects(std.jsonSchema.output(options)),
+  };
+  return new Proxy(schema, {
+    get: (target, key, receiver) =>
+      key === '~standard' ? { ...std, jsonSchema } : Reflect.get(target, key, receiver),
+  });
+}
+
+function withoutClosedObjects(node: unknown): never {
+  if (Array.isArray(node)) return node.map(withoutClosedObjects) as never;
+  if (!node || typeof node !== 'object') return node as never;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(node)) {
+    if (k === 'additionalProperties' && v === false) continue;
+    out[k] = withoutClosedObjects(v);
+  }
+  return out as never;
 }

@@ -75,7 +75,7 @@ export function jobReply(job: Job, ctx: unknown): CallToolResult {
     status: job.status,
     status_uri: `video://jobs/${job.id}`,
     ...(job.meta?.media_id ? { media_id: job.meta.media_id } : {}),
-    hint: 'Long-running: call job.get with this job_id until status is completed',
+    hint: 'Long-running: call job.get {job_id, wait_seconds: 50} until status is completed',
   });
 }
 

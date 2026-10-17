@@ -91,7 +91,7 @@ export class MediaLibrary {
       real = await realpath(path);
     } catch {
       throw new CfError('not_found', `No file at ${path}`, {
-        hint: `Media roots: ${this.config.roots.join(', ')}. In local mode, host folders are mounted under /media`,
+        hint: `The server sees only ${this.config.roots.join(', ')}. To recreate a reference, no import is needed: rebuild it with create.motion or create.still. For the user's own footage, use a path there or an http(s) URL`,
       });
     }
     for (const root of this.config.roots) {
