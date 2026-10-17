@@ -5,7 +5,8 @@
 #   ./up.sh                                (again later to deploy again)
 # CUTTINGFLOOR_BUILD=1 builds the image on the server from this checkout's HEAD instead of
 # pulling it. CUTTINGFLOOR_ZONE (a Hetzner DNS zone, e.g. example.com) points the domain at the
-# server; otherwise add the A record yourself.
+# server; otherwise add the A record yourself. CUTTINGFLOOR_DNS_TOKEN is the token for the project
+# that holds the zone, when that isn't the server's project.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -27,10 +28,11 @@ SSH=(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "root@$IP")
 
 if [ -n "${CUTTINGFLOOR_ZONE:-}" ]; then
   RECORD=${DOMAIN%."$CUTTINGFLOOR_ZONE"}
-  if hcloud zone rrset describe "$CUTTINGFLOOR_ZONE" "$RECORD" A >/dev/null 2>&1; then
-    hcloud zone rrset set-records "$CUTTINGFLOOR_ZONE" "$RECORD" A --record "$IP"
+  dns() { if [ -n "${CUTTINGFLOOR_DNS_TOKEN:-}" ]; then HCLOUD_TOKEN=$CUTTINGFLOOR_DNS_TOKEN hcloud "$@"; else hcloud "$@"; fi; }
+  if dns zone rrset describe "$CUTTINGFLOOR_ZONE" "$RECORD" A >/dev/null 2>&1; then
+    dns zone rrset set-records "$CUTTINGFLOOR_ZONE" "$RECORD" A --record "$IP"
   else
-    hcloud zone rrset create "$CUTTINGFLOOR_ZONE" --name "$RECORD" --type A --record "$IP" --ttl 300
+    dns zone rrset create "$CUTTINGFLOOR_ZONE" --name "$RECORD" --type A --record "$IP" --ttl 300
   fi
 fi
 
