@@ -313,10 +313,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
                 signal,
                 onProgress: (f, m) => progress(f, `timing words: ${m}`),
               });
-              const latest = await rt.media.get(deps.owner(), record.media_id);
-              latest.analyses = { ...latest.analyses, transcript };
-              await rt.media.save(deps.owner(), latest);
-              return latest;
+              return rt.media.saveAnalysis(deps.owner(), record.media_id, 'transcript', transcript);
             }
           : undefined,
       );

@@ -40,6 +40,11 @@ export interface MediaRecord {
   updated_at: string;
 }
 
+type LookRun = NonNullable<MediaInfo['look']>['runs'][number];
+
+/** Look runs kept with each media. */
+export const LOOK_RUNS_KEPT = 10;
+
 export interface MediaConfig {
   /** Folders path imports may read from (realpath-checked). Empty disables path imports. */
   roots: string[];
@@ -78,12 +83,77 @@ export class MediaLibrary {
   }
 
   async find(owner: string, id: string): Promise<MediaRecord | undefined> {
-    return this.#ws.readJson<MediaRecord>(join(this.dir(owner, id), 'media.json'), { touch: true });
+    const record = await this.#ws.readJson<MediaRecord>(join(this.dir(owner, id), 'media.json'), {
+      touch: true,
+    });
+    if (!record) return undefined;
+    // Each analysis is its own file, so analyses running on different servers never overwrite
+    // each other. A record from before that kept them inline: move them out once.
+    const dir = join(this.dir(owner, id), 'analyses');
+    if (record.analyses) {
+      const { look, ...rest } = record.analyses;
+      for (const [kind, value] of Object.entries(rest)) {
+        await this.#ws.writeJson(join(dir, `${kind}.json`), value, { exclusive: true });
+      }
+      for (const [i, run] of (look?.runs ?? []).entries()) {
+        await this.#ws.writeJson(
+          join(dir, `look-${String(i).padStart(14, '0')}-${run.id}.json`),
+          run,
+          {
+            exclusive: true,
+          },
+        );
+      }
+      delete record.analyses;
+      await this.save(owner, record);
+    }
+    const names = (await this.#ws.list(dir)).filter((n) => n.endsWith('.json')).sort();
+    const analyses: NonNullable<MediaRecord['analyses']> = {};
+    const runs: LookRun[] = [];
+    for (const name of names) {
+      const value = await this.#ws.readJson<never>(join(dir, name));
+      if (!value) continue;
+      if (name.startsWith('look-')) runs.push(value);
+      else analyses[name.slice(0, -5) as 'transcript' | 'beats' | 'faces'] = value;
+    }
+    if (runs.length) analyses.look = { runs: runs.slice(-LOOK_RUNS_KEPT) };
+    if (Object.keys(analyses).length) record.analyses = analyses;
+    return record;
   }
 
+  /** The record itself; analyses are written apart, with saveAnalysis. */
   async save(owner: string, record: MediaRecord): Promise<void> {
     record.updated_at = new Date().toISOString();
-    await this.#ws.writeJson(join(this.dir(owner, record.media_id), 'media.json'), record);
+    const { analyses: _kept, ...rest } = record;
+    await this.#ws.writeJson(join(this.dir(owner, record.media_id), 'media.json'), rest);
+  }
+
+  /**
+   * Stores one analysis beside the record. transcript, beats and faces replace the last of their
+   * kind; each look run is a new file, named so they sort by time, and only the newest are kept.
+   */
+  async saveAnalysis(
+    owner: string,
+    id: string,
+    kind: 'transcript' | 'beats' | 'faces' | 'look',
+    value: unknown,
+  ): Promise<MediaRecord> {
+    const dir = join(this.dir(owner, id), 'analyses');
+    if (kind === 'look') {
+      const run = value as LookRun;
+      await this.#ws.writeJson(
+        join(dir, `look-${Date.now().toString().padStart(14, '0')}-${run.id}.json`),
+        run,
+        {
+          exclusive: true,
+        },
+      );
+      const looks = (await this.#ws.list(dir)).filter((n) => n.startsWith('look-')).sort();
+      for (const old of looks.slice(0, -LOOK_RUNS_KEPT)) await this.#ws.remove(join(dir, old));
+    } else {
+      await this.#ws.writeJson(join(dir, `${kind}.json`), value);
+    }
+    return this.get(owner, id);
   }
 
   /** Checks a path import against the media roots and returns its real path. */

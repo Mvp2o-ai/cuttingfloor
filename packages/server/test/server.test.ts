@@ -286,6 +286,55 @@ describe('timelines', () => {
 });
 
 describe('media and jobs without engines', () => {
+  it('moves analyses a record kept inline into their own files, keeping every one', async () => {
+    const { readFile, readdir } = await import('node:fs/promises');
+    const client = await connect(env.runtime, 'legacy');
+    const id = 'm_aaaaaaaaaaaaaaaaaaaaaaaaab';
+    const dir = env.runtime.media.dir('legacy', id);
+    const now = new Date().toISOString();
+    const run = { id: 'j_a', model: 'jev-1.14.0', questions: {}, with_previous: false, frames: [] };
+    await env.runtime.ws.writeJson(`${dir}/media.json`, {
+      media_id: id,
+      name: 'old.mp4',
+      status: 'ready',
+      source: { path: '/media/old.mp4' },
+      file: null,
+      size: null,
+      fingerprint: null,
+      probe: null,
+      conform: [],
+      mezzanine: null,
+      proxy: null,
+      analysis: null,
+      analyses: {
+        beats: { bpm: 120, beats: [0.5], downbeats: [0.5] },
+        look: { runs: [run] },
+      },
+      created_at: now,
+      updated_at: now,
+    });
+    const got = await ok<Record<string, unknown>>(client, 'media.get', {
+      media_id: id,
+      include: ['beats', 'look'],
+    });
+    expect(got).toMatchObject({ beats: { bpm: 120 }, look: { runs: [{ id: 'j_a' }] } });
+    expect(JSON.parse(await readFile(`${dir}/media.json`, 'utf8'))).not.toHaveProperty('analyses');
+    expect((await readdir(`${dir}/analyses`)).sort()).toEqual([
+      'beats.json',
+      `look-${'0'.repeat(14)}-j_a.json`,
+    ]);
+
+    // Two runs stored at the same moment (two servers) both stay; only the newest 10 are kept.
+    await Promise.all(
+      Array.from({ length: 11 }, (_, i) =>
+        env.runtime.media.saveAnalysis('legacy', id, 'look', { ...run, id: `j_${i}` }),
+      ),
+    );
+    const after = await env.runtime.media.get('legacy', id);
+    expect(after.analyses?.look?.runs).toHaveLength(10);
+    expect(after.analyses?.beats?.bpm).toBe(120);
+  });
+
   it('asks for a TypeSafe key and questions before a look starts a job', async () => {
     const bare = await connect(env.runtime, 'looker');
     const look = { media_id: 'm_aaaaaaaaaaaaaaaaaaaaaaaaaa', kind: 'look' };

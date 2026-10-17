@@ -3346,6 +3346,38 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
       });
       expect(stored.look.runs).toHaveLength(1);
 
+      // Two runs at once both stay with the media.
+      const ask = { media_id: media.media_id, kind: 'look', at_seconds: [0.5] };
+      const twice = await Promise.all(
+        [0, 1].map(() =>
+          ok<{ job_id: string }>(c, 'media.analyze', {
+            ...ask,
+            questions: { bars: { type: 'noul', instructions: 'Does `frame` show colour bars?' } },
+          }),
+        ),
+      );
+      for (const j of twice) await waitJob(j.job_id);
+      const both = await ok<{ look: { runs: Array<{ id: string }> } }>(c, 'media.get', {
+        media_id: media.media_id,
+        include: ['look'],
+      });
+      expect(both.look.runs.map((r) => r.id)).toEqual(
+        expect.arrayContaining(twice.map((j) => j.job_id)),
+      );
+
+      // A daily cap (hosted) refuses the call that would pass it, before any job; 4 used today.
+      (env.runtime.config as { lookFramesPerDay?: number }).lookFramesPerDay = 5;
+      const capped = await call(c, 'media.analyze', {
+        ...ask,
+        at_seconds: [0.5, 1.5],
+        questions: { bars: { type: 'noul', instructions: 'Does `frame` show colour bars?' } },
+      });
+      expect(capped.structured).toMatchObject({
+        code: 'quota_exceeded',
+        detail: { limit: 5, used: 4 },
+      });
+      delete (env.runtime.config as { lookFramesPerDay?: number }).lookFramesPerDay;
+
       // A key TypeSafe refuses ends the job with credential_invalid; no key appears anywhere.
       const bad = await keyed('ts-wrong-key');
       const refused = await ok<{ job_id: string }>(bad, 'media.analyze', {

@@ -22,6 +22,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { askJev, JEV_MODEL, JEV_URL } from '../jev.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
+import { addUsage, checkQuota } from '../usage.ts';
 
 /** Analysis data longer than this stays with the media instead of filling the result. */
 const INLINE_CHARS = 20_000;
@@ -35,10 +36,9 @@ function inline(mediaId: string, kind: string, data: unknown): Record<string, un
   };
 }
 
-/** look: frames a call may ask about, questions per frame, and runs kept with the media. */
+/** look: frames a call may ask about, and questions per frame. */
 const LOOK_MAX_FRAMES = 600;
 const LOOK_MAX_QUESTIONS = 32;
-const LOOK_KEEP_RUNS = 10;
 
 type LookFrame = { time: number; answers: Record<string, LookAnswer> };
 
@@ -309,6 +309,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
             },
           );
         }
+        await checkQuota(rt.ws, owner, 'look', asked, rt.config.lookFramesPerDay);
       }
       if (args.kind === 'track' && !args.region) {
         throw new CfError('bad_request', 'track needs a region: {at_seconds, x, y, w, h}');
@@ -328,13 +329,8 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
             ? { width: v.height, height: v.width }
             : { width: v.width, height: v.height }
           : { width: 0, height: 0 };
-        // Store a result with the media, re-reading it first so concurrent analyses keep each other's.
-        const keep = async (patch: NonNullable<typeof record.analyses>) => {
-          const latest = await rt.media.get(owner, args.media_id);
-          latest.analyses = { ...latest.analyses, ...patch };
-          await rt.media.save(owner, latest);
-          return latest;
-        };
+        const keep = (kind: 'transcript' | 'beats' | 'faces', value: unknown) =>
+          rt.media.saveAnalysis(owner, args.media_id, kind, value);
         switch (args.kind) {
           case 'transcript': {
             const transcript = await transcribe(file, {
@@ -344,7 +340,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               signal,
               onProgress: (f, m) => progress(f, `transcript: ${m}`),
             });
-            const latest = await keep({ transcript });
+            const latest = await keep('transcript', transcript);
             return ok({
               media_id: args.media_id,
               kind: args.kind,
@@ -355,7 +351,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           case 'beats': {
             progress(0.1, 'beats: listening');
             const beats = await analyseBeats(file, signal);
-            const latest = await keep({ beats });
+            const latest = await keep('beats', beats);
             return ok({
               media_id: args.media_id,
               kind: args.kind,
@@ -366,7 +362,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           case 'faces': {
             progress(0.1, 'faces: looking');
             const faces = await detectFaces(file, size, { signal });
-            const latest = await keep({ faces });
+            const latest = await keep('faces', faces);
             return ok({
               media_id: args.media_id,
               kind: args.kind,
@@ -429,10 +425,8 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               with_previous: args.with_previous,
               frames,
             };
-            const latest = await rt.media.get(owner, args.media_id);
-            const runs = [...(latest.analyses?.look?.runs ?? []), run].slice(-LOOK_KEEP_RUNS);
-            latest.analyses = { ...latest.analyses, look: { runs } };
-            await rt.media.save(owner, latest);
+            await rt.media.saveAnalysis(owner, args.media_id, 'look', run);
+            await addUsage(rt.ws, owner, 'look', job.id, frames.length);
             return ok({
               media_id: args.media_id,
               kind: args.kind,
