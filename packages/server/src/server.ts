@@ -2,6 +2,7 @@ import type { CredentialStore } from '@cuttingfloor/credentials';
 import { McpServer } from '@modelcontextprotocol/server';
 import { registerCatalogs } from './catalog.ts';
 import { registerResources } from './resources.ts';
+import { toErrorResult } from './result.ts';
 import type { Runtime } from './runtime.ts';
 import { registerTasks } from './tasks.ts';
 import { registerCodeTools } from './tools/code.ts';
@@ -17,6 +18,11 @@ export interface ServerDeps {
   credentials: CredentialStore;
   /** Identity that owns timelines, media and jobs: `local` in local mode, the token's `sub` hosted. */
   owner: () => string;
+  /**
+   * Hosted: whether the owner may work right now (trial, plan). Throws a CfError, which every
+   * tool call returns instead of running. Absent locally.
+   */
+  access?: () => Promise<void>;
 }
 
 const INSTRUCTIONS = `cuttingfloor is a headless video editor. It makes video two ways, often both at once:
@@ -47,6 +53,7 @@ export function createServer(deps: ServerDeps): McpServer {
     { instructions: INSTRUCTIONS },
   );
   openOutputSchemas(server);
+  if (deps.access) gateTools(server, deps.access);
   registerTasks(server, deps);
   registerResources(server, deps);
   registerCatalogs(server);
@@ -57,6 +64,24 @@ export function createServer(deps: ServerDeps): McpServer {
   registerRenderTools(server, deps);
   registerInterchangeTools(server, deps);
   return server;
+}
+
+/** Runs the access check before every tool; a refusal is the tool's result. */
+function gateTools(server: McpServer, access: () => Promise<void>): void {
+  const register = server.registerTool.bind(server);
+  server.registerTool = ((name: string, config: unknown, handler: (...a: unknown[]) => unknown) =>
+    register(
+      name,
+      config as never,
+      (async (...args: unknown[]) => {
+        try {
+          await access();
+        } catch (error) {
+          return toErrorResult(error);
+        }
+        return handler(...args);
+      }) as never,
+    )) as typeof server.registerTool;
 }
 
 /**

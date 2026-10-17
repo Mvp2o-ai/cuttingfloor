@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { configFromEnv, Runtime } from '@cuttingfloor/server';
+import { AccessCheck } from './access.ts';
 import { createHttpServer, parseApiKeys } from './http.ts';
 import { discoverAuthorizationServer, JwtTokenVerifier } from './oauth.ts';
 
@@ -55,6 +56,21 @@ if (oauth && issuer)
     );
   }, 300_000).unref();
 
+// Trial and plan checks for signed-in users: WorkOS holds the account, Stripe the subscription.
+const access =
+  oauth && process.env.WORKOS_API_KEY && process.env.STRIPE_SECRET_KEY
+    ? new AccessCheck({
+        workosKey: process.env.WORKOS_API_KEY,
+        stripeKey: process.env.STRIPE_SECRET_KEY,
+        accountUrl:
+          process.env.CUTTINGFLOOR_ACCOUNT_URL ?? 'https://cuttingfloor-site.vercel.app/account',
+      })
+    : undefined;
+if (oauth && !access)
+  process.stderr.write(
+    'access: WORKOS_API_KEY or STRIPE_SECRET_KEY unset; every sign-in may work\n',
+  );
+
 const runtime = new Runtime(config);
 await runtime.start();
 // Hosted, the server's own TypeSafe key answers media.analyze look for every account; no other
@@ -68,6 +84,7 @@ const server = createHttpServer({
   credentials,
   ...(config.mode === 'hosted' ? { apiKeys } : {}),
   ...(oauth ? { oauth } : {}),
+  ...(access ? { access: (owner: string) => access.require(owner) } : {}),
 });
 if (oauth) process.stderr.write(`oauth: sign-in at ${issuer} for ${oauth.resource}\n`);
 

@@ -41,11 +41,13 @@ export async function connect(
   runtime: Runtime,
   owner = 'local',
   env: NodeJS.ProcessEnv = {},
+  access?: () => Promise<void>,
 ): Promise<Client> {
   const server = createServer({
     runtime,
     credentials: new LocalCredentialStore(env, false),
     owner: () => owner,
+    ...(access ? { access } : {}),
   });
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);

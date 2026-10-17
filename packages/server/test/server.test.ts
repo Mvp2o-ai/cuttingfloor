@@ -1,4 +1,4 @@
-import { BatchResult, EditResult } from '@cuttingfloor/schema';
+import { BatchResult, CfError, EditResult } from '@cuttingfloor/schema';
 import { TASKS_EXTENSION_ID_V2 } from '@modelcontextprotocol/ext-tasks/core/v2';
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as z from 'zod/v4';
@@ -436,5 +436,27 @@ describe('media and jobs without engines', () => {
       job_id: job.id,
     });
     expect(view).toMatchObject({ status: 'failed', error: { code: 'interrupted' } });
+  });
+});
+
+describe('access', () => {
+  it('runs no tool for an owner the access check refuses, and says where to subscribe', async () => {
+    const env = await testRuntime();
+    let allowed = false;
+    const client = await connect(env.runtime, 'user_x', {}, async () => {
+      if (!allowed)
+        throw new CfError('subscription_required', 'The free trial ended', {
+          hint: 'Subscribe at https://example.com/account',
+        });
+    });
+    const sequence = SEQ_720P25;
+    const refused = await call(client, 'timeline.create', { name: 'A', sequence });
+    expect(refused.isError).toBe(true);
+    expect(refused.structured).toMatchObject({ code: 'subscription_required' });
+    expect(String(refused.structured.hint)).toContain('/account');
+    // Listing tools still works, so the client can show the refusal's hint.
+    expect((await client.listTools()).tools.length).toBeGreaterThan(40);
+    allowed = true;
+    expect((await call(client, 'timeline.create', { name: 'A', sequence })).isError).toBe(false);
   });
 });

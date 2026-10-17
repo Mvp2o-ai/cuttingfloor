@@ -33,6 +33,11 @@ export interface HttpOptions {
    * (its /mcp URL) and tokens from the verifier's authorization server, alongside any API keys.
    */
   oauth?: { verifier: JwtTokenVerifier; resource: URL };
+  /**
+   * Hosted: whether a signed-in owner may work (trial, plan); throws a CfError when not. Applies
+   * to OAuth sign-ins only: API keys are for maintenance and are never gated.
+   */
+  access?: (owner: string) => Promise<void>;
 }
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
@@ -46,7 +51,13 @@ export function createHttpServer(options: HttpOptions): Server {
   const handler = createMcpHandler(
     (ctx) => {
       const owner = ctx.authInfo?.clientId ?? 'local';
-      return createServer({ runtime, credentials, owner: () => owner });
+      const gate = ctx.authInfo?.extra?.via === 'oauth' ? options.access : undefined;
+      return createServer({
+        runtime,
+        credentials,
+        owner: () => owner,
+        ...(gate ? { access: () => gate(owner) } : {}),
+      });
     },
     { onerror: (error) => process.stderr.write(`mcp: ${error.message}\n`) },
   );
@@ -113,17 +124,21 @@ export function createHttpServer(options: HttpOptions): Server {
         return;
       }
       let owner = 'local';
+      let via = 'local';
       const request = await toWebRequest(req as IncomingMessage & { method: string; url: string });
       if (hashedKeys.length || requireToken) {
         const keyOwner = apiKeyOwner(req);
-        if (keyOwner) owner = keyOwner;
-        else if (requireToken) {
+        if (keyOwner) {
+          owner = keyOwner;
+          via = 'key';
+        } else if (requireToken) {
           const auth = await requireToken(request);
           if (auth instanceof Response) {
             await sendResponse(res, auth);
             return;
           }
           owner = String(auth.extra?.sub);
+          via = 'oauth';
         } else {
           res
             .writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' })
@@ -145,7 +160,7 @@ export function createHttpServer(options: HttpOptions): Server {
         }
       }
       const response = await handler.fetch(request, {
-        authInfo: { token: 'redacted', clientId: owner, scopes: [] },
+        authInfo: { token: 'redacted', clientId: owner, scopes: [], extra: { via } },
       });
       await sendResponse(res, response);
     } catch (error) {
