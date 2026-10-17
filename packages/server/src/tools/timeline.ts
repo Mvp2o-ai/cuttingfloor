@@ -64,7 +64,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.add': {
     title: 'Add clip',
     description:
-      'Place media on the timeline. A/V media lands as a linked pair on a video and an audio track. Default: the whole media on the main track, after the last clip, overwriting; overlay: true puts it on a free layer above instead.',
+      'Place media on the timeline. A/V media lands as a linked pair on a video and an audio track. Default: the whole media, after the last clip, overwriting.',
   },
   'clip.remove': {
     title: 'Remove clip',
@@ -131,12 +131,12 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'title.add': {
     title: 'Add title',
     description:
-      'Text over the tracks below (on track_id, or a free layer above the main track): styled with font, size, colour, outline, shadow and box, placed by x/y, revealed with a typewriter or word animation. It is a clip, so transforms, masks, animations and transitions apply.',
+      'Text on a video track, over the tracks below: styled with font, size, colour, outline, shadow and box, placed by x/y, revealed with a typewriter or word animation. It is a clip, so transforms, masks, animations and transitions apply.',
   },
   'caption.add': {
     title: 'Add captions',
     description:
-      'Captions (on track_id, or a free layer above the main track) from segments (with optional word timings for highlights) or from SRT/VTT text. One clip per caption; returns their clip_ids. Burned in when exported.',
+      'Captions on a video track from segments (with optional word timings for highlights) or from SRT/VTT text. One clip per caption; returns their clip_ids. Burned in when exported.',
   },
   'text.set': {
     title: 'Set text',

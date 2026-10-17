@@ -567,26 +567,13 @@ function clipAdd(
     });
   }
   if (!key) doc.media[mediaId] = media;
+  const primary = getTrack(doc, a.track_id);
   const kinds: TrackKind[] =
     a.av === 'linked'
       ? ([media.video ? 'video' : null, media.audio ? 'audio' : null].filter(
           Boolean,
         ) as TrackKind[])
       : [a.av];
-  const fps = doc.sequence.fps;
-  const { inTicks, duration } = clipSpan(a, media, mediaId, facts, fps);
-  // Like CapCut: no track means the main track, and an overlay gets a free layer above it.
-  const overlayStart =
-    a.at_frame !== undefined
-      ? framesToTicks(a.at_frame, fps)
-      : a.after_clip_id
-        ? end(locate(doc, a.after_clip_id).clip)
-        : 0;
-  const primary = a.track_id
-    ? getTrack(doc, a.track_id)
-    : a.overlay && kinds.includes('video')
-      ? freeLayer(doc, overlayStart, overlayStart + duration)
-      : mainTrack(doc, kinds[0] ?? 'video');
   if (!kinds.includes(primary.kind)) {
     const has = [media.video && 'video', media.audio && 'audio'].filter(Boolean).join(' and ');
     throw new CfError(
@@ -615,9 +602,36 @@ function clipAdd(
   }
   for (const t of targets.values()) assertUnlocked(t);
 
+  const fps = doc.sequence.fps;
+  let inTicks: number;
+  let duration: number;
+  const range =
+    a.source && 'words' in a.source ? wordRange(a.source.words, mediaId, facts, fps) : a.source;
+  if (range) {
+    if (range.out <= range.in) {
+      throw new CfError(
+        'bad_request',
+        'source.out must be greater than source.in (out is exclusive)',
+      );
+    }
+    inTicks = framesToTicks(range.in, fps);
+    duration = framesToTicks(range.out - range.in, fps);
+  } else if (media.duration === null) {
+    inTicks = 0;
+    duration = framesToTicks(
+      a.duration_frames ?? Math.round((STILL_DEFAULT_SECONDS * fps.num) / fps.den),
+      fps,
+    );
+  } else {
+    inTicks = 0;
+    const tpf = ticksPerFrame(fps);
+    duration = Math.floor(media.duration / tpf) * tpf;
+    if (duration <= 0) throw new CfError('bad_request', 'The media is shorter than one frame');
+  }
+
   let start: number;
-  if (a.at_frame !== undefined || a.after_clip_id || (a.overlay && !a.track_id))
-    start = overlayStart;
+  if (a.at_frame !== undefined) start = framesToTicks(a.at_frame, fps);
+  else if (a.after_clip_id) start = end(locate(doc, a.after_clip_id).clip);
   else start = Math.max(...[...targets.values()].map(trackEnd));
 
   const link = targets.size > 1 ? nextId(doc, 'l') : null;
@@ -636,83 +650,18 @@ function clipAdd(
       enabled: true,
     };
     checkSourceRange(doc, clip);
-    place(doc, track, clip, a.mode ?? (isMain(doc, primary) ? 'insert' : 'overwrite'));
+    place(doc, track, clip, a.mode);
     made.push(clip);
   }
   const main = made.find((c) => c.kind === primary.kind) ?? made[0];
   return ok(start, { clip_id: main?.id ?? '', clip_ids: made.map((c) => c.id) });
 }
 
-/** Where a clip.add reads its source and for how long, in ticks. */
-function clipSpan(
-  a: EditArgsOf<'clip.add'>,
-  media: MediaRef,
-  mediaId: string,
-  facts: FactsResolver,
-  fps: Sequence['fps'],
-): { inTicks: number; duration: number } {
-  const range =
-    a.source && 'words' in a.source ? wordRange(a.source.words, mediaId, facts, fps) : a.source;
-  if (range) {
-    if (range.out <= range.in) {
-      throw new CfError(
-        'bad_request',
-        'source.out must be greater than source.in (out is exclusive)',
-      );
-    }
-    return {
-      inTicks: framesToTicks(range.in, fps),
-      duration: framesToTicks(range.out - range.in, fps),
-    };
-  }
-  if (media.duration === null) {
-    return {
-      inTicks: 0,
-      duration: framesToTicks(
-        a.duration_frames ?? Math.round((STILL_DEFAULT_SECONDS * fps.num) / fps.den),
-        fps,
-      ),
-    };
-  }
-  const tpf = ticksPerFrame(fps);
-  const duration = Math.floor(media.duration / tpf) * tpf;
-  if (duration <= 0) throw new CfError('bad_request', 'The media is shorter than one frame');
-  return { inTicks: 0, duration };
-}
-
-/**
- * Whether a track is the main one: the bottom video track, magnetic like CapCut's. Edits on it
- * insert and ripple unless told otherwise, so no gaps open; layers above are free-form.
- */
-function isMain(doc: TimelineDoc, track: StoredTrack): boolean {
-  return track.kind === 'video' && doc.tracks.find((t) => t.kind === 'video') === track;
-}
-
-/** The main track of a kind: the bottom one, made if there is none. */
-function mainTrack(doc: TimelineDoc, kind: TrackKind): StoredTrack {
-  return doc.tracks.find((t) => t.kind === kind) ?? addTrack(doc, kind);
-}
-
-/**
- * The lowest video layer above the main track that is free from `start` to `stop`, made on top
- * if none is: where text and overlays go when the caller names no track.
- */
-function freeLayer(doc: TimelineDoc, start: number, stop: number): StoredTrack {
-  const layers = doc.tracks.filter((t) => t.kind === 'video');
-  if (!layers.length) addTrack(doc, 'video');
-  const free = layers
-    .slice(1)
-    .find(
-      (t) => !t.locked && !t.hidden && t.clips.every((c) => end(c) <= start || c.start >= stop),
-    );
-  return free ?? addTrack(doc, 'video');
-}
-
 function clipRemove(doc: TimelineDoc, a: EditArgsOf<'clip.remove'>): OpOutcome {
   const members = group(doc, a.clip_id);
   for (const m of members) assertUnlocked(m.track);
+  removeAndRipple(members, a.ripple);
   const ref = members.find((m) => m.clip.id === a.clip_id) ?? members[0];
-  removeAndRipple(members, a.ripple ?? (ref ? isMain(doc, ref.track) : false));
   return ok(ref ? ref.clip.start : 0, { clip_ids: members.map((m) => m.clip.id) });
 }
 
@@ -730,14 +679,12 @@ function clipMove(doc: TimelineDoc, a: EditArgsOf<'clip.move'>): OpOutcome {
   }
   for (const m of members) assertUnlocked(m.track);
   assertUnlocked(destination);
-  // The main track is magnetic: leaving it closes the gap, landing on it pushes clips along.
-  removeAndRipple(members, a.ripple ?? isMain(doc, ref.track));
-  const mode = a.mode ?? (isMain(doc, destination) ? 'insert' : 'overwrite');
+  removeAndRipple(members, a.ripple);
   for (const m of members) {
     const moved = { ...m.clip, start: m.clip.start + delta };
     if (moved.start < 0)
       throw new CfError('bad_request', 'The move would put a linked clip before frame 0');
-    place(doc, m === ref ? destination : m.track, moved, mode);
+    place(doc, m === ref ? destination : m.track, moved, a.mode);
   }
   return ok(ref.clip.start + delta, {
     clip_id: ref.clip.id,
@@ -757,20 +704,19 @@ function clipTrim(doc: TimelineDoc, a: EditArgsOf<'clip.trim'>): OpOutcome {
   const target = framesToTicks(a.to_frame, doc.sequence.fps);
   const delta = a.edge === 'end' ? target - end(ref.clip) : target - ref.clip.start;
   for (const m of members) assertUnlocked(m.track);
-  const ripple = a.ripple ?? isMain(doc, ref.track);
   for (const { track, clip } of members) {
     const oldEnd = end(clip);
     const { prevEnd, nextStart } = neighbours(track, clip);
     if (a.edge === 'end') {
       moveEdge(clip, 'end', delta);
       checkSourceRange(doc, clip);
-      if (ripple) shiftFrom(track, oldEnd, delta, clip);
+      if (a.ripple) shiftFrom(track, oldEnd, delta, clip);
       else if (end(clip) > nextStart) {
         throw new CfError('bad_request', `Extending clip ${clip.id} would overlap the next clip`, {
           hint: 'Use ripple: true to push later clips, or trim the next clip first',
         });
       }
-    } else if (ripple) {
+    } else if (a.ripple) {
       // Ripple head trim: the clip keeps its position, its content shifts, later clips follow.
       const start = clip.start;
       moveEdge(clip, 'start', delta);
@@ -1507,13 +1453,10 @@ function mergeStyle(
 }
 
 function titleAdd(doc: TimelineDoc, a: EditArgsOf<'title.add'>): OpOutcome {
+  const track = textTrack(doc, a.track_id);
   const fps = doc.sequence.fps;
+  const start = a.at_frame !== undefined ? framesToTicks(a.at_frame, fps) : trackEnd(track);
   const duration = framesToTicks(a.duration_frames ?? Math.round((3 * fps.num) / fps.den), fps);
-  const at = a.at_frame !== undefined ? framesToTicks(a.at_frame, fps) : undefined;
-  const track = a.track_id
-    ? textTrack(doc, a.track_id)
-    : freeLayer(doc, at ?? 0, (at ?? 0) + duration);
-  const start = at ?? (a.track_id ? trackEnd(track) : 0);
   const style = mergeStyle(undefined, a.style);
   const clip: StoredClip = {
     id: nextId(doc, 'c'),
@@ -1628,6 +1571,7 @@ function captionAdd(
   if (given !== 1) {
     throw new CfError('bad_request', 'Give exactly one of segments, srt, vtt or from_transcript');
   }
+  const track = textTrack(doc, a.track_id);
   const fps = doc.sequence.fps;
   const tpf = ticksPerFrame(fps);
   const toFrame = (sec: number) => Math.round((sec * fps.num) / fps.den) + a.offset_frames;
@@ -1648,14 +1592,6 @@ function captionAdd(
           }
         : {}),
     }));
-  // No track: one free layer above the main track for the whole run of captions.
-  const track = a.track_id
-    ? textTrack(doc, a.track_id)
-    : freeLayer(
-        doc,
-        Math.min(...segments.map((g) => g.start_frame)) * tpf,
-        Math.max(...segments.map((g) => g.end_frame)) * tpf,
-      );
   const style = mergeStyle(undefined, a.style);
   const ids: string[] = [];
   for (const seg of segments) {
