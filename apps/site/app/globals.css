@@ -737,6 +737,26 @@ a {
   color: var(--ink);
 }
 
+/* ---------- the floor: the session from above, a looping render made with create.motion ---------- */
+
+.floor {
+  padding: 0;
+}
+.floor video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: var(--bg);
+}
+.floor-cap {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px var(--gutter);
+  border-top: 1px solid var(--rule);
+}
+
 /* ---------- reel ---------- */
 
 .reel {
@@ -916,6 +936,9 @@ a {
 /* ---------- small screens ---------- */
 
 @media (max-width: 900px) {
+  .floor-cap span + span {
+    display: none;
+  }
   .nav-links {
     display: none;
   }

@@ -67,9 +67,17 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="cell floor" aria-label="An agent editing over MCP">
+          <video src="/floor.mp4" poster="/floor.jpg" muted loop playsInline autoPlay />
+          <div className="floor-cap">
+            <span className="label">01 / The floor</span>
+            <span className="label">Your agent, one MCP server, every edit a call</span>
+          </div>
+        </section>
+
         <section className="cell" aria-label="A session">
           <div className="head">
-            <span className="label">01 / The bay</span>
+            <span className="label">02 / The bay</span>
             <p className="lede">
               Every edit is a tool call. Every call returns a new timeline and a picture of it, so
               the agent sees what it did.
@@ -80,7 +88,7 @@ export default function Home() {
 
         <section className="cell paper marks" id="how">
           <span className="mark-b" />
-          <span className="label">02 / What it does</span>
+          <span className="label">03 / What it does</span>
           <h2 className="display big-stat">
             62 tools.
             <br />
@@ -92,7 +100,7 @@ export default function Home() {
 
         <section className="cell">
           <div className="head">
-            <span className="label">03 / Start</span>
+            <span className="label">04 / Start</span>
             <h2 className="display">Three steps.</h2>
           </div>
           <ol className="ledger">
@@ -133,7 +141,7 @@ export default function Home() {
               </figcaption>
             </div>
             <div>
-              <span className="label">04 / Made here</span>
+              <span className="label">05 / Made here</span>
               <h2
                 className="display"
                 style={{ fontSize: 'clamp(40px, 5.4vw, 80px)', margin: '16px 0 20px' }}
@@ -150,7 +158,7 @@ export default function Home() {
 
         <section className="cell" id="pricing">
           <div className="head">
-            <span className="label">05 / Pricing</span>
+            <span className="label">06 / Pricing</span>
             <h2 className="display">Pay for rendering.</h2>
           </div>
           <table className="price-table">
@@ -186,7 +194,7 @@ export default function Home() {
 
         <section className="cell">
           <div className="head">
-            <span className="label">06 / Questions</span>
+            <span className="label">07 / Questions</span>
             <h2 className="display">Asked.</h2>
           </div>
           <div className="faq">
