@@ -25,6 +25,8 @@ export interface RuntimeConfig {
   modelsDir?: string;
   /** The motion sandbox (cuttingfloor motion-worker) for create.motion and create.still. */
   motionUrl: string | null;
+  /** Local mode: the folder on the user's machine compose mounts at /media/videos. */
+  mediaHostPath?: string;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
@@ -53,6 +55,9 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     inlineMaxBytes: Number(env.CUTTINGFLOOR_INLINE_MAX_BYTES ?? 32 * 1024 ** 2),
     ...(env.CUTTINGFLOOR_MODELS ? { modelsDir: env.CUTTINGFLOOR_MODELS } : {}),
     motionUrl: env.CUTTINGFLOOR_MOTION_URL?.replace(/\/$/, '') || null,
+    ...(mode === 'local' && env.CUTTINGFLOOR_MEDIA_HOST_PATH
+      ? { mediaHostPath: env.CUTTINGFLOOR_MEDIA_HOST_PATH }
+      : {}),
   };
 }
 
@@ -78,6 +83,7 @@ export class Runtime {
       maxDownloadBytes: config.maxDownloadBytes,
       downloadTimeoutMs: 30 * 60_000,
       allowPrivateUrls: config.allowPrivateUrls,
+      ...(config.mediaHostPath ? { hostFolders: { '/media/videos': config.mediaHostPath } } : {}),
     });
     this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs);
   }

@@ -336,6 +336,14 @@ describe('media and jobs without engines', () => {
     expect(view.error.code).toBe('path_not_allowed');
   });
 
+  it('names the host folder behind a media root when a path is not found', async () => {
+    const local = await testRuntime({ mediaHostPath: '/Users/someone/Movies' });
+    local.runtime.media.config.hostFolders = { [local.mediaDir]: '/Users/someone/Movies' };
+    const client = await connect(local.runtime);
+    const res = await call(client, 'media.import', { source: { path: '/Users/someone/clip.mp4' } });
+    expect(String(res.structured.hint)).toContain(`${local.mediaDir} is /Users/someone/Movies`);
+  });
+
   it('answers tasks/get only for the owner, and unknown jobs as errors', async () => {
     const job = await env.runtime.jobs.store.create({ owner: 'local', tool: 'export.video' });
     const client = await connect(env.runtime);
