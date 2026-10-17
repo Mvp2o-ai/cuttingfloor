@@ -1070,6 +1070,38 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(Object.values(view.nested)[0]?.duration).toBe(50);
     }, 120_000);
 
+    it('reports export progress while it renders, not only at the end', async () => {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'slow',
+        sequence: { width: 1920, height: 1080, fps: { num: 25, den: 1 } },
+      });
+      const slow = await ok<{ timeline_id: string }>(client, 'edit.batch', {
+        timeline_id,
+        preview: 'none',
+        ops: [
+          { tool: 'clip.add', args: { track_id: 't1', media_id: media.av } },
+          { tool: 'clip.add', args: { track_id: 't1', media_id: media.av } },
+          { tool: 'clip.add', args: { track_id: 't1', media_id: media.av } },
+          { tool: 'filter.add', args: { timeline: true, name: 'blur', params: { radius: 0.02 } } },
+        ],
+      });
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: slow.timeline_id,
+        preset: 'master_prores_422hq',
+        filename: 'progress-check',
+      });
+      const seen: number[] = [];
+      for (;;) {
+        const view = await ok<{ status: string; progress?: number }>(client, 'job.get', {
+          job_id: started.job_id,
+        });
+        if (view.progress !== undefined) seen.push(view.progress);
+        if (view.status !== 'working') break;
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      expect(seen.some((p) => p > 0 && p < 1)).toBe(true);
+    }, 240_000);
+
     it('exports what the preview shows', async () => {
       const pip = await withEdit('clip.set_transform', {
         clip_id: 'c4',
