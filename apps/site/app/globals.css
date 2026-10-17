@@ -1,11 +1,12 @@
-/* cuttingfloor: the bay. Warm black, bone, and one tally light. */
+/* cuttingfloor: the bay. Warm black, bone, and chroma-key green, used only where it means something. */
 :root {
   --bg: #0e0d0b;
   --bg-2: #161511;
   --ink: #eee8dc;
   --mute: #8f887c;
   --rule: #2a2722;
-  --tally: #ff4a1c;
+  --key: #00b140;
+  --key-ink: #00742c;
   --paper: #e8e1d1;
   --paper-ink: #151310;
   --paper-mute: #6b6457;
@@ -42,7 +43,7 @@ a {
 }
 
 ::selection {
-  background: var(--tally);
+  background: var(--key);
   color: var(--bg);
 }
 
@@ -73,31 +74,29 @@ a {
 .marks > .mark-b::after {
   content: "";
   position: absolute;
-  width: 12px;
-  height: 12px;
-  border-color: var(--mute);
-  border-style: solid;
+  width: 13px;
+  height: 13px;
+  --mark: var(--mute);
+  background:
+    linear-gradient(var(--mark), var(--mark)) center / 1px 100% no-repeat,
+    linear-gradient(var(--mark), var(--mark)) center / 100% 1px no-repeat;
   pointer-events: none;
 }
 .marks::before {
   top: 16px;
   left: 16px;
-  border-width: 1px 0 0 1px;
 }
 .marks::after {
   top: 16px;
   right: 16px;
-  border-width: 1px 1px 0 0;
 }
 .marks > .mark-b::before {
   bottom: 16px;
   left: 16px;
-  border-width: 0 0 1px 1px;
 }
 .marks > .mark-b::after {
   bottom: 16px;
   right: 16px;
-  border-width: 0 1px 1px 0;
 }
 
 .label {
@@ -144,13 +143,12 @@ a {
   align-items: center;
   gap: 10px;
 }
-.tally-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--tally);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tally) 22%, transparent);
-  animation: rec 2.4s steps(1) infinite;
+.marker {
+  width: 14px;
+  height: 14px;
+  background:
+    linear-gradient(var(--key), var(--key)) center / 3px 100% no-repeat,
+    linear-gradient(var(--key), var(--key)) center / 100% 3px no-repeat;
 }
 @keyframes rec {
   0%,
@@ -184,7 +182,7 @@ a {
   color: var(--bg);
 }
 .nav-cta:hover {
-  background: var(--tally);
+  background: var(--key);
 }
 
 /* ---------- hero ---------- */
@@ -220,9 +218,6 @@ a {
   font-size: clamp(64px, 17.5vw, 252px);
   margin-top: 28px;
 }
-.hero h1 .cut {
-  color: var(--tally);
-}
 .hero-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -257,7 +252,7 @@ a {
   line-height: 1.1;
 }
 .link-big:hover {
-  color: var(--tally);
+  color: var(--key);
 }
 .link-big.quiet {
   color: var(--mute);
@@ -333,7 +328,7 @@ a {
   min-width: 92px;
 }
 .code-line button:hover {
-  background: var(--tally);
+  background: var(--key);
   color: var(--bg);
 }
 
@@ -371,7 +366,7 @@ a {
   opacity: 0.85;
 }
 .win-bar .rec {
-  color: var(--tally);
+  color: var(--key);
 }
 .win.agent {
   grid-row: span 2;
@@ -390,7 +385,7 @@ a {
 }
 .agent-log .prompt {
   color: var(--ink);
-  border-left: 2px solid var(--tally);
+  border-left: 2px solid var(--key);
   padding-left: 10px;
   margin-bottom: 14px;
   font-family: var(--font-display), sans-serif;
@@ -410,7 +405,7 @@ a {
   transform: none;
 }
 .agent-log .fn {
-  color: var(--tally);
+  color: var(--key);
 }
 .agent-log .args {
   color: var(--mute);
@@ -461,7 +456,7 @@ a {
   color: var(--mute);
 }
 .program-hud .on {
-  color: var(--tally);
+  color: var(--key);
 }
 
 .timeline {
@@ -521,7 +516,7 @@ a {
   transform: scaleX(1);
 }
 .clip.cap {
-  background: var(--tally);
+  background: var(--key);
 }
 .clip.aud {
   background: transparent;
@@ -540,7 +535,7 @@ a {
   top: -26px;
   bottom: -6px;
   width: 1px;
-  background: var(--tally);
+  background: var(--key);
   left: 0;
   transition: left 0.3s linear;
 }
@@ -550,7 +545,7 @@ a {
   top: 0;
   left: -5px;
   border: 5px solid transparent;
-  border-top-color: var(--tally);
+  border-top-color: var(--key);
 }
 .render-bar {
   margin: 10px 12px 0 52px;
@@ -595,11 +590,11 @@ a {
 .paper .label {
   color: var(--paper-mute);
 }
-.paper .marks::before,
-.paper .marks::after,
-.paper .marks > .mark-b::before,
-.paper .marks > .mark-b::after {
-  border-color: var(--paper-mute);
+.paper.marks::before,
+.paper.marks::after,
+.paper.marks > .mark-b::before,
+.paper.marks > .mark-b::after {
+  --mark: var(--paper-mute);
 }
 .big-stat {
   font-size: clamp(56px, 10vw, 150px);
@@ -680,7 +675,7 @@ a {
   min-height: 300px;
 }
 .caps-pane pre .k {
-  color: #b2300e;
+  color: var(--key-ink);
 }
 .caps-pane pre .c {
   color: var(--paper-mute);
@@ -705,7 +700,7 @@ a {
 .ledger .n {
   font-family: var(--font-pixel), monospace;
   font-size: 40px;
-  color: var(--tally);
+  color: var(--key);
 }
 .ledger h3 {
   margin: 0;
@@ -794,7 +789,7 @@ a {
 }
 .price-table tr.pick .tier::after {
   content: " ●";
-  color: var(--tally);
+  color: var(--key);
   font-size: 0.6em;
   vertical-align: middle;
 }
@@ -829,7 +824,7 @@ a {
 .faq summary::after {
   content: "+";
   font-family: var(--font-pixel), monospace;
-  color: var(--tally);
+  color: var(--key);
 }
 .faq details[open] summary::after {
   content: "−";
@@ -892,7 +887,6 @@ a {
 }
 @media (prefers-reduced-motion: reduce) {
   .rise,
-  .tally-dot,
   .caret {
     animation: none;
   }

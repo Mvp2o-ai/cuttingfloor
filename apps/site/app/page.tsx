@@ -14,7 +14,7 @@ export default function Home() {
       <header className="nav">
         <div className="nav-inner">
           <a className="wordmark" href="/">
-            <span className="tally-dot" aria-hidden="true" />
+            <span className="marker" aria-hidden="true" />
             cuttingfloor
           </a>
           <nav className="nav-links" aria-label="Sections">
@@ -39,7 +39,7 @@ export default function Home() {
           <h1 className="display rise d1">
             Your agent
             <br />
-            edits <span className="cut">video.</span>
+            edits video.
           </h1>
           <div className="hero-row">
             <div className="rise d2">

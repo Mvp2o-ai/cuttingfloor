@@ -26,7 +26,7 @@ const CAPS = [
       ],
       [
         'text.set',
-        '{ timeline_id: "tl_06…", track_id: "V2",\n  style: { highlight: { mode: "karaoke", color: "#ff4a1c" } } }',
+        '{ timeline_id: "tl_06…", track_id: "V2",\n  style: { highlight: { mode: "karaoke", color: "#00b140" } } }',
       ],
     ],
     note: 'rendered by libass, frame-exact',
