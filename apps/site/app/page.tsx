@@ -3,6 +3,15 @@ import { Capabilities } from './capabilities.tsx';
 import { Connect } from './connect.tsx';
 import { PLANS } from './pricing.ts';
 
+/** Solved: a check, drawn on once in the accent. */
+function Check() {
+  return (
+    <svg className="check" viewBox="0 0 48 40" role="img" aria-label="solved">
+      <path d="M5 21 L18 33 L43 6" />
+    </svg>
+  );
+}
+
 // Signing up (or in) is the account page: WorkOS sign-in, then the trial, plans and the connect box.
 const SIGN_UP = '/account';
 const DOCS = 'https://github.com/mvp2o-ai/cuttingfloor';
@@ -40,7 +49,7 @@ export default function Home() {
             Editing,
             <br />
             solved.
-            <span className="qed" role="img" aria-label="Q.E.D." />
+            <Check />
           </h1>
           <div className="hero-row">
             <div className="rise d2">
@@ -176,7 +185,7 @@ export default function Home() {
                 <tr key={p.name} className={p.pick ? 'pick' : ''}>
                   <td className="tier">{p.name}</td>
                   <td className="amount">
-                    {p.price} <small>{p.per}</small>
+                    {p.contact ? <a href={p.contact}>{p.price}</a> : p.price} <small>{p.per}</small>
                   </td>
                   <td>{p.included}</td>
                   <td className="over">{p.overage}</td>
@@ -234,7 +243,7 @@ export default function Home() {
           <div>
             <p className="display">
               Editing, solved.
-              <span className="qed" role="img" aria-label="Q.E.D." />
+              <Check />
             </p>
             <div className="footer-links">
               <a href={SIGN_UP}>Start free</a>

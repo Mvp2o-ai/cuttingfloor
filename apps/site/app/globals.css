@@ -569,14 +569,35 @@ a {
   transition: width 0.25s linear;
 }
 
-/* The tombstone that ends a proof: editing, solved. */
-.qed {
+/* Solved: a check, drawn on once in the accent. */
+.check {
   display: inline-block;
-  width: 0.42em;
-  height: 0.58em;
-  margin-left: 0.12em;
-  background: var(--key);
+  width: 0.62em;
+  height: 0.52em;
+  margin-left: 0.1em;
   vertical-align: baseline;
+  overflow: visible;
+}
+.check path {
+  fill: none;
+  stroke: var(--key);
+  stroke-width: 7;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: draw 0.55s 0.7s var(--ease) forwards;
+}
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .check path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
 }
 
 /* ---------- section heads ---------- */
@@ -814,6 +835,13 @@ a {
   font-weight: 700;
   font-variation-settings: "wdth" 80;
   white-space: nowrap;
+}
+.price-table .amount a {
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+.price-table .amount a:hover {
+  color: var(--key);
 }
 .price-table .amount small {
   font-size: 15px;

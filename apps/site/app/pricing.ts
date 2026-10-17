@@ -8,6 +8,8 @@ export type Plan = {
   included: string;
   overage: string;
   note: string;
+  /** Priced by conversation: the price cell links here instead. */
+  contact?: string;
   pick?: boolean;
 };
 
@@ -39,10 +41,11 @@ export const PLANS: Plan[] = [
   },
   {
     name: 'Enterprise',
-    price: '$499',
-    per: '/ seat / month',
-    included: '5,000 min a seat',
-    overage: '$0.05 / min',
-    note: 'Agents editing all day. Priority queue, SSO, an SLA. Dedicated servers from $1,500.',
+    price: 'Call us',
+    per: '',
+    included: 'By volume',
+    overage: 'By volume',
+    note: 'Agents editing all day. Priority queue, SSO, an SLA, dedicated servers.',
+    contact: 'mailto:ken@mvp2o.com?subject=cuttingfloor%20Enterprise',
   },
 ];
