@@ -29,8 +29,15 @@ export const Preview = z
 
 const Mode = z
   .enum(['overwrite', 'insert'])
-  .default('overwrite')
-  .describe('overwrite replaces what is underneath; insert pushes later clips right');
+  .optional()
+  .describe(
+    'overwrite replaces what is underneath; insert pushes later clips right. Default: insert on the main (bottom) video track, overwrite above',
+  );
+const Ripple = (what: string) =>
+  z
+    .boolean()
+    .optional()
+    .describe(`${what}. Default: true on the main (bottom) video track, false above`);
 
 const anim = (limits: readonly [number, number], text: string) =>
   AnimatableValue.optional().describe(`${text}; ${limits[0]} to ${limits[1]}`);
@@ -113,7 +120,16 @@ export const EditArgs = {
   'clip.add': z.object({
     track_id: z
       .string()
-      .describe('Track for the clip; a linked A/V clip puts its other half on link_track_id'),
+      .optional()
+      .describe(
+        'Track for the clip; a linked A/V clip puts its other half on link_track_id. Default: the main (bottom) track, or a free layer with overlay',
+      ),
+    overlay: z
+      .boolean()
+      .optional()
+      .describe(
+        'Picture-in-picture: the clip goes on the lowest video layer above the main track that is free for its span (made if needed), at at_frame (default 0)',
+      ),
     media_id: MediaId.optional(),
     nested_timeline_id: TimelineId.optional().describe(
       'Instead of media: nest another timeline as one clip (a compound clip)',
@@ -150,23 +166,20 @@ export const EditArgs = {
   }),
   'clip.remove': z.object({
     clip_id: z.string(),
-    ripple: z.boolean().default(false).describe('Close the gap by pulling later clips left'),
+    ripple: Ripple('Close the gap by pulling later clips left'),
   }),
   'clip.move': z.object({
     clip_id: z.string(),
     to_frame: frame,
     to_track_id: z.string().optional(),
     mode: Mode,
-    ripple: z.boolean().default(false).describe('Close the gap left behind'),
+    ripple: Ripple('Close the gap left behind'),
   }),
   'clip.trim': z.object({
     clip_id: z.string(),
     edge: z.enum(['start', 'end']),
     to_frame: frame.describe('New timeline position of that edge'),
-    ripple: z
-      .boolean()
-      .default(false)
-      .describe('Shift later clips so nothing overlaps and no gap opens'),
+    ripple: Ripple('Shift later clips so nothing overlaps and no gap opens'),
     side: z
       .enum(['both', 'video', 'audio'])
       .default('both')
@@ -221,14 +234,24 @@ export const EditArgs = {
   'range.lift': z.object({ range: FrameRange, track_ids: TrackIds }),
   'range.extract': z.object({ range: FrameRange, track_ids: TrackIds }),
   'title.add': z.object({
-    track_id: z.string().describe('A video track; text composites over the tracks below'),
+    track_id: z
+      .string()
+      .optional()
+      .describe(
+        'A video track; text composites over the tracks below. Default: a free layer above the main track',
+      ),
     text: z.string().min(1).max(2000).describe('Line breaks with \\n'),
-    at_frame: frame.optional().describe('Default: after the last clip on the track'),
+    at_frame: frame
+      .optional()
+      .describe('Default: after the last clip on track_id, or frame 0 without one'),
     duration_frames: z.number().int().positive().max(1_000_000).optional().describe('Default 3 s'),
     style: TextStyle.optional(),
   }),
   'caption.add': z.object({
-    track_id: z.string().describe('A video track for the captions, usually the top one'),
+    track_id: z
+      .string()
+      .optional()
+      .describe('A video track for the captions. Default: a free layer above the main track'),
     segments: z
       .array(
         z.object({

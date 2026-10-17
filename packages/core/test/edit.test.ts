@@ -155,6 +155,7 @@ describe('clip.add', () => {
         media_id: 'm_aaaaaaaaaaaaaaaaaaaaaaavid',
         at_frame: 40,
         source: { in: 0, out: 20 },
+        mode: 'overwrite',
       },
     }));
     expect(layout(doc, 0)).toEqual([
@@ -280,9 +281,38 @@ describe('remove, move, trim, split', () => {
   }
   const id = (doc: TimelineDoc, track: number, i: number) => doc.tracks[track]?.clips[i]?.id ?? '';
 
+  it('keeps the main track magnetic and layers above free-form, like CapCut', () => {
+    const VID = 'm_aaaaaaaaaaaaaaaaaaaaaaavid';
+    const doc = edit(
+      newTimeline('t', seq, { video: 2, audio: 0 }),
+      { tool: 'clip.add', args: { track_id: 't1', media_id: VID, source: { in: 0, out: 50 } } },
+      { tool: 'clip.add', args: { track_id: 't1', media_id: VID, source: { in: 50, out: 100 } } },
+      { tool: 'clip.add', args: { track_id: 't2', media_id: VID, source: { in: 0, out: 20 } } },
+      { tool: 'clip.add', args: { track_id: 't2', media_id: VID, source: { in: 20, out: 40 } } },
+    ).doc;
+    const [a, b] = doc.tracks[0]?.clips.map((c) => c.id) ?? [];
+    // Moving the second main clip to the front inserts it and closes the gap it left.
+    const swapped = edit(doc, { tool: 'clip.move', args: { clip_id: b ?? '', to_frame: 0 } }).doc;
+    expect(layout(swapped, 0)).toEqual([
+      [0, 50, 50],
+      [50, 100, 0],
+    ]);
+    // Removing from the main track closes up; from a layer above, it leaves the gap.
+    expect(layout(edit(doc, { tool: 'clip.remove', args: { clip_id: a ?? '' } }).doc, 0)).toEqual([
+      [0, 50, 50],
+    ]);
+    const upper = doc.tracks[1]?.clips[0]?.id ?? '';
+    expect(layout(edit(doc, { tool: 'clip.remove', args: { clip_id: upper } }).doc, 1)).toEqual([
+      [20, 40, 20],
+    ]);
+  });
+
   it('removes a link group, with and without ripple', () => {
     const doc = threeClips();
-    const gap = edit(doc, { tool: 'clip.remove', args: { clip_id: id(doc, 0, 1) } }).doc;
+    const gap = edit(doc, {
+      tool: 'clip.remove',
+      args: { clip_id: id(doc, 0, 1), ripple: false },
+    }).doc;
     expect(layout(gap, 0)).toEqual([
       [0, 50, 0],
       [100, 150, 100],
@@ -309,7 +339,7 @@ describe('remove, move, trim, split', () => {
     const doc = threeClips();
     const moved = edit(doc, {
       tool: 'clip.move',
-      args: { clip_id: id(doc, 0, 0), to_frame: 125 },
+      args: { clip_id: id(doc, 0, 0), to_frame: 125, mode: 'overwrite', ripple: false },
     }).doc;
     expect(layout(moved, 0)).toEqual([
       [50, 100, 50],
@@ -336,7 +366,7 @@ describe('remove, move, trim, split', () => {
     const doc = threeClips();
     const shorter = edit(doc, {
       tool: 'clip.trim',
-      args: { clip_id: id(doc, 0, 0), edge: 'end', to_frame: 40 },
+      args: { clip_id: id(doc, 0, 0), edge: 'end', to_frame: 40, ripple: false },
     }).doc;
     expect(layout(shorter, 0)).toEqual([
       [0, 40, 0],
@@ -344,7 +374,10 @@ describe('remove, move, trim, split', () => {
       [100, 150, 100],
     ]);
     expect(() =>
-      edit(doc, { tool: 'clip.trim', args: { clip_id: id(doc, 0, 0), edge: 'end', to_frame: 60 } }),
+      edit(doc, {
+        tool: 'clip.trim',
+        args: { clip_id: id(doc, 0, 0), edge: 'end', to_frame: 60, ripple: false },
+      }),
     ).toThrow(/overlap/);
     const rippled = edit(doc, {
       tool: 'clip.trim',
@@ -536,7 +569,7 @@ describe('compositing', () => {
     expect(transformAt(clip(doc, 'c3'), tpf, 10, 40).x).toBeCloseTo(0.5);
     doc = edit(doc, {
       tool: 'clip.trim',
-      args: { clip_id: 'c3', edge: 'start', to_frame: 10 },
+      args: { clip_id: 'c3', edge: 'start', to_frame: 10, ripple: false },
     }).doc;
     // After trimming 10 frames off the head, the same content is at clip frame 0.
     expect(transformAt(clip(doc, 'c3'), tpf, 0, 30).x).toBeCloseTo(0.5);
@@ -920,7 +953,7 @@ describe('nested timelines', () => {
     ]);
     doc = edit(doc, {
       tool: 'clip.trim',
-      args: { clip_id: 'c3', edge: 'start', to_frame: 10 },
+      args: { clip_id: 'c3', edge: 'start', to_frame: 10, ripple: false },
     }).doc;
     doc = edit(doc, { tool: 'clip.set_transform', args: { clip_id: 'c3', scale: 0.5 } }).doc;
     expect(layout(doc, 0)).toEqual([[10, 60, 10]]);
@@ -1094,6 +1127,44 @@ describe('transitions', () => {
 
 describe('text', () => {
   const textStart = () => newTimeline('t', seq, { video: 2, audio: 0 });
+
+  it('puts text and overlays on a free layer when no track is named, like CapCut', () => {
+    const VID = 'm_aaaaaaaaaaaaaaaaaaaaaaavid';
+    const PNG = 'm_aaaaaaaaaaaaaaaaaaaaaaapng';
+    const { doc, results } = edit(
+      newTimeline('t', seq, { video: 1, audio: 1 }),
+      // No track: the main track.
+      { tool: 'clip.add', args: { media_id: VID } },
+      // Text with no track: a new layer above the main track, at frame 0 by default.
+      { tool: 'title.add', args: { text: 'One', duration_frames: 30 } },
+      // Overlapping text: the first layer is taken there, so another one.
+      { tool: 'title.add', args: { text: 'Two', at_frame: 10, duration_frames: 30 } },
+      // Later text fits back on the first text layer.
+      { tool: 'title.add', args: { text: 'Three', at_frame: 50, duration_frames: 10 } },
+      // An overlay clip finds the lowest free layer too.
+      {
+        tool: 'clip.add',
+        args: { media_id: PNG, overlay: true, at_frame: 70, duration_frames: 10 },
+      },
+      {
+        tool: 'caption.add',
+        args: { segments: [{ start_frame: 0, end_frame: 20, text: 'Hi' }] },
+      },
+    );
+    const trackOf = (id: string) => doc.tracks.find((t) => t.clips.some((c) => c.id === id))?.id;
+    const [main, one, two, three, pip, cap] = results.map(
+      (r) => r.clip_id ?? r.clip_ids?.[0] ?? '',
+    );
+    const video = doc.tracks.filter((t) => t.kind === 'video').map((t) => t.id);
+    expect(trackOf(main as string)).toBe(video[0]);
+    expect(trackOf(one as string)).toBe(video[1]);
+    expect(trackOf(two as string)).toBe(video[2]);
+    expect(trackOf(three as string)).toBe(video[1]);
+    expect(trackOf(pip as string)).toBe(video[1]);
+    // Frames 0-20 are taken on both text layers, so the captions get a fourth.
+    expect(trackOf(cap as string)).toBe(video[3]);
+    expect(video).toHaveLength(4);
+  });
 
   it('previews a revealed title once it is fully shown', () => {
     const tpf = ticksPerFrame(seq.fps);
