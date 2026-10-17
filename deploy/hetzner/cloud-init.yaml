@@ -1,0 +1,23 @@
+#cloud-config
+# A cuttingfloor host: Docker with gVisor (runsc) for the sandbox, a firewall, nothing else.
+# No secrets here (user data is readable from the server's metadata): up.sh copies them over SSH.
+package_update: true
+packages: [ca-certificates, curl, gnupg, ufw]
+runcmd:
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+  - echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release; echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+  - curl -fsSL https://gvisor.dev/archive.key | gpg --dearmor -o /etc/apt/keyrings/gvisor.gpg
+  - echo "deb [signed-by=/etc/apt/keyrings/gvisor.gpg] https://storage.googleapis.com/gvisor/releases release main" > /etc/apt/sources.list.d/gvisor.list
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin runsc
+  # systrap needs no nested virtualisation, which Hetzner Cloud doesn't offer.
+  - runsc install -- --platform=systrap
+  - systemctl restart docker
+  - ufw default deny incoming
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
+  - mkdir -p /opt/cuttingfloor
+  - touch /var/lib/cloud/cuttingfloor-ready

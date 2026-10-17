@@ -10,3 +10,6 @@ coverage/
 plans/
 # Agent worktrees
 .claude/worktrees/
+
+# Hosted deploy secrets
+deploy/hetzner/cuttingfloor.env
