@@ -17,15 +17,18 @@ One server first. It's the same image as local, in hosted mode:
    ```
 3. Copy `cuttingfloor.env.example` to `cuttingfloor.env` and fill it in. That file is git-ignored.
 4. Run `./up.sh`. It does three things:
-   - creates `cuttingfloor-1`, a CCX23 in Falkenstein, with Docker and gVisor
+   - creates `cuttingfloor-1`, a CCX23 in Falkenstein, with Docker and gVisor, on a named IPv4 and no IPv6. The address outlives a rebuilt server, and it uses one primary IP. Hetzner counts limits across every project of the account.
    - copies the compose file and the env file over SSH (cloud-init user data never holds a secret)
    - starts everything
 5. Point an A record for the domain at the address it prints. Caddy gets the certificate on first request.
+   Or let `up.sh` set it: `CUTTINGFLOOR_ZONE=example.com` for a Hetzner DNS zone, plus `CUTTINGFLOOR_DNS_TOKEN` when the zone is in another project.
 6. Run `./up.sh` again to deploy a new image.
 
-**If the image is private:** export `GHCR_USER` and `GHCR_TOKEN` (`read:packages`) before running `up.sh`. Or make the GHCR package public in the GitHub UI.
+**Check it:** `CF_KEY=<a key from CUTTINGFLOOR_API_KEYS> node scripts/smoke-hosted.ts https://<domain>`. It checks that a request without a key is refused, then the sandbox (`create.still`, `create.motion`, `code.run`), `look` on the server's TypeSafe key, and an export's signed link.
 
-**Not yet verified:** Chromium and `code.run` running under gVisor (spec §8.1). That's the first check on a new server. `scripts/smoke-motion.ts` runs those checks (escapes, network, abuse) against the local compose file. Point it at this one, whose sandbox runs under `runsc`, and run it on the server.
+**If the image is private:** export `GHCR_USER` and `GHCR_TOKEN` (`read:packages`) before running `up.sh`. Or make the GHCR package public in the GitHub UI. Or build on the server from this checkout's HEAD: `CUTTINGFLOOR_BUILD=1 ./up.sh`.
+
+**Verified under gVisor:** `create.still`, `create.motion` and `code.run` run with the sandbox under `runsc` (systrap). The deeper escape and abuse checks in `scripts/smoke-motion.ts` still run only against the local compose file.
 
 ## Growing it
 
