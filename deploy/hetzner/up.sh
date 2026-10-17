@@ -11,8 +11,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 NAME=${CUTTINGFLOOR_SERVER:-cuttingfloor-1}
-TYPE=${CUTTINGFLOOR_SERVER_TYPE:-ccx23}   # 4 dedicated vCPU, 16 GB
-LOCATION=${CUTTINGFLOOR_LOCATION:-fsn1}
+TYPE=${CUTTINGFLOOR_SERVER_TYPE:-ccx33}   # 8 dedicated vCPU, 32 GB
+LOCATION=${CUTTINGFLOOR_LOCATION:-ash}
 SSH_KEY=${CUTTINGFLOOR_SSH_KEY:-$(hcloud ssh-key list -o noheader -o columns=name | head -1)}
 
 [ -f cuttingfloor.env ] || { echo "Make cuttingfloor.env from cuttingfloor.env.example first" >&2; exit 1; }

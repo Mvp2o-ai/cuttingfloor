@@ -17,7 +17,7 @@ One server first. It's the same image as local, in hosted mode:
    ```
 3. Copy `cuttingfloor.env.example` to `cuttingfloor.env` and fill it in. That file is git-ignored.
 4. Run `./up.sh`. It does three things:
-   - creates `cuttingfloor-1`, a CCX23 in Falkenstein, with Docker and gVisor, on a named IPv4 and no IPv6. The address outlives a rebuilt server, and it uses one primary IP. Hetzner counts limits across every project of the account.
+   - creates `cuttingfloor-1`, a CCX33 (8 dedicated vCPUs, 32 GB) in Ashburn, with Docker and gVisor, on a named IPv4 and no IPv6. The address outlives a rebuilt server, and it uses one primary IP. Hetzner counts limits across every project of the account.
    - copies the compose file and the env file over SSH (cloud-init user data never holds a secret)
    - starts everything
 5. Point an A record for the domain at the address it prints. Caddy gets the certificate on first request.
@@ -33,7 +33,7 @@ One server first. It's the same image as local, in hosted mode:
 ## Growing it
 
 **1. One server, bigger.**
-- `CUTTINGFLOOR_SERVER_TYPE=ccx33` or larger, then `./up.sh`.
+- `CUTTINGFLOOR_SERVER_TYPE=ccx43` or larger, then `./up.sh`.
 - Accounts can't collide:
   - Each owner's data sits under its own folder.
   - Timelines are content-addressed and never change.
