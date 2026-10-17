@@ -1,7 +1,7 @@
 # Hosting cuttingfloor on Hetzner Cloud
 
 One server first. It's the same image as local, in hosted mode:
-- bearer API keys, one owner per key
+- OAuth sign-in through WorkOS AuthKit (each user is an owner), and bearer API keys alongside
 - URL imports only
 - the server's own TypeSafe key for `media.analyze look`, with a daily frame cap per account
 - the sandbox under gVisor
@@ -16,13 +16,17 @@ One server first. It's the same image as local, in hosted mode:
    hcloud ssh-key create --name me --public-key-from-file ~/.ssh/id_ed25519.pub
    ```
 3. Copy `cuttingfloor.env.example` to `cuttingfloor.env` and fill it in. That file is git-ignored.
-4. Run `./up.sh`. It does three things:
+4. Set up sign-in (WorkOS AuthKit):
+   - `CUTTINGFLOOR_OAUTH_ISSUER` is the AuthKit domain (Domains page).
+   - Register `<CUTTINGFLOOR_PUBLIC_URL>/mcp` as the default resource indicator: `POST https://api.workos.com/user_management/authkit_oauth_resources {"uri": "…/mcp", "default": true}`.
+   - In the dashboard, Connect → Configuration: turn on Client ID Metadata Document and Dynamic Client Registration.
+5. Run `./up.sh`. It does three things:
    - creates `cuttingfloor-1`, a CCX33 (8 dedicated vCPUs, 32 GB) in Ashburn, with Docker and gVisor, on a named IPv4 and no IPv6. The address outlives a rebuilt server, and it uses one primary IP. Hetzner counts limits across every project of the account.
    - copies the compose file and the env file over SSH (cloud-init user data never holds a secret)
    - starts everything
-5. Point an A record for the domain at the address it prints. Caddy gets the certificate on first request.
+6. Point an A record for the domain at the address it prints. Caddy gets the certificate on first request.
    Or let `up.sh` set it: `CUTTINGFLOOR_ZONE=example.com` for a Hetzner DNS zone, plus `CUTTINGFLOOR_DNS_TOKEN` when the zone is in another project.
-6. Run `./up.sh` again to deploy a new image.
+7. Run `./up.sh` again to deploy a new image.
 
 **Check it:** `CF_KEY=<a key from CUTTINGFLOOR_API_KEYS> node scripts/smoke-hosted.ts https://<domain>`. It checks that a request without a key is refused, then the sandbox (`create.still`, `create.motion`, `code.run`), `look` on the server's TypeSafe key, and an export's signed link.
 
