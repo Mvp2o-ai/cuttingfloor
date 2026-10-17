@@ -293,6 +293,15 @@ describe('media and jobs without engines', () => {
     expect((await ok<{ jobs: unknown[] }>(client, 'job.list', {})).jobs).toHaveLength(0);
   });
 
+  it('drops cached frames on start, so a new build never serves an old render', async () => {
+    const { mkdir, writeFile, access } = await import('node:fs/promises');
+    const stale = env.runtime.ws.path('cache', 'frames', 'tl_x-1-640.webp');
+    await mkdir(env.runtime.ws.path('cache', 'frames'), { recursive: true });
+    await writeFile(stale, 'old');
+    await env.runtime.start({ sweep: false });
+    await expect(access(stale)).rejects.toThrow();
+  });
+
   it('answers tasks/get only for the owner, and unknown jobs as errors', async () => {
     const job = await env.runtime.jobs.store.create({ owner: 'local', tool: 'export.video' });
     const client = await connect(env.runtime);

@@ -82,9 +82,14 @@ export class Runtime {
     this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs);
   }
 
-  /** Loads the signing secret, recovers interrupted jobs and starts the hourly TTL sweep. */
+  /**
+   * Loads the signing secret, recovers interrupted jobs and starts the hourly TTL sweep. Cached
+   * frames go: a timeline id names the edit, not the renderer, so frames an older build drew
+   * would otherwise outlive a fix to how they are drawn.
+   */
   async start(options: { sweep?: boolean } = {}): Promise<void> {
     await this.secret();
+    await this.ws.remove(this.ws.path('cache', 'frames'));
     await this.jobs.recover();
     if (options.sweep !== false) {
       await this.sweep();
