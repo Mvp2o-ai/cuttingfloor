@@ -46,7 +46,7 @@ export default function Home() {
             <span>agentic video editing</span>
           </div>
           <h1 className="display rise d1">
-            Editing,
+            Video editing,
             <br />
             solved.
             <Check />
@@ -242,7 +242,7 @@ export default function Home() {
           <span className="mark-b" />
           <div>
             <p className="display">
-              Editing, solved.
+              Video editing, solved.
               <Check />
             </p>
             <div className="footer-links">
