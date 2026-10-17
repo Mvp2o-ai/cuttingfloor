@@ -177,7 +177,7 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Job output',
       description:
-        'The file a finished export.video or export.timeline made. Large files answer with their signed download URL instead of the bytes.',
+        'The file a finished export.video or export.timeline made, as its own type (video/mp4, video/quicktime, image/gif, audio/*, …) for a client or model that takes it in. Files over the inline limit answer with their signed download URL (text/uri-list) instead of the bytes.',
     },
     async (uri, vars) => {
       const owner = deps.owner();

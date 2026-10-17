@@ -825,6 +825,7 @@ export const ExportPreset = z
     'social_9x16_h264',
     'web_1080p_av1',
     'gif',
+    'review_h264',
     'audio_wav_48k',
     'audio_mp3',
   ])

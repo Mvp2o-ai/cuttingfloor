@@ -1102,6 +1102,51 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(seen.some((p) => p > 0 && p < 1)).toBe(true);
     }, 240_000);
 
+    it('renders a small review of a range that reads back as video for a model to watch', async () => {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'review',
+        sequence: { width: 1920, height: 1080, fps: { num: 25, den: 1 } },
+      });
+      const cut = await ok<{ timeline_id: string }>(client, 'clip.add', {
+        timeline_id,
+        track_id: 't1',
+        media_id: media.av,
+        preview: 'none',
+      });
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: cut.timeline_id,
+        preset: 'review_h264',
+        range: { start: 0, end: 50 },
+        filename: 'review-check',
+      });
+      const done = await waitJob(started.job_id, 120_000);
+      if (done.error) throw new Error(`export failed: ${JSON.stringify(done.error)}`);
+      expect(done.result).toMatchObject({
+        width: 854,
+        height: 480,
+        fps: 25,
+        duration_seconds: 2,
+        mime_type: 'video/mp4',
+        uri: `video://jobs/${started.job_id}/output`,
+      });
+      // What a host sees: links to the file, marked for the model, one fetchable over https.
+      const got = await client.callTool({ name: 'job.get', arguments: { job_id: started.job_id } });
+      const links = (got.content as Array<Record<string, unknown>>).filter(
+        (c) => c.type === 'resource_link',
+      );
+      expect(links.map((l) => String(l.uri).split(':')[0])).toEqual(['video', 'http']);
+      for (const l of links) {
+        expect(l).toMatchObject({
+          mimeType: 'video/mp4',
+          annotations: { audience: ['assistant'] },
+        });
+      }
+      const read = await client.readResource({ uri: `video://jobs/${started.job_id}/output` });
+      const file = read.contents[0] as { mimeType: string; blob: string };
+      expect(file.mimeType).toBe('video/mp4');
+      expect(Buffer.from(file.blob, 'base64').subarray(4, 8).toString()).toBe('ftyp');
+    }, 120_000);
+
     it('exports what the preview shows', async () => {
       const pip = await withEdit('clip.set_transform', {
         clip_id: 'c4',
