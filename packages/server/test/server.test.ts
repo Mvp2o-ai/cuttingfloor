@@ -20,6 +20,31 @@ describe('protocol surface', () => {
     expect(client.getInstructions()).toMatch(/timeline_id/);
   });
 
+  it('advertises open output schemas, so added result fields never break cached clients', async () => {
+    const client = await connect(env.runtime);
+    const { tools } = await client.listTools();
+    const withOutput = tools.filter((t) => t.outputSchema);
+    expect(withOutput.length).toBeGreaterThan(5);
+    for (const t of withOutput) {
+      expect(JSON.stringify(t.outputSchema), t.name).not.toContain('"additionalProperties":false');
+    }
+  });
+
+  it('waits on a job with wait_seconds instead of polling', async () => {
+    const client = await connect(env.runtime, 'waiter');
+    const job = await env.runtime.jobs.store.create({ owner: 'waiter', tool: 'export.video' });
+    setTimeout(() => {
+      void env.runtime.jobs.store.update(job, { status: 'completed', progress: 1 });
+    }, 300);
+    const started = Date.now();
+    const got = await ok<{ status: string }>(client, 'job.get', {
+      job_id: job.id,
+      wait_seconds: 5,
+    });
+    expect(got.status).toBe('completed');
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
   it('lists the tools, each annotated', async () => {
     const client = await connect(env.runtime);
     const { tools } = await client.listTools();
@@ -132,10 +157,15 @@ describe('protocol surface', () => {
 describe('timelines', () => {
   it('creates, edits immutably, and keeps history', async () => {
     const client = await connect(env.runtime);
-    const { timeline_id: t0 } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
-      name: 'Cut',
-      sequence: SEQ_720P25,
-    });
+    const { timeline_id: t0, tracks } = await ok<{
+      timeline_id: string;
+      tracks: Array<{ id: string; kind: string; name: string }>;
+    }>(client, 'timeline.create', { name: 'Cut', sequence: SEQ_720P25 });
+    // The track ids come back, so the first clip.add needs no timeline.get or guess.
+    expect(tracks).toEqual([
+      { id: 't1', kind: 'video', name: 'V1' },
+      { id: 't2', kind: 'audio', name: 'A1' },
+    ]);
     const added = await ok<{
       timeline_id: string;
       track_id: string;
@@ -263,6 +293,57 @@ describe('media and jobs without engines', () => {
     expect((await ok<{ jobs: unknown[] }>(client, 'job.list', {})).jobs).toHaveLength(0);
   });
 
+  it('drops cached frames on start, so a new build never serves an old render', async () => {
+    const { mkdir, writeFile, access } = await import('node:fs/promises');
+    const stale = env.runtime.ws.path('cache', 'frames', 'tl_x-1-640.webp');
+    await mkdir(env.runtime.ws.path('cache', 'frames'), { recursive: true });
+    await writeFile(stale, 'old');
+    await env.runtime.start({ sweep: false });
+    await expect(access(stale)).rejects.toThrow();
+  });
+
+  it('imports only a completed export.video, and says why not otherwise', async () => {
+    const client = await connect(env.runtime, 'renders');
+    const store = env.runtime.jobs.store;
+    const notExport = await store.create({ owner: 'renders', tool: 'qa.check' });
+    const rendering = await store.create({ owner: 'renders', tool: 'export.video' });
+    const missing = await call(client, 'media.import', {
+      source: { job_id: 'j_aaaaaaaaaaaaaaaaaaaaaaaaaa' },
+    });
+    expect(missing.structured).toMatchObject({ code: 'not_found' });
+    const wrong = await call(client, 'media.import', { source: { job_id: notExport.id } });
+    expect(wrong.structured).toMatchObject({ code: 'bad_request' });
+    const busy = await call(client, 'media.import', { source: { job_id: rendering.id } });
+    expect(busy.structured).toMatchObject({ code: 'media_not_ready' });
+  });
+
+  it('shows a job whose tool failed as failed', async () => {
+    const client = await connect(env.runtime, 'failer');
+    const job = await env.runtime.jobs.store.create({ owner: 'failer', tool: 'media.import' });
+    await env.runtime.jobs.store.update(job, {
+      status: 'completed',
+      statusMessage: 'failed',
+      result: {
+        isError: true,
+        content: [],
+        structuredContent: { code: 'path_not_allowed', message: 'nope' },
+      } as never,
+    });
+    const view = await ok<{ status: string; error: { code: string } }>(client, 'job.get', {
+      job_id: job.id,
+    });
+    expect(view.status).toBe('failed');
+    expect(view.error.code).toBe('path_not_allowed');
+  });
+
+  it('names the host folder behind a media root when a path is not found', async () => {
+    const local = await testRuntime({ mediaHostPath: '/Users/someone/Movies' });
+    local.runtime.media.config.hostFolders = { [local.mediaDir]: '/Users/someone/Movies' };
+    const client = await connect(local.runtime);
+    const res = await call(client, 'media.import', { source: { path: '/Users/someone/clip.mp4' } });
+    expect(String(res.structured.hint)).toContain(`${local.mediaDir} is /Users/someone/Movies`);
+  });
+
   it('answers tasks/get only for the owner, and unknown jobs as errors', async () => {
     const job = await env.runtime.jobs.store.create({ owner: 'local', tool: 'export.video' });
     const client = await connect(env.runtime);
@@ -287,6 +368,6 @@ describe('media and jobs without engines', () => {
     const view = await ok<{ status: string; error: { code: string } }>(client, 'job.get', {
       job_id: job.id,
     });
-    expect(view).toMatchObject({ status: 'completed', error: { code: 'interrupted' } });
+    expect(view).toMatchObject({ status: 'failed', error: { code: 'interrupted' } });
   });
 });

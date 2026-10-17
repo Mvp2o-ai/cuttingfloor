@@ -214,7 +214,7 @@ export async function exportTimeline(
     await run(
       BIN.melt,
       [
-        '-silent',
+        // Not -silent: it suppresses -progress too, and the job then shows no progress at all.
         '-progress',
         ...project,
         '-consumer',

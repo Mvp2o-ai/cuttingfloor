@@ -429,6 +429,12 @@ export const TimelineCreateInput = z.object({
 export const TimelineRef = z.object({ timeline_id: TimelineId });
 export const TimelineLoadInput = z.object({ timeline: TimelineInput });
 export const TimelineIdResult = z.object({ timeline_id: TimelineId });
+export const TimelineCreateResult = z.object({
+  timeline_id: TimelineId,
+  tracks: z
+    .array(z.object({ id: z.string(), kind: TrackKind, name: z.string() }))
+    .describe('The new tracks; edits take the id (track_id), not the name'),
+});
 export const TimelineGetResult = TimelineView;
 export const TimelineHistoryInput = z.object({
   timeline_id: TimelineId,
@@ -458,6 +464,11 @@ export const MediaSource = z.union([
       .describe('A file under a media root, e.g. /media/videos/clip.mp4 (local mode)'),
   }),
   z.object({ url: z.url().describe('An http(s) URL to download') }),
+  z.object({
+    job_id: JobId.describe(
+      'A completed export.video: its rendered file becomes media, e.g. to re-edit a finished cut or place it in a sequence of another shape',
+    ),
+  }),
 ]);
 
 export const MediaImportInput = z.object({
@@ -667,6 +678,7 @@ export const CodeRunResult = z.object({
   stdout: z.string(),
   stderr: z.string(),
   seconds: z.number(),
+  warnings: z.array(z.string()).optional(),
 });
 
 /** Kokoro's English voices, in speaker-id order: a = American, b = British; f/m = female/male. */
@@ -763,6 +775,14 @@ export const JobView = z.object({
   error: ToolError.optional(),
 });
 export const JobRef = z.object({ job_id: JobId });
+export const JobGetInput = JobRef.extend({
+  wait_seconds: z
+    .number()
+    .min(0)
+    .max(50)
+    .default(0)
+    .describe('Hold the call up to this long for the job to finish, instead of polling'),
+});
 export const JobListInput = z.object({
   status: JobStatus.optional(),
   limit: z.number().int().min(1).max(200).default(50),
@@ -805,6 +825,7 @@ export const ExportPreset = z
     'social_9x16_h264',
     'web_1080p_av1',
     'gif',
+    'review_h264',
     'audio_wav_48k',
     'audio_mp3',
   ])

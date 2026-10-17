@@ -51,7 +51,8 @@ export async function sha256File(file: string): Promise<string> {
   return hash.digest('hex');
 }
 
-const fetching = new Map<string, Promise<string>>();
+/** Downloads under way, and everyone waiting on each: they all hear its progress. */
+const fetching = new Map<string, { work: Promise<string>; listeners: Set<(f: number) => void> }>();
 
 /** The model file, downloading and checking it the first time it is needed. */
 export function ensureModel(
@@ -60,8 +61,13 @@ export function ensureModel(
   options: { signal?: AbortSignal; onProgress?: (fraction: number) => void } = {},
 ): Promise<string> {
   const file = join(dir, `ggml-${name}.bin`);
+  const listen = options.onProgress;
   const pending = fetching.get(file);
-  if (pending) return pending;
+  if (pending) {
+    if (listen) pending.listeners.add(listen);
+    return pending.work.finally(() => listen && pending.listeners.delete(listen));
+  }
+  const listeners = new Set<(f: number) => void>(listen ? [listen] : []);
   const work = (async () => {
     const spec = WHISPER_MODELS[name];
     try {
@@ -76,7 +82,9 @@ export function ensureModel(
       timeoutMs: 30 * 60_000,
       allowPrivate: false,
       ...(options.signal ? { signal: options.signal } : {}),
-      onProgress: (bytes) => options.onProgress?.(Math.min(1, bytes / spec.bytes)),
+      onProgress: (bytes) => {
+        for (const l of listeners) l(Math.min(1, bytes / spec.bytes));
+      },
     });
     const digest = await sha256File(part);
     if (digest !== spec.sha256) {
@@ -88,7 +96,7 @@ export function ensureModel(
     await rename(part, file);
     return file;
   })();
-  fetching.set(file, work);
+  fetching.set(file, { work, listeners });
   return work.finally(() => fetching.delete(file));
 }
 

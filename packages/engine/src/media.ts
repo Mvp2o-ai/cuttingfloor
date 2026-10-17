@@ -1,4 +1,4 @@
-import { open, realpath, stat } from 'node:fs/promises';
+import { copyFile, mkdir, open, realpath, stat } from 'node:fs/promises';
 import { basename, extname, join, sep } from 'node:path';
 import { randomId, secondsToTicks, type Workspace } from '@cuttingfloor/core';
 import { CfError, type MediaInfo, type MediaRef, type ToolError } from '@cuttingfloor/schema';
@@ -14,7 +14,11 @@ export interface MediaRecord {
   name: string;
   status: 'importing' | 'processing' | 'ready' | 'failed';
   /** Where it came from: a path, a URL, or a create.* tool and the hash of its recipe. */
-  source: { path: string } | { url: string } | { created: string; recipe: string };
+  source:
+    | { path: string }
+    | { url: string }
+    | { job: string }
+    | { created: string; recipe: string };
   /** The original: the user's file in place, or the downloaded copy. */
   file: string | null;
   size: number | null;
@@ -41,6 +45,8 @@ export interface MediaConfig {
   maxDownloadBytes: number;
   downloadTimeoutMs: number;
   allowPrivateUrls: boolean;
+  /** Local mode: which folder on the user's machine a media root is, for hints. */
+  hostFolders?: Record<string, string>;
 }
 
 export type Progress = (fraction: number, message: string) => void;
@@ -91,7 +97,13 @@ export class MediaLibrary {
       real = await realpath(path);
     } catch {
       throw new CfError('not_found', `No file at ${path}`, {
-        hint: `Media roots: ${this.config.roots.join(', ')}. In local mode, host folders are mounted under /media`,
+        hint: `The server sees only ${this.config.roots.join(', ')}.${Object.entries(
+          this.config.hostFolders ?? {},
+        )
+          .map(([inside, host]) => ` ${inside} is ${host} on the user's machine.`)
+          .join(
+            '',
+          )} To recreate a reference, no import is needed: rebuild it with create.motion or create.still. For the user's own footage, use a path there (copy the file into that folder first) or an http(s) URL`,
       });
     }
     for (const root of this.config.roots) {
@@ -113,6 +125,20 @@ export class MediaLibrary {
     throw new CfError('path_not_allowed', `${path} is outside the media roots`, {
       hint: `Allowed: ${this.config.roots.join(', ')}`,
     });
+  }
+
+  /** Copies a file the server made (a rendered export) into a new record's folder. */
+  async adopt(owner: string, record: MediaRecord, file: string): Promise<string> {
+    const dir = this.dir(owner, record.media_id);
+    await mkdir(dir, { recursive: true });
+    const dest = join(
+      dir,
+      `source${extname(file)
+        .slice(0, 8)
+        .replace(/[^.\w]/g, '')}`,
+    );
+    await copyFile(file, dest);
+    return dest;
   }
 
   /** An existing usable import of the same content, for dedupe. */
@@ -153,7 +179,9 @@ export class MediaLibrary {
           ? basename(source.path)
           : 'url' in source
             ? decodeURIComponent(new URL(source.url).pathname.split('/').pop() || 'download')
-            : source.created),
+            : 'job' in source
+              ? source.job
+              : source.created),
       status: 'importing',
       source,
       file: null,

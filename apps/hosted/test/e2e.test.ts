@@ -1070,6 +1070,83 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(Object.values(view.nested)[0]?.duration).toBe(50);
     }, 120_000);
 
+    it('reports export progress while it renders, not only at the end', async () => {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'slow',
+        sequence: { width: 1920, height: 1080, fps: { num: 25, den: 1 } },
+      });
+      const slow = await ok<{ timeline_id: string }>(client, 'edit.batch', {
+        timeline_id,
+        preview: 'none',
+        ops: [
+          { tool: 'clip.add', args: { track_id: 't1', media_id: media.av } },
+          { tool: 'clip.add', args: { track_id: 't1', media_id: media.av } },
+          { tool: 'clip.add', args: { track_id: 't1', media_id: media.av } },
+          { tool: 'filter.add', args: { timeline: true, name: 'blur', params: { radius: 0.02 } } },
+        ],
+      });
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: slow.timeline_id,
+        preset: 'master_prores_422hq',
+        filename: 'progress-check',
+      });
+      const seen: number[] = [];
+      for (;;) {
+        const view = await ok<{ status: string; progress?: number }>(client, 'job.get', {
+          job_id: started.job_id,
+        });
+        if (view.progress !== undefined) seen.push(view.progress);
+        if (view.status !== 'working') break;
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      expect(seen.some((p) => p > 0 && p < 1)).toBe(true);
+    }, 240_000);
+
+    it('renders a small review of a range that reads back as video for a model to watch', async () => {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'review',
+        sequence: { width: 1920, height: 1080, fps: { num: 25, den: 1 } },
+      });
+      const cut = await ok<{ timeline_id: string }>(client, 'clip.add', {
+        timeline_id,
+        track_id: 't1',
+        media_id: media.av,
+        preview: 'none',
+      });
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: cut.timeline_id,
+        preset: 'review_h264',
+        range: { start: 0, end: 50 },
+        filename: 'review-check',
+      });
+      const done = await waitJob(started.job_id, 120_000);
+      if (done.error) throw new Error(`export failed: ${JSON.stringify(done.error)}`);
+      expect(done.result).toMatchObject({
+        width: 854,
+        height: 480,
+        fps: 25,
+        duration_seconds: 2,
+        mime_type: 'video/mp4',
+        uri: `video://jobs/${started.job_id}/output`,
+      });
+      // What a host sees: links to the file, marked for the model, one fetchable over https.
+      const got = await client.callTool({ name: 'job.get', arguments: { job_id: started.job_id } });
+      const links = (got.content as Array<Record<string, unknown>>).filter(
+        (c) => c.type === 'resource_link',
+      );
+      expect(links.map((l) => String(l.uri).split(':')[0])).toEqual(['video', 'http']);
+      for (const l of links) {
+        expect(l).toMatchObject({
+          mimeType: 'video/mp4',
+          annotations: { audience: ['assistant'] },
+        });
+      }
+      const read = await client.readResource({ uri: `video://jobs/${started.job_id}/output` });
+      const file = read.contents[0] as { mimeType: string; blob: string };
+      expect(file.mimeType).toBe('video/mp4');
+      expect(Buffer.from(file.blob, 'base64').subarray(4, 8).toString()).toBe('ftyp');
+    }, 120_000);
+
     it('exports what the preview shows', async () => {
       const pip = await withEdit('clip.set_transform', {
         clip_id: 'c4',
@@ -1651,6 +1728,97 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(across).toContain('white');
       expect(colour(await pixel(image, 40, 40))).toBe('green');
     }, 120_000);
+
+    it('shows a title that starts later in the timeline, in frames and in exports', async () => {
+      // libass reads the timeline time, so text placed after frame 0 must be timed there too.
+      const t = await onGreen([
+        {
+          tool: 'title.add',
+          args: {
+            track_id: 't2',
+            text: 'LATER',
+            at_frame: 30,
+            duration_frames: 20,
+            style: { size: 0.25, color: '#FFFFFF', shadow: null, outline: null },
+          },
+        },
+      ]);
+      const whiteAcross = async (image: Buffer) =>
+        (
+          await Promise.all(
+            [440, 520, 600, 680, 760, 840].map(async (x) => colour(await pixel(image, x, 360))),
+          )
+        ).includes('white');
+      expect(await whiteAcross(await frame(t, 10))).toBe(false);
+      expect(await whiteAcross(await frame(t, 30))).toBe(true);
+      expect(await whiteAcross(await frame(t, 40))).toBe(true);
+
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: t,
+        preset: 'master_prores_422hq',
+        filename: 'title-later',
+      });
+      const job = await waitJob(started.job_id);
+      const file = join(
+        env.exportsDir,
+        String((job.result as { file: string }).file)
+          .split('/')
+          .pop() ?? '',
+      );
+      const still = join(env.dir, 'title-later.png');
+      await ff(['-i', file, '-vf', 'select=eq(n\\,40)', '-frames:v', '1', still]);
+      expect(await whiteAcross(await readFile(still))).toBe(true);
+    }, 240_000);
+
+    it('imports a rendered export as media and re-frames it to 9:16', async () => {
+      const wide = await onGreen([
+        {
+          tool: 'title.add',
+          args: {
+            track_id: 't2',
+            text: 'WIDE',
+            at_frame: 0,
+            duration_frames: 50,
+            style: { size: 0.25, shadow: null, outline: null },
+          },
+        },
+      ]);
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: wide,
+        preset: 'master_prores_422hq',
+        filename: 'wide-master',
+      });
+      await waitJob(started.job_id);
+      const imported = await importMedia({ job_id: started.job_id });
+      expect(imported).toMatchObject({ width: 1280, height: 720 });
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'tall',
+        sequence: { width: 720, height: 1280, fps: { num: 25, den: 1 } },
+        tracks: { video: 1, audio: 0 },
+      });
+      const tall = await ok<{ timeline_id: string }>(client, 'edit.batch', {
+        timeline_id,
+        preview: 'none',
+        ops: [
+          { tool: 'clip.add', args: { track_id: 't1', media_id: imported.media_id, av: 'video' } },
+          {
+            tool: 'clip.set_transform',
+            args: { clip_id: { $ref: 'ops[0].clip_id' }, fit: 'cover' },
+          },
+        ],
+      });
+      // Covered: green reaches the top and bottom edges of the tall frame.
+      const res = await call(client, 'render.frames', {
+        timeline_id: tall.timeline_id,
+        frames: [10],
+        layout: 'single',
+        format: 'png',
+        size: 'full',
+      });
+      const image = Buffer.from((res.content[0]?.data as string) ?? '', 'base64');
+      expect(colour(await pixel(image, 20, 20))).toBe('green');
+      expect(colour(await pixel(image, 700, 1260))).toBe('green');
+    }, 240_000);
 
     it('moves a caption highlight from word to word in time', async () => {
       const t = await onGreen([
@@ -2680,6 +2848,36 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
 
   describe('code', () => {
     it.skipIf(!chromium)(
+      'says when output was cut and when a rendered page kept its placeholder name',
+      async () => {
+        const started = await ok<{ job_id: string }>(client, 'code.run', {
+          timeout_seconds: 300,
+          script: `
+import { still } from 'cuttingfloor';
+await still({ html: '<b>x</b>', width: 64, height: 64 });
+await still({ html: '<b>y</b>', width: 64, height: 64, out: 'out/named.png' });
+console.log('a'.repeat(40000));
+console.log('the end');
+`,
+        });
+        const done = await waitJob(started.job_id, 300_000);
+        if (done.error) throw new Error(`code.run failed: ${JSON.stringify(done.error)}`);
+        const result = done.result as {
+          stdout: string;
+          outputs: Array<{ name: string }>;
+          warnings?: string[];
+        };
+        expect(result.outputs.map((o) => o.name).sort()).toEqual(['named.png', 'still-1.png']);
+        expect(result.stdout).toMatch(/^\[\d+ earlier characters of stdout cut/);
+        expect(result.stdout).toMatch(/the end\n$/);
+        expect(result.warnings).toEqual([
+          expect.stringMatching(/^still-1\.png kept the placeholder/),
+        ]);
+      },
+      300_000,
+    );
+
+    it.skipIf(!chromium)(
       'a script renders a graphic, imports it, cuts to the beat and previews; tools refine and export',
       async () => {
         const m = env.mediaDir;
@@ -3140,7 +3338,7 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
     const view = await ok<{ status: string; error?: { code: string } }>(client, 'job.get', {
       job_id: job.job_id,
     });
-    expect(view.status).toBe('completed');
+    expect(view.status).toBe('failed');
     expect(view.error?.code).toBe('interrupted');
     const retry = await ok<{ job_id: string }>(client, 'export.video', {
       timeline_id: timeline,

@@ -10,6 +10,7 @@ export const PRESET_NAMES = [
   'social_9x16_h264',
   'web_1080p_av1',
   'gif',
+  'review_h264',
   'audio_wav_48k',
   'audio_mp3',
 ] as const;
@@ -139,6 +140,26 @@ export const PRESETS: Record<PresetName, PresetSpec> = {
       ...BT709,
     },
     crf: { max: 63 },
+    bitrate: true,
+  },
+  // Small and quick, for a model that takes video in to watch the cut: sound kept, every frame kept.
+  review_h264: {
+    extension: 'mp4',
+    mime: 'video/mp4',
+    size: (w, h) => fitBox(w, h, 854, 854),
+    settings: {
+      vcodec: 'libx264',
+      preset: 'veryfast',
+      crf: '28',
+      pix_fmt: 'yuv420p',
+      g: '60',
+      acodec: 'aac',
+      ab: '128k',
+      f: 'mp4',
+      movflags: '+faststart',
+      ...BT709,
+    },
+    crf: { max: 51 },
     bitrate: true,
   },
   gif: {

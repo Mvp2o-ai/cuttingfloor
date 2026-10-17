@@ -25,6 +25,8 @@ export interface RuntimeConfig {
   modelsDir?: string;
   /** The motion sandbox (cuttingfloor motion-worker) for create.motion and create.still. */
   motionUrl: string | null;
+  /** Local mode: the folder on the user's machine compose mounts at /media/videos. */
+  mediaHostPath?: string;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
@@ -53,6 +55,9 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     inlineMaxBytes: Number(env.CUTTINGFLOOR_INLINE_MAX_BYTES ?? 32 * 1024 ** 2),
     ...(env.CUTTINGFLOOR_MODELS ? { modelsDir: env.CUTTINGFLOOR_MODELS } : {}),
     motionUrl: env.CUTTINGFLOOR_MOTION_URL?.replace(/\/$/, '') || null,
+    ...(mode === 'local' && env.CUTTINGFLOOR_MEDIA_HOST_PATH
+      ? { mediaHostPath: env.CUTTINGFLOOR_MEDIA_HOST_PATH }
+      : {}),
   };
 }
 
@@ -78,13 +83,19 @@ export class Runtime {
       maxDownloadBytes: config.maxDownloadBytes,
       downloadTimeoutMs: 30 * 60_000,
       allowPrivateUrls: config.allowPrivateUrls,
+      ...(config.mediaHostPath ? { hostFolders: { '/media/videos': config.mediaHostPath } } : {}),
     });
     this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs);
   }
 
-  /** Loads the signing secret, recovers interrupted jobs and starts the hourly TTL sweep. */
+  /**
+   * Loads the signing secret, recovers interrupted jobs and starts the hourly TTL sweep. Cached
+   * frames go: a timeline id names the edit, not the renderer, so frames an older build drew
+   * would otherwise outlive a fix to how they are drawn.
+   */
   async start(options: { sweep?: boolean } = {}): Promise<void> {
     await this.secret();
+    await this.ws.remove(this.ws.path('cache', 'frames'));
     await this.jobs.recover();
     if (options.sweep !== false) {
       await this.sweep();
