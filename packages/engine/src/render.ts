@@ -118,6 +118,76 @@ export async function renderMediaFrames(
   }
 }
 
+/**
+ * Stills of one media file as baseline JPEGs at exact times, sized for a judgment model: the long
+ * edge `longEdge`, raised so the short edge is at least `minEdge`. Runs a few FFmpeg seeks at once.
+ */
+export async function mediaStills(
+  file: string,
+  size: { width: number; height: number },
+  times: number[],
+  options: {
+    longEdge: number;
+    minEdge: number;
+    signal?: AbortSignal;
+    onFrame?: (done: number) => void;
+  },
+): Promise<Buffer[]> {
+  const long = Math.max(size.width, size.height);
+  const short = Math.max(1, Math.min(size.width, size.height));
+  const scale = Math.max(options.longEdge / long, options.minEdge / short);
+  const w = Math.round(size.width * scale);
+  const h = Math.round(size.height * scale);
+  const dir = await mkdtemp(join(tmpdir(), 'cf-stills-'));
+  try {
+    const out: Buffer[] = new Array(times.length);
+    let next = 0;
+    let done = 0;
+    const worker = async () => {
+      while (next < times.length) {
+        const i = next++;
+        const name = join(dir, `s_${i}.jpg`);
+        await run(
+          BIN.ffmpeg,
+          [
+            '-hide_banner',
+            '-nostdin',
+            '-v',
+            'error',
+            '-protocol_whitelist',
+            'file',
+            '-ss',
+            (times[i] as number).toFixed(6),
+            '-i',
+            `file:${file}`,
+            '-frames:v',
+            '1',
+            '-vf',
+            `scale=${w}:${h}:flags=area,format=yuvj420p`,
+            '-q:v',
+            '3',
+            '-y',
+            name,
+          ],
+          { timeoutMs: 60_000, ...(options.signal ? { signal: options.signal } : {}) },
+        );
+        const data = await readFile(name).catch(() => null);
+        if (!data?.length) {
+          throw new CfError('bad_request', `No picture at ${times[i]} s`, {
+            hint: 'Sample times inside the media: media.get gives its duration_seconds',
+          });
+        }
+        out[i] = data;
+        options.onFrame?.(++done);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, times.length) }, worker));
+    return out;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 async function encodeImages(dir: string, pngs: string[], options: ImageOptions): Promise<Buffer[]> {
   const codec = options.format === 'webp' ? ['-c:v', 'libwebp', '-quality', '82'] : ['-c:v', 'png'];
   if (options.layout === 'grid' && pngs.length > 1) {

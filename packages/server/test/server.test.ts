@@ -5,8 +5,8 @@ import * as z from 'zod/v4';
 import { call, connect, ok, SEQ_720P25, type TestEnv, testRuntime } from './helpers.ts';
 
 const anyResult = z.object({}).passthrough();
-/** tools/list as JSON, in bytes (about 4 bytes per token). */
-const BUDGET_BYTES = 110_000;
+/** tools/list as JSON, in bytes (about 4 bytes per token). Raised from 110 000 for the look guide in media.analyze. */
+const BUDGET_BYTES = 115_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -286,6 +286,24 @@ describe('timelines', () => {
 });
 
 describe('media and jobs without engines', () => {
+  it('asks for a TypeSafe key and questions before a look starts a job', async () => {
+    const bare = await connect(env.runtime, 'looker');
+    const look = { media_id: 'm_aaaaaaaaaaaaaaaaaaaaaaaaaa', kind: 'look' };
+    const noKey = await call(bare, 'media.analyze', {
+      ...look,
+      questions: { speaker: { type: 'noul', instructions: 'Is a person in `frame`?' } },
+    });
+    expect(noKey.structured).toMatchObject({
+      code: 'credential_required',
+      detail: { provider: 'typesafe', env: 'TYPESAFE_API_KEY' },
+    });
+    const keyed = await connect(env.runtime, 'looker', { TYPESAFE_API_KEY: 'ts-secret-test' });
+    const noQuestions = await call(keyed, 'media.analyze', look);
+    expect(noQuestions.structured).toMatchObject({ code: 'bad_request' });
+    expect((await ok<{ jobs: unknown[] }>(keyed, 'job.list', {})).jobs).toHaveLength(0);
+    expect(JSON.stringify([noKey, noQuestions])).not.toContain('ts-secret-test');
+  });
+
   it('refuses paths outside the media roots before creating a job', async () => {
     const client = await connect(env.runtime);
     const res = await call(client, 'media.import', { source: { path: '/etc/passwd' } });

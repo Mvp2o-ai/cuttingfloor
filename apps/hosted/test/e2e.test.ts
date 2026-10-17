@@ -8,12 +8,13 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { startMotionWorker } from '@cuttingfloor/motion';
-import { Runtime } from '@cuttingfloor/server';
+import { createServer, Runtime } from '@cuttingfloor/server';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import {
   createTaskSessionFromClient,
   resultFromTaskOutcome,
 } from '@modelcontextprotocol/ext-tasks/client';
+import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHttpServer } from '../src/http.ts';
 
@@ -3167,6 +3168,207 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
       // 2 s × 60 px = 120 px of 360 is a third of the frame.
       expect(first && later && first.y - later.y).toBeGreaterThan(0.2);
       expect(first && later && first.y - later.y).toBeLessThan(0.45);
+    }, 300_000);
+  });
+
+  describe('look', () => {
+    const KEY = 'ts-e2e-secret-key';
+    let jev: Server;
+    const seen: Array<{ headers: Record<string, unknown>; body: Record<string, unknown> }> = [];
+    let busy = 1;
+
+    /** Width and height from a JPEG's start-of-frame marker. */
+    function jpegSize(b: Buffer): { width: number; height: number; baseline: boolean } {
+      for (let i = 2; i < b.length; ) {
+        const marker = b[i + 1] as number;
+        const len = b.readUInt16BE(i + 2);
+        if (marker >= 0xc0 && marker <= 0xc2) {
+          return {
+            height: b.readUInt16BE(i + 5),
+            width: b.readUInt16BE(i + 7),
+            baseline: marker === 0xc0,
+          };
+        }
+        i += 2 + len;
+      }
+      throw new Error('no SOF');
+    }
+
+    /** A connection whose server holds the given TypeSafe key, acting as the local owner. */
+    async function keyed(key: string): Promise<Client> {
+      const server = createServer({
+        runtime: env.runtime,
+        credentials: new LocalCredentialStore({ TYPESAFE_API_KEY: key }, false),
+        owner: () => 'local',
+      });
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      await server.connect(a);
+      const c = new Client({ name: 'look', version: '0' });
+      await c.connect(b);
+      return c;
+    }
+
+    beforeAll(async () => {
+      // A stand-in for api.typesafe.ai: rate-limits the first call, refuses a wrong key, and
+      // answers every question with fixed values so the conversion can be checked exactly.
+      jev = createPlainServer(async (req, res) => {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>;
+        seen.push({ headers: req.headers, body });
+        if (req.headers.authorization !== `Bearer ${KEY}`) return res.writeHead(401).end('{}');
+        if (busy-- > 0) return res.writeHead(429).end('{}');
+        const answers: Record<string, unknown> = {};
+        for (const [id, q] of Object.entries(body.questions as Record<string, { type: string }>)) {
+          answers[id] =
+            q.type === 'noul'
+              ? { type: 'noul', noul: 0.81 }
+              : q.type === 'choice'
+                ? {
+                    type: 'choice',
+                    choice: 'bars',
+                    probabilities: { bars: 0.9, none: 0.1 },
+                    confidence: 0.8,
+                  }
+                : q.type === 'score'
+                  ? {
+                      type: 'score',
+                      score: 1.5,
+                      legend: {},
+                      probabilities: { 0: 0, 1: 0.5, 2: 0.5 },
+                      confidence: 0.4,
+                    }
+                  : {
+                      type: 'box',
+                      box: { top: 0.1, bottom: 0.5, left: 0.2, right: 0.6 },
+                      confidence: 0.9,
+                    };
+        }
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            model: 'jev-1.14.0',
+            answers,
+            usage: { input_tokens: 1, output_tokens: 1 },
+          }),
+        );
+      });
+      await new Promise<void>((r) => jev.listen(0, '127.0.0.1', r));
+      (env.runtime.config as { typesafeUrl?: string }).typesafeUrl =
+        `http://127.0.0.1:${(jev.address() as AddressInfo).port}`;
+    });
+    afterAll(() => jev?.close());
+
+    it('asks every question of each sampled frame and keeps the answers with the media', async () => {
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=640x360:rate=25',
+        '-t',
+        '3',
+        '-pix_fmt',
+        'yuv420p',
+        join(env.mediaDir, 'look.mp4'),
+      ]);
+      const media = await importMedia({ path: join(env.mediaDir, 'look.mp4') });
+      const c = await keyed(KEY);
+      const started = await ok<{ job_id: string }>(c, 'media.analyze', {
+        media_id: media.media_id,
+        kind: 'look',
+        every_seconds: 1,
+        with_previous: true,
+        questions: {
+          bars: { type: 'noul', instructions: 'Does `frame` show colour bars?' },
+          kind: {
+            type: 'choice',
+            instructions: 'What fills `frame`?',
+            criteria: { bars: null, none: 'Anything else' },
+          },
+          busy: {
+            type: 'score',
+            instructions: 'How busy is `frame`?',
+            criteria: ['Empty', 'Some', 'Full'],
+          },
+          clock: { type: 'box', instructions: 'the moving clock in `frame`' },
+        },
+      });
+      const done = (await waitJob(started.job_id)) as { result?: Record<string, unknown> };
+      const result = done.result as {
+        frames: number;
+        summary: Record<string, unknown>;
+        look: { frames: Array<{ time: number; answers: Record<string, unknown> }> };
+      };
+      // Times 0, 1 and 2: the first is shown only as `previous`, so two frames are asked.
+      expect(result.frames).toBe(2);
+      expect(result.look.frames.map((f) => f.time)).toEqual([1, 2]);
+      expect(result.look.frames[0]?.answers).toEqual({
+        bars: { noul: 0.81 },
+        kind: { choice: 'bars', probabilities: { bars: 0.9, none: 0.1 }, confidence: 0.8 },
+        busy: { score: 1.5, probabilities: { 0: 0, 1: 0.5, 2: 0.5 }, confidence: 0.4 },
+        clock: { box: { x: 0.2, y: 0.1, w: 0.4, h: 0.4 }, confidence: 0.9 },
+      });
+      expect(result.summary).toMatchObject({
+        bars: { yes_at: [{ from: 1, to: 2 }] },
+        kind: { spans: [{ choice: 'bars', from: 1, to: 2 }] },
+      });
+
+      // What Jev received: the key only in its header, the preview header, the pinned model,
+      // and baseline JPEGs inside its size limits, named as the questions name them.
+      const asked = seen.filter((r) => r.headers.authorization === `Bearer ${KEY}`);
+      expect(asked).toHaveLength(3); // one 429, retried
+      for (const r of asked) {
+        expect(r.headers['typesafe-danger-zone-images']).toBe('true');
+        const body = r.body as {
+          model: string;
+          state: Record<string, unknown>;
+          assets: Record<string, { format: string; data_base64: string }>;
+        };
+        expect(body.model).toBe('jev-1.14.0');
+        expect(body.state.seconds_between).toBe(1);
+        for (const name of ['frame', 'previous']) {
+          const asset = body.assets[body.state[name] as string];
+          expect(asset?.format).toBe('jpg');
+          const size = jpegSize(Buffer.from(asset?.data_base64 ?? '', 'base64'));
+          expect(size).toEqual({ width: 512, height: 288, baseline: true });
+        }
+      }
+
+      const stored = await ok<{ analyses: Record<string, unknown>; look: { runs: unknown[] } }>(
+        c,
+        'media.get',
+        { media_id: media.media_id, include: ['look'] },
+      );
+      expect(stored.analyses.look).toEqual({
+        runs: 1,
+        frames: 2,
+        questions: ['bars', 'kind', 'busy', 'clock'],
+      });
+      expect(stored.look.runs).toHaveLength(1);
+
+      // A key TypeSafe refuses ends the job with credential_invalid; no key appears anywhere.
+      const bad = await keyed('ts-wrong-key');
+      const refused = await ok<{ job_id: string }>(bad, 'media.analyze', {
+        media_id: media.media_id,
+        kind: 'look',
+        at_seconds: [0.5],
+        questions: { bars: { type: 'noul', instructions: 'Does `frame` show colour bars?' } },
+      });
+      const failed = await waitJob(refused.job_id);
+      expect(JSON.stringify(failed)).toContain('credential_invalid');
+      const record = await readFile(
+        env.runtime.ws.ownerDir('local', 'media', media.media_id, 'media.json'),
+        'utf8',
+      );
+      for (const text of [
+        JSON.stringify(done),
+        JSON.stringify(failed),
+        JSON.stringify(stored),
+        record,
+      ]) {
+        expect(text).not.toContain(KEY);
+        expect(text).not.toContain('ts-wrong-key');
+      }
     }, 300_000);
   });
 

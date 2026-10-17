@@ -37,10 +37,14 @@ export async function testRuntime(overrides: Partial<RuntimeConfig> = {}): Promi
 }
 
 /** An SDK client over InMemoryTransport (2025-era handshake, as most clients today). */
-export async function connect(runtime: Runtime, owner = 'local'): Promise<Client> {
+export async function connect(
+  runtime: Runtime,
+  owner = 'local',
+  env: NodeJS.ProcessEnv = {},
+): Promise<Client> {
   const server = createServer({
     runtime,
-    credentials: new LocalCredentialStore({}, false),
+    credentials: new LocalCredentialStore(env, false),
     owner: () => owner,
   });
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();

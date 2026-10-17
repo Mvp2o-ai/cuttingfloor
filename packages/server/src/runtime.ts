@@ -25,6 +25,8 @@ export interface RuntimeConfig {
   modelsDir?: string;
   /** The motion sandbox (cuttingfloor motion-worker) for create.motion and create.still. */
   motionUrl: string | null;
+  /** TypeSafe's API, for media.analyze look. Default: api.typesafe.ai. */
+  typesafeUrl?: string;
   /** Local mode: the folder on the user's machine compose mounts at /media/videos. */
   mediaHostPath?: string;
 }
@@ -55,6 +57,9 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     inlineMaxBytes: Number(env.CUTTINGFLOOR_INLINE_MAX_BYTES ?? 32 * 1024 ** 2),
     ...(env.CUTTINGFLOOR_MODELS ? { modelsDir: env.CUTTINGFLOOR_MODELS } : {}),
     motionUrl: env.CUTTINGFLOOR_MOTION_URL?.replace(/\/$/, '') || null,
+    ...(env.CUTTINGFLOOR_TYPESAFE_URL
+      ? { typesafeUrl: env.CUTTINGFLOOR_TYPESAFE_URL.replace(/\/$/, '') }
+      : {}),
     ...(mode === 'local' && env.CUTTINGFLOOR_MEDIA_HOST_PATH
       ? { mediaHostPath: env.CUTTINGFLOOR_MEDIA_HOST_PATH }
       : {}),

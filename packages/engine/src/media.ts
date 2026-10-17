@@ -33,6 +33,7 @@ export interface MediaRecord {
     transcript?: NonNullable<MediaInfo['transcript']>;
     beats?: NonNullable<MediaInfo['beats']>;
     faces?: NonNullable<MediaInfo['faces']>;
+    look?: NonNullable<MediaInfo['look']>;
   };
   error?: ToolError;
   created_at: string;
@@ -326,7 +327,7 @@ export function mediaRef(record: MediaRecord): MediaRef | undefined {
 
 export function mediaInfo(
   record: MediaRecord,
-  include: Array<'transcript' | 'beats' | 'faces'> = [],
+  include: Array<'transcript' | 'beats' | 'faces' | 'look'> = [],
 ): MediaInfo {
   const p = record.probe;
   const a = record.analyses;
@@ -347,6 +348,15 @@ export function mediaInfo(
               faces: {
                 rate: a.faces.rate,
                 frames_with_faces: a.faces.frames.filter((f) => f.faces.length).length,
+              },
+            }
+          : {}),
+        ...(a.look?.runs.length
+          ? {
+              look: {
+                runs: a.look.runs.length,
+                frames: a.look.runs.at(-1)?.frames.length ?? 0,
+                questions: Object.keys(a.look.runs.at(-1)?.questions ?? {}),
               },
             }
           : {}),
