@@ -20,6 +20,9 @@ importers:
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
+      puppeteer-core:
+        specifier: 25.14.0
+        version: 25.14.0
       typescript:
         specifier: 6.0.3
         version: 6.0.3
