@@ -30,6 +30,8 @@ One server first. It's the same image as local, in hosted mode:
 
 **Check it:** `CF_KEY=<a key from CUTTINGFLOOR_API_KEYS> node scripts/smoke-hosted.ts https://<domain>`. It checks that a request without a key is refused, then the sandbox (`create.still`, `create.motion`, `code.run`), `look` on the server's TypeSafe key, and an export's signed link.
 
+**Check sign-in:** `WORKOS_API_KEY=sk_… CHROME_PATH=<chrome> node scripts/smoke-oauth.ts https://<domain>`. It makes a throwaway WorkOS user, registers a client with AuthKit as an MCP client does, signs in on AuthKit's page in headless Chrome, calls tools with the token, then deletes the user and the client. AuthKit caches its metadata for five minutes, so a registration setting changed there takes that long to show.
+
 **If the image is private:** export `GHCR_USER` and `GHCR_TOKEN` (`read:packages`) before running `up.sh`. Or make the GHCR package public in the GitHub UI. Or build on the server from this checkout's HEAD: `CUTTINGFLOOR_BUILD=1 ./up.sh`.
 
 **Verified under gVisor:** `create.still`, `create.motion` and `code.run` run with the sandbox under `runsc` (systrap). The deeper escape and abuse checks in `scripts/smoke-motion.ts` still run only against the local compose file.

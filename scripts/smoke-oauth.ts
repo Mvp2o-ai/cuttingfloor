@@ -13,6 +13,7 @@ import type { AddressInfo } from 'node:net';
 import {
   Client,
   type OAuthClientProvider,
+  type OAuthDiscoveryState,
   StreamableHTTPClientTransport,
   UnauthorizedError,
 } from '@modelcontextprotocol/client';
@@ -94,6 +95,7 @@ const browser = await puppeteer.launch({ executablePath: chrome, headless: true 
 let tokens: { access_token: string } | undefined;
 let clientInfo: { client_id: string } | undefined;
 let verifier = '';
+let discovery: OAuthDiscoveryState | undefined;
 const provider: OAuthClientProvider = {
   get redirectUrl() {
     return redirectUrl;
@@ -119,6 +121,10 @@ const provider: OAuthClientProvider = {
     verifier = v;
   },
   codeVerifier: () => verifier,
+  saveDiscoveryState: (state) => {
+    discovery = state;
+  },
+  discoveryState: () => discovery,
   redirectToAuthorization: async (url) => {
     await signIn(url);
   },
@@ -203,7 +209,9 @@ try {
   await browser.close();
   listener.close();
   await workos(`/user_management/users/${userId}`, { method: 'DELETE' });
-  step('deleted the throwaway user');
+  if (clientInfo)
+    await workos(`/connect/applications/${clientInfo.client_id}`, { method: 'DELETE' });
+  step('deleted the throwaway user and the client it registered');
 }
 
 if (failures.length) {
