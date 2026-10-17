@@ -15,6 +15,7 @@ import {
   sample,
   span,
   TimelineStore,
+  ticksPerFrame,
   timelineIdOf,
   toView,
   transformAt,
@@ -1021,7 +1022,7 @@ describe('transitions', () => {
         tool: 'transition.add',
         args: { clip_id: 'c4', kind: 'dissolve', duration_frames: 10, mode: 'handles' },
       }),
-    ).toThrow(/no source past its end/);
+    ).toThrow(/too little source past its end/);
   });
 
   it('takes crossfades on audio only, and needs touching clips', () => {
@@ -1038,6 +1039,32 @@ describe('transitions', () => {
         args: { clip_id: 'c4', kind: 'dissolve', duration_frames: 10 },
       }),
     ).toThrow(/no cut/);
+  });
+
+  it('shortens a transition a speed change leaves short of source, instead of dropping it', () => {
+    // An overlap transition trims each clip by half its length to make handles; speeding the
+    // second clip up then needs more source before its start than those handles hold.
+    const placed = edit(
+      start(),
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 200, out: 250 } } },
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 0, out: 50 } } },
+    );
+    const [a, b] = [placed.results[0]?.clip_id ?? '', placed.results[1]?.clip_id ?? ''];
+    const withTransition = edit(placed.doc, {
+      tool: 'transition.add',
+      args: { clip_id: a, kind: 'dip_to_black', duration_frames: 12 },
+    });
+    const id = withTransition.results[0]?.clip_ids?.[0] ?? '';
+    const faster = edit(withTransition.doc, {
+      tool: 'clip.set_speed',
+      args: { clip_id: b, rate: 1.5 },
+    });
+    expect(faster.outcome.warnings.join('\n')).toMatch(
+      new RegExp(`Transition ${id} shortened from 12 to \\d+ frames`),
+    );
+    const kept = toView('tl_x', faster.doc).tracks[0]?.transitions?.[0];
+    expect(kept?.id).toBe(id);
+    expect((kept?.end ?? 0) - (kept?.start ?? 0)).toBeLessThan(12);
   });
 
   it('drops a transition an edit breaks, and says so', () => {
@@ -1067,6 +1094,25 @@ describe('transitions', () => {
 
 describe('text', () => {
   const textStart = () => newTimeline('t', seq, { video: 2, audio: 0 });
+
+  it('previews a revealed title once it is fully shown', () => {
+    const tpf = ticksPerFrame(seq.fps);
+    const typed = edit(textStart(), {
+      tool: 'title.add',
+      args: {
+        track_id: 't2',
+        text: 'Hi',
+        at_frame: 10,
+        style: { reveal: 'typewriter', reveal_frames: 15 },
+      },
+    });
+    expect(typed.outcome.focus / tpf).toBe(25);
+    const plain = edit(textStart(), {
+      tool: 'title.add',
+      args: { track_id: 't2', text: 'Hi', at_frame: 10 },
+    });
+    expect(plain.outcome.focus / tpf).toBe(10);
+  });
 
   it('adds a styled title and restyles it, with null resetting a field', () => {
     let { doc } = edit(textStart(), {
@@ -1505,6 +1551,17 @@ describe('time and views', () => {
     });
     const changed = diff(back, next);
     expect(changed.filter((c) => c.change === 'removed')).toHaveLength(2);
+    // Added and modified clips say where they now sit.
+    const moved = edit(back, {
+      tool: 'clip.move',
+      args: { clip_id: view.tracks[0]?.clips[1]?.id ?? '', to_frame: 100 },
+    });
+    expect(diff(back, moved.doc).find((c) => c.type === 'clip')).toMatchObject({
+      change: 'modified',
+      track_id: 't1',
+      start: 100,
+      end: 140,
+    });
     expect(() => fromView(view, () => undefined)).toThrow(/not available/);
   });
 });

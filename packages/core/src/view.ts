@@ -615,10 +615,18 @@ export function diff(a: TimelineDoc, b: TimelineDoc): Change[] {
     );
   const clipsA = clips(a);
   const clipsB = clips(b);
+  const f = (ticks: number) => ticksToFrames(ticks, b.sequence.fps);
+  const at = new Map(
+    b.tracks.flatMap((t) =>
+      t.clips.map(
+        (c) => [c.id, { track_id: t.id, start: f(c.start), end: f(c.start + c.duration) }] as const,
+      ),
+    ),
+  );
   for (const [id, c] of clipsB) {
     const before = clipsA.get(id);
-    if (before === undefined) out.push({ id, type: 'clip', change: 'added' });
-    else if (before !== c) out.push({ id, type: 'clip', change: 'modified' });
+    if (before === undefined) out.push({ id, type: 'clip', change: 'added', ...at.get(id) });
+    else if (before !== c) out.push({ id, type: 'clip', change: 'modified', ...at.get(id) });
   }
   for (const id of clipsA.keys())
     if (!clipsB.has(id)) out.push({ id, type: 'clip', change: 'removed' });

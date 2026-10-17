@@ -1471,7 +1471,13 @@ function titleAdd(doc: TimelineDoc, a: EditArgsOf<'title.add'>): OpOutcome {
     enabled: true,
   };
   place(doc, track, clip, 'overwrite');
-  return ok(start, { clip_id: clip.id });
+  // Preview the title once its reveal is done, not its first, still-empty frame.
+  const revealed =
+    style?.reveal && style.reveal !== 'none'
+      ? (style.reveal_frames ?? Math.max(1, Math.round((fps.num / fps.den) * 0.8)))
+      : 0;
+  const shown = Math.min(revealed, Math.round(duration / ticksPerFrame(fps)) - 1);
+  return ok(start + framesToTicks(Math.max(0, shown), fps), { clip_id: clip.id });
 }
 
 type Segment = NonNullable<EditArgsOf<'caption.add'>['segments']>[number];
@@ -1718,9 +1724,10 @@ function transitionProblem(
       return true;
     }
   };
-  if (short(a, 'end', after)) return `clip ${a.id} has no source past its end to play into it`;
+  if (short(a, 'end', after))
+    return `clip ${a.id} has too little source past its end to play into it`;
   if (short(b, 'start', before))
-    return `clip ${b.id} has no source before its start to play into it`;
+    return `clip ${b.id} has too little source before its start to play into it`;
   return undefined;
 }
 
@@ -1733,15 +1740,34 @@ export function assertTransitions(doc: TimelineDoc): void {
     }
 }
 
-/** Drops transitions an edit made impossible, saying why. */
+/**
+ * Fits transitions an edit made impossible, saying what changed: one short of source (a clip
+ * sped up, trimmed or slipped) shortens to the longest length that plays; one whose clips no
+ * longer meet is removed.
+ */
 function tidyTransitions(doc: TimelineDoc): string[] {
   const warnings: string[] = [];
+  const tpf = ticksPerFrame(doc.sequence.fps);
   for (const track of doc.tracks) {
     if (!track.transitions) continue;
     track.transitions = track.transitions.filter((tr) => {
       const problem = transitionProblem(doc, track, tr);
-      if (problem) warnings.push(`Transition ${tr.id} was removed: ${problem}`);
-      return !problem;
+      if (!problem) return true;
+      const full = tr.duration;
+      if (/source|longer/.test(problem)) {
+        for (let d = full - tpf; d >= 2 * tpf; d -= tpf) {
+          tr.duration = d;
+          if (!transitionProblem(doc, track, tr)) {
+            warnings.push(
+              `Transition ${tr.id} shortened from ${full / tpf} to ${d / tpf} frames: ${problem}`,
+            );
+            return true;
+          }
+        }
+        tr.duration = full;
+      }
+      warnings.push(`Transition ${tr.id} was removed: ${problem}`);
+      return false;
     });
     if (!track.transitions.length) delete track.transitions;
   }
