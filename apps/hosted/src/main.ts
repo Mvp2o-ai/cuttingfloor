@@ -23,6 +23,13 @@ if (config.mode === 'hosted' && apiKeys.size === 0) {
   );
   process.exit(1);
 }
+// Download links are built from it; without it every link would point at the server's own loopback.
+if (config.mode === 'hosted' && !process.env.CUTTINGFLOOR_PUBLIC_URL) {
+  process.stderr.write(
+    'Hosted mode needs CUTTINGFLOOR_PUBLIC_URL, the https address clients reach this server at (download links are built from it)\n',
+  );
+  process.exit(1);
+}
 
 const runtime = new Runtime(config);
 await runtime.start();

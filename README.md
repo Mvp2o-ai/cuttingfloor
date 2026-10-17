@@ -63,7 +63,7 @@ Time is integer frames at the sequence rate, end-exclusive. `timeline.get` retur
 
 ## Hosted mode
 
-The same image with `CUTTINGFLOOR_MODE=hosted`: no path imports (URLs only), no exports folder, and every request needs `Authorization: Bearer <key>` from `CUTTINGFLOOR_API_KEYS` (`owner:key,owner2:key2`, or the `cuttingfloor_api_keys` Docker secret). Each key's owner has separate timelines, media and jobs. Set `CUTTINGFLOOR_PUBLIC_URL` so download links point at the right host.
+The same image with `CUTTINGFLOOR_MODE=hosted`: no path imports (URLs only), no exports folder, and every request needs `Authorization: Bearer <key>` from `CUTTINGFLOOR_API_KEYS` (`owner:key,owner2:key2`, or the `cuttingfloor_api_keys` Docker secret). Each key's owner has separate timelines, media and jobs. `CUTTINGFLOOR_PUBLIC_URL` is required: download links are built from it, and the server won't start without it.
 
 | Variable | Default | |
 |---|---|---|
