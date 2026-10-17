@@ -2,9 +2,10 @@ import { readFile } from 'node:fs/promises';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { configFromEnv, Runtime } from '@cuttingfloor/server';
 import { createHttpServer, parseApiKeys } from './http.ts';
+import { OAuthVerifier } from './oauth.ts';
 
 // `cuttingfloor serve`: the long-running HTTP node. Local mode (compose) is one user on
-// loopback; hosted mode requires bearer API keys and takes provider keys per tenant.
+// loopback; hosted mode requires bearer API keys or OAuth and takes provider keys per tenant.
 const config = configFromEnv();
 const port = Number(process.env.PORT ?? 8787);
 // 0.0.0.0 inside the container; compose publishes it on the host's loopback only.
@@ -17,19 +18,25 @@ const apiKeys = parseApiKeys(
       () => undefined,
     )),
 );
-if (config.mode === 'hosted' && apiKeys.size === 0) {
+const publicUrl = process.env.CUTTINGFLOOR_PUBLIC_URL?.replace(/\/$/, '');
+const issuer = process.env.CUTTINGFLOOR_OAUTH_ISSUER;
+if (config.mode === 'hosted' && apiKeys.size === 0 && !issuer) {
   process.stderr.write(
-    'Hosted mode needs CUTTINGFLOOR_API_KEYS (owner:key,...) or the cuttingfloor_api_keys secret\n',
+    'Hosted mode needs CUTTINGFLOOR_OAUTH_ISSUER, or CUTTINGFLOOR_API_KEYS (owner:key,...) or the cuttingfloor_api_keys secret\n',
   );
   process.exit(1);
 }
-// Download links are built from it; without it every link would point at the server's own loopback.
-if (config.mode === 'hosted' && !process.env.CUTTINGFLOOR_PUBLIC_URL) {
+// Download links are built from it, and it names this server to the authorization server.
+if (config.mode === 'hosted' && !publicUrl) {
   process.stderr.write(
-    'Hosted mode needs CUTTINGFLOOR_PUBLIC_URL, the https address clients reach this server at (download links are built from it)\n',
+    'Hosted mode needs CUTTINGFLOOR_PUBLIC_URL, the https address clients reach this server at (download links and the OAuth resource are built from it)\n',
   );
   process.exit(1);
 }
+const oauth =
+  config.mode === 'hosted' && issuer && publicUrl
+    ? new OAuthVerifier({ issuer, resource: `${publicUrl}/mcp` })
+    : undefined;
 
 const runtime = new Runtime(config);
 await runtime.start();
@@ -43,7 +50,13 @@ const server = createHttpServer({
   runtime,
   credentials,
   ...(config.mode === 'hosted' ? { apiKeys } : {}),
+  ...(oauth ? { oauth } : {}),
 });
+// Fetch the authorization server's metadata now, so a wrong issuer shows at start.
+oauth?.authorizationServerMetadata().then(
+  () => process.stderr.write(`oauth: tokens from ${oauth.issuer} for ${oauth.resource}\n`),
+  (error: Error) => process.stderr.write(`oauth: ${error.message}\n`),
+);
 
 server.listen(port, host, () => {
   process.stderr.write(

@@ -12,6 +12,7 @@ import type { CredentialStore } from '@cuttingfloor/credentials';
 import { createServer, outputMime, type Runtime } from '@cuttingfloor/server';
 import { toWebRequest } from '@modelcontextprotocol/node';
 import { createMcpHandler } from '@modelcontextprotocol/server';
+import type { OAuthVerifier } from './oauth.ts';
 
 export interface HttpOptions {
   runtime: Runtime;
@@ -21,6 +22,8 @@ export interface HttpOptions {
    * the server only answers on loopback host names.
    */
   apiKeys?: Map<string, string>;
+  /** Hosted mode: OAuth access tokens from one authorization server, alongside any API keys. */
+  oauth?: OAuthVerifier;
 }
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
@@ -30,7 +33,7 @@ const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
  * signed output downloads at /outputs/…, and /healthz.
  */
 export function createHttpServer(options: HttpOptions): Server {
-  const { runtime, credentials } = options;
+  const { runtime, credentials, oauth } = options;
   const handler = createMcpHandler(
     (ctx) => {
       const owner = ctx.authInfo?.clientId ?? 'local';
@@ -43,12 +46,44 @@ export function createHttpServer(options: HttpOptions): Server {
     owner,
   }));
 
+  /** The owner a bearer token acts as: an API key's account, else an access token's subject. */
+  async function authenticate(token: string): Promise<string | undefined> {
+    const digest = createHash('sha256').update(token).digest();
+    const key = hashedKeys.find((k) => timingSafeEqual(k.digest, digest));
+    if (key) return key.owner;
+    return oauth?.verify(token);
+  }
+
   return createNodeServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
       if (url.pathname === '/healthz') {
         res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
         return;
+      }
+      if (oauth && req.method === 'GET' && url.pathname.startsWith('/.well-known/')) {
+        const json = (status: number, body: unknown) =>
+          res
+            .writeHead(status, {
+              'content-type': 'application/json',
+              'access-control-allow-origin': '*',
+              'cache-control': 'public, max-age=3600',
+            })
+            .end(JSON.stringify(body));
+        if (
+          url.pathname === '/.well-known/oauth-protected-resource' ||
+          url.pathname === new URL(oauth.resourceMetadataUrl).pathname
+        ) {
+          json(200, oauth.protectedResource());
+          return;
+        }
+        // Clients from before Protected Resource Metadata look for the authorization server here.
+        if (url.pathname === '/.well-known/oauth-authorization-server') {
+          const metadata = await oauth.authorizationServerMetadata().catch(() => undefined);
+          if (metadata) json(200, metadata);
+          else json(502, { error: 'authorization server unreachable' });
+          return;
+        }
       }
       if (url.pathname.startsWith('/outputs/') && (req.method === 'GET' || req.method === 'HEAD')) {
         const file = await runtime.verifyOutput(
@@ -68,22 +103,26 @@ export function createHttpServer(options: HttpOptions): Server {
         return;
       }
       let owner = 'local';
-      if (hashedKeys.length) {
+      if (hashedKeys.length || oauth) {
         const token = /^Bearer (.+)$/i.exec(req.headers.authorization ?? '')?.[1];
-        const digest = token ? createHash('sha256').update(token).digest() : undefined;
-        const match = digest && hashedKeys.find((k) => timingSafeEqual(k.digest, digest));
-        if (!match) {
+        const found = token ? await authenticate(token) : undefined;
+        if (!found) {
           res
-            .writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' })
+            .writeHead(401, {
+              'content-type': 'application/json',
+              'www-authenticate': oauth ? oauth.challenge(Boolean(token)) : 'Bearer',
+            })
             .end(
               JSON.stringify({
                 error: 'invalid_token',
-                error_description: 'Send Authorization: Bearer <api key>',
+                error_description: oauth
+                  ? 'Sign in through the authorization server named in the protected resource metadata, or send Authorization: Bearer <api key>'
+                  : 'Send Authorization: Bearer <api key>',
               }),
             );
           return;
         }
-        owner = match.owner;
+        owner = found;
       } else {
         // Local mode: refuse DNS-rebinding and cross-site browser requests.
         const host = (req.headers.host ?? '').replace(/:\d+$/, '');
