@@ -478,6 +478,11 @@ describe('media helpers', () => {
   it('snaps measured rates to standard ones', () => {
     expect(standardRate({ num: 2997, den: 100 })).toEqual({ num: 30000, den: 1001 });
     expect(standardRate({ num: 25, den: 1 })).toEqual({ num: 25, den: 1 });
+    // Whole rates stay whole, though the NTSC rate is within tolerance of each.
+    expect(standardRate({ num: 30, den: 1 })).toEqual({ num: 30, den: 1 });
+    expect(standardRate({ num: 24, den: 1 })).toEqual({ num: 24, den: 1 });
+    expect(standardRate({ num: 60, den: 1 })).toEqual({ num: 60, den: 1 });
+    expect(standardRate({ num: 24000, den: 1001 })).toEqual({ num: 24000, den: 1001 });
     expect(standardRate({ num: 4650, den: 179 })).toEqual({ num: 26, den: 1 });
   });
 

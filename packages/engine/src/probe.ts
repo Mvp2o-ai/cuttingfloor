@@ -269,8 +269,10 @@ export function standardRate(r: { num: number; den: number }): { num: number; de
     { num: 15, den: 1 },
     { num: 12, den: 1 },
   ];
-  const near = standard.find((s) => Math.abs(s.num / s.den - value) / value < 0.002);
-  return near ?? { num: Math.max(1, Math.round(value)), den: 1 };
+  // The nearest one: 30 and 29.97 are only 0.1% apart, so the first within tolerance can be wrong.
+  const off = (s: { num: number; den: number }) => Math.abs(s.num / s.den - value) / value;
+  const near = standard.reduce((a, b) => (off(b) < off(a) ? b : a));
+  return off(near) < 0.002 ? near : { num: Math.max(1, Math.round(value)), den: 1 };
 }
 
 /** Why a file needs a mezzanine before MLT reads it frame-accurately. */
