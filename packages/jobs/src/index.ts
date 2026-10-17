@@ -263,10 +263,12 @@ export class JobRunner {
     let current = (await this.store.get(job.id, job.owner)) ?? job;
     let lastWrite = 0;
     let pending: Promise<unknown> = Promise.resolve();
-    const progress = (fraction: number, message: string) => {
-      const now = Date.now();
-      if (now - lastWrite < 1000 && fraction < 1) return;
-      lastWrite = now;
+    // An update inside the second is held, not dropped: the latest one is written when the
+    // second is up, so a quick "running" after "fetching inputs" still shows.
+    let held: { fraction: number; message: string } | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const write = (fraction: number, message: string) => {
+      lastWrite = Date.now();
       pending = pending.then(async () => {
         if (controller.signal.aborted) return;
         current = await this.store.update(current, {
@@ -275,9 +277,28 @@ export class JobRunner {
         });
       });
     };
+    const progress = (fraction: number, message: string) => {
+      const wait = lastWrite + 1000 - Date.now();
+      if (wait <= 0 || fraction >= 1) {
+        held = undefined;
+        write(fraction, message);
+        return;
+      }
+      held = { fraction, message };
+      timer ??= setTimeout(() => {
+        timer = undefined;
+        if (held) write(held.fraction, held.message);
+        held = undefined;
+      }, wait);
+    };
+    const settle = () => {
+      clearTimeout(timer);
+      held = undefined;
+    };
     try {
       if (controller.signal.aborted) throw new CfError('cancelled', 'Cancelled');
       const result = await work({ signal: controller.signal, progress });
+      settle();
       await pending;
       current = await this.store.update(current, {
         status: 'completed',
@@ -286,6 +307,7 @@ export class JobRunner {
         result,
       });
     } catch (error) {
+      settle();
       await pending.catch(() => undefined);
       if (controller.signal.aborted) {
         current = await this.store.update(current, {

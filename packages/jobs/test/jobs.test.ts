@@ -42,6 +42,28 @@ describe('JobRunner', () => {
     });
   });
 
+  it('shows the latest progress even when it came within a second of the last', async () => {
+    const { store, runner } = await setup();
+    const job = await store.create({ owner: 'o', tool: 't' });
+    let finish = () => {};
+    runner.start(job, async ({ progress }) => {
+      progress(0, 'fetching inputs');
+      progress(0.1, 'running');
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      return { content: [], structuredContent: {} };
+    });
+    await new Promise((r) => setTimeout(r, 1300));
+    expect(await store.get(job.id, 'o')).toMatchObject({
+      status: 'working',
+      statusMessage: 'running',
+      progress: 0.1,
+    });
+    finish();
+    await runner.settled(job.id);
+  });
+
   it('queues beyond its concurrency, and cancels running and queued jobs', async () => {
     const { store, runner } = await setup(1);
     const running = await store.create({ owner: 'o', tool: 't' });
