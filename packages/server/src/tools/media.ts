@@ -20,6 +20,18 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 
+/** Analysis data longer than this stays with the media instead of filling the result. */
+const INLINE_CHARS = 20_000;
+
+/** An analysis for the result: whole when short, or a note on where to read it when long. */
+function inline(mediaId: string, kind: string, data: unknown): Record<string, unknown> {
+  const chars = JSON.stringify(data).length;
+  if (chars <= INLINE_CHARS) return { [kind]: data };
+  return {
+    note: `The ${kind} is ${chars} characters, too long to return here. It is stored with the media: in code.run, cf.media.get({media_id: '${mediaId}', include: ['${kind}']}) gives all of it to search, and the script prints only what you need; media.get {include: ['${kind}']} returns it whole.`,
+  };
+}
+
 export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
   const rt = deps.runtime;
 
@@ -145,7 +157,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       title: 'Analyze media',
       description: [
         'Find what is in imported media, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). beats: tempo, beat and downbeat times. faces: face boxes over time plus a smoothed focus point for reframing (e.g. to 9:16 with clip.set_transform keyframes). track: follow a region you give from a moment on.',
-        'Times are media seconds; boxes are fractions of the picture. Results stay with the media (media.get include) except track, which comes back in the result.',
+        'Times are media seconds; boxes are fractions of the picture. Results stay with the media (media.get include) except track, which comes back in the result. A result too long to return (a long transcript) comes back as its summary and a note on reading it in code.run.',
         'Long-running: returns a task, or a job_id for job.get.',
       ].join(' '),
       inputSchema: MediaAnalyzeInput,
@@ -217,7 +229,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               media_id: args.media_id,
               kind: args.kind,
               summary: mediaInfo(latest).analyses?.transcript,
-              transcript,
+              ...inline(args.media_id, 'transcript', transcript),
             }) as never;
           }
           case 'beats': {
@@ -228,7 +240,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               media_id: args.media_id,
               kind: args.kind,
               summary: mediaInfo(latest).analyses?.beats,
-              beats,
+              ...inline(args.media_id, 'beats', beats),
             }) as never;
           }
           case 'faces': {
@@ -239,7 +251,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               media_id: args.media_id,
               kind: args.kind,
               summary: mediaInfo(latest).analyses?.faces,
-              faces,
+              ...inline(args.media_id, 'faces', faces),
             }) as never;
           }
           case 'track': {
@@ -270,7 +282,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get media',
       description:
-        'Status, streams, duration, frame rate, conform reasons, scene cuts, loudness, silences and summaries of media.analyze results; include returns those results in full.',
+        'Status, streams, duration, frame rate, conform reasons, scene cuts, loudness, silences and summaries of media.analyze results; include returns those results in full (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
       inputSchema: MediaRefInput,
       outputSchema: MediaInfo,
       annotations: {
