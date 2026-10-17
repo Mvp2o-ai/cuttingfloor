@@ -40,7 +40,8 @@ async function workos(path: string, init: RequestInit = {}) {
       ...init.headers,
     },
   });
-  const body = res.status === 204 ? {} : await res.json();
+  const text = await res.text();
+  const body = text ? JSON.parse(text) : {};
   if (!res.ok) throw new Error(`WorkOS ${path}: ${res.status} ${JSON.stringify(body)}`);
   return body as Record<string, unknown>;
 }

@@ -67,7 +67,7 @@ export function createHttpServer(options: HttpOptions): Server {
             .writeHead(status, {
               'content-type': 'application/json',
               'access-control-allow-origin': '*',
-              'cache-control': 'public, max-age=3600',
+              'cache-control': 'public, max-age=300',
             })
             .end(JSON.stringify(body));
         if (

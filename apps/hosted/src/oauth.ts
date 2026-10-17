@@ -48,9 +48,12 @@ export class OAuthVerifier {
     return `Bearer resource_metadata="${this.resourceMetadataUrl}"${error}`;
   }
 
-  /** The authorization server's metadata (RFC 8414, else OpenID discovery), cached for an hour. */
+  /**
+   * The authorization server's metadata (RFC 8414, else OpenID discovery), cached for five
+   * minutes as AuthKit caches it, so a registration setting changed there shows soon.
+   */
   async authorizationServerMetadata(): Promise<Record<string, unknown>> {
-    if (this.#metadata && Date.now() - this.#metadata.at < 3_600_000) return this.#metadata.value;
+    if (this.#metadata && Date.now() - this.#metadata.at < 300_000) return this.#metadata.value;
     const value = this.#discover();
     this.#metadata = { value, at: Date.now() };
     value.catch(() => {
