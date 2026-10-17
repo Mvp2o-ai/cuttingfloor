@@ -972,3 +972,79 @@ a {
     color: var(--mute);
   }
 }
+
+/* ---------- account ---------- */
+
+.as-button {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.nav .as-button {
+  font-size: 15px;
+  font-weight: 600;
+}
+.account-email {
+  color: var(--mute);
+}
+.account-head {
+  font-size: clamp(56px, 10vw, 150px);
+  margin: 20px 0 24px;
+}
+button.link-big {
+  background: none;
+  color: var(--ink);
+  padding: 0 0 2px;
+  margin-top: 32px;
+}
+.plans {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 40px;
+}
+.plan {
+  border: 1px solid var(--rule);
+  background: var(--bg-2);
+  padding: 22px;
+}
+.plan .tier {
+  margin: 0 0 6px;
+  font-size: clamp(28px, 3vw, 40px);
+  font-weight: 800;
+  font-variation-settings: "wdth" 70;
+  letter-spacing: -0.02em;
+}
+.plan p {
+  margin: 0 0 20px;
+  color: var(--mute);
+}
+.plan-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.buy {
+  appearance: none;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 700;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+.buy:hover {
+  background: var(--key);
+  border-color: var(--key);
+}
+.buy.quiet {
+  background: none;
+  color: var(--ink);
+}
+@media (max-width: 900px) {
+  .plans {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

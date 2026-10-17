@@ -3,9 +3,8 @@ import { Capabilities } from './capabilities.tsx';
 import { Connect } from './connect.tsx';
 import { PLANS } from './pricing.ts';
 
-// The trial starts by connecting: the client opens the sign-in. The account page (plan, billing)
-// arrives with subscriptions.
-const SIGN_UP = '#start';
+// Signing up (or in) is the account page: WorkOS sign-in, then the trial, plans and the connect box.
+const SIGN_UP = '/account';
 const DOCS = 'https://github.com/mvp2o-ai/cuttingfloor';
 
 export default function Home() {
@@ -21,6 +20,7 @@ export default function Home() {
             <a href="#how">How it works</a>
             <a href="#pricing">Pricing</a>
             <a href={DOCS}>Open source</a>
+            <a href={SIGN_UP}>Sign in</a>
           </nav>
           <a className="nav-cta" href={SIGN_UP}>
             Start free

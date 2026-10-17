@@ -1,0 +1,9 @@
+import { authkitProxy } from '@workos-inc/authkit-nextjs';
+
+// Sessions for the signed-in pages only; the landing page stays static. Signed-out visitors to
+// /account and the billing routes go to the WorkOS sign-in first.
+export default authkitProxy({
+  middlewareAuth: { enabled: true, unauthenticatedPaths: ['/callback'] },
+});
+
+export const config = { matcher: ['/account', '/callback', '/api/:path*'] };
