@@ -1529,6 +1529,34 @@ describe('time and views', () => {
     expect(layout(doc, 0)).toEqual([[60, 90, 0]]);
   });
 
+  it('refuses a loaded caption whose words and text disagree', () => {
+    const { doc } = edit(newTimeline('t', seq, { video: 2, audio: 0 }), {
+      tool: 'caption.add',
+      args: {
+        track_id: 't2',
+        segments: [
+          {
+            start_frame: 0,
+            end_frame: 20,
+            text: 'Hello there',
+            words: [
+              { text: 'Hello', start_frame: 0, end_frame: 10 },
+              { text: 'there', start_frame: 10, end_frame: 20 },
+            ],
+          },
+        ],
+      },
+    });
+    const view = toView('tl_x', doc);
+    const caption = view.tracks[1]?.clips[0] as { text: string; words: Array<{ text: string }> };
+    caption.text = 'HELLO THERE';
+    expect(() => fromView(view, resolve)).toThrow(
+      /words spell "Hello there" but its text is "HELLO THERE"/,
+    );
+    for (const w of caption.words) w.text = w.text.toUpperCase();
+    expect(() => fromView(view, resolve)).not.toThrow();
+  });
+
   it('round-trips through the view and reports a structural diff', () => {
     const { doc } = edit(
       start(),
