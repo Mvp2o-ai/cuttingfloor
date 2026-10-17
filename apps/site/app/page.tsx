@@ -44,7 +44,7 @@ export default function Home() {
           <div className="hero-row">
             <div className="rise d2">
               <p className="lede">
-                Connect Claude, Cursor or ChatGPT and say what you want cut.{' '}
+                Connect Kazi, Claude, Cursor or ChatGPT and say what you want cut.{' '}
                 <em>
                   It imports your footage, reads the transcript, trims, captions, mixes and hands
                   back a finished file.
@@ -191,8 +191,8 @@ export default function Home() {
             <details>
               <summary>Which agents work with it?</summary>
               <p>
-                Any MCP client with remote servers: Claude (web, desktop and Code), Cursor, ChatGPT
-                in developer mode, VS Code, and anything built on the MCP SDKs.
+                Any MCP client with remote servers: Kazi, Claude (web, desktop and Code), Cursor,
+                ChatGPT in developer mode, VS Code, and anything built on the MCP SDKs.
               </p>
             </details>
             <details>

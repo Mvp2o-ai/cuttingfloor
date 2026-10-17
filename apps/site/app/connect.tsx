@@ -4,7 +4,14 @@ import { useState } from 'react';
 
 export const MCP_URL = 'https://cuttingfloorai.apifunnel.ai/mcp';
 
+// Kazi is ours, so it leads, in the accent.
 const CLIENTS = [
+  {
+    name: 'Kazi',
+    how: 'In Kazi (app.apifunnel.ai), open Servers and add your own server. Paste the address, Connect, then sign in.',
+    line: MCP_URL,
+    ours: true,
+  },
   {
     name: 'Claude',
     how: 'Settings → Connectors → Add custom connector. Paste the address, then sign in.',
@@ -41,6 +48,7 @@ export function Connect() {
             type="button"
             role="tab"
             aria-selected={i === tab}
+            className={'ours' in c && c.ours ? 'ours' : undefined}
             onClick={() => {
               setTab(i);
               setCopied(false);

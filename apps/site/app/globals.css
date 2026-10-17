@@ -291,6 +291,13 @@ a {
   color: var(--bg);
   background: var(--ink);
 }
+.connect-tabs button.ours {
+  color: var(--key);
+}
+.connect-tabs button.ours[aria-selected="true"] {
+  color: var(--bg);
+  background: var(--key);
+}
 .connect-body {
   padding: 18px;
 }
