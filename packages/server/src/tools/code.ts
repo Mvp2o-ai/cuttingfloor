@@ -16,6 +16,8 @@ import { createServer, type ServerDeps } from '../server.ts';
 // named *.timeline.json.
 
 const deny = new Set<string>(CODE_DENIED_TOOLS);
+/** The names motion() and still() write when the script gives no out. */
+const PLACEHOLDER = /^(motion|still)-\d+\.(mov|mp4|png)$/;
 
 /** An MCP client to a fresh server instance acting as `owner`, for the script's tool calls. */
 async function ownerClient(deps: ServerDeps, owner: string): Promise<Client> {
@@ -35,7 +37,7 @@ export function registerCodeTools(server: McpServer, deps: ServerDeps): void {
       title: 'Run code',
       description: [
         'Run a script (node, python or bash) in the sandbox for anything the tools do not cover: generated graphics, procedural or data-driven edits, custom FFmpeg or MLT work, batch jobs.',
-        "Inside, `import { cf } from 'cuttingfloor'` (python `from cuttingfloor import cf`; bash `cf domain.verb '{json}'`) calls every tool except code.run, create.motion and create.still as cf.domain.verb(args), on the same media and timelines, following long jobs to their result. motion({html, duration}) and still({html}) from the same module render pages right there.",
+        "Inside, `import { cf } from 'cuttingfloor'` (python `from cuttingfloor import cf`; bash `cf domain.verb '{json}'`) calls every tool except code.run, create.motion and create.still as cf.domain.verb(args), on the same media and timelines, following long jobs to their result. In node, motion({html, duration, width, height, fps, transparent, out}) and still({html, width, height, out}) from the same module render pages right there and return the file's path; out names it (e.g. 'out/title.mov').",
         'inputs are fetched into in/; files written to out/ come back as media (video, audio, images, fonts, LUTs), and out/*.timeline.json as timelines (the timeline.get JSON).',
         'Preinstalled: Node 24, Python 3 (numpy, Pillow, OpenCV), FFmpeg, melt, Chromium. No network.',
         'Long-running: a task, or {job_id} for job.get. A non-zero exit fails with code_failed and the logs.',
@@ -142,7 +144,19 @@ export function registerCodeTools(server: McpServer, deps: ServerDeps): void {
             progress(0.9 + (0.1 * i) / run.files.length, `importing out/${f.name}`);
             outputs.push(await keep(f, scriptHash, job.id, signal));
           }
-          return ok({ exit_code: run.exit_code, outputs, ...logs, seconds: run.seconds }) as never;
+          const unnamed = outputs.map((o) => o.name).filter((n) => PLACEHOLDER.test(n));
+          const warnings = unnamed.length
+            ? [
+                `${unnamed.join(', ')} kept the placeholder name motion() and still() give when no out is passed. To name what a page renders, pass out: motion({html, duration, out: 'out/<name>.mov'}) (.mp4 with transparent: false), still({html, out: 'out/<name>.png'}).`,
+              ]
+            : [];
+          return ok({
+            exit_code: run.exit_code,
+            outputs,
+            ...logs,
+            seconds: run.seconds,
+            ...(warnings.length ? { warnings } : {}),
+          }) as never;
         } finally {
           await client.close().catch(() => undefined);
         }

@@ -678,6 +678,7 @@ export const CodeRunResult = z.object({
   stdout: z.string(),
   stderr: z.string(),
   seconds: z.number(),
+  warnings: z.array(z.string()).optional(),
 });
 
 /** Kokoro's English voices, in speaker-id order: a = American, b = British; f/m = female/male. */

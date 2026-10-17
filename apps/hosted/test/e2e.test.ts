@@ -2803,6 +2803,36 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
 
   describe('code', () => {
     it.skipIf(!chromium)(
+      'says when output was cut and when a rendered page kept its placeholder name',
+      async () => {
+        const started = await ok<{ job_id: string }>(client, 'code.run', {
+          timeout_seconds: 300,
+          script: `
+import { still } from 'cuttingfloor';
+await still({ html: '<b>x</b>', width: 64, height: 64 });
+await still({ html: '<b>y</b>', width: 64, height: 64, out: 'out/named.png' });
+console.log('a'.repeat(40000));
+console.log('the end');
+`,
+        });
+        const done = await waitJob(started.job_id, 300_000);
+        if (done.error) throw new Error(`code.run failed: ${JSON.stringify(done.error)}`);
+        const result = done.result as {
+          stdout: string;
+          outputs: Array<{ name: string }>;
+          warnings?: string[];
+        };
+        expect(result.outputs.map((o) => o.name).sort()).toEqual(['named.png', 'still-1.png']);
+        expect(result.stdout).toMatch(/^\[\d+ earlier characters of stdout cut/);
+        expect(result.stdout).toMatch(/the end\n$/);
+        expect(result.warnings).toEqual([
+          expect.stringMatching(/^still-1\.png kept the placeholder/),
+        ]);
+      },
+      300_000,
+    );
+
+    it.skipIf(!chromium)(
       'a script renders a graphic, imports it, cuts to the beat and previews; tools refine and export',
       async () => {
         const m = env.mediaDir;
