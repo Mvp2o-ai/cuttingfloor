@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { configFromEnv, Runtime } from '@cuttingfloor/server';
 import { createHttpServer, parseApiKeys } from './http.ts';
-import { OAuthVerifier } from './oauth.ts';
+import { discoverAuthorizationServer, JwtTokenVerifier } from './oauth.ts';
 
 // `cuttingfloor serve`: the long-running HTTP node. Local mode (compose) is one user on
 // loopback; hosted mode requires bearer API keys or OAuth and takes provider keys per tenant.
@@ -33,10 +33,27 @@ if (config.mode === 'hosted' && !publicUrl) {
   );
   process.exit(1);
 }
+// MCP authorization: this server is the OAuth resource at /mcp; users sign in at the issuer.
 const oauth =
   config.mode === 'hosted' && issuer && publicUrl
-    ? new OAuthVerifier({ issuer, resource: `${publicUrl}/mcp` })
+    ? {
+        verifier: new JwtTokenVerifier(
+          await discoverAuthorizationServer(issuer).catch((error: Error) => {
+            process.stderr.write(`oauth: ${error.message}\n`);
+            process.exit(1);
+          }),
+        ),
+        resource: new URL(`${publicUrl}/mcp`),
+      }
     : undefined;
+// Registration settings change at the authorization server; it caches its metadata five minutes.
+if (oauth && issuer)
+  setInterval(() => {
+    discoverAuthorizationServer(issuer).then(
+      (metadata) => oauth.verifier.update(metadata),
+      (error: Error) => process.stderr.write(`oauth: ${error.message}\n`),
+    );
+  }, 300_000).unref();
 
 const runtime = new Runtime(config);
 await runtime.start();
@@ -52,11 +69,7 @@ const server = createHttpServer({
   ...(config.mode === 'hosted' ? { apiKeys } : {}),
   ...(oauth ? { oauth } : {}),
 });
-// Fetch the authorization server's metadata now, so a wrong issuer shows at start.
-oauth?.authorizationServerMetadata().then(
-  () => process.stderr.write(`oauth: tokens from ${oauth.issuer} for ${oauth.resource}\n`),
-  (error: Error) => process.stderr.write(`oauth: ${error.message}\n`),
-);
+if (oauth) process.stderr.write(`oauth: sign-in at ${issuer} for ${oauth.resource}\n`);
 
 server.listen(port, host, () => {
   process.stderr.write(

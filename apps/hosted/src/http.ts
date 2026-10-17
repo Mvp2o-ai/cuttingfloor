@@ -11,8 +11,14 @@ import { Readable } from 'node:stream';
 import type { CredentialStore } from '@cuttingfloor/credentials';
 import { createServer, outputMime, type Runtime } from '@cuttingfloor/server';
 import { toWebRequest } from '@modelcontextprotocol/node';
-import { createMcpHandler } from '@modelcontextprotocol/server';
-import type { OAuthVerifier } from './oauth.ts';
+import {
+  createMcpHandler,
+  getOAuthProtectedResourceMetadataUrl,
+  type OAuthMetadata,
+  oauthMetadataResponse,
+  requireBearerAuth,
+} from '@modelcontextprotocol/server';
+import type { JwtTokenVerifier } from './oauth.ts';
 
 export interface HttpOptions {
   runtime: Runtime;
@@ -22,8 +28,11 @@ export interface HttpOptions {
    * the server only answers on loopback host names.
    */
   apiKeys?: Map<string, string>;
-  /** Hosted mode: OAuth access tokens from one authorization server, alongside any API keys. */
-  oauth?: OAuthVerifier;
+  /**
+   * Hosted mode: MCP authorization (2026-07-28) with this server as the OAuth resource `resource`
+   * (its /mcp URL) and tokens from the verifier's authorization server, alongside any API keys.
+   */
+  oauth?: { verifier: JwtTokenVerifier; resource: URL };
 }
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
@@ -46,12 +55,21 @@ export function createHttpServer(options: HttpOptions): Server {
     owner,
   }));
 
-  /** The owner a bearer token acts as: an API key's account, else an access token's subject. */
-  async function authenticate(token: string): Promise<string | undefined> {
+  const resourceMetadataUrl = oauth && getOAuthProtectedResourceMetadataUrl(oauth.resource);
+  const requireToken =
+    oauth &&
+    requireBearerAuth({
+      verifier: oauth.verifier,
+      expectedResource: oauth.resource,
+      ...(resourceMetadataUrl ? { resourceMetadataUrl } : {}),
+    });
+
+  /** An API key's owner, if the request carries one. */
+  function apiKeyOwner(req: IncomingMessage): string | undefined {
+    const token = /^Bearer (.+)$/i.exec(req.headers.authorization ?? '')?.[1];
+    if (!token || !hashedKeys.length) return undefined;
     const digest = createHash('sha256').update(token).digest();
-    const key = hashedKeys.find((k) => timingSafeEqual(k.digest, digest));
-    if (key) return key.owner;
-    return oauth?.verify(token);
+    return hashedKeys.find((k) => timingSafeEqual(k.digest, digest))?.owner;
   }
 
   return createNodeServer(async (req, res) => {
@@ -61,27 +79,19 @@ export function createHttpServer(options: HttpOptions): Server {
         res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
         return;
       }
-      if (oauth && req.method === 'GET' && url.pathname.startsWith('/.well-known/')) {
-        const json = (status: number, body: unknown) =>
-          res
-            .writeHead(status, {
-              'content-type': 'application/json',
-              'access-control-allow-origin': '*',
-              'cache-control': 'public, max-age=300',
-            })
-            .end(JSON.stringify(body));
-        if (
-          url.pathname === '/.well-known/oauth-protected-resource' ||
-          url.pathname === new URL(oauth.resourceMetadataUrl).pathname
-        ) {
-          json(200, oauth.protectedResource());
-          return;
-        }
-        // Clients from before Protected Resource Metadata look for the authorization server here.
-        if (url.pathname === '/.well-known/oauth-authorization-server') {
-          const metadata = await oauth.authorizationServerMetadata().catch(() => undefined);
-          if (metadata) json(200, metadata);
-          else json(502, { error: 'authorization server unreachable' });
+      // The discovery documents: Protected Resource Metadata (RFC 9728), and the authorization
+      // server's metadata for clients from before it.
+      if (oauth && url.pathname.startsWith('/.well-known/')) {
+        const metadata = oauthMetadataResponse(
+          new Request(webUrl(req), { method: req.method ?? 'GET' }),
+          {
+            oauthMetadata: oauth.verifier.metadata as OAuthMetadata,
+            resourceServerUrl: oauth.resource,
+            resourceName: 'cuttingfloor',
+          },
+        );
+        if (metadata) {
+          await sendResponse(res, metadata);
           return;
         }
       }
@@ -103,26 +113,28 @@ export function createHttpServer(options: HttpOptions): Server {
         return;
       }
       let owner = 'local';
-      if (hashedKeys.length || oauth) {
-        const token = /^Bearer (.+)$/i.exec(req.headers.authorization ?? '')?.[1];
-        const found = token ? await authenticate(token) : undefined;
-        if (!found) {
+      const request = await toWebRequest(req as IncomingMessage & { method: string; url: string });
+      if (hashedKeys.length || requireToken) {
+        const keyOwner = apiKeyOwner(req);
+        if (keyOwner) owner = keyOwner;
+        else if (requireToken) {
+          const auth = await requireToken(request);
+          if (auth instanceof Response) {
+            await sendResponse(res, auth);
+            return;
+          }
+          owner = String(auth.extra?.sub);
+        } else {
           res
-            .writeHead(401, {
-              'content-type': 'application/json',
-              'www-authenticate': oauth ? oauth.challenge(Boolean(token)) : 'Bearer',
-            })
+            .writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' })
             .end(
               JSON.stringify({
                 error: 'invalid_token',
-                error_description: oauth
-                  ? 'Sign in through the authorization server named in the protected resource metadata, or send Authorization: Bearer <api key>'
-                  : 'Send Authorization: Bearer <api key>',
+                error_description: 'Send Authorization: Bearer <api key>',
               }),
             );
           return;
         }
-        owner = found;
       } else {
         // Local mode: refuse DNS-rebinding and cross-site browser requests.
         const host = (req.headers.host ?? '').replace(/:\d+$/, '');
@@ -132,29 +144,38 @@ export function createHttpServer(options: HttpOptions): Server {
           return;
         }
       }
-      const request = await toWebRequest(req as IncomingMessage & { method: string; url: string });
       const response = await handler.fetch(request, {
         authInfo: { token: 'redacted', clientId: owner, scopes: [] },
       });
-      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
-      if (!response.body) {
-        res.end();
-        return;
-      }
-      const body = Readable.fromWeb(response.body as never);
-      // Stop streaming only if the client goes away before the response is done. (The
-      // request's own 'close' fires once its body is read, which is too early.)
-      res.on('close', () => {
-        if (!res.writableFinished) body.destroy();
-      });
-      body.on('error', () => res.destroy());
-      body.pipe(res);
+      await sendResponse(res, response);
     } catch (error) {
       process.stderr.write(`http: ${(error as Error).stack ?? error}\n`);
       if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain' });
       res.end('internal error');
     }
   });
+}
+
+/** The request's URL as the client addressed it, for web-standard handlers. */
+function webUrl(req: IncomingMessage): string {
+  return new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`).toString();
+}
+
+/** Writes a web Response to a Node response, streaming its body. */
+async function sendResponse(res: ServerResponse, response: Response): Promise<void> {
+  res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+  if (!response.body) {
+    res.end();
+    return;
+  }
+  const body = Readable.fromWeb(response.body as never);
+  // Stop streaming only if the client goes away before the response is done. (The
+  // request's own 'close' fires once its body is read, which is too early.)
+  res.on('close', () => {
+    if (!res.writableFinished) body.destroy();
+  });
+  body.on('error', () => res.destroy());
+  body.pipe(res);
 }
 
 /** Streams a file with single-range support, so players can seek. */

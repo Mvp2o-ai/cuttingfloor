@@ -8,7 +8,7 @@ import { Runtime } from '@cuttingfloor/server';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHttpServer, parseApiKeys } from '../src/http.ts';
-import { OAuthVerifier } from '../src/oauth.ts';
+import { JwtTokenVerifier } from '../src/oauth.ts';
 
 const KEY = 'test-key-0123456789abcdefghij';
 let runtime: Runtime;
@@ -16,7 +16,7 @@ const servers: Server[] = [];
 
 async function listen(
   apiKeys?: Map<string, string>,
-  oauth?: (base: string) => OAuthVerifier,
+  oauth?: (base: string) => { verifier: JwtTokenVerifier; resource: URL },
 ): Promise<string> {
   // The OAuth resource names the server's own address, so take a free port first.
   const port = oauth ? await freePort() : 0;
@@ -145,23 +145,33 @@ describe('HTTP face', () => {
 
   it('challenges for OAuth and describes itself as a protected resource', async () => {
     const issuer = 'https://auth.example.com';
-    const base = await listen(
-      parseApiKeys(`ken:${KEY}`),
-      (b) => new OAuthVerifier({ issuer, resource: `${b}/mcp` }),
-    );
+    const base = await listen(parseApiKeys(`ken:${KEY}`), (b) => ({
+      // The authorization server's metadata as AuthKit publishes it; no token is checked here.
+      verifier: new JwtTokenVerifier({
+        issuer,
+        authorization_endpoint: `${issuer}/oauth2/authorize`,
+        token_endpoint: `${issuer}/oauth2/token`,
+        jwks_uri: `${issuer}/oauth2/jwks`,
+        response_types_supported: ['code'],
+      }),
+      resource: new URL(`${b}/mcp`),
+    }));
     const prmUrl = `${base}/.well-known/oauth-protected-resource/mcp`;
 
     const anon = await fetch(`${base}/mcp`, { method: 'POST', body: '{}' });
     expect(anon.status).toBe(401);
-    expect(anon.headers.get('www-authenticate')).toBe(`Bearer resource_metadata="${prmUrl}"`);
+    expect(anon.headers.get('www-authenticate')).toMatch(/^Bearer /);
+    expect(anon.headers.get('www-authenticate')).toContain(`resource_metadata="${prmUrl}"`);
     const prm = await (await fetch(prmUrl)).json();
-    expect(prm).toEqual({
+    expect(prm).toMatchObject({
       resource: `${base}/mcp`,
       authorization_servers: [issuer],
-      bearer_methods_supported: ['header'],
       resource_name: 'cuttingfloor',
     });
-    expect(await (await fetch(`${base}/.well-known/oauth-protected-resource`)).json()).toEqual(prm);
+    const asMeta = (await (
+      await fetch(`${base}/.well-known/oauth-authorization-server`)
+    ).json()) as { issuer: string };
+    expect(asMeta.issuer).toBe(issuer);
 
     const bad = await fetch(`${base}/mcp`, {
       method: 'POST',

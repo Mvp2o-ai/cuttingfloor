@@ -1,116 +1,88 @@
+import {
+  type AuthInfo,
+  OAuthError,
+  OAuthErrorCode,
+  type OAuthTokenVerifier,
+} from '@modelcontextprotocol/server';
 import { createRemoteJWKSet, type JWTVerifyGetKey, jwtVerify } from 'jose';
 
-export interface OAuthOptions {
-  /** The authorization server's issuer, e.g. https://example.authkit.app. */
+/** RFC 8414 metadata, as the SDK's `oauthMetadataResponse` serves it. */
+export type AuthorizationServerMetadata = Record<string, unknown> & {
   issuer: string;
-  /** This server's canonical MCP URI (RFC 8707), e.g. https://mcp.example.com/mcp. */
-  resource: string;
-}
+  jwks_uri?: string;
+};
 
 /**
- * The resource-server half of MCP authorization (2026-07-28): Protected Resource Metadata
- * (RFC 9728) pointing at one external authorization server, and access tokens checked as JWTs
- * against its keys, issuer and our own audience. Sign-in, consent, client registration (CIMD,
- * DCR) and tokens all live at the authorization server; this holds nothing but cached keys.
+ * The one piece of MCP authorization the SDK leaves to the server: checking an access token.
+ * Tokens are JWTs from one authorization server (WorkOS AuthKit), checked here against its
+ * published keys and issuer. The SDK does the rest: `requireBearerAuth` checks the audience
+ * (RFC 8707) and expiry and answers with the 401 challenge, and `oauthMetadataResponse` serves
+ * the discovery documents.
  */
-export class OAuthVerifier {
-  readonly issuer: string;
-  readonly resource: string;
-  readonly resourceMetadataUrl: string;
-  #audiences: string[];
-  #metadata: { value: Promise<Record<string, unknown>>; at: number } | undefined;
-  #jwks?: { uri: string; keys: JWTVerifyGetKey };
+export class JwtTokenVerifier implements OAuthTokenVerifier {
+  metadata: AuthorizationServerMetadata;
+  #keys: { uri: string; get: JWTVerifyGetKey };
 
-  constructor(options: OAuthOptions) {
-    this.issuer = options.issuer.replace(/\/$/, '');
-    this.resource = options.resource.replace(/\/$/, '');
-    const url = new URL(this.resource);
-    this.resourceMetadataUrl = `${url.origin}/.well-known/oauth-protected-resource${url.pathname === '/' ? '' : url.pathname}`;
-    // Clients name the most specific URI they can; some name the origin alone.
-    this.#audiences = [this.resource, `${this.resource}/`, url.origin, `${url.origin}/`];
+  constructor(metadata: AuthorizationServerMetadata) {
+    this.metadata = metadata;
+    this.#keys = keysFor(metadata);
   }
 
-  /** The RFC 9728 document served at resourceMetadataUrl (and the root well-known path). */
-  protectedResource(): Record<string, unknown> {
-    return {
-      resource: this.resource,
-      authorization_servers: [this.issuer],
-      bearer_methods_supported: ['header'],
-      resource_name: 'cuttingfloor',
-    };
+  /** Takes fresh metadata, e.g. after registration settings change at the server. */
+  update(metadata: AuthorizationServerMetadata): void {
+    if (metadata.issuer !== this.metadata.issuer)
+      throw new Error(`issuer changed from ${this.metadata.issuer} to ${metadata.issuer}`);
+    this.metadata = metadata;
+    if (metadata.jwks_uri !== this.#keys.uri) this.#keys = keysFor(metadata);
   }
 
-  /** The 401 challenge: where to find the metadata, and why the token failed if one came. */
-  challenge(tokenSent: boolean): string {
-    const error = tokenSent
-      ? ', error="invalid_token", error_description="The access token is invalid or expired"'
-      : '';
-    return `Bearer resource_metadata="${this.resourceMetadataUrl}"${error}`;
-  }
-
-  /**
-   * The authorization server's metadata (RFC 8414, else OpenID discovery), cached for five
-   * minutes as AuthKit caches it, so a registration setting changed there shows soon.
-   */
-  async authorizationServerMetadata(): Promise<Record<string, unknown>> {
-    if (this.#metadata && Date.now() - this.#metadata.at < 300_000) return this.#metadata.value;
-    const value = this.#discover();
-    this.#metadata = { value, at: Date.now() };
-    value.catch(() => {
-      if (this.#metadata?.value === value) this.#metadata = undefined;
-    });
-    return value;
-  }
-
-  /** The owner a valid access token acts as (its `sub`), or undefined. */
-  async verify(token: string): Promise<string | undefined> {
-    if (token.split('.').length !== 3) return undefined;
-    let keys: JWTVerifyGetKey;
+  async verifyAccessToken(token: string): Promise<AuthInfo> {
     try {
-      keys = await this.#keys();
-    } catch (error) {
-      process.stderr.write(`oauth: ${(error as Error).message}\n`);
-      return undefined;
-    }
-    try {
-      const { payload } = await jwtVerify(token, keys, {
-        issuer: [this.issuer, `${this.issuer}/`],
-        audience: this.#audiences,
+      const { payload } = await jwtVerify(token, this.#keys.get, {
+        issuer: this.metadata.issuer,
         requiredClaims: ['exp', 'sub'],
         clockTolerance: 30,
       });
-      return typeof payload.sub === 'string' && payload.sub ? payload.sub : undefined;
+      const audience = [payload.aud ?? []].flat()[0];
+      return {
+        token,
+        clientId: String(payload.client_id ?? payload.azp ?? ''),
+        scopes: typeof payload.scope === 'string' ? payload.scope.split(' ').filter(Boolean) : [],
+        expiresAt: payload.exp as number,
+        ...(audience ? { resource: new URL(audience) } : {}),
+        extra: { sub: payload.sub },
+      };
     } catch {
-      return undefined;
+      throw new OAuthError(OAuthErrorCode.InvalidToken, 'The access token is invalid or expired');
     }
   }
+}
 
-  async #keys(): Promise<JWTVerifyGetKey> {
-    const uri = (await this.authorizationServerMetadata()).jwks_uri;
-    if (typeof uri !== 'string') throw new Error(`${this.issuer} publishes no jwks_uri`);
-    if (this.#jwks?.uri !== uri) this.#jwks = { uri, keys: createRemoteJWKSet(new URL(uri)) };
-    return this.#jwks.keys;
-  }
+function keysFor(metadata: AuthorizationServerMetadata) {
+  if (typeof metadata.jwks_uri !== 'string')
+    throw new Error(`${metadata.issuer} publishes no jwks_uri`);
+  return { uri: metadata.jwks_uri, get: createRemoteJWKSet(new URL(metadata.jwks_uri)) };
+}
 
-  async #discover(): Promise<Record<string, unknown>> {
-    const { origin, pathname } = new URL(this.issuer);
-    const path = pathname === '/' ? '' : pathname;
-    const candidates = [
-      `${origin}/.well-known/oauth-authorization-server${path}`,
-      `${origin}/.well-known/openid-configuration${path}`,
-      `${this.issuer}/.well-known/openid-configuration`,
-    ];
-    for (const url of candidates) {
-      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) }).catch(() => undefined);
-      if (!res?.ok) continue;
-      const metadata = (await res.json().catch(() => undefined)) as
-        | Record<string, unknown>
-        | undefined;
-      if (typeof metadata?.issuer !== 'string') continue;
-      if (metadata.issuer.replace(/\/$/, '') !== this.issuer)
-        throw new Error(`${url} names issuer ${metadata.issuer}, not ${this.issuer}`);
-      return metadata;
-    }
-    throw new Error(`no authorization server metadata found for ${this.issuer}`);
+/** Fetches an authorization server's metadata (RFC 8414, else OpenID discovery). */
+export async function discoverAuthorizationServer(
+  issuer: string,
+): Promise<AuthorizationServerMetadata> {
+  const { origin, pathname } = new URL(issuer);
+  const path = pathname === '/' ? '' : pathname.replace(/\/$/, '');
+  for (const url of [
+    `${origin}/.well-known/oauth-authorization-server${path}`,
+    `${origin}/.well-known/openid-configuration${path}`,
+  ]) {
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) }).catch(() => undefined);
+    if (!res?.ok) continue;
+    const metadata = (await res.json().catch(() => undefined)) as
+      | AuthorizationServerMetadata
+      | undefined;
+    if (typeof metadata?.issuer !== 'string') continue;
+    if (metadata.issuer.replace(/\/$/, '') !== issuer.replace(/\/$/, ''))
+      throw new Error(`${url} names issuer ${metadata.issuer}, not ${issuer}`);
+    return metadata;
   }
+  throw new Error(`no authorization server metadata found for ${issuer}`);
 }
