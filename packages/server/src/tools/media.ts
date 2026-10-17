@@ -1,3 +1,5 @@
+import { readdir } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import {
   analyseBeats,
   detectFaces,
@@ -21,6 +23,38 @@ import type { ServerDeps } from '../server.ts';
 export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
   const rt = deps.runtime;
 
+  /** The file a completed export.video rendered, for importing it as media. */
+  const renderedFile = async (owner: string, jobId: string): Promise<string> => {
+    const job = await rt.jobs.store.get(jobId, owner);
+    if (!job) {
+      throw new CfError('not_found', `No job ${jobId}`, { hint: 'Finished jobs are kept 7 days' });
+    }
+    if (job.tool !== 'export.video') {
+      throw new CfError('bad_request', `Job ${jobId} is a ${job.tool}, not an export.video`, {
+        hint: 'Only rendered videos import as media',
+      });
+    }
+    if (job.status === 'working') {
+      throw new CfError('media_not_ready', `Export ${jobId} is still rendering`, {
+        hint: 'job.get {job_id, wait_seconds: 50} until it completes, then import it',
+      });
+    }
+    const result = job.result as { isError?: boolean } | undefined;
+    if (job.status !== 'completed' || result?.isError) {
+      throw new CfError('bad_request', `Export ${jobId} did not finish (${job.status})`);
+    }
+    const dir = rt.ws.ownerDir(owner, 'outputs', jobId);
+    const [name] = (await readdir(dir).catch(() => [] as string[])).filter(
+      (n) => !n.startsWith('.'),
+    );
+    if (!name) {
+      throw new CfError('not_found', `Export ${jobId} has no file any more`, {
+        hint: 'Outputs expire 7 days after the export; export the timeline again',
+      });
+    }
+    return join(dir, name);
+  };
+
   server.registerTool(
     'media.import',
     {
@@ -28,7 +62,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       description: [
         "Import the user's own video, audio, image or font to edit with or place as is: probe, fingerprint, conform if needed (VFR, rotation, HDR → BT.709), 540p proxy, scene and loudness analysis. A reference image to recreate needs no import: rebuild it with create.motion or create.still.",
         'Long-running: returns a task, or {job_id, media_id} for job.get. The media_id is usable in edits as soon as the job reports processing.',
-        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, or ` : ''}an http(s) URL.`,
+        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL, or the job_id of a completed export.video (its render becomes media).`,
         'Importing the same file again returns the same media_id.',
       ].join(' '),
       inputSchema: MediaImportInput,
@@ -47,10 +81,15 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         const existing = await store.findIdempotent(owner, 'media.import', args.idempotency_key);
         if (existing) return jobReply(existing, ctx);
       }
-      // Path imports fail fast (outside the roots, missing) and dedupe by fingerprint.
-      if ('path' in args.source) {
-        const real = await rt.media.resolvePath(args.source.path);
-        const known = await rt.media.findByFingerprint(owner, await fingerprint(real));
+      // Path and render imports fail fast (outside the roots, missing) and dedupe by fingerprint.
+      const local =
+        'path' in args.source
+          ? await rt.media.resolvePath(args.source.path)
+          : 'job_id' in args.source
+            ? await renderedFile(owner, args.source.job_id)
+            : undefined;
+      if (local) {
+        const known = await rt.media.findByFingerprint(owner, await fingerprint(local));
         if (known) {
           const done = await store.create({
             owner,
@@ -70,7 +109,16 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           );
         }
       }
-      const record = await rt.media.create(owner, args.source, args.name);
+      const record = await rt.media.create(
+        owner,
+        'job_id' in args.source ? { job: args.source.job_id } : args.source,
+        args.name ?? (local && 'job_id' in args.source ? basename(local) : undefined),
+      );
+      if (local && 'job_id' in args.source) {
+        // The render is copied: outputs and media expire on their own clocks.
+        record.file = await rt.media.adopt(owner, record, local);
+        await rt.media.save(owner, record);
+      }
       const job = await store.create({
         owner,
         tool: 'media.import',

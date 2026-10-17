@@ -84,7 +84,8 @@ export function jobView(job: Job) {
   return {
     job_id: job.id,
     tool: job.tool,
-    status: job.status,
+    // A tool error completes the MCP task, but to anyone reading a job it failed.
+    status: result?.isError && job.status === 'completed' ? 'failed' : job.status,
     ...(job.statusMessage ? { status_message: job.statusMessage } : {}),
     ...(job.progress !== undefined ? { progress: job.progress } : {}),
     created_at: job.createdAt,

@@ -1,4 +1,4 @@
-import { open, realpath, stat } from 'node:fs/promises';
+import { copyFile, mkdir, open, realpath, stat } from 'node:fs/promises';
 import { basename, extname, join, sep } from 'node:path';
 import { randomId, secondsToTicks, type Workspace } from '@cuttingfloor/core';
 import { CfError, type MediaInfo, type MediaRef, type ToolError } from '@cuttingfloor/schema';
@@ -14,7 +14,11 @@ export interface MediaRecord {
   name: string;
   status: 'importing' | 'processing' | 'ready' | 'failed';
   /** Where it came from: a path, a URL, or a create.* tool and the hash of its recipe. */
-  source: { path: string } | { url: string } | { created: string; recipe: string };
+  source:
+    | { path: string }
+    | { url: string }
+    | { job: string }
+    | { created: string; recipe: string };
   /** The original: the user's file in place, or the downloaded copy. */
   file: string | null;
   size: number | null;
@@ -115,6 +119,20 @@ export class MediaLibrary {
     });
   }
 
+  /** Copies a file the server made (a rendered export) into a new record's folder. */
+  async adopt(owner: string, record: MediaRecord, file: string): Promise<string> {
+    const dir = this.dir(owner, record.media_id);
+    await mkdir(dir, { recursive: true });
+    const dest = join(
+      dir,
+      `source${extname(file)
+        .slice(0, 8)
+        .replace(/[^.\w]/g, '')}`,
+    );
+    await copyFile(file, dest);
+    return dest;
+  }
+
   /** An existing usable import of the same content, for dedupe. */
   async findByFingerprint(owner: string, fingerprint: string): Promise<MediaRecord | undefined> {
     const index = await this.#ws.readJson<{ media_id: string }>(
@@ -153,7 +171,9 @@ export class MediaLibrary {
           ? basename(source.path)
           : 'url' in source
             ? decodeURIComponent(new URL(source.url).pathname.split('/').pop() || 'download')
-            : source.created),
+            : 'job' in source
+              ? source.job
+              : source.created),
       status: 'importing',
       source,
       file: null,

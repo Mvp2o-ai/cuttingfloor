@@ -1693,6 +1693,56 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(await whiteAcross(await readFile(still))).toBe(true);
     }, 240_000);
 
+    it('imports a rendered export as media and re-frames it to 9:16', async () => {
+      const wide = await onGreen([
+        {
+          tool: 'title.add',
+          args: {
+            track_id: 't2',
+            text: 'WIDE',
+            at_frame: 0,
+            duration_frames: 50,
+            style: { size: 0.25, shadow: null, outline: null },
+          },
+        },
+      ]);
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: wide,
+        preset: 'master_prores_422hq',
+        filename: 'wide-master',
+      });
+      await waitJob(started.job_id);
+      const imported = await importMedia({ job_id: started.job_id });
+      expect(imported).toMatchObject({ width: 1280, height: 720 });
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'tall',
+        sequence: { width: 720, height: 1280, fps: { num: 25, den: 1 } },
+        tracks: { video: 1, audio: 0 },
+      });
+      const tall = await ok<{ timeline_id: string }>(client, 'edit.batch', {
+        timeline_id,
+        preview: 'none',
+        ops: [
+          { tool: 'clip.add', args: { track_id: 't1', media_id: imported.media_id, av: 'video' } },
+          {
+            tool: 'clip.set_transform',
+            args: { clip_id: { $ref: 'ops[0].clip_id' }, fit: 'cover' },
+          },
+        ],
+      });
+      // Covered: green reaches the top and bottom edges of the tall frame.
+      const res = await call(client, 'render.frames', {
+        timeline_id: tall.timeline_id,
+        frames: [10],
+        layout: 'single',
+        format: 'png',
+        size: 'full',
+      });
+      const image = Buffer.from((res.content[0]?.data as string) ?? '', 'base64');
+      expect(colour(await pixel(image, 20, 20))).toBe('green');
+      expect(colour(await pixel(image, 700, 1260))).toBe('green');
+    }, 240_000);
+
     it('moves a caption highlight from word to word in time', async () => {
       const t = await onGreen([
         {
@@ -3181,7 +3231,7 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
     const view = await ok<{ status: string; error?: { code: string } }>(client, 'job.get', {
       job_id: job.job_id,
     });
-    expect(view.status).toBe('completed');
+    expect(view.status).toBe('failed');
     expect(view.error?.code).toBe('interrupted');
     const retry = await ok<{ job_id: string }>(client, 'export.video', {
       timeline_id: timeline,

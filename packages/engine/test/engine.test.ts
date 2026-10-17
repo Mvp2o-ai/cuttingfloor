@@ -286,6 +286,9 @@ describe('MLT compiler', () => {
     );
     expect(xml).toMatch(/<entry producer="n1_main" in="0" out="34">/);
     expect(xml.indexOf('id="n1_main"')).toBeLessThan(xml.indexOf('<tractor id="main"'));
+    // The nested level decodes its media with producers of its own, never the parent's.
+    expect(xml).toMatch(/<producer id="l1_m_[0-9a-z]+_v">/);
+    expect(xml).toMatch(/<entry producer="l1_m_[0-9a-z]+_v"/);
   });
 
   it('plays both clips of a transition on separate sub-tracks', () => {

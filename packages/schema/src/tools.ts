@@ -464,6 +464,11 @@ export const MediaSource = z.union([
       .describe('A file under a media root, e.g. /media/videos/clip.mp4 (local mode)'),
   }),
   z.object({ url: z.url().describe('An http(s) URL to download') }),
+  z.object({
+    job_id: JobId.describe(
+      'A completed export.video: its rendered file becomes media, e.g. to re-edit a finished cut or place it in a sequence of another shape',
+    ),
+  }),
 ]);
 
 export const MediaImportInput = z.object({

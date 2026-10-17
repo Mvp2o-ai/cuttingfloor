@@ -302,6 +302,40 @@ describe('media and jobs without engines', () => {
     await expect(access(stale)).rejects.toThrow();
   });
 
+  it('imports only a completed export.video, and says why not otherwise', async () => {
+    const client = await connect(env.runtime, 'renders');
+    const store = env.runtime.jobs.store;
+    const notExport = await store.create({ owner: 'renders', tool: 'qa.check' });
+    const rendering = await store.create({ owner: 'renders', tool: 'export.video' });
+    const missing = await call(client, 'media.import', {
+      source: { job_id: 'j_aaaaaaaaaaaaaaaaaaaaaaaaaa' },
+    });
+    expect(missing.structured).toMatchObject({ code: 'not_found' });
+    const wrong = await call(client, 'media.import', { source: { job_id: notExport.id } });
+    expect(wrong.structured).toMatchObject({ code: 'bad_request' });
+    const busy = await call(client, 'media.import', { source: { job_id: rendering.id } });
+    expect(busy.structured).toMatchObject({ code: 'media_not_ready' });
+  });
+
+  it('shows a job whose tool failed as failed', async () => {
+    const client = await connect(env.runtime, 'failer');
+    const job = await env.runtime.jobs.store.create({ owner: 'failer', tool: 'media.import' });
+    await env.runtime.jobs.store.update(job, {
+      status: 'completed',
+      statusMessage: 'failed',
+      result: {
+        isError: true,
+        content: [],
+        structuredContent: { code: 'path_not_allowed', message: 'nope' },
+      } as never,
+    });
+    const view = await ok<{ status: string; error: { code: string } }>(client, 'job.get', {
+      job_id: job.id,
+    });
+    expect(view.status).toBe('failed');
+    expect(view.error.code).toBe('path_not_allowed');
+  });
+
   it('answers tasks/get only for the owner, and unknown jobs as errors', async () => {
     const job = await env.runtime.jobs.store.create({ owner: 'local', tool: 'export.video' });
     const client = await connect(env.runtime);
@@ -326,6 +360,6 @@ describe('media and jobs without engines', () => {
     const view = await ok<{ status: string; error: { code: string } }>(client, 'job.get', {
       job_id: job.id,
     });
-    expect(view).toMatchObject({ status: 'completed', error: { code: 'interrupted' } });
+    expect(view).toMatchObject({ status: 'failed', error: { code: 'interrupted' } });
   });
 });

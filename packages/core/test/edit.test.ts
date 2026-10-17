@@ -900,6 +900,28 @@ describe('nested timelines', () => {
     expect(toView('tl_x', fromView(view, resolve))).toEqual({ ...view, parent: null });
   });
 
+  it('nests only timelines of the same shape, and says how to place another shape', () => {
+    const store: Record<string, TimelineDoc> = {
+      tl_00000000000000000000000000000001: inner(),
+    };
+    const tall = { ...seq, width: seq.height, height: seq.width };
+    expect(() =>
+      nestIn(newTimeline('t', tall, { video: 1, audio: 1 }), store, {
+        tool: 'clip.add',
+        args: { track_id: 't1', nested_timeline_id: 'tl_00000000000000000000000000000001' },
+      }),
+    ).toThrow(/different shape/);
+    // Same shape at another size nests; reshaping the parent afterwards is refused.
+    const half = { ...seq, width: seq.width / 2, height: seq.height / 2 };
+    const { doc } = nestIn(newTimeline('t', half, { video: 1, audio: 1 }), store, {
+      tool: 'clip.add',
+      args: { track_id: 't1', nested_timeline_id: 'tl_00000000000000000000000000000001' },
+    });
+    expect(() => edit(doc, { tool: 'timeline.set_sequence', args: { sequence: tall } })).toThrow(
+      /different shape/,
+    );
+  });
+
   it('flattens nesting, edits compound clips like any clip, and drops what is no longer used', () => {
     const store: Record<string, TimelineDoc> = { tl_00000000000000000000000000000001: inner() };
     store.tl_00000000000000000000000000000002 = nestIn(start(), store, {

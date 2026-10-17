@@ -477,6 +477,8 @@ const ok = (focus: number, extra: Partial<OpOutcome> = {}): OpOutcome => ({
 
 function setSequence(doc: TimelineDoc, a: EditArgsOf<'timeline.set_sequence'>): OpOutcome {
   ticksPerFrame(a.sequence.fps);
+  for (const [id, n] of Object.entries(doc.nested ?? {}))
+    assertSameShape(a.sequence, n.sequence, id);
   doc.sequence = a.sequence;
   return ok(0);
 }
@@ -514,11 +516,27 @@ function nest(doc: TimelineDoc, id: string, resolveTimeline: TimelineResolver): 
   }
   // A nested timeline keeps its own effects; its master belongs to it as a top level only.
   const { parent: _p, op: _o, nested, master: _master, ...body } = source;
+  assertSameShape(doc.sequence, body.sequence, id);
   doc.nested = { ...doc.nested, ...nested, [id]: body };
   if (!timelineEnd(body)) {
     throw new CfError('bad_request', `Timeline ${id} is empty, so there is nothing to nest`);
   }
   return id;
+}
+
+/**
+ * A nested timeline renders inside its parent's frame, so it must have the same shape (any size
+ * of it). Another shape is a render placed like footage instead.
+ */
+function assertSameShape(outer: Sequence, inner: Sequence, id: string): void {
+  if (Math.abs(outer.width * inner.height - inner.width * outer.height) <= outer.height) return;
+  throw new CfError(
+    'bad_request',
+    `Timeline ${id} is ${inner.width}x${inner.height}, a different shape from this ${outer.width}x${outer.height} sequence, so it can't nest`,
+    {
+      hint: `Render it and place the render: export.video {timeline_id: "${id}"}, then media.import {source: {job_id}} and clip.add the media (clip.set_transform fit: cover to fill)`,
+    },
+  );
 }
 
 /** A source range in frames covering transcript words i to j. */
