@@ -7,9 +7,9 @@ const pixel = VT323({ subsets: ['latin'], weight: '400', variable: '--font-pixel
 const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono' });
 
 export const metadata: Metadata = {
-  title: 'cuttingfloor — your agent edits video',
+  title: 'cuttingfloor — editing, solved',
   description:
-    'A headless video editor for AI agents. Connect Claude, Cursor or ChatGPT over MCP and cut, caption, mix and export real video.',
+    'Editing, solved. A headless video editor for AI agents. Connect Kazi, Claude, Cursor or ChatGPT over MCP and cut, caption, mix and export real video.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

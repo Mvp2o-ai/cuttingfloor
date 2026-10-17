@@ -163,7 +163,7 @@ export function Bay() {
         <div className="program-hud">
           <span className="tc">{tc}</span>
           <span className={render === 100 ? 'on' : ''}>
-            {render === 100 ? 'exported' : `${STEPS[Math.max(0, shown - 1)]?.fn ?? 'idle'}`}
+            {render === 100 ? '∎ solved' : `${STEPS[Math.max(0, shown - 1)]?.fn ?? 'idle'}`}
           </span>
         </div>
       </section>

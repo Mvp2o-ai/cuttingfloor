@@ -34,17 +34,19 @@ export default function Home() {
           <div className="leader rise">
             <b>cuttingfloor</b>
             <span className="dots" />
-            <span>a video editor with no screen</span>
+            <span>agentic video editing</span>
           </div>
           <h1 className="display rise d1">
-            Your agent
+            Editing,
             <br />
-            edits video.
+            solved.
+            <span className="qed" role="img" aria-label="Q.E.D." />
           </h1>
           <div className="hero-row">
             <div className="rise d2">
               <p className="lede">
-                Connect Kazi, Claude, Cursor or ChatGPT and say what you want cut.{' '}
+                Your agent edits video now. Connect Kazi, Claude, Cursor or ChatGPT and say what you
+                want cut.{' '}
                 <em>
                   It imports your footage, reads the transcript, trims, captions, mixes and hands
                   back a finished file.
@@ -222,7 +224,10 @@ export default function Home() {
         <footer className="cell footer marks">
           <span className="mark-b" />
           <div>
-            <p className="display">Roll it.</p>
+            <p className="display">
+              Editing, solved.
+              <span className="qed" role="img" aria-label="Q.E.D." />
+            </p>
             <div className="footer-links">
               <a href={SIGN_UP}>Start free</a>
               <a href={DOCS}>GitHub</a>

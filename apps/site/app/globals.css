@@ -569,6 +569,16 @@ a {
   transition: width 0.25s linear;
 }
 
+/* The tombstone that ends a proof: editing, solved. */
+.qed {
+  display: inline-block;
+  width: 0.42em;
+  height: 0.58em;
+  margin-left: 0.12em;
+  background: var(--key);
+  vertical-align: baseline;
+}
+
 /* ---------- section heads ---------- */
 
 .head {
