@@ -15,6 +15,11 @@ export interface AssOptions {
   head: number;
   /** Frames in the whole render span. */
   length: number;
+  /**
+   * Timeline frame of the span's first frame. libass reads the frame's timeline time, not the
+   * clip's, so the events sit there.
+   */
+  at: number;
   /** The family of an imported font, by its media id. */
   fontFamily?: (mediaId: string) => string | undefined;
 }
@@ -65,8 +70,8 @@ export function assText(s: string): string {
   return s.replace(/\\/g, '\\⁠').replace(/\{/g, '｛').replace(/\}/g, '｝').replace(/\r?\n/g, '\\N');
 }
 
-function time(seconds: number): string {
-  const cs = Math.max(0, Math.round(seconds * 100));
+function time(seconds: number, round: (n: number) => number = Math.round): string {
+  const cs = Math.max(0, round(seconds * 100));
   const h = Math.floor(cs / 360000);
   const m = Math.floor((cs % 360000) / 6000);
   const s = Math.floor((cs % 6000) / 100);
@@ -115,7 +120,9 @@ export function buildAss(clip: TextClip, o: AssOptions): string {
     );
   }
   const pos = `\\pos(${Math.round((style.x ?? 0.5) * o.width)},${Math.round((style.y ?? 0.5) * o.height)})`;
-  const end = time(o.length / fps);
+  // Down, so the first frame's own time is never before the event starts.
+  const begin = time(o.at / fps, Math.floor);
+  const end = time((o.at + o.length) / fps);
   const n = o.length - o.head;
 
   // Words with times, as clip frames, when the caption has them.
@@ -205,7 +212,7 @@ export function buildAss(clip: TextClip, o: AssOptions): string {
   const text = render(true);
   const plain = assText(words ? words.map((w) => w.text).join(' ') : clip.text);
   const events = [];
-  if (style.box) events.push(`Dialogue: 0,0:00:00.00,${end},Box,,0,0,0,,{${pos}}${plain}`);
+  if (style.box) events.push(`Dialogue: 0,${begin},${end},Box,,0,0,0,,{${pos}}${plain}`);
   if (shadow && blur && style.shadow) {
     // libass blurs the letters too when there is no outline, and casts no shadow from
     // invisible ones, so a soft shadow is its own layer: the letters in the shadow colour,
@@ -214,11 +221,11 @@ export function buildAss(clip: TextClip, o: AssOptions): string {
     const sy = Math.round((style.y ?? 0.5) * o.height + shadow);
     const c = assColour(style.shadow.color);
     events.push(
-      `Dialogue: 1,0:00:00.00,${end},Text,,0,0,0,,{\\pos(${sx},${sy})\\1c&H${c.slice(4)}&\\1a&H${c.slice(2, 4)}&\\3a&HFF&\\shad0\\blur${blur}}${render(false, '\\1a', c.slice(2, 4))}`,
+      `Dialogue: 1,${begin},${end},Text,,0,0,0,,{\\pos(${sx},${sy})\\1c&H${c.slice(4)}&\\1a&H${c.slice(2, 4)}&\\3a&HFF&\\shad0\\blur${blur}}${render(false, '\\1a', c.slice(2, 4))}`,
     );
-    events.push(`Dialogue: 2,0:00:00.00,${end},Text,,0,0,0,,{${pos}\\shad0}${text}`);
+    events.push(`Dialogue: 2,${begin},${end},Text,,0,0,0,,{${pos}\\shad0}${text}`);
   } else {
-    events.push(`Dialogue: 1,0:00:00.00,${end},Text,,0,0,0,,{${pos}}${text}`);
+    events.push(`Dialogue: 1,${begin},${end},Text,,0,0,0,,{${pos}}${text}`);
   }
   return [
     '[Script Info]',

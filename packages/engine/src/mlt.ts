@@ -283,6 +283,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
               tpf,
               head: cp.head,
               length,
+              at: from,
               fontFamily: (id) => options.sources.get(id)?.family,
             }),
           );

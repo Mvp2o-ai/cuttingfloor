@@ -1652,6 +1652,47 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(colour(await pixel(image, 40, 40))).toBe('green');
     }, 120_000);
 
+    it('shows a title that starts later in the timeline, in frames and in exports', async () => {
+      // libass reads the timeline time, so text placed after frame 0 must be timed there too.
+      const t = await onGreen([
+        {
+          tool: 'title.add',
+          args: {
+            track_id: 't2',
+            text: 'LATER',
+            at_frame: 30,
+            duration_frames: 20,
+            style: { size: 0.25, color: '#FFFFFF', shadow: null, outline: null },
+          },
+        },
+      ]);
+      const whiteAcross = async (image: Buffer) =>
+        (
+          await Promise.all(
+            [440, 520, 600, 680, 760, 840].map(async (x) => colour(await pixel(image, x, 360))),
+          )
+        ).includes('white');
+      expect(await whiteAcross(await frame(t, 10))).toBe(false);
+      expect(await whiteAcross(await frame(t, 30))).toBe(true);
+      expect(await whiteAcross(await frame(t, 40))).toBe(true);
+
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: t,
+        preset: 'master_prores_422hq',
+        filename: 'title-later',
+      });
+      const job = await waitJob(started.job_id);
+      const file = join(
+        env.exportsDir,
+        String((job.result as { file: string }).file)
+          .split('/')
+          .pop() ?? '',
+      );
+      const still = join(env.dir, 'title-later.png');
+      await ff(['-i', file, '-vf', 'select=eq(n\\,40)', '-frames:v', '1', still]);
+      expect(await whiteAcross(await readFile(still))).toBe(true);
+    }, 240_000);
+
     it('moves a caption highlight from word to word in time', async () => {
       const t = await onGreen([
         {
