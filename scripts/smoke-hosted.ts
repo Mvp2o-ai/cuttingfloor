@@ -1,15 +1,25 @@
 // Smoke test for a live hosted server, as a client reaches it: over HTTPS with a bearer key.
 //
-//   CF_KEY=cf_… node scripts/smoke-hosted.ts https://cuttingfloorai.apifunnel.ai
+//   node scripts/smoke-hosted.ts https://cuttingfloorai.apifunnel.ai
+//
+// The maintenance key comes from CF_KEY, else the first key in deploy/hetzner/cuttingfloor.env
+// (git-ignored, the file up.sh deploys). Keys are for maintenance; clients sign in with OAuth.
 //
 // Checks that a request without a key is refused, then that create.still, create.motion and
 // code.run work in the server's sandbox (gVisor on Hetzner), media.analyze look answers on the
 // server's own TypeSafe key, and an export comes back as a signed link that downloads.
+import { readFile } from 'node:fs/promises';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
 const base = (process.argv[2] ?? 'https://cuttingfloorai.apifunnel.ai').replace(/\/$/, '');
-const key = process.env.CF_KEY;
-if (!key) throw new Error('Set CF_KEY to one of the server’s API keys');
+const key =
+  process.env.CF_KEY ??
+  (await readFile(new URL('../deploy/hetzner/cuttingfloor.env', import.meta.url), 'utf8').then(
+    (env) => /^CUTTINGFLOOR_API_KEYS=[^:,\s]+:([^,\s]+)/m.exec(env)?.[1],
+    () => undefined,
+  ));
+if (!key)
+  throw new Error('Set CF_KEY, or CUTTINGFLOOR_API_KEYS in deploy/hetzner/cuttingfloor.env');
 
 const step = (label: string) => process.stdout.write(`• ${label}\n`);
 const failures: string[] = [];
