@@ -10,7 +10,7 @@ runcmd:
   - curl -fsSL https://gvisor.dev/archive.key | gpg --dearmor -o /etc/apt/keyrings/gvisor.gpg
   - echo "deb [signed-by=/etc/apt/keyrings/gvisor.gpg] https://storage.googleapis.com/gvisor/releases release main" > /etc/apt/sources.list.d/gvisor.list
   - apt-get update
-  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin runsc
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin runsc
   # systrap needs no nested virtualisation, which Hetzner Cloud doesn't offer.
   - runsc install -- --platform=systrap
   - systemctl restart docker

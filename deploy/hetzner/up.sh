@@ -20,8 +20,13 @@ SSH_KEY=${CUTTINGFLOOR_SSH_KEY:-$(hcloud ssh-key list -o noheader -o columns=nam
 DOMAIN=$(grep ^CUTTINGFLOOR_DOMAIN= cuttingfloor.env | cut -d= -f2)
 
 if ! hcloud server describe "$NAME" >/dev/null 2>&1; then
+  # A named IPv4 and no IPv6: the address outlives a rebuilt server, so DNS stays put, and it
+  # costs one primary IP (limits count them across every project of the account).
+  hcloud primary-ip describe "$NAME" >/dev/null 2>&1 \
+    || hcloud primary-ip create --type ipv4 --name "$NAME" --location "$LOCATION" --label app=cuttingfloor
   hcloud server create --name "$NAME" --type "$TYPE" --image debian-13 --location "$LOCATION" \
-    --ssh-key "$SSH_KEY" --user-data-from-file cloud-init.yaml --label app=cuttingfloor
+    --ssh-key "$SSH_KEY" --user-data-from-file cloud-init.yaml --label app=cuttingfloor \
+    --primary-ipv4 "$NAME" --without-ipv6
 fi
 IP=$(hcloud server ip "$NAME")
 SSH=(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "root@$IP")
