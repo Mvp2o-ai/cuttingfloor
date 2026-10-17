@@ -1,0 +1,21 @@
+{
+  "name": "@cuttingfloor/site",
+  "version": "0.0.0",
+  "private": true,
+  "description": "cuttingfloor.ai: the landing page and, later, sign-up and account. Deployed to Vercel.",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "16.2.9",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2"
+  }
+}

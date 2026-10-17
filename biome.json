@@ -4,6 +4,7 @@
     "includes": [
       "**",
       "!**/dist",
+      "!**/.next",
       "!**/node_modules",
       "!plans",
       "!.claude",
