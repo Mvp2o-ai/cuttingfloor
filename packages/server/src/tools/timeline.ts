@@ -161,7 +161,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'audio.set_master': {
     title: 'Set master',
     description:
-      'Gain (dB) and limiter ceiling (dBFS) on the whole mix. Audio edits preview with the measured loudness and true peak, and qa.check measures the whole render.',
+      'Gain (dB) and limiter ceiling on the whole mix. The ceiling caps sample peaks (dBFS); the true peak between samples can land above it, most on dense, bright sound, and qa.check measures it (dBTP). Audio edits preview with the measured loudness.',
   },
   'filter.add': {
     title: 'Add effect',

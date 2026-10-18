@@ -2101,7 +2101,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(rms(faded.left, 0, 0.2)).toBeLessThan(rms(faded.left, 1.5, 2.5) * 0.35);
     }, 120_000);
 
-    it('holds the master limiter ceiling as a true peak, measured by qa.check', async () => {
+    it('limits the master to its ceiling, measured by qa.check', async () => {
       const loud = await ok<{ timeline_id: string }>(client, 'audio.set_master', {
         // The tone sits near -18 dBFS, so +20 dB drives it into the limiter.
         timeline_id: await tone([]),

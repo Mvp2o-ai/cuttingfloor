@@ -310,7 +310,13 @@ export const EditArgs = {
   }),
   'audio.set_master': z.object({
     gain_db: z.number().min(-60).max(40).nullable().optional(),
-    limit_db: z.number().min(-20).max(0).nullable().optional().describe('Limiter ceiling, dBFS'),
+    limit_db: z
+      .number()
+      .min(-20)
+      .max(0)
+      .nullable()
+      .optional()
+      .describe('Limiter ceiling on sample peaks, dBFS'),
   }),
   'filter.add': z.object({
     clip_id: z.string().optional().describe('Apply to one clip (or an adjustment clip)'),
