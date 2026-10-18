@@ -2,7 +2,13 @@ name: Image
 
 # Every PR and push: lint, typecheck and all tests (engine and end-to-end included) inside the
 # image, then a smoke test of the built image as users run it. Pushes to main and develop, and
-# releases, publish the image to GHCR for linux/amd64 and linux/arm64 (:latest is main only).
+# releases, publish the image to GHCR for linux/amd64 and linux/arm64 (:latest is main only):
+# each platform builds on its own native runner, then one job tags both as one multi-arch image.
+#
+# Build caches live in GHCR next to the image (:buildcache-test, :buildcache-amd64,
+# :buildcache-arm64), not in the Actions cache: the layers are several GB per platform and the
+# Actions cache's 10 GB limit evicted them, so most runs started cold. Writing a cache is
+# best-effort (a fork's pull request can read them but not write).
 
 on:
   push:
@@ -29,68 +35,140 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/mvp2o-ai/cuttingfloor
+  CACHE: ghcr.io/mvp2o-ai/cuttingfloor:buildcache
+  CACHE_OPTS: mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
 
 jobs:
   test:
     name: Test in the image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+    outputs:
+      tested: ${{ steps.tested.outputs.tested }}
     steps:
-      - uses: actions/checkout@v7
+      # A promotion (develop -> main) merges a commit whose tree develop's own push run tests
+      # anyway. When the trees match, wait for that run's test and smoke jobs and pass on their
+      # result instead of building and testing it all again; anything else tests here.
+      - id: tested
+        name: Already tested on develop
+        if: >-
+          github.event_name == 'pull_request' && github.base_ref == 'main' &&
+          github.head_ref == 'develop' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
+        run: |
+          tree() { gh api "repos/$GITHUB_REPOSITORY/commits/$1" --jq .commit.tree.sha; }
+          if [ "$(tree "$MERGE_SHA")" != "$(tree "$HEAD_SHA")" ]; then
+            echo "The merge differs from develop's ${HEAD_SHA:0:8}; testing here."; exit 0
+          fi
+          deadline=$((SECONDS + 45 * 60))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/image.yml/runs?event=push&branch=develop&head_sha=$HEAD_SHA" \
+              --jq '.workflow_runs[0] | select(.) | "\(.id) \(.status)"')
+            if [ -z "$run" ] && [ "$SECONDS" -gt 180 ]; then
+              echo "No push run on develop for ${HEAD_SHA:0:8}; testing here."; exit 0
+            fi
+            if [ -n "$run" ]; then
+              states=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/${run% *}/jobs" --jq \
+                '[.jobs[] | select(.name == "Test in the image" or .name == "Smoke-test the image") | "\(.status)/\(.conclusion)"] | sort | join(" ")')
+              echo "Run ${run% *} (${run#* }): ${states:-no jobs yet}"
+              if [ "$states" = "completed/success completed/success" ]; then
+                echo "Develop's run ${run% *} tested and smoke-tested ${HEAD_SHA:0:8}: https://github.com/$GITHUB_REPOSITORY/actions/runs/${run% *}"
+                echo "tested=true" >> "$GITHUB_OUTPUT"; exit 0
+              fi
+              if grep -qE 'completed/(failure|cancelled|timed_out|skipped)' <<<"$states" || [ "${run#* }" = completed ]; then
+                echo "Develop's run did not pass both; testing here."; exit 0
+              fi
+            fi
+            sleep 20
+          done
+          echo "Gave up waiting for develop's run; testing here."
+      - if: steps.tested.outputs.tested != 'true'
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - if: steps.tested.outputs.tested != 'true'
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - if: steps.tested.outputs.tested != 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Lint, typecheck and test with FFmpeg and MLT
+        if: steps.tested.outputs.tested != 'true'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           target: test
           build-args: CUTTINGFLOOR_BENCH_SCALE=3
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Its own cache, plus amd64's for the base layers they share.
+          cache-from: |
+            type=registry,ref=${{ env.CACHE }}-test
+            type=registry,ref=${{ env.CACHE }}-amd64
+          cache-to: type=registry,ref=${{ env.CACHE }}-test,${{ env.CACHE_OPTS }}
 
   smoke:
     name: Smoke-test the image
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - if: needs.test.outputs.tested == 'true'
+        run: echo "Develop's run smoke-tested this commit (see Test in the image)."
+      - if: needs.test.outputs.tested != 'true'
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@v7
+      - if: needs.test.outputs.tested != 'true'
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - if: needs.test.outputs.tested != 'true'
+        uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - if: needs.test.outputs.tested != 'true'
+        run: pnpm install --frozen-lockfile
+      - if: needs.test.outputs.tested != 'true'
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - if: needs.test.outputs.tested != 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build the runtime image
+        if: needs.test.outputs.tested != 'true'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           load: true
           tags: cuttingfloor:ci
-          cache-from: type=gha
+          cache-from: |
+            type=registry,ref=${{ env.CACHE }}-amd64
+            type=registry,ref=${{ env.CACHE }}-test
+          # On pushes, keep the runtime layers for the amd64 publish build (same image, all hits).
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}-amd64,{1}', env.CACHE, env.CACHE_OPTS) || '' }}
       - name: HTTP, stdio via docker exec, restart
+        if: needs.test.outputs.tested != 'true'
         run: node scripts/smoke-image.ts cuttingfloor:ci
       - name: Motion sandbox (compose), Chromium sandboxed, nothing reachable, abuse contained
+        if: needs.test.outputs.tested != 'true'
         run: node scripts/smoke-motion.ts cuttingfloor:ci
 
-  publish:
-    name: Publish to GHCR
-    needs: smoke
+  meta:
+    name: Image tags and labels
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.meta.outputs.tags }}
+      labels: ${{ steps.meta.outputs.labels }}
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
@@ -101,18 +179,93 @@ jobs:
             type=sha,format=long,prefix=
             type=semver,pattern={{version}},value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version }},enable=${{ inputs.version != '' }}
-      - name: Build and push linux/amd64 + linux/arm64
+
+  # Each platform builds natively on its own runner (no emulation) and pushes untagged, by digest,
+  # with its own cache. publish then tags both as one.
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: [smoke, meta]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        name: Build and push ${{ matrix.platform }} by digest
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          platforms: ${{ matrix.platform }}
+          labels: ${{ needs.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           provenance: mode=max
           sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=${{ env.CACHE }}-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.CACHE }}-${{ matrix.arch }},${{ env.CACHE_OPTS }}
+      - name: Record the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish to GHCR
+    needs: [meta, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tag linux/amd64 + linux/arm64 as one image
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          TAGS: ${{ needs.meta.outputs.tags }}
+        run: |
+          sources=()
+          for d in *; do sources+=("$IMAGE@sha256:$d"); done
+          if [ "${#sources[@]}" -ne 2 ]; then
+            echo "::error::expected 2 platform digests, got ${#sources[@]}"; exit 1
+          fi
+          tags=()
+          while IFS= read -r t; do
+            if [ -n "$t" ]; then tags+=(-t "$t"); fi
+          done <<<"$TAGS"
+          docker buildx imagetools create "${tags[@]}" "${sources[@]}"
+      - name: Inspect
+        env:
+          TAGS: ${{ needs.meta.outputs.tags }}
+        run: docker buildx imagetools inspect "$(head -n1 <<<"$TAGS")"
 
   deploy:
     needs: publish

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { demoForSkill } from '../../../content/demos.ts';
 import { SKILLS, SKILLS_UPDATED, type Skill, skill } from '../../../content/skills.ts';
 import { SITE_URL } from '../../seo.ts';
 import { Breadcrumbs, Footer, JsonLd, Nav } from '../../shell.tsx';
@@ -50,6 +51,7 @@ export default async function SkillPage({ params }: Props) {
   const s = skill((await params).slug);
   if (!s) notFound();
   const n = String(SKILLS.indexOf(s) + 1).padStart(2, '0');
+  const shown = demoForSkill(s.slug);
 
   return (
     <>
@@ -102,6 +104,11 @@ export default async function SkillPage({ params }: Props) {
 
         <section className="cell wt-end">
           <p className="wt-links">
+            {shown && (
+              <>
+                <a href={`/demos/${shown.slug}`}>Watch an agent do it: {shown.title}</a> ·{' '}
+              </>
+            )}
             <a href="/skills">More skills</a> · <a href="/walkthroughs">Walkthroughs</a>
           </p>
         </section>

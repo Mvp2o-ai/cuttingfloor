@@ -2052,6 +2052,10 @@ button.link-big {
 .demo-video video.on {
   opacity: 1;
 }
+/* A 16:9 video in the 9:16 preview: whole, not cropped. */
+.demo-video video.wide {
+  object-fit: contain;
+}
 .demo-file {
   position: absolute;
   left: 8px;
@@ -2252,4 +2256,62 @@ button.link-big {
 .demo-stack {
   display: grid;
   gap: clamp(48px, 7vw, 96px);
+}
+
+/* ---------- demos: the hub and a watch page per demo ---------- */
+
+.dm-hub img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 9 / 16;
+  max-height: 420px;
+  object-fit: cover;
+  border: 1px solid var(--rule);
+}
+.dm-pair {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: clamp(16px, 3vw, 40px);
+  align-items: start;
+}
+.dm-pair figure {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+/* Further versions take the full row under the before and after. */
+.dm-pair figure:nth-child(n + 3) {
+  grid-column: 1 / -1;
+  max-width: 720px;
+}
+.dm-pair video {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 80vh;
+  background: #000;
+  border: 1px solid var(--rule);
+}
+.dm-pair figcaption {
+  font-family: var(--font-mono), monospace;
+  font-size: 14px;
+  color: var(--mute);
+}
+.dm-main video {
+  border-color: var(--key);
+}
+.dm-steps {
+  margin: 0;
+  padding-left: 1.4em;
+  display: grid;
+  gap: 10px;
+  font-size: clamp(18px, 1.6vw, 22px);
+  max-width: 60ch;
+}
+@media (max-width: 600px) {
+  .dm-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

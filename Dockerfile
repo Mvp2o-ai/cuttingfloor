@@ -153,11 +153,10 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prefer-offline 
 # the model; the server re-embeds any skill whose text no longer matches its stored hash.
 RUN node packages/skills/scripts/write-vectors.ts
 
-# Test-only: espeak-ng speaks the transcript fixtures, and the tiny whisper model and the Kokoro
-# voice model are fetched once here (checksummed) so test runs don't download them.
-FROM build AS testenv
-USER root
-RUN apt-get update && apt-get install -y --no-install-recommends espeak-ng curl ca-certificates \
+# Test-only: the tiny whisper model and the Kokoro voice model, fetched once (checksummed) so test
+# runs don't download them. A stage of its own so a source change doesn't fetch them again.
+FROM base AS testmodels
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /opt/models \
  && curl -fsSL -o /opt/models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin \
@@ -165,6 +164,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends espeak-ng curl 
  && curl -fsSL -o /tmp/kokoro.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2 \
  && echo "c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298  /tmp/kokoro.tar.bz2" | sha256sum -c - \
  && tar -xjf /tmp/kokoro.tar.bz2 -C /opt/models --no-same-owner && rm /tmp/kokoro.tar.bz2
+
+# Test-only: espeak-ng speaks the transcript fixtures.
+FROM build AS testenv
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends espeak-ng \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=testmodels /opt/models /opt/models
 ENV CUTTINGFLOOR_MODELS=/opt/models
 
 # `docker build --target test .` runs lint, typecheck and every test, engine tests included.

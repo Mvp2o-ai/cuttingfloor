@@ -24,6 +24,7 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
           cuttingfloor
         </a>
         <nav className="nav-links" aria-label="Sections">
+          <a href="/demos">Demos</a>
           <a href="/walkthroughs">Walkthroughs</a>
           <a href="/skills">Skills</a>
           <a href="/#how">How it works</a>

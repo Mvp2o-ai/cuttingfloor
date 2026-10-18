@@ -123,7 +123,13 @@ export function AgentDemo({ demo }: { demo: Demo }) {
           </p>
           <div className="demo-video">
             {videos.map((v, i) => (
-              <VideoLayer key={v.src} src={v.src} poster={v.poster} on={i === stage} />
+              <VideoLayer
+                key={v.src}
+                src={v.src}
+                poster={v.poster}
+                wide={v.wide}
+                on={i === stage}
+              />
             ))}
             <span className="demo-file">{videos[stage]?.label}</span>
           </div>
@@ -191,7 +197,17 @@ export function AgentDemo({ demo }: { demo: Demo }) {
 }
 
 /** One of the stacked videos: plays while it is the one on screen. */
-function VideoLayer({ src, poster, on }: { src: string; poster?: string; on: boolean }) {
+function VideoLayer({
+  src,
+  poster,
+  wide,
+  on,
+}: {
+  src: string;
+  poster?: string;
+  wide?: boolean;
+  on: boolean;
+}) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const v = ref.current;
@@ -204,7 +220,7 @@ function VideoLayer({ src, poster, on }: { src: string; poster?: string; on: boo
   return (
     <video
       ref={ref}
-      className={on ? 'on' : ''}
+      className={[on ? 'on' : '', wide ? 'wide' : ''].join(' ').trim() || undefined}
       src={src}
       poster={poster}
       muted

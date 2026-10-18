@@ -7,6 +7,7 @@ const config: NextConfig = {
   // Pages that moved keep working at their old addresses.
   async redirects() {
     return [
+      { source: '/demo', destination: '/demos', permanent: true },
       {
         source: '/walkthroughs/fix-jagged-cuts',
         destination: '/walkthroughs/cut-pauses-and-restarts',

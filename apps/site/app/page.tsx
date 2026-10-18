@@ -1,6 +1,8 @@
+import { DEMOS } from '../content/demos.ts';
 import { HOME_SESSION } from '../content/home-session.ts';
 import { Capabilities } from './capabilities.tsx';
 import { Connect } from './connect.tsx';
+import { AgentDemo } from './demos/demo.tsx';
 import { PLANS } from './pricing.ts';
 import { Prompts } from './prompts.tsx';
 import { ALTERNATIVES, FAQS, structuredData } from './seo.ts';
@@ -47,8 +49,8 @@ export default function Home() {
                 <a className="link-big" href={SIGN_UP}>
                   Start free for 3 days
                 </a>
-                <a className="link-big quiet" href={`#${SESSION_ID}`}>
-                  Watch it work
+                <a className="link-big quiet" href="/demos">
+                  Watch it edit
                 </a>
               </div>
             </div>
@@ -93,9 +95,25 @@ export default function Home() {
           />
         </section>
 
+        {DEMOS[0] && (
+          <section className="cell" aria-label="Your agent, editing">
+            <div className="head">
+              <span className="label">03 / In your agent</span>
+              <h2 className="lede">
+                Plug cuttingfloor into the agent you already use. <em>It becomes your editor.</em>
+              </h2>
+            </div>
+            <AgentDemo demo={DEMOS[0]} />
+            <p className="wt-links">
+              <a href={`/demos/${DEMOS[0].slug}`}>Watch the before and after</a> ·{' '}
+              <a href="/demos">All demos</a>
+            </p>
+          </section>
+        )}
+
         <section className="cell" aria-label="Things to ask for">
           <div className="head">
-            <span className="label">03 / Ask for</span>
+            <span className="label">04 / Ask for</span>
             <div>
               <h2 className="display">Say it like you’d say it to an editor.</h2>
               <p className="compare-lede">
@@ -109,7 +127,7 @@ export default function Home() {
 
         <section className="cell paper marks" id="how">
           <span className="mark-b" />
-          <span className="label">04 / What it does</span>
+          <span className="label">05 / What it does</span>
           <h2 className="display big-stat">
             62 tools.
             <br />
@@ -124,7 +142,7 @@ export default function Home() {
 
         <section className="cell" id="start">
           <div className="head">
-            <span className="label">05 / Start</span>
+            <span className="label">06 / Start</span>
             <h2 className="display">Three steps.</h2>
           </div>
           <ol className="ledger">
@@ -170,7 +188,7 @@ export default function Home() {
               </figcaption>
             </div>
             <div>
-              <span className="label">06 / Made here</span>
+              <span className="label">07 / Made here</span>
               <h2
                 className="display"
                 style={{ fontSize: 'clamp(40px, 5.4vw, 80px)', margin: '16px 0 20px' }}
@@ -187,7 +205,7 @@ export default function Home() {
 
         <section className="cell" id="pricing">
           <div className="head">
-            <span className="label">07 / Pricing</span>
+            <span className="label">08 / Pricing</span>
             <h2 className="display">Pay for rendering.</h2>
           </div>
           <table className="price-table">
@@ -223,7 +241,7 @@ export default function Home() {
 
         <section className="cell" id="compare">
           <div className="head">
-            <span className="label">08 / Compared</span>
+            <span className="label">09 / Compared</span>
             <div>
               <h2 className="display">Edits, not templates.</h2>
               <p className="compare-lede">
@@ -255,7 +273,7 @@ export default function Home() {
 
         <section className="cell">
           <div className="head">
-            <span className="label">09 / Questions</span>
+            <span className="label">10 / Questions</span>
             <h2 className="display">Asked.</h2>
           </div>
           <div className="faq">

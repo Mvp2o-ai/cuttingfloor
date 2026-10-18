@@ -54,3 +54,5 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # image.yml's test job reads workflow runs (it looks for develop's run on promotions).
+      actions: read
