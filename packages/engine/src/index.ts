@@ -16,6 +16,7 @@ export {
   matteSize,
   segmentSize,
 } from './cutout.ts';
+export { detectScenes, detectSilences } from './detect.ts';
 export { BIN, engineVersions, installedFonts, run } from './exec.ts';
 export { download, isBlockedAddress } from './fetch.ts';
 export {

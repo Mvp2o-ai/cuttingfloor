@@ -285,7 +285,6 @@ export async function factsResolver(
     const record = await rt.media.find(owner, id);
     if (!record) continue;
     out.set(id, {
-      ...(record.analysis ? { silences: record.analysis.silences } : {}),
       ...(record.analyses?.transcript ? { words: record.analyses.transcript.words } : {}),
     });
   }

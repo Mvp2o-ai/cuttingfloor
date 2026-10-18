@@ -3156,6 +3156,55 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
       expect(captions.every((c) => (c.words?.length ?? 0) <= 3)).toBe(true);
     }, 600_000);
 
+    it('finds silences and scene cuts with the settings it is given', async () => {
+      // Tone, then 1 s of quiet from 2 s, then a quieter tone (-30 dBFS) from 3 s; red, then
+      // blue at 2.5 s.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=red:size=320x180:rate=25:d=2.5[a];color=c=blue:size=320x180:rate=25:d=2.5[b];[a][b]concat=n=2:v=1:a=0[out0]',
+        '-f',
+        'lavfi',
+        '-i',
+        "aevalsrc=exprs='if(lt(t\\,2)\\,0.5\\,if(lt(t\\,3)\\,0\\,0.0316))*sin(2*PI*440*t)':s=48000:d=5",
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-shortest',
+        join(env.mediaDir, 'scenes.mp4'),
+      ]);
+      const media = await importMedia({ path: join(env.mediaDir, 'scenes.mp4') });
+      const loose = await analyze({
+        media_id: media.media_id,
+        kind: 'silence',
+        threshold_db: -50,
+        min_seconds: 0.5,
+      });
+      const strict = await analyze({
+        media_id: media.media_id,
+        kind: 'silence',
+        threshold_db: -20,
+        min_seconds: 0.5,
+      });
+      const spans = (r: Record<string, unknown>) =>
+        r.silences as Array<{ start: number; end: number }>;
+      // At -50 dB only the gap is quiet; at -20 dB the quieter tone counts too.
+      expect(spans(loose)).toHaveLength(1);
+      expect(spans(loose)[0]?.start).toBeCloseTo(2, 0);
+      expect(spans(strict).at(-1)?.end).toBeGreaterThan(4.5);
+      const cuts = await analyze({ media_id: media.media_id, kind: 'scenes', threshold: 10 });
+      expect((cuts.scenes as number[]).some((t) => Math.abs(t - 2.5) < 0.1)).toBe(true);
+      const missing = await call(client, 'media.analyze', {
+        media_id: media.media_id,
+        kind: 'silence',
+      });
+      expect(missing.structured.code).toBe('bad_request');
+    }, 300_000);
+
     it('finds the beat of a click track', async () => {
       await ff([
         '-f',

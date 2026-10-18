@@ -40,10 +40,8 @@ export type MediaResolver = (mediaId: string) => MediaRef | undefined;
 /** Looks up a stored timeline an edit nests. Returns undefined for unknown or expired ids. */
 export type TimelineResolver = (timelineId: string) => TimelineDoc | undefined;
 
-/** What is known about a media item beyond its streams, from import and media.analyze. */
+/** What is known about a media item beyond its streams, from media.analyze. */
 export interface MediaFacts {
-  /** Silent spans (source seconds) found at import. */
-  silences?: Array<{ start: number; end: number }>;
   /** Transcript words (source seconds), from media.analyze. */
   words?: Array<{ text: string; start: number; end: number }>;
 }

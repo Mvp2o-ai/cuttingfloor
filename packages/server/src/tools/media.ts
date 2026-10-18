@@ -3,6 +3,8 @@ import { basename, join } from 'node:path';
 import {
   analyseBeats,
   detectFaces,
+  detectScenes,
+  detectSilences,
   fingerprint,
   mediaInfo,
   mediaStills,
@@ -140,7 +142,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Import media',
       description: [
-        "Import the user's own video, audio, image or font to edit with or place as is: probe, fingerprint, conform if needed (VFR, rotation, HDR → BT.709), 540p proxy, scene and loudness analysis. A reference image to recreate needs no import: rebuild it with create.motion or create.still.",
+        "Import the user's own video, audio, image or font to edit with or place as is: probe, fingerprint, conform if needed (VFR, rotation, HDR → BT.709), 540p proxy and integrated loudness. A reference image to recreate needs no import: rebuild it with create.motion or create.still.",
         'Long-running: returns a task, or {job_id, media_id} for job.get. The media_id is usable in edits as soon as the job reports processing.',
         `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL, the upload_id of a file sent through media.upload, or the job_id of a completed export.video (its render becomes media).`,
         'Importing the same file again returns the same media_id.',
@@ -268,8 +270,8 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Analyze media',
       description: [
-        'Find what is in imported media, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). beats: tempo, beat and downbeat times. faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on. look: your own questions about what is on screen, answered on sampled frames.',
-        'Times are media seconds; boxes are fractions of the picture. Results stay with the media (media.get include) except track, which comes back in the result. A result too long to return (a long transcript) comes back as its summary and a note on reading it in code.run.',
+        'Find what is in imported media, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). beats: tempo, beat and downbeat times. faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on. look: your own questions about what is on screen, answered on sampled frames. silence: stretches quieter than threshold_db for at least min_seconds. scenes: times the picture changes by more than threshold (0–100).',
+        'Times are media seconds; boxes are fractions of the picture. Results stay with the media (media.get include) except track, silence and scenes, which come back in the result. A result too long to return (a long transcript) comes back as its summary and a note on reading it in code.run.',
         'Long-running: returns a task, or a job_id for job.get.',
         '',
         'HOW LOOK WORKS. TypeSafe Jev, a fast judgment model (preview), answers your questions about frames sampled from the media. Each sampled frame is its own request: Jev sees that one picture, named `frame`, and with with_previous also the frame sampled just before it, named `previous`, plus any state you give: text or JSON entries by name, the same on every frame (the script, what a term means). Every question is answered on every frame, independently and in parallel (about 0.15 s a frame), as typed data you then combine in your own code.',
@@ -315,7 +317,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         });
       }
       const p = record.probe;
-      const needsPicture = args.kind === 'faces' || args.kind === 'track';
+      const needsPicture = args.kind === 'faces' || args.kind === 'track' || args.kind === 'scenes';
       if (
         args.kind === 'look'
           ? !p?.video
@@ -370,6 +372,19 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       }
       if (args.kind === 'track' && !args.region) {
         throw new CfError('bad_request', 'track needs a region: {at_seconds, x, y, w, h}');
+      }
+      if (
+        args.kind === 'silence' &&
+        (args.threshold_db === undefined || args.min_seconds === undefined)
+      ) {
+        throw new CfError('bad_request', 'silence needs threshold_db and min_seconds', {
+          hint: 'Say what counts as quiet, e.g. {threshold_db: -40, min_seconds: 0.3}',
+        });
+      }
+      if (args.kind === 'scenes' && args.threshold === undefined) {
+        throw new CfError('bad_request', 'scenes needs a threshold (0–100)', {
+          hint: 'Lower finds subtler cuts, e.g. {threshold: 10}',
+        });
       }
       const job = await store.create({
         owner,
@@ -507,6 +522,24 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               track: { rate: fps, points },
             }) as never;
           }
+          case 'silence': {
+            progress(0.1, 'silence: listening');
+            const silences = await detectSilences(file, {
+              thresholdDb: args.threshold_db as number,
+              minSeconds: args.min_seconds as number,
+              ...(p?.duration ? { duration: p.duration } : {}),
+              signal,
+            });
+            return ok({ media_id: args.media_id, kind: args.kind, silences }) as never;
+          }
+          case 'scenes': {
+            progress(0.1, 'scenes: looking');
+            const scenes = await detectScenes(file, {
+              threshold: args.threshold as number,
+              signal,
+            });
+            return ok({ media_id: args.media_id, kind: args.kind, scenes }) as never;
+          }
         }
       });
       return jobReply(job, ctx);
@@ -518,7 +551,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get media',
       description:
-        'Status, streams, duration, frame rate, conform reasons, scene cuts, loudness, silences and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
+        'Status, streams, duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
       inputSchema: MediaRefInput,
       outputSchema: MediaInfo,
       annotations: {

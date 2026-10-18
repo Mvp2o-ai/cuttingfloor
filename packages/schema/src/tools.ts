@@ -545,9 +545,9 @@ export const LookAnalysis = z.object({
 export const MediaAnalyzeInput = z.object({
   media_id: MediaId,
   kind: z
-    .enum(['transcript', 'beats', 'faces', 'track', 'look'])
+    .enum(['transcript', 'beats', 'faces', 'track', 'look', 'silence', 'scenes'])
     .describe(
-      'transcript: words with times (whisper.cpp, local); beats: tempo and beat times; faces: face boxes over time; track: follow a region; look: your own questions answered on sampled frames',
+      'transcript: words with times (whisper.cpp, local); beats: tempo and beat times; faces: face boxes over time; track: follow a region; look: your own questions answered on sampled frames; silence: stretches quieter than threshold_db for min_seconds; scenes: times the picture changes by more than threshold',
     ),
   questions: z
     .record(JudgeName, JudgeQuestion)
@@ -596,6 +596,24 @@ export const MediaAnalyzeInput = z.object({
       'track: the box to follow (top-left x, y and size, fractions of the picture) and when',
     ),
   until_seconds: z.number().min(0).optional().describe('track, look: stop here. Default: the end'),
+  threshold_db: z
+    .number()
+    .min(-100)
+    .max(0)
+    .optional()
+    .describe('silence (required): quieter than this counts as silence, dBFS'),
+  min_seconds: z
+    .number()
+    .min(0.01)
+    .max(3600)
+    .optional()
+    .describe('silence (required): only stretches at least this long'),
+  threshold: z
+    .number()
+    .min(0)
+    .max(100)
+    .optional()
+    .describe('scenes (required): how much the picture must change to count as a cut, 0–100'),
   idempotency_key: z.string().min(1).max(200).optional(),
 });
 
@@ -648,11 +666,7 @@ export const MediaInfo = z.object({
     .array(z.string())
     .describe('Why a mezzanine was made (vfr, rotation, hdr, codec); empty when not needed'),
   analysis: z
-    .object({
-      scenes: z.array(z.number()).describe('Scene cut times, seconds'),
-      loudness_lufs: z.number().nullable(),
-      silences: z.array(z.object({ start: z.number(), end: z.number() })),
-    })
+    .object({ loudness_lufs: z.number().nullable().describe('Integrated loudness at import') })
     .nullable(),
   analyses: z
     .object({
@@ -688,7 +702,7 @@ export type MediaInfo = z.infer<typeof MediaInfo>;
 
 export const MediaAnalyzeResult = z.object({
   media_id: MediaId,
-  kind: z.enum(['transcript', 'beats', 'faces', 'track', 'look']),
+  kind: z.enum(['transcript', 'beats', 'faces', 'track', 'look', 'silence', 'scenes']),
   summary: z
     .record(z.string(), z.unknown())
     .optional()
@@ -717,6 +731,11 @@ export const MediaAnalyzeResult = z.object({
       ),
     })
     .optional(),
+  silences: z
+    .array(z.object({ start: z.number(), end: z.number() }))
+    .optional()
+    .describe('silence: media seconds'),
+  scenes: z.array(z.number()).optional().describe('scenes: cut times, media seconds'),
   note: z
     .string()
     .optional()

@@ -642,63 +642,19 @@ async function makeProxy(
   await run(BIN.ffmpeg, args, { signal, onLine: timeProgress(p.duration, onFraction) });
 }
 
-/** Scene cuts, integrated loudness and silences, computed once at import. */
+/** Integrated loudness, measured once at import (EBU R128; below its -70 LUFS gate, none). */
 async function analyse(
   file: string,
   p: Probe,
   signal: AbortSignal,
 ): Promise<NonNullable<MediaInfo['analysis']>> {
-  const scenes: number[] = [];
-  if (p.video) {
-    const { stderr } = await run(
-      BIN.ffmpeg,
-      [
-        ...INPUT,
-        '-i',
-        `file:${file}`,
-        '-an',
-        '-vf',
-        'scdet=threshold=12,metadata=print:key=lavfi.scd.time',
-        '-f',
-        'null',
-        '-',
-      ],
-      { signal },
-    );
-    for (const m of stderr.matchAll(/lavfi\.scd\.time=([\d.]+)/g)) scenes.push(Number(m[1]));
-  }
-  let loudness: number | null = null;
-  const silences: Array<{ start: number; end: number }> = [];
-  if (p.audio) {
-    const { stderr } = await run(
-      BIN.ffmpeg,
-      [
-        ...INPUT,
-        '-i',
-        `file:${file}`,
-        '-vn',
-        '-af',
-        'ebur128=framelog=quiet,silencedetect=n=-50dB:d=0.5',
-        '-f',
-        'null',
-        '-',
-      ],
-      { signal },
-    );
-    const i = /I:\s+(-?[\d.]+) LUFS/.exec(stderr.slice(stderr.lastIndexOf('Summary')));
-    loudness = i ? Number(i[1]) : null;
-    if (loudness !== null && loudness < -69) loudness = null;
-    let open: number | null = null;
-    for (const line of stderr.split('\n')) {
-      const s = /silence_start: (-?[\d.]+)/.exec(line);
-      const e = /silence_end: (-?[\d.]+)/.exec(line);
-      if (s) open = Math.max(0, Number(s[1]));
-      if (e && open !== null) {
-        silences.push({ start: open, end: Number(e[1]) });
-        open = null;
-      }
-    }
-    if (open !== null && p.duration) silences.push({ start: open, end: p.duration });
-  }
-  return { scenes, loudness_lufs: loudness, silences };
+  if (!p.audio) return { loudness_lufs: null };
+  const { stderr } = await run(
+    BIN.ffmpeg,
+    [...INPUT, '-i', `file:${file}`, '-vn', '-af', 'ebur128=framelog=quiet', '-f', 'null', '-'],
+    { signal },
+  );
+  const i = /I:\s+(-?[\d.]+) LUFS/.exec(stderr.slice(stderr.lastIndexOf('Summary')));
+  const loudness = i ? Number(i[1]) : null;
+  return { loudness_lufs: loudness !== null && loudness >= -70 ? loudness : null };
 }
