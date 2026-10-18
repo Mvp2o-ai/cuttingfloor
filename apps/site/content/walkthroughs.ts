@@ -38,7 +38,7 @@ export type Walkthrough = {
   sections: { heading: string; body: string[] }[];
 };
 
-// Fix jagged cuts: 22:14 of talking head with 28 retakes left in. The agent keeps the last take of
+// Cut out pauses, ums and restarts: 22:14 of talking head with 28 restarts left in. The agent keeps the last take of
 // each, so 29 passages remain, 41 seconds shorter.
 const EP12_LENGTH = 1293;
 const EP12_JOINS = [
@@ -51,22 +51,21 @@ const EP12_PASSAGES = [0, ...EP12_JOINS, EP12_LENGTH]
 
 export const WALKTHROUGHS: Walkthrough[] = [
   {
-    slug: 'fix-jagged-cuts',
-    title: 'Fix jagged cuts',
-    metaTitle: 'Fix jagged jump cuts in a long YouTube video with an AI agent | cuttingfloor',
+    slug: 'cut-pauses-and-restarts',
+    title: 'Cut out pauses, ums and restarts',
+    metaTitle:
+      'Cut the pauses, ums and restarts out of a long video with your AI agent | cuttingfloor',
     metaDescription:
-      'Hard cuts between retakes on the same angle read as jolts. The prompt, and every tool call, an agent used to find 28 of them and make each one invisible.',
+      'A 22-minute video full of long pauses, ums and lines started over. The prompt, and every tool call an agent made, to cut them out without losing a word.',
     oneLiner:
-      'Turn the hard cuts between retakes on one camera angle into joins nobody notices, without changing the running order or losing a word.',
+      'Cut the long pauses, the ums and the lines you started over out of a talking video, so it flows, without losing anything you meant to say.',
     answer:
-      'Fixing jagged cuts means turning the jump cuts between retakes on one camera angle into joins nobody notices. Here an agent connected to the cuttingfloor MCP server reads the transcript of a 22-minute video, finds 28 retake joins, adds L-cuts, audio crossfades and alternating punch-ins, checks the frames and exports a 4K file.',
+      'Your agent can clean up a talking video for you: the long pauses, the ums, and the lines you started over. Here Claude Code, with the cuttingfloor MCP server connected, reads every word of a 22-minute video, cuts 28 restarts, smooths each cut so nothing jumps, checks its work and exports the finished file.',
     updated: '2026-10-18',
-    prompt: `Here's the raw export of my 22-minute video: ./footage/ep12-raw.mp4.
-There are about thirty jump cuts in the talking-head sections: pauses
-and retakes I left in. They're hard cuts on the same angle, so they
-read as little jolts. Find them and clean them up so the cuts feel
-invisible. Don't change the running order and don't lose anything I
-actually said.`,
+    prompt: `Here's my 22-minute video: ./footage/ep12-raw.mp4.
+Cut out the long pauses, the ums, and the bits where I messed up and
+started a line again. Keep everything else in order, and don't lose
+anything I actually meant to say.`,
     session: {
       agent: 'claude code',
       preview: { aspect: '16:9', length: EP12_LENGTH, fps: 30 },
@@ -74,11 +73,11 @@ actually said.`,
       steps: [
         {
           kind: 'user',
-          text: 'Here’s my 22-minute episode. About thirty jump cuts on the same angle read as jolts. Make them invisible; keep the order and every word.',
+          text: 'Here’s my 22-minute video. Cut out the long pauses, the ums, and the bits where I started a line again. Keep everything else in order.',
         },
         {
           kind: 'agent',
-          text: 'Importing it and reading the transcript. A retake shows up in the words: a pause, then the same sentence again.',
+          text: 'On it. I’ll read through everything you said first, so I can find the pauses and the restarts.',
         },
         {
           kind: 'call',
@@ -94,7 +93,7 @@ actually said.`,
         },
         {
           kind: 'agent',
-          text: 'I found 28 retakes. I’m keeping the last take of each sentence, so 29 passages stay, in order.',
+          text: 'Found 28 places where you started a line over, plus the long pauses. I’m keeping your best take each time, in the same order.',
         },
         {
           kind: 'call',
@@ -120,28 +119,28 @@ actually said.`,
         },
         {
           kind: 'agent',
-          text: 'Now the joins. Each gets an L-cut, so the room tone carries under the picture change, and a short audio crossfade.',
+          text: 'Now I’m smoothing every cut so the sound doesn’t jump, and zooming in a little on every other part so the cuts don’t jar.',
         },
         {
           kind: 'call',
           fn: 'edit.batch',
           args: '{ ops: 28 × clip.trim { side: "audio" } }',
           full: '{ timeline_id: "tl_02", ops: [ { tool: "clip.trim", args: { clip_id: "c_a01", edge: "end", side: "audio", to_frame: 1145 } }, … 27 more, each 6 frames past its cut ] }',
-          ret: 'tl_03 · 28 L-cuts, 6-frame audio tails',
+          ret: 'tl_03 · sound carries over 28 cuts',
         },
         {
           kind: 'call',
           fn: 'edit.batch',
           args: '{ ops: 28 × transition.add { kind: "crossfade" } }',
           full: '{ timeline_id: "tl_03", ops: [ { tool: "transition.add", args: { clip_id: "c_a01", kind: "crossfade", duration_frames: 4 } }, … 27 more ] }',
-          ret: 'tl_04 · 28 audio crossfades, 4 frames',
+          ret: 'tl_04 · 28 soft cuts',
         },
         {
           kind: 'call',
           fn: 'edit.batch',
           args: '{ ops: 14 × clip.set_transform { scale: 1.08 } }',
           full: '{ timeline_id: "tl_04", ops: [ { tool: "clip.set_transform", args: { clip_id: "c_v02", scale: 1.08, y: 0.46 } }, … every other passage, 14 in all ] }',
-          ret: 'tl_05 · punch-in on alternate passages',
+          ret: 'tl_05 · zoomed in on every other part',
         },
         {
           kind: 'call',
@@ -152,7 +151,7 @@ actually said.`,
         },
         {
           kind: 'agent',
-          text: 'Each join reads as a cut-in now, not a jolt. I checked the other twenty the same way. Running QA, then the export.',
+          text: 'I looked at both sides of the cuts: nothing jumps. Running the checks, then the export.',
         },
         {
           kind: 'call',
@@ -172,7 +171,7 @@ actually said.`,
         },
         {
           kind: 'agent',
-          text: 'Done. 21:33, 41 seconds of dead frames gone, every sentence kept and in order.',
+          text: 'Done. ep12-clean.mp4 is 21:33, 41 seconds shorter, and everything you meant to say is still in it.',
         },
       ],
     },
@@ -189,12 +188,12 @@ actually said.`,
         { name: 'A1', segments: EP12_PASSAGES, marks: EP12_JOINS },
       ],
       legend: [
-        { swatch: 'cut', text: 'a passage, the last take kept' },
-        { swatch: 'alt', text: 'punched in to 108%' },
-        { swatch: 'mark', text: 'L-cut and 4-frame crossfade' },
+        { swatch: 'cut', text: 'what stays: your best take of each line' },
+        { swatch: 'alt', text: 'zoomed in a little, so cuts don’t jar' },
+        { swatch: 'mark', text: 'a cut, smoothed so the sound doesn’t jump' },
       ],
       stats: [
-        { label: 'Retake joins', value: '28' },
+        { label: 'Restarts cut', value: '28' },
         { label: 'Running time', value: '22:14 → 21:33' },
         { label: 'Words lost', value: '0' },
         { label: 'Tool calls', value: '10' },
@@ -209,27 +208,21 @@ actually said.`,
     },
     sections: [
       {
-        heading: 'Why do jump cuts on the same angle look jagged?',
+        heading: 'How do I cut the ums and pauses out of a video?',
         body: [
-          'Between two takes of the same shot the words change and the background doesn’t, so the eye reads the cut as a jolt even when it is technically clean. Long talking-head videos collect dozens of them: every pause and every retake you left in.',
+          'Ask your agent, in your own words. With cuttingfloor connected, it reads everything you said with the time of every word, so it can see each long pause, each um, and each line you started over. It keeps your best take of each line and cuts the rest, in order.',
         ],
       },
       {
-        heading: 'How does the agent find the jump cuts?',
+        heading: 'Won’t all those cuts look choppy?',
         body: [
-          'It reads. media.analyze returns the transcript with every word timed, and a retake looks the same in any language: a pause, then a sentence starting over. There is no jump-cut detector tool; the agent decides where the joins are, and keeps the last attempt at each sentence.',
+          'Not if each one is smoothed. The agent lets the sound run a moment past each cut so it never stops dead, softens it so it doesn’t click, and zooms in a little on every other part so the picture change feels on purpose. Then it looks at both sides of the cuts before it exports.',
         ],
       },
       {
-        heading: 'What happens at each join?',
+        heading: 'Will I lose anything I said?',
         body: [
-          'Three small edits. The audio runs six frames past the picture change (an L-cut), so the room tone bridges the join. A four-frame crossfade stops it clicking. Every other passage is punched in to 108%, so the same angle reads as a new shot. Then the agent looks at both sides of each join with render.frames before it exports.',
-        ],
-      },
-      {
-        heading: 'What stays the same?',
-        body: [
-          'The running order and every sentence you said. Nothing is re-shot or generated: the footage was already shot, and this is what happens to it next.',
+          'No. The order stays the same, and every line you meant to say is still there. Nothing is re-recorded or generated: the video was already shot, and this is just the edit.',
         ],
       },
     ],
