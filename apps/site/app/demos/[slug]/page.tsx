@@ -4,6 +4,7 @@ import { DEMOS, type Demo, demo, finished } from '../../../content/demos.ts';
 import { skill } from '../../../content/skills.ts';
 import { Breadcrumbs, Footer, JsonLd, Nav } from '../../shell.tsx';
 import { AgentDemo } from '../demo.tsx';
+import { Seek } from '../seek.tsx';
 import { videoObject } from '../video.ts';
 
 // One watch page per demo: the finished video is the main thing on it, so search can show it.
@@ -66,11 +67,13 @@ export default async function DemoPage({ params }: Props) {
         <section className="cell">
           <div className="dm-pair">
             <figure className="dm-main">
+              <Seek target="finished" />
               <video
+                id="finished"
                 src={v.src}
                 poster={v.poster}
-                width={540}
-                height={960}
+                width={v.wide ? 960 : 540}
+                height={v.wide ? 540 : 960}
                 controls
                 playsInline
                 preload="none"
@@ -85,8 +88,8 @@ export default async function DemoPage({ params }: Props) {
               <video
                 src={d.raw.src}
                 poster={d.raw.poster}
-                width={540}
-                height={960}
+                width={d.raw.wide ? 960 : 540}
+                height={d.raw.wide ? 540 : 960}
                 controls
                 playsInline
                 preload="none"
@@ -97,6 +100,24 @@ export default async function DemoPage({ params }: Props) {
                 <span className="label">Before</span> {d.raw.label}
               </figcaption>
             </figure>
+            {d.extra?.map((x) => (
+              <figure key={x.src}>
+                <video
+                  src={x.src}
+                  poster={x.poster}
+                  width={x.wide ? 960 : 540}
+                  height={x.wide ? 540 : 960}
+                  controls
+                  playsInline
+                  preload="none"
+                >
+                  <track kind="captions" srcLang="en" label="English" src={x.captions} default />
+                </video>
+                <figcaption>
+                  <span className="label">{x.caption}</span> {x.label}
+                </figcaption>
+              </figure>
+            ))}
           </div>
         </section>
 

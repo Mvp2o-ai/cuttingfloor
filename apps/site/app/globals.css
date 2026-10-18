@@ -2052,6 +2052,10 @@ button.link-big {
 .demo-video video.on {
   opacity: 1;
 }
+/* A 16:9 video in the 9:16 preview: whole, not cropped. */
+.demo-video video.wide {
+  object-fit: contain;
+}
 .demo-file {
   position: absolute;
   left: 8px;
@@ -2267,7 +2271,7 @@ button.link-big {
 }
 .dm-pair {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-template-columns: auto minmax(0, 1fr);
   gap: clamp(16px, 3vw, 40px);
   align-items: start;
 }
@@ -2276,11 +2280,16 @@ button.link-big {
   display: grid;
   gap: 10px;
 }
+/* Further versions take the full row under the before and after. */
+.dm-pair figure:nth-child(n + 3) {
+  grid-column: 1 / -1;
+  max-width: 720px;
+}
 .dm-pair video {
   display: block;
-  width: 100%;
+  width: auto;
+  max-width: 100%;
   height: auto;
-  aspect-ratio: 9 / 16;
   max-height: 80vh;
   background: #000;
   border: 1px solid var(--rule);
