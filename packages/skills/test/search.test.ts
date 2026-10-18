@@ -301,9 +301,11 @@ describe('the local model', () => {
       expect(tighter?.slug).toBe('cut-pauses-ums-and-restarts');
       expect(tighter?.semantic).toBeGreaterThan(0.5);
       expect(tighter?.keyword).toBeLessThan(0.2);
-      // Off-topic asks find nothing rather than the least-wrong skill.
-      expect(await index.search('what is the weather in Lisbon tomorrow')).toEqual([]);
-      expect(await index.search('change the font colour')).toEqual([]);
+      // Off-topic asks still rank, with scores low enough for the caller to see it doesn't fit.
+      const [weather] = await index.search('what is the weather in Lisbon tomorrow');
+      const [font] = await index.search('change the font colour');
+      expect(weather?.score).toBeLessThan(0.1);
+      expect(font?.score).toBeLessThan(0.1);
     },
     60_000,
   );

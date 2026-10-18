@@ -15,13 +15,9 @@ const SEMANTIC_WEIGHT = 0.6;
 const BM25_WEIGHT = 0.4;
 /** BM25 at or above this counts as a full keyword match. */
 const BM25_SATURATION = 10;
-/**
- * Lowest fused score returned (one-mcp's list floor): the caller reads name and description
- * before acting, so recall wins. Keywords alone (no model) return any skill with a match.
- * Checked against all-MiniLM-L6-v2: asks for a skill in other words score 0.27 to 0.39 (cosine
- * 0.40 to 0.60), generic video asks 0.15 to 0.23, off-topic ones below 0.1.
- */
-const HYBRID_FLOOR = 0.25;
+// No floor: every skill comes back ranked with its score, and the caller decides what fits.
+// Seen with all-MiniLM-L6-v2: asks for a skill in other words score 0.27 to 0.39, generic
+// video asks 0.15 to 0.23, off-topic ones below 0.1. Keywords alone (no model) need a match.
 
 export interface SkillMatch {
   slug: string;
@@ -159,7 +155,7 @@ export class SkillIndex {
           keyword,
         };
       })
-      .filter((m) => (m.semantic === null ? m.keyword > 0 : m.score >= HYBRID_FLOOR))
+      .filter((m) => m.semantic !== null || m.keyword > 0)
       .sort((a, b) => b.score - a.score || a.slug.localeCompare(b.slug))
       .slice(0, limit);
   }
