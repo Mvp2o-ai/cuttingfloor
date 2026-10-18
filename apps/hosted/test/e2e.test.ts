@@ -2568,6 +2568,53 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     );
 
     it.skipIf(!chromium)(
+      'renders across several browsers as one would, even a page that counts its own frames',
+      async () => {
+        // Three browsers share the 50 frames. The box moves 20 px per animation frame the page
+        // has seen, not per second, so a browser that skipped any frame would draw it short.
+        const before = process.env.CUTTINGFLOOR_MOTION_WORKERS;
+        process.env.CUTTINGFLOOR_MOTION_WORKERS = '3';
+        try {
+          const motion = await create('create.motion', {
+            html: `<canvas id="c" width="1280" height="720"></canvas>
+<script>
+  const ctx = document.getElementById('c').getContext('2d');
+  let seen = 0;
+  function draw() {
+    seen += 1;
+    ctx.clearRect(0, 0, 1280, 720);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(20 * seen, 300, 20, 120);
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+</script>`,
+            duration_seconds: 2,
+            width: 1280,
+            height: 720,
+            fps: 25,
+          });
+          // The page draws once while loading and once more at frame 0, so frame n has seen
+          // n + 2 frames: its box spans x 20(n + 2) to 20(n + 3). 37 and 47 are other browsers'.
+          for (const n of [0, 37, 47]) {
+            const x = 20 * (n + 2);
+            expect(
+              await look(await over(motion.media_id, n), [
+                [x + 10, 360],
+                [x - 30, 360],
+                [x + 50, 360],
+              ]),
+            ).toEqual(['white', 'red', 'red']);
+          }
+        } finally {
+          if (before === undefined) delete process.env.CUTTINGFLOOR_MOTION_WORKERS;
+          else process.env.CUTTINGFLOOR_MOTION_WORKERS = before;
+        }
+      },
+      180_000,
+    );
+
+    it.skipIf(!chromium)(
       'loads bundled libraries from lib/',
       async () => {
         const motion = await create('create.motion', {
