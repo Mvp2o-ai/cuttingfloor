@@ -1,12 +1,12 @@
 name: Image
 
 # Every PR and push: lint, typecheck and all tests (engine and end-to-end included) inside the
-# image, then a smoke test of the built image as users run it. On main, and for releases, the
-# image is published to GHCR for linux/amd64 and linux/arm64.
+# image, then a smoke test of the built image as users run it. Pushes to main and develop, and
+# releases, publish the image to GHCR for linux/amd64 and linux/arm64 (:latest is main only).
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_call:
     inputs:
@@ -96,7 +96,8 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
             type=sha,format=long,prefix=
             type=semver,pattern={{version}},value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version }},enable=${{ inputs.version != '' }}

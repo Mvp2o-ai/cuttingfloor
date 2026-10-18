@@ -1,6 +1,6 @@
 name: Release
 
-# When changesets land on main: bump the version, commit the changelog, tag vX.Y.Z, create the
+# When changesets land on main (a promotion of develop):bump the version, commit the changelog, tag vX.Y.Z, create the
 # GitHub release, and publish the image as :X.Y.Z and :X.Y. (The organisation doesn't let Actions
 # open pull requests, so there is no "version packages" PR: merging the changeset is the release.)
 
@@ -59,6 +59,16 @@ jobs:
           gh release create "v${version}" --title "v${version}" --notes-file notes.md
           echo "released=true" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
+          # develop takes the release commit too, so it stays ahead of main and its version and
+          # changelog match. Best effort: a conflict leaves develop for the next promotion.
+          git fetch -q origin develop
+          git switch -q -c back-merge origin/develop
+          if git merge -q --no-ff "v${version}" -m "chore: merge v${version} into develop"; then
+            git push origin HEAD:develop || echo "::warning::develop moved; merge v${version} by hand"
+          else
+            git merge --abort
+            echo "::warning::v${version} does not merge into develop cleanly; merge it by hand"
+          fi
 
   image:
     needs: release

@@ -1,0 +1,29 @@
+name: Flow
+
+# The open-source flow: forks and branches open pull requests into develop; only develop is
+# promoted into main. A pull request into main from anywhere else fails here, and the main
+# ruleset requires this check, so it cannot merge. Retarget it to develop.
+
+on:
+  pull_request:
+    types: [opened, reopened, edited, synchronize]
+
+permissions: {}
+
+jobs:
+  target:
+    name: Pull request target
+    runs-on: ubuntu-latest
+    steps:
+      - name: Only develop goes into main
+        env:
+          BASE: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$BASE" = main ] && { [ "$HEAD_REF" != develop ] || [ "$HEAD_REPO" != "$REPO" ]; }; then
+            echo "::error::Pull requests go into develop. Change the base branch of this pull request to develop."
+            exit 1
+          fi
+          echo "$HEAD_REPO:$HEAD_REF -> $BASE is fine."

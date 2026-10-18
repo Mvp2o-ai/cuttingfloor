@@ -17,5 +17,14 @@
 - No provider key ever appears in a tool argument, result, error, log or stored file.
 - Tests use the SDK `Client` against `createServer` (InMemoryTransport) or the HTTP server, not internal functions.
 
+## Branches and releases
+Open source: outside contributors fork, branch from `develop` and open pull requests into `develop` (CONTRIBUTING.md). Agents follow the same flow from worktrees:
+- The main checkout (first in `git worktree list`) is the person's and stays on `develop`. Never edit, commit or switch branches there.
+- Start: a worktree off `origin/develop` on a branch prefixed with the harness (`claude/…`, `cursor/…`, `codex/…`). Claude Code worktrees live in `.claude/worktrees/`; run `scripts/worktree-setup.sh` in a new one (env files and its own `pnpm install`).
+- Ship: `pnpm check` in the worktree, then `git push origin HEAD:develop` (rebase on `origin/develop` if rejected), or a pull request into `develop`.
+- Promote: `scripts/promote-develop.sh "<summary>"` opens the develop → main pull request, waits for its checks and merges it. Changesets on `main` cut the release, tag the image and merge back into `develop`. Only `develop` may open a pull request into `main` (the Flow check).
+- Finish: `scripts/finish-release.sh <worktree>` waits for main's runs, removes the worktree and fast-forwards the main checkout.
+- Whether something exists is answered from `origin/develop` and `origin/main` (`git grep -n <term> origin/develop --`), not a working tree that may be behind.
+
 ## Commits
 Conventional, small, one concern each. Add a changeset (`pnpm changeset`) for user-facing changes; only the `cuttingfloor` app is versioned, and releases tag the image.
