@@ -2,6 +2,9 @@
 //
 //   CHROME_PATH=<chrome> node scripts/smoke-account.ts https://cuttingfloor-site.vercel.app
 //
+// A preview (develop) sits behind Vercel's team login: set VERCEL_BYPASS to the project's
+// automation bypass secret (Settings → Deployment Protection; VERCEL_BYPASS in the env file).
+//
 // Keys come from deploy/hetzner/cuttingfloor.env. Makes a throwaway WorkOS user, signs in on the
 // site through AuthKit, checks the account page shows the trial, opens Stripe Checkout for Pro
 // (stopping before payment), then checks the MCP server's access rules: trial, trial over,
@@ -18,6 +21,7 @@ const env = await readFile(new URL('../deploy/hetzner/cuttingfloor.env', import.
 const read = (name: string) => new RegExp(`^${name}=(\\S+)`, 'm').exec(env)?.[1] ?? '';
 const workosKey = read('WORKOS_API_KEY');
 const stripeKey = read('STRIPE_SECRET_KEY');
+const bypass = process.env.VERCEL_BYPASS ?? read('VERCEL_BYPASS');
 
 const step = (label: string) => process.stdout.write(`• ${label}\n`);
 const failures: string[] = [];
@@ -65,6 +69,10 @@ try {
   step('signs in on the site and sees the trial');
   const page = await browser.newPage();
   await page.setViewport({ width: 1440, height: 900 });
+  if (bypass)
+    await page.goto(
+      `${site}/?x-vercel-protection-bypass=${bypass}&x-vercel-set-bypass-cookie=true`,
+    );
   await page.goto(`${site}/account`, { waitUntil: 'networkidle2' });
   await page.waitForSelector('input[type=email], input[name=email]', { timeout: 30_000 });
   await page.type('input[type=email], input[name=email]', email);

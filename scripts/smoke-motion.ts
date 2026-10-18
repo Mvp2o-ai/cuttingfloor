@@ -314,6 +314,15 @@ console.log(JSON.stringify({ timeline_id }));`,
   );
 
   step('code.run: a script reaches nothing');
+  // The worker as the host sees it (PID and start time), to tell afterwards whether the
+  // script's signals reached it. kill() inside the script takes its own namespace's PIDs, so a
+  // "killed" there can be a PID number shared with one of the script's own processes.
+  const workerProcess = () =>
+    docker('top', motion, '-eo', 'pid,lstart,args')
+      .split('\n')
+      .filter((l) => l.includes('motion-worker') && !l.includes('docker-init'))
+      .join('\n');
+  const workerBefore = workerProcess();
   const reach = await code({
     script: `const targets = ${JSON.stringify([
       ['a public host by name', 'http://example.com/'],
@@ -332,14 +341,17 @@ const fs = await import('node:fs');
 out['/data'] = fs.readdirSync('/data').length ? 'has files' : 'empty';
 out['other jobs in /tmp'] = fs.readdirSync('/tmp').filter((d) => !process.cwd().endsWith(d)).length ? 'visible' : 'none';
 let worker = 'invisible';
+// /proc lists the container's PIDs, but kill() takes this namespace's, where the same number can
+// be one of this script's own threads (ignored: the script is init here). So the worker is
+// signalled only by the PID it has at this script's namespace depth (NSpid); none, unreachable.
+const nspid = (p) => (fs.readFileSync('/proc/' + p + '/status', 'utf8').match(/^NSpid:\\s*(.*)$/m)?.[1] ?? '').trim().split(/\\s+/);
+const depth = nspid('self').length;
 for (const pid of fs.readdirSync('/proc').filter((p) => /^\\d+$/.test(p))) {
-  // /proc lists the container's PIDs, but kill() takes this namespace's: container PID 1
-  // (docker-init ... motion-worker) is this script's own PID here.
-  if (Number(pid) === process.pid) continue;
   try {
-    if (fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8').includes('motion-worker')) {
-      try { process.kill(Number(pid), 'SIGTERM'); worker = 'killed'; } catch { worker = 'listed, not signalable'; }
-    }
+    if (!fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8').includes('motion-worker')) continue;
+    const ns = nspid(pid);
+    if (ns.length < depth) { worker = 'listed, not signalable'; continue; }
+    try { process.kill(Number(ns[depth - 1]), 'SIGTERM'); worker = 'killed'; } catch { worker = 'listed, not signalable'; }
   } catch {}
 }
 out.worker = worker;
@@ -353,10 +365,15 @@ console.log(JSON.stringify(out));`,
   });
   const seen = JSON.parse(reach.stdout?.trim() || '{}') as Record<string, string>;
   if (reach.error) expect(false, `reach script ran: ${JSON.stringify(reach.error)}`);
-  for (const [label, value] of Object.entries(seen)) {
-    const good = ['blocked', 'empty', 'none', '401', 'listed, not signalable', 'invisible'];
+  const { worker: signalled, ...rest } = seen;
+  for (const [label, value] of Object.entries(rest)) {
+    const good = ['blocked', 'empty', 'none', '401'];
     expect(good.includes(value), `code.run: ${label} → ${value}`);
   }
+  expect(
+    Boolean(workerBefore) && workerProcess() === workerBefore,
+    `code.run: the worker survives the script's signals (${signalled})`,
+  );
 
   step('code.run: nothing outlives the job, abuse fails cleanly');
   await code({
