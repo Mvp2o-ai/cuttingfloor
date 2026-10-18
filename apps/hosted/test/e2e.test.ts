@@ -3502,6 +3502,50 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
       }
     }, 300_000);
 
+    it('look shows state entries beside every frame', async () => {
+      const media = await importMedia({ path: join(env.mediaDir, 'look.mp4') });
+      const c = await keyed(KEY);
+      seen.length = 0;
+      const reserved = await call(c, 'media.analyze', {
+        media_id: media.media_id,
+        kind: 'look',
+        at_seconds: [0.5],
+        state: { frame: 'mine' },
+        questions: { bars: { type: 'noul', instructions: 'Does `frame` show colour bars?' } },
+      });
+      expect(reserved.structured).toMatchObject({ code: 'bad_request' });
+      const started = await ok<{ job_id: string }>(c, 'media.analyze', {
+        media_id: media.media_id,
+        kind: 'look',
+        at_seconds: [0.5, 1.5],
+        state: {
+          script: 'Here are the colour bars',
+          terms: { bars: 'vertical stripes of colour' },
+        },
+        questions: {
+          matches: { type: 'noul', instructions: 'Does `frame` show what `script` says?' },
+        },
+      });
+      const done = (await waitJob(started.job_id)) as { result?: { frames: number } };
+      expect(done.result?.frames).toBe(2);
+      const asked = seen.filter((r) => r.headers.authorization === `Bearer ${KEY}`);
+      expect(asked).toHaveLength(2);
+      for (const r of asked) {
+        const state = r.body.state as Record<string, unknown>;
+        expect(state.script).toBe('Here are the colour bars');
+        expect(state.terms).toEqual({ bars: 'vertical stripes of colour' });
+        expect(typeof state.frame).toBe('string');
+      }
+      const stored = await ok<{ look: { runs: Array<{ id: string; state?: unknown }> } }>(
+        c,
+        'media.get',
+        { media_id: media.media_id, include: ['look'] },
+      );
+      expect(stored.look.runs.find((run) => run.id === started.job_id)?.state).toMatchObject({
+        script: 'Here are the colour bars',
+      });
+    }, 120_000);
+
     it('judge.ask takes an image, a video frame and text in one state', async () => {
       const video = await importMedia({ path: join(env.mediaDir, 'look.mp4') });
       const image = await importMedia({ path: join(env.mediaDir, 'card.png') });
