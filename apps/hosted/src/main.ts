@@ -73,8 +73,8 @@ if (oauth && !access)
 
 const runtime = new Runtime(config);
 await runtime.start();
-// Hosted, the server's own TypeSafe key answers media.analyze look for every account; no other
-// provider key comes from this process's environment.
+// Hosted, the server's own TypeSafe key answers judge.ask and media.analyze look for every
+// account; no other provider key comes from this process's environment.
 const credentials = new LocalCredentialStore(
   config.mode === 'local' ? process.env : { TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY },
   config.mode === 'local',

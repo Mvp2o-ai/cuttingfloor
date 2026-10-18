@@ -17,6 +17,7 @@ import type {
   JobGetInput,
   JobListInput,
   JobRef,
+  JudgeAskInput,
   LoudnessInput,
   MediaAnalyzeInput,
   MediaImportInput,
@@ -76,6 +77,7 @@ export type ToolName =
   | 'job.cancel'
   | 'job.get'
   | 'job.list'
+  | 'judge.ask'
   | 'media.analyze'
   | 'media.get'
   | 'media.import'
@@ -141,6 +143,7 @@ export interface ToolInputs {
   'job.cancel': z.input<typeof JobRef>;
   'job.get': z.input<typeof JobGetInput>;
   'job.list': z.input<typeof JobListInput>;
+  'judge.ask': z.input<typeof JudgeAskInput>;
   'media.analyze': z.input<typeof MediaAnalyzeInput>;
   'media.get': z.input<typeof MediaRefInput>;
   'media.import': z.input<typeof MediaImportInput>;
@@ -207,6 +210,7 @@ export interface ToolOutputs {
   'job.cancel': Record<string, unknown>;
   'job.get': Record<string, unknown>;
   'job.list': Record<string, unknown>;
+  'judge.ask': Record<string, unknown>;
   'media.analyze': z.output<typeof MediaInfo>;
   'media.get': Record<string, unknown>;
   'media.import': z.output<typeof MediaInfo>;
@@ -273,6 +277,7 @@ export const TOOL_NAMES: readonly ToolName[] = [
   'job.cancel',
   'job.get',
   'job.list',
+  'judge.ask',
   'media.analyze',
   'media.get',
   'media.import',

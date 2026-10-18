@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import type { Workspace } from '@cuttingfloor/core';
 import { CfError } from '@cuttingfloor/schema';
 
-// Per-owner daily counts of paid work done on the server's own keys (hosted look frames). Each
+// Per-owner daily counts of paid work done on the server's own keys (hosted Jev judgments). Each
 // job writes its own file under the owner's day, and the day's count is their sum, so jobs ending
 // together on any server never lose a count. The check before a job is soft: servers can each
 // admit a call at the same moment, so a cap can be passed by up to one call per server.
@@ -26,16 +26,17 @@ export async function checkQuota(
   what: string,
   adding: number,
   limit: number | undefined,
+  words: { unit: string; hint: string },
 ): Promise<void> {
   if (limit === undefined) return;
   const used = await usedToday(ws, owner, what);
   if (used + adding <= limit) return;
   throw new CfError(
     'quota_exceeded',
-    `That is ${adding} ${what} frames; ${used} of today's ${limit} are used`,
+    `That is ${adding} ${words.unit}; ${used} of today's ${limit} are used`,
     {
       detail: { limit, used, resets: `${day()}T24:00:00Z` },
-      hint: `Sample fewer frames (a larger every_seconds, or at_seconds around the moments you need), or wait for the reset at midnight UTC. ${Math.max(0, limit - used)} are left today`,
+      hint: `${words.hint}, or wait for the reset at midnight UTC. ${Math.max(0, limit - used)} are left today`,
     },
   );
 }

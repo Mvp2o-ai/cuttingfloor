@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { CfError, type LookAnswer } from '@cuttingfloor/schema';
+import { CfError, type JudgeAnswer } from '@cuttingfloor/schema';
 
-// TypeSafe's Jev, a judgment model: typed answers to questions about a state that holds images.
-// The key stays here: it goes in the Authorization header and nowhere else, never into an error.
+// TypeSafe's Jev, a judgment model: typed answers to questions about a state of text, JSON and
+// images. The key stays here: it goes in the Authorization header and nowhere else, never into an
+// error.
 
 /** Images and Box need 1.14; pinned so an alias moving under us cannot change answers. */
 export const JEV_MODEL = 'jev-1.14.0';
@@ -25,7 +26,7 @@ async function slot<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 export interface JevImage {
-  /** Name the questions use in backticks: `frame`, `previous`. */
+  /** Name the questions use in backticks: `frame`, `previous`, or a judge.ask state entry. */
   name: string;
   jpeg: Buffer;
 }
@@ -34,8 +35,8 @@ export interface JevRequest {
   base: string;
   key: string;
   images: JevImage[];
-  /** Extra state beside the images, e.g. the seconds between them. */
-  facts?: Record<string, unknown>;
+  /** Text and JSON entries beside the images, e.g. the seconds between them. */
+  state?: Record<string, unknown>;
   questions: Record<string, unknown>;
   signal: AbortSignal;
 }
@@ -53,7 +54,7 @@ type RawAnswer = {
 const round = (n: number) => Math.round(n * 10_000) / 10_000;
 
 /** Jev's answer in cuttingfloor's terms: boxes as {x, y, w, h} fractions, like faces and track. */
-function answer(a: RawAnswer): LookAnswer {
+function answer(a: RawAnswer): JudgeAnswer {
   switch (a.type) {
     case 'noul':
       return { noul: round(a.noul ?? 0) };
@@ -82,20 +83,32 @@ function answer(a: RawAnswer): LookAnswer {
       };
     }
     default:
-      return a as LookAnswer;
+      return a as JudgeAnswer;
   }
 }
 
-/** Asks every question about one state of images; retries rate limits and overload. */
-export async function askJev(req: JevRequest): Promise<Record<string, LookAnswer>> {
-  const state: Record<string, unknown> = { ...req.facts };
+export interface JevReply {
+  model: string;
+  answers: Record<string, JudgeAnswer>;
+}
+
+/** Asks every question about one state; retries rate limits and overload. */
+export async function askJev(req: JevRequest): Promise<JevReply> {
+  const state: Record<string, unknown> = { ...req.state };
   const assets: Record<string, unknown> = {};
   for (const img of req.images) {
     const ref = `img-${randomUUID()}`;
     state[img.name] = ref;
     assets[ref] = { type: 'image', format: 'jpg', data_base64: img.jpeg.toString('base64') };
   }
-  const body = JSON.stringify({ model: JEV_MODEL, state, assets, questions: req.questions });
+  const body = JSON.stringify({
+    model: JEV_MODEL,
+    state,
+    ...(req.images.length ? { assets } : {}),
+    questions: req.questions,
+  });
+  // Images and Box questions are a preview TypeSafe turns on per request.
+  const boxes = Object.values(req.questions).some((q) => (q as { type?: string }).type === 'box');
   for (let attempt = 0; ; attempt++) {
     let res: Response;
     try {
@@ -105,7 +118,7 @@ export async function askJev(req: JevRequest): Promise<Record<string, LookAnswer
           headers: {
             authorization: `Bearer ${req.key}`,
             'content-type': 'application/json',
-            'TypeSafe-Danger-Zone-Images': 'true',
+            ...(req.images.length || boxes ? { 'TypeSafe-Danger-Zone-Images': 'true' } : {}),
           },
           body,
           signal: req.signal,
@@ -122,8 +135,11 @@ export async function askJev(req: JevRequest): Promise<Record<string, LookAnswer
       });
     }
     if (res.ok) {
-      const json = (await res.json()) as { answers: Record<string, RawAnswer> };
-      return Object.fromEntries(Object.entries(json.answers).map(([id, a]) => [id, answer(a)]));
+      const json = (await res.json()) as { model?: string; answers: Record<string, RawAnswer> };
+      return {
+        model: json.model ?? JEV_MODEL,
+        answers: Object.fromEntries(Object.entries(json.answers).map(([id, a]) => [id, answer(a)])),
+      };
     }
     const detail = await res.text().catch(() => '');
     if ((res.status === 429 || res.status >= 500) && attempt < 3) {
@@ -136,7 +152,17 @@ export async function askJev(req: JevRequest): Promise<Record<string, LookAnswer
         hint: 'Set a valid TYPESAFE_API_KEY (typesafe.ai) and restart the server',
       });
     }
-    if (res.status === 400 || res.status === 413 || res.status === 422) {
+    if (res.status === 413 || detail.includes('max_tokens_exceeded')) {
+      throw new CfError(
+        'limit_exceeded',
+        'That is more than Jev reads in one call (64k tokens of state and questions, 32 MiB of images)',
+        {
+          detail: { provider: 'typesafe', status: res.status },
+          hint: 'Split the questions or the state across calls: fewer or shorter text entries, fewer pictures, or half the questions in each call',
+        },
+      );
+    }
+    if (res.status === 400 || res.status === 422) {
       throw new CfError('bad_request', `TypeSafe rejected the questions: ${detail.slice(0, 500)}`, {
         hint: 'Each question is {type: noul | choice | score | box, instructions, criteria?}; choice criteria is {option: meaning}, score criteria an array of 2-10 levels, box takes no criteria',
       });

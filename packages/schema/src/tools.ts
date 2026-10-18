@@ -15,6 +15,7 @@ import {
 } from './compositing.ts';
 import { ToolError } from './errors.ts';
 import { JobId, MediaId, TimelineId, UploadId } from './ids.ts';
+import { JUDGE_LIMITS, JudgeName, JudgeQuestion, JudgeText } from './judge.ts';
 import { ASSET_NAME, MOTION_LIMITS } from './motion.ts';
 import { Sequence } from './sequence.ts';
 import { Colour, TextStyle } from './text.ts';
@@ -513,53 +514,7 @@ export const MediaRefInput = z.object({
     .describe('Also return these analyses in full (otherwise only their summaries)'),
 });
 
-/** Text a judgment model reads: a string, or structure that clarifies it (definitions, examples). */
-const JudgmentText = z.union([
-  z.string().min(1),
-  z.record(z.string(), z.unknown()),
-  z.array(z.unknown()),
-]);
-
-/** One look question, in TypeSafe Jev's own format. Answered on every sampled frame independently. */
-export const LookQuestion = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('noul'),
-    instructions: JudgmentText,
-    criteria: z.object({ true: JudgmentText, false: JudgmentText }).partial().optional(),
-  }),
-  z.object({
-    type: z.literal('choice'),
-    instructions: JudgmentText,
-    criteria: z.record(z.string(), JudgmentText.nullable()).describe('option: what it means'),
-  }),
-  z.object({
-    type: z.literal('score'),
-    instructions: JudgmentText,
-    criteria: z.array(JudgmentText).min(2).max(10).describe('levels, lowest first'),
-  }),
-  z.object({ type: z.literal('box'), instructions: JudgmentText }),
-]);
-
-export const LookAnswer = z.union([
-  z.object({ noul: z.number() }),
-  z.object({
-    choice: z.string(),
-    probabilities: z.record(z.string(), z.number()),
-    confidence: z.number(),
-  }),
-  z.object({
-    score: z.number(),
-    probabilities: z.record(z.string(), z.number()),
-    confidence: z.number(),
-  }),
-  z.object({
-    box: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }),
-    confidence: z.number(),
-  }),
-]);
-export type LookAnswer = z.infer<typeof LookAnswer>;
-
-/** Stored look runs. Loosely typed in results: the shapes are the question and answer types above. */
+/** Stored look runs. Loosely typed in results: the shapes are JudgeQuestion and JudgeAnswer. */
 export const LookAnalysis = z.object({
   runs: z.array(
     z.object({
@@ -567,6 +522,7 @@ export const LookAnalysis = z.object({
       model: z.string(),
       questions: z.record(z.string(), z.unknown()),
       with_previous: z.boolean(),
+      state: z.record(z.string(), z.unknown()).optional(),
       frames: z.array(
         z.object({
           time: z.number(),
@@ -585,10 +541,16 @@ export const MediaAnalyzeInput = z.object({
       'transcript: words with times (whisper.cpp, local); beats: tempo and beat times; faces: faces over time and a focus path for reframing; track: follow a region; look: your own questions answered on sampled frames',
     ),
   questions: z
-    .record(z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/), LookQuestion)
+    .record(JudgeName, JudgeQuestion)
     .optional()
     .describe(
-      'look: id (yours, not shown to the model) to question; up to 32, all asked of every frame',
+      `look: id (yours, not shown to the model) to question; up to ${JUDGE_LIMITS.lookQuestions}, all asked of every frame`,
+    ),
+  state: z
+    .record(JudgeName, JudgeText)
+    .optional()
+    .describe(
+      'look: text or JSON entries shown beside `frame` on every frame, by name, for questions to refer to (a script line, a definition)',
     ),
   every_seconds: z
     .number()
