@@ -32,8 +32,10 @@ import {
 } from '@cuttingfloor/schema';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import {
+  assertFonts,
   assertOnline,
   factsResolver,
+  fontsIn,
   framesUri,
   mediaIdsIn,
   mediaResolver,
@@ -408,6 +410,7 @@ async function applyAndReply(
   const rt = deps.runtime;
   const owner = deps.owner();
   const base = await rt.timelines.get(owner, baseId);
+  await assertFonts(fontsIn(ops));
   const media = await mediaResolver(rt, owner, mediaIdsIn(ops));
   const nestable = await timelineResolver(rt, owner, nestedIdsIn(ops));
   // Word-range clips read the transcript media.analyze found; only those load the media records.

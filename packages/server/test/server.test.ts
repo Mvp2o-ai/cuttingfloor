@@ -1,3 +1,4 @@
+import { installedFonts } from '@cuttingfloor/engine';
 import { BatchResult, CfError, EditResult, QaCheckResult, withJob } from '@cuttingfloor/schema';
 import { TASKS_EXTENSION_ID_V2 } from '@modelcontextprotocol/ext-tasks/core/v2';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -462,6 +463,41 @@ describe('media and jobs without engines', () => {
       job_id: job.id,
     });
     expect(view).toMatchObject({ status: 'failed', error: { code: 'interrupted' } });
+  });
+});
+
+const fonts = await installedFonts();
+
+describe('text fonts', () => {
+  it.skipIf(!fonts.length)('refuses a font that is not installed and names real ones', async () => {
+    const client = await connect(env.runtime);
+    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      name: 'fonts',
+      sequence: SEQ_720P25,
+    });
+    const refused = await call(client, 'edit.batch', {
+      timeline_id,
+      ops: [
+        {
+          tool: 'title.add',
+          args: { track_id: 't1', text: 'Hi', style: { font: 'Nonexistent Sans Display' } },
+        },
+      ],
+    });
+    expect(refused.structured).toMatchObject({ code: 'bad_request' });
+    expect(String(refused.structured.message)).toMatch(
+      /"Nonexistent Sans Display" is not installed/,
+    );
+    expect(String(refused.structured.hint)).toMatch(/video:\/\/catalog\/fonts/);
+    const real = fonts[0] as string;
+    const kept = await call(client, 'title.add', {
+      timeline_id,
+      track_id: 't1',
+      text: 'Hi',
+      style: { font: real.toLowerCase() },
+      preview: 'none',
+    });
+    expect(kept.isError).toBe(false);
   });
 });
 

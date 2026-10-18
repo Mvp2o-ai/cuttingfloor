@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import { type MediaFacts, ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
 import {
   type ImageFormat,
+  installedFonts,
   lengthFrames,
   type MltSource,
   mediaRef,
@@ -127,6 +128,44 @@ export function nestedIdsIn(value: unknown, out: string[] = []): string[] {
     }
   }
   return out;
+}
+
+/** Every font family a text style names (`style.font`), anywhere in an args tree. */
+export function fontsIn(value: unknown, out: string[] = []): string[] {
+  if (Array.isArray(value)) for (const v of value) fontsIn(v, out);
+  else if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) {
+      if (k === 'font' && typeof v === 'string') out.push(v);
+      else fontsIn(v, out);
+    }
+  }
+  return out;
+}
+
+/**
+ * Refuses a font family the image doesn't have, which would otherwise render in the default
+ * font without a word. Skipped where fontconfig can't list fonts.
+ */
+export async function assertFonts(names: string[]): Promise<void> {
+  if (!names.length) return;
+  const installed = await installedFonts();
+  if (!installed.length) return;
+  const known = new Set(installed.map((f) => f.toLowerCase()));
+  const missing = [...new Set(names)].find((n) => !known.has(n.toLowerCase()));
+  if (!missing) return;
+  const words = missing
+    .toLowerCase()
+    .split(/[\s_-]+/)
+    .filter((w) => w.length > 2);
+  const near = installed.filter((f) => words.some((w) => f.toLowerCase().includes(w)));
+  const shown = (near.length ? near : installed).slice(0, 12);
+  throw new CfError(
+    'bad_request',
+    `Font "${missing}" is not installed, so the text would fall back to the default font`,
+    {
+      hint: `${near.length ? 'Close matches' : 'Installed fonts include'}: ${shown.join(', ')} (video://catalog/fonts lists them all). For another font, media.import its .ttf or .otf and set font_media_id`,
+    },
+  );
 }
 
 /** Every string value under a `media_id` key, anywhere in an args tree. */
