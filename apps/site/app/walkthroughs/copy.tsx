@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 
-/** Copies the prompt. Without JavaScript the prompt is still there to select. */
-export function Copy({ text }: { text: string }) {
+/** Copies the text. Without JavaScript the text is still there to select. */
+export function Copy({ text, label = 'Copy prompt' }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
   return (
     <button
@@ -19,7 +19,7 @@ export function Copy({ text }: { text: string }) {
         )
       }
     >
-      {done ? 'Copied' : 'Copy prompt'}
+      {done ? 'Copied' : label}
     </button>
   );
 }

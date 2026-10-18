@@ -1,3 +1,4 @@
+import { SKILLS, SKILLS_UPDATED } from '../content/skills.ts';
 import { WALKTHROUGHS } from '../content/walkthroughs.ts';
 
 // Every public page, with the date its content last changed. The sitemap, llms.txt and the
@@ -12,4 +13,6 @@ export const ROUTES: Route[] = [
     title: w.title,
     updated: w.updated,
   })),
+  { path: '/skills', title: 'Skills', updated: SKILLS_UPDATED },
+  ...SKILLS.map((s) => ({ path: `/skills/${s.slug}`, title: s.title, updated: SKILLS_UPDATED })),
 ];

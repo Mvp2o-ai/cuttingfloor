@@ -84,6 +84,9 @@ importers:
 
   apps/site:
     dependencies:
+      '@cuttingfloor/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
       '@workos-inc/authkit-nextjs':
         specifier: 4.4.0
         version: 4.4.0(@workos-inc/node@10.14.0)(next@16.2.9(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@6.0.3)

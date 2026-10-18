@@ -1584,6 +1584,18 @@ button.link-big {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.sk-add {
+  margin: 0;
+  padding: clamp(20px, 3vw, 36px);
+  list-style: none;
+  display: grid;
+  gap: 12px;
+  font-size: clamp(15px, 1.3vw, 17px);
+  line-height: 1.55;
+}
+.sk-add strong {
+  color: var(--ink);
+}
 .wt-prompt figcaption {
   display: flex;
   justify-content: space-between;
@@ -1888,6 +1900,89 @@ button.link-big {
   .wt-ruler span:nth-child(even) {
     visibility: hidden;
   }
+}
+
+/* ---------- skills: the walkthrough frame, with the skill on paper ---------- */
+
+.sk-add {
+  margin: 0;
+  padding: clamp(20px, 3vw, 36px);
+  list-style: none;
+  display: grid;
+  gap: 14px;
+}
+.sk-add strong {
+  display: inline-block;
+  min-width: 8ch;
+  font-family: var(--font-pixel), monospace;
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--key);
+}
+
+.sk-body h2 {
+  margin: clamp(36px, 5vw, 56px) 0 14px;
+  font-size: clamp(28px, 3.4vw, 44px);
+  font-weight: 800;
+  font-variation-settings: "wdth" 70;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.sk-body h2:first-child {
+  margin-top: 0;
+}
+.sk-body p,
+.sk-body li {
+  font-size: clamp(17px, 1.4vw, 19px);
+  line-height: 1.6;
+}
+.sk-body p {
+  margin: 0 0 12px;
+}
+.sk-body ul,
+.sk-body ol {
+  margin: 0;
+  padding-left: 1.4em;
+}
+.sk-body li + li {
+  margin-top: 10px;
+}
+.sk-body li ul {
+  margin-top: 8px;
+}
+.sk-body li ul li + li {
+  margin-top: 6px;
+}
+.sk-body ol > li::marker {
+  font-family: var(--font-pixel), monospace;
+  color: var(--paper-mute);
+}
+.sk-body code {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+}
+.sk-table {
+  overflow-x: auto;
+}
+.sk-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.sk-body th,
+.sk-body td {
+  text-align: left;
+  vertical-align: top;
+  padding: 10px 12px 10px 0;
+  border-bottom: 1px solid var(--paper-rule);
+}
+.sk-body th {
+  font-family: var(--font-pixel), monospace;
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--paper-mute);
 }
 
 /* ---------- agent demo: your agent, with cuttingfloor connected ---------- */
