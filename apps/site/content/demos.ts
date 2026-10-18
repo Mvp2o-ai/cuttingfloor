@@ -484,6 +484,11 @@ export function finished(d: Demo): DemoVideo {
   return d.turns.at(-1)?.video ?? d.raw;
 }
 
+/** A video's length as its label gives it: "0:24". */
+export function length(v: DemoVideo): string {
+  return v.label.split(' · ').at(-1) ?? '';
+}
+
 /** The demo that shows a skill, for a link from the skill's page. */
 export function demoForSkill(slug: string): Demo | undefined {
   return DEMOS.find((d) => d.skill === slug);

@@ -2260,32 +2260,59 @@ button.link-big {
 
 /* ---------- demos: the hub and a watch page per demo ---------- */
 
-.dm-hub img {
+.dm-ba {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+.dm-poster {
+  display: grid;
+  gap: 6px;
+}
+.dm-poster img {
   display: block;
   width: 100%;
   height: auto;
   aspect-ratio: 9 / 16;
-  max-height: 420px;
+  max-height: 320px;
   object-fit: cover;
   border: 1px solid var(--rule);
 }
-.dm-pair {
+.dm-poster:last-child img {
+  border-color: var(--key);
+}
+.dm-arrow {
+  font-size: 28px;
+  color: var(--key);
+}
+/* Before, the edit, after: each act gets room, so the order reads at a glance. */
+.dm-act .head h2 {
+  margin: 0 0 10px;
+  font-size: clamp(56px, 8vw, 120px);
+}
+.dm-act .head .lede {
+  margin: 0;
+  color: var(--mute);
+}
+.dm-side {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: clamp(16px, 3vw, 40px);
+  gap: clamp(20px, 4vw, 56px);
   align-items: start;
 }
-.dm-pair figure {
+.dm-side figure,
+.dm-extra {
   margin: 0;
   display: grid;
   gap: 10px;
 }
-/* Further versions take the full row under the before and after. */
-.dm-pair figure:nth-child(n + 3) {
-  grid-column: 1 / -1;
+.dm-extra {
+  margin-top: clamp(28px, 4vw, 48px);
   max-width: 720px;
 }
-.dm-pair video {
+.dm-side video,
+.dm-extra video {
   display: block;
   width: auto;
   max-width: 100%;
@@ -2294,13 +2321,40 @@ button.link-big {
   background: #000;
   border: 1px solid var(--rule);
 }
-.dm-pair figcaption {
+.dm-side figcaption,
+.dm-extra figcaption {
   font-family: var(--font-mono), monospace;
   font-size: 14px;
   color: var(--mute);
 }
 .dm-main video {
   border-color: var(--key);
+}
+.dm-notes {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  max-width: 60ch;
+}
+.dm-notes h3 {
+  margin: 0;
+  font-size: clamp(20px, 1.8vw, 26px);
+}
+.dm-script {
+  margin: 0;
+  font-size: clamp(17px, 1.4vw, 20px);
+  line-height: 1.7;
+}
+.dm-script del,
+.dm-key del {
+  color: #c2412d;
+  text-decoration-thickness: 2px;
+}
+.dm-key {
+  margin: 0;
+  font-family: var(--font-mono), monospace;
+  font-size: 14px;
+  color: var(--mute);
 }
 .dm-steps {
   margin: 0;
@@ -2310,8 +2364,15 @@ button.link-big {
   font-size: clamp(18px, 1.6vw, 22px);
   max-width: 60ch;
 }
-@media (max-width: 600px) {
-  .dm-pair {
+/* A wide video takes the row; its notes go under it. */
+.dm-side.wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+.dm-side.wide video {
+  max-width: min(100%, 960px);
+}
+@media (max-width: 700px) {
+  .dm-side {
     grid-template-columns: minmax(0, 1fr);
   }
 }
