@@ -283,7 +283,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Create a voiceover',
       description:
-        'English text spoken by a natural voice (Kokoro, local; the model downloads once) as WAV media. words (default) times each word into the media transcript for caption.add {from_transcript}. Long-running: a task, or {job_id, media_id} for job.get.',
+        'English text spoken by a natural voice (Kokoro, local; the model downloads once) as WAV media. words (default) times each word into the media transcript (media.get include transcript). Long-running: a task, or {job_id, media_id} for job.get.',
       inputSchema: CreateVoiceoverInput,
       outputSchema: withJob(MediaInfo),
       annotations: annotations('Create a voiceover'),

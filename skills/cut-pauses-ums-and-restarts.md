@@ -39,7 +39,7 @@ related: add-captions:related
 | A pause is a deliberate beat before a punchline | Keep it, shortened to about 0.4 s |
 | A restart changes the meaning ("no, sorry, 214 Maple") | Keep the corrected version only |
 | A silent stretch shows something worth seeing (food, the room) | Keep the picture; it is B-roll, not dead air |
-| The user wants captions as well | Add them with `caption.add {from_transcript}` per clip, then look at `render.frames` on both sides of every cut: a word that was cut can still show as a caption there; remove it with `clip.remove`, or rewrite that caption with `caption.add {segments}` |
+| The user wants captions as well | Group the kept words into captions and add them with `caption.add {in_clip: {clip_id, segments}}` per clip, in transcript seconds, then look at `render.frames` on both sides of every cut |
 
 ## Required behavior
 - Never change the order of what was said, and never cut a line the speaker meant to keep.

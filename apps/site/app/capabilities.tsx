@@ -33,7 +33,7 @@ const CAPS = [
     code: [
       [
         'caption.add',
-        '{ timeline_id: "tl_05…", track_id: "V2",\n  from_transcript: { clip_id: "c_1", max_words: 4 } }',
+        '{ timeline_id: "tl_05…", track_id: "V2",\n  in_clip: { clip_id: "c_1", segments: [ … ] } }',
       ],
       [
         'text.set',

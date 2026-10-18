@@ -152,7 +152,7 @@ export function applyEdit<T extends EditTool>(
     'range.lift': (d, a) => rangeRemove(d, a, false),
     'range.extract': (d, a) => rangeRemove(d, a, true),
     'title.add': titleAdd,
-    'caption.add': (d, a, _m, _t, f) => captionAdd(d, a, f),
+    'caption.add': (d, a) => captionAdd(d, a),
     'text.set': textSet,
     'audio.set_gain': audioSetGain,
     'audio.set_pan': audioSetPan,
@@ -1428,106 +1428,48 @@ function titleAdd(doc: TimelineDoc, a: EditArgsOf<'title.add'>): OpOutcome {
 type Segment = NonNullable<EditArgsOf<'caption.add'>['segments']>[number];
 
 /**
- * Captions from a clip's transcript, placed where its words play: each frame of the clip maps
- * to the source time it shows (speed and reverse included) and so to a word. Words group into
- * captions of at most `max_words` / `max_chars`, breaking at pauses and sentence ends.
+ * Segments timed in a clip's source seconds, placed where those moments play: each frame of
+ * the clip maps to the source time it shows (speed, ramps and reverse included). A segment or
+ * word that doesn't play is left out; one partly in keeps the frames that play.
  */
-function transcriptSegments(
+function inClipSegments(
   doc: TimelineDoc,
-  from: NonNullable<EditArgsOf<'caption.add'>['from_transcript']>,
-  facts: FactsResolver,
+  given: NonNullable<EditArgsOf<'caption.add'>['in_clip']>,
 ): Segment[] {
-  const { clip } = locate(doc, from.clip_id);
-  const words = clip.type === 'media' ? facts(clip.media_id)?.words : undefined;
-  if (!words?.length) {
-    throw new CfError('bad_request', `Clip ${from.clip_id} has no transcript`, {
-      hint: 'Run media.analyze {kind: "transcript"} on its media first',
-    });
-  }
+  const { clip } = locate(doc, given.clip_id);
   const tpf = ticksPerFrame(doc.sequence.fps);
   const start = Math.round(clip.start / tpf);
-  const n = Math.round(clip.duration / tpf);
-  const placed = new Map<number, { first: number; last: number; lo: number; hi: number }>();
-  // Source seconds one frame plays: what a word covers per frame it is seen in.
-  let step = 0;
-  let prevT: number | undefined;
-  for (let i = 0; i < n; i++) {
-    const t = frameSource(clip, tpf, i) / TICKS_PER_SECOND;
-    if (prevT !== undefined) step = Math.max(step, Math.abs(t - prevT));
-    prevT = t;
-    // The word playing at t: the last that starts at or before it, if t is inside it.
-    let lo = 0;
-    let hi = words.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if ((words[mid] as { start: number }).start <= t) lo = mid;
-      else hi = mid - 1;
-    }
-    const w = words[lo];
-    if (!w || t < w.start || t >= w.end) continue;
-    const p = placed.get(lo);
-    if (p) {
-      p.first = Math.min(p.first, i);
-      p.last = Math.max(p.last, i);
-      p.lo = Math.min(p.lo, t);
-      p.hi = Math.max(p.hi, t);
-    } else placed.set(lo, { first: i, last: i, lo: t, hi: t });
+  const times = Array.from(
+    { length: Math.round(clip.duration / tpf) },
+    (_, i) => frameSource(clip, tpf, i) / TICKS_PER_SECOND,
+  );
+  const place = (from: number, to: number) => {
+    let first = -1;
+    let last = -1;
+    times.forEach((t, i) => {
+      if (t < from || t >= to) return;
+      if (first < 0 || i < first) first = i;
+      if (i > last) last = i;
+    });
+    return first < 0 ? undefined : { start_frame: start + first, end_frame: start + last + 1 };
+  };
+  const out: Segment[] = [];
+  for (const seg of given.segments) {
+    const at = place(seg.start, seg.end);
+    if (!at) continue;
+    const words = seg.words?.flatMap((w) => {
+      const wat = place(w.start, w.end);
+      return wat ? [{ text: w.text, ...wat }] : [];
+    });
+    out.push({ ...at, text: seg.text, ...(words?.length ? { words } : {}) });
   }
-  // Whisper stretches words over the pauses around them, so a cut can clip a frame or two of one
-  // the clip doesn't really say. Caption a word only when at least half of it plays here.
-  const ordered = [...placed.entries()]
-    .filter(([index, f]) => {
-      const w = words[index] as { start: number; end: number };
-      return Math.min(f.hi + step, w.end) - f.lo >= (w.end - w.start) / 2;
-    })
-    .map(([index, f]) => ({ text: (words[index] as { text: string }).text, ...f }))
-    .sort((x, y) => x.first - y.first);
-  const pause = Math.round((0.6 * doc.sequence.fps.num) / doc.sequence.fps.den);
-  const groups: Array<typeof ordered> = [];
-  let current: typeof ordered = [];
-  for (const w of ordered) {
-    const prev = current[current.length - 1];
-    const chars = current.reduce((sum, x) => sum + x.text.length + 1, 0) + w.text.length;
-    if (
-      prev &&
-      (current.length >= from.max_words ||
-        chars > from.max_chars ||
-        w.first - prev.last > pause ||
-        /[.?!]$/.test(prev.text))
-    ) {
-      groups.push(current);
-      current = [];
-    }
-    current.push(w);
-  }
-  if (current.length) groups.push(current);
-  return groups.map((g, k) => {
-    const first = g[0] as (typeof ordered)[number];
-    const last = g[g.length - 1] as (typeof ordered)[number];
-    // Hold each caption until the next one starts, unless there is a real pause.
-    const next = groups[k + 1]?.[0];
-    const end = next && next.first - last.last <= pause ? next.first : last.last + 1;
-    return {
-      start_frame: start + first.first,
-      end_frame: start + Math.min(n, end),
-      text: g.map((w) => w.text).join(' '),
-      words: g.map((w) => ({
-        text: w.text,
-        start_frame: start + w.first,
-        end_frame: start + w.last + 1,
-      })),
-    };
-  });
+  return out;
 }
 
-function captionAdd(
-  doc: TimelineDoc,
-  a: EditArgsOf<'caption.add'>,
-  facts: FactsResolver,
-): OpOutcome {
-  const given = [a.segments, a.srt, a.vtt, a.from_transcript].filter((x) => x !== undefined).length;
+function captionAdd(doc: TimelineDoc, a: EditArgsOf<'caption.add'>): OpOutcome {
+  const given = [a.segments, a.srt, a.vtt, a.in_clip].filter((x) => x !== undefined).length;
   if (given !== 1) {
-    throw new CfError('bad_request', 'Give exactly one of segments, srt, vtt or from_transcript');
+    throw new CfError('bad_request', 'Give exactly one of segments, srt, vtt or in_clip');
   }
   const track = textTrack(doc, a.track_id);
   const fps = doc.sequence.fps;
@@ -1535,7 +1477,7 @@ function captionAdd(
   const toFrame = (sec: number) => Math.round((sec * fps.num) / fps.den) + a.offset_frames;
   const segments =
     a.segments ??
-    (a.from_transcript ? transcriptSegments(doc, a.from_transcript, facts) : undefined) ??
+    (a.in_clip ? inClipSegments(doc, a.in_clip) : undefined) ??
     parseSubtitles((a.srt ?? a.vtt) as string, a.srt !== undefined ? 'srt' : 'vtt').map((cue) => ({
       start_frame: toFrame(cue.start),
       end_frame: toFrame(cue.end),

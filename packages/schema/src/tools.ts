@@ -247,14 +247,34 @@ export const EditArgs = {
       )
       .max(5000)
       .optional(),
-    from_transcript: z
+    in_clip: z
       .object({
-        clip_id: z.string().describe('A clip whose media has a transcript (media.analyze)'),
-        max_words: z.number().int().min(1).max(30).default(6).describe('Words per caption at most'),
-        max_chars: z.number().int().min(8).max(200).default(36),
+        clip_id: z.string(),
+        segments: z
+          .array(
+            z.object({
+              start: z.number().min(0),
+              end: z.number().min(0),
+              text: z.string().min(1).max(2000),
+              words: z
+                .array(
+                  z.object({
+                    text: z.string().min(1).max(200),
+                    start: z.number().min(0),
+                    end: z.number().min(0),
+                  }),
+                )
+                .max(500)
+                .optional(),
+            }),
+          )
+          .min(1)
+          .max(5000),
       })
       .optional()
-      .describe("Captions from the clip's transcript, timed where its words play"),
+      .describe(
+        "Segments timed in seconds of a clip's media (e.g. transcript word times), placed where those moments play in the clip, through speed changes; what doesn't play is left out",
+      ),
     srt: z.string().max(2_000_000).optional().describe('SubRip text instead of segments'),
     vtt: z.string().max(2_000_000).optional().describe('WebVTT text instead of segments'),
     offset_frames: z

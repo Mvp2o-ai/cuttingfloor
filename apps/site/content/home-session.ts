@@ -67,7 +67,7 @@ export const HOME_SESSION: SessionData = {
     {
       kind: 'call',
       fn: 'caption.add',
-      args: '{ from_transcript: true }',
+      args: '{ in_clip: { clip_id, segments } }',
       ret: '84 captions on V2',
       effect: { type: 'captions', track: 'V2', from: 0, to: 58 },
     },

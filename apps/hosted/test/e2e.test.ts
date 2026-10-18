@@ -3112,6 +3112,17 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
       });
       expect(info.analyses.transcript.words).toBe(transcript.words.length);
 
+      // Grouping words into captions is the agent's call: here, three at a time.
+      const segments = [];
+      for (let i = 0; i < transcript.words.length; i += 3) {
+        const group = transcript.words.slice(i, i + 3);
+        segments.push({
+          start: group[0]?.start ?? 0,
+          end: group[group.length - 1]?.end ?? 0,
+          text: group.map((w) => w.text).join(' '),
+          words: group,
+        });
+      }
       const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
         name: 'captions',
         sequence: { width: 320, height: 180, fps: { num: 25, den: 1 } },
@@ -3129,7 +3140,7 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
               tool: 'caption.add',
               args: {
                 track_id: 't2',
-                from_transcript: { clip_id: { $ref: 'ops[0].clip_id' }, max_words: 3 },
+                in_clip: { clip_id: { $ref: 'ops[0].clip_id' }, segments },
               },
             },
           ],

@@ -138,7 +138,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'caption.add': {
     title: 'Add captions',
     description:
-      'Captions on a video track from segments (with optional word timings for highlights) or from SRT/VTT text. One clip per caption; returns their clip_ids. Burned in when exported.',
+      "Captions on a video track from segments (with optional word timings for highlights), from SRT/VTT text, or in_clip: segments timed in seconds of a clip's media, such as transcript word times, placed where they play. One clip per caption; returns their clip_ids. Burned in when exported.",
   },
   'text.set': {
     title: 'Set text',
@@ -410,12 +410,9 @@ async function applyAndReply(
   const base = await rt.timelines.get(owner, baseId);
   const media = await mediaResolver(rt, owner, mediaIdsIn(ops));
   const nestable = await timelineResolver(rt, owner, nestedIdsIn(ops));
-  // Transcript captions and word-range clips read what media.analyze found; only those load
-  // the media records.
+  // Word-range clips read the transcript media.analyze found; only those load the media records.
   const needsFacts = ops.some(
-    (o) =>
-      (o.tool === 'caption.add' && 'from_transcript' in o.args) ||
-      (o.tool === 'clip.add' && JSON.stringify(o.args.source ?? '').includes('"words"')),
+    (o) => o.tool === 'clip.add' && JSON.stringify(o.args.source ?? '').includes('"words"'),
   );
   const facts = needsFacts
     ? await factsResolver(rt, owner, base, mediaIdsIn(ops))
