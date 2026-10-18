@@ -30,7 +30,7 @@ const BODY = `# Add captions
 
 ## Steps
 1. The assistant should transcribe the video with \`media.analyze {kind: "transcript"}\`.
-2. The assistant should add captions with \`caption.add {from_transcript}\`.
+2. The assistant should add captions with \`caption.add {in_clip}\`.
 
 ## Decision table
 | Situation | Do |
