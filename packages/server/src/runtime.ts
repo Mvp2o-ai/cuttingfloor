@@ -28,9 +28,13 @@ export interface RuntimeConfig {
   motionUrl: string | null;
   /** This server's name in job records, so servers sharing a data root know whose jobs are whose. */
   node?: string;
-  /** Look frames each owner may ask about a day; unset means no limit (local mode). */
-  lookFramesPerDay?: number;
-  /** TypeSafe's API, for media.analyze look. Default: api.typesafe.ai. */
+  /**
+   * Jev judgments each owner may ask a day on the server's key, shared by media.analyze look (one
+   * a frame) and judge.ask (one a call, plus one per picture past the first); unset means no limit
+   * (local mode).
+   */
+  judgmentsPerDay?: number;
+  /** TypeSafe's API, for judge.ask and media.analyze look. Default: api.typesafe.ai. */
   typesafeUrl?: string;
   /** Local mode: the folder on the user's machine compose mounts at /media/videos. */
   mediaHostPath?: string;
@@ -44,6 +48,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+  // The look-only name from before judge.ask still sets the shared budget.
+  const perDay = env.CUTTINGFLOOR_JUDGMENTS_PER_DAY ?? env.CUTTINGFLOOR_LOOK_FRAMES_PER_DAY;
   return {
     dataDir: env.CUTTINGFLOOR_DATA ?? '/data',
     mode,
@@ -63,9 +69,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     ...(env.CUTTINGFLOOR_MODELS ? { modelsDir: env.CUTTINGFLOOR_MODELS } : {}),
     motionUrl: env.CUTTINGFLOOR_MOTION_URL?.replace(/\/$/, '') || null,
     node: env.CUTTINGFLOOR_NODE ?? (mode === 'local' ? 'local' : hostname()),
-    ...(env.CUTTINGFLOOR_LOOK_FRAMES_PER_DAY || mode === 'hosted'
-      ? { lookFramesPerDay: Number(env.CUTTINGFLOOR_LOOK_FRAMES_PER_DAY ?? 5000) }
-      : {}),
+    ...(perDay || mode === 'hosted' ? { judgmentsPerDay: Number(perDay || 5000) } : {}),
     ...(env.CUTTINGFLOOR_TYPESAFE_URL
       ? { typesafeUrl: env.CUTTINGFLOOR_TYPESAFE_URL.replace(/\/$/, '') }
       : {}),

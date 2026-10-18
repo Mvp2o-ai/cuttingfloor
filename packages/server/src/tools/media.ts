@@ -12,7 +12,8 @@ import {
 } from '@cuttingfloor/engine';
 import {
   CfError,
-  type LookAnswer,
+  JUDGE_LIMITS,
+  type JudgeAnswer,
   MediaAnalyzeInput,
   MediaImportInput,
   MediaInfo,
@@ -25,6 +26,7 @@ import { askJev, JEV_MODEL, JEV_URL } from '../jev.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 import { addUsage, checkQuota } from '../usage.ts';
+import { checkQuestions, JUDGMENTS, jevKeyRequired, PICTURE, pictureSize } from './judge.ts';
 
 /** Analysis data longer than this stays with the media instead of filling the result. */
 const INLINE_CHARS = 20_000;
@@ -38,11 +40,10 @@ function inline(mediaId: string, kind: string, data: unknown): Record<string, un
   };
 }
 
-/** look: frames a call may ask about, and questions per frame. */
+/** look: frames a call may ask about. Questions per frame are judge.ask's limit. */
 const LOOK_MAX_FRAMES = 600;
-const LOOK_MAX_QUESTIONS = 32;
 
-type LookFrame = { time: number; answers: Record<string, LookAnswer> };
+type LookFrame = { time: number; answers: Record<string, JudgeAnswer> };
 
 /** Per question, where its answers sit: yes spans, choice spans, score range. */
 function lookDigest(questions: Record<string, { type: string }>, frames: LookFrame[]) {
@@ -263,7 +264,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         'Choose the type by the answer you need. noul: yes or no, answered as noul, the probability of yes from 0 to 1. choice: one of options you name, answered as choice plus probabilities and confidence. score: a degree on levels you order, answered as score (0 is the first level; it can land between levels) plus confidence. box: where one thing is, answered as box {x, y, w, h} in fractions of the picture plus confidence.',
         'Write each question about the picture as it looks. Name the picture in backticks ("in `frame`"), ask about one thing, word it so yes means the thing is there, and describe it as it appears: "Does `frame` show a human being, even if only their face fills the picture?", "Is one large word laid over `frame`, much bigger than any other text?". To compare, name both pictures and the thing that differs: "Is there a button in `frame` that is not in `previous`?". To locate, name the one thing so only it fits ("the \'Get started for free\' button under the headline in `frame`") and, in the same call, a noul asking whether it is there; use the box on frames where that noul is high. Give a choice a none option for frames where nothing fits, and each score level a concrete situation.',
         'Read the answers this way: a noul of 0.5 or more reads as yes, and you can set your own cut-off; confidence tells you how far to trust a choice, a score or a box, and a loose box shows as low confidence. Work in passes: every_seconds 1 over the whole media, then at_seconds around the times where answers change. media.get scenes give when the picture cuts; look tells you what is on it.',
-        "The result gives each question's spans (when a noul reads yes, which choice holds when); every frame's answers stay with the media (media.get include ['look'], the last 10 runs). Up to 600 frames and 32 questions a call. Full guide to writing questions: https://docs.typesafe.ai/primitives and https://docs.typesafe.ai/images.",
+        `The result gives each question's spans (when a noul reads yes, which choice holds when); every frame's answers stay with the media (media.get include ['look'], the last 10 runs). Up to ${LOOK_MAX_FRAMES} frames and ${JUDGE_LIMITS.questions} questions a call. For one judgment about text, a still or a single frame, judge.ask answers at once. Full guide to writing questions: https://docs.typesafe.ai/primitives and https://docs.typesafe.ai/images.`,
       ].join('\n'),
       inputSchema: MediaAnalyzeInput,
       annotations: {
@@ -279,21 +280,9 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       const store = rt.jobs.store;
       if (args.kind === 'look') {
         if (!(await deps.credentials.status(owner, 'typesafe')).configured) {
-          throw new CfError('credential_required', 'look needs a TypeSafe API key on this server', {
-            detail: { provider: 'typesafe', env: 'TYPESAFE_API_KEY' },
-            hint: 'Add TYPESAFE_API_KEY=<key> (from typesafe.ai) to the .env next to compose.yaml, then docker compose up -d',
-          });
+          throw jevKeyRequired('look');
         }
-        const n = Object.keys(args.questions ?? {}).length;
-        if (!n || n > LOOK_MAX_QUESTIONS) {
-          throw new CfError(
-            'bad_request',
-            `look needs 1 to ${LOOK_MAX_QUESTIONS} questions; got ${n}`,
-            {
-              hint: 'questions: {is_speaker: {type: "noul", instructions: "Does `frame` show a person speaking to camera?"}}',
-            },
-          );
-        }
+        checkQuestions('look', args.questions);
       }
       if (args.idempotency_key) {
         const existing = await store.findIdempotent(owner, 'media.analyze', args.idempotency_key);
@@ -354,7 +343,10 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
             },
           );
         }
-        await checkQuota(rt.ws, owner, 'look', asked, rt.config.lookFramesPerDay);
+        await checkQuota(rt.ws, owner, JUDGMENTS, asked, rt.config.judgmentsPerDay, {
+          unit: 'judgments (one a frame)',
+          hint: 'Sample fewer frames (a larger every_seconds, or at_seconds around the moments you need)',
+        });
       }
       if (args.kind === 'track' && !args.region) {
         throw new CfError('bad_request', 'track needs a region: {at_seconds, x, y, w, h}');
@@ -369,11 +361,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       rt.jobs.start(job, async ({ signal, progress }) => {
         const file = renderSource(record, 'export');
         const v = p?.video;
-        const size = v
-          ? v.rotation % 180
-            ? { width: v.height, height: v.width }
-            : { width: v.width, height: v.height }
-          : { width: 0, height: 0 };
+        const size = pictureSize(record);
         const keep = (kind: 'transcript' | 'beats' | 'faces', value: unknown) =>
           rt.media.saveAnalysis(owner, args.media_id, kind, value);
         switch (args.kind) {
@@ -421,8 +409,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
             const questions = args.questions as NonNullable<typeof args.questions>;
             progress(0.02, `look: taking ${times.length} frames`);
             const stills = await mediaStills(file, size, times, {
-              longEdge: 512,
-              minEdge: 280,
+              ...PICTURE,
               signal,
               onFrame: (n) =>
                 progress(0.02 + (0.28 * n) / times.length, `look: frame ${n} of ${times.length}`),
@@ -437,7 +424,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
                 const i = next++;
                 const t = times[i] as number;
                 const prev = i > 0 && args.with_previous ? i - 1 : -1;
-                const answers = await askJev({
+                const { answers } = await askJev({
                   base: rt.config.typesafeUrl ?? JEV_URL,
                   key,
                   images: [
@@ -446,7 +433,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
                   ],
                   ...(prev >= 0
                     ? {
-                        facts: {
+                        state: {
                           seconds_between: Math.round((t - (times[prev] as number)) * 1000) / 1000,
                         },
                       }
@@ -471,7 +458,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               frames,
             };
             await rt.media.saveAnalysis(owner, args.media_id, 'look', run);
-            await addUsage(rt.ws, owner, 'look', job.id, frames.length);
+            await addUsage(rt.ws, owner, JUDGMENTS, job.id, frames.length);
             return ok({
               media_id: args.media_id,
               kind: args.kind,

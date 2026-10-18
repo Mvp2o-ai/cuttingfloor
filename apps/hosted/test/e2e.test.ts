@@ -3465,7 +3465,7 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
       );
 
       // A daily cap (hosted) refuses the call that would pass it, before any job; 4 used today.
-      (env.runtime.config as { lookFramesPerDay?: number }).lookFramesPerDay = 5;
+      (env.runtime.config as { judgmentsPerDay?: number }).judgmentsPerDay = 5;
       const capped = await call(c, 'media.analyze', {
         ...ask,
         at_seconds: [0.5, 1.5],
@@ -3475,7 +3475,7 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
         code: 'quota_exceeded',
         detail: { limit: 5, used: 4 },
       });
-      delete (env.runtime.config as { lookFramesPerDay?: number }).lookFramesPerDay;
+      delete (env.runtime.config as { judgmentsPerDay?: number }).judgmentsPerDay;
 
       // A key TypeSafe refuses ends the job with credential_invalid; no key appears anywhere.
       const bad = await keyed('ts-wrong-key');
@@ -3501,6 +3501,94 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
         expect(text).not.toContain('ts-wrong-key');
       }
     }, 300_000);
+
+    it('judge.ask takes an image, a video frame and text in one state', async () => {
+      const video = await importMedia({ path: join(env.mediaDir, 'look.mp4') });
+      const image = await importMedia({ path: join(env.mediaDir, 'card.png') });
+      const c = await keyed(KEY);
+      seen.length = 0;
+      const got = await ok<{ model: string; answers: Record<string, unknown> }>(c, 'judge.ask', {
+        state: {
+          card: { media_id: image.media_id },
+          shot: { media_id: video.media_id, at_seconds: 1.5 },
+          line: 'Here are the colour bars',
+        },
+        questions: {
+          same: { type: 'noul', instructions: 'Does `shot` show what `line` says?' },
+          where: { type: 'box', instructions: 'the moving clock in `shot`' },
+        },
+      });
+      expect(got).toEqual({
+        model: 'jev-1.14.0',
+        answers: {
+          same: { noul: 0.81 },
+          where: { box: { x: 0.2, y: 0.1, w: 0.4, h: 0.4 }, confidence: 0.9 },
+        },
+      });
+      expect(seen).toHaveLength(1);
+      const r = seen[0] as (typeof seen)[number];
+      expect(r.headers['typesafe-danger-zone-images']).toBe('true');
+      const body = r.body as {
+        state: Record<string, string>;
+        assets: Record<string, { format: string; data_base64: string }>;
+      };
+      expect(body.state.line).toBe('Here are the colour bars');
+      expect(Object.keys(body.assets)).toHaveLength(2);
+      // Pictures go the way look sends frames: baseline JPEG, 512 on the long edge, 280 at least.
+      const shot = body.assets[body.state.shot as string];
+      expect(jpegSize(Buffer.from(shot?.data_base64 ?? '', 'base64'))).toEqual({
+        width: 512,
+        height: 288,
+        baseline: true,
+      });
+      const card = body.assets[body.state.card as string];
+      expect(jpegSize(Buffer.from(card?.data_base64 ?? '', 'base64'))).toEqual({
+        width: 512,
+        height: 384,
+        baseline: true,
+      });
+
+      // A video needs its time, and a time inside it.
+      const noTime = await call(c, 'judge.ask', {
+        state: { shot: { media_id: video.media_id } },
+        questions: { same: { type: 'noul', instructions: 'Is `shot` dark?' } },
+      });
+      expect(noTime.structured).toMatchObject({ code: 'bad_request' });
+      expect(String(noTime.structured.hint)).toContain('at_seconds');
+      const late = await call(c, 'judge.ask', {
+        state: { shot: { media_id: video.media_id, at_seconds: 30 } },
+        questions: { same: { type: 'noul', instructions: 'Is `shot` dark?' } },
+      });
+      expect(late.structured).toMatchObject({ code: 'bad_request' });
+    }, 120_000);
+
+    it.skipIf(!chromium)(
+      'judge.ask runs from code.run as cf.judge.ask',
+      async () => {
+        const c = await keyed(KEY);
+        const started = await ok<{ job_id: string }>(c, 'code.run', {
+          timeout_seconds: 120,
+          script: `
+import { cf } from 'cuttingfloor';
+const lines = ['So basically the way this works is', 'You click the button'];
+const out = [];
+for (const line of lines) {
+  const { answers } = await cf.judge.ask({
+    state: { passage: line },
+    questions: { filler: { type: 'noul', instructions: 'Does \`passage\` hold a filler word?' } },
+  });
+  out.push(answers.filler.noul);
+}
+console.log(JSON.stringify(out));
+`,
+        });
+        const done = await waitJob(started.job_id, 120_000);
+        if (done.error) throw new Error(`code.run failed: ${JSON.stringify(done.error)}`);
+        const result = done.result as { stdout: string };
+        expect(JSON.parse(result.stdout.trim().split('\n').pop() ?? '[]')).toEqual([0.81, 0.81]);
+      },
+      180_000,
+    );
   });
 
   it('refuses crafted media', async () => {

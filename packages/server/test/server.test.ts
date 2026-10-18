@@ -5,8 +5,11 @@ import * as z from 'zod/v4';
 import { call, connect, ok, SEQ_720P25, type TestEnv, testRuntime } from './helpers.ts';
 
 const anyResult = z.object({}).passthrough();
-/** tools/list as JSON, in bytes (about 4 bytes per token). Raised from 110 000 for the look guide in media.analyze. */
-const BUDGET_BYTES = 115_000;
+/**
+ * tools/list as JSON, in bytes (about 4 bytes per token). Raised from 110 000 for the look guide
+ * in media.analyze, and from 115 000 for judge.ask.
+ */
+const BUDGET_BYTES = 123_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -91,6 +94,7 @@ describe('protocol surface', () => {
         'job.cancel',
         'job.get',
         'job.list',
+        'judge.ask',
         'media.analyze',
         'media.get',
         'media.import',
