@@ -4,6 +4,11 @@ name: Image
 # image, then a smoke test of the built image as users run it. Pushes to main and develop, and
 # releases, publish the image to GHCR for linux/amd64 and linux/arm64 (:latest is main only):
 # each platform builds on its own native runner, then one job tags both as one multi-arch image.
+#
+# Build caches live in GHCR next to the image (:buildcache-test, :buildcache-amd64,
+# :buildcache-arm64), not in the Actions cache: the layers are several GB per platform and the
+# Actions cache's 10 GB limit evicted them, so most runs started cold. Writing a cache is
+# best-effort (a fork's pull request can read them but not write).
 
 on:
   push:
@@ -30,6 +35,8 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/mvp2o-ai/cuttingfloor
+  CACHE: ghcr.io/mvp2o-ai/cuttingfloor:buildcache
+  CACHE_OPTS: mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
 
 jobs:
   test:
@@ -40,14 +47,22 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Lint, typecheck and test with FFmpeg and MLT
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           target: test
           build-args: CUTTINGFLOOR_BENCH_SCALE=3
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Its own cache, plus amd64's for the base layers they share.
+          cache-from: |
+            type=registry,ref=${{ env.CACHE }}-test
+            type=registry,ref=${{ env.CACHE }}-amd64
+          cache-to: type=registry,ref=${{ env.CACHE }}-test,${{ env.CACHE_OPTS }}
 
   smoke:
     name: Smoke-test the image
@@ -64,15 +79,22 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build the runtime image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           load: true
           tags: cuttingfloor:ci
-          cache-from: type=gha
+          cache-from: |
+            type=registry,ref=${{ env.CACHE }}-amd64
+            type=registry,ref=${{ env.CACHE }}-test
           # On pushes, keep the runtime layers for the amd64 publish build (same image, all hits).
-          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=image-amd64,mode=max' || '' }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}-amd64,{1}', env.CACHE, env.CACHE_OPTS) || '' }}
       - name: HTTP, stdio via docker exec, restart
         run: node scripts/smoke-image.ts cuttingfloor:ci
       - name: Motion sandbox (compose), Chromium sandboxed, nothing reachable, abuse contained
@@ -98,7 +120,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version }},enable=${{ inputs.version != '' }}
 
   # Each platform builds natively on its own runner (no emulation) and pushes untagged, by digest,
-  # with its own cache scope (the test job owns the default one). publish then tags both as one.
+  # with its own cache. publish then tags both as one.
   build:
     name: Build ${{ matrix.platform }}
     needs: [smoke, meta]
@@ -109,14 +131,9 @@ jobs:
           - platform: linux/amd64
             arch: amd64
             runner: ubuntu-latest
-            # Its own scope, plus the test job's (the default scope) for the stages they share.
-            cache_from: |
-              type=gha,scope=image-amd64
-              type=gha
           - platform: linux/arm64
             arch: arm64
             runner: ubuntu-24.04-arm
-            cache_from: type=gha,scope=image-arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -138,8 +155,8 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           provenance: mode=max
           sbom: true
-          cache-from: ${{ matrix.cache_from }}
-          cache-to: type=gha,scope=image-${{ matrix.arch }},mode=max
+          cache-from: type=registry,ref=${{ env.CACHE }}-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.CACHE }}-${{ matrix.arch }},${{ env.CACHE_OPTS }}
       - name: Record the digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
