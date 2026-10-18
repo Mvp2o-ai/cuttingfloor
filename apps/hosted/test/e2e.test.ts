@@ -1149,6 +1149,11 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         });
         if (view.progress !== undefined) seen.push(view.progress);
         if (view.status !== 'working') break;
+        // Progress part way through is the point; the rest of the render adds nothing.
+        if (seen.some((p) => p > 0 && p < 1)) {
+          await ok(client, 'job.cancel', { job_id: started.job_id });
+          break;
+        }
         await new Promise((r) => setTimeout(r, 150));
       }
       expect(seen.some((p) => p > 0 && p < 1)).toBe(true);
