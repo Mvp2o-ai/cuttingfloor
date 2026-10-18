@@ -774,6 +774,25 @@ describe('timing', () => {
     expect([at(doc, frozen, 0), at(doc, frozen, 24)]).toEqual([90, 90]);
   });
 
+  it('freezes the last frame after the clip, leaving no one-frame remainder', () => {
+    // c4 covers frames 0–99: frame 99 is its last.
+    const { doc, results } = edit(two(), {
+      tool: 'clip.freeze',
+      args: { clip_id: 'c4', at_frame: 99, duration_frames: 25 },
+    });
+    const frozen = results[0]?.clip_id ?? '';
+    expect(layout(doc, 0)).toEqual([
+      [0, 100, 50],
+      [100, 125, 149],
+      [125, 175, 0],
+    ]);
+    expect(layout(doc, 1)).toEqual([
+      [0, 100, 50],
+      [125, 175, 0],
+    ]);
+    expect(at(doc, frozen, 0)).toBe(149);
+  });
+
   it('rolls, slips and slides', () => {
     // The next clip starts at source 0, so the cut can only roll later.
     const rolled = edit(two(), { tool: 'clip.roll', args: { clip_id: 'c4', to_frame: 110 } }).doc;

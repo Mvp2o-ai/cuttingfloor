@@ -953,21 +953,24 @@ function clipFreeze(doc: TimelineDoc, a: EditArgsOf<'clip.freeze'>): OpOutcome {
   const tpf = ticksPerFrame(fps);
   const held = Math.round(frameSource(v, tpf, Math.round((at - v.start) / tpf)));
   const duration = framesToTicks(a.duration_frames, fps);
+  // Freezing the last frame holds it after the clip, rather than leaving that one frame (and a
+  // blip of its sound) to play again after the hold.
+  const holdAt = at + tpf >= end(v) ? end(v) : at;
   const tracks = [...new Set(members.map((m) => m.track))];
   const rights: StoredClip[] = [];
   for (const track of tracks) {
-    const right = splitTrackAt(doc, track, at);
+    const right = splitTrackAt(doc, track, holdAt);
     if (right) rights.push(right);
   }
   const link = rights.length > 1 ? nextId(doc, 'l') : null;
   for (const r of rights) r.link = link;
   // Everything from the frame on moves later on the clip's tracks; its sound has a gap there.
-  for (const track of tracks) shiftFrom(track, at, duration);
+  for (const track of tracks) shiftFrom(track, holdAt, duration);
   const { speed: _s, animation: _a, ...look } = v;
   const frozen: StoredClip = {
     ...look,
     id: nextId(doc, 'c'),
-    start: at,
+    start: holdAt,
     in: held,
     duration,
     link: null,
@@ -977,7 +980,7 @@ function clipFreeze(doc: TimelineDoc, a: EditArgsOf<'clip.freeze'>): OpOutcome {
   video.track.clips.push(frozen);
   sortTrack(video.track);
   tidyLinks(doc);
-  return ok(at, { clip_id: frozen.id, temporal: true });
+  return ok(holdAt, { clip_id: frozen.id, temporal: true });
 }
 
 /** The clip on the same track that starts exactly where `clip` ends, and the one that ends where it starts. */

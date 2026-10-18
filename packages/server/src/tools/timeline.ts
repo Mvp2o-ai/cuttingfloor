@@ -101,7 +101,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.freeze': {
     title: 'Freeze frame',
     description:
-      'Hold the frame at at_frame for duration_frames: the clip splits there, a freeze frame goes in, and later clips on its tracks move later.',
+      "Hold the frame at at_frame for duration_frames: the clip splits there, a freeze frame goes in, and later clips on its tracks move later. Freezing a clip's last frame holds it after the clip, with silence under the hold.",
   },
   'clip.roll': {
     title: 'Roll edit',
