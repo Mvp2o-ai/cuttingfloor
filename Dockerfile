@@ -87,20 +87,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 
 # all-MiniLM-L6-v2 (Apache-2.0) for skills.search: sentence embeddings on the CPU, int8 (about
 # 23 MB), in the Transformers.js layout. It ships in the image; nothing downloads at run time, and
-# without it search is keywords only. Each file's SHA-256 is checked when its sum is given; the
-# step prints them, so pinning the revision to a commit means copying four lines.
+# without it search is keywords only. Pinned to a commit, every file checked against its SHA-256.
 FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS skills-model
-ARG MINILM_REVISION=main
-ARG MINILM_CONFIG_SHA256=
-ARG MINILM_TOKENIZER_SHA256=
-ARG MINILM_TOKENIZER_CONFIG_SHA256=
-ARG MINILM_ONNX_SHA256=
+ARG MINILM_REVISION=751bff37182d3f1213fa05d7196b954e230abad9
+ARG MINILM_CONFIG_SHA256=7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7
+ARG MINILM_TOKENIZER_SHA256=da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0
+ARG MINILM_TOKENIZER_CONFIG_SHA256=9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3
+ARG MINILM_ONNX_SHA256=afdb6f1a0e45b715d0bb9b11772f032c399babd23bfc31fed1c170afc848bdb1
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
  && dir=/models/Xenova/all-MiniLM-L6-v2 && mkdir -p "$dir/onnx" \
  && fetch() { \
       curl -fsSL -o "$dir/$1" "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/$MINILM_REVISION/$1" \
-      && sha256sum "$dir/$1" \
-      && { [ -z "$2" ] || echo "$2  $dir/$1" | sha256sum -c -; }; \
+      && echo "$2  $dir/$1" | sha256sum -c -; \
     } \
  && fetch config.json "$MINILM_CONFIG_SHA256" \
  && fetch tokenizer.json "$MINILM_TOKENIZER_SHA256" \
