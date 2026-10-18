@@ -1173,6 +1173,43 @@ describe('text', () => {
     expect(plain.outcome.focus / tpf).toBe(10);
   });
 
+  it('says when a title or caption covers text already on its track', () => {
+    const { outcome, doc } = edit(
+      textStart(),
+      {
+        tool: 'title.add',
+        args: { track_id: 't2', text: 'First', at_frame: 0, duration_frames: 70 },
+      },
+      {
+        tool: 'title.add',
+        args: { track_id: 't2', text: 'Second', at_frame: 14, duration_frames: 30 },
+      },
+      {
+        tool: 'title.add',
+        args: { track_id: 't2', text: 'Third', at_frame: 100, duration_frames: 10 },
+      },
+      {
+        tool: 'title.add',
+        args: { track_id: 't2', text: 'Fourth', at_frame: 95, duration_frames: 20 },
+      },
+    );
+    expect(layout(doc, 1).map(([a, b]) => [a, b])).toEqual([
+      [0, 14],
+      [14, 44],
+      [44, 70],
+      [95, 115],
+    ]);
+    expect(outcome.warnings).toEqual([
+      'c4 covers part of c3 on t2 (frames 0–70), which now plays 0–14 and 44–70. To show both, put one on another track or move it',
+      'c7 replaced c6 on t2 (frames 100–110), which is gone. To show both, put one on another track or move it',
+    ]);
+    // Text that lands on an empty stretch says nothing.
+    expect(
+      edit(textStart(), { tool: 'title.add', args: { track_id: 't2', text: 'Alone' } }).outcome
+        .warnings,
+    ).toEqual([]);
+  });
+
   it('adds a styled title and restyles it, with null resetting a field', () => {
     let { doc } = edit(textStart(), {
       tool: 'title.add',

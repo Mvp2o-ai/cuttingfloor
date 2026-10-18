@@ -395,6 +395,37 @@ function place(
   sortTrack(track);
 }
 
+/**
+ * Places a new clip over what is on its track (overwrite), saying what that did to each clip it
+ * covered: cut shorter, split around it, or removed. A title on a busy track is an easy mistake.
+ */
+function placeOver(doc: TimelineDoc, track: StoredTrack, clip: StoredClip): string[] {
+  const tpf = ticksPerFrame(doc.sequence.fps);
+  const f = (t: number) => Math.round(t / tpf);
+  const before = new Set(track.clips.map((c) => c.id));
+  const covered = track.clips
+    .filter((c) => c.start < end(clip) && end(c) > clip.start)
+    .map((c) => ({ id: c.id, start: c.start, end: end(c) }));
+  place(doc, track, clip, 'overwrite');
+  return covered.map((was) => {
+    // What is left of it: the clip under its own id, and the part after the new clip when it
+    // reached past it (a new id when it was split around the new clip).
+    const pieces = track.clips.filter(
+      (c) =>
+        c !== clip &&
+        (c.id === was.id ||
+          (!before.has(c.id) &&
+            c.start === end(clip) &&
+            was.start < end(clip) &&
+            was.end > end(clip))),
+    );
+    const where = `${was.id} on ${track.id} (frames ${f(was.start)}–${f(was.end)})`;
+    return pieces.length
+      ? `${clip.id} covers part of ${where}, which now plays ${pieces.map((c) => `${f(c.start)}–${f(end(c))}`).join(' and ')}. To show both, put one on another track or move it`
+      : `${clip.id} replaced ${where}, which is gone. To show both, put one on another track or move it`;
+  });
+}
+
 /** Takes clips off their tracks; with ripple, later clips close each gap (latest gap first). */
 function removeAndRipple(members: Located[], ripple: boolean): void {
   for (const { track, clip } of members) removeClip(track, clip);
@@ -1413,14 +1444,14 @@ function titleAdd(doc: TimelineDoc, a: EditArgsOf<'title.add'>): OpOutcome {
     link: null,
     enabled: true,
   };
-  place(doc, track, clip, 'overwrite');
+  const warnings = placeOver(doc, track, clip);
   // Preview the title once its reveal is done, not its first, still-empty frame.
   const revealed =
     style?.reveal && style.reveal !== 'none'
       ? (style.reveal_frames ?? Math.max(1, Math.round((fps.num / fps.den) * 0.8)))
       : 0;
   const shown = Math.min(revealed, Math.round(duration / ticksPerFrame(fps)) - 1);
-  return ok(start + framesToTicks(Math.max(0, shown), fps), { clip_id: clip.id });
+  return ok(start + framesToTicks(Math.max(0, shown), fps), { clip_id: clip.id, warnings });
 }
 
 type Segment = NonNullable<EditArgsOf<'caption.add'>['segments']>[number];
@@ -1492,6 +1523,7 @@ function captionAdd(doc: TimelineDoc, a: EditArgsOf<'caption.add'>): OpOutcome {
     }));
   const style = mergeStyle(undefined, a.style);
   const ids: string[] = [];
+  const warnings: string[] = [];
   for (const seg of segments) {
     if (seg.start_frame < 0) {
       throw new CfError(
@@ -1530,13 +1562,14 @@ function captionAdd(doc: TimelineDoc, a: EditArgsOf<'caption.add'>): OpOutcome {
       link: null,
       enabled: true,
     };
-    place(doc, track, clip, 'overwrite');
+    warnings.push(...placeOver(doc, track, clip));
     ids.push(clip.id);
   }
   const first = segments[0];
   return ok(first ? first.start_frame * tpf : 0, {
     clip_ids: ids,
     ...(ids[0] ? { clip_id: ids[0] } : {}),
+    warnings,
   });
 }
 
