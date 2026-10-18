@@ -660,21 +660,18 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     ).rejects.toThrow(/past the end/);
   }, 60_000);
 
-  it('runs the exact QA checks', async () => {
+  it('measures the render: gaps, frames, loudness, and black and silence with given settings', async () => {
+    type Span = { start: number; end: number };
     const report = await ok<{
-      passed: boolean;
-      checks: Array<{
-        check: string;
-        status: string;
-        findings: Array<{ start: number; end: number }>;
-      }>;
-      measured: { frames: number };
+      gaps: Span[];
+      frames: { expected: number; rendered: number };
+      black?: Span[];
+      integrated_lufs: number | null;
     }>(client, 'qa.check', { timeline_id: timeline });
-    expect(report.passed).toBe(false);
-    const gaps = report.checks.find((c) => c.check === 'gaps');
-    expect(gaps?.findings).toEqual([{ start: 100, end: 125, detail: 'no picture' }]);
-    expect(report.checks.find((c) => c.check === 'frame_count')?.status).toBe('pass');
-    expect(report.measured.frames).toBe(175);
+    expect(report.gaps).toEqual([{ start: 100, end: 125 }]);
+    expect(report.frames).toEqual({ expected: 175, rendered: 175 });
+    // Nothing is looked for that was not asked for.
+    expect(report.black).toBeUndefined();
 
     // Planted: black picture 50–100, silence 50–125 (no audio there), a gap 100–125.
     const black = (await importMedia({ path: join(env.mediaDir, 'black.mp4') })).media_id;
@@ -698,21 +695,23 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       ],
     });
     const qa = await ok<{
-      checks: Array<{
-        check: string;
-        status: string;
-        findings: Array<{ start: number; end: number }>;
-      }>;
-    }>(client, 'qa.check', { timeline_id: planted.timeline_id, loudness_target_lufs: -14 });
-    const by = (name: string) => qa.checks.find((c) => c.check === name);
-    expect(by('gaps')?.findings).toEqual([{ start: 100, end: 125, detail: 'no picture' }]);
-    const blackSpan = by('black_frames')?.findings[0];
-    expect(blackSpan?.start).toBeGreaterThanOrEqual(49);
-    expect(blackSpan?.end).toBeLessThanOrEqual(101);
-    const quiet = by('silence')?.findings[0];
-    expect(quiet?.start).toBeLessThanOrEqual(51);
-    expect(quiet?.end).toBeGreaterThanOrEqual(124);
-    expect(by('loudness')?.status).toBe('warn');
+      gaps: Span[];
+      black: Span[];
+      silences: Span[];
+      integrated_lufs: number | null;
+      true_peak_dbtp: number | null;
+    }>(client, 'qa.check', {
+      timeline_id: planted.timeline_id,
+      black: { pixel_threshold: 0.1, picture_share: 0.98, min_seconds: 0.5 },
+      silence: { threshold_db: -50, min_seconds: 1 },
+    });
+    expect(qa.gaps).toEqual([{ start: 100, end: 125 }]);
+    expect(qa.black[0]?.start).toBeGreaterThanOrEqual(49);
+    expect(qa.black[0]?.end).toBeLessThanOrEqual(101);
+    expect(qa.silences[0]?.start).toBeLessThanOrEqual(51);
+    expect(qa.silences[0]?.end).toBeGreaterThanOrEqual(124);
+    expect(qa.integrated_lufs).toBeLessThan(0);
+    expect(qa.true_peak_dbtp).toBeLessThan(0);
   }, 120_000);
 
   it('renders the exact source frame', async () => {
@@ -2110,11 +2109,13 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         limit_db: -1,
         preview: 'none',
       });
-      const report = await ok<{
-        measured: { integrated_lufs: number; true_peak_dbtp: number };
-      }>(client, 'qa.check', { timeline_id: loud.timeline_id });
-      expect(report.measured.true_peak_dbtp).toBeLessThanOrEqual(-1);
-      expect(report.measured.integrated_lufs).toBeGreaterThan(-10);
+      const report = await ok<{ integrated_lufs: number; true_peak_dbtp: number }>(
+        client,
+        'qa.check',
+        { timeline_id: loud.timeline_id },
+      );
+      expect(report.true_peak_dbtp).toBeLessThanOrEqual(-1);
+      expect(report.integrated_lufs).toBeGreaterThan(-10);
     }, 240_000);
   });
 

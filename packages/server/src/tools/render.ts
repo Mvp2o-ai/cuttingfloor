@@ -112,7 +112,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         rt.config.exportsDir
           ? `and the file in the exports folder (${rt.config.exportsDir}).`
           : '.',
-        'Run qa.check first if you want the exact checks.',
+        'qa.check measures a render (gaps, frames, loudness) before you export.',
       ].join(' '),
       inputSchema: ExportVideoInput,
       outputSchema: withJob(ExportResult),
@@ -214,7 +214,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'QA check',
       description:
-        'Exact checks on the rendered timeline: gaps in the picture, offline media, black frames, silence, loudness against a target (default -14 LUFS, true peak -1 dBTP) and the rendered frame count. Short timelines answer at once; longer ones return a task or job.',
+        'Measure the rendered timeline: gaps in the picture, offline media, rendered against expected frame count, integrated loudness (LUFS) and true peak (dBTP), plus black and silent stretches when you give their settings. Facts only, no verdicts. Short timelines answer at once; longer ones return a task or job.',
       inputSchema: QaCheckInput,
       outputSchema: withJob(QaCheckResult),
       annotations: { ...readOnly, title: 'QA check' },
@@ -226,7 +226,23 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         const { sources, offline } = await sourcesFor(rt, owner, doc, 'preview');
         const report = await qaCheck(doc, sources, offline, {
           ...(args.range ? { range: args.range } : {}),
-          targetLufs: args.loudness_target_lufs,
+          ...(args.black
+            ? {
+                black: {
+                  pixelThreshold: args.black.pixel_threshold,
+                  pictureShare: args.black.picture_share,
+                  minSeconds: args.black.min_seconds,
+                },
+              }
+            : {}),
+          ...(args.silence
+            ? {
+                silence: {
+                  thresholdDb: args.silence.threshold_db,
+                  minSeconds: args.silence.min_seconds,
+                },
+              }
+            : {}),
           signal,
           onProgress: (f) => progress(f, `checking ${Math.round(f * 100)}%`),
         });

@@ -1090,29 +1090,40 @@ export const ExportResult = z.object({
 export const QaCheckInput = z.object({
   timeline_id: TimelineId,
   range: z.object({ start: frame, end: frame }).optional(),
-  loudness_target_lufs: z.number().min(-40).max(-5).default(-14),
+  black: z
+    .object({
+      pixel_threshold: z.number().min(0).max(1).describe('A pixel this dark or darker is black'),
+      picture_share: z
+        .number()
+        .min(0)
+        .max(1)
+        .describe('A frame with this share of black pixels is black'),
+      min_seconds: z.number().min(0.01).max(3600),
+    })
+    .optional()
+    .describe('Find black stretches with these settings; left out, none are looked for'),
+  silence: z
+    .object({
+      threshold_db: z.number().min(-100).max(0).describe('Quieter than this, dBFS'),
+      min_seconds: z.number().min(0.01).max(3600),
+    })
+    .optional()
+    .describe(
+      'Find silent stretches in the mix with these settings; left out, none are looked for',
+    ),
 });
 
-export const QaFinding = z.object({ start: frame, end: frame, detail: z.string() });
+const QaSpan = z.object({ start: frame, end: frame });
 export const QaCheckResult = z.object({
-  passed: z.boolean(),
-  checks: z.array(
-    z.object({
-      check: z.enum([
-        'gaps',
-        'offline_media',
-        'black_frames',
-        'silence',
-        'loudness',
-        'frame_count',
-      ]),
-      status: z.enum(['pass', 'fail', 'warn']),
-      findings: z.array(QaFinding),
-    }),
-  ),
-  measured: z.object({
-    frames: z.number(),
-    integrated_lufs: z.number().nullable(),
-    true_peak_dbtp: z.number().nullable(),
-  }),
+  range: QaSpan,
+  gaps: z.array(QaSpan).describe('Frames with no picture on any visible video track'),
+  offline_media: z.array(z.string()).describe('Media ids that are offline; nothing was rendered'),
+  frames: z
+    .object({ expected: z.number(), rendered: z.number() })
+    .nullable()
+    .describe('null when offline media stopped the render'),
+  black: z.array(QaSpan).optional().describe('With black settings: black stretches, frames'),
+  silences: z.array(QaSpan).optional().describe('With silence settings: silent stretches, frames'),
+  integrated_lufs: z.number().nullable().describe('null below the EBU R128 -70 LUFS gate'),
+  true_peak_dbtp: z.number().nullable(),
 });

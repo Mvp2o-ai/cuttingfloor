@@ -43,7 +43,7 @@ export {
   resolvePreset,
 } from './presets.ts';
 export { conformReasons, type Probe, probe, standardRate } from './probe.ts';
-export { type QaReport, qaCheck } from './qa.ts';
+export { type QaOptions, type QaReport, qaCheck } from './qa.ts';
 export {
   exportTimeline,
   mediaStills,
