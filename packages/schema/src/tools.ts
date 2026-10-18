@@ -825,7 +825,10 @@ export const CodeRunInput = z.object({
     .int()
     .min(1)
     .max(CODE_LIMITS.maxTimeoutSeconds)
-    .default(CODE_LIMITS.defaultTimeoutSeconds),
+    .default(CODE_LIMITS.defaultTimeoutSeconds)
+    .describe(
+      "The script's own running time; time its calls spend queued behind other work is added on",
+    ),
   idempotency_key: z.string().min(1).max(200).optional(),
 });
 
@@ -944,7 +947,12 @@ export const JobView = z.object({
   job_id: JobId,
   tool: z.string(),
   status: JobStatus,
-  status_message: z.string().optional(),
+  status_message: z
+    .string()
+    .optional()
+    .describe(
+      'What it is doing; while it waits, its place in the queue and what it waits for (a job slot, a render slot, the sandbox, or for code.run the call it is waiting on)',
+    ),
   progress: z.number().min(0).max(1).optional(),
   created_at: z.string(),
   updated_at: z.string(),

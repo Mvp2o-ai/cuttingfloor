@@ -173,6 +173,8 @@ export interface JobContext {
   signal: AbortSignal;
   /** Records progress; written to the job file at most once a second. */
   progress(fraction: number, message: string): void;
+  /** Says what the job is doing or waiting for, leaving its progress as it is. */
+  status(message: string): void;
 }
 
 export type JobWork = (ctx: JobContext) => Promise<JobResult>;
@@ -206,6 +208,8 @@ export interface RunnerOptions {
   heartbeatMs?: number;
   /** A working job not written for this long has lost its server. */
   staleMs?: number;
+  /** Wraps every job's work, e.g. to report what it waits for from deep inside. */
+  around?: (ctx: JobContext, work: () => Promise<JobResult>) => Promise<JobResult>;
 }
 
 /**
@@ -221,6 +225,7 @@ export class JobRunner {
   readonly #concurrency: number;
   readonly #heartbeatMs: number;
   readonly #staleMs: number;
+  readonly #around: RunnerOptions['around'];
   readonly #running = new Map<string, AbortController>();
   readonly #lanes: Record<JobLane, Lane>;
   readonly #done = new Map<string, Promise<void>>();
@@ -231,6 +236,7 @@ export class JobRunner {
     this.node = options.node ?? 'local';
     this.#heartbeatMs = options.heartbeatMs ?? 30_000;
     this.#staleMs = options.staleMs ?? 120_000;
+    this.#around = options.around;
     this.#lanes = {
       engine: { limit: this.#concurrency, running: new Map(), queue: [] },
       sandbox: { limit: SANDBOX_LANE, running: new Map(), queue: [] },
@@ -397,10 +403,12 @@ export class JobRunner {
     // An update inside the second is held, not dropped: the latest one is written when the
     // second is up, so a quick "running" after "fetching inputs" still shows.
     let held: { fraction: number; message: string } | undefined;
+    let fraction = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const write = (fraction: number, message: string) => {
+    const write = (f: number, message: string) => {
       lastWrite = Date.now();
-      void save({ progress: Math.max(0, Math.min(1, fraction)), statusMessage: message });
+      fraction = Math.max(0, Math.min(1, f));
+      void save({ progress: fraction, statusMessage: message });
     };
     const progress = (fraction: number, message: string) => {
       const wait = lastWrite + 1000 - Date.now();
@@ -422,7 +430,12 @@ export class JobRunner {
     };
     try {
       if (controller.signal.aborted) throw new CfError('cancelled', 'Cancelled');
-      const result = await work({ signal: controller.signal, progress });
+      const ctx: JobContext = {
+        signal: controller.signal,
+        progress,
+        status: (message) => progress(held?.fraction ?? fraction, message),
+      };
+      const result = await (this.#around ? this.#around(ctx, () => work(ctx)) : work(ctx));
       settle();
       await writes();
       await this.#end(latest(), {

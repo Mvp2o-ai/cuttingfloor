@@ -3,7 +3,13 @@ import { readFile } from 'node:fs/promises';
 import { availableParallelism, hostname } from 'node:os';
 import { extname, join } from 'node:path';
 import { ownerKey, TimelineStore, Workspace } from '@cuttingfloor/core';
-import { MEDIA_TTL_MS, MediaLibrary, setRenderLimit } from '@cuttingfloor/engine';
+import {
+  MEDIA_TTL_MS,
+  MediaLibrary,
+  renderLoad,
+  setRenderLimit,
+  watchRenderQueue,
+} from '@cuttingfloor/engine';
 import { FileJobStore, JobRunner } from '@cuttingfloor/jobs';
 import { Uploads } from './uploads.ts';
 
@@ -114,6 +120,18 @@ export class Runtime {
     if (config.maxRenders) setRenderLimit(config.maxRenders);
     this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs, {
       ...(config.node ? { node: config.node } : {}),
+      // A job whose render waits for a slot says so, and where it stands.
+      around: (ctx, work) =>
+        watchRenderQueue(
+          {
+            queued: (ahead) =>
+              ctx.status(
+                `waiting for a render slot: ${ahead === 0 ? 'next in line' : `${ahead} ahead`} (${renderLoad().limit} renders run at once on this server)`,
+              ),
+            started: () => ctx.status('rendering'),
+          },
+          work,
+        ),
     });
     // Uploads take files as big as URL imports may download.
     this.uploads = new Uploads(this.ws, {

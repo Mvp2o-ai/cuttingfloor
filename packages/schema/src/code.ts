@@ -63,5 +63,8 @@ export type CodeEvent =
   | { done: CodeDone }
   | { error: ToolError };
 
-/** The main server's answer to a call or file request. */
-export type CodeReply = { result: unknown } | { error: ToolError };
+/**
+ * The main server's answer to a call or file request. `extend_ms`: time the script's calls spent
+ * queued behind other work, added to its time limit (queue time doesn't count against it).
+ */
+export type CodeReply = ({ result: unknown } | { error: ToolError }) & { extend_ms?: number };

@@ -268,8 +268,6 @@ export async function exportTimeline(
     overrides?: Overrides;
     signal?: AbortSignal;
     onProgress?: (fraction: number) => void;
-    /** While it waits for a render slot: how many renders are ahead. */
-    onQueue?: (ahead: number) => void;
   },
 ): Promise<{ frames: number; width: number | null; height: number | null }> {
   const { spec, settings, width, height } = resolvePreset(preset, doc.sequence, options.overrides);
@@ -323,7 +321,6 @@ export async function exportTimeline(
       {
         cwd: dir,
         heavy: true,
-        ...(options.onQueue ? { onQueue: options.onQueue } : {}),
         ...(options.signal ? { signal: options.signal } : {}),
         onLine: (line) => {
           const m = /Current Frame:\s+(\d+)/.exec(line);

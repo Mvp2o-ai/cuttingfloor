@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn } from 'node:child_process';
 import { availableParallelism } from 'node:os';
 import { CfError, serverBusy } from '@cuttingfloor/schema';
@@ -107,6 +108,23 @@ function renderSlot(
   });
 }
 
+/** Who hears about heavy runs waiting for a slot, for work deep inside a job. */
+const queueWatch = new AsyncLocalStorage<{
+  queued: (ahead: number) => void;
+  started: () => void;
+}>();
+
+/**
+ * Runs `work` so that any heavy run inside it that has to wait reports where it stands
+ * (`queued`) and when it gets its slot (`started`): a job's status says it waits for a render.
+ */
+export function watchRenderQueue<T>(
+  watch: { queued: (ahead: number) => void; started: () => void },
+  work: () => Promise<T>,
+): Promise<T> {
+  return queueWatch.run(watch, work);
+}
+
 /**
  * Runs an engine binary with an argument list (never a shell). Rejects with engine_error, or
  * server_busy when the machine has no memory or processes left for it.
@@ -117,7 +135,18 @@ export async function run(
   options: RunOptions = {},
 ): Promise<RunResult> {
   if (!options.heavy) return spawnRun(bin, args, options);
-  const release = await renderSlot(options.signal, options.onQueue);
+  const watch = queueWatch.getStore();
+  let waited = false;
+  const onQueue =
+    options.onQueue || watch
+      ? (ahead: number) => {
+          waited = true;
+          options.onQueue?.(ahead);
+          watch?.queued(ahead);
+        }
+      : undefined;
+  const release = await renderSlot(options.signal, onQueue);
+  if (waited) watch?.started();
   try {
     return await spawnRun(bin, args, options);
   } finally {

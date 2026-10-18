@@ -77,8 +77,39 @@ export function registerCodeTools(server: McpServer, deps: ServerDeps): void {
       });
       rt.jobs.start(
         job,
-        async ({ signal, progress }) => {
+        async ({ signal, progress, status }) => {
           const client = await ownerClient(deps, owner);
+          // Jobs the script started (id: tool), and how long they waited in a queue.
+          const inner = new Map<string, string>();
+          const credited = new Set<string>();
+          const counted = new Map<string, number>();
+          let queuedMs = 0;
+          /** What the script waits on, in the job's status, while one of its jobs works. */
+          const follow = async (tool: string, body: Record<string, unknown> | undefined) => {
+            const id = typeof body?.job_id === 'string' ? body.job_id : undefined;
+            if (!id) return;
+            if (tool !== 'job.get') inner.set(id, tool);
+            const what = inner.get(id);
+            if (!what) return;
+            if (body?.status === 'working') {
+              const message = typeof body.status_message === 'string' ? body.status_message : '';
+              status(`running; waiting on ${what} ${id}${message ? `: ${message}` : ''}`);
+            } else {
+              status('running');
+            }
+            if (credited.has(id)) return;
+            // Queue time is credited as it passes, so a long wait never runs the script out.
+            const record = await rt.jobs.store.get(id, owner);
+            if (!record) return;
+            const from = counted.get(id) ?? Date.parse(record.createdAt);
+            const until =
+              record.startedAt || record.status !== 'working'
+                ? Date.parse(record.startedAt ?? record.createdAt)
+                : Date.now();
+            if (until > from) queuedMs += until - from;
+            counted.set(id, Math.max(from, until));
+            if (record.startedAt || record.status !== 'working') credited.add(id);
+          };
           const scratch = rt.ws.ownerDir(owner, 'code', job.id);
           await mkdir(scratch, { recursive: true });
           // out/ files land with the job's outputs, where their download links point.
@@ -101,7 +132,16 @@ export function registerCodeTools(server: McpServer, deps: ServerDeps): void {
                   if (deny.has(tool)) {
                     throw new CfError('bad_request', `${tool} can't be called from code.run`);
                   }
-                  return client.callTool({ name: tool, arguments: callArgs });
+                  const result = (await client.callTool({ name: tool, arguments: callArgs })) as {
+                    structuredContent?: Record<string, unknown>;
+                  };
+                  await follow(tool, result.structuredContent).catch(() => undefined);
+                  return result;
+                },
+                queued: () => {
+                  const ms = queuedMs;
+                  queuedMs = 0;
+                  return ms;
                 },
                 file: async (ref) => {
                   if (ref.media_id) {

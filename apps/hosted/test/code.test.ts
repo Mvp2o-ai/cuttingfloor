@@ -295,6 +295,57 @@ except CfError as e:
     }
   }, 60_000);
 
+  it('says which call it waits on, and does not count that queue time against its limit', async () => {
+    const client = await connect('alice');
+    // Both of the server's job slots are busy with other work.
+    const forever = ({ signal }: { signal: AbortSignal }) =>
+      new Promise<never>((_, reject) =>
+        signal.addEventListener('abort', () => reject(new Error('x'))),
+      );
+    const blockers = [];
+    for (const tool of ['export.video', 'qa.check']) {
+      const b = await runtime.jobs.store.create({ owner: 'bob', tool });
+      runtime.jobs.start(b, forever);
+      blockers.push(b);
+    }
+    const port = (http.address() as AddressInfo).port;
+    const started = (await client.callTool({
+      name: 'code.run',
+      arguments: {
+        timeout_seconds: 2,
+        script: `import { cf } from 'cuttingfloor';
+try { await cf.media.import({ source: { url: 'http://127.0.0.1:${port}/healthz' } }); } catch (e) { console.log(e.code); }
+console.log('done');`,
+      },
+    })) as { structuredContent: { job_id: string } };
+    const id = started.structuredContent.job_id;
+    let seen = '';
+    for (let i = 0; i < 100 && !/waiting on media\.import/.test(seen); i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      const got = (await client.callTool({ name: 'job.get', arguments: { job_id: id } })) as {
+        structuredContent: { status_message?: string };
+      };
+      seen = got.structuredContent.status_message ?? '';
+    }
+    expect(seen).toMatch(
+      /^running; waiting on media\.import j_\w+: queued: next in line, waiting for a free job slot \(2 run at once on this server; running now: export\.video, qa\.check\)$/,
+    );
+    // Queued for longer than the script's whole limit, it still finishes.
+    await new Promise((r) => setTimeout(r, 3000));
+    for (const b of blockers) await runtime.jobs.cancel(b.id, 'bob');
+    let done: Run;
+    for (;;) {
+      const got = (await client.callTool({ name: 'job.get', arguments: { job_id: id } })) as {
+        structuredContent: Run;
+      };
+      done = got.structuredContent;
+      if (done.status !== 'working') break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(done.error).toBeUndefined();
+    expect(done.result?.stdout).toMatch(/done\n$/);
+  }, 60_000);
+
   it.skipIf(!namespaces)(
     'has no network and cannot see the worker',
     async () => {

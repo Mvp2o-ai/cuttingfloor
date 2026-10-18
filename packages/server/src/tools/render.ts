@@ -270,7 +270,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         const signal =
           (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal ??
           new AbortController().signal;
-        return run({ signal, progress: () => undefined });
+        return run({ signal, progress: () => undefined, status: () => undefined });
       }
       const job = await rt.jobs.store.create({
         owner,
@@ -287,7 +287,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get job',
       description:
-        'Status, progress and, once completed, the result of a long-running call (media.import, create.*, export.video, qa.check). Same record as tasks/get. wait_seconds holds the call until the job finishes or the time is up, so one call usually covers a short job.',
+        'Status, progress and, once completed, the result of a long-running call (media.import, create.*, export.video, qa.check, code.run). Same record as tasks/get. status_message says what it is doing, or, while it waits, where it stands in the queue and what it waits for. wait_seconds holds the call until the job finishes or the time is up, so one call usually covers a short job.',
       inputSchema: JobGetInput,
       outputSchema: JobView,
       annotations: { ...readOnly, title: 'Get job' },

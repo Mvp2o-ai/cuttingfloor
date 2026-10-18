@@ -19,6 +19,11 @@ import {
 export interface CodeHandlers {
   /** A tool call from the script: the MCP result. */
   call(tool: string, args: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Milliseconds the script's calls have spent queued since this was last asked: added to the
+   * script's time limit, which counts its own time, not time waiting for a slot.
+   */
+  queued?(): number;
   /** A file the script asked for: a path on disk or bytes, and the name to give it. */
   file(ref: { media_id?: string; timeline_id?: string }): Promise<{
     name: string;
@@ -98,7 +103,8 @@ export async function runCodeInSandbox(
       } catch (error) {
         body = { error: errorOf(error) };
       }
-      await reply(rid, body);
+      const extend = handlers.queued?.() ?? 0;
+      await reply(rid, extend > 0 ? { ...body, extend_ms: extend } : body);
     } else if ('upload' in event) {
       const { rid, name } = event.upload;
       let body: CodeReply;

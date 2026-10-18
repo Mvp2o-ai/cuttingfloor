@@ -55,6 +55,8 @@ export interface CodeJob {
   /** Files the script is importing now: rid → path. */
   uploads: Map<string, string>;
   timer?: NodeJS.Timeout;
+  /** While it runs: adds to its time limit. */
+  extend?: (ms: number) => void;
   /** Once finished: lets the sandbox go to the next job. */
   release?: (() => void) | undefined;
 }
@@ -165,7 +167,9 @@ export async function runCode(
         });
       }
       const args = (body.args ?? {}) as Record<string, unknown>;
-      return json(res, 200, await ask((rid) => ({ call: { rid, tool, args } })));
+      const { extend_ms, ...reply } = await ask((rid) => ({ call: { rid, tool, args } }));
+      if (extend_ms && extend_ms > 0) job.extend?.(extend_ms);
+      return json(res, 200, reply);
     }
     if (req.method === 'POST' && req.url === '/file') {
       const ref = body.media_id
@@ -314,10 +318,26 @@ function execute(
       }
       void reap(marker);
     };
-    const timer = setTimeout(() => {
-      why = 'timeout';
-      kill();
-    }, timeoutSeconds * 1000);
+    // The limit is the script's own time: what its calls spent queued is added back on.
+    let deadline = started + timeoutSeconds * 1000;
+    let credited = 0;
+    let timer: NodeJS.Timeout;
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(
+        () => {
+          why = 'timeout';
+          kill();
+        },
+        Math.max(0, deadline - Date.now()),
+      );
+    };
+    arm();
+    job.extend = (ms) => {
+      credited += ms;
+      deadline += ms;
+      arm();
+    };
     const onAbort = () => {
       why = 'cancelled';
       kill();
@@ -334,10 +354,14 @@ function execute(
       if (why === 'cancelled') return reject(new CfError('cancelled', 'Cancelled'));
       if (why === 'timeout') {
         return reject(
-          new CfError('limit_exceeded', `The script ran longer than ${timeoutSeconds} s`, {
-            hint: 'Raise timeout_seconds (up to 1800), or do less per run',
-            detail: { stdout: shown('stdout', 4000), stderr: shown('stderr', 4000) },
-          }),
+          new CfError(
+            'limit_exceeded',
+            `The script ran longer than ${timeoutSeconds} s${credited ? ` (not counting ${Math.round(credited / 1000)} s its calls waited in queues)` : ''}`,
+            {
+              hint: 'Raise timeout_seconds (up to 1800), or do less per run',
+              detail: { stdout: shown('stdout', 4000), stderr: shown('stderr', 4000) },
+            },
+          ),
         );
       }
       if (code !== 0 && /^unshare: /m.test(tail.stderr)) {

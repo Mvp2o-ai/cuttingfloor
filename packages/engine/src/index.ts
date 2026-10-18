@@ -24,6 +24,7 @@ export {
   renderLoad,
   run,
   setRenderLimit,
+  watchRenderQueue,
 } from './exec.ts';
 export { download, isBlockedAddress } from './fetch.ts';
 export {
