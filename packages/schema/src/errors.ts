@@ -19,6 +19,7 @@ export const ErrorCode = z.enum([
   'limit_exceeded',
   'quota_exceeded',
   'subscription_required',
+  'server_busy',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
@@ -57,4 +58,16 @@ export class CfError extends Error {
       ...(this.hint ? { hint: this.hint } : {}),
     };
   }
+}
+
+/**
+ * The server has no room for this work right now (memory, processes, the sandbox restarting): a
+ * retryable error. Locally (CUTTINGFLOOR_MODE is not hosted) the hint also says what to change.
+ */
+export function serverBusy(message: string, local?: string): CfError {
+  const hosted = process.env.CUTTINGFLOOR_MODE === 'hosted';
+  return new CfError('server_busy', message, {
+    hint: `The server is busy with other work; call the tool again in about a minute (with the same idempotency_key it starts a fresh job)${!hosted && local ? `. If it keeps happening: ${local}` : ''}`,
+    detail: { retry: true, retry_after_seconds: 60 },
+  });
 }

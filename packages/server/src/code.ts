@@ -8,6 +8,7 @@ import {
   type CodeEvent,
   type CodeReply,
   type CodeRequest,
+  serverBusy,
   type ToolError,
 } from '@cuttingfloor/schema';
 
@@ -67,9 +68,10 @@ export async function runCodeInSandbox(
     });
   } catch (error) {
     if (signal.aborted) throw new CfError('cancelled', 'Cancelled');
-    throw new CfError('engine_error', `The sandbox is not reachable: ${(error as Error).message}`, {
-      hint: 'Check the motion service is running (docker compose ps)',
-    });
+    throw serverBusy(
+      `The sandbox is not reachable (${(error as Error).message}); it may be restarting`,
+      'check the motion service is running (docker compose ps)',
+    );
   }
   if (!res.ok || !res.body) {
     const body = (await res.json().catch(() => ({}))) as { error?: ToolError };
@@ -161,14 +163,14 @@ export async function runCodeInSandbox(
     }
   } catch (error) {
     if (signal.aborted) throw new CfError('cancelled', 'Cancelled');
-    throw error;
+    if (error instanceof CfError) throw error;
+    // The stream broke mid-run ("terminated"): the sandbox restarted, most often out of memory.
+    throw serverBusy(`The sandbox stopped mid-run (${(error as Error).message})`);
   }
   await Promise.all(answering);
   if (!done || !job) {
     if (signal.aborted) throw new CfError('cancelled', 'Cancelled');
-    throw new CfError('engine_error', 'The sandbox stopped without an answer', {
-      hint: 'It may have restarted mid-run; try again',
-    });
+    throw serverBusy('The sandbox stopped without an answer; it may have restarted mid-run');
   }
   try {
     const files: CodeRun['files'] = [];

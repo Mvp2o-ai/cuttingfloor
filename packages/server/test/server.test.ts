@@ -465,6 +465,34 @@ describe('media and jobs without engines', () => {
   });
 });
 
+describe('a busy or restarting sandbox', () => {
+  it('fails create.still with a retryable server_busy, and names docker only locally', async () => {
+    const down = await testRuntime({ motionUrl: 'http://127.0.0.1:9' });
+    for (const mode of ['local', 'hosted']) {
+      const before = process.env.CUTTINGFLOOR_MODE;
+      process.env.CUTTINGFLOOR_MODE = mode;
+      try {
+        const client = await connect(down.runtime, `busy-${mode}`);
+        const started = await ok<{ job_id: string }>(client, 'create.still', {
+          html: `<b>${mode}</b>`,
+        });
+        const view = await ok<{ status: string; error: { code: string; hint: string } }>(
+          client,
+          'job.get',
+          { job_id: started.job_id, wait_seconds: 20 },
+        );
+        expect(view).toMatchObject({ status: 'failed', error: { code: 'server_busy' } });
+        expect(view.error.hint).toMatch(/again in about a minute/);
+        if (mode === 'local') expect(view.error.hint).toMatch(/docker compose ps/);
+        else expect(view.error.hint).not.toMatch(/docker/i);
+      } finally {
+        if (before === undefined) delete process.env.CUTTINGFLOOR_MODE;
+        else process.env.CUTTINGFLOOR_MODE = before;
+      }
+    }
+  });
+});
+
 describe('access', () => {
   it('runs no tool for an owner the access check refuses, and says where to subscribe', async () => {
     const env = await testRuntime();

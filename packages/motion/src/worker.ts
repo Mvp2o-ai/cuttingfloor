@@ -14,6 +14,7 @@ import {
   MOTION_LIMITS,
   type MotionEvent,
   MotionRequest,
+  serverBusy,
 } from '@cuttingfloor/schema';
 import { type CodeJob, deliverFile, dropCodeJob, newCodeJob, replyTo, runCode } from './code.ts';
 import { pageDocument } from './document.ts';
@@ -61,17 +62,34 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
   >();
   const codeJobs = new Map<string, CodeJob>();
   let queue: Promise<void> = Promise.resolve();
+  /** What is in the sandbox now and waiting for it, in order: the first one runs. */
+  const lineup: string[] = [];
   let waiting = 0;
 
   /** Runs work after everything queued before it, one job at a time. */
-  function enqueue(work: () => Promise<void>): Promise<void> {
+  function enqueue(what: string, work: () => Promise<void>): Promise<void> {
     waiting += 1;
+    lineup.push(what);
     const run = queue.then(async () => {
       waiting -= 1;
-      await work();
+      try {
+        await work();
+      } finally {
+        lineup.shift();
+      }
     });
     queue = run.catch(() => undefined);
     return run;
+  }
+
+  /** Where a new job stands: what it waits behind, in words. */
+  function waitMessage(): string | undefined {
+    const ahead = lineup.length;
+    if (!ahead) return undefined;
+    const counts = new Map<string, number>();
+    for (const w of lineup) counts.set(w, (counts.get(w) ?? 0) + 1);
+    const what = [...counts].map(([w, n]) => `${n} ${w}${n > 1 ? 's' : ''}`).join(', ');
+    return `queued in the sandbox: ${ahead} ahead (${what}); it runs one at a time`;
   }
 
   /** Nothing another owner made may be on disk while a script runs. */
@@ -141,8 +159,9 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
     const send = (e: MotionEvent) => res.write(`${JSON.stringify(e)}\n`);
     const abort = new AbortController();
     res.on('close', () => abort.abort());
-    if (waiting > 0) send({ progress: 0, message: `waiting (${waiting} ahead)` });
-    await enqueue(async () => {
+    const queued = waitMessage();
+    if (queued) send({ progress: 0, message: queued });
+    await enqueue(request.kind === 'still' ? 'still' : 'motion render', async () => {
       if (abort.signal.aborted) return;
       try {
         const done = await render(request, send, abort.signal);
@@ -170,8 +189,9 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
     };
     const abort = new AbortController();
     res.on('close', () => abort.abort());
-    if (waiting > 0) send({ progress: 0, message: `waiting (${waiting} ahead)` });
-    await enqueue(async () => {
+    const queued = waitMessage();
+    if (queued) send({ progress: 0, message: queued });
+    await enqueue('code.run script', async () => {
       if (abort.signal.aborted) return;
       await purge();
       const job = await newCodeJob(scratch);
@@ -389,7 +409,13 @@ function runJob(
     };
     signal.addEventListener('abort', onAbort, { once: true });
     child.on('error', (e) =>
-      reject(new CfError('engine_error', `Could not start a render: ${e.message}`)),
+      reject(
+        /ENOMEM|EAGAIN/.test((e as NodeJS.ErrnoException).code ?? '')
+          ? serverBusy(
+              `The sandbox has no memory or processes left to start a render (${e.message})`,
+            )
+          : new CfError('engine_error', `Could not start a render: ${e.message}`),
+      ),
     );
     child.on('close', async (code, sig) => {
       clearTimeout(timer);
@@ -410,6 +436,18 @@ function runJob(
       }
       if (why === 'cancelled') return reject(new CfError('cancelled', 'Cancelled'));
       if (code === 0 && outcome.done) return resolve(outcome.done);
+      // The sandbox, not the page, ran out: it could not start the browser or the encoder.
+      if (
+        /\b(ENOMEM|EAGAIN)\b|Cannot allocate memory|Resource temporarily unavailable/.test(
+          outcome.failed ?? '',
+        )
+      ) {
+        return reject(
+          serverBusy(
+            `The sandbox had no memory or processes left for the render (${(outcome.failed ?? '').split('\n')[0]})`,
+          ),
+        );
+      }
       if (
         sig === 'SIGKILL' ||
         code === 137 ||
@@ -419,7 +457,7 @@ function runJob(
       ) {
         return reject(
           new CfError('limit_exceeded', 'The render ran out of memory or processes', {
-            hint: 'The motion sandbox has fixed memory and process limits; simplify the page or lower the size',
+            hint: 'The motion sandbox has fixed memory and process limits; simplify the page or lower the size. If it rendered before, the sandbox may have been busy: try again in a minute',
           }),
         );
       }

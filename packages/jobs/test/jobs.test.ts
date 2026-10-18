@@ -17,6 +17,16 @@ const forever = ({ signal }: { signal: AbortSignal }) =>
     signal.addEventListener('abort', () => reject(new Error('aborted'))),
   );
 
+/** Waits (up to 2 s) for a job's status message to match; returns the last one seen. */
+async function messageOf(store: FileJobStore, id: string, want: RegExp) {
+  let message: string | undefined;
+  for (let i = 0; i < 200 && !want.test(message ?? ''); i++) {
+    message = (await store.get(id, 'o'))?.statusMessage;
+    if (!want.test(message ?? '')) await new Promise((r) => setTimeout(r, 10));
+  }
+  return message;
+}
+
 describe('JobRunner', () => {
   it('completes, records results and keeps domain errors as isError results', async () => {
     const { store, runner } = await setup();
@@ -66,25 +76,42 @@ describe('JobRunner', () => {
 
   it('queues beyond its concurrency, and cancels running and queued jobs', async () => {
     const { store, runner } = await setup(1);
-    const running = await store.create({ owner: 'o', tool: 't' });
+    const running = await store.create({ owner: 'o', tool: 'export.video' });
     const queued = await store.create({ owner: 'o', tool: 't' });
+    const third = await store.create({ owner: 'o', tool: 't' });
     runner.start(running, forever);
     runner.start(queued, forever);
-    // Wait for the runner to record the second job as queued; a fixed sleep raced it on slow
-    // CI runners.
-    let message: string | undefined;
-    for (let i = 0; i < 200 && message !== 'queued'; i++) {
-      message = (await store.get(queued.id, 'o'))?.statusMessage;
-      if (message !== 'queued') await new Promise((r) => setTimeout(r, 10));
-    }
-    expect(message).toBe('queued');
+    runner.start(third, forever);
+    // Each queued job says where it stands and what it waits for.
+    expect(await messageOf(store, queued.id, /^queued/)).toBe(
+      'queued: next in line, waiting for a free job slot (1 run at once on this server; running now: export.video)',
+    );
+    expect(await messageOf(store, third.id, /^queued: 1 ahead/)).toMatch(/1 ahead/);
+    expect(runner.queuePosition(third.id)).toMatchObject({ ahead: 1, limit: 1 });
     expect((await runner.cancel(queued.id, 'o'))?.status).toBe('cancelled');
+    // The one behind it moves up.
+    expect(await messageOf(store, third.id, /next in line/)).toMatch(/next in line/);
     expect((await runner.cancel(running.id, 'o'))?.status).toBe('cancelled');
+    expect(runner.queuePosition(third.id)).toBeUndefined();
+    expect((await runner.cancel(third.id, 'o'))?.status).toBe('cancelled');
     // The slot is free again.
     const next = await store.create({ owner: 'o', tool: 't' });
     runner.start(next, async () => ({ content: [] }));
     await runner.settled(next.id);
     expect((await store.get(next.id, 'o'))?.status).toBe('completed');
+  });
+
+  it('runs sandbox jobs without taking a slot engine work needs', async () => {
+    const { store, runner } = await setup(1);
+    const script = await store.create({ owner: 'o', tool: 'code.run' });
+    runner.start(script, forever, { lane: 'sandbox' });
+    // An export started while a script runs starts at once, not behind it.
+    const exp = await store.create({ owner: 'o', tool: 'export.video' });
+    runner.start(exp, async () => ({ content: [], structuredContent: { ok: true } }));
+    await runner.settled(exp.id);
+    expect(await store.get(exp.id, 'o')).toMatchObject({ status: 'completed' });
+    expect((await store.get(exp.id, 'o'))?.startedAt).toEqual(expect.any(String));
+    await runner.cancel(script.id, 'o');
   });
 
   it('scopes jobs to their owner and honours idempotency keys', async () => {

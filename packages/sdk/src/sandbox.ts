@@ -132,8 +132,21 @@ let made = 0;
 const quiet = () => undefined;
 
 /**
+ * One page renders at a time in a script: a motion render already opens several browsers, so
+ * renders started together (Promise.all) wait their turn instead of running the sandbox out of
+ * memory.
+ */
+let turn: Promise<unknown> = Promise.resolve();
+function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
+  const mine = turn.then(work, work);
+  turn = mine.catch(() => undefined);
+  return mine;
+}
+
+/**
  * Renders an animated page frame by frame, exactly as create.motion does: ProRes 4444 with alpha
- * (transparent, default) or H.264. Returns the file's path.
+ * (transparent, default) or H.264. Returns the file's path. Renders run one at a time, in the
+ * order they were asked for.
  */
 export async function motion(
   options: PageOptions & { duration: number; fps?: number },
@@ -147,11 +160,13 @@ export async function motion(
     transparent: options.transparent ?? true,
     ...(options.seed !== undefined ? { seed: options.seed } : {}),
   };
-  const { root, entry } = await page(options, job.width, job.height);
   made += 1;
   const dest = options.out ?? out(`motion-${made}.${job.transparent ? 'mov' : 'mp4'}`);
-  const profile = await mkdtemp(join(process.env.TMPDIR ?? tmpdir(), 'cf-profile-'));
-  return renderMotion(root, job, quiet, { entry, out: dest, profile });
+  return oneAtATime(async () => {
+    const { root, entry } = await page(options, job.width, job.height);
+    const profile = await mkdtemp(join(process.env.TMPDIR ?? tmpdir(), 'cf-profile-'));
+    return renderMotion(root, job, quiet, { entry, out: dest, profile });
+  });
 }
 
 /** Renders a page to a PNG, exactly as create.still does. Returns the file's path. */
@@ -165,9 +180,11 @@ export async function still(options: PageOptions): Promise<string> {
     transparent: options.transparent ?? true,
     ...(options.seed !== undefined ? { seed: options.seed } : {}),
   };
-  const { root, entry } = await page(options, job.width, job.height);
   made += 1;
   const dest = options.out ?? out(`still-${made}.png`);
-  const profile = await mkdtemp(join(process.env.TMPDIR ?? tmpdir(), 'cf-profile-'));
-  return renderStill(root, job, quiet, { entry, out: dest, profile });
+  return oneAtATime(async () => {
+    const { root, entry } = await page(options, job.width, job.height);
+    const profile = await mkdtemp(join(process.env.TMPDIR ?? tmpdir(), 'cf-profile-'));
+    return renderStill(root, job, quiet, { entry, out: dest, profile });
+  });
 }

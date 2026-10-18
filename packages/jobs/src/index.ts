@@ -37,6 +37,8 @@ export interface Job {
   meta?: Record<string, string>;
   /** The server running it. With `lastUpdatedAt` as its heartbeat, any server can tell it died. */
   node?: string;
+  /** When it left the queue and started its work. */
+  startedAt?: string;
 }
 
 export const JOB_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -90,7 +92,7 @@ export class FileJobStore {
 
   /**
    * The job a repeat call with the same idempotency key should return: the earlier one, unless
-   * it ended interrupted, failed or cancelled, in which case the caller starts a fresh job.
+   * it ended interrupted, busy, failed or cancelled, in which case the caller starts a fresh job.
    */
   async findIdempotent(owner: string, tool: string, key: string): Promise<Job | undefined> {
     const index = await this.#ws.readJson<{ job_id: string }>(this.#idemFile(owner, tool, key));
@@ -98,7 +100,11 @@ export class FileJobStore {
     const job = await this.get(index.job_id, owner);
     if (!job || job.status === 'failed' || job.status === 'cancelled') return undefined;
     const code = (job.result?.structuredContent as { code?: string } | undefined)?.code;
-    if (job.result?.isError && (code === 'interrupted' || code === 'cancelled')) return undefined;
+    if (
+      job.result?.isError &&
+      (code === 'interrupted' || code === 'cancelled' || code === 'server_busy')
+    )
+      return undefined;
     return job;
   }
 
@@ -171,6 +177,28 @@ export interface JobContext {
 
 export type JobWork = (ctx: JobContext) => Promise<JobResult>;
 
+/**
+ * Which queue a job waits in. engine: work this server does itself (renders, imports, analysis),
+ * at most `concurrency` at once. sandbox: work the sandbox does (create.motion, create.still,
+ * code.run), which queues there instead, so it never holds a slot engine work could use.
+ */
+export type JobLane = 'engine' | 'sandbox';
+
+/** Sandbox jobs this server follows at once; the sandbox itself runs them one at a time. */
+const SANDBOX_LANE = 16;
+
+interface Lane {
+  limit: number;
+  /** Jobs holding a slot: id → tool. */
+  running: Map<string, string>;
+  queue: Array<{
+    id: string;
+    tool: string;
+    take: () => void;
+    save: (patch: Partial<Job>) => Promise<unknown>;
+  }>;
+}
+
 export interface RunnerOptions {
   /** This server's name in job records. Default `local`. */
   node?: string;
@@ -194,9 +222,8 @@ export class JobRunner {
   readonly #heartbeatMs: number;
   readonly #staleMs: number;
   readonly #running = new Map<string, AbortController>();
-  readonly #queue: Array<() => void> = [];
+  readonly #lanes: Record<JobLane, Lane>;
   readonly #done = new Map<string, Promise<void>>();
-  #active = 0;
 
   constructor(store: FileJobStore, concurrency = 2, options: RunnerOptions = {}) {
     this.store = store;
@@ -204,13 +231,18 @@ export class JobRunner {
     this.node = options.node ?? 'local';
     this.#heartbeatMs = options.heartbeatMs ?? 30_000;
     this.#staleMs = options.staleMs ?? 120_000;
+    this.#lanes = {
+      engine: { limit: this.#concurrency, running: new Map(), queue: [] },
+      sandbox: { limit: SANDBOX_LANE, running: new Map(), queue: [] },
+    };
   }
 
   /** Starts `work` for a job already written with `store.create`. */
-  start(job: Job, work: JobWork): void {
+  start(job: Job, work: JobWork, options: { lane?: JobLane } = {}): void {
     const controller = new AbortController();
     this.#running.set(job.id, controller);
-    const done = this.#run(job, work, controller).finally(() => {
+    const lane = this.#lanes[options.lane ?? 'engine'];
+    const done = this.#run(job, work, controller, lane).finally(() => {
       this.#running.delete(job.id);
       this.#done.delete(job.id);
     });
@@ -263,7 +295,34 @@ export class JobRunner {
     return stale.length;
   }
 
-  async #run(job: Job, work: JobWork, controller: AbortController): Promise<void> {
+  /**
+   * Where a job stands in its lane's queue, for job.get: undefined once it runs (or for a job
+   * this server isn't running).
+   */
+  queuePosition(id: string): { ahead: number; limit: number; running: string[] } | undefined {
+    for (const lane of Object.values(this.#lanes)) {
+      const at = lane.queue.findIndex((q) => q.id === id);
+      if (at >= 0) return { ahead: at, limit: lane.limit, running: [...lane.running.values()] };
+    }
+    return undefined;
+  }
+
+  /** Tells every job waiting in a lane where it now stands. */
+  #announce(lane: Lane): void {
+    const running = [...lane.running.values()];
+    const counts = new Map<string, number>();
+    for (const tool of running) counts.set(tool, (counts.get(tool) ?? 0) + 1);
+    const now = [...counts].map(([tool, n]) => (n > 1 ? `${n} ${tool}` : tool)).join(', ');
+    lane.queue.forEach((q, i) => {
+      void q
+        .save({
+          statusMessage: `queued: ${i === 0 ? 'next in line' : `${i} ahead`}, waiting for a free job slot (${lane.limit} run at once on this server${now ? `; running now: ${now}` : ''})`,
+        })
+        .catch(() => undefined);
+    });
+  }
+
+  async #run(job: Job, work: JobWork, controller: AbortController, lane: Lane): Promise<void> {
     let current: Job = job;
     let pending: Promise<unknown> = Promise.resolve();
     // Every write while working goes through here, one at a time: a record another server has
@@ -288,6 +347,7 @@ export class JobRunner {
         job,
         work,
         controller,
+        lane,
         save,
         () => current,
         () => pending,
@@ -301,22 +361,24 @@ export class JobRunner {
     job: Job,
     work: JobWork,
     controller: AbortController,
+    lane: Lane,
     save: (patch: Partial<Job>) => Promise<unknown>,
     latest: () => Job,
     writes: () => Promise<unknown>,
   ): Promise<void> {
-    if (this.#active >= this.#concurrency) {
-      await save({ statusMessage: 'queued' });
+    if (lane.running.size >= lane.limit) {
       // Wait for a slot; a job cancelled while queued leaves without ever taking one.
       const granted = await new Promise<boolean>((resolve) => {
-        const take = () => resolve(true);
-        this.#queue.push(take);
+        const entry = { id: job.id, tool: job.tool, take: () => resolve(true), save };
+        lane.queue.push(entry);
+        this.#announce(lane);
         controller.signal.addEventListener(
           'abort',
           () => {
-            const at = this.#queue.indexOf(take);
+            const at = lane.queue.indexOf(entry);
             if (at >= 0) {
-              this.#queue.splice(at, 1);
+              lane.queue.splice(at, 1);
+              this.#announce(lane);
               resolve(false);
             }
           },
@@ -328,9 +390,9 @@ export class JobRunner {
         await this.#end(latest(), { status: 'cancelled', statusMessage: 'cancelled' });
         return;
       }
-    } else {
-      this.#active += 1;
     }
+    lane.running.set(job.id, job.tool);
+    void save({ startedAt: new Date().toISOString() }).catch(() => undefined);
     let lastWrite = 0;
     // An update inside the second is held, not dropped: the latest one is written when the
     // second is up, so a quick "running" after "fetching inputs" still shows.
@@ -386,9 +448,14 @@ export class JobRunner {
         });
       }
     } finally {
-      const next = this.#queue.shift();
-      if (next) next();
-      else this.#active -= 1;
+      lane.running.delete(job.id);
+      const next = lane.queue.shift();
+      if (next) {
+        // Its slot is taken before anything else can see a free one.
+        lane.running.set(next.id, next.tool);
+        next.take();
+        this.#announce(lane);
+      }
     }
   }
 

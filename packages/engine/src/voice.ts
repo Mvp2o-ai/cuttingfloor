@@ -105,6 +105,7 @@ export async function speak(
       said.startsWith('-') ? ` ${said}` : said,
     ],
     {
+      heavy: true,
       timeoutMs: 30 * 60_000,
       ...(options.signal ? { signal: options.signal } : {}),
     },

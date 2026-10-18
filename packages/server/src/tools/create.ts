@@ -13,6 +13,7 @@ import {
   speak,
   voiceWords,
 } from '@cuttingfloor/engine';
+import type { JobLane } from '@cuttingfloor/jobs';
 import {
   CfError,
   CreateCutoutInput,
@@ -64,6 +65,8 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       progress: (f: number, m: string) => void,
       signal: AbortSignal,
     ) => Promise<MediaRecord>,
+    /** sandbox: the work is the sandbox's, which queues it there. */
+    lane: JobLane = 'engine',
   ) {
     const owner = deps.owner();
     const store = rt.jobs.store;
@@ -101,20 +104,24 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       statusMessage: `making ${record.media_id}`,
       ...key,
     });
-    rt.jobs.start(job, async ({ signal, progress }) => {
-      const say = (f: number, m: string) => progress(f, `${record.media_id}: ${m}`);
-      const share = finish ? 0.6 : 0.85;
-      record.file = await make(
-        rt.media.dir(owner, record.media_id),
-        (f, m) => say(share * f, m),
-        signal,
-      );
-      let done = await rt.media.ingest(owner, record, (f, m) => say(share + 0.1 * f, m), signal);
-      if (finish)
-        done = await finish(done, (f, m) => say(share + 0.1 + (0.9 - share) * f, m), signal);
-      await rt.media.rememberRecipe(owner, hash, done.media_id);
-      return ok(mediaInfo(done)) as never;
-    });
+    rt.jobs.start(
+      job,
+      async ({ signal, progress }) => {
+        const say = (f: number, m: string) => progress(f, `${record.media_id}: ${m}`);
+        const share = finish ? 0.6 : 0.85;
+        record.file = await make(
+          rt.media.dir(owner, record.media_id),
+          (f, m) => say(share * f, m),
+          signal,
+        );
+        let done = await rt.media.ingest(owner, record, (f, m) => say(share + 0.1 * f, m), signal);
+        if (finish)
+          done = await finish(done, (f, m) => say(share + 0.1 + (0.9 - share) * f, m), signal);
+        await rt.media.rememberRecipe(owner, hash, done.media_id);
+        return ok(mediaInfo(done)) as never;
+      },
+      { lane },
+    );
     return jobReply(job, ctx);
   }
 
@@ -203,8 +210,14 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         ...request,
         assets: files.map(({ name, fingerprint }) => [name, fingerprint]),
       };
-      return create(ctx, 'create.motion', args, recipe, (dir, progress, signal) =>
-        sandbox(request, dir, progress, signal),
+      return create(
+        ctx,
+        'create.motion',
+        args,
+        recipe,
+        (dir, progress, signal) => sandbox(request, dir, progress, signal),
+        undefined,
+        'sandbox',
       );
     }),
   );
@@ -238,8 +251,14 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         ...request,
         assets: files.map(({ name, fingerprint }) => [name, fingerprint]),
       };
-      return create(ctx, 'create.still', args, recipe, (dir, progress, signal) =>
-        sandbox(request, dir, progress, signal),
+      return create(
+        ctx,
+        'create.still',
+        args,
+        recipe,
+        (dir, progress, signal) => sandbox(request, dir, progress, signal),
+        undefined,
+        'sandbox',
       );
     }),
   );

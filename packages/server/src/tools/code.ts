@@ -75,112 +75,116 @@ export function registerCodeTools(server: McpServer, deps: ServerDeps): void {
         statusMessage: 'starting',
         ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),
       });
-      rt.jobs.start(job, async ({ signal, progress }) => {
-        const client = await ownerClient(deps, owner);
-        const scratch = rt.ws.ownerDir(owner, 'code', job.id);
-        await mkdir(scratch, { recursive: true });
-        // out/ files land with the job's outputs, where their download links point.
-        const outDir = rt.ws.ownerDir(owner, 'outputs', job.id);
-        await mkdir(outDir, { recursive: true });
-        try {
-          const run = await runCodeInSandbox(
-            rt.config.motionUrl,
-            {
-              language: args.language,
-              script: args.script,
-              timeout_seconds: args.timeout_seconds,
-              inputs: [
-                ...args.inputs.media_ids.map((media_id) => ({ media_id })),
-                ...args.inputs.timeline_ids.map((timeline_id) => ({ timeline_id })),
-              ],
-            },
-            {
-              call: async (tool, callArgs) => {
-                if (deny.has(tool)) {
-                  throw new CfError('bad_request', `${tool} can't be called from code.run`);
-                }
-                return client.callTool({ name: tool, arguments: callArgs });
+      rt.jobs.start(
+        job,
+        async ({ signal, progress }) => {
+          const client = await ownerClient(deps, owner);
+          const scratch = rt.ws.ownerDir(owner, 'code', job.id);
+          await mkdir(scratch, { recursive: true });
+          // out/ files land with the job's outputs, where their download links point.
+          const outDir = rt.ws.ownerDir(owner, 'outputs', job.id);
+          await mkdir(outDir, { recursive: true });
+          try {
+            const run = await runCodeInSandbox(
+              rt.config.motionUrl,
+              {
+                language: args.language,
+                script: args.script,
+                timeout_seconds: args.timeout_seconds,
+                inputs: [
+                  ...args.inputs.media_ids.map((media_id) => ({ media_id })),
+                  ...args.inputs.timeline_ids.map((timeline_id) => ({ timeline_id })),
+                ],
               },
-              file: async (ref) => {
-                if (ref.media_id) {
-                  const record = await rt.media.get(owner, ref.media_id);
-                  if (record.status !== 'ready' || !record.file) {
-                    throw new CfError(
-                      'media_not_ready',
-                      `Media ${ref.media_id} is still importing`,
-                    );
+              {
+                call: async (tool, callArgs) => {
+                  if (deny.has(tool)) {
+                    throw new CfError('bad_request', `${tool} can't be called from code.run`);
+                  }
+                  return client.callTool({ name: tool, arguments: callArgs });
+                },
+                file: async (ref) => {
+                  if (ref.media_id) {
+                    const record = await rt.media.get(owner, ref.media_id);
+                    if (record.status !== 'ready' || !record.file) {
+                      throw new CfError(
+                        'media_not_ready',
+                        `Media ${ref.media_id} is still importing`,
+                      );
+                    }
+                    return {
+                      name: `${record.media_id}${extname(record.file).slice(0, 8)}`,
+                      path: record.file,
+                    };
+                  }
+                  const id = ref.timeline_id ?? '';
+                  const got = (await client.callTool({
+                    name: 'timeline.get',
+                    arguments: { timeline_id: id },
+                  })) as { isError?: boolean; structuredContent?: Record<string, unknown> };
+                  if (got.isError) {
+                    const e = got.structuredContent as { code: never; message: string };
+                    throw new CfError(e?.code ?? 'not_found', e?.message ?? `No timeline ${id}`);
                   }
                   return {
-                    name: `${record.media_id}${extname(record.file).slice(0, 8)}`,
-                    path: record.file,
+                    name: `${id}.timeline.json`,
+                    data: Buffer.from(JSON.stringify(got.structuredContent, null, 2)),
                   };
-                }
-                const id = ref.timeline_id ?? '';
-                const got = (await client.callTool({
-                  name: 'timeline.get',
-                  arguments: { timeline_id: id },
-                })) as { isError?: boolean; structuredContent?: Record<string, unknown> };
-                if (got.isError) {
-                  const e = got.structuredContent as { code: never; message: string };
-                  throw new CfError(e?.code ?? 'not_found', e?.message ?? `No timeline ${id}`);
-                }
-                return {
-                  name: `${id}.timeline.json`,
-                  data: Buffer.from(JSON.stringify(got.structuredContent, null, 2)),
-                };
-              },
-              output: async (name) => join(outDir, name),
-              scratch: async (name) => join(scratch, name),
-              upload: async (name, path) =>
-                mediaInfo(
-                  await importFile(
-                    name,
-                    path,
-                    `${scriptHash}\0${job.id}\0up:${name}`,
-                    signal,
-                    'move',
+                },
+                output: async (name) => join(outDir, name),
+                scratch: async (name) => join(scratch, name),
+                upload: async (name, path) =>
+                  mediaInfo(
+                    await importFile(
+                      name,
+                      path,
+                      `${scriptHash}\0${job.id}\0up:${name}`,
+                      signal,
+                      'move',
+                    ),
                   ),
-                ),
-            },
-            (f, m) => progress(0.05 + 0.85 * f, m),
-            signal,
-          );
-          const logs = { stdout: run.stdout, stderr: run.stderr };
-          if (run.exit_code !== 0) {
-            throw new CfError(
-              'code_failed',
-              run.signal
-                ? `The script was killed (${run.signal})`
-                : `The script exited with ${run.exit_code}`,
-              {
-                hint: 'Read stderr, fix the script and run it again; nothing in out/ was kept',
-                detail: { exit_code: run.exit_code, ...logs },
               },
+              (f, m) => progress(0.05 + 0.85 * f, m),
+              signal,
             );
+            const logs = { stdout: run.stdout, stderr: run.stderr };
+            if (run.exit_code !== 0) {
+              throw new CfError(
+                'code_failed',
+                run.signal
+                  ? `The script was killed (${run.signal})`
+                  : `The script exited with ${run.exit_code}`,
+                {
+                  hint: 'Read stderr, fix the script and run it again; nothing in out/ was kept',
+                  detail: { exit_code: run.exit_code, ...logs },
+                },
+              );
+            }
+            const outputs: z.infer<typeof CodeRunResult>['outputs'] = [];
+            for (const [i, f] of run.files.entries()) {
+              progress(0.9 + (0.1 * i) / run.files.length, `importing out/${f.name}`);
+              outputs.push(await keep(f, scriptHash, job.id, signal));
+            }
+            const unnamed = outputs.map((o) => o.name).filter((n) => PLACEHOLDER.test(n));
+            const warnings = unnamed.length
+              ? [
+                  `${unnamed.join(', ')} kept the placeholder name motion() and still() give when no out is passed. To name what a page renders, pass out: motion({html, duration, out: 'out/<name>.mov'}) (.mp4 with transparent: false), still({html, out: 'out/<name>.png'}).`,
+                ]
+              : [];
+            return ok({
+              exit_code: run.exit_code,
+              outputs,
+              ...logs,
+              seconds: run.seconds,
+              ...(warnings.length ? { warnings } : {}),
+            }) as never;
+          } finally {
+            await client.close().catch(() => undefined);
+            await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
           }
-          const outputs: z.infer<typeof CodeRunResult>['outputs'] = [];
-          for (const [i, f] of run.files.entries()) {
-            progress(0.9 + (0.1 * i) / run.files.length, `importing out/${f.name}`);
-            outputs.push(await keep(f, scriptHash, job.id, signal));
-          }
-          const unnamed = outputs.map((o) => o.name).filter((n) => PLACEHOLDER.test(n));
-          const warnings = unnamed.length
-            ? [
-                `${unnamed.join(', ')} kept the placeholder name motion() and still() give when no out is passed. To name what a page renders, pass out: motion({html, duration, out: 'out/<name>.mov'}) (.mp4 with transparent: false), still({html, out: 'out/<name>.png'}).`,
-              ]
-            : [];
-          return ok({
-            exit_code: run.exit_code,
-            outputs,
-            ...logs,
-            seconds: run.seconds,
-            ...(warnings.length ? { warnings } : {}),
-          }) as never;
-        } finally {
-          await client.close().catch(() => undefined);
-          await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
-        }
-      });
+        },
+        { lane: 'sandbox' },
+      );
 
       /**
        * A file the script made, as new media through the normal import. An out/ file stays where

@@ -2948,8 +2948,11 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
           timeout_seconds: 300,
           script: `
 import { still } from 'cuttingfloor';
-await still({ html: '<b>x</b>', width: 64, height: 64 });
-await still({ html: '<b>y</b>', width: 64, height: 64, out: 'out/named.png' });
+// Started together, they render one at a time.
+await Promise.all([
+  still({ html: '<b>x</b>', width: 64, height: 64 }),
+  still({ html: '<b>y</b>', width: 64, height: 64, out: 'out/named.png' }),
+]);
 console.log('a'.repeat(40000));
 console.log('the end');
 `,
@@ -2958,10 +2961,13 @@ console.log('the end');
         if (done.error) throw new Error(`code.run failed: ${JSON.stringify(done.error)}`);
         const result = done.result as {
           stdout: string;
-          outputs: Array<{ name: string }>;
+          outputs: Array<{ name: string; type: string; url: string }>;
           warnings?: string[];
         };
         expect(result.outputs.map((o) => o.name).sort()).toEqual(['named.png', 'still-1.png']);
+        expect(result.outputs.map((o) => o.type)).toEqual(['media', 'media']);
+        const png = await fetch(result.outputs[0]?.url ?? '');
+        expect(png.headers.get('content-type')).toBe('image/png');
         expect(result.stdout).toMatch(/^\[\d+ earlier characters of stdout cut/);
         expect(result.stdout).toMatch(/the end\n$/);
         expect(result.warnings).toEqual([

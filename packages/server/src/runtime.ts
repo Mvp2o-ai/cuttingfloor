@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { availableParallelism, hostname } from 'node:os';
 import { extname, join } from 'node:path';
 import { ownerKey, TimelineStore, Workspace } from '@cuttingfloor/core';
-import { MEDIA_TTL_MS, MediaLibrary } from '@cuttingfloor/engine';
+import { MEDIA_TTL_MS, MediaLibrary, setRenderLimit } from '@cuttingfloor/engine';
 import { FileJobStore, JobRunner } from '@cuttingfloor/jobs';
 import { Uploads } from './uploads.ts';
 
@@ -17,6 +17,11 @@ export interface RuntimeConfig {
   mediaRoots: string[];
   exportsDir: string | null;
   maxJobs: number;
+  /**
+   * Renders (melt, encodes, transcription) that may run at once, jobs and inline previews
+   * together; the rest wait their turn. Default: half the CPUs, at least 2.
+   */
+  maxRenders?: number;
   outputUrlTtlMs: number;
   maxDownloadBytes: number;
   allowPrivateUrls: boolean;
@@ -62,6 +67,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     maxJobs: Number(
       env.CUTTINGFLOOR_MAX_JOBS ?? Math.max(1, Math.floor(availableParallelism() / 4)),
     ),
+    ...(env.CUTTINGFLOOR_MAX_RENDERS ? { maxRenders: Number(env.CUTTINGFLOOR_MAX_RENDERS) } : {}),
     outputUrlTtlMs: Number(env.CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS ?? 24) * 3_600_000,
     maxDownloadBytes: Number(env.CUTTINGFLOOR_MAX_DOWNLOAD_BYTES ?? 10 * 1024 ** 3),
     allowPrivateUrls: env.CUTTINGFLOOR_ALLOW_PRIVATE_URLS === '1',
@@ -105,6 +111,7 @@ export class Runtime {
       allowPrivateUrls: config.allowPrivateUrls,
       ...(config.mediaHostPath ? { hostFolders: { '/media/videos': config.mediaHostPath } } : {}),
     });
+    if (config.maxRenders) setRenderLimit(config.maxRenders);
     this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs, {
       ...(config.node ? { node: config.node } : {}),
     });

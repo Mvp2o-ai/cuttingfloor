@@ -11,11 +11,49 @@ import {
   isBlockedAddress,
   onsetEnvelope,
   type Probe,
+  renderLoad,
+  run,
   scaledSize,
+  setRenderLimit,
   standardRate,
   trackBeats,
 } from '@cuttingfloor/engine';
 import { describe, expect, it } from 'vitest';
+
+describe('render slots', () => {
+  it('queues heavy runs past the limit, counting each timeout from its own start', async () => {
+    const before = renderLoad().limit;
+    setRenderLimit(1);
+    try {
+      const seen: number[][] = [[], [], []];
+      const started = Date.now();
+      // Each takes 0.3 s and may take 0.5 s; the last waits 0.6 s first and still passes.
+      await Promise.all(
+        seen.map((ahead) =>
+          run('sleep', ['0.3'], { heavy: true, timeoutMs: 500, onQueue: (n) => ahead.push(n) }),
+        ),
+      );
+      expect(Date.now() - started).toBeGreaterThanOrEqual(850);
+      expect(seen).toEqual([[], [0], [1, 0]]);
+      expect(renderLoad()).toMatchObject({ running: 0, waiting: 0 });
+      // A run killed by the system (the out-of-memory killer) is a retryable busy error.
+      await expect(run('sh', ['-c', 'kill -9 $$'], { heavy: true })).rejects.toMatchObject({
+        code: 'server_busy',
+        detail: { retry: true },
+      });
+      // A run cancelled while it waits leaves the queue.
+      const hold = run('sleep', ['0.3'], { heavy: true });
+      const abort = new AbortController();
+      const waiting = run('sleep', ['5'], { heavy: true, signal: abort.signal });
+      abort.abort();
+      await expect(waiting).rejects.toMatchObject({ code: 'cancelled' });
+      await hold;
+      expect(renderLoad()).toMatchObject({ running: 0, waiting: 0 });
+    } finally {
+      setRenderLimit(before);
+    }
+  });
+});
 
 describe('SSRF guard', () => {
   it('blocks private, loopback, link-local and metadata addresses', () => {
