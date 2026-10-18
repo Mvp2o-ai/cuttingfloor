@@ -1,4 +1,4 @@
-import { BatchResult, CfError, EditResult } from '@cuttingfloor/schema';
+import { BatchResult, CfError, EditResult, QaCheckResult, withJob } from '@cuttingfloor/schema';
 import { TASKS_EXTENSION_ID_V2 } from '@modelcontextprotocol/ext-tasks/core/v2';
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as z from 'zod/v4';
@@ -432,6 +432,26 @@ describe('media and jobs without engines', () => {
     expect((await call(stranger, 'job.get', { job_id: job.id })).structured).toMatchObject({
       code: 'not_found',
     });
+  });
+
+  it('answers qa.check on a long timeline with a job handle its output schema allows', async () => {
+    const client = await connect(env.runtime);
+    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      name: 'Long',
+      sequence: SEQ_720P25,
+    });
+    const titled = await ok<{ timeline_id: string }>(client, 'title.add', {
+      timeline_id,
+      track_id: 't1',
+      text: 'Thirty seconds',
+      duration_frames: 750,
+      preview: 'none',
+    });
+    // The client checks structured results against the advertised schema, so ok() alone
+    // would fail on a mismatch; parse too, against the zod schema the server declares.
+    const reply = await ok(client, 'qa.check', { timeline_id: titled.timeline_id });
+    expect(withJob(QaCheckResult).parse(reply)).toMatchObject({ status: 'working' });
+    await ok(client, 'job.cancel', { job_id: reply.job_id });
   });
 
   it('marks jobs left working by a previous process as interrupted', async () => {
