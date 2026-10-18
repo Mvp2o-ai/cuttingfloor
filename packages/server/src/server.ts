@@ -55,6 +55,7 @@ export function createServer(deps: ServerDeps): McpServer {
     { instructions: INSTRUCTIONS },
   );
   compactSchemas(server);
+  allowTaskReplies(server);
   if (deps.access) gateTools(server, deps.access);
   registerTasks(server, deps);
   registerResources(server, deps);
@@ -115,6 +116,20 @@ function compactSchemas(server: McpServer): void {
       } as never,
       handler as never,
     )) as typeof server.registerTool;
+}
+
+/**
+ * A long call answers a Tasks client with a task, which carries no structured content; the SDK
+ * would reject that against the tool's output schema. Only the task reply skips the check; the
+ * result tasks/result later gives is the one other clients get directly.
+ */
+function allowTaskReplies(server: McpServer): void {
+  const target = server as unknown as {
+    validateToolOutput: (tool: unknown, result: { resultType?: string }, name: string) => unknown;
+  };
+  const validate = target.validateToolOutput.bind(server);
+  target.validateToolOutput = async (tool, result, name) =>
+    result.resultType === 'task' ? undefined : validate(tool, result, name);
 }
 
 interface StandardJson {
