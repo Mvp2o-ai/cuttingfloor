@@ -16,6 +16,7 @@ export {
   matteSize,
   segmentSize,
 } from './cutout.ts';
+export { detectScenes, detectSilences } from './detect.ts';
 export { BIN, engineVersions, installedFonts, run } from './exec.ts';
 export { download, isBlockedAddress } from './fetch.ts';
 export {
@@ -42,7 +43,7 @@ export {
   resolvePreset,
 } from './presets.ts';
 export { conformReasons, type Probe, probe, standardRate } from './probe.ts';
-export { type QaReport, qaCheck } from './qa.ts';
+export { type QaOptions, type QaReport, qaCheck } from './qa.ts';
 export {
   exportTimeline,
   mediaStills,

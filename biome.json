@@ -10,6 +10,8 @@
       "!**/node_modules",
       "!plans",
       "!.claude",
+      "!.models",
+      "!packages/skills/vectors.json",
       "!tools/motion/seccomp.json",
       "!packages/sdk/src/tools.generated.ts"
     ]

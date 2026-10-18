@@ -157,7 +157,7 @@ anything I actually meant to say.`,
           kind: 'call',
           fn: 'qa.check',
           args: '{ timeline_id: "tl_05" }',
-          ret: 'passed · no gaps · no black frames · −14.2 LUFS',
+          ret: 'no gaps · 0 black stretches · −14.2 LUFS',
           effect: { type: 'qa', checks: ['no gaps', 'no black frames', 'loudness ok'] },
         },
         {

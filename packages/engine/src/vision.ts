@@ -27,8 +27,6 @@ export interface Faces {
   /** Frames sampled per second. */
   rate: number;
   frames: FaceFrame[];
-  /** The centre of the most prominent face over time, smoothed: where to keep the picture. */
-  focus: Array<{ time: number; x: number; y: number }>;
 }
 
 export interface TrackPoint extends Box {
@@ -149,23 +147,7 @@ export async function detectFaces(
     },
     options.signal,
   );
-  // Focus: the largest face's centre, smoothed so a reframe doesn't jitter; held through gaps.
-  const focus: Faces['focus'] = [];
-  let x = 0.5;
-  let y = 0.5;
-  let seen = false;
-  for (const f of frames) {
-    const big = [...f.faces].sort((a, b) => b.w * b.h - a.w * a.h)[0];
-    if (big) {
-      const cx = big.x + big.w / 2;
-      const cy = big.y + big.h / 2;
-      x = seen ? x + 0.35 * (cx - x) : cx;
-      y = seen ? y + 0.35 * (cy - y) : cy;
-      seen = true;
-    }
-    focus.push({ time: f.time, x: r4(x), y: r4(y) });
-  }
-  return { rate, frames, focus };
+  return { rate, frames };
 }
 
 /** Follows a region from `start` seconds, frame by frame, until `until` (default: the end). */

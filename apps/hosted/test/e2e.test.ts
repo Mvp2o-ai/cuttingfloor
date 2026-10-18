@@ -660,21 +660,18 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     ).rejects.toThrow(/past the end/);
   }, 60_000);
 
-  it('runs the exact QA checks', async () => {
+  it('measures the render: gaps, frames, loudness, and black and silence with given settings', async () => {
+    type Span = { start: number; end: number };
     const report = await ok<{
-      passed: boolean;
-      checks: Array<{
-        check: string;
-        status: string;
-        findings: Array<{ start: number; end: number }>;
-      }>;
-      measured: { frames: number };
+      gaps: Span[];
+      frames: { expected: number; rendered: number };
+      black?: Span[];
+      integrated_lufs: number | null;
     }>(client, 'qa.check', { timeline_id: timeline });
-    expect(report.passed).toBe(false);
-    const gaps = report.checks.find((c) => c.check === 'gaps');
-    expect(gaps?.findings).toEqual([{ start: 100, end: 125, detail: 'no picture' }]);
-    expect(report.checks.find((c) => c.check === 'frame_count')?.status).toBe('pass');
-    expect(report.measured.frames).toBe(175);
+    expect(report.gaps).toEqual([{ start: 100, end: 125 }]);
+    expect(report.frames).toEqual({ expected: 175, rendered: 175 });
+    // Nothing is looked for that was not asked for.
+    expect(report.black).toBeUndefined();
 
     // Planted: black picture 50–100, silence 50–125 (no audio there), a gap 100–125.
     const black = (await importMedia({ path: join(env.mediaDir, 'black.mp4') })).media_id;
@@ -698,21 +695,23 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       ],
     });
     const qa = await ok<{
-      checks: Array<{
-        check: string;
-        status: string;
-        findings: Array<{ start: number; end: number }>;
-      }>;
-    }>(client, 'qa.check', { timeline_id: planted.timeline_id, loudness_target_lufs: -14 });
-    const by = (name: string) => qa.checks.find((c) => c.check === name);
-    expect(by('gaps')?.findings).toEqual([{ start: 100, end: 125, detail: 'no picture' }]);
-    const blackSpan = by('black_frames')?.findings[0];
-    expect(blackSpan?.start).toBeGreaterThanOrEqual(49);
-    expect(blackSpan?.end).toBeLessThanOrEqual(101);
-    const quiet = by('silence')?.findings[0];
-    expect(quiet?.start).toBeLessThanOrEqual(51);
-    expect(quiet?.end).toBeGreaterThanOrEqual(124);
-    expect(by('loudness')?.status).toBe('warn');
+      gaps: Span[];
+      black: Span[];
+      silences: Span[];
+      integrated_lufs: number | null;
+      true_peak_dbtp: number | null;
+    }>(client, 'qa.check', {
+      timeline_id: planted.timeline_id,
+      black: { pixel_threshold: 0.1, picture_share: 0.98, min_seconds: 0.5 },
+      silence: { threshold_db: -50, min_seconds: 1 },
+    });
+    expect(qa.gaps).toEqual([{ start: 100, end: 125 }]);
+    expect(qa.black[0]?.start).toBeGreaterThanOrEqual(49);
+    expect(qa.black[0]?.end).toBeLessThanOrEqual(101);
+    expect(qa.silences[0]?.start).toBeLessThanOrEqual(51);
+    expect(qa.silences[0]?.end).toBeGreaterThanOrEqual(124);
+    expect(qa.integrated_lufs).toBeLessThan(0);
+    expect(qa.true_peak_dbtp).toBeLessThan(0);
   }, 120_000);
 
   it('renders the exact source frame', async () => {
@@ -2042,20 +2041,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         '-shortest',
         join(m, 'steady.mov'),
       ]);
-      // Speech: silence with a burst of sound from 1 to 2 s.
-      await ff([
-        '-f',
-        'lavfi',
-        '-i',
-        "sine=frequency=1000:sample_rate=48000,volume=enable='not(between(t,1,2))':volume=0",
-        '-t',
-        '4',
-        '-c:a',
-        'pcm_s16le',
-        join(m, 'speech.wav'),
-      ]);
       ids.tone = (await importMedia({ path: join(m, 'steady.mov') })).media_id;
-      ids.speech = (await importMedia({ path: join(m, 'speech.wav') })).media_id;
     }, 180_000);
 
     it('lowers by gain, previews a waveform with loudness, and pans', async () => {
@@ -2115,44 +2101,21 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(rms(faded.left, 0, 0.2)).toBeLessThan(rms(faded.left, 1.5, 2.5) * 0.35);
     }, 120_000);
 
-    it('ducks music under speech', async () => {
-      const ducked = await tone([
-        {
-          tool: 'clip.add',
-          args: { track_id: 't3', media_id: ids.speech, at_frame: 0, source: { in: 0, out: 75 } },
-        },
-        { tool: 'audio.duck', args: { track_id: 't2', amount_db: -12 } },
-        // Listen to the music alone.
-        { tool: 'track.set', args: { track_id: 't3', muted: true } },
-      ]);
-      const music = await exportPcm(ducked);
-      const before = rms(music.left, 0.2, 0.6);
-      expect(rms(music.left, 1.3, 1.7) / before).toBeGreaterThan(0.2);
-      expect(rms(music.left, 1.3, 1.7) / before).toBeLessThan(0.3);
-      expect(rms(music.left, 2.6, 2.9) / before).toBeGreaterThan(0.9);
-    }, 120_000);
-
-    it('sets loudness to a target with peaks under the ceiling', async () => {
-      const res = await ok<{
-        timeline_id: string;
-        measured: { lufs: number; true_peak_db: number };
-      }>(client, 'audio.set_loudness', {
+    it('limits the master to its ceiling, measured by qa.check', async () => {
+      const loud = await ok<{ timeline_id: string }>(client, 'audio.set_master', {
+        // The tone sits near -18 dBFS, so +20 dB drives it into the limiter.
         timeline_id: await tone([]),
-        target_lufs: -16,
-        true_peak_db: -1,
+        gain_db: 20,
+        limit_db: -1,
         preview: 'none',
       });
-      expect(Math.abs(res.measured.lufs + 16)).toBeLessThan(0.7);
-      expect(res.measured.true_peak_db).toBeLessThanOrEqual(-1);
-      const report = await ok<{ checks: Array<{ check: string; status: string }> }>(
+      const report = await ok<{ integrated_lufs: number; true_peak_dbtp: number }>(
         client,
         'qa.check',
-        {
-          timeline_id: res.timeline_id,
-          loudness_target_lufs: -16,
-        },
+        { timeline_id: loud.timeline_id },
       );
-      expect(report.checks.find((c) => c.check === 'loudness')?.status).toBe('pass');
+      expect(report.true_peak_dbtp).toBeLessThanOrEqual(-1);
+      expect(report.integrated_lufs).toBeGreaterThan(-10);
     }, 240_000);
   });
 
@@ -3150,6 +3113,17 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
       });
       expect(info.analyses.transcript.words).toBe(transcript.words.length);
 
+      // Grouping words into captions is the agent's call: here, three at a time.
+      const segments = [];
+      for (let i = 0; i < transcript.words.length; i += 3) {
+        const group = transcript.words.slice(i, i + 3);
+        segments.push({
+          start: group[0]?.start ?? 0,
+          end: group[group.length - 1]?.end ?? 0,
+          text: group.map((w) => w.text).join(' '),
+          words: group,
+        });
+      }
       const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
         name: 'captions',
         sequence: { width: 320, height: 180, fps: { num: 25, den: 1 } },
@@ -3167,7 +3141,7 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
               tool: 'caption.add',
               args: {
                 track_id: 't2',
-                from_transcript: { clip_id: { $ref: 'ops[0].clip_id' }, max_words: 3 },
+                in_clip: { clip_id: { $ref: 'ops[0].clip_id' }, segments },
               },
             },
           ],
@@ -3182,6 +3156,55 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
       expect(captions.length).toBeGreaterThanOrEqual(3);
       expect(captions.every((c) => (c.words?.length ?? 0) <= 3)).toBe(true);
     }, 600_000);
+
+    it('finds silences and scene cuts with the settings it is given', async () => {
+      // Tone, then 1 s of quiet from 2 s, then a quieter tone (-30 dBFS) from 3 s; red, then
+      // blue at 2.5 s.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=red:size=320x180:rate=25:d=2.5[a];color=c=blue:size=320x180:rate=25:d=2.5[b];[a][b]concat=n=2:v=1:a=0[out0]',
+        '-f',
+        'lavfi',
+        '-i',
+        "aevalsrc=exprs='if(lt(t\\,2)\\,0.5\\,if(lt(t\\,3)\\,0\\,0.0316))*sin(2*PI*440*t)':s=48000:d=5",
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-shortest',
+        join(env.mediaDir, 'scenes.mp4'),
+      ]);
+      const media = await importMedia({ path: join(env.mediaDir, 'scenes.mp4') });
+      const loose = await analyze({
+        media_id: media.media_id,
+        kind: 'silence',
+        threshold_db: -50,
+        min_seconds: 0.5,
+      });
+      const strict = await analyze({
+        media_id: media.media_id,
+        kind: 'silence',
+        threshold_db: -20,
+        min_seconds: 0.5,
+      });
+      const spans = (r: Record<string, unknown>) =>
+        r.silences as Array<{ start: number; end: number }>;
+      // At -50 dB only the gap is quiet; at -20 dB the quieter tone counts too.
+      expect(spans(loose)).toHaveLength(1);
+      expect(spans(loose)[0]?.start).toBeCloseTo(2, 0);
+      expect(spans(strict).at(-1)?.end).toBeGreaterThan(4.5);
+      const cuts = await analyze({ media_id: media.media_id, kind: 'scenes', threshold: 10 });
+      expect((cuts.scenes as number[]).some((t) => Math.abs(t - 2.5) < 0.1)).toBe(true);
+      const missing = await call(client, 'media.analyze', {
+        media_id: media.media_id,
+        kind: 'silence',
+      });
+      expect(missing.structured.code).toBe('bad_request');
+    }, 300_000);
 
     it('finds the beat of a click track', async () => {
       await ff([
@@ -3226,7 +3249,6 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
       const res = await analyze({ media_id: faceMedia.media_id, kind: 'faces' });
       const faces = res.faces as {
         frames: Array<{ faces: Array<{ x: number; y: number; w: number; h: number }> }>;
-        focus: Array<{ x: number; y: number }>;
       };
       expect(faces.frames.filter((f) => f.faces.length === 1).length).toBeGreaterThan(5);
       const face = faces.frames[0]?.faces[0];

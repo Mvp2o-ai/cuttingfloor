@@ -16,19 +16,34 @@ import type {
   ExportVideoInput,
   JobGetInput,
   JobListInput,
+  JobListResult,
   JobRef,
+  JobView,
   JudgeAskInput,
-  LoudnessInput,
+  JudgeAskResult,
   MediaAnalyzeInput,
+  MediaAnalyzeResult,
   MediaImportInput,
   MediaInfo,
   MediaRefInput,
   MediaUploadInput,
+  MediaUploadResult,
   QaCheckInput,
+  QaCheckResult,
   RenderFramesInput,
+  RenderFramesResult,
+  SkillsGetInput,
+  SkillsGetResult,
+  SkillsSearchInput,
+  SkillsSearchResult,
   TimelineCreateInput,
+  TimelineCreateResult,
   TimelineDiffInput,
+  TimelineDiffResult,
+  TimelineGetResult,
   TimelineHistoryInput,
+  TimelineHistoryResult,
+  TimelineIdResult,
   TimelineLoadInput,
   TimelineRef,
   editInput,
@@ -37,10 +52,8 @@ import type * as z from 'zod/v4';
 
 export type ToolName =
   | 'adjustment.add'
-  | 'audio.duck'
   | 'audio.fade'
   | 'audio.set_gain'
-  | 'audio.set_loudness'
   | 'audio.set_master'
   | 'audio.set_pan'
   | 'caption.add'
@@ -86,6 +99,8 @@ export type ToolName =
   | 'range.extract'
   | 'range.lift'
   | 'render.frames'
+  | 'skills.get'
+  | 'skills.search'
   | 'text.set'
   | 'timeline.create'
   | 'timeline.diff'
@@ -103,10 +118,8 @@ export type ToolName =
 
 export interface ToolInputs {
   'adjustment.add': z.input<ReturnType<typeof editInput<'adjustment.add'>>>;
-  'audio.duck': z.input<ReturnType<typeof editInput<'audio.duck'>>>;
   'audio.fade': z.input<ReturnType<typeof editInput<'audio.fade'>>>;
   'audio.set_gain': z.input<ReturnType<typeof editInput<'audio.set_gain'>>>;
-  'audio.set_loudness': z.input<typeof LoudnessInput>;
   'audio.set_master': z.input<ReturnType<typeof editInput<'audio.set_master'>>>;
   'audio.set_pan': z.input<ReturnType<typeof editInput<'audio.set_pan'>>>;
   'caption.add': z.input<ReturnType<typeof editInput<'caption.add'>>>;
@@ -152,6 +165,8 @@ export interface ToolInputs {
   'range.extract': z.input<ReturnType<typeof editInput<'range.extract'>>>;
   'range.lift': z.input<ReturnType<typeof editInput<'range.lift'>>>;
   'render.frames': z.input<typeof RenderFramesInput>;
+  'skills.get': z.input<typeof SkillsGetInput>;
+  'skills.search': z.input<typeof SkillsSearchInput>;
   'text.set': z.input<ReturnType<typeof editInput<'text.set'>>>;
   'timeline.create': z.input<typeof TimelineCreateInput>;
   'timeline.diff': z.input<typeof TimelineDiffInput>;
@@ -170,10 +185,8 @@ export interface ToolInputs {
 
 export interface ToolOutputs {
   'adjustment.add': z.output<typeof EditResult>;
-  'audio.duck': z.output<typeof EditResult>;
   'audio.fade': z.output<typeof EditResult>;
   'audio.set_gain': z.output<typeof EditResult>;
-  'audio.set_loudness': z.output<typeof EditResult>;
   'audio.set_master': z.output<typeof EditResult>;
   'audio.set_pan': z.output<typeof EditResult>;
   'caption.add': z.output<typeof EditResult>;
@@ -207,24 +220,26 @@ export interface ToolOutputs {
   'filter.add': z.output<typeof EditResult>;
   'filter.remove': z.output<typeof EditResult>;
   'filter.set': z.output<typeof EditResult>;
-  'job.cancel': Record<string, unknown>;
-  'job.get': Record<string, unknown>;
-  'job.list': Record<string, unknown>;
-  'judge.ask': Record<string, unknown>;
-  'media.analyze': z.output<typeof MediaInfo>;
-  'media.get': Record<string, unknown>;
+  'job.cancel': z.output<typeof JobView>;
+  'job.get': z.output<typeof JobView>;
+  'job.list': z.output<typeof JobListResult>;
+  'judge.ask': z.output<typeof JudgeAskResult>;
+  'media.analyze': z.output<typeof MediaAnalyzeResult>;
+  'media.get': z.output<typeof MediaInfo>;
   'media.import': z.output<typeof MediaInfo>;
-  'media.upload': Record<string, unknown>;
-  'qa.check': Record<string, unknown>;
+  'media.upload': z.output<typeof MediaUploadResult>;
+  'qa.check': z.output<typeof QaCheckResult>;
   'range.extract': z.output<typeof EditResult>;
   'range.lift': z.output<typeof EditResult>;
-  'render.frames': Record<string, unknown>;
+  'render.frames': z.output<typeof RenderFramesResult>;
+  'skills.get': z.output<typeof SkillsGetResult>;
+  'skills.search': z.output<typeof SkillsSearchResult>;
   'text.set': z.output<typeof EditResult>;
-  'timeline.create': Record<string, unknown>;
-  'timeline.diff': Record<string, unknown>;
-  'timeline.get': Record<string, unknown>;
-  'timeline.history': Record<string, unknown>;
-  'timeline.load': Record<string, unknown>;
+  'timeline.create': z.output<typeof TimelineCreateResult>;
+  'timeline.diff': z.output<typeof TimelineDiffResult>;
+  'timeline.get': z.output<typeof TimelineGetResult>;
+  'timeline.history': z.output<typeof TimelineHistoryResult>;
+  'timeline.load': z.output<typeof TimelineIdResult>;
   'timeline.set_sequence': z.output<typeof EditResult>;
   'title.add': z.output<typeof EditResult>;
   'track.add': z.output<typeof EditResult>;
@@ -237,10 +252,8 @@ export interface ToolOutputs {
 
 export const TOOL_NAMES: readonly ToolName[] = [
   'adjustment.add',
-  'audio.duck',
   'audio.fade',
   'audio.set_gain',
-  'audio.set_loudness',
   'audio.set_master',
   'audio.set_pan',
   'caption.add',
@@ -286,6 +299,8 @@ export const TOOL_NAMES: readonly ToolName[] = [
   'range.extract',
   'range.lift',
   'render.frames',
+  'skills.get',
+  'skills.search',
   'text.set',
   'timeline.create',
   'timeline.diff',

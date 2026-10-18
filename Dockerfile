@@ -85,6 +85,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
  && cp -L /src/lib/libonnxruntime.so* /opt/sherpa-onnx/lib/ \
  && /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts --help >/dev/null 2>&1 || /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts 2>&1 | grep -qi usage
 
+# all-MiniLM-L6-v2 (Apache-2.0) for skills.search: sentence embeddings on the CPU, int8 (about
+# 23 MB), in the Transformers.js layout. It ships in the image; nothing downloads at run time, and
+# without it search is keywords only. Pinned to a commit, every file checked against its SHA-256.
+FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS skills-model
+ARG MINILM_REVISION=751bff37182d3f1213fa05d7196b954e230abad9
+ARG MINILM_CONFIG_SHA256=7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7
+ARG MINILM_TOKENIZER_SHA256=da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0
+ARG MINILM_TOKENIZER_CONFIG_SHA256=9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3
+ARG MINILM_ONNX_SHA256=afdb6f1a0e45b715d0bb9b11772f032c399babd23bfc31fed1c170afc848bdb1
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+ && dir=/models/Xenova/all-MiniLM-L6-v2 && mkdir -p "$dir/onnx" \
+ && fetch() { \
+      curl -fsSL -o "$dir/$1" "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/$MINILM_REVISION/$1" \
+      && echo "$2  $dir/$1" | sha256sum -c -; \
+    } \
+ && fetch config.json "$MINILM_CONFIG_SHA256" \
+ && fetch tokenizer.json "$MINILM_TOKENIZER_SHA256" \
+ && fetch tokenizer_config.json "$MINILM_TOKENIZER_CONFIG_SHA256" \
+ && fetch onnx/model_quantized.onnx "$MINILM_ONNX_SHA256"
+
 FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS base
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt tini fontconfig \
@@ -110,6 +130,7 @@ COPY --from=vision /yunet.onnx /usr/share/cuttingfloor/models/face_detection_yun
 COPY --from=vision /models/ /usr/share/cuttingfloor/models/
 COPY --from=vision /opt/onnxruntime/lib/ /opt/onnxruntime/lib/
 COPY --from=vision /cf-segment /usr/local/bin/cf-segment
+COPY --from=skills-model /models/ /usr/share/cuttingfloor/models/
 # Chromium for the sandbox (create.motion, create.still, code.run), only ever started by the
 # motion-worker role through this wrapper, which keeps its sandbox on and its network off.
 # Python (numpy, Pillow, OpenCV) is for code.run scripts.
@@ -128,6 +149,9 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm fetch
 COPY . .
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prefer-offline --frozen-lockfile
+# Every skill's vector, from the model above, so the server embeds only the query. Fails without
+# the model; the server re-embeds any skill whose text no longer matches its stored hash.
+RUN node packages/skills/scripts/write-vectors.ts
 
 # Test-only: espeak-ng speaks the transcript fixtures, and the tiny whisper model and the Kokoro
 # voice model are fetched once here (checksummed) so test runs don't download them.

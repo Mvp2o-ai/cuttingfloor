@@ -11,6 +11,7 @@ import { registerInterchangeTools } from './tools/interchange.ts';
 import { registerJudgeTools } from './tools/judge.ts';
 import { registerMediaTools } from './tools/media.ts';
 import { registerRenderTools } from './tools/render.ts';
+import { registerSkillTools } from './tools/skills.ts';
 import { registerTimelineTools } from './tools/timeline.ts';
 import { SERVER_NAME, SERVER_VERSION } from './version.ts';
 
@@ -37,15 +38,16 @@ Typical flow:
    Timing: clip.set_speed (rate, ramp curve, reverse), clip.freeze, clip.roll / slip / slide, clip.replace, range.lift / range.extract (cut a span out of every track at once). Nest a timeline of the same shape as one clip with clip.add {nested_timeline_id}; to reuse a finished edit of another shape (or bake one), export.video it and media.import {source: {job_id}}.
    Transitions: transition.add at the cut after a clip (dissolve, dips, wipes, slides, pushes, zooms, iris, spin; linked audio crossfades).
    Text: title.add and caption.add (segments, SRT or VTT; word timings drive highlights) on a video track; text.set restyles many at once.
-   Audio: audio.set_gain (keyframes for rides), audio.set_pan, audio.fade, audio.duck (music under speech), audio.set_loudness (e.g. -14 LUFS). Audio edits preview as a waveform with measured loudness.
+   Audio: audio.set_gain (keyframes for rides), audio.set_pan, audio.fade, audio.set_master (gain and limiter on the mix). Audio edits preview as a waveform with measured loudness.
    Effects: filter.add on a clip, a track or the whole timeline (video://catalog/effects: colour, LUTs, blur, vignette, chroma key, glitch; EQ, compressor, denoise, pitch); adjustment.add for effects over everything below for a stretch.
-   Analysis: media.analyze {kind: transcript | beats | faces | track} turns media into data: cut by words (clip.add source {words}), caption from a transcript (caption.add from_transcript), cut on beats, reframe on the faces' focus, pin a title to a tracked object.
+   Analysis: media.analyze {kind: transcript | beats | faces | track | look | silence | scenes} turns media into data: cut by words (clip.add source {words}), caption from transcript times (caption.add in_clip), cut on beats, reframe on face boxes, pin a title to a tracked object.
    Judgment: judge.ask answers your typed questions (yes/no, choice, score, box) about text, JSON and pictures you name (a still, a video frame, a transcript passage) in one fast call; media.analyze {kind: look} asks them of frames sampled across a video.
    Overlays and picture-in-picture: put a clip on a higher video track, then clip.set_transform, clip.set_mask, clip.set_blend and clip.set_animation. Catalogues of accepted names are resources at video://catalog/{name}.
    Create: create.motion (any animated HTML, rendered frame-exactly with alpha in a sandbox), create.still (HTML to a PNG), create.matte (solid or gradient), create.voiceover (speech with timed words) and create.cutout (a subject without its background) make new media to place with clip.add.
    Code: code.run runs a node/python/bash script in the sandbox for anything the tools don't cover. Inside it, cf.domain.verb(args) calls these same tools on the same media and timelines, and files written to out/ come back as media or timelines, so code and tools hand work to each other.
 4. Look at the result with preview: "inline" on an edit, or render.frames (stills). To watch it play, with motion, timing and sound, when you or your client take video in: export.video a range with preset review_h264; its result links the file (video://jobs/{job_id}/output) and gives a signed url, fps and duration.
 5. qa.check, then export.video (long-running) for a signed download URL: presets for web, masters, 9:16 social, AV1, GIF and audio, with size/fps/bitrate overrides (video://catalog/presets). export.timeline hands the edit to another editor (FCPXML, OTIO, EDL) or writes captions (SRT, VTT).
+Skills: step-by-step instructions for common jobs, such as cutting the pauses and ums out of a talking video. Before composing one yourself, skills.search in the user's words, then skills.get and follow its steps.
 Time is integer frames at the sequence rate; ranges are end-exclusive. Timelines expire 24 h after last use (timeline.get + timeline.load restores one); media and outputs after 7 days.`;
 
 /** Builds one MCP server instance over the shared runtime. Transports live in apps/. */
@@ -54,7 +56,8 @@ export function createServer(deps: ServerDeps): McpServer {
     { name: SERVER_NAME, version: SERVER_VERSION },
     { instructions: INSTRUCTIONS },
   );
-  openOutputSchemas(server);
+  compactSchemas(server);
+  allowTaskReplies(server);
   if (deps.access) gateTools(server, deps.access);
   registerTasks(server, deps);
   registerResources(server, deps);
@@ -66,6 +69,7 @@ export function createServer(deps: ServerDeps): McpServer {
   registerCodeTools(server, deps);
   registerRenderTools(server, deps);
   registerInterchangeTools(server, deps);
+  registerSkillTools(server);
   return server;
 }
 
@@ -88,21 +92,47 @@ function gateTools(server: McpServer, access: () => Promise<void>): void {
 }
 
 /**
- * Advertises output schemas without `additionalProperties: false`. Clients cache a tool's output
- * schema when they connect and validate results against it, so with closed schemas a field added
- * in a later release fails every result until the client reconnects. Results are still checked
- * against the full zod schema here.
+ * Advertises compact schemas. Output schemas drop `additionalProperties: false`: clients cache a
+ * tool's output schema when they connect and validate results against it, so with closed schemas
+ * a field added in a later release fails every result until the client reconnects. Every schema
+ * drops the noise JSON Schema conversion adds (`$schema`, and the safe-integer bounds on every
+ * integer), since every connection pays for tools/list in tokens. Arguments and results are
+ * still checked against the full zod schemas here.
  */
-function openOutputSchemas(server: McpServer): void {
+function compactSchemas(server: McpServer): void {
   const register = server.registerTool.bind(server);
-  server.registerTool = ((name: string, config: { outputSchema?: unknown }, handler: unknown) =>
+  server.registerTool = ((
+    name: string,
+    config: { inputSchema?: unknown; outputSchema?: unknown },
+    handler: unknown,
+  ) =>
     register(
       name,
-      (config.outputSchema
-        ? { ...config, outputSchema: openSchema(config.outputSchema as StandardJson) }
-        : config) as never,
+      {
+        ...config,
+        ...(isStandard(config.inputSchema)
+          ? { inputSchema: rewriteJson(config.inputSchema, (j) => compact(j, false)) }
+          : {}),
+        ...(isStandard(config.outputSchema)
+          ? { outputSchema: rewriteJson(config.outputSchema, (j) => compact(j, true)) }
+          : {}),
+      } as never,
       handler as never,
     )) as typeof server.registerTool;
+}
+
+/**
+ * A long call answers a Tasks client with a task, which carries no structured content; the SDK
+ * would reject that against the tool's output schema. Only the task reply skips the check; the
+ * result tasks/result later gives is the one other clients get directly.
+ */
+function allowTaskReplies(server: McpServer): void {
+  const target = server as unknown as {
+    validateToolOutput: (tool: unknown, result: { resultType?: string }, name: string) => unknown;
+  };
+  const validate = target.validateToolOutput.bind(server);
+  target.validateToolOutput = async (tool, result, name) =>
+    result.resultType === 'task' ? undefined : validate(tool, result, name);
 }
 
 interface StandardJson {
@@ -114,25 +144,41 @@ interface StandardJson {
   };
 }
 
-function openSchema<S extends StandardJson>(schema: S): S {
+function isStandard(schema: unknown): schema is StandardJson {
+  return Boolean((schema as Partial<StandardJson> | undefined)?.['~standard']?.jsonSchema);
+}
+
+/** On an advertised schema, the zod schema it stands for (so the SDK generator can name it). */
+export const OPENED_FROM = Symbol.for('cuttingfloor.openedFrom');
+
+function rewriteJson<S extends StandardJson>(schema: S, fix: (json: unknown) => unknown): S {
   const std = schema['~standard'];
   const jsonSchema = {
     ...std.jsonSchema,
-    output: (options: unknown) => withoutClosedObjects(std.jsonSchema.output(options)),
+    input: (options: unknown) => fix(std.jsonSchema.input(options)),
+    output: (options: unknown) => fix(std.jsonSchema.output(options)),
   };
   return new Proxy(schema, {
     get: (target, key, receiver) =>
-      key === '~standard' ? { ...std, jsonSchema } : Reflect.get(target, key, receiver),
+      key === '~standard'
+        ? { ...std, jsonSchema }
+        : key === OPENED_FROM
+          ? target
+          : Reflect.get(target, key, receiver),
   });
 }
 
-function withoutClosedObjects(node: unknown): never {
-  if (Array.isArray(node)) return node.map(withoutClosedObjects) as never;
+const SAFE = Number.MAX_SAFE_INTEGER;
+
+function compact(node: unknown, open: boolean): never {
+  if (Array.isArray(node)) return node.map((n) => compact(n, open)) as never;
   if (!node || typeof node !== 'object') return node as never;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(node)) {
-    if (k === 'additionalProperties' && v === false) continue;
-    out[k] = withoutClosedObjects(v);
+    if (k === '$schema') continue;
+    if (open && k === 'additionalProperties' && v === false) continue;
+    if ((k === 'minimum' && v === -SAFE) || (k === 'maximum' && v === SAFE)) continue;
+    out[k] = compact(v, open);
   }
   return out as never;
 }

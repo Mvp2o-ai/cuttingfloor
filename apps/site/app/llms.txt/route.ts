@@ -1,3 +1,4 @@
+import { SKILLS } from '../../content/skills.ts';
 import { PLANS } from '../pricing.ts';
 import { ALTERNATIVES, DESCRIPTION, DOCS_URL, FAQS, MCP_ADDRESS, SITE_URL } from '../seo.ts';
 
@@ -24,6 +25,13 @@ export function GET() {
     '',
     `- [Home](${SITE_URL}): overview, pricing and sign-up`,
     `- [Source and docs](${DOCS_URL}): open source, runs in one Docker image`,
+    `- [Skills](${SITE_URL}/skills): step-by-step instructions an agent follows with cuttingfloor's tools`,
+    '',
+    '## Skills',
+    '',
+    "A connected agent finds these itself: skills.search {query} in the user's words, then skills.get {slug} for the whole skill.",
+    '',
+    ...SKILLS.map((s) => `- [${s.title}](${SITE_URL}/skills/${s.slug}): ${s.description}`),
     '',
     '## Pricing',
     '',

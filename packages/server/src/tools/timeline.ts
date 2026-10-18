@@ -11,11 +11,12 @@ import {
 import { lengthFrames, measureMix } from '@cuttingfloor/engine';
 import {
   BatchInput,
+  BatchResult,
   CfError,
   EDIT_TOOLS,
+  EditResult,
   type EditTool,
   editInput,
-  LoudnessInput,
   TimelineCreateInput,
   TimelineCreateResult,
   TimelineDiffInput,
@@ -27,6 +28,7 @@ import {
   TimelineIdResult,
   TimelineLoadInput,
   TimelineRef,
+  withJob,
 } from '@cuttingfloor/schema';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import {
@@ -136,7 +138,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'caption.add': {
     title: 'Add captions',
     description:
-      'Captions on a video track from segments (with optional word timings for highlights) or from SRT/VTT text. One clip per caption; returns their clip_ids. Burned in when exported.',
+      "Captions on a video track from segments (with optional word timings for highlights), from SRT/VTT text, or in_clip: segments timed in seconds of a clip's media, such as transcript word times, placed where they play. One clip per caption; returns their clip_ids. Burned in when exported.",
   },
   'text.set': {
     title: 'Set text',
@@ -156,15 +158,10 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
     title: 'Fade audio',
     description: "Fade a clip's sound in from its start and out to its end. null removes a fade.",
   },
-  'audio.duck': {
-    title: 'Duck under speech',
-    description:
-      'Lower a track (usually music) wherever the other audio tracks have sound, using the silences found at import; writes gain keyframes on its clips that you can see and change.',
-  },
   'audio.set_master': {
     title: 'Set master',
     description:
-      'Gain (dB) and limiter ceiling (dBFS) on the whole mix. audio.set_loudness sets both from a measured loudness target.',
+      'Gain (dB) and limiter ceiling on the whole mix. The ceiling caps sample peaks (dBFS); the true peak between samples can land above it, most on dense, bright sound, and qa.check measures it (dBTP). Audio edits preview with the measured loudness.',
   },
   'filter.add': {
     title: 'Add effect',
@@ -356,6 +353,7 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
         title: meta.title,
         description: `${meta.description} ${RETURNS}`,
         inputSchema: editInput(tool),
+        outputSchema: EditResult,
         annotations: { ...annotations, title: meta.title },
       },
       guard(
@@ -375,8 +373,6 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
     );
   }
 
-  registerLoudness(server, deps);
-
   server.registerTool(
     'edit.batch',
     {
@@ -384,6 +380,7 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
       description:
         'Apply many edits as one change: one new timeline_id, one preview. All apply or none do. Use {"$ref":"ops[N].clip_id"} (or track_id, clip_ids[M]) to use an id an earlier op made. Returns the edit result plus results: [{tool, clip_id?, clip_ids?, track_id?}] per op.',
       inputSchema: BatchInput,
+      outputSchema: BatchResult,
       annotations: { ...annotations, title: 'Batch edit' },
     },
     guard(async (args) =>
@@ -396,79 +393,6 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
         true,
       ),
     ),
-  );
-}
-
-/** Timelines up to this long set loudness in the call; longer ones become a task or job. */
-const LOUDNESS_INLINE_SECONDS = 60;
-
-function registerLoudness(server: McpServer, deps: ServerDeps): void {
-  const rt = deps.runtime;
-  server.registerTool(
-    'audio.set_loudness',
-    {
-      title: 'Set loudness',
-      description:
-        'Measure the mix and set the master gain and a limiter so the whole timeline lands on target_lufs (default -14, the usual for online video) with peaks under true_peak_db. Returns the edit result plus measured {before_lufs, lufs, true_peak_db}. Short timelines answer at once; longer ones return a task or job.',
-      inputSchema: LoudnessInput,
-      annotations: {
-        title: 'Set loudness',
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    guard(async (args, ctx) => {
-      const owner = deps.owner();
-      const base = await rt.timelines.get(owner, args.timeline_id);
-      const work = async ({ signal }: { signal: AbortSignal }) => {
-        const { sources, offline } = await sourcesFor(rt, owner, base, 'export');
-        assertOnline(offline);
-        // Measure without any master, set the gain, then measure again and correct once
-        // (the limiter takes a little off the top).
-        const { master: _m, ...bare } = base;
-        const before = await measureMix(bare, sources, { signal });
-        if (before.lufs === null) {
-          throw new CfError('bad_request', 'The timeline has no measurable sound', {
-            hint: 'Add audio, or unmute its tracks',
-          });
-        }
-        const limit = Math.round((args.true_peak_db - 0.5) * 10) / 10;
-        let gain = Math.round((args.target_lufs - before.lufs) * 100) / 100;
-        let after = await measureMix({ ...bare, master: { gain, limit } }, sources, { signal });
-        if (after.lufs !== null) {
-          gain = Math.round((gain + args.target_lufs - after.lufs) * 100) / 100;
-          after = await measureMix({ ...bare, master: { gain, limit } }, sources, { signal });
-        }
-        return applyAndReply(
-          deps,
-          args.timeline_id,
-          args.preview,
-          [{ tool: 'audio.set_master', args: { gain_db: gain, limit_db: limit } }],
-          {
-            tool: 'audio.set_loudness',
-            args: { target_lufs: args.target_lufs, true_peak_db: args.true_peak_db },
-          },
-          false,
-          { measured: { before_lufs: before.lufs, lufs: after.lufs, true_peak_db: after.peak } },
-        );
-      };
-      const seconds = (lengthFrames(base) * ticksPerFrame(base.sequence.fps)) / 705_600_000;
-      if (seconds <= LOUDNESS_INLINE_SECONDS) {
-        const signal =
-          (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal ??
-          new AbortController().signal;
-        return work({ signal });
-      }
-      const job = await rt.jobs.store.create({
-        owner,
-        tool: 'audio.set_loudness',
-        statusMessage: 'measuring',
-      });
-      rt.jobs.start(job, work as never);
-      return jobReply(job, ctx);
-    }),
   );
 }
 
@@ -486,13 +410,9 @@ async function applyAndReply(
   const base = await rt.timelines.get(owner, baseId);
   const media = await mediaResolver(rt, owner, mediaIdsIn(ops));
   const nestable = await timelineResolver(rt, owner, nestedIdsIn(ops));
-  // Ducking, transcript captions and word-range clips read what import and media.analyze
-  // found; only those load the media records.
+  // Word-range clips read the transcript media.analyze found; only those load the media records.
   const needsFacts = ops.some(
-    (o) =>
-      o.tool === 'audio.duck' ||
-      (o.tool === 'caption.add' && 'from_transcript' in o.args) ||
-      (o.tool === 'clip.add' && JSON.stringify(o.args.source ?? '').includes('"words"')),
+    (o) => o.tool === 'clip.add' && JSON.stringify(o.args.source ?? '').includes('"words"'),
   );
   const facts = needsFacts
     ? await factsResolver(rt, owner, base, mediaIdsIn(ops))

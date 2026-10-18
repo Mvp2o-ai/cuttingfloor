@@ -25,6 +25,7 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
         </a>
         <nav className="nav-links" aria-label="Sections">
           <a href="/walkthroughs">Walkthroughs</a>
+          <a href="/skills">Skills</a>
           <a href="/#how">How it works</a>
           <a href="/#pricing">Pricing</a>
           <a href={DOCS_URL}>Open source</a>
@@ -50,6 +51,7 @@ export function Footer({ cta = 'Start free' }: { cta?: string }) {
         <div className="footer-links">
           <a href={SIGN_UP}>{cta}</a>
           <a href="/walkthroughs">Walkthroughs</a>
+          <a href="/skills">Skills</a>
           <a href={DOCS_URL}>GitHub</a>
           <a href="mailto:ken@mvp2o.com">Contact</a>
         </div>

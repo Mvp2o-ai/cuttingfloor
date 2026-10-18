@@ -33,7 +33,7 @@ const CAPS = [
     code: [
       [
         'caption.add',
-        '{ timeline_id: "tl_05…", track_id: "V2",\n  from_transcript: { clip_id: "c_1", max_words: 4 } }',
+        '{ timeline_id: "tl_05…", track_id: "V2",\n  in_clip: { clip_id: "c_1", segments: [ … ] } }',
       ],
       [
         'text.set',
@@ -44,12 +44,12 @@ const CAPS = [
   },
   {
     title: 'Mix like an engineer.',
-    body: 'Duck music under speech, ride gain with keyframes, crossfade at the cut, and land the whole thing at −14 LUFS.',
+    body: 'Ride gain with keyframes, crossfade at the cut, and set the gain and limiter on the whole mix, with the loudness measured after every change.',
     code: [
-      ['audio.duck', '{ timeline_id: "tl_07…", track_id: "A2", amount_db: -14 }'],
-      ['audio.set_loudness', '{ timeline_id: "tl_08…", target_lufs: -14 }'],
+      ['audio.set_gain', '{ clip_id: "c7", gain_db: { keyframes: [ … ] } }'],
+      ['audio.set_master', '{ timeline_id: "tl_08…", gain_db: 6, limit_db: -1 }'],
     ],
-    note: 'measured, set, measured again',
+    note: 'measured on every preview',
   },
   {
     title: 'Make what you don’t have.',

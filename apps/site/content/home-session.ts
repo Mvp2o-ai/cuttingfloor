@@ -67,14 +67,14 @@ export const HOME_SESSION: SessionData = {
     {
       kind: 'call',
       fn: 'caption.add',
-      args: '{ from_transcript: true }',
+      args: '{ in_clip: { clip_id, segments } }',
       ret: '84 captions on V2',
       effect: { type: 'captions', track: 'V2', from: 0, to: 58 },
     },
     {
       kind: 'call',
-      fn: 'audio.set_loudness',
-      args: '{ target_lufs: -14 }',
+      fn: 'audio.set_master',
+      args: '{ gain_db: 6, limit_db: -1 }',
       ret: 'measured −14.1 LUFS',
       effect: { type: 'loudness', reading: '−14.1 LUFS' },
     },

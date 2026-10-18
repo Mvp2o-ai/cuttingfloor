@@ -247,14 +247,34 @@ export const EditArgs = {
       )
       .max(5000)
       .optional(),
-    from_transcript: z
+    in_clip: z
       .object({
-        clip_id: z.string().describe('A clip whose media has a transcript (media.analyze)'),
-        max_words: z.number().int().min(1).max(30).default(6).describe('Words per caption at most'),
-        max_chars: z.number().int().min(8).max(200).default(36),
+        clip_id: z.string(),
+        segments: z
+          .array(
+            z.object({
+              start: z.number().min(0),
+              end: z.number().min(0),
+              text: z.string().min(1).max(2000),
+              words: z
+                .array(
+                  z.object({
+                    text: z.string().min(1).max(200),
+                    start: z.number().min(0),
+                    end: z.number().min(0),
+                  }),
+                )
+                .max(500)
+                .optional(),
+            }),
+          )
+          .min(1)
+          .max(5000),
       })
       .optional()
-      .describe("Captions from the clip's transcript, timed where its words play"),
+      .describe(
+        "Segments timed in seconds of a clip's media (e.g. transcript word times), placed where those moments play in the clip, through speed changes; what doesn't play is left out",
+      ),
     srt: z.string().max(2_000_000).optional().describe('SubRip text instead of segments'),
     vtt: z.string().max(2_000_000).optional().describe('WebVTT text instead of segments'),
     offset_frames: z
@@ -288,20 +308,15 @@ export const EditArgs = {
     in_frames: z.number().int().positive().max(1_000_000).nullable().optional(),
     out_frames: z.number().int().positive().max(1_000_000).nullable().optional(),
   }),
-  'audio.duck': z.object({
-    track_id: z.string().describe('The audio track to lower, usually music'),
-    under_track_ids: z
-      .array(z.string())
-      .min(1)
-      .optional()
-      .describe('Tracks whose sound triggers it. Default: every other audio track'),
-    amount_db: z.number().min(-60).max(-1).default(-12),
-    attack_frames: z.number().int().min(0).max(1000).default(5),
-    release_frames: z.number().int().min(0).max(1000).default(15),
-  }),
   'audio.set_master': z.object({
     gain_db: z.number().min(-60).max(40).nullable().optional(),
-    limit_db: z.number().min(-20).max(0).nullable().optional().describe('Limiter ceiling, dBFS'),
+    limit_db: z
+      .number()
+      .min(-20)
+      .max(0)
+      .nullable()
+      .optional()
+      .describe('Limiter ceiling on sample peaks, dBFS'),
   }),
   'filter.add': z.object({
     clip_id: z.string().optional().describe('Apply to one clip (or an adjustment clip)'),
@@ -536,9 +551,9 @@ export const LookAnalysis = z.object({
 export const MediaAnalyzeInput = z.object({
   media_id: MediaId,
   kind: z
-    .enum(['transcript', 'beats', 'faces', 'track', 'look'])
+    .enum(['transcript', 'beats', 'faces', 'track', 'look', 'silence', 'scenes'])
     .describe(
-      'transcript: words with times (whisper.cpp, local); beats: tempo and beat times; faces: faces over time and a focus path for reframing; track: follow a region; look: your own questions answered on sampled frames',
+      'transcript: words with times (whisper.cpp, local); beats: tempo and beat times; faces: face boxes over time; track: follow a region; look: your own questions answered on sampled frames; silence: stretches quieter than threshold_db for min_seconds; scenes: times the picture changes by more than threshold',
     ),
   questions: z
     .record(JudgeName, JudgeQuestion)
@@ -587,6 +602,24 @@ export const MediaAnalyzeInput = z.object({
       'track: the box to follow (top-left x, y and size, fractions of the picture) and when',
     ),
   until_seconds: z.number().min(0).optional().describe('track, look: stop here. Default: the end'),
+  threshold_db: z
+    .number()
+    .min(-100)
+    .max(0)
+    .optional()
+    .describe('silence (required): quieter than this counts as silence, dBFS'),
+  min_seconds: z
+    .number()
+    .min(0.01)
+    .max(3600)
+    .optional()
+    .describe('silence (required): only stretches at least this long'),
+  threshold: z
+    .number()
+    .min(0)
+    .max(100)
+    .optional()
+    .describe('scenes (required): how much the picture must change to count as a cut, 0–100'),
   idempotency_key: z.string().min(1).max(200).optional(),
 });
 
@@ -613,7 +646,6 @@ export const FacesAnalysis = z.object({
       ),
     }),
   ),
-  focus: z.array(z.object({ time: z.number(), x: z.number(), y: z.number() })),
 });
 
 export const MediaStatus = z.enum(['importing', 'processing', 'ready', 'failed']);
@@ -640,16 +672,18 @@ export const MediaInfo = z.object({
     .array(z.string())
     .describe('Why a mezzanine was made (vfr, rotation, hdr, codec); empty when not needed'),
   analysis: z
-    .object({
-      scenes: z.array(z.number()).describe('Scene cut times, seconds'),
-      loudness_lufs: z.number().nullable(),
-      silences: z.array(z.object({ start: z.number(), end: z.number() })),
-    })
+    .object({ loudness_lufs: z.number().nullable().describe('Integrated loudness at import') })
     .nullable(),
   analyses: z
     .object({
       transcript: z
-        .object({ model: z.string(), language: z.string(), words: z.number() })
+        .object({
+          model: z.string(),
+          language: z.string(),
+          words: z
+            .number()
+            .describe('How many words; the words themselves are in transcript.words'),
+        })
         .optional(),
       beats: z.object({ bpm: z.number(), beats: z.number() }).optional(),
       faces: z.object({ rate: z.number(), frames_with_faces: z.number() }).optional(),
@@ -659,14 +693,60 @@ export const MediaInfo = z.object({
         .describe('frames and questions: the latest run'),
     })
     .optional()
-    .describe('Summaries of media.analyze results; media.get include returns them in full'),
-  transcript: Transcript.optional(),
+    .describe(
+      'Summaries of media.analyze results (counts, not data); include puts each in full at the top level',
+    ),
+  transcript: Transcript.optional().describe(
+    'With include ["transcript"]: every word as {text, start, end, confidence}',
+  ),
   beats: BeatsAnalysis.optional(),
   faces: FacesAnalysis.optional(),
   look: LookAnalysis.optional(),
   error: ToolError.optional(),
 });
 export type MediaInfo = z.infer<typeof MediaInfo>;
+
+export const MediaAnalyzeResult = z.object({
+  media_id: MediaId,
+  kind: z.enum(['transcript', 'beats', 'faces', 'track', 'look', 'silence', 'scenes']),
+  summary: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe('The summary media.get gives under analyses; look: where each answer holds'),
+  model: z.string().optional().describe('look: the Jev model'),
+  frames: z.number().optional().describe('look: frames asked about'),
+  transcript: Transcript.optional(),
+  beats: BeatsAnalysis.optional(),
+  faces: FacesAnalysis.optional(),
+  look: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe('look: this run (id, model, questions, frames with answers)'),
+  track: z
+    .object({
+      rate: z.number(),
+      points: z.array(
+        z.object({
+          time: z.number(),
+          x: z.number(),
+          y: z.number(),
+          w: z.number(),
+          h: z.number(),
+          found: z.boolean(),
+        }),
+      ),
+    })
+    .optional(),
+  silences: z
+    .array(z.object({ start: z.number(), end: z.number() }))
+    .optional()
+    .describe('silence: media seconds'),
+  scenes: z.array(z.number()).optional().describe('scenes: cut times, media seconds'),
+  note: z
+    .string()
+    .optional()
+    .describe('In place of the analysis when it is too long to return: where to read it'),
+});
 
 // Create: new media from a recipe. Always a job; the result is a media_id for clip.add.
 const createCommon = {
@@ -869,6 +949,32 @@ export const JobListInput = z.object({
 });
 export const JobListResult = z.object({ jobs: z.array(JobView) });
 
+/** What a long-running tool answers while it works: poll job.get with job_id for the result. */
+export const JobHandle = z.object({
+  job_id: JobId,
+  status: JobStatus,
+  status_uri: z.string(),
+  media_id: MediaId.optional().describe('The media it is making; usable in edits once processing'),
+  hint: z.string(),
+});
+
+const finished = new WeakMap<z.ZodType, z.ZodType>();
+
+/**
+ * A long-running tool's output: its result when it finishes in the call, or a JobHandle while it
+ * works (job.get then gives the result). code.run's cf follows the job, so scripts get the result.
+ */
+export function withJob<T extends z.ZodType>(result: T) {
+  const schema = z.union([result, JobHandle]);
+  finished.set(schema, result);
+  return schema;
+}
+
+/** The result inside a withJob output, or undefined for any other schema. */
+export function finishedResult(schema: unknown): z.ZodType | undefined {
+  return finished.get(schema as z.ZodType);
+}
+
 // Render and export
 export const RenderFramesInput = z
   .object({
@@ -987,39 +1093,43 @@ export const ExportResult = z.object({
   mime_type: z.string(),
 });
 
-export const LoudnessInput = z.object({
-  timeline_id: TimelineId,
-  preview: Preview,
-  target_lufs: z.number().min(-40).max(-5).default(-14),
-  true_peak_db: z.number().min(-9).max(0).default(-1),
-});
-
 export const QaCheckInput = z.object({
   timeline_id: TimelineId,
   range: z.object({ start: frame, end: frame }).optional(),
-  loudness_target_lufs: z.number().min(-40).max(-5).default(-14),
+  black: z
+    .object({
+      pixel_threshold: z.number().min(0).max(1).describe('A pixel this dark or darker is black'),
+      picture_share: z
+        .number()
+        .min(0)
+        .max(1)
+        .describe('A frame with this share of black pixels is black'),
+      min_seconds: z.number().min(0.01).max(3600),
+    })
+    .optional()
+    .describe('Find black stretches with these settings; left out, none are looked for'),
+  silence: z
+    .object({
+      threshold_db: z.number().min(-100).max(0).describe('Quieter than this, dBFS'),
+      min_seconds: z.number().min(0.01).max(3600),
+    })
+    .optional()
+    .describe(
+      'Find silent stretches in the mix with these settings; left out, none are looked for',
+    ),
 });
 
-export const QaFinding = z.object({ start: frame, end: frame, detail: z.string() });
+const QaSpan = z.object({ start: frame, end: frame });
 export const QaCheckResult = z.object({
-  passed: z.boolean(),
-  checks: z.array(
-    z.object({
-      check: z.enum([
-        'gaps',
-        'offline_media',
-        'black_frames',
-        'silence',
-        'loudness',
-        'frame_count',
-      ]),
-      status: z.enum(['pass', 'fail', 'warn']),
-      findings: z.array(QaFinding),
-    }),
-  ),
-  measured: z.object({
-    frames: z.number(),
-    integrated_lufs: z.number().nullable(),
-    true_peak_dbtp: z.number().nullable(),
-  }),
+  range: QaSpan,
+  gaps: z.array(QaSpan).describe('Frames with no picture on any visible video track'),
+  offline_media: z.array(z.string()).describe('Media ids that are offline; nothing was rendered'),
+  frames: z
+    .object({ expected: z.number(), rendered: z.number() })
+    .nullable()
+    .describe('null when offline media stopped the render'),
+  black: z.array(QaSpan).optional().describe('With black settings: black stretches, frames'),
+  silences: z.array(QaSpan).optional().describe('With silence settings: silent stretches, frames'),
+  integrated_lufs: z.number().nullable().describe('null below the EBU R128 -70 LUFS gate'),
+  true_peak_dbtp: z.number().nullable(),
 });

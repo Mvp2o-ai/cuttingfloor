@@ -7,37 +7,44 @@ import { BIN, run } from './exec.ts';
 import { lengthFrames, type MltSource, scaledSize, writeMltProject } from './mlt.ts';
 import { countFrames } from './render.ts';
 
-type Status = 'pass' | 'fail' | 'warn';
-interface Finding {
+interface Span {
   start: number;
   end: number;
-  detail: string;
 }
 export interface QaReport {
-  passed: boolean;
-  checks: Array<{
-    check: 'gaps' | 'offline_media' | 'black_frames' | 'silence' | 'loudness' | 'frame_count';
-    status: Status;
-    findings: Finding[];
-  }>;
-  measured: { frames: number; integrated_lufs: number | null; true_peak_dbtp: number | null };
+  range: Span;
+  /** Frames with no enabled clip on any visible video track. */
+  gaps: Span[];
+  offline_media: string[];
+  /** null when offline media stopped the render. */
+  frames: { expected: number; rendered: number } | null;
+  /** Only when black settings were given. */
+  black?: Span[];
+  /** Only when silence settings were given. */
+  silences?: Span[];
+  integrated_lufs: number | null;
+  true_peak_dbtp: number | null;
+}
+
+export interface QaOptions {
+  range?: Span;
+  /** A pixel at or under pixelThreshold (0–1) is black; a frame with pictureShare of them is. */
+  black?: { pixelThreshold: number; pictureShare: number; minSeconds: number };
+  silence?: { thresholdDb: number; minSeconds: number };
+  signal?: AbortSignal;
+  onProgress?: (f: number) => void;
 }
 
 /**
- * Exact checks, all code: gaps in the picture, offline media, black frames, silence, loudness
- * against a target, and the rendered frame count. Renders a small analysis pass with melt
- * from the proxies, then measures it with FFmpeg.
+ * Measures the rendered timeline: gaps, offline media, the rendered frame count, integrated
+ * loudness and true peak, and black or silent stretches with the caller's settings. Facts only:
+ * what is wrong is the caller's call. Renders a small pass with melt, then measures it.
  */
 export async function qaCheck(
   doc: TimelineDoc,
   sources: Map<string, MltSource>,
   offline: string[],
-  options: {
-    range?: { start: number; end: number };
-    targetLufs: number;
-    signal?: AbortSignal;
-    onProgress?: (f: number) => void;
-  },
+  options: QaOptions,
 ): Promise<QaReport> {
   const length = lengthFrames(doc);
   if (!length)
@@ -53,9 +60,7 @@ export async function qaCheck(
   }
   const fps = doc.sequence.fps;
   const toFrame = (seconds: number) => range.start + Math.round((seconds * fps.num) / fps.den);
-  const checks: QaReport['checks'] = [];
 
-  // Gaps: frames with no enabled clip on any visible video track.
   const tpf = ticksPerFrame(fps);
   const covered: Array<[number, number]> = doc.tracks
     .filter((t) => t.kind === 'video' && !t.hidden)
@@ -71,34 +76,25 @@ export async function qaCheck(
         ),
     )
     .sort((a, b) => a[0] - b[0]);
-  const gaps: Finding[] = [];
+  const gaps: Span[] = [];
   let cursor = range.start;
   for (const [s, e] of covered) {
     if (e <= cursor) continue;
-    if (s > cursor && s < range.end)
-      gaps.push({ start: cursor, end: Math.min(s, range.end), detail: 'no picture' });
+    if (s > cursor && s < range.end) gaps.push({ start: cursor, end: Math.min(s, range.end) });
     cursor = Math.max(cursor, e);
     if (cursor >= range.end) break;
   }
   if (cursor < range.end && doc.tracks.some((t) => t.kind === 'video'))
-    gaps.push({ start: cursor, end: range.end, detail: 'no picture' });
-  checks.push({ check: 'gaps', status: gaps.length ? 'fail' : 'pass', findings: gaps });
-  checks.push({
-    check: 'offline_media',
-    status: offline.length ? 'fail' : 'pass',
-    findings: offline.map((id) => ({
-      start: range.start,
-      end: range.end,
-      detail: `media ${id} is offline`,
-    })),
-  });
-  if (offline.length) {
-    return {
-      passed: false,
-      checks,
-      measured: { frames: 0, integrated_lufs: null, true_peak_dbtp: null },
-    };
-  }
+    gaps.push({ start: cursor, end: range.end });
+  const report: QaReport = {
+    range,
+    gaps,
+    offline_media: offline,
+    frames: null,
+    integrated_lufs: null,
+    true_peak_dbtp: null,
+  };
+  if (offline.length) return report;
 
   const dir = await mkdtemp(join(tmpdir(), 'cf-qa-'));
   try {
@@ -132,22 +128,10 @@ export async function qaCheck(
         },
       },
     );
-    const frames = await countFrames(join(dir, 'qa.mkv'));
-    checks.push({
-      check: 'frame_count',
-      status: frames === total ? 'pass' : 'fail',
-      findings:
-        frames === total
-          ? []
-          : [
-              {
-                start: range.start,
-                end: range.end,
-                detail: `rendered ${frames} frames, expected ${total}`,
-              },
-            ],
-    });
+    report.frames = { expected: total, rendered: await countFrames(join(dir, 'qa.mkv')) };
     options.onProgress?.(0.85);
+    const b = options.black;
+    const q = options.silence;
     const { stderr } = await run(
       BIN.ffmpeg,
       [
@@ -155,81 +139,62 @@ export async function qaCheck(
         '-nostdin',
         '-i',
         'qa.mkv',
-        '-vf',
-        'blackdetect=d=0.5:pix_th=0.10',
+        ...(b
+          ? [
+              '-vf',
+              `blackdetect=d=${b.minSeconds}:pix_th=${b.pixelThreshold}:pic_th=${b.pictureShare}`,
+            ]
+          : ['-vn']),
         '-af',
-        'silencedetect=n=-50dB:d=1,ebur128=peak=true:framelog=quiet',
+        [
+          ...(q ? [`silencedetect=n=${q.thresholdDb}dB:d=${q.minSeconds}`] : []),
+          'ebur128=peak=true:framelog=quiet',
+        ].join(','),
         '-f',
         'null',
         '-',
       ],
       { cwd: dir, ...(options.signal ? { signal: options.signal } : {}) },
     );
-    const black: Finding[] = [];
-    for (const m of stderr.matchAll(/black_start:([\d.]+) black_end:([\d.]+)/g)) {
-      // Gaps are reported on their own; a black span is only the part that has a picture.
-      for (const [s, e] of subtract([toFrame(Number(m[1])), toFrame(Number(m[2]))], gaps)) {
-        black.push({ start: s, end: e, detail: 'black picture' });
+    if (b) {
+      report.black = [];
+      for (const m of stderr.matchAll(/black_start:([\d.]+) black_end:([\d.]+)/g)) {
+        // Gaps are their own fact; a black span is only the part that has a picture.
+        for (const [s, e] of subtract([toFrame(Number(m[1])), toFrame(Number(m[2]))], gaps)) {
+          report.black.push({ start: s, end: e });
+        }
       }
     }
-    checks.push({ check: 'black_frames', status: black.length ? 'warn' : 'pass', findings: black });
-    const silence: Finding[] = [];
-    let open: number | null = null;
-    for (const line of stderr.split('\n')) {
-      const s = /silence_start: (-?[\d.]+)/.exec(line);
-      const e = /silence_end: (-?[\d.]+)/.exec(line);
-      if (s) open = Math.max(0, Number(s[1]));
-      if (e && open !== null) {
-        silence.push({
-          start: toFrame(open),
-          end: toFrame(Number(e[1])),
-          detail: 'silence below -50 dBFS',
-        });
-        open = null;
+    if (q) {
+      report.silences = [];
+      let open: number | null = null;
+      for (const line of stderr.split('\n')) {
+        const s = /silence_start: (-?[\d.]+)/.exec(line);
+        const e = /silence_end: (-?[\d.]+)/.exec(line);
+        if (s) open = Math.max(0, Number(s[1]));
+        if (e && open !== null) {
+          report.silences.push({ start: toFrame(open), end: toFrame(Number(e[1])) });
+          open = null;
+        }
       }
+      if (open !== null) report.silences.push({ start: toFrame(open), end: range.end });
     }
-    if (open !== null)
-      silence.push({ start: toFrame(open), end: range.end, detail: 'silence below -50 dBFS' });
-    checks.push({ check: 'silence', status: silence.length ? 'warn' : 'pass', findings: silence });
+    // EBU R128: below its -70 LUFS absolute gate there is no integrated loudness.
     const summary = stderr.slice(stderr.lastIndexOf('Summary:'));
     const lufsMatch = /I:\s+(-?[\d.]+) LUFS/.exec(summary);
     const peakMatch = /Peak:\s+(-?[\d.inf]+) dBFS/.exec(summary);
-    const lufs = lufsMatch && Number(lufsMatch[1]) > -70 ? Number(lufsMatch[1]) : null;
-    const peak = peakMatch && Number.isFinite(Number(peakMatch[1])) ? Number(peakMatch[1]) : null;
-    const loudness: Finding[] = [];
-    if (lufs === null)
-      loudness.push({ start: range.start, end: range.end, detail: 'no measurable audio' });
-    else if (Math.abs(lufs - options.targetLufs) > 2) {
-      loudness.push({
-        start: range.start,
-        end: range.end,
-        detail: `integrated ${lufs.toFixed(1)} LUFS, target ${options.targetLufs} ±2`,
-      });
-    }
-    if (peak !== null && peak > -1)
-      loudness.push({
-        start: range.start,
-        end: range.end,
-        detail: `true peak ${peak.toFixed(1)} dBTP is above -1`,
-      });
-    checks.push({
-      check: 'loudness',
-      status: loudness.length ? 'warn' : 'pass',
-      findings: loudness,
-    });
+    report.integrated_lufs = lufsMatch && Number(lufsMatch[1]) > -70 ? Number(lufsMatch[1]) : null;
+    report.true_peak_dbtp =
+      peakMatch && Number.isFinite(Number(peakMatch[1])) ? Number(peakMatch[1]) : null;
     options.onProgress?.(1);
-    return {
-      passed: checks.every((c) => c.status !== 'fail'),
-      checks,
-      measured: { frames, integrated_lufs: lufs, true_peak_dbtp: peak },
-    };
+    return report;
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 }
 
 /** The parts of [start, end) not covered by any of `holes`. */
-function subtract(span: [number, number], holes: Finding[]): Array<[number, number]> {
+function subtract(span: [number, number], holes: Span[]): Array<[number, number]> {
   let parts: Array<[number, number]> = [span];
   for (const h of holes) {
     parts = parts.flatMap(([s, e]): Array<[number, number]> => {
