@@ -6,9 +6,13 @@ import { BIN, run } from './exec.ts';
 import { lengthFrames, type MltSource, scaledSize, writeMltProject } from './mlt.ts';
 import { ffmpegArgs, meltArgs, type Overrides, type PresetName, resolvePreset } from './presets.ts';
 
+export type ImageFormat = 'webp' | 'png' | 'jpeg';
+
 export interface ImageOptions {
   longEdge: number;
-  format: 'webp' | 'png';
+  format: ImageFormat;
+  /** WebP and JPEG, 1–100. Default 82 (WebP) and 85 (JPEG). */
+  quality?: number;
   /** Contact sheet of all frames, or one image per frame. */
   layout: 'single' | 'grid';
   signal?: AbortSignal;
@@ -55,6 +59,7 @@ export async function renderTimelineFrames(
       ],
       {
         cwd: dir,
+        heavy: true,
         timeoutMs: MELT_FRAME_TIMEOUT_MS,
         ...(options.signal ? { signal: options.signal } : {}),
       },
@@ -188,14 +193,29 @@ export async function mediaStills(
   }
 }
 
+/** FFmpeg's encoder arguments for an image format at a quality (1–100). */
+function imageCodec(options: ImageOptions): string[] {
+  if (options.format === 'webp')
+    return ['-c:v', 'libwebp', '-quality', String(options.quality ?? 82)];
+  if (options.format === 'jpeg') {
+    // mjpeg's scale runs 2 (best) to 31; full-range 4:2:0, which every viewer reads.
+    const q = Math.round(2 + ((100 - (options.quality ?? 85)) * 29) / 99);
+    return ['-c:v', 'mjpeg', '-q:v', String(q), '-pix_fmt', 'yuvj420p'];
+  }
+  return ['-c:v', 'png'];
+}
+
+/** The file extension for an image format. */
+export const imageExtension = (format: ImageFormat): string => (format === 'jpeg' ? 'jpg' : format);
+
 async function encodeImages(dir: string, pngs: string[], options: ImageOptions): Promise<Buffer[]> {
-  const codec = options.format === 'webp' ? ['-c:v', 'libwebp', '-quality', '82'] : ['-c:v', 'png'];
+  const codec = imageCodec(options);
   if (options.layout === 'grid' && pngs.length > 1) {
     const cols = Math.ceil(Math.sqrt(pngs.length));
     const rows = Math.ceil(pngs.length / cols);
     const list = pngs.map((p) => `file '${p}'`).join('\n');
     await writeFile(join(dir, 'list.txt'), `${list}\n`);
-    const out = `grid.${options.format}`;
+    const out = `grid.${imageExtension(options.format)}`;
     await run(
       BIN.ffmpeg,
       [
@@ -227,7 +247,7 @@ async function encodeImages(dir: string, pngs: string[], options: ImageOptions):
       out.push(await readFile(join(dir, p)));
       continue;
     }
-    const name = p.replace(/\.png$/, '.webp');
+    const name = p.replace(/\.png$/, `.${imageExtension(options.format)}`);
     await run(BIN.ffmpeg, ['-hide_banner', '-nostdin', '-i', p, ...codec, '-y', name], {
       cwd: dir,
       timeoutMs: 60_000,
@@ -300,6 +320,7 @@ export async function exportTimeline(
       ],
       {
         cwd: dir,
+        heavy: true,
         ...(options.signal ? { signal: options.signal } : {}),
         onLine: (line) => {
           const m = /Current Frame:\s+(\d+)/.exec(line);
@@ -334,7 +355,11 @@ export async function exportTimeline(
           : ['-vf', vf, ...ffmpegArgs(settings)]),
         dest,
       ],
-      { ...(options.signal ? { signal: options.signal } : {}), timeoutMs: 4 * 60 * 60_000 },
+      {
+        heavy: true,
+        ...(options.signal ? { signal: options.signal } : {}),
+        timeoutMs: 4 * 60 * 60_000,
+      },
     );
     options.onProgress?.(1);
     const seconds = (total * doc.sequence.fps.den) / doc.sequence.fps.num;

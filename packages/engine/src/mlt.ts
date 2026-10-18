@@ -172,7 +172,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
     );
     const trackXml: string[] = [`<track producer="${prefix}bg"/>`];
     const transitions: string[] = [];
-    const out = { width, height };
+    const out = { width, height, pixel: width / doc.sequence.width };
     let index = 0;
     body.tracks.forEach((t, ti) => {
       // Adjustment clips: everything below this track becomes one sub-tractor whose output

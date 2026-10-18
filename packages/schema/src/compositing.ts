@@ -110,9 +110,9 @@ export type Animatable =
   | { keyframes: Array<{ frame: number; value: number; ease?: Ease | undefined }> };
 
 export const Fit = z
-  .enum(['contain', 'cover', 'fill'])
+  .enum(['contain', 'cover', 'fill', 'none'])
   .describe(
-    'contain: whole picture inside the frame (default); cover: fill the frame, cropping; fill: stretch',
+    'contain: whole picture inside the frame, scaled up or down to touch its edges (default); cover: fill the frame, cropping; fill: stretch; none: its own pixels at sequence size, unscaled (a 300 px logo stays 300 px on a 1920 px sequence), for logos and graphics made to size',
   );
 export const Flip = z.enum(['none', 'horizontal', 'vertical', 'both']);
 

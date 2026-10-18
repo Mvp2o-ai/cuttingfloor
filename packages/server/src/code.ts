@@ -8,6 +8,7 @@ import {
   type CodeEvent,
   type CodeReply,
   type CodeRequest,
+  serverBusy,
   type ToolError,
 } from '@cuttingfloor/schema';
 
@@ -18,6 +19,11 @@ import {
 export interface CodeHandlers {
   /** A tool call from the script: the MCP result. */
   call(tool: string, args: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Milliseconds the script's calls have spent queued since this was last asked: added to the
+   * script's time limit, which counts its own time, not time waiting for a slot.
+   */
+  queued?(): number;
   /** A file the script asked for: a path on disk or bytes, and the name to give it. */
   file(ref: { media_id?: string; timeline_id?: string }): Promise<{
     name: string;
@@ -26,13 +32,18 @@ export interface CodeHandlers {
   }>;
   /** Where to put an out/ file the script wrote. */
   output(name: string): Promise<string>;
-  /** A file the script imports while it runs, fetched to `output(name)`: the media it became. */
+  /** Where to put a file the script imports while it runs. */
+  scratch(name: string): Promise<string>;
+  /** A file the script imports while it runs, fetched to `scratch(name)`: the media it became. */
   upload(name: string, path: string): Promise<unknown>;
 }
 
 export interface CodeRun extends CodeDone {
-  /** out/ files, fetched to the paths `output` gave. */
-  files: Array<{ name: string; path: string }>;
+  /**
+   * out/ files: fetched to the paths `output` gave, or the reason one could not be fetched (the
+   * others are still there).
+   */
+  files: Array<{ name: string; path: string } | { name: string; error: ToolError }>;
 }
 
 const errorOf = (error: unknown): ToolError =>
@@ -62,9 +73,10 @@ export async function runCodeInSandbox(
     });
   } catch (error) {
     if (signal.aborted) throw new CfError('cancelled', 'Cancelled');
-    throw new CfError('engine_error', `The sandbox is not reachable: ${(error as Error).message}`, {
-      hint: 'Check the motion service is running (docker compose ps)',
-    });
+    throw serverBusy(
+      `The sandbox is not reachable (${(error as Error).message}); it may be restarting`,
+      'check the motion service is running (docker compose ps)',
+    );
   }
   if (!res.ok || !res.body) {
     const body = (await res.json().catch(() => ({}))) as { error?: ToolError };
@@ -91,14 +103,15 @@ export async function runCodeInSandbox(
       } catch (error) {
         body = { error: errorOf(error) };
       }
-      await reply(rid, body);
+      const extend = handlers.queued?.() ?? 0;
+      await reply(rid, extend > 0 ? { ...body, extend_ms: extend } : body);
     } else if ('upload' in event) {
       const { rid, name } = event.upload;
       let body: CodeReply;
       try {
         const r = await fetch(url(`/upload/${rid}`), { headers: headers(), signal });
         if (!r.ok || !r.body) throw new CfError('engine_error', `Could not fetch ${name}`);
-        const dest = await handlers.output(`upload-${rid}-${name}`);
+        const dest = await handlers.scratch(`upload-${rid}-${name}`);
         await pipeline(Readable.fromWeb(r.body as never), createWriteStream(dest));
         body = { result: await handlers.upload(name, dest) };
       } catch (error) {
@@ -156,27 +169,50 @@ export async function runCodeInSandbox(
     }
   } catch (error) {
     if (signal.aborted) throw new CfError('cancelled', 'Cancelled');
-    throw error;
+    if (error instanceof CfError) throw error;
+    // The stream broke mid-run ("terminated"): the sandbox restarted, most often out of memory.
+    throw serverBusy(`The sandbox stopped mid-run (${(error as Error).message})`);
   }
   await Promise.all(answering);
   if (!done || !job) {
     if (signal.aborted) throw new CfError('cancelled', 'Cancelled');
-    throw new CfError('engine_error', 'The sandbox stopped without an answer', {
-      hint: 'It may have restarted mid-run; try again',
-    });
+    throw serverBusy('The sandbox stopped without an answer; it may have restarted mid-run');
   }
   try {
     const files: CodeRun['files'] = [];
     if (done.exit_code === 0) {
       for (const o of done.outputs) {
-        const r = await fetch(url(`/out/${encodeURIComponent(o.name)}`), {
-          headers: headers(),
-          signal,
-        });
-        if (!r.ok || !r.body) throw new CfError('engine_error', `Could not fetch out/${o.name}`);
-        const dest = await handlers.output(o.name);
-        await pipeline(Readable.fromWeb(r.body as never), createWriteStream(dest));
-        files.push({ name: o.name, path: dest });
+        // One file that can't be fetched is that file's failure, not the run's.
+        try {
+          const r = await fetch(url(`/out/${encodeURIComponent(o.name)}`), {
+            headers: headers(),
+            signal,
+          });
+          if (!r.ok || !r.body) {
+            throw new CfError(
+              'engine_error',
+              `Could not fetch out/${o.name} from the sandbox: HTTP ${r.status}${r.status === 404 ? ' (the sandbox no longer has it)' : ''}`,
+              { hint: 'Run the script again to make this file; the other outputs were kept' },
+            );
+          }
+          const dest = await handlers.output(o.name);
+          await pipeline(Readable.fromWeb(r.body as never), createWriteStream(dest));
+          files.push({ name: o.name, path: dest });
+        } catch (error) {
+          if (signal.aborted) throw new CfError('cancelled', 'Cancelled');
+          const e = errorOf(error);
+          files.push({
+            name: o.name,
+            error:
+              error instanceof CfError
+                ? e
+                : {
+                    ...e,
+                    message: `Could not fetch out/${o.name} from the sandbox: ${e.message}`,
+                    hint: 'Run the script again to make this file; the other outputs were kept',
+                  },
+          });
+        }
       }
     }
     return { ...done, files };

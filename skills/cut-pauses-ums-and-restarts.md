@@ -1,7 +1,7 @@
 ---
 name: cut-pauses-ums-and-restarts
 description: Clean up a talking video with cuttingfloor. Cut the long pauses, the ums, the lines the speaker started over, and lines said twice, then smooth every cut so nothing jumps. Use when someone asks to tighten a talking-head, vlog, interview, tutorial or listing video, remove dead air, remove filler words, or fix restarts and retakes.
-version: 3
+version: 4
 type: playbook
 source: system
 related: add-captions:related
@@ -28,7 +28,7 @@ related: add-captions:related
    - add the pauses from step 3 that are longer than about 0.6 s, trimmed to about 0.15 s each side of the speech; Jev reads text and does not see pauses;
    - keep an opening "okay, so" when it is the speaker's voice; cut it when the next words make a stronger start.
 6. The assistant should build the cut on one timeline: `timeline.create` at the takes' size and frame rate, `clip.add` each take in order, then one `edit.batch` of `range.extract` ranges, latest first, so earlier frame numbers do not move. Or, often simpler: one `clip.add` per kept range with `source: {in, out}` in frames.
-7. The assistant should smooth every cut: `transition.add {kind: "crossfade", duration_frames: 4, mode: "handles"}` on the clip before each cut, and `clip.set_transform {scale: 1.1}` on every other section so a cut between two moments of the same shot reads as a cut-in rather than a jump.
+7. The assistant should smooth every cut: `transition.add {kind: "crossfade", duration_frames: 4, mode: "handles"}` on the clip before each cut (the video clip or its linked audio clip; either way only the sound crossfades and the picture cuts hard, and `changed` lists each crossfade added), and `clip.set_transform {scale: 1.1}` on every other section so a cut between two moments of the same shot reads as a cut-in rather than a jump.
 8. The assistant should even out the sound if it needs it: `audio.set_master {gain_db, limit_db: -1}`, with the gain worked out from the loudness `qa.check` measures.
 9. The assistant should look at its work before handing it over: `render.frames` on both sides of every cut, and `qa.check`.
 10. The assistant should export with `export.video` (`social_9x16_h264` for vertical, `web_1080p_h264` otherwise) and hand back the file, saying how much was cut and that the order and every intended line are kept.

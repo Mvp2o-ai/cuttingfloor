@@ -159,6 +159,7 @@ export async function transcribe(
       ],
       {
         cwd: dir,
+        heavy: true,
         timeoutMs: 6 * 60 * 60_000,
         ...(options.signal ? { signal: options.signal } : {}),
       },

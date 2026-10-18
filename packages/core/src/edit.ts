@@ -395,6 +395,37 @@ function place(
   sortTrack(track);
 }
 
+/**
+ * Places a new clip over what is on its track (overwrite), saying what that did to each clip it
+ * covered: cut shorter, split around it, or removed. A title on a busy track is an easy mistake.
+ */
+function placeOver(doc: TimelineDoc, track: StoredTrack, clip: StoredClip): string[] {
+  const tpf = ticksPerFrame(doc.sequence.fps);
+  const f = (t: number) => Math.round(t / tpf);
+  const before = new Set(track.clips.map((c) => c.id));
+  const covered = track.clips
+    .filter((c) => c.start < end(clip) && end(c) > clip.start)
+    .map((c) => ({ id: c.id, start: c.start, end: end(c) }));
+  place(doc, track, clip, 'overwrite');
+  return covered.map((was) => {
+    // What is left of it: the clip under its own id, and the part after the new clip when it
+    // reached past it (a new id when it was split around the new clip).
+    const pieces = track.clips.filter(
+      (c) =>
+        c !== clip &&
+        (c.id === was.id ||
+          (!before.has(c.id) &&
+            c.start === end(clip) &&
+            was.start < end(clip) &&
+            was.end > end(clip))),
+    );
+    const where = `${was.id} on ${track.id} (frames ${f(was.start)}–${f(was.end)})`;
+    return pieces.length
+      ? `${clip.id} covers part of ${where}, which now plays ${pieces.map((c) => `${f(c.start)}–${f(end(c))}`).join(' and ')}. To show both, put one on another track or move it`
+      : `${clip.id} replaced ${where}, which is gone. To show both, put one on another track or move it`;
+  });
+}
+
 /** Takes clips off their tracks; with ripple, later clips close each gap (latest gap first). */
 function removeAndRipple(members: Located[], ripple: boolean): void {
   for (const { track, clip } of members) removeClip(track, clip);
@@ -416,6 +447,19 @@ function neighbours(track: StoredTrack, clip: StoredClip): { prevEnd: number; ne
 
 function checkSourceRange(doc: TimelineDoc, clip: StoredClip): void {
   const media = clipSource(doc, clip);
+  if (
+    clip.in < 0 &&
+    (clip.type === 'title' || clip.type === 'caption' || clip.type === 'adjustment')
+  ) {
+    const what = clip.type === 'adjustment' ? 'an adjustment clip' : `a ${clip.type}`;
+    throw new CfError(
+      'bad_request',
+      `Clip ${clip.id} is ${what}: its start can't be trimmed earlier than where it was added`,
+      {
+        hint: `To start it earlier, clip.move it to the new start, then clip.trim its end to where it should end${clip.type === 'adjustment' ? '' : `, or add it again with ${clip.type}.add at the new frame`}`,
+      },
+    );
+  }
   if (clip.in < 0) {
     throw new CfError(
       'bad_request',
@@ -922,21 +966,24 @@ function clipFreeze(doc: TimelineDoc, a: EditArgsOf<'clip.freeze'>): OpOutcome {
   const tpf = ticksPerFrame(fps);
   const held = Math.round(frameSource(v, tpf, Math.round((at - v.start) / tpf)));
   const duration = framesToTicks(a.duration_frames, fps);
+  // Freezing the last frame holds it after the clip, rather than leaving that one frame (and a
+  // blip of its sound) to play again after the hold.
+  const holdAt = at + tpf >= end(v) ? end(v) : at;
   const tracks = [...new Set(members.map((m) => m.track))];
   const rights: StoredClip[] = [];
   for (const track of tracks) {
-    const right = splitTrackAt(doc, track, at);
+    const right = splitTrackAt(doc, track, holdAt);
     if (right) rights.push(right);
   }
   const link = rights.length > 1 ? nextId(doc, 'l') : null;
   for (const r of rights) r.link = link;
   // Everything from the frame on moves later on the clip's tracks; its sound has a gap there.
-  for (const track of tracks) shiftFrom(track, at, duration);
+  for (const track of tracks) shiftFrom(track, holdAt, duration);
   const { speed: _s, animation: _a, ...look } = v;
   const frozen: StoredClip = {
     ...look,
     id: nextId(doc, 'c'),
-    start: at,
+    start: holdAt,
     in: held,
     duration,
     link: null,
@@ -946,7 +993,7 @@ function clipFreeze(doc: TimelineDoc, a: EditArgsOf<'clip.freeze'>): OpOutcome {
   video.track.clips.push(frozen);
   sortTrack(video.track);
   tidyLinks(doc);
-  return ok(at, { clip_id: frozen.id, temporal: true });
+  return ok(holdAt, { clip_id: frozen.id, temporal: true });
 }
 
 /** The clip on the same track that starts exactly where `clip` ends, and the one that ends where it starts. */
@@ -1413,14 +1460,14 @@ function titleAdd(doc: TimelineDoc, a: EditArgsOf<'title.add'>): OpOutcome {
     link: null,
     enabled: true,
   };
-  place(doc, track, clip, 'overwrite');
+  const warnings = placeOver(doc, track, clip);
   // Preview the title once its reveal is done, not its first, still-empty frame.
   const revealed =
     style?.reveal && style.reveal !== 'none'
       ? (style.reveal_frames ?? Math.max(1, Math.round((fps.num / fps.den) * 0.8)))
       : 0;
   const shown = Math.min(revealed, Math.round(duration / ticksPerFrame(fps)) - 1);
-  return ok(start + framesToTicks(Math.max(0, shown), fps), { clip_id: clip.id });
+  return ok(start + framesToTicks(Math.max(0, shown), fps), { clip_id: clip.id, warnings });
 }
 
 type Segment = NonNullable<EditArgsOf<'caption.add'>['segments']>[number];
@@ -1449,7 +1496,12 @@ function inClipSegments(
       if (first < 0 || i < first) first = i;
       if (i > last) last = i;
     });
-    return first < 0 ? undefined : { start_frame: start + first, end_frame: start + last + 1 };
+    if (first < 0) return undefined;
+    // Something already playing when the clip starts begins at its first frame, not a frame in
+    // (a frame shows a stretch of source; the cut can fall inside it), so captions per clip meet
+    // at a cut with no gap.
+    if (first === 1 && from < (times[1] as number)) first = 0;
+    return { start_frame: start + first, end_frame: start + last + 1 };
   };
   const out: Segment[] = [];
   for (const seg of given.segments) {
@@ -1492,6 +1544,7 @@ function captionAdd(doc: TimelineDoc, a: EditArgsOf<'caption.add'>): OpOutcome {
     }));
   const style = mergeStyle(undefined, a.style);
   const ids: string[] = [];
+  const warnings: string[] = [];
   for (const seg of segments) {
     if (seg.start_frame < 0) {
       throw new CfError(
@@ -1530,13 +1583,14 @@ function captionAdd(doc: TimelineDoc, a: EditArgsOf<'caption.add'>): OpOutcome {
       link: null,
       enabled: true,
     };
-    place(doc, track, clip, 'overwrite');
+    warnings.push(...placeOver(doc, track, clip));
     ids.push(clip.id);
   }
   const first = segments[0];
   return ok(first ? first.start_frame * tpf : 0, {
     clip_ids: ids,
     ...(ids[0] ? { clip_id: ids[0] } : {}),
+    warnings,
   });
 }
 
@@ -1692,7 +1746,7 @@ function checkKind(track: StoredTrack, kind: StoredTransition['kind']): void {
       'bad_request',
       track.kind === 'audio'
         ? `Audio tracks take crossfade transitions, not ${kind}`
-        : 'crossfade is for audio tracks; video takes dissolve, wipes, slides and the rest',
+        : 'crossfade is for audio tracks, or a video clip with sound linked to it; video alone takes dissolve, wipes, slides and the rest',
       { hint: 'See video://catalog/transitions' },
     );
   }
@@ -1739,7 +1793,14 @@ function transitionAdd(doc: TimelineDoc, a: EditArgsOf<'transition.add'>): OpOut
       },
     );
   }
-  checkKind(ref.track, a.kind);
+  // A crossfade is sound only: on a video clip it goes on the audio linked to it, and the
+  // picture cuts hard.
+  const soundOnly = a.kind === 'crossfade';
+  if (soundOnly && ref.track.kind !== 'audio') {
+    if (!members.some((m) => m.track.kind === 'audio')) checkKind(ref.track, a.kind);
+  } else {
+    checkKind(ref.track, a.kind);
+  }
   const tpf = ticksPerFrame(doc.sequence.fps);
   const duration = framesToTicks(a.duration_frames, doc.sequence.fps);
   const { before, after } = transitionHalves(duration, tpf);
@@ -1748,8 +1809,27 @@ function transitionAdd(doc: TimelineDoc, a: EditArgsOf<'transition.add'>): OpOut
   for (const m of members) {
     const b = m === ref ? next : touching(m.track, m.clip).after;
     if (!b || (m !== ref && next.link && b.link !== next.link)) continue;
+    if (soundOnly && m.track.kind !== 'audio') continue;
     assertUnlocked(m.track);
     cuts.push({ track: m.track, a: m.clip, b });
+  }
+  if (soundOnly && a.mode === 'overlap' && members.some((m) => m.track.kind !== 'audio')) {
+    throw new CfError(
+      'bad_request',
+      'A crossfade on linked clips would overlap the sound alone and pull it out of sync with the picture',
+      {
+        hint: "Use mode: 'handles' for a sound-only crossfade (it moves nothing), or a video kind such as dissolve to blend picture and sound together",
+      },
+    );
+  }
+  if (!cuts.length) {
+    throw new CfError(
+      'bad_request',
+      `No audio clip linked to ${a.clip_id} meets the next one at this cut`,
+      {
+        hint: 'Put the crossfade on the audio clip before the cut, or use a video kind such as dissolve',
+      },
+    );
   }
   if (a.mode === 'overlap') {
     // Free source on each side of the cut by overlapping the clips; later clips move earlier.

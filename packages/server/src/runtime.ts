@@ -1,9 +1,15 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { availableParallelism, hostname } from 'node:os';
-import { join } from 'node:path';
+import { extname, join } from 'node:path';
 import { ownerKey, TimelineStore, Workspace } from '@cuttingfloor/core';
-import { MEDIA_TTL_MS, MediaLibrary } from '@cuttingfloor/engine';
+import {
+  MEDIA_TTL_MS,
+  MediaLibrary,
+  renderLoad,
+  setRenderLimit,
+  watchRenderQueue,
+} from '@cuttingfloor/engine';
 import { FileJobStore, JobRunner } from '@cuttingfloor/jobs';
 import { Uploads } from './uploads.ts';
 
@@ -17,6 +23,11 @@ export interface RuntimeConfig {
   mediaRoots: string[];
   exportsDir: string | null;
   maxJobs: number;
+  /**
+   * Renders (melt, encodes, transcription) that may run at once, jobs and inline previews
+   * together; the rest wait their turn. Default: half the CPUs, at least 2.
+   */
+  maxRenders?: number;
   outputUrlTtlMs: number;
   maxDownloadBytes: number;
   allowPrivateUrls: boolean;
@@ -62,6 +73,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     maxJobs: Number(
       env.CUTTINGFLOOR_MAX_JOBS ?? Math.max(1, Math.floor(availableParallelism() / 4)),
     ),
+    ...(env.CUTTINGFLOOR_MAX_RENDERS ? { maxRenders: Number(env.CUTTINGFLOOR_MAX_RENDERS) } : {}),
     outputUrlTtlMs: Number(env.CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS ?? 24) * 3_600_000,
     maxDownloadBytes: Number(env.CUTTINGFLOOR_MAX_DOWNLOAD_BYTES ?? 10 * 1024 ** 3),
     allowPrivateUrls: env.CUTTINGFLOOR_ALLOW_PRIVATE_URLS === '1',
@@ -105,8 +117,21 @@ export class Runtime {
       allowPrivateUrls: config.allowPrivateUrls,
       ...(config.mediaHostPath ? { hostFolders: { '/media/videos': config.mediaHostPath } } : {}),
     });
+    if (config.maxRenders) setRenderLimit(config.maxRenders);
     this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs, {
       ...(config.node ? { node: config.node } : {}),
+      // A job whose render waits for a slot says so, and where it stands.
+      around: (ctx, work) =>
+        watchRenderQueue(
+          {
+            queued: (ahead) =>
+              ctx.status(
+                `waiting for a render slot: ${ahead === 0 ? 'next in line' : `${ahead} ahead`} (${renderLoad().limit} renders run at once on this server)`,
+              ),
+            started: () => ctx.status('rendering'),
+          },
+          work,
+        ),
     });
     // Uploads take files as big as URL imports may download.
     this.uploads = new Uploads(this.ws, {
@@ -147,6 +172,14 @@ export class Runtime {
     await this.timelines.sweep();
     await this.media.sweep(MEDIA_TTL_MS);
     await this.jobs.store.sweep();
+    // Frames kept for download (render.frames urls) last as long as their links.
+    for (const owner of await this.ws.owners()) {
+      await this.ws.sweep(
+        this.ws.path('owners', owner, 'outputs'),
+        this.config.outputUrlTtlMs,
+        (name) => !name.startsWith('f_'),
+      );
+    }
     await this.uploads.sweep();
     for (const owner of await this.ws.owners()) {
       await this.ws.sweep(this.ws.path('owners', owner, 'usage'), 2 * 24 * 3_600_000);
@@ -163,7 +196,10 @@ export class Runtime {
     return this.#secret;
   }
 
-  /** A signed, time-limited download URL for a job output. */
+  /**
+   * A signed, time-limited download URL for a file under `outputs/{id}/`: a job's output (`j_…`),
+   * or frames kept for download (`f_…`). A media id (`m_…`) signs the media's own file.
+   */
   async signOutput(
     owner: string,
     jobId: string,
@@ -180,13 +216,30 @@ export class Runtime {
     };
   }
 
-  /** Checks a signed output URL. Returns the file on disk, or undefined when invalid or expired. */
+  /** A signed download URL for a media item's file; undefined while it has none. */
+  async signMedia(
+    owner: string,
+    record: { media_id: string; name: string; file: string | null },
+  ): Promise<{ url: string; expiresAt: string } | undefined> {
+    if (!record.file) return undefined;
+    const name =
+      record.name.replace(/[^\w.-]+/g, '_').replace(/^[._]+/, '') ||
+      `${record.media_id}${extname(record.file)}`;
+    return this.signOutput(owner, record.media_id, name);
+  }
+
+  /**
+   * Checks a signed output URL. Returns the file on disk and the name to download it as, or
+   * undefined when invalid or expired.
+   */
   async verifyOutput(
     pathname: string,
     exp: string | null,
     sig: string | null,
   ): Promise<string | undefined> {
-    const m = /^\/outputs\/([A-Za-z0-9_-]{1,64})\/(j_[0-9a-z]{26})\/([^/]+)$/.exec(pathname);
+    const m = /^\/outputs\/([A-Za-z0-9_-]{1,64})\/((?:j|f|m)_[0-9a-z]{26})\/([^/]+)$/.exec(
+      pathname,
+    );
     if (!m || !exp || !sig || !(Number(exp) > Date.now())) return undefined;
     const expected = createHmac('sha256', await this.secret())
       .update(`${pathname}\n${exp}`)
@@ -195,6 +248,13 @@ export class Runtime {
     if (given.length !== expected.length || !timingSafeEqual(given, expected)) return undefined;
     const name = decodeURIComponent(m[3] ?? '');
     if (name.includes('/') || name.startsWith('.')) return undefined;
-    return this.ws.path('owners', m[1] ?? '', 'outputs', m[2] ?? '', name);
+    const key = m[1] ?? '';
+    const id = m[2] ?? '';
+    if (id.startsWith('m_')) {
+      // An owner key is its own key, so the media library finds the owner's media by it.
+      const record = await this.media.find(key, id);
+      return record?.file ?? undefined;
+    }
+    return this.ws.path('owners', key, 'outputs', id, name);
   }
 }

@@ -605,7 +605,11 @@ async function conform(
     'mov',
     `file:${dest}`,
   ];
-  await run(BIN.ffmpeg, args, { signal, onLine: timeProgress(p.duration, onFraction) });
+  await run(BIN.ffmpeg, args, {
+    heavy: true,
+    signal,
+    onLine: timeProgress(p.duration, onFraction),
+  });
 }
 
 /** 540p all-intra MJPEG proxy (every frame a keyframe) with PCM audio. */
@@ -639,7 +643,11 @@ async function makeProxy(
     'mov',
     `file:${dest}`,
   ];
-  await run(BIN.ffmpeg, args, { signal, onLine: timeProgress(p.duration, onFraction) });
+  await run(BIN.ffmpeg, args, {
+    heavy: true,
+    signal,
+    onLine: timeProgress(p.duration, onFraction),
+  });
 }
 
 /** Integrated loudness, measured once at import (EBU R128; below its -70 LUFS gate, none). */

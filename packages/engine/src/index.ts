@@ -17,7 +17,15 @@ export {
   segmentSize,
 } from './cutout.ts';
 export { detectScenes, detectSilences } from './detect.ts';
-export { BIN, engineVersions, installedFonts, run } from './exec.ts';
+export {
+  BIN,
+  engineVersions,
+  installedFonts,
+  renderLoad,
+  run,
+  setRenderLimit,
+  watchRenderQueue,
+} from './exec.ts';
 export { download, isBlockedAddress } from './fetch.ts';
 export {
   fingerprint,
@@ -46,6 +54,8 @@ export { conformReasons, type Probe, probe, standardRate } from './probe.ts';
 export { type QaOptions, type QaReport, qaCheck } from './qa.ts';
 export {
   exportTimeline,
+  type ImageFormat,
+  imageExtension,
   mediaStills,
   renderMediaFrames,
   renderTimelineFrames,

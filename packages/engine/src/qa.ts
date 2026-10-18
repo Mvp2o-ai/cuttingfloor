@@ -121,6 +121,7 @@ export async function qaCheck(
       ],
       {
         cwd: dir,
+        heavy: true,
         ...(options.signal ? { signal: options.signal } : {}),
         onLine: (line) => {
           const m = /Current Frame:\s+(\d+)/.exec(line);

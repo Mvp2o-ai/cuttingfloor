@@ -68,7 +68,8 @@ The same image with `CUTTINGFLOOR_MODE=hosted`: no path imports (URLs only), no 
 | Variable | Default | |
 |---|---|---|
 | `CUTTINGFLOOR_DATA` | `/data` | Data root |
-| `CUTTINGFLOOR_MAX_JOBS` | cores ÷ 4 | Concurrent imports, exports and QA runs |
+| `CUTTINGFLOOR_MAX_JOBS` | cores ÷ 4 | Concurrent imports, exports and QA runs (sandbox jobs queue in the sandbox instead) |
+| `CUTTINGFLOOR_MAX_RENDERS` | cores ÷ 2, at least 2 | Renders (melt, encodes, transcription) at once, jobs and inline previews together; the rest wait their turn |
 | `CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS` | `24` | Signed download link lifetime |
 | `CUTTINGFLOOR_MAX_DOWNLOAD_BYTES` | 10 GiB | Size cap for URL imports and uploads |
 | `CUTTINGFLOOR_MOTION_URL` | unset (compose sets it) | The sandbox for `create.motion`, `create.still` and `code.run`; without it those tools explain how to start one |

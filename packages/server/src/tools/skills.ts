@@ -21,7 +21,7 @@ export function registerSkillTools(server: McpServer): void {
     {
       title: 'Find a skill',
       description:
-        "Find step-by-step instructions for a common job, written for you to follow with these tools: cutting the pauses, ums and restarts out of a talking video, for one. Search in the user's words; every skill comes back best first with its score (roughly 0 to 1; a real fit is usually above 0.25, an unrelated one below 0.1), so judge the fit from the score and the description. Read one with skills.get, then follow its Steps.",
+        "Find step-by-step instructions for a common job, written for you to follow with these tools: cutting the pauses, ums and restarts out of a talking video, for one. Search in the user's words; every skill comes back best first with its score (roughly 0 to 1). Below 0.1 is unrelated; a real fit usually scores 0.15 to 0.45, lower for a short or general ask, and an unrelated skill that shares words can score as high, so read the description of each one above 0.1 to judge the fit. Read one with skills.get, then follow its Steps.",
       inputSchema: SkillsSearchInput,
       outputSchema: SkillsSearchResult,
       annotations: {

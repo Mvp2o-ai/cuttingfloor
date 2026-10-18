@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { DEMOS, finished } from '../../content/demos.ts';
+import { DEMOS, type DemoVideo, finished, length } from '../../content/demos.ts';
 import { Breadcrumbs, Footer, Nav } from '../shell.tsx';
 
 export const metadata: Metadata = {
@@ -31,14 +31,17 @@ export default function Demos() {
               return (
                 <li key={d.slug}>
                   <a href={`/demos/${d.slug}`}>
-                    {v.poster && (
-                      // biome-ignore lint/performance/noImgElement: a fixed-size poster, no layout shift
-                      <img src={v.poster} alt="" width={540} height={960} loading="lazy" />
-                    )}
+                    <span className="dm-ba">
+                      <Poster v={d.raw} tag="Before" />
+                      <span className="dm-arrow" aria-hidden="true">
+                        →
+                      </span>
+                      <Poster v={v} tag="After" />
+                    </span>
                     <h2>{d.title}</h2>
                     <p>{d.description}</p>
                     <span className="wt-hub-meta">
-                      {d.agent} · {d.raw.label.split(' · ')[1]} → {v.label.split(' · ')[1]}
+                      {d.agent} · {length(d.raw)} → {length(v)}
                     </span>
                   </a>
                 </li>
@@ -49,5 +52,26 @@ export default function Demos() {
         <Footer />
       </main>
     </>
+  );
+}
+
+function Poster({ v, tag }: { v: DemoVideo; tag: string }) {
+  return (
+    <span className="dm-poster">
+      {v.poster && (
+        // biome-ignore lint/performance/noImgElement: a fixed-size poster, no layout shift
+        <img
+          src={v.poster}
+          alt=""
+          width={v.wide ? 960 : 540}
+          height={v.wide ? 540 : 960}
+          loading="lazy"
+          className={v.wide ? 'wide' : undefined}
+        />
+      )}
+      <span className="label">
+        {tag} · {length(v)}
+      </span>
+    </span>
   );
 }

@@ -1,7 +1,7 @@
 import { open, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PROVIDER_ENV, type ProviderId } from '@cuttingfloor/credentials';
-import { engineVersions, renderMediaFrames, renderSource } from '@cuttingfloor/engine';
+import { engineVersions, renderLoad, renderMediaFrames, renderSource } from '@cuttingfloor/engine';
 import { CfError } from '@cuttingfloor/schema';
 import {
   type McpServer,
@@ -50,6 +50,7 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
         exports_dir: rt.config.exportsDir,
         retention: { timelines_hours: 24, media_days: 7, jobs_days: 7 },
         max_concurrent_jobs: rt.config.maxJobs,
+        renders: renderLoad(),
         providers,
       };
       return {
@@ -99,7 +100,7 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Timeline frames',
       description:
-        'Frames of a timeline as one image: {spec} is frame numbers joined by _ plus .webp or .png, e.g. 0_24_48.webp',
+        'Frames of a timeline as one image: {spec} is frame numbers joined by _ plus .webp, .png or .jpeg, e.g. 0_24_48.webp',
       mimeType: 'image/webp',
     },
     async (uri, vars) => {
@@ -211,14 +212,17 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
   );
 }
 
-function parseSpec(spec: string): { frames: number[]; format: 'webp' | 'png' } {
-  const m = /^(\d+(?:_\d+){0,15})\.(webp|png)$/.exec(decodeURIComponent(spec));
+function parseSpec(spec: string): { frames: number[]; format: 'webp' | 'png' | 'jpeg' } {
+  const m = /^(\d+(?:_\d+){0,15})\.(webp|png|jpeg)$/.exec(decodeURIComponent(spec));
   if (!m)
     throw new ProtocolError(
       ProtocolErrorCode.InvalidParams,
       'Expected frames like 0_24_48.webp (at most 16)',
     );
-  return { frames: (m[1] ?? '').split('_').map(Number), format: m[2] as 'webp' | 'png' };
+  return {
+    frames: (m[1] ?? '').split('_').map(Number),
+    format: m[2] as 'webp' | 'png' | 'jpeg',
+  };
 }
 
 /** Domain errors on resource reads surface as invalid-params protocol errors. */

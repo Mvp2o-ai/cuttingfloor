@@ -186,7 +186,7 @@ export const EditArgs = {
       .max(32)
       .optional()
       .describe(
-        'Speed ramp: rates at fractions of the clip (first at 0, last at 1), linear between',
+        'Speed ramp: rates at fractions of the clip as it plays after the change (first at 0, last at 1; 0.5 is halfway through the new length), linear between. timeline.get gives each point its clip frame and source frame',
       ),
     reverse: z.boolean().optional(),
     preserve_pitch: z.boolean().optional().describe('Keep voices at their pitch (default true)'),
@@ -627,9 +627,13 @@ export const Transcript = z.object({
   model: z.string(),
   language: z.string(),
   text: z.string(),
-  words: z.array(
-    z.object({ text: z.string(), start: z.number(), end: z.number(), confidence: z.number() }),
-  ),
+  words: z
+    .array(
+      z.object({ text: z.string(), start: z.number(), end: z.number(), confidence: z.number() }),
+    )
+    .describe(
+      'Media seconds, up to about a second off: starts can sit in the silence before a word and ends run over the pause after it; short ums are often missing',
+    ),
 });
 export const BeatsAnalysis = z.object({
   bpm: z.number(),
@@ -653,6 +657,11 @@ export const MediaStatus = z.enum(['importing', 'processing', 'ready', 'failed']
 export const MediaInfo = z.object({
   media_id: MediaId,
   name: z.string(),
+  url: z
+    .string()
+    .optional()
+    .describe('media.get: a signed download of the file itself, once it has one'),
+  expires_at: z.string().optional().describe('When url stops working'),
   status: MediaStatus.describe(
     'importing: not probed yet; processing: usable in edits, proxy still rendering; ready; failed',
   ),
@@ -820,7 +829,10 @@ export const CodeRunInput = z.object({
     .int()
     .min(1)
     .max(CODE_LIMITS.maxTimeoutSeconds)
-    .default(CODE_LIMITS.defaultTimeoutSeconds),
+    .default(CODE_LIMITS.defaultTimeoutSeconds)
+    .describe(
+      "The script's own running time; time its calls spend queued behind other work is added on",
+    ),
   idempotency_key: z.string().min(1).max(200).optional(),
 });
 
@@ -829,9 +841,21 @@ export const CodeRunResult = z.object({
   outputs: z.array(
     z.object({
       name: z.string(),
+      type: z
+        .enum(['media', 'timeline', 'file', 'failed'])
+        .describe(
+          'media: imported (media_id); timeline: loaded (timeline_id); file: text or data (vtt, srt, json, txt, csv, …) kept as it is; failed: this one file was not kept (error says why), the others were',
+        ),
       media_id: MediaId.optional(),
       timeline_id: TimelineId.optional(),
       kind: z.string().optional(),
+      url: z
+        .string()
+        .optional()
+        .describe('Signed download of the file exactly as the script wrote it'),
+      expires_at: z.string().optional(),
+      bytes: z.number().optional(),
+      mime_type: z.string().optional(),
       error: ToolError.optional(),
     }),
   ),
@@ -927,7 +951,12 @@ export const JobView = z.object({
   job_id: JobId,
   tool: z.string(),
   status: JobStatus,
-  status_message: z.string().optional(),
+  status_message: z
+    .string()
+    .optional()
+    .describe(
+      'What it is doing; while it waits, its place in the queue and what it waits for (a job slot, a render slot, the sandbox, or for code.run the call it is waiting on)',
+    ),
   progress: z.number().min(0).max(1).optional(),
   created_at: z.string(),
   updated_at: z.string(),
@@ -991,7 +1020,16 @@ export const RenderFramesInput = z
       .enum(['preview', 'full'])
       .default('preview')
       .describe('full: the sequence size from original media (long_edge ignored)'),
-    format: z.enum(['webp', 'png']).default('webp'),
+    format: z
+      .enum(['webp', 'png', 'jpeg'])
+      .default('webp')
+      .describe('jpeg: for places that take nothing else; png: lossless'),
+    quality: z
+      .int()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe('WebP and JPEG, 1–100 (default 82 WebP, 85 JPEG)'),
   })
   .refine((v) => Boolean(v.timeline_id) !== Boolean(v.media_id), {
     message: 'Give exactly one of timeline_id or media_id',
@@ -1001,7 +1039,16 @@ export const RenderFramesInput = z
   });
 
 export const RenderFramesResult = z.object({
-  images: z.array(z.object({ uri: z.string(), frames: z.array(frame) })),
+  images: z.array(
+    z.object({
+      uri: z.string().describe('MCP resource for the image'),
+      frames: z.array(frame),
+      url: z.string().describe('Signed download of this image'),
+      expires_at: z.string(),
+      mime_type: z.string(),
+      bytes: z.number(),
+    }),
+  ),
 });
 
 export const ExportPreset = z

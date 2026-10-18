@@ -39,7 +39,7 @@ async function renderMix(
       'video_off=1',
       'real_time=-1',
     ],
-    { cwd: dir, timeoutMs: MIX_TIMEOUT_MS, ...(signal ? { signal } : {}) },
+    { cwd: dir, heavy: true, timeoutMs: MIX_TIMEOUT_MS, ...(signal ? { signal } : {}) },
   );
   return join(dir, 'mix.wav');
 }

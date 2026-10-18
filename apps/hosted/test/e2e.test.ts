@@ -640,6 +640,32 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     expect(grid.content.filter((c) => c.type === 'image')).toHaveLength(1);
   }, 120_000);
 
+  it('links frames and media for download, and renders JPEG at a quality', async () => {
+    const sizes: number[] = [];
+    for (const quality of [30, 95]) {
+      const res = await ok<{ images: Array<{ url: string; mime_type: string; bytes: number }> }>(
+        client,
+        'render.frames',
+        { timeline_id: timeline, frames: [10, 30], layout: 'single', format: 'jpeg', quality },
+      );
+      expect(res.images).toHaveLength(2);
+      expect(res.images[0]?.mime_type).toBe('image/jpeg');
+      const got = await fetch(res.images[0]?.url ?? '');
+      expect(got.headers.get('content-type')).toBe('image/jpeg');
+      const body = Buffer.from(await got.arrayBuffer());
+      expect(body.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+      expect(body.length).toBe(res.images[0]?.bytes);
+      sizes.push(body.length);
+    }
+    expect(sizes[0]).toBeLessThan(sizes[1] as number);
+    const info = await ok<{ url: string }>(client, 'media.get', { media_id: media.card });
+    const file = await fetch(info.url);
+    expect(file.status).toBe(200);
+    expect(Buffer.from(await file.arrayBuffer())).toEqual(
+      await readFile(join(env.mediaDir, 'card.png')),
+    );
+  }, 120_000);
+
   it('serves previews as links that render on read', async () => {
     const trimmed = await ok<{ timeline_id: string; preview: { uri: string; frames: number[] } }>(
       client,
@@ -1877,6 +1903,43 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(colour(await pixel(image, 700, 1260))).toBe('green');
     }, 240_000);
 
+    it('shows a graphic at its own pixel size with fit none, in previews and full size', async () => {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'native',
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+        tracks: { video: 1, audio: 0 },
+      });
+      // card.png is 400x300 blue; contain would scale it to 960x720 on this 1280x720 frame.
+      const placed = await ok<{ timeline_id: string }>(client, 'edit.batch', {
+        timeline_id,
+        preview: 'none',
+        ops: [
+          { tool: 'clip.add', args: { track_id: 't1', media_id: media.card, duration_frames: 25 } },
+          {
+            tool: 'clip.set_transform',
+            args: { clip_id: { $ref: 'ops[0].clip_id' }, fit: 'none' },
+          },
+        ],
+      });
+      for (const [size, k] of [
+        ['full', 1],
+        ['preview', 0.5],
+      ] as const) {
+        const res = await call(client, 'render.frames', {
+          timeline_id: placed.timeline_id,
+          frames: [5],
+          layout: 'single',
+          format: 'png',
+          size,
+        });
+        const image = Buffer.from((res.content[0]?.data as string) ?? '', 'base64');
+        expect(colour(await pixel(image, 640 * k, 360 * k)), size).toBe('blue');
+        expect(colour(await pixel(image, 820 * k, 360 * k)), size).toBe('blue');
+        expect(colour(await pixel(image, 860 * k, 360 * k)), size).toBe('black');
+        expect(colour(await pixel(image, 640 * k, 530 * k)), size).toBe('black');
+      }
+    }, 120_000);
+
     it('moves a caption highlight from word to word in time', async () => {
       const t = await onGreen([
         {
@@ -2922,8 +2985,11 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
           timeout_seconds: 300,
           script: `
 import { still } from 'cuttingfloor';
-await still({ html: '<b>x</b>', width: 64, height: 64 });
-await still({ html: '<b>y</b>', width: 64, height: 64, out: 'out/named.png' });
+// Started together, they render one at a time.
+await Promise.all([
+  still({ html: '<b>x</b>', width: 64, height: 64 }),
+  still({ html: '<b>y</b>', width: 64, height: 64, out: 'out/named.png' }),
+]);
 console.log('a'.repeat(40000));
 console.log('the end');
 `,
@@ -2932,10 +2998,13 @@ console.log('the end');
         if (done.error) throw new Error(`code.run failed: ${JSON.stringify(done.error)}`);
         const result = done.result as {
           stdout: string;
-          outputs: Array<{ name: string }>;
+          outputs: Array<{ name: string; type: string; url: string }>;
           warnings?: string[];
         };
         expect(result.outputs.map((o) => o.name).sort()).toEqual(['named.png', 'still-1.png']);
+        expect(result.outputs.map((o) => o.type)).toEqual(['media', 'media']);
+        const png = await fetch(result.outputs[0]?.url ?? '');
+        expect(png.headers.get('content-type')).toBe('image/png');
         expect(result.stdout).toMatch(/^\[\d+ earlier characters of stdout cut/);
         expect(result.stdout).toMatch(/the end\n$/);
         expect(result.warnings).toEqual([

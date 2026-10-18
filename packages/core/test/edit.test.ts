@@ -720,6 +720,14 @@ describe('timing', () => {
     }).doc;
     // Mean rate 2: the 100 source frames take 50 timeline frames.
     expect(layout(doc, 0)[0]).toEqual([0, 50, 50]);
+    // Each point says where it falls in the clip and what source frame shows there.
+    expect(clipView(doc, 'c4')?.speed).toMatchObject({
+      curve: [
+        { at: 0, rate: 1, frame: 0, source_frame: 50 },
+        { at: 0.5, rate: 3, frame: 25, source_frame: 100 },
+        { at: 1, rate: 1, frame: 49 },
+      ],
+    });
     const before = [5, 20, 30, 45].map((f) => at(doc, 'c4', f));
     doc = edit(doc, { tool: 'clip.split', args: { clip_id: 'c4', at_frame: 25 } }).doc;
     const right = doc.tracks[0]?.clips[1]?.id ?? '';
@@ -764,6 +772,25 @@ describe('timing', () => {
     ]);
     expect(clipView(doc, frozen)).toMatchObject({ speed: { rate: 0 }, link: null });
     expect([at(doc, frozen, 0), at(doc, frozen, 24)]).toEqual([90, 90]);
+  });
+
+  it('freezes the last frame after the clip, leaving no one-frame remainder', () => {
+    // c4 covers frames 0–99: frame 99 is its last.
+    const { doc, results } = edit(two(), {
+      tool: 'clip.freeze',
+      args: { clip_id: 'c4', at_frame: 99, duration_frames: 25 },
+    });
+    const frozen = results[0]?.clip_id ?? '';
+    expect(layout(doc, 0)).toEqual([
+      [0, 100, 50],
+      [100, 125, 149],
+      [125, 175, 0],
+    ]);
+    expect(layout(doc, 1)).toEqual([
+      [0, 100, 50],
+      [125, 175, 0],
+    ]);
+    expect(at(doc, frozen, 0)).toBe(149);
   });
 
   it('rolls, slips and slides', () => {
@@ -1048,10 +1075,39 @@ describe('transitions', () => {
   });
 
   it('takes crossfades on audio only, and needs touching clips', () => {
+    // On a linked video clip a crossfade goes on its sound; the picture cuts hard. Overlapping
+    // the sound alone would pull it out of sync, so it needs handles.
     expect(() =>
       edit(two(), {
         tool: 'transition.add',
         args: { clip_id: 'c4', kind: 'crossfade', duration_frames: 10 },
+      }),
+    ).toThrow(/out of sync/);
+    const before = two();
+    const { doc } = edit(before, {
+      tool: 'transition.add',
+      args: { clip_id: 'c4', kind: 'crossfade', duration_frames: 4, mode: 'handles' },
+    });
+    expect(doc.tracks[0]?.transitions).toBeUndefined();
+    expect(doc.tracks[1]?.transitions).toMatchObject([{ kind: 'crossfade' }]);
+    // The edit says which transition it added, where, and what kind.
+    expect(diff(before, doc)).toEqual([
+      {
+        id: doc.tracks[1]?.transitions?.[0]?.id,
+        type: 'transition',
+        change: 'added',
+        track_id: doc.tracks[1]?.id,
+        kind: 'crossfade',
+        start: 98,
+        end: 102,
+      },
+    ]);
+    // A video clip with no sound linked to it takes no crossfade.
+    const unlinked = edit(two(), { tool: 'clip.unlink', args: { clip_id: 'c4' } }).doc;
+    expect(() =>
+      edit(unlinked, {
+        tool: 'transition.add',
+        args: { clip_id: 'c4', kind: 'crossfade', duration_frames: 4, mode: 'handles' },
       }),
     ).toThrow(/for audio tracks/);
     const apart = edit(two(), { tool: 'clip.move', args: { clip_id: 'c7', to_frame: 120 } }).doc;
@@ -1134,6 +1190,43 @@ describe('text', () => {
       args: { track_id: 't2', text: 'Hi', at_frame: 10 },
     });
     expect(plain.outcome.focus / tpf).toBe(10);
+  });
+
+  it('says when a title or caption covers text already on its track', () => {
+    const { outcome, doc } = edit(
+      textStart(),
+      {
+        tool: 'title.add',
+        args: { track_id: 't2', text: 'First', at_frame: 0, duration_frames: 70 },
+      },
+      {
+        tool: 'title.add',
+        args: { track_id: 't2', text: 'Second', at_frame: 14, duration_frames: 30 },
+      },
+      {
+        tool: 'title.add',
+        args: { track_id: 't2', text: 'Third', at_frame: 100, duration_frames: 10 },
+      },
+      {
+        tool: 'title.add',
+        args: { track_id: 't2', text: 'Fourth', at_frame: 95, duration_frames: 20 },
+      },
+    );
+    expect(layout(doc, 1).map(([a, b]) => [a, b])).toEqual([
+      [0, 14],
+      [14, 44],
+      [44, 70],
+      [95, 115],
+    ]);
+    expect(outcome.warnings).toEqual([
+      'c4 covers part of c3 on t2 (frames 0–70), which now plays 0–14 and 44–70. To show both, put one on another track or move it',
+      'c7 replaced c6 on t2 (frames 100–110), which is gone. To show both, put one on another track or move it',
+    ]);
+    // Text that lands on an empty stretch says nothing.
+    expect(
+      edit(textStart(), { tool: 'title.add', args: { track_id: 't2', text: 'Alone' } }).outcome
+        .warnings,
+    ).toEqual([]);
   });
 
   it('adds a styled title and restyles it, with null resetting a field', () => {
@@ -1513,6 +1606,30 @@ describe('transcripts', () => {
       ['end.', 41, 42],
     ]);
   });
+
+  it("starts a caption at the cut when it begins inside the clip's first frame", () => {
+    // The clip's first frame shows source 1.36–1.40 s; speech from 1.38 s starts at the cut,
+    // not a frame after it, so captions made per clip meet with no gap.
+    let { doc } = run(textStart(), {
+      tool: 'clip.add',
+      args: { track_id: 't1', media_id: AV, source: { in: 34, out: 76 } },
+    });
+    const added = run(doc, {
+      tool: 'caption.add',
+      args: {
+        track_id: 't2',
+        in_clip: { clip_id: 'c5', segments: [{ start: 1.38, end: 2, text: 'Right at the cut' }] },
+      },
+    });
+    doc = added.doc;
+    const caption = added.results[0]?.clip_id ?? '';
+    expect(toView('tl_x', doc).tracks[1]?.clips.map((c) => [c.start, c.end])).toEqual([[0, 16]]);
+    // A caption is not trimmed back past where it was added; the error says what to do instead.
+    doc = run(doc, { tool: 'clip.move', args: { clip_id: caption, to_frame: 20 } }).doc;
+    expect(() =>
+      run(doc, { tool: 'clip.trim', args: { clip_id: caption, edge: 'start', to_frame: 15 } }),
+    ).toThrow(/is a caption: its start can't be trimmed earlier/);
+  });
 });
 
 describe('time and views', () => {
@@ -1564,6 +1681,12 @@ describe('time and views', () => {
     );
     for (const w of caption.words) w.text = w.text.toUpperCase();
     expect(() => fromView(view, resolve)).not.toThrow();
+  });
+
+  it('reports a master change and timeline effects in the diff', () => {
+    const before = start();
+    const mastered = edit(before, { tool: 'audio.set_master', args: { gain_db: -3 } }).doc;
+    expect(diff(before, mastered)).toEqual([{ id: 'master', type: 'master', change: 'modified' }]);
   });
 
   it('round-trips through the view and reports a structural diff', () => {

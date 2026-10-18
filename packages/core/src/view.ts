@@ -26,7 +26,7 @@ import {
   timelineEnd,
   transitionHalves,
 } from './edit.ts';
-import { span } from './speed.ts';
+import { frameSource, span } from './speed.ts';
 import { framesToTicks, ticksPerFrame, ticksToFrames } from './time.ts';
 
 /** A clip's speed, audio and compositing settings in tool form (frames from the clip start). */
@@ -45,7 +45,22 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
   if (c.speed) {
     const { rate, curve, reverse, preserve_pitch } = c.speed;
     out.speed = {
-      ...(curve ? { curve: curve.map((p) => ({ at: p.t / c.duration, rate: p.rate })) } : {}),
+      ...(curve
+        ? {
+            curve: curve.map((p) => {
+              const frame = Math.min(
+                Math.round(p.t / tpf),
+                Math.max(0, Math.round(c.duration / tpf) - 1),
+              );
+              return {
+                at: p.t / c.duration,
+                rate: p.rate,
+                frame,
+                source_frame: Math.round(frameSource(c, tpf, frame) / tpf),
+              };
+            }),
+          }
+        : {}),
       ...(rate !== undefined ? { rate } : {}),
       ...(reverse ? { reverse } : {}),
       ...(preserve_pitch === false ? { preserve_pitch } : {}),
@@ -601,7 +616,7 @@ export function diff(a: TimelineDoc, b: TimelineDoc): Change[] {
   const tracksA = new Map(a.tracks.map((t) => [t.id, t]));
   const tracksB = new Map(b.tracks.map((t) => [t.id, t]));
   const props = (t: TimelineDoc['tracks'][number]) =>
-    JSON.stringify([t.kind, t.name, t.muted, t.hidden, t.locked, t.transitions ?? []]);
+    JSON.stringify([t.kind, t.name, t.muted, t.hidden, t.locked, t.effects ?? []]);
   for (const [id, t] of tracksB) {
     const before = tracksA.get(id);
     if (!before) out.push({ id, type: 'track', change: 'added' });
@@ -609,6 +624,47 @@ export function diff(a: TimelineDoc, b: TimelineDoc): Change[] {
   }
   for (const id of tracksA.keys())
     if (!tracksB.has(id)) out.push({ id, type: 'track', change: 'removed' });
+  if (JSON.stringify(a.effects ?? []) !== JSON.stringify(b.effects ?? [])) {
+    out.push({ id: 'effects', type: 'effects', change: 'modified' });
+  }
+  if (JSON.stringify(a.master ?? null) !== JSON.stringify(b.master ?? null)) {
+    out.push({ id: 'master', type: 'master', change: 'modified' });
+  }
+
+  // Each transition by id, with its track, kind and the frames it covers around its cut.
+  const tpf = ticksPerFrame(b.sequence.fps);
+  const transitions = (d: TimelineDoc) =>
+    new Map(
+      d.tracks.flatMap((t) =>
+        (t.transitions ?? []).map(
+          (x) => [x.id, { track: t, x, key: JSON.stringify([t.id, x]) }] as const,
+        ),
+      ),
+    );
+  const transA = transitions(a);
+  const transB = transitions(b);
+  for (const [id, { track, x, key }] of transB) {
+    const before = transA.get(id);
+    if (before && before.key === key) continue;
+    const clipA = track.clips.find((c) => c.id === x.a);
+    const { before: lead, after: tail } = transitionHalves(x.duration, tpf);
+    const cut = clipA ? clipA.start + clipA.duration : undefined;
+    out.push({
+      id,
+      type: 'transition',
+      change: before ? 'modified' : 'added',
+      track_id: track.id,
+      kind: x.kind,
+      ...(cut === undefined
+        ? {}
+        : {
+            start: ticksToFrames(cut - lead, b.sequence.fps),
+            end: ticksToFrames(cut + tail, b.sequence.fps),
+          }),
+    });
+  }
+  for (const id of transA.keys())
+    if (!transB.has(id)) out.push({ id, type: 'transition', change: 'removed' });
 
   const clips = (d: TimelineDoc) =>
     new Map(

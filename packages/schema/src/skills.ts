@@ -41,7 +41,11 @@ export const SkillMatch = z.object({
   slug: SkillSlug,
   name: z.string(),
   description: z.string(),
-  score: z.number().describe('0 to 1; higher is a closer match'),
+  score: z
+    .number()
+    .describe(
+      'Roughly 0 to 1, higher is closer; below 0.1 is unrelated, above it read the description',
+    ),
 });
 
 export const SkillsSearchResult = z.object({

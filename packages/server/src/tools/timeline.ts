@@ -32,8 +32,10 @@ import {
 } from '@cuttingfloor/schema';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import {
+  assertFonts,
   assertOnline,
   factsResolver,
+  fontsIn,
   framesUri,
   mediaIdsIn,
   mediaResolver,
@@ -66,7 +68,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.add': {
     title: 'Add clip',
     description:
-      'Place media on the timeline. A/V media lands as a linked pair on a video and an audio track. Default: the whole media, after the last clip, overwriting.',
+      'Place media on the timeline. A/V media lands as a linked pair on a video and an audio track. Default: the whole media, after the last clip, overwriting. A picture is scaled to fit the frame (a small logo fills it edge to edge); clip.set_transform {fit: "none"} keeps its own pixel size.',
   },
   'clip.remove': {
     title: 'Remove clip',
@@ -99,7 +101,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.freeze': {
     title: 'Freeze frame',
     description:
-      'Hold the frame at at_frame for duration_frames: the clip splits there, a freeze frame goes in, and later clips on its tracks move later.',
+      "Hold the frame at at_frame for duration_frames: the clip splits there, a freeze frame goes in, and later clips on its tracks move later. Freezing a clip's last frame holds it after the clip, with silence under the hold.",
   },
   'clip.roll': {
     title: 'Roll edit',
@@ -181,7 +183,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'transition.add': {
     title: 'Add transition',
     description:
-      'Transition at the cut after a clip, into the clip that touches it (video://catalog/transitions). Linked audio gets a crossfade at the same cut. mode overlap (default) overlaps the clips and moves later clips earlier; handles uses source past the cut and moves nothing.',
+      'Transition at the cut after a clip, into the clip that touches it (video://catalog/transitions). Linked audio gets a crossfade at the same cut. kind crossfade is sound only: on a video clip it crossfades the linked audio and the picture cuts hard (use mode handles for that). mode overlap (default) overlaps the clips and moves later clips earlier; handles uses source past the cut and moves nothing. changed lists each transition added, with its track and kind.',
   },
   'transition.set': {
     title: 'Set transition',
@@ -194,7 +196,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.set_transform': {
     title: 'Set transform',
     description:
-      'Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; eases are listed at video://catalog/eases. Omitted fields keep their value; null resets one.',
+      'Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). fit none shows a graphic at its own pixel size, so scale 1 is its real size; the default contain scales it to touch the frame edges. Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; eases are listed at video://catalog/eases. Omitted fields keep their value; null resets one.',
   },
   'clip.set_blend': {
     title: 'Set blend mode',
@@ -408,6 +410,7 @@ async function applyAndReply(
   const rt = deps.runtime;
   const owner = deps.owner();
   const base = await rt.timelines.get(owner, baseId);
+  await assertFonts(fontsIn(ops));
   const media = await mediaResolver(rt, owner, mediaIdsIn(ops));
   const nestable = await timelineResolver(rt, owner, nestedIdsIn(ops));
   // Word-range clips read the transcript media.analyze found; only those load the media records.

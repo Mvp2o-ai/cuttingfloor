@@ -8,11 +8,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CfError,
+  type CodeDone,
   type CodeEvent,
   CodeRequest,
   MOTION_LIMITS,
   type MotionEvent,
   MotionRequest,
+  serverBusy,
 } from '@cuttingfloor/schema';
 import { type CodeJob, deliverFile, dropCodeJob, newCodeJob, replyTo, runCode } from './code.ts';
 import { pageDocument } from './document.ts';
@@ -30,6 +32,11 @@ import type { MotionJob } from './render.ts';
 const JOB = fileURLToPath(new URL('./job.ts', import.meta.url));
 const MAX_BODY = Math.ceil(MOTION_LIMITS.maxAssetBytes * 1.4) + MOTION_LIMITS.maxHtmlBytes + 65_536;
 const KEEP_MS = 10 * 60_000;
+/**
+ * A finished script keeps the sandbox until the main server has fetched its out/ files and let
+ * it go, or this long without a request from it (a main server that went away).
+ */
+const CODE_IDLE_MS = 60_000;
 
 export interface MotionWorkerOptions {
   port: number;
@@ -55,17 +62,34 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
   >();
   const codeJobs = new Map<string, CodeJob>();
   let queue: Promise<void> = Promise.resolve();
+  /** What is in the sandbox now and waiting for it, in order: the first one runs. */
+  const lineup: string[] = [];
   let waiting = 0;
 
   /** Runs work after everything queued before it, one job at a time. */
-  function enqueue(work: () => Promise<void>): Promise<void> {
+  function enqueue(what: string, work: () => Promise<void>): Promise<void> {
     waiting += 1;
+    lineup.push(what);
     const run = queue.then(async () => {
       waiting -= 1;
-      await work();
+      try {
+        await work();
+      } finally {
+        lineup.shift();
+      }
     });
     queue = run.catch(() => undefined);
     return run;
+  }
+
+  /** Where a new job stands: what it waits behind, in words. */
+  function waitMessage(): string | undefined {
+    const ahead = lineup.length;
+    if (!ahead) return undefined;
+    const counts = new Map<string, number>();
+    for (const w of lineup) counts.set(w, (counts.get(w) ?? 0) + 1);
+    const what = [...counts].map(([w, n]) => `${n} ${w}${n > 1 ? 's' : ''}`).join(', ');
+    return `queued in the sandbox: ${ahead} ahead (${what}); it runs one at a time`;
   }
 
   /** Nothing another owner made may be on disk while a script runs. */
@@ -77,7 +101,7 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
     }
     for (const [id, job] of codeJobs) {
       codeJobs.delete(id);
-      await dropCodeJob(job);
+      await drop(job);
     }
   }
 
@@ -135,8 +159,9 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
     const send = (e: MotionEvent) => res.write(`${JSON.stringify(e)}\n`);
     const abort = new AbortController();
     res.on('close', () => abort.abort());
-    if (waiting > 0) send({ progress: 0, message: `waiting (${waiting} ahead)` });
-    await enqueue(async () => {
+    const queued = waitMessage();
+    if (queued) send({ progress: 0, message: queued });
+    await enqueue(request.kind === 'still' ? 'still' : 'motion render', async () => {
       if (abort.signal.aborted) return;
       try {
         const done = await render(request, send, abort.signal);
@@ -164,27 +189,50 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
     };
     const abort = new AbortController();
     res.on('close', () => abort.abort());
-    if (waiting > 0) send({ progress: 0, message: `waiting (${waiting} ahead)` });
-    await enqueue(async () => {
+    const queued = waitMessage();
+    if (queued) send({ progress: 0, message: queued });
+    await enqueue('code.run script', async () => {
       if (abort.signal.aborted) return;
       await purge();
       const job = await newCodeJob(scratch);
       codeJobs.set(job.id, job);
       send({ job: { id: job.id, secret: job.secret } });
+      let done: CodeDone;
       try {
-        send({ done: await runCode(job, parsed.data, send, abort.signal) });
-        job.timer = setTimeout(() => {
-          codeJobs.delete(job.id);
-          void dropCodeJob(job);
-        }, KEEP_MS);
-        job.timer.unref();
+        done = await runCode(job, parsed.data, send, abort.signal);
       } catch (error) {
         codeJobs.delete(job.id);
         await dropCodeJob(job);
         send({ error: errorBody(error) });
+        res.end();
+        return;
       }
+      // The next job purges this one's files, so this one keeps the sandbox until the main
+      // server has fetched its out/ files and deleted it (or stops asking).
+      const released = new Promise<void>((resolve) => {
+        job.release = resolve;
+      });
+      idle(job);
+      send({ done });
       res.end();
+      await released;
     });
+  }
+
+  /** Starts (or restarts) a finished job's idle clock; it lets the sandbox go when it runs out. */
+  function idle(job: CodeJob): void {
+    if (job.timer) clearTimeout(job.timer);
+    if (!job.release) return;
+    job.timer = setTimeout(() => void drop(job), CODE_IDLE_MS);
+    job.timer.unref();
+  }
+
+  async function drop(job: CodeJob): Promise<void> {
+    codeJobs.delete(job.id);
+    await dropCodeJob(job);
+    const release = job.release;
+    job.release = undefined;
+    release?.();
   }
 
   async function codeRoute(
@@ -201,10 +249,25 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
       return json(res, 404, { error: { code: 'not_found', message: 'No such job' } });
     }
     if (req.method === 'DELETE' && !what) {
-      codeJobs.delete(id);
-      await dropCodeJob(job);
+      await drop(job);
       return json(res, 200, { ok: true });
     }
+    // A request in flight (a big out/ file streaming) holds the idle clock.
+    if (job.timer) clearTimeout(job.timer);
+    try {
+      await jobRoute(req, res, job, what, rid);
+    } finally {
+      idle(job);
+    }
+  }
+
+  async function jobRoute(
+    req: IncomingMessage,
+    res: ServerResponse,
+    job: CodeJob,
+    what: string | undefined,
+    rid: string | undefined,
+  ): Promise<void> {
     if (req.method === 'POST' && what === 'reply' && rid) {
       replyTo(job, rid, (await readBody(req, 64 * 1024 * 1024)) as never);
       return json(res, 200, { ok: true });
@@ -346,7 +409,13 @@ function runJob(
     };
     signal.addEventListener('abort', onAbort, { once: true });
     child.on('error', (e) =>
-      reject(new CfError('engine_error', `Could not start a render: ${e.message}`)),
+      reject(
+        /ENOMEM|EAGAIN/.test((e as NodeJS.ErrnoException).code ?? '')
+          ? serverBusy(
+              `The sandbox has no memory or processes left to start a render (${e.message})`,
+            )
+          : new CfError('engine_error', `Could not start a render: ${e.message}`),
+      ),
     );
     child.on('close', async (code, sig) => {
       clearTimeout(timer);
@@ -367,6 +436,18 @@ function runJob(
       }
       if (why === 'cancelled') return reject(new CfError('cancelled', 'Cancelled'));
       if (code === 0 && outcome.done) return resolve(outcome.done);
+      // The sandbox, not the page, ran out: it could not start the browser or the encoder.
+      if (
+        /\b(ENOMEM|EAGAIN)\b|Cannot allocate memory|Resource temporarily unavailable/.test(
+          outcome.failed ?? '',
+        )
+      ) {
+        return reject(
+          serverBusy(
+            `The sandbox had no memory or processes left for the render (${(outcome.failed ?? '').split('\n')[0]})`,
+          ),
+        );
+      }
       if (
         sig === 'SIGKILL' ||
         code === 137 ||
@@ -376,7 +457,7 @@ function runJob(
       ) {
         return reject(
           new CfError('limit_exceeded', 'The render ran out of memory or processes', {
-            hint: 'The motion sandbox has fixed memory and process limits; simplify the page or lower the size',
+            hint: 'The motion sandbox has fixed memory and process limits; simplify the page or lower the size. If it rendered before, the sandbox may have been busy: try again in a minute',
           }),
         );
       }

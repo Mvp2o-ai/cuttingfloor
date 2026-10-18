@@ -1,3 +1,4 @@
+import { installedFonts } from '@cuttingfloor/engine';
 import { BatchResult, CfError, EditResult, QaCheckResult, withJob } from '@cuttingfloor/schema';
 import { TASKS_EXTENSION_ID_V2 } from '@modelcontextprotocol/ext-tasks/core/v2';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -462,6 +463,69 @@ describe('media and jobs without engines', () => {
       job_id: job.id,
     });
     expect(view).toMatchObject({ status: 'failed', error: { code: 'interrupted' } });
+  });
+});
+
+const fonts = await installedFonts();
+
+describe('text fonts', () => {
+  it.skipIf(!fonts.length)('refuses a font that is not installed and names real ones', async () => {
+    const client = await connect(env.runtime);
+    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      name: 'fonts',
+      sequence: SEQ_720P25,
+    });
+    const refused = await call(client, 'edit.batch', {
+      timeline_id,
+      ops: [
+        {
+          tool: 'title.add',
+          args: { track_id: 't1', text: 'Hi', style: { font: 'Nonexistent Sans Display' } },
+        },
+      ],
+    });
+    expect(refused.structured).toMatchObject({ code: 'bad_request' });
+    expect(String(refused.structured.message)).toMatch(
+      /"Nonexistent Sans Display" is not installed/,
+    );
+    expect(String(refused.structured.hint)).toMatch(/video:\/\/catalog\/fonts/);
+    const real = fonts[0] as string;
+    const kept = await call(client, 'title.add', {
+      timeline_id,
+      track_id: 't1',
+      text: 'Hi',
+      style: { font: real.toLowerCase() },
+      preview: 'none',
+    });
+    expect(kept.isError).toBe(false);
+  });
+});
+
+describe('a busy or restarting sandbox', () => {
+  it('fails create.still with a retryable server_busy, and names docker only locally', async () => {
+    const down = await testRuntime({ motionUrl: 'http://127.0.0.1:9' });
+    for (const mode of ['local', 'hosted']) {
+      const before = process.env.CUTTINGFLOOR_MODE;
+      process.env.CUTTINGFLOOR_MODE = mode;
+      try {
+        const client = await connect(down.runtime, `busy-${mode}`);
+        const started = await ok<{ job_id: string }>(client, 'create.still', {
+          html: `<b>${mode}</b>`,
+        });
+        const view = await ok<{ status: string; error: { code: string; hint: string } }>(
+          client,
+          'job.get',
+          { job_id: started.job_id, wait_seconds: 20 },
+        );
+        expect(view).toMatchObject({ status: 'failed', error: { code: 'server_busy' } });
+        expect(view.error.hint).toMatch(/again in about a minute/);
+        if (mode === 'local') expect(view.error.hint).toMatch(/docker compose ps/);
+        else expect(view.error.hint).not.toMatch(/docker/i);
+      } finally {
+        if (before === undefined) delete process.env.CUTTINGFLOOR_MODE;
+        else process.env.CUTTINGFLOOR_MODE = before;
+      }
+    }
   });
 });
 

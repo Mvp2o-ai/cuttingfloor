@@ -50,7 +50,22 @@ export type StoredSpeed = z.infer<typeof StoredSpeed>;
 export const SpeedView = z.object({
   rate: z.number().min(0).max(100).optional(),
   curve: z
-    .array(z.object({ at: z.number().min(0).max(1), rate: z.number().min(0).max(100) }))
+    .array(
+      z.object({
+        at: z.number().min(0).max(1),
+        rate: z.number().min(0).max(100),
+        frame: z
+          .number()
+          .int()
+          .optional()
+          .describe('timeline.get: the clip frame (from its start) this point falls on'),
+        source_frame: z
+          .number()
+          .int()
+          .optional()
+          .describe('timeline.get: the source frame showing there, from the start of the media'),
+      }),
+    )
     .min(2)
     .max(64)
     .optional(),
@@ -293,11 +308,16 @@ export type TimelineInput = z.infer<typeof TimelineInput>;
 
 export const Change = z.object({
   id: z.string(),
-  type: z.enum(['clip', 'track', 'sequence', 'name']),
+  type: z.enum(['clip', 'track', 'transition', 'effects', 'master', 'sequence', 'name']),
   change: z.enum(['added', 'removed', 'modified']),
-  /** Where an added or modified clip now sits, so a follow-up edit needs no timeline.get. */
+  /**
+   * Where an added or modified clip or transition now sits (its frames, end exclusive), so a
+   * follow-up edit needs no timeline.get.
+   */
   track_id: z.string().optional(),
   start: z.number().int().optional(),
   end: z.number().int().optional(),
+  /** Transitions: what kind it is. */
+  kind: z.string().optional(),
 });
 export type Change = z.infer<typeof Change>;
