@@ -21,8 +21,6 @@ import type {
   JobView,
   JudgeAskInput,
   JudgeAskResult,
-  LoudnessInput,
-  LoudnessResult,
   MediaAnalyzeInput,
   MediaAnalyzeResult,
   MediaImportInput,
@@ -50,10 +48,8 @@ import type * as z from 'zod/v4';
 
 export type ToolName =
   | 'adjustment.add'
-  | 'audio.duck'
   | 'audio.fade'
   | 'audio.set_gain'
-  | 'audio.set_loudness'
   | 'audio.set_master'
   | 'audio.set_pan'
   | 'caption.add'
@@ -116,10 +112,8 @@ export type ToolName =
 
 export interface ToolInputs {
   'adjustment.add': z.input<ReturnType<typeof editInput<'adjustment.add'>>>;
-  'audio.duck': z.input<ReturnType<typeof editInput<'audio.duck'>>>;
   'audio.fade': z.input<ReturnType<typeof editInput<'audio.fade'>>>;
   'audio.set_gain': z.input<ReturnType<typeof editInput<'audio.set_gain'>>>;
-  'audio.set_loudness': z.input<typeof LoudnessInput>;
   'audio.set_master': z.input<ReturnType<typeof editInput<'audio.set_master'>>>;
   'audio.set_pan': z.input<ReturnType<typeof editInput<'audio.set_pan'>>>;
   'caption.add': z.input<ReturnType<typeof editInput<'caption.add'>>>;
@@ -183,10 +177,8 @@ export interface ToolInputs {
 
 export interface ToolOutputs {
   'adjustment.add': z.output<typeof EditResult>;
-  'audio.duck': z.output<typeof EditResult>;
   'audio.fade': z.output<typeof EditResult>;
   'audio.set_gain': z.output<typeof EditResult>;
-  'audio.set_loudness': z.output<typeof LoudnessResult>;
   'audio.set_master': z.output<typeof EditResult>;
   'audio.set_pan': z.output<typeof EditResult>;
   'caption.add': z.output<typeof EditResult>;
@@ -250,10 +242,8 @@ export interface ToolOutputs {
 
 export const TOOL_NAMES: readonly ToolName[] = [
   'adjustment.add',
-  'audio.duck',
   'audio.fade',
   'audio.set_gain',
-  'audio.set_loudness',
   'audio.set_master',
   'audio.set_pan',
   'caption.add',

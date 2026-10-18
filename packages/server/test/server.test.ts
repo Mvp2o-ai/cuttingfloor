@@ -54,10 +54,8 @@ describe('protocol surface', () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
-        'audio.duck',
         'audio.fade',
         'audio.set_gain',
-        'audio.set_loudness',
         'audio.set_master',
         'audio.set_pan',
         'caption.add',

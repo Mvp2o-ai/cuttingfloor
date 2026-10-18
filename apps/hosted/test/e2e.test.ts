@@ -2042,20 +2042,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         '-shortest',
         join(m, 'steady.mov'),
       ]);
-      // Speech: silence with a burst of sound from 1 to 2 s.
-      await ff([
-        '-f',
-        'lavfi',
-        '-i',
-        "sine=frequency=1000:sample_rate=48000,volume=enable='not(between(t,1,2))':volume=0",
-        '-t',
-        '4',
-        '-c:a',
-        'pcm_s16le',
-        join(m, 'speech.wav'),
-      ]);
       ids.tone = (await importMedia({ path: join(m, 'steady.mov') })).media_id;
-      ids.speech = (await importMedia({ path: join(m, 'speech.wav') })).media_id;
     }, 180_000);
 
     it('lowers by gain, previews a waveform with loudness, and pans', async () => {
@@ -2115,44 +2102,19 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(rms(faded.left, 0, 0.2)).toBeLessThan(rms(faded.left, 1.5, 2.5) * 0.35);
     }, 120_000);
 
-    it('ducks music under speech', async () => {
-      const ducked = await tone([
-        {
-          tool: 'clip.add',
-          args: { track_id: 't3', media_id: ids.speech, at_frame: 0, source: { in: 0, out: 75 } },
-        },
-        { tool: 'audio.duck', args: { track_id: 't2', amount_db: -12 } },
-        // Listen to the music alone.
-        { tool: 'track.set', args: { track_id: 't3', muted: true } },
-      ]);
-      const music = await exportPcm(ducked);
-      const before = rms(music.left, 0.2, 0.6);
-      expect(rms(music.left, 1.3, 1.7) / before).toBeGreaterThan(0.2);
-      expect(rms(music.left, 1.3, 1.7) / before).toBeLessThan(0.3);
-      expect(rms(music.left, 2.6, 2.9) / before).toBeGreaterThan(0.9);
-    }, 120_000);
-
-    it('sets loudness to a target with peaks under the ceiling', async () => {
-      const res = await ok<{
-        timeline_id: string;
-        measured: { lufs: number; true_peak_db: number };
-      }>(client, 'audio.set_loudness', {
+    it('holds the master limiter ceiling as a true peak, measured by qa.check', async () => {
+      const loud = await ok<{ timeline_id: string }>(client, 'audio.set_master', {
+        // The tone sits near -18 dBFS, so +20 dB drives it into the limiter.
         timeline_id: await tone([]),
-        target_lufs: -16,
-        true_peak_db: -1,
+        gain_db: 20,
+        limit_db: -1,
         preview: 'none',
       });
-      expect(Math.abs(res.measured.lufs + 16)).toBeLessThan(0.7);
-      expect(res.measured.true_peak_db).toBeLessThanOrEqual(-1);
-      const report = await ok<{ checks: Array<{ check: string; status: string }> }>(
-        client,
-        'qa.check',
-        {
-          timeline_id: res.timeline_id,
-          loudness_target_lufs: -16,
-        },
-      );
-      expect(report.checks.find((c) => c.check === 'loudness')?.status).toBe('pass');
+      const report = await ok<{
+        measured: { integrated_lufs: number; true_peak_dbtp: number };
+      }>(client, 'qa.check', { timeline_id: loud.timeline_id });
+      expect(report.measured.true_peak_dbtp).toBeLessThanOrEqual(-1);
+      expect(report.measured.integrated_lufs).toBeGreaterThan(-10);
     }, 240_000);
   });
 

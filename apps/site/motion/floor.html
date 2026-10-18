@@ -97,7 +97,7 @@ const CALLS = [
   { fn: 'media.analyze', arg: '{ kind: "transcript" }', ret: 'logged · 6,412 words · 41 scenes', st: 'tr' },
   { fn: 'clip.add', arg: '{ words: [812, 861] }', ret: 'rough cut · ripple · J-cut 00:14', st: 'tl' },
   { fn: 'create.motion', arg: '{ html: lower third }', ret: 'lower third · 4 s · alpha', st: 'mo' },
-  { fn: 'audio.set_loudness', arg: '{ target_lufs: -14 }', ret: 'mixed · ducked · −14.1 LUFS', st: 'au' },
+  { fn: 'audio.set_master', arg: '{ gain_db: 6, limit_db: -1 }', ret: 'mixed · −14.1 LUFS', st: 'au' },
   { fn: 'export.video', arg: '{ preset: "web_1080p" }', ret: 'delivered · cut.mp4 · 1080p', st: 're' },
 ];
 const PATHS = {

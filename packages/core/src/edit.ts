@@ -157,7 +157,6 @@ export function applyEdit<T extends EditTool>(
     'audio.set_gain': audioSetGain,
     'audio.set_pan': audioSetPan,
     'audio.fade': audioFade,
-    'audio.duck': (d, a, _m, _t, f) => audioDuck(d, a, f),
     'audio.set_master': audioSetMaster,
     'filter.add': filterAdd,
     'filter.set': filterSet,
@@ -1364,78 +1363,6 @@ function audioSetMaster(doc: TimelineDoc, a: EditArgsOf<'audio.set_master'>): Op
   if (!gain && limit === undefined) delete doc.master;
   else doc.master = { gain, ...(limit !== undefined ? { limit } : {}) };
   return ok(0, { audio: { start: 0, end: timelineEnd(doc) } });
-}
-
-/**
- * Lowers a track wherever the tracks above it have sound, as gain keyframes on its clips:
- * speech is everything outside the silences found at import, the duck starts `attack` frames
- * before it and recovers over `release` frames after it.
- */
-function audioDuck(doc: TimelineDoc, a: EditArgsOf<'audio.duck'>, facts: FactsResolver): OpOutcome {
-  const target = getTrack(doc, a.track_id);
-  if (target.kind !== 'audio')
-    throw new CfError('bad_request', `Track ${target.id} is not an audio track`);
-  assertUnlocked(target);
-  const under = a.under_track_ids
-    ? a.under_track_ids.map((id) => getTrack(doc, id))
-    : doc.tracks.filter((t) => t.kind === 'audio' && t !== target);
-  if (!under.length)
-    throw new CfError('bad_request', 'There is no other audio track to duck under');
-  const tpf = ticksPerFrame(doc.sequence.fps);
-  const len = Math.round(timelineEnd(doc) / tpf);
-  const active = new Uint8Array(len);
-  for (const track of under) {
-    if (track.kind !== 'audio')
-      throw new CfError('bad_request', `Track ${track.id} is not an audio track`);
-    if (track.muted) continue;
-    for (const clip of track.clips) {
-      if (!clip.enabled) continue;
-      const quiet = clip.type === 'media' ? (facts(clip.media_id)?.silences ?? []) : [];
-      const start = Math.round(clip.start / tpf);
-      const n = Math.round(clip.duration / tpf);
-      for (let i = 0; i < n && start + i < len; i++) {
-        const s = frameSource(clip, tpf, i) / TICKS_PER_SECOND;
-        if (!quiet.some((q) => s >= q.start && s < q.end)) active[start + i] = 1;
-      }
-    }
-  }
-  // Envelope 0–1: a backward pass ramps in before speech, a forward pass recovers after.
-  const env = new Float64Array(len);
-  let level = 0;
-  for (let f = len - 1; f >= 0; f--) {
-    level = active[f] ? 1 : Math.max(0, level - 1 / Math.max(1, a.attack_frames));
-    env[f] = level;
-  }
-  level = 0;
-  for (let f = 0; f < len; f++) {
-    level = active[f] ? 1 : Math.max(0, level - 1 / Math.max(1, a.release_frames));
-    env[f] = Math.max(env[f] ?? 0, level);
-  }
-  const changed: StoredClip[] = [];
-  for (const clip of target.clips) {
-    const start = Math.round(clip.start / tpf);
-    const n = Math.round(clip.duration / tpf);
-    const points: Array<[number, number]> = [];
-    let any = false;
-    for (let i = 0; i < n; i++) {
-      const t = Math.round(frameSource(clip, tpf, i));
-      const duck = (env[start + i] ?? 0) * a.amount_db;
-      if (duck) any = true;
-      points.push([t, Math.round((sample(clip.gain, 0, t) + duck) * 100) / 100]);
-    }
-    if (!any) continue;
-    const kept = points.filter((p, i) => {
-      const prev = points[i - 1];
-      const next = points[i + 1];
-      return !prev || !next || prev[1] !== p[1] || next[1] !== p[1];
-    });
-    clip.gain = { keyframes: kept.map(([t, value]) => ({ t, value })) };
-    changed.push(clip);
-  }
-  if (!changed.length) {
-    return { ...ok(0), warnings: ['Nothing to duck under: the other tracks are silent or empty'] };
-  }
-  return audioOutcome(changed);
 }
 
 // ------------------------------------------------------------------------------------ text

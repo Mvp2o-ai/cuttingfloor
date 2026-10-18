@@ -288,17 +288,6 @@ export const EditArgs = {
     in_frames: z.number().int().positive().max(1_000_000).nullable().optional(),
     out_frames: z.number().int().positive().max(1_000_000).nullable().optional(),
   }),
-  'audio.duck': z.object({
-    track_id: z.string().describe('The audio track to lower, usually music'),
-    under_track_ids: z
-      .array(z.string())
-      .min(1)
-      .optional()
-      .describe('Tracks whose sound triggers it. Default: every other audio track'),
-    amount_db: z.number().min(-60).max(-1).default(-12),
-    attack_frames: z.number().int().min(0).max(1000).default(5),
-    release_frames: z.number().int().min(0).max(1000).default(15),
-  }),
   'audio.set_master': z.object({
     gain_db: z.number().min(-60).max(40).nullable().optional(),
     limit_db: z.number().min(-20).max(0).nullable().optional().describe('Limiter ceiling, dBFS'),
@@ -1058,21 +1047,6 @@ export const ExportResult = z.object({
   height: z.number().nullable().optional(),
   preset: ExportPreset,
   mime_type: z.string(),
-});
-
-export const LoudnessInput = z.object({
-  timeline_id: TimelineId,
-  preview: Preview,
-  target_lufs: z.number().min(-40).max(-5).default(-14),
-  true_peak_db: z.number().min(-9).max(0).default(-1),
-});
-
-export const LoudnessResult = EditResult.extend({
-  measured: z.object({
-    before_lufs: z.number().nullable(),
-    lufs: z.number().nullable(),
-    true_peak_db: z.number().nullable(),
-  }),
 });
 
 export const QaCheckInput = z.object({

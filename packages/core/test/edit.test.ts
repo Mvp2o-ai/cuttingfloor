@@ -1286,45 +1286,6 @@ describe('audio', () => {
     ).toThrow(/has no sound/);
   });
 
-  it('ducks a music track where the others have sound, as gain keyframes', () => {
-    const { doc } = runEdits(
-      newTimeline('t', seq, { video: 0, audio: 2 }),
-      'tl_parent',
-      [
-        {
-          tool: 'clip.add',
-          args: { track_id: 't1', media_id: AV, av: 'audio', source: { in: 0, out: 100 } },
-        },
-        { tool: 'clip.add', args: { track_id: 't2', media_id: AUD, source: { in: 0, out: 100 } } },
-        {
-          tool: 'audio.duck',
-          args: { track_id: 't2', amount_db: -12, attack_frames: 5, release_frames: 10 },
-        },
-      ],
-      resolve,
-      { tool: 'test', args: null },
-      undefined,
-      // The speech is silent for its first and last second (frames 0–25 and 75–100).
-      (id) =>
-        id === AV
-          ? {
-              silences: [
-                { start: 0, end: 1 },
-                { start: 3, end: 10 },
-              ],
-            }
-          : undefined,
-    );
-    const music = doc.tracks[1]?.clips[0];
-    const at = (f: number) => sample(music?.gain, 0, framesToTicks(f, fps));
-    expect(at(10)).toBe(0);
-    expect(at(22)).toBeLessThan(0);
-    expect(at(22)).toBeGreaterThan(-12);
-    expect(at(50)).toBe(-12);
-    expect(at(80)).toBeGreaterThan(-12);
-    expect(at(95)).toBe(0);
-  });
-
   it('sets the master and round-trips everything through timeline.load', () => {
     const { doc } = edit(
       base(),
