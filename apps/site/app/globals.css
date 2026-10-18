@@ -1584,18 +1584,6 @@ button.link-big {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.sk-add {
-  margin: 0;
-  padding: clamp(20px, 3vw, 36px);
-  list-style: none;
-  display: grid;
-  gap: 12px;
-  font-size: clamp(15px, 1.3vw, 17px);
-  line-height: 1.55;
-}
-.sk-add strong {
-  color: var(--ink);
-}
 .wt-prompt figcaption {
   display: flex;
   justify-content: space-between;
