@@ -45,7 +45,8 @@ if [ -z "$pr" ]; then
   pr=$(gh pr list --base main --head develop --state open --json number --jq '.[0].number')
 fi
 
-sleep 10
+# Checks register a few seconds after a push to develop; until then there are none to watch.
+until [ "$(gh pr checks "$pr" --json name --jq length 2>/dev/null || echo 0)" -gt 0 ]; do sleep 10; done
 gh pr checks "$pr" --watch --fail-fast
 gh pr merge "$pr" --merge --subject "Promote develop: $1"
 git fetch -q origin main
