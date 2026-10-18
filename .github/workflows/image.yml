@@ -71,6 +71,8 @@ jobs:
           load: true
           tags: cuttingfloor:ci
           cache-from: type=gha
+          # On pushes, keep the runtime layers for the amd64 publish build (same image, all hits).
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=image-amd64,mode=max' || '' }}
       - name: HTTP, stdio via docker exec, restart
         run: node scripts/smoke-image.ts cuttingfloor:ci
       - name: Motion sandbox (compose), Chromium sandboxed, nothing reachable, abuse contained
