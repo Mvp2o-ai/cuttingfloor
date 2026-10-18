@@ -2,7 +2,7 @@
 
 One server first. It's the same image as local, in hosted mode:
 - OAuth sign-in through WorkOS AuthKit (each user is an owner), and bearer API keys alongside
-- URL imports only
+- imports from a URL, or of a file sent to a signed upload URL (`media.upload`, resumable, kept a day until imported)
 - the server's own TypeSafe key for `media.analyze look`, with a daily frame cap per account
 - the sandbox under gVisor
 - Caddy for TLS
@@ -28,7 +28,7 @@ One server first. It's the same image as local, in hosted mode:
    Or let `up.sh` set it: `CUTTINGFLOOR_ZONE=example.com` for a Hetzner DNS zone, plus `CUTTINGFLOOR_DNS_TOKEN` when the zone is in another project.
 7. After that, deploys are automatic: every merge into `main` publishes the image and the `Deploy` workflow pulls it here. Run `./up.sh` again only to change the server or its `cuttingfloor.env`.
 
-**Check it:** `CF_KEY=<a key from CUTTINGFLOOR_API_KEYS> node scripts/smoke-hosted.ts https://<domain>`. It checks that a request without a key is refused, then the sandbox (`create.still`, `create.motion`, `code.run`), `look` on the server's TypeSafe key, and an export's signed link.
+**Check it:** `CF_KEY=<a key from CUTTINGFLOOR_API_KEYS> node scripts/smoke-hosted.ts https://<domain>`. It checks that a request without a key is refused, then the sandbox (`create.still`, `create.motion`, `code.run`), `look` on the server's TypeSafe key, an export's signed link, and that file uploaded back in two parts and imported.
 
 **Check sign-in:** `WORKOS_API_KEY=sk_… CHROME_PATH=<chrome> node scripts/smoke-oauth.ts https://<domain>`. It makes a throwaway WorkOS user, registers a client with AuthKit as an MCP client does, signs in on AuthKit's page in headless Chrome, calls tools with the token, then deletes the user and the client. AuthKit caches its metadata for five minutes, so a registration setting changed there takes that long to show.
 
@@ -51,7 +51,7 @@ One server first. It's the same image as local, in hosted mode:
   - The job records (node name, heartbeat, any server cleaning up after a dead one) are built for this.
   - A cancel on one server reaches a job running on another.
 - What it needs:
-  - A shared `/data`: an NFS export over Hetzner's private network as a first step, or the S3 `BlobStore` (spec §3) for object storage.
+  - A shared `/data`: an NFS export over Hetzner's private network as a first step, or the S3 `BlobStore` (spec §3) for object storage. Uploads live there too, so a resumed upload can land on any server.
   - A Hetzner load balancer in front.
   - A distinct `CUTTINGFLOOR_NODE` per server (up.sh sets it to the server name).
 

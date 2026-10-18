@@ -514,6 +514,58 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     expect(fromUrl).toMatchObject({ status: 'ready', kind: 'audio' });
   }, 120_000);
 
+  it('imports a file sent through media.upload, resumed part way', async () => {
+    await ff([
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc2=size=640x360:rate=25',
+      '-t',
+      '2',
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      join(env.mediaDir, 'sent.mp4'),
+    ]);
+    const bytes = await readFile(join(env.mediaDir, 'sent.mp4'));
+    const up = await ok<{ upload_id: string; url: string }>(client, 'media.upload', {
+      name: 'sent.mp4',
+      bytes: bytes.length,
+    });
+    // The first part, then the rest from where the server says it stands.
+    const half = Math.floor(bytes.length / 2);
+    const first = await fetch(up.url, {
+      method: 'PUT',
+      headers: { 'content-range': `bytes 0-${half - 1}/${bytes.length}` },
+      body: bytes.subarray(0, half),
+    });
+    expect(first.headers.get('upload-complete')).toBe('false');
+    const offset = Number((await fetch(up.url, { method: 'HEAD' })).headers.get('upload-offset'));
+    expect(offset).toBe(half);
+    const rest = await fetch(up.url, {
+      method: 'PUT',
+      headers: { 'content-range': `bytes ${offset}-${bytes.length - 1}/${bytes.length}` },
+      body: bytes.subarray(offset),
+    });
+    expect(await rest.json()).toMatchObject({ complete: true, received: bytes.length });
+
+    const sent = await importMedia({ upload_id: up.upload_id });
+    expect(sent).toMatchObject({ status: 'ready', kind: 'video', width: 640, name: 'sent.mp4' });
+    // Imported uploads are moved into the media, so the link has nothing left.
+    expect((await fetch(up.url, { method: 'HEAD' })).status).toBe(404);
+
+    // The same bytes again are the media already imported.
+    const again = await ok<{ upload_id: string; url: string }>(client, 'media.upload', {
+      name: 'copy.mp4',
+    });
+    await fetch(again.url, { method: 'PUT', body: await readFile(join(env.mediaDir, 'av.mp4')) });
+    const dup = await ok<{ media_id: string }>(client, 'media.import', {
+      source: { upload_id: again.upload_id },
+    });
+    expect(dup.media_id).toBe(media.av);
+  }, 120_000);
+
   let timeline = '';
 
   it('edits with inline previews that show the right pixels', async () => {

@@ -7,7 +7,8 @@
 //
 // Checks that a request without a key is refused, then that create.still, create.motion and
 // code.run work in the server's sandbox (gVisor on Hetzner), media.analyze look answers on the
-// server's own TypeSafe key, and an export comes back as a signed link that downloads.
+// server's own TypeSafe key, an export comes back as a signed link that downloads, and that file,
+// sent back in two parts through media.upload, imports as media.
 import { readFile } from 'node:fs/promises';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
@@ -129,8 +130,33 @@ if (mediaId) {
   expect(Boolean(url), `export.video ${JSON.stringify(exported.error ?? '')}`);
   if (url) {
     const file = await fetch(url);
-    const bytes = (await file.arrayBuffer()).byteLength;
+    const body = Buffer.from(await file.arrayBuffer());
+    const bytes = body.length;
     expect(file.ok && bytes > 1000, `signed link downloads (${file.status}, ${bytes} bytes)`);
+
+    step('media.upload: a file sent in two parts imports as media');
+    const up = await call('media.upload', { name: 'smoke-upload.mp4', bytes });
+    const half = Math.floor(bytes / 2);
+    const parts = [
+      [0, half],
+      [half, bytes],
+    ] as const;
+    let complete = false;
+    for (const [from, to] of parts) {
+      const res = await fetch(String(up.url), {
+        method: 'PUT',
+        headers: { 'content-range': `bytes ${from}-${to - 1}/${bytes}` },
+        body: body.subarray(from, to),
+      });
+      complete = res.headers.get('upload-complete') === 'true';
+      expect(res.ok, `part ${from}-${to - 1} accepted (${res.status})`);
+    }
+    expect(complete, 'upload complete');
+    const imported = await run('media.import', { source: { upload_id: up.upload_id } });
+    expect(
+      imported.result?.status === 'ready' && imported.result?.kind === 'video',
+      `uploaded file imports (${JSON.stringify(imported.error ?? imported.result?.status)})`,
+    );
   }
 }
 

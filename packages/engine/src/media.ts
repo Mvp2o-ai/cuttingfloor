@@ -1,4 +1,4 @@
-import { copyFile, mkdir, open, realpath, stat } from 'node:fs/promises';
+import { copyFile, mkdir, open, realpath, rename, stat } from 'node:fs/promises';
 import { basename, extname, join, sep } from 'node:path';
 import { randomId, secondsToTicks, type Workspace } from '@cuttingfloor/core';
 import { CfError, type MediaInfo, type MediaRef, type ToolError } from '@cuttingfloor/schema';
@@ -13,10 +13,11 @@ export interface MediaRecord {
   media_id: string;
   name: string;
   status: 'importing' | 'processing' | 'ready' | 'failed';
-  /** Where it came from: a path, a URL, or a create.* tool and the hash of its recipe. */
+  /** Where it came from: a path, a URL, an upload, a render, or a create.* tool and its recipe. */
   source:
     | { path: string }
     | { url: string }
+    | { upload: string }
     | { job: string }
     | { created: string; recipe: string };
   /** The original: the user's file in place, or the downloaded copy. */
@@ -198,8 +199,16 @@ export class MediaLibrary {
     });
   }
 
-  /** Copies a file the server made (a rendered export) into a new record's folder. */
-  async adopt(owner: string, record: MediaRecord, file: string): Promise<string> {
+  /**
+   * Brings a file the server holds into a new record's folder: a rendered export is copied (it
+   * expires on its own clock), an upload is moved.
+   */
+  async adopt(
+    owner: string,
+    record: MediaRecord,
+    file: string,
+    options: { move?: boolean } = {},
+  ): Promise<string> {
     const dir = this.dir(owner, record.media_id);
     await mkdir(dir, { recursive: true });
     const dest = join(
@@ -208,7 +217,8 @@ export class MediaLibrary {
         .slice(0, 8)
         .replace(/[^.\w]/g, '')}`,
     );
-    await copyFile(file, dest);
+    if (options.move) await rename(file, dest);
+    else await copyFile(file, dest);
     return dest;
   }
 
@@ -252,7 +262,9 @@ export class MediaLibrary {
             ? decodeURIComponent(new URL(source.url).pathname.split('/').pop() || 'download')
             : 'job' in source
               ? source.job
-              : source.created),
+              : 'upload' in source
+                ? source.upload
+                : source.created),
       status: 'importing',
       source,
       file: null,

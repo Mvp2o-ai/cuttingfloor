@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { ownerKey, TimelineStore, Workspace } from '@cuttingfloor/core';
 import { MEDIA_TTL_MS, MediaLibrary } from '@cuttingfloor/engine';
 import { FileJobStore, JobRunner } from '@cuttingfloor/jobs';
+import { Uploads } from './uploads.ts';
 
 export interface RuntimeConfig {
   /** Data root: timelines, media, jobs, outputs and caches, all with TTLs. */
@@ -81,6 +82,7 @@ export class Runtime {
   readonly timelines: TimelineStore;
   readonly media: MediaLibrary;
   readonly jobs: JobRunner;
+  readonly uploads: Uploads;
   /** Downloaded models, kept across restarts (they are checksummed, not user data). */
   readonly modelsDir: string;
   #secret: Buffer | undefined;
@@ -101,6 +103,12 @@ export class Runtime {
     });
     this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs, {
       ...(config.node ? { node: config.node } : {}),
+    });
+    // Uploads take files as big as URL imports may download.
+    this.uploads = new Uploads(this.ws, {
+      secret: () => this.secret(),
+      publicUrl: () => this.config.publicUrl,
+      maxBytes: config.maxDownloadBytes,
     });
   }
 
@@ -135,6 +143,7 @@ export class Runtime {
     await this.timelines.sweep();
     await this.media.sweep(MEDIA_TTL_MS);
     await this.jobs.store.sweep();
+    await this.uploads.sweep();
     for (const owner of await this.ws.owners()) {
       await this.ws.sweep(this.ws.path('owners', owner, 'usage'), 2 * 24 * 3_600_000);
     }
