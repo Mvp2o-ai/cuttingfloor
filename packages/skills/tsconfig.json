@@ -4,7 +4,7 @@
     "rootDir": ".",
     "outDir": "dist/types"
   },
-  "include": ["src", "test"],
+  "include": ["src", "test", "scripts"],
   "references": [
     {
       "path": "../schema"

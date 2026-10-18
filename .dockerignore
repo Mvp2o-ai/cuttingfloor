@@ -24,3 +24,6 @@ coverage
 /*.png
 /*.jpg
 /*.jpeg
+# Built inside the image, never copied in
+packages/skills/vectors.json
+.models

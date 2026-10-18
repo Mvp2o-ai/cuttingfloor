@@ -13,3 +13,8 @@ plans/
 
 # Hosted deploy secrets
 deploy/hetzner/cuttingfloor.env
+
+# Skill vectors, written per image build (packages/skills/scripts/write-vectors.ts)
+packages/skills/vectors.json
+# Model files downloaded for local runs
+.models/

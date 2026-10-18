@@ -2,6 +2,7 @@ import { CfError } from '@cuttingfloor/schema';
 import { bm25Score, termFrequencies, tokenize } from './bm25.ts';
 import type { Embedder } from './embed.ts';
 import type { Skill } from './library.ts';
+import { contractText, type StoredVector, textHash } from './vectors.ts';
 
 // Hybrid search over skills, as one-mcp searches playbooks (mcp-platform/src/playbooks/
 // hybrid-search.ts there): cosine similarity of sentence embeddings, fused with BM25.
@@ -40,10 +41,6 @@ interface Entry {
 
 const words = (slug: string) => slug.replace(/-/g, ' ');
 
-/** What a skill is for, embedded. */
-export const contractText = (s: Pick<Skill, 'name' | 'description'>) =>
-  `${words(s.name)}. ${s.description}`;
-
 /** The same, for keywords, with the slug kept whole so a slug query matches exactly. */
 const lexicalText = (s: Pick<Skill, 'slug' | 'name' | 'description'>) =>
   `${s.name} ${words(s.name)} ${words(s.slug)}\n${s.description}`;
@@ -78,13 +75,32 @@ export class SkillIndex {
       for (const t of e.terms.keys()) this.#df.set(t, (this.#df.get(t) ?? 0) + 1);
   }
 
-  /** Indexes the skills that are not hidden. Without an embedder, search is keywords only. */
-  static async build(skills: Skill[], embedder: Embedder | null): Promise<SkillIndex> {
+  /**
+   * Indexes the skills that are not hidden. A stored vector is used when its hash matches the
+   * skill's text now; the rest are embedded here. Without an embedder, search is keywords only.
+   */
+  static async build(
+    skills: Skill[],
+    embedder: Embedder | null,
+    stored: ReadonlyMap<string, StoredVector> = new Map(),
+  ): Promise<SkillIndex> {
     const shown = skills.filter((s) => !s.hidden);
     let vectors: Float32Array[] | null = null;
+    let computed = 0;
     if (embedder) {
+      const texts = shown.map(contractText);
+      const kept = shown.map((s, i) => {
+        const hit = stored.get(s.slug);
+        return hit && hit.hash === textHash(texts[i] as string) ? hit.vector : null;
+      });
+      const missing = kept.flatMap((v, i) => (v ? [] : [i]));
       try {
-        vectors = await embedder.embed(shown.map(contractText));
+        const fresh = missing.length
+          ? await embedder.embed(missing.map((i) => texts[i] as string))
+          : [];
+        for (const [j, i] of missing.entries()) kept[i] = fresh[j] ?? null;
+        computed = missing.length;
+        vectors = kept.every((v) => v) ? (kept as Float32Array[]) : null;
       } catch {
         vectors = null;
       }
@@ -95,8 +111,15 @@ export class SkillIndex {
       for (const f of terms.values()) length += f;
       return { skill, vector: vectors?.[i] ?? null, terms, length };
     });
-    return new SkillIndex(entries, vectors ? embedder : null);
+    const index = new SkillIndex(entries, vectors ? embedder : null);
+    index.vectors = vectors
+      ? { stored: shown.length - computed, computed }
+      : { stored: 0, computed: 0 };
+    return index;
   }
+
+  /** Where the skills' vectors came from: the stored file, or embedded when the index was built. */
+  vectors: { stored: number; computed: number } = { stored: 0, computed: 0 };
 
   /** Whether the semantic half is on. */
   get semantic(): boolean {

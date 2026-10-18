@@ -1,15 +1,23 @@
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { CfError } from '@cuttingfloor/schema';
 import {
   bm25Score,
+  contractText,
   type Embedder,
   findSkill,
   loadEmbedder,
   loadLibrary,
   parseSkill,
+  readVectors,
   type Skill,
   SkillIndex,
+  skills,
   termFrequencies,
+  textHash,
   tokenize,
+  writeVectors,
 } from '@cuttingfloor/skills';
 import { describe, expect, it } from 'vitest';
 
@@ -172,6 +180,80 @@ describe('skill search', () => {
   });
 });
 
+describe('stored vectors', () => {
+  /** The stand-in, counting the texts it is asked to embed. */
+  const counting = () => {
+    const seen: string[] = [];
+    const embedder: Embedder = {
+      embed: async (texts) => {
+        seen.push(...texts);
+        return standIn.embed(texts);
+      },
+    };
+    return { embedder, seen };
+  };
+
+  it('round-trips through the file exactly, keyed by slug with a hash of the text', async () => {
+    const file = join(await mkdtemp(join(tmpdir(), 'cf-vectors-')), 'vectors.json');
+    expect(await writeVectors(SKILLS, standIn, file)).toBe(SKILLS.length);
+    const json = JSON.parse(await readFile(file, 'utf8'));
+    expect(Object.keys(json.skills).sort()).toEqual(SKILLS.map((s) => s.slug).sort());
+    const stored = readVectors(file);
+    const first = SKILLS[0] as Skill;
+    expect(stored.get(first.slug)?.hash).toBe(textHash(contractText(first)));
+    const [want] = await standIn.embed([contractText(first)]);
+    expect(stored.get(first.slug)?.vector).toEqual(want);
+  });
+
+  it('embeds only the query when every vector is stored and current', async () => {
+    const file = join(await mkdtemp(join(tmpdir(), 'cf-vectors-')), 'vectors.json');
+    await writeVectors(SKILLS, standIn, file);
+    const { embedder, seen } = counting();
+    const index = await SkillIndex.build(SKILLS, embedder, readVectors(file));
+    expect(index.vectors).toEqual({ stored: 3, computed: 0 });
+    expect(seen).toEqual([]);
+    const [first] = await index.search('make it portrait');
+    expect(first?.slug).toBe('reframe-to-vertical');
+    expect(seen).toEqual(['make it portrait']);
+  });
+
+  it('re-embeds a skill whose text changed, and one with no vector', async () => {
+    const file = join(await mkdtemp(join(tmpdir(), 'cf-vectors-')), 'vectors.json');
+    await writeVectors(SKILLS.slice(0, 2), standIn, file);
+    const edited = SKILLS.map((s) =>
+      s.slug === 'reframe-to-vertical' ? { ...s, description: `${s.description} Portrait.` } : s,
+    );
+    const { embedder, seen } = counting();
+    const index = await SkillIndex.build(edited, embedder, readVectors(file));
+    expect(index.vectors).toEqual({ stored: 1, computed: 2 });
+    expect(seen.map((t) => t.split('.')[0])).toEqual(['reframe to vertical', 'add captions']);
+  });
+
+  it('reads a missing, broken or other-model file as no vectors', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'cf-vectors-'));
+    expect(readVectors(join(dir, 'none.json')).size).toBe(0);
+    await writeFile(join(dir, 'broken.json'), '{');
+    expect(readVectors(join(dir, 'broken.json')).size).toBe(0);
+    await writeFile(
+      join(dir, 'other.json'),
+      JSON.stringify({
+        model: 'other',
+        dimensions: 1,
+        skills: { a: { hash: 'x', vector: 'AAAAAA==' } },
+      }),
+    );
+    expect(readVectors(join(dir, 'other.json')).size).toBe(0);
+  });
+
+  it('is unused without a model: keywords only', async () => {
+    const file = join(await mkdtemp(join(tmpdir(), 'cf-vectors-')), 'vectors.json');
+    await writeVectors(SKILLS, standIn, file);
+    const index = await SkillIndex.build(SKILLS, null, readVectors(file));
+    expect(index.semantic).toBe(false);
+    expect(index.vectors).toEqual({ stored: 0, computed: 0 });
+  });
+});
+
 describe('a skill by slug', () => {
   it('finds hidden ones too, and points an unknown slug at search', () => {
     expect(findSkill(SKILLS, 'secret-skill').slug).toBe('secret-skill');
@@ -194,6 +276,17 @@ describe('the local model', () => {
   it('is in the image', () => {
     if (required) expect(loaded.embedder, 'reason' in loaded ? loaded.reason : '').not.toBeNull();
   });
+
+  it.skipIf(!required)(
+    'ships every skill vector in the image, current',
+    async () => {
+      const { index, degraded } = await skills();
+      expect(degraded).toBeNull();
+      expect(index.vectors.computed).toBe(0);
+      expect(index.vectors.stored).toBe(loadLibrary().skills.filter((s) => !s.hidden).length);
+    },
+    60_000,
+  );
 
   it.skipIf(!loaded.embedder)(
     'finds the right skill in this repo for what a creator types',

@@ -149,6 +149,9 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm fetch
 COPY . .
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prefer-offline --frozen-lockfile
+# Every skill's vector, from the model above, so the server embeds only the query. Fails without
+# the model; the server re-embeds any skill whose text no longer matches its stored hash.
+RUN node packages/skills/scripts/write-vectors.ts
 
 # Test-only: espeak-ng speaks the transcript fixtures, and the tiny whisper model and the Kokoro
 # voice model are fetched once here (checksummed) so test runs don't download them.
