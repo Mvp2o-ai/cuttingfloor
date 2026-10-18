@@ -26,7 +26,10 @@ and stays on develop. Another session's worktree is theirs; leave it alone.
 - Land it: `git push origin HEAD:develop` (a rejection means someone pushed first:
   `git pull --rebase origin develop`, check again, push again). Or open a pull request into
   develop. Never into main.
-- develop gets CI, CodeQL, the image (`:develop`) and a Vercel preview of the site.
+- develop gets CI, CodeQL, the image (`:develop`) and a Vercel preview of the site at
+  https://cuttingfloor-site-git-develop-wiltshireks-projects.vercel.app (team login; sign-in and
+  Stripe work there, on the same WorkOS and Stripe accounts as production). Check it with
+  `CHROME_PATH=… node scripts/smoke-account.ts <that url>`.
 
 ## 3. Promote develop to main (when the person says to release)
 
