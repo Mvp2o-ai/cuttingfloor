@@ -296,8 +296,14 @@ describe('the local model', () => {
       const [first] = await index.search('remove the ums from my video');
       expect(first?.slug).toBe('cut-pauses-ums-and-restarts');
       expect(first?.semantic).toBeGreaterThan(0.3);
+      // By meaning: "tighter" is not in the skill, and the shared words alone fall short.
+      const [tighter] = await index.search('make my talking video tighter');
+      expect(tighter?.slug).toBe('cut-pauses-ums-and-restarts');
+      expect(tighter?.semantic).toBeGreaterThan(0.5);
+      expect(tighter?.keyword).toBeLessThan(0.2);
       // Off-topic asks find nothing rather than the least-wrong skill.
       expect(await index.search('what is the weather in Lisbon tomorrow')).toEqual([]);
+      expect(await index.search('change the font colour')).toEqual([]);
     },
     60_000,
   );
