@@ -85,6 +85,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
  && cp -L /src/lib/libonnxruntime.so* /opt/sherpa-onnx/lib/ \
  && /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts --help >/dev/null 2>&1 || /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts 2>&1 | grep -qi usage
 
+# all-MiniLM-L6-v2 (Apache-2.0) for skills.search: sentence embeddings on the CPU, int8 (about
+# 23 MB), in the Transformers.js layout. It ships in the image; nothing downloads at run time, and
+# without it search is keywords only. Each file's SHA-256 is checked when its sum is given; the
+# step prints them, so pinning the revision to a commit means copying four lines.
+FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS skills-model
+ARG MINILM_REVISION=main
+ARG MINILM_CONFIG_SHA256=
+ARG MINILM_TOKENIZER_SHA256=
+ARG MINILM_TOKENIZER_CONFIG_SHA256=
+ARG MINILM_ONNX_SHA256=
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+ && dir=/models/Xenova/all-MiniLM-L6-v2 && mkdir -p "$dir/onnx" \
+ && fetch() { \
+      curl -fsSL -o "$dir/$1" "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/$MINILM_REVISION/$1" \
+      && sha256sum "$dir/$1" \
+      && { [ -z "$2" ] || echo "$2  $dir/$1" | sha256sum -c -; }; \
+    } \
+ && fetch config.json "$MINILM_CONFIG_SHA256" \
+ && fetch tokenizer.json "$MINILM_TOKENIZER_SHA256" \
+ && fetch tokenizer_config.json "$MINILM_TOKENIZER_CONFIG_SHA256" \
+ && fetch onnx/model_quantized.onnx "$MINILM_ONNX_SHA256"
+
 FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS base
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt tini fontconfig \
@@ -110,6 +132,7 @@ COPY --from=vision /yunet.onnx /usr/share/cuttingfloor/models/face_detection_yun
 COPY --from=vision /models/ /usr/share/cuttingfloor/models/
 COPY --from=vision /opt/onnxruntime/lib/ /opt/onnxruntime/lib/
 COPY --from=vision /cf-segment /usr/local/bin/cf-segment
+COPY --from=skills-model /models/ /usr/share/cuttingfloor/models/
 # Chromium for the sandbox (create.motion, create.still, code.run), only ever started by the
 # motion-worker role through this wrapper, which keeps its sandbox on and its network off.
 # Python (numpy, Pillow, OpenCV) is for code.run scripts.
