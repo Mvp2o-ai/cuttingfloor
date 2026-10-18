@@ -314,6 +314,15 @@ console.log(JSON.stringify({ timeline_id }));`,
   );
 
   step('code.run: a script reaches nothing');
+  // The worker as the host sees it (PID and start time), to tell afterwards whether the
+  // script's signals reached it. kill() inside the script takes its own namespace's PIDs, so a
+  // "killed" there can be a PID number shared with one of the script's own processes.
+  const workerProcess = () =>
+    docker('top', motion, '-eo', 'pid,lstart,args')
+      .split('\n')
+      .filter((l) => l.includes('motion-worker') && !l.includes('docker-init'))
+      .join('\n');
+  const workerBefore = workerProcess();
   const reach = await code({
     script: `const targets = ${JSON.stringify([
       ['a public host by name', 'http://example.com/'],
@@ -353,10 +362,15 @@ console.log(JSON.stringify(out));`,
   });
   const seen = JSON.parse(reach.stdout?.trim() || '{}') as Record<string, string>;
   if (reach.error) expect(false, `reach script ran: ${JSON.stringify(reach.error)}`);
-  for (const [label, value] of Object.entries(seen)) {
-    const good = ['blocked', 'empty', 'none', '401', 'listed, not signalable', 'invisible'];
+  const { worker: signalled, ...rest } = seen;
+  for (const [label, value] of Object.entries(rest)) {
+    const good = ['blocked', 'empty', 'none', '401'];
     expect(good.includes(value), `code.run: ${label} → ${value}`);
   }
+  expect(
+    Boolean(workerBefore) && workerProcess() === workerBefore,
+    `code.run: the worker survives the script's signals (${signalled})`,
+  );
 
   step('code.run: nothing outlives the job, abuse fails cleanly');
   await code({
