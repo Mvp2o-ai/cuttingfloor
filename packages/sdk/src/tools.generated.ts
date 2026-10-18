@@ -22,6 +22,7 @@ import type {
   MediaImportInput,
   MediaInfo,
   MediaRefInput,
+  MediaUploadInput,
   QaCheckInput,
   RenderFramesInput,
   TimelineCreateInput,
@@ -78,6 +79,7 @@ export type ToolName =
   | 'media.analyze'
   | 'media.get'
   | 'media.import'
+  | 'media.upload'
   | 'qa.check'
   | 'range.extract'
   | 'range.lift'
@@ -142,6 +144,7 @@ export interface ToolInputs {
   'media.analyze': z.input<typeof MediaAnalyzeInput>;
   'media.get': z.input<typeof MediaRefInput>;
   'media.import': z.input<typeof MediaImportInput>;
+  'media.upload': z.input<typeof MediaUploadInput>;
   'qa.check': z.input<typeof QaCheckInput>;
   'range.extract': z.input<ReturnType<typeof editInput<'range.extract'>>>;
   'range.lift': z.input<ReturnType<typeof editInput<'range.lift'>>>;
@@ -207,6 +210,7 @@ export interface ToolOutputs {
   'media.analyze': z.output<typeof MediaInfo>;
   'media.get': Record<string, unknown>;
   'media.import': z.output<typeof MediaInfo>;
+  'media.upload': Record<string, unknown>;
   'qa.check': Record<string, unknown>;
   'range.extract': z.output<typeof EditResult>;
   'range.lift': z.output<typeof EditResult>;
@@ -272,6 +276,7 @@ export const TOOL_NAMES: readonly ToolName[] = [
   'media.analyze',
   'media.get',
   'media.import',
+  'media.upload',
   'qa.check',
   'range.extract',
   'range.lift',

@@ -137,6 +137,96 @@ describe('HTTP face', () => {
     expect((await fetch(local.replace(/exp=\d+/, 'exp=1'))).status).toBe(403);
   });
 
+  it('takes signed, resumable uploads for the owner who asked', async () => {
+    const base = await listen(parseApiKeys(`alice:${KEY},bob:${KEY}-bob`));
+    (runtime.config as { publicUrl: string }).publicUrl = base;
+    const connect = async (key: string) => {
+      const client = new Client({ name: 't', version: '0' });
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+          requestInit: { headers: { authorization: `Bearer ${key}` } },
+        }),
+      );
+      return client;
+    };
+    const tool = async (client: Client, name: string, args: Record<string, unknown>) =>
+      (await client.callTool({ name, arguments: args })) as {
+        isError?: boolean;
+        structuredContent: Record<string, unknown>;
+      };
+    const alice = await connect(KEY);
+    const bob = await connect(`${KEY}-bob`);
+    // This runtime takes files up to 1024 bytes.
+    const big = await tool(alice, 'media.upload', { name: 'big.mp4', bytes: 4096 });
+    expect(big.isError).toBe(true);
+
+    const up = (await tool(alice, 'media.upload', { name: 'clip.mp4' })).structuredContent as {
+      upload_id: string;
+      url: string;
+      max_bytes: number;
+      how: string;
+    };
+    expect(up.upload_id).toMatch(/^u_/);
+    expect(up.max_bytes).toBe(1024);
+    expect(up.how).toContain(`curl --fail -T clip.mp4 '${up.url}'`);
+    const url = new URL(up.url);
+    expect(
+      (await fetch(url, { method: 'OPTIONS' })).headers.get('access-control-allow-origin'),
+    ).toBe('*');
+
+    // A forged or expired link is refused.
+    const forged = await fetch(up.url.replace(/sig=[^&]+/, 'sig=AAAA'), {
+      method: 'PUT',
+      body: 'x',
+    });
+    expect(forged.status).toBe(403);
+    expect((await fetch(up.url.replace(/exp=\d+/, 'exp=1'), { method: 'HEAD' })).status).toBe(403);
+
+    const body = Buffer.alloc(600, 7);
+    const part = await fetch(url, {
+      method: 'PUT',
+      headers: { 'content-range': 'bytes 0-299/600' },
+      body: body.subarray(0, 300),
+    });
+    expect(part.status).toBe(200);
+    expect(part.headers.get('upload-offset')).toBe('300');
+    // Not complete yet, so it doesn't import.
+    const early = await tool(alice, 'media.import', { source: { upload_id: up.upload_id } });
+    expect(early.structuredContent.code).toBe('media_not_ready');
+    // A part that doesn't start where the upload stands says where it does.
+    const gap = await fetch(url, {
+      method: 'PUT',
+      headers: { 'content-range': 'bytes 400-599/600' },
+      body: body.subarray(400),
+    });
+    expect(gap.status).toBe(409);
+    expect(gap.headers.get('upload-offset')).toBe('300');
+    const rest = await fetch(url, {
+      method: 'PUT',
+      headers: { 'content-range': 'bytes 300-599/600' },
+      body: body.subarray(300),
+    });
+    expect(await rest.json()).toMatchObject({ received: 600, complete: true });
+    expect((await fetch(url, { method: 'PUT', body: 'more' })).status).toBe(409);
+
+    // Another owner can't import it.
+    const stolen = await tool(bob, 'media.import', { source: { upload_id: up.upload_id } });
+    expect(stolen.structuredContent.code).toBe('not_found');
+    // Its owner can, once: the import takes the file.
+    const imported = await tool(alice, 'media.import', { source: { upload_id: up.upload_id } });
+    expect(imported.structuredContent.media_id).toMatch(/^m_/);
+    expect((await fetch(url, { method: 'HEAD' })).status).toBe(404);
+
+    // Bytes past the limit are refused part way.
+    const over = (await tool(alice, 'media.upload', { name: 'over.wav' })).structuredContent as {
+      url: string;
+    };
+    const refused = await fetch(over.url, { method: 'PUT', body: Buffer.alloc(2048) });
+    expect(refused.status).toBe(413);
+    await alice.close();
+    await bob.close();
+  });
+
   it('validates API key configuration', () => {
     expect(() => parseApiKeys('alice')).toThrow(/owner:key/);
     expect(() => parseApiKeys('alice:short')).toThrow(/too short/);

@@ -14,7 +14,7 @@ import {
   TransitionKind,
 } from './compositing.ts';
 import { ToolError } from './errors.ts';
-import { JobId, MediaId, TimelineId } from './ids.ts';
+import { JobId, MediaId, TimelineId, UploadId } from './ids.ts';
 import { ASSET_NAME, MOTION_LIMITS } from './motion.ts';
 import { Sequence } from './sequence.ts';
 import { Colour, TextStyle } from './text.ts';
@@ -465,6 +465,9 @@ export const MediaSource = z.union([
   }),
   z.object({ url: z.url().describe('An http(s) URL to download') }),
   z.object({
+    upload_id: UploadId.describe('A file sent to the URL media.upload gave, once fully sent'),
+  }),
+  z.object({
     job_id: JobId.describe(
       'A completed export.video: its rendered file becomes media, e.g. to re-edit a finished cut or place it in a sequence of another shape',
     ),
@@ -475,6 +478,29 @@ export const MediaImportInput = z.object({
   source: MediaSource,
   name: z.string().min(1).max(200).optional(),
   idempotency_key: z.string().min(1).max(200).optional(),
+});
+
+export const MediaUploadInput = z.object({
+  name: z
+    .string()
+    .min(1)
+    .max(200)
+    .regex(/^[^/\\]+$/)
+    .describe('The file name with its extension, e.g. interview.mp4'),
+  bytes: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('The file size, to be refused now rather than part way if it is too big'),
+});
+
+export const MediaUploadResult = z.object({
+  upload_id: UploadId,
+  url: z.string().describe('Signed: PUT the file here; no other credentials needed'),
+  expires_at: z.string(),
+  max_bytes: z.number(),
+  how: z.string(),
 });
 
 export const ANALYSES = ['transcript', 'beats', 'faces', 'look'] as const;

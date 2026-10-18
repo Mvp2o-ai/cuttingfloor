@@ -9,7 +9,7 @@ import {
 } from 'node:http';
 import { Readable } from 'node:stream';
 import type { CredentialStore } from '@cuttingfloor/credentials';
-import { createServer, outputMime, type Runtime } from '@cuttingfloor/server';
+import { createServer, outputMime, type Runtime, UploadRefused } from '@cuttingfloor/server';
 import { toWebRequest } from '@modelcontextprotocol/node';
 import {
   createMcpHandler,
@@ -44,7 +44,7 @@ const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 
 /**
  * The HTTP face: Streamable HTTP MCP at /mcp (2026-07-28, with stateless 2025 fallback),
- * signed output downloads at /outputs/…, and /healthz.
+ * signed output downloads at /outputs/…, signed uploads at /uploads/…, and /healthz.
  */
 export function createHttpServer(options: HttpOptions): Server {
   const { runtime, credentials, oauth } = options;
@@ -83,7 +83,7 @@ export function createHttpServer(options: HttpOptions): Server {
     return hashedKeys.find((k) => timingSafeEqual(k.digest, digest))?.owner;
   }
 
-  return createNodeServer(async (req, res) => {
+  const server = createNodeServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
       if (url.pathname === '/healthz') {
@@ -117,6 +117,10 @@ export function createHttpServer(options: HttpOptions): Server {
           return;
         }
         await sendFile(req, res, file);
+        return;
+      }
+      if (url.pathname.startsWith('/uploads/')) {
+        await handleUpload(runtime, req, res, url);
         return;
       }
       if (url.pathname !== '/mcp') {
@@ -169,6 +173,114 @@ export function createHttpServer(options: HttpOptions): Server {
       res.end('internal error');
     }
   });
+  // Uploads run as long as the file takes; each one has its own idle timeout instead.
+  server.requestTimeout = 0;
+  return server;
+}
+
+const UPLOAD_CORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'PUT, HEAD, GET, OPTIONS',
+  'access-control-allow-headers': 'content-type, content-range',
+  'access-control-expose-headers': 'upload-offset, upload-complete',
+  'access-control-max-age': '86400',
+};
+
+/**
+ * A signed upload URL: PUT sends the file (whole, or a part with Content-Range), HEAD and GET
+ * say how much has arrived. The signature is the credential, so browsers may send it too.
+ */
+async function handleUpload(
+  runtime: Runtime,
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+): Promise<void> {
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, UPLOAD_CORS).end();
+    return;
+  }
+  const reply = (
+    status: number,
+    body: Record<string, unknown>,
+    state?: { received: number; complete: boolean },
+  ) => {
+    res.writeHead(status, {
+      ...UPLOAD_CORS,
+      'content-type': 'application/json',
+      'cache-control': 'no-store',
+      ...(state
+        ? { 'upload-offset': String(state.received), 'upload-complete': String(state.complete) }
+        : {}),
+    });
+    res.end(req.method === 'HEAD' ? undefined : JSON.stringify(body));
+  };
+  const target = await runtime.uploads.verify(
+    url.pathname,
+    url.searchParams.get('exp'),
+    url.searchParams.get('sig'),
+  );
+  if (!target) {
+    req.resume();
+    reply(403, { error: 'invalid or expired upload link; call media.upload for a new one' });
+    return;
+  }
+  if (req.method === 'HEAD' || req.method === 'GET') {
+    const state = await runtime.uploads.state(target.owner, target.id);
+    if (!state) reply(404, { error: 'no such upload, or it was imported or expired' });
+    else reply(200, { ...state }, state);
+    return;
+  }
+  if (req.method !== 'PUT') {
+    req.resume();
+    res.writeHead(405, { ...UPLOAD_CORS, allow: 'PUT, HEAD, GET, OPTIONS' }).end();
+    return;
+  }
+  const header = req.headers['content-range'];
+  const range = header ? /^bytes (\d+)-(\d+)\/(\d+|\*)$/.exec(header) : null;
+  if (header && !range) {
+    req.resume();
+    reply(400, { error: 'Content-Range must be bytes <first>-<last>/<total or *>' });
+    return;
+  }
+  const lengthHeader = req.headers['content-length'];
+  const length = lengthHeader === undefined ? null : Number(lengthHeader);
+  if (range && length !== null && Number(range[2]) - Number(range[1]) + 1 !== length) {
+    req.resume();
+    reply(400, { error: 'Content-Range does not match Content-Length' });
+    return;
+  }
+  // A stalled client lets go of its upload after two idle minutes; it can resume later.
+  req.setTimeout(120_000, () => req.destroy());
+  try {
+    const state = await runtime.uploads.receive(target.owner, target.id, req, {
+      length,
+      range: range
+        ? { start: Number(range[1]), total: range[3] === '*' ? null : Number(range[3]) }
+        : null,
+    });
+    reply(
+      200,
+      {
+        ...state,
+        next: state.complete
+          ? `media.import {source: {upload_id: "${state.upload_id}"}}`
+          : 'send the rest: PUT with Content-Range from the bytes received',
+      },
+      state,
+    );
+  } catch (error) {
+    if (!(error instanceof UploadRefused)) throw error;
+    // Stop reading a body the upload won't take; close the connection rather than drain it.
+    if (!req.complete) res.setHeader('connection', 'close');
+    const state =
+      error.received === undefined ? undefined : { received: error.received, complete: false };
+    reply(
+      error.status,
+      { error: error.message, ...(state ? { received: state.received } : {}) },
+      state,
+    );
+  }
 }
 
 /** The request's URL as the client addressed it, for web-standard handlers. */

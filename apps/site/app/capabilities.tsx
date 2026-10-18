@@ -17,6 +17,17 @@ const CAPS = [
     note: 'whisper.cpp, on our servers',
   },
   {
+    title: 'It looks before it ships.',
+    body: 'Stills and filmstrips after every edit, a review render it can watch, and exact checks for gaps, black frames, clipping and sync. Other video agents apply an edit and hope; this one sees what it made and fixes it first.',
+    feature: true,
+    code: [
+      ['render.frames', '{ timeline_id: "tl_12…", frames: [0, 120, 240] }'],
+      ['qa.check', '{ timeline_id: "tl_12…" }'],
+      ['export.video', '{ timeline_id: "tl_12…", preset: "web_1080p_h264" }'],
+    ],
+    note: 'FCPXML, OTIO, EDL out too',
+  },
+  {
     title: 'Captions that keep time.',
     body: 'Captions come from the transcript and follow every speed change and cut. Karaoke, word pop, typewriter, boxes, outlines.',
     code: [
@@ -64,16 +75,6 @@ const CAPS = [
     ],
     note: 'no network, its own namespaces',
   },
-  {
-    title: 'Look before it ships.',
-    body: 'Stills and filmstrips after every edit, a review render it can watch, and exact checks for gaps, black frames, clipping and sync.',
-    code: [
-      ['render.frames', '{ timeline_id: "tl_12…", frames: [0, 120, 240] }'],
-      ['qa.check', '{ timeline_id: "tl_12…" }'],
-      ['export.video', '{ timeline_id: "tl_12…", preset: "web_1080p_h264" }'],
-    ],
-    note: 'FCPXML, OTIO, EDL out too',
-  },
 ] as const;
 
 export function Capabilities() {
@@ -105,10 +106,13 @@ export function Capabilities() {
             ref={(el) => {
               items.current[i] = el;
             }}
-            className={i === active ? 'on' : ''}
+            className={[i === active ? 'on' : '', 'feature' in c ? 'feature' : '']
+              .filter(Boolean)
+              .join(' ')}
           >
-            <h3>{c.title}</h3>
-            <p>{c.body}</p>
+            {'feature' in c && <span className="label cap-tag">The review loop</span>}
+            <h3 className={'feature' in c ? 'cap-feature-title' : undefined}>{c.title}</h3>
+            <p className={'feature' in c ? 'cap-feature-body' : undefined}>{c.body}</p>
           </li>
         ))}
       </ol>

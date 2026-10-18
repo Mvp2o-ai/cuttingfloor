@@ -17,6 +17,8 @@ import {
   MediaImportInput,
   MediaInfo,
   MediaRefInput,
+  MediaUploadInput,
+  MediaUploadResult,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { askJev, JEV_MODEL, JEV_URL } from '../jev.ts';
@@ -128,7 +130,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       description: [
         "Import the user's own video, audio, image or font to edit with or place as is: probe, fingerprint, conform if needed (VFR, rotation, HDR → BT.709), 540p proxy, scene and loudness analysis. A reference image to recreate needs no import: rebuild it with create.motion or create.still.",
         'Long-running: returns a task, or {job_id, media_id} for job.get. The media_id is usable in edits as soon as the job reports processing.',
-        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL, or the job_id of a completed export.video (its render becomes media).`,
+        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL, the upload_id of a file sent through media.upload, or the job_id of a completed export.video (its render becomes media).`,
         'Importing the same file again returns the same media_id.',
       ].join(' '),
       inputSchema: MediaImportInput,
@@ -147,16 +149,22 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         const existing = await store.findIdempotent(owner, 'media.import', args.idempotency_key);
         if (existing) return jobReply(existing, ctx);
       }
-      // Path and render imports fail fast (outside the roots, missing) and dedupe by fingerprint.
+      // Path, upload and render imports fail fast (outside the roots, missing, unfinished) and
+      // dedupe by fingerprint.
+      const upload =
+        'upload_id' in args.source
+          ? await rt.uploads.take(owner, args.source.upload_id)
+          : undefined;
       const local =
         'path' in args.source
           ? await rt.media.resolvePath(args.source.path)
           : 'job_id' in args.source
             ? await renderedFile(owner, args.source.job_id)
-            : undefined;
+            : upload?.file;
       if (local) {
         const known = await rt.media.findByFingerprint(owner, await fingerprint(local));
         if (known) {
+          if ('upload_id' in args.source) await rt.uploads.remove(owner, args.source.upload_id);
           const done = await store.create({
             owner,
             tool: 'media.import',
@@ -175,15 +183,24 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           );
         }
       }
+      const source = args.source;
       const record = await rt.media.create(
         owner,
-        'job_id' in args.source ? { job: args.source.job_id } : args.source,
-        args.name ?? (local && 'job_id' in args.source ? basename(local) : undefined),
+        'job_id' in source
+          ? { job: source.job_id }
+          : 'upload_id' in source
+            ? { upload: source.upload_id }
+            : source,
+        args.name ?? upload?.name ?? (local && 'job_id' in source ? basename(local) : undefined),
       );
-      if (local && 'job_id' in args.source) {
+      if (local && 'job_id' in source) {
         // The render is copied: outputs and media expire on their own clocks.
         record.file = await rt.media.adopt(owner, record, local);
         await rt.media.save(owner, record);
+      } else if (local && 'upload_id' in source) {
+        record.file = await rt.media.adopt(owner, record, local, { move: true });
+        await rt.media.save(owner, record);
+        await rt.uploads.remove(owner, source.upload_id);
       }
       const job = await store.create({
         owner,
@@ -202,6 +219,34 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         return ok(mediaInfo(done)) as never;
       });
       return jobReply(job, ctx);
+    }),
+  );
+
+  server.registerTool(
+    'media.upload',
+    {
+      title: 'Upload media',
+      description: [
+        "A signed URL to send one of the user's files to this server, for files on their machine that the server can't read: PUT the file there (curl --fail -T interview.mp4 '<url>'), then media.import {source: {upload_id}}. The URL needs no other credentials and works for a day.",
+        'A broken upload resumes: HEAD the url for Upload-Offset (the bytes received), then PUT the rest with Content-Range: bytes <offset>-<last>/<total>. Large files can go in parts the same way.',
+      ].join(' '),
+      inputSchema: MediaUploadInput,
+      outputSchema: MediaUploadResult,
+      annotations: {
+        title: 'Upload media',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    guard(async (args) => {
+      const upload = await rt.uploads.create(deps.owner(), args.name, args.bytes);
+      return ok({
+        ...upload,
+        max_bytes: rt.uploads.maxBytes,
+        how: `curl --fail -T ${shellQuote(args.name)} '${upload.url}' then media.import {source: {upload_id: "${upload.upload_id}"}}`,
+      });
     }),
   );
 
@@ -479,4 +524,9 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       ok(mediaInfo(await rt.media.get(deps.owner(), args.media_id), args.include ?? [])),
     ),
   );
+}
+
+/** A file name as one shell word, for the example command. */
+function shellQuote(name: string): string {
+  return /^[\w.@%+=:,/-]+$/.test(name) ? name : `'${name.replace(/'/g, "'\\''")}'`;
 }

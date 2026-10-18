@@ -1,47 +1,23 @@
-import { Bay } from './bay.tsx';
+import { HOME_SESSION } from '../content/home-session.ts';
 import { Capabilities } from './capabilities.tsx';
 import { Connect } from './connect.tsx';
 import { PLANS } from './pricing.ts';
-import { ALTERNATIVES, DOCS_URL, FAQS, structuredData } from './seo.ts';
+import { Prompts } from './prompts.tsx';
+import { ALTERNATIVES, FAQS, structuredData } from './seo.ts';
+import { Session } from './session/session.tsx';
+import { Check, Footer, JsonLd, Nav, SIGN_UP } from './shell.tsx';
 
-/** Solved: a check, drawn on once in the accent. */
-function Check() {
-  return (
-    <svg className="check" viewBox="0 0 48 40" role="img" aria-label="solved">
-      <path d="M5 21 L18 33 L43 6" />
-    </svg>
-  );
-}
+// Linking here plays the session from the top.
+const SESSION_ID = 'session';
 
-// Signing up (or in) is the account page: WorkOS sign-in, then the trial, plans and the connect box.
-const SIGN_UP = '/account';
-const DOCS = DOCS_URL;
+// The agents it already works in. Kazi is ours, so it leads, in the accent.
+const CLIENTS = ['Kazi', 'Claude', 'Claude Code', 'Cursor', 'ChatGPT', 'Codex'] as const;
 
 export default function Home() {
   return (
     <>
-      <script
-        type="application/ld+json"
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: our own constant data, serialised for crawlers
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData()) }}
-      />
-      <header className="nav">
-        <div className="nav-inner">
-          <a className="wordmark" href="/">
-            <span className="marker" aria-hidden="true" />
-            cuttingfloor
-          </a>
-          <nav className="nav-links" aria-label="Sections">
-            <a href="#how">How it works</a>
-            <a href="#pricing">Pricing</a>
-            <a href={DOCS}>Open source</a>
-            <a href={SIGN_UP}>Sign in</a>
-          </nav>
-          <a className="nav-cta" href={SIGN_UP}>
-            Start free
-          </a>
-        </div>
-      </header>
+      <JsonLd data={structuredData()} />
+      <Nav />
 
       <main className="frame">
         <section className="cell hero marks">
@@ -71,13 +47,24 @@ export default function Home() {
                 <a className="link-big" href={SIGN_UP}>
                   Start free for 3 days
                 </a>
-                <a className="link-big quiet" href="#how">
-                  See it work
+                <a className="link-big quiet" href={`#${SESSION_ID}`}>
+                  Watch it work
                 </a>
               </div>
             </div>
-            <div className="rise d3" id="start">
-              <Connect />
+            <div className="rise d3 works-in">
+              <span className="label">Works in</span>
+              <ul>
+                {CLIENTS.map((c, i) => (
+                  <li key={c} className={i === 0 ? 'ours' : undefined}>
+                    {c}
+                  </li>
+                ))}
+              </ul>
+              <p>
+                Bring the agent you already use. Sign in, then add one server address; the setup for
+                each is <a href="#start">below</a>.
+              </p>
             </div>
           </div>
         </section>
@@ -92,23 +79,37 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="cell" aria-label="A session">
+        <section className="cell" id={SESSION_ID} aria-label="A session">
           <div className="head">
-            <span className="label">02 / The bay</span>
+            <span className="label">02 / A session</span>
             <h2 className="lede">
-              Agentic video editing, one tool call at a time.{' '}
-              <em>
-                Every call returns a new timeline and a picture of it, so the agent sees what it
-                did.
-              </em>
+              Agentic video editing, one tool call at a time. <em>Here is one.</em>
             </h2>
           </div>
-          <Bay />
+          <Session
+            id={SESSION_ID}
+            data={HOME_SESSION}
+            note="Every edit is a tool call. Every call returns a timeline and a picture of it, so the agent sees what it made before it ships."
+          />
+        </section>
+
+        <section className="cell" aria-label="Things to ask for">
+          <div className="head">
+            <span className="label">03 / Ask for</span>
+            <div>
+              <h2 className="display">Say it like you’d say it to an editor.</h2>
+              <p className="compare-lede">
+                No prompt craft, no timeline. Rescue a take, cut it down, or make what you don’t
+                have.
+              </p>
+            </div>
+          </div>
+          <Prompts />
         </section>
 
         <section className="cell paper marks" id="how">
           <span className="mark-b" />
-          <span className="label">03 / What it does</span>
+          <span className="label">04 / What it does</span>
           <h2 className="display big-stat">
             62 tools.
             <br />
@@ -121,9 +122,9 @@ export default function Home() {
           <Capabilities />
         </section>
 
-        <section className="cell">
+        <section className="cell" id="start">
           <div className="head">
-            <span className="label">04 / Start</span>
+            <span className="label">05 / Start</span>
             <h2 className="display">Three steps.</h2>
           </div>
           <ol className="ledger">
@@ -153,6 +154,10 @@ export default function Home() {
               </p>
             </li>
           </ol>
+          <div className="start-connect">
+            <p className="label">Your agent’s setup</p>
+            <Connect />
+          </div>
         </section>
 
         <section className="cell">
@@ -165,7 +170,7 @@ export default function Home() {
               </figcaption>
             </div>
             <div>
-              <span className="label">05 / Made here</span>
+              <span className="label">06 / Made here</span>
               <h2
                 className="display"
                 style={{ fontSize: 'clamp(40px, 5.4vw, 80px)', margin: '16px 0 20px' }}
@@ -182,7 +187,7 @@ export default function Home() {
 
         <section className="cell" id="pricing">
           <div className="head">
-            <span className="label">06 / Pricing</span>
+            <span className="label">07 / Pricing</span>
             <h2 className="display">Pay for rendering.</h2>
           </div>
           <table className="price-table">
@@ -218,7 +223,7 @@ export default function Home() {
 
         <section className="cell" id="compare">
           <div className="head">
-            <span className="label">07 / Compared</span>
+            <span className="label">08 / Compared</span>
             <div>
               <h2 className="display">Edits, not templates.</h2>
               <p className="compare-lede">
@@ -250,7 +255,7 @@ export default function Home() {
 
         <section className="cell">
           <div className="head">
-            <span className="label">08 / Questions</span>
+            <span className="label">09 / Questions</span>
             <h2 className="display">Asked.</h2>
           </div>
           <div className="faq">
@@ -263,32 +268,7 @@ export default function Home() {
           </div>
         </section>
 
-        <footer className="cell footer marks">
-          <span className="mark-b" />
-          <div>
-            <p className="display">
-              Video editing, solved.
-              <Check />
-            </p>
-            <div className="footer-links">
-              <a href={SIGN_UP}>Start free</a>
-              <a href={DOCS}>GitHub</a>
-              <a href="mailto:ken@mvp2o.com">Contact</a>
-            </div>
-          </div>
-          <div className="win">
-            <div className="win-bar">
-              <span>About</span>
-              <span className="grip" />
-            </div>
-            <p>
-              cuttingfloor 0.10
-              <br />© 2026 mvp2o
-              <br />
-              Cut on a warm black.
-            </p>
-          </div>
-        </footer>
+        <Footer />
       </main>
     </>
   );

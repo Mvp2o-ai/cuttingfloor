@@ -94,6 +94,7 @@ describe('protocol surface', () => {
         'media.analyze',
         'media.get',
         'media.import',
+        'media.upload',
         'qa.check',
         'range.extract',
         'range.lift',

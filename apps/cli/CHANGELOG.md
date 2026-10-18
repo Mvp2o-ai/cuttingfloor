@@ -1,5 +1,12 @@
 # cuttingfloor
 
+## 0.14.0
+
+### Minor Changes
+
+- d25eb67: Uploads: `media.upload {name, bytes?}` gives a signed URL to PUT one of the user's files to, so a hosted server can take files it can't read from a path. Uploads resume (HEAD for `Upload-Offset`, then `Content-Range` from there), take browsers (CORS), are capped at `CUTTINGFLOOR_MAX_DOWNLOAD_BYTES` and kept a day; `media.import {source: {upload_id}}` moves the file into the media.
+- 0bd36b3: Site: the home page session is drawn in the page from data instead of a video, and walkthroughs arrive: a template at /walkthroughs/[slug] fed by one data module, a hub at /walkthroughs, and the first walkthrough, fix-jagged-cuts.
+
 ## 0.13.0
 
 ### Minor Changes
