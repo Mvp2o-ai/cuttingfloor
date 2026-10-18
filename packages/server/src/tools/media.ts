@@ -273,7 +273,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         'Choose the type by the answer you need. noul: yes or no, answered as noul, the probability of yes from 0 to 1. choice: one of options you name, answered as choice plus probabilities and confidence. score: a degree on levels you order, answered as score (0 is the first level; it can land between levels) plus confidence. box: where one thing is, answered as box {x, y, w, h} in fractions of the picture plus confidence.',
         'Write each question about the picture as it looks. Name the picture in backticks ("in `frame`"), ask about one thing, word it so yes means the thing is there, and describe it as it appears: "Does `frame` show a human being, even if only their face fills the picture?", "Is one large word laid over `frame`, much bigger than any other text?". To compare, name both pictures and the thing that differs: "Is there a button in `frame` that is not in `previous`?". To locate, name the one thing so only it fits ("the \'Get started for free\' button under the headline in `frame`") and, in the same call, a noul asking whether it is there; use the box on frames where that noul is high. Give a choice a none option for frames where nothing fits, and each score level a concrete situation.',
         'Read the answers this way: a noul of 0.5 or more reads as yes, and you can set your own cut-off; confidence tells you how far to trust a choice, a score or a box, and a loose box shows as low confidence. Work in passes: every_seconds 1 over the whole media, then at_seconds around the times where answers change. media.get scenes give when the picture cuts; look tells you what is on it.',
-        `The result gives each question's spans (when a noul reads yes, which choice holds when); every frame's answers stay with the media (media.get include ['look'], the last 10 runs). Up to ${LOOK_MAX_FRAMES} frames and ${JUDGE_LIMITS.questions} questions a call. For one judgment about text, a still or a single frame, judge.ask answers at once. Full guide to writing questions: https://docs.typesafe.ai/primitives and https://docs.typesafe.ai/images.`,
+        `The result gives each question's spans (when a noul reads yes, which choice holds when); every frame's answers stay with the media (media.get include ['look'], the last 10 runs). Up to ${LOOK_MAX_FRAMES} frames and ${JUDGE_LIMITS.lookQuestions} questions a call. For one judgment about text, a still or a single frame, judge.ask answers at once. Full guide to writing questions: https://docs.typesafe.ai/primitives and https://docs.typesafe.ai/images.`,
       ].join('\n'),
       inputSchema: MediaAnalyzeInput,
       annotations: {
@@ -291,7 +291,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         if (!(await deps.credentials.status(owner, 'typesafe')).configured) {
           throw jevKeyRequired('look');
         }
-        checkQuestions('look', args.questions);
+        checkQuestions('look', args.questions, JUDGE_LIMITS.lookQuestions);
         const taken = Object.keys(args.state ?? {}).filter((n) => LOOK_NAMES.includes(n));
         if (taken.length) {
           throw new CfError('bad_request', `look names ${taken.join(', ')} itself`, {

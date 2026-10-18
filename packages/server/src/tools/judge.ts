@@ -31,19 +31,19 @@ export function jevKeyRequired(tool: string): CfError {
 }
 
 /** Refuses a question count outside 1 to the limit, with an example to copy. */
-export function checkQuestions(tool: string, questions: Record<string, unknown> | undefined) {
+export function checkQuestions(
+  tool: string,
+  questions: Record<string, unknown> | undefined,
+  max: number = JUDGE_LIMITS.questions,
+) {
   const n = Object.keys(questions ?? {}).length;
-  if (n && n <= JUDGE_LIMITS.questions) return;
-  throw new CfError(
-    'bad_request',
-    `${tool} needs 1 to ${JUDGE_LIMITS.questions} questions; got ${n}`,
-    {
-      hint:
-        n > JUDGE_LIMITS.questions
-          ? 'Split the questions across calls with the same state'
-          : 'questions: {is_filler: {type: "noul", instructions: "Is the word marked [[like this]] in `passage` a filler word?"}}',
-    },
-  );
+  if (n && n <= max) return;
+  throw new CfError('bad_request', `${tool} needs 1 to ${max} questions; got ${n}`, {
+    hint:
+      n > max
+        ? 'Split the questions across calls with the same state'
+        : 'questions: {is_filler: {type: "noul", instructions: "Is the word marked [[like this]] in `passage` a filler word?"}}',
+  });
 }
 
 /** Refuses text state too long to fit Jev's context with questions beside it. */
@@ -66,8 +66,12 @@ export function pictureSize(record: MediaRecord): { width: number; height: numbe
     : { width: v.width, height: v.height };
 }
 
-/** Units of the shared budget a judge.ask call takes: one, plus one per picture past the first. */
-export const judgeUnits = (pictures: number) => Math.max(1, pictures);
+/**
+ * Units of the shared budget a judge.ask call takes, on look's scale (a frame with up to 32
+ * questions is one): one per 32 questions, plus one for each picture past the first.
+ */
+export const judgeUnits = (questions: number, pictures: number) =>
+  Math.ceil(questions / JUDGE_LIMITS.lookQuestions) + Math.max(0, pictures - 1);
 
 export function registerJudgeTools(server: McpServer, deps: ServerDeps): void {
   const rt = deps.runtime;
@@ -148,9 +152,9 @@ export function registerJudgeTools(server: McpServer, deps: ServerDeps): void {
         );
       }
       checkText(text);
-      const units = judgeUnits(refs.length);
+      const units = judgeUnits(Object.keys(args.questions).length, refs.length);
       await checkQuota(rt.ws, owner, JUDGMENTS, units, rt.config.judgmentsPerDay, {
-        unit: 'judgments (one a call, plus one for each picture past the first)',
+        unit: 'judgments (one per 32 questions a call, plus one for each picture past the first)',
         hint: 'Ask fewer pictures a call, or keep all your questions about one state in one call',
       });
       const signal =

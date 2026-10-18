@@ -544,7 +544,7 @@ export const MediaAnalyzeInput = z.object({
     .record(JudgeName, JudgeQuestion)
     .optional()
     .describe(
-      `look: id (yours, not shown to the model) to question; up to ${JUDGE_LIMITS.questions}, all asked of every frame`,
+      `look: id (yours, not shown to the model) to question; up to ${JUDGE_LIMITS.lookQuestions}, all asked of every frame`,
     ),
   state: z
     .record(JudgeName, JudgeText)

@@ -132,7 +132,7 @@ describe('judge.ask', () => {
 
   it('refuses calls past the limits before asking Jev', async () => {
     const c = await keyed();
-    const many = Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`q${i}`, filler]));
+    const many = Object.fromEntries(Array.from({ length: 301 }, (_, i) => [`q${i}`, filler]));
     const tooMany = await call(c, 'judge.ask', { state: { passage: 'x' }, questions: many });
     expect(tooMany.structured).toMatchObject({ code: 'bad_request' });
     expect(String(tooMany.structured.hint)).toMatch(/Split the questions/);
@@ -203,6 +203,23 @@ describe('judge.ask', () => {
         files.map(async (f) => JSON.parse(await readFile(join(dir, f), 'utf8')).count),
       );
       expect(counts).toEqual([1, 1]);
+    } finally {
+      delete (env.runtime.config as { judgmentsPerDay?: number }).judgmentsPerDay;
+    }
+  });
+
+  it("counts a call on look's scale: one per 32 questions", async () => {
+    const owner = 'judge-units';
+    const c = await connect(env.runtime, owner, { TYPESAFE_API_KEY: KEY });
+    (env.runtime.config as { judgmentsPerDay?: number }).judgmentsPerDay = 100;
+    try {
+      const questions = Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`w${i}`, filler]));
+      const res = await ok(c, 'judge.ask', { state: { passage: 'So basically' }, questions });
+      expect(Object.keys(res.answers as object)).toHaveLength(65);
+      const day = new Date().toISOString().slice(0, 10);
+      const dir = env.runtime.ws.ownerDir(owner, 'usage', `judgments-${day}`);
+      const [file] = await readdir(dir);
+      expect(JSON.parse(await readFile(join(dir, file as string), 'utf8')).count).toBe(3);
     } finally {
       delete (env.runtime.config as { judgmentsPerDay?: number }).judgmentsPerDay;
     }

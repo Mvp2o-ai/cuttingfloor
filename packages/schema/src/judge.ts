@@ -4,8 +4,16 @@ import { MediaId } from './ids.ts';
 // Questions for TypeSafe Jev, a judgment model, and its typed answers. judge.ask asks them about
 // any state you give (text, JSON, pictures); media.analyze look asks them of sampled frames.
 
-/** Per call: questions (Jev has no count limit, only a 64k-token context), pictures, text size. */
-export const JUDGE_LIMITS = { questions: 32, images: 8, textChars: 200_000 } as const;
+/**
+ * Per call: questions (Jev has no count limit, only a 64k-token context; look asks its questions of
+ * every frame, so it takes fewer), pictures, text size.
+ */
+export const JUDGE_LIMITS = {
+  questions: 300,
+  lookQuestions: 32,
+  images: 8,
+  textChars: 200_000,
+} as const;
 
 /** A state entry's or a question's name: questions refer to entries by it, in backticks. */
 export const JudgeName = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/);
