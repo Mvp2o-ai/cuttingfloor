@@ -13,6 +13,8 @@
 - Stateless: timelines are immutable and content-addressed; every durable thing is a file with a TTL under the data root. No database, no project folders, no in-memory state a restart would lose.
 - Engines are subprocesses (`packages/engine`), always called with argument lists, never a shell. Only the server writes MLT XML, with forced producers.
 - Tool names are `domain.verb`. Tools are granular editing primitives; anything that is a composition of primitives, data or derivable is not a tool. No tool involves a human.
+- Core tenet: tools give the agent actions (edits) and facts it cannot get itself (a transcript, speech spans, frames, loudness); judgment and composition are the agent's. A composition that isn't obvious goes in a skill (`skills/`), a soft harness of steps using the tools. It becomes a script or a tool only on evidence: it is common, agents measurably struggle with the skill, and the tool brings something the agent cannot reproduce. A tool never merges sources or decides behind the agent's back.
+- Every tool declares its output schema, and results always match it (including the job a long-running tool returns). Agents chain calls in `code.run` before any result exists, so the output signature is the contract; the generated SDK carries it.
 - Domain errors are `CfError` (typed code, actionable hint) and reach clients as `isError` results.
 - No provider key ever appears in a tool argument, result, error, log or stored file.
 - Tests use the SDK `Client` against `createServer` (InMemoryTransport) or the HTTP server, not internal functions.

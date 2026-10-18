@@ -6,8 +6,10 @@ import { BIN, run } from '@cuttingfloor/engine';
 import {
   CfError,
   ExportTimelineInput,
+  ExportTimelineResult,
   TICKS_PER_SECOND,
   type TimelineDoc,
+  withJob,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { guard, jobReply, ok } from '../result.ts';
@@ -50,6 +52,7 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
         'Long-running: a task, or {job_id} for job.get; the result has a signed download URL.',
       ].join(' '),
       inputSchema: ExportTimelineInput,
+      outputSchema: withJob(ExportTimelineResult),
       annotations: {
         title: 'Export timeline',
         readOnlyHint: false,

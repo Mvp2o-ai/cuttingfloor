@@ -54,7 +54,7 @@ export function createServer(deps: ServerDeps): McpServer {
     { name: SERVER_NAME, version: SERVER_VERSION },
     { instructions: INSTRUCTIONS },
   );
-  openOutputSchemas(server);
+  compactSchemas(server);
   if (deps.access) gateTools(server, deps.access);
   registerTasks(server, deps);
   registerResources(server, deps);
@@ -88,19 +88,31 @@ function gateTools(server: McpServer, access: () => Promise<void>): void {
 }
 
 /**
- * Advertises output schemas without `additionalProperties: false`. Clients cache a tool's output
- * schema when they connect and validate results against it, so with closed schemas a field added
- * in a later release fails every result until the client reconnects. Results are still checked
- * against the full zod schema here.
+ * Advertises compact schemas. Output schemas drop `additionalProperties: false`: clients cache a
+ * tool's output schema when they connect and validate results against it, so with closed schemas
+ * a field added in a later release fails every result until the client reconnects. Every schema
+ * drops the noise JSON Schema conversion adds (`$schema`, and the safe-integer bounds on every
+ * integer), since every connection pays for tools/list in tokens. Arguments and results are
+ * still checked against the full zod schemas here.
  */
-function openOutputSchemas(server: McpServer): void {
+function compactSchemas(server: McpServer): void {
   const register = server.registerTool.bind(server);
-  server.registerTool = ((name: string, config: { outputSchema?: unknown }, handler: unknown) =>
+  server.registerTool = ((
+    name: string,
+    config: { inputSchema?: unknown; outputSchema?: unknown },
+    handler: unknown,
+  ) =>
     register(
       name,
-      (config.outputSchema
-        ? { ...config, outputSchema: openSchema(config.outputSchema as StandardJson) }
-        : config) as never,
+      {
+        ...config,
+        ...(isStandard(config.inputSchema)
+          ? { inputSchema: rewriteJson(config.inputSchema, (j) => compact(j, false)) }
+          : {}),
+        ...(isStandard(config.outputSchema)
+          ? { outputSchema: rewriteJson(config.outputSchema, (j) => compact(j, true)) }
+          : {}),
+      } as never,
       handler as never,
     )) as typeof server.registerTool;
 }
@@ -114,25 +126,41 @@ interface StandardJson {
   };
 }
 
-function openSchema<S extends StandardJson>(schema: S): S {
+function isStandard(schema: unknown): schema is StandardJson {
+  return Boolean((schema as Partial<StandardJson> | undefined)?.['~standard']?.jsonSchema);
+}
+
+/** On an advertised schema, the zod schema it stands for (so the SDK generator can name it). */
+export const OPENED_FROM = Symbol.for('cuttingfloor.openedFrom');
+
+function rewriteJson<S extends StandardJson>(schema: S, fix: (json: unknown) => unknown): S {
   const std = schema['~standard'];
   const jsonSchema = {
     ...std.jsonSchema,
-    output: (options: unknown) => withoutClosedObjects(std.jsonSchema.output(options)),
+    input: (options: unknown) => fix(std.jsonSchema.input(options)),
+    output: (options: unknown) => fix(std.jsonSchema.output(options)),
   };
   return new Proxy(schema, {
     get: (target, key, receiver) =>
-      key === '~standard' ? { ...std, jsonSchema } : Reflect.get(target, key, receiver),
+      key === '~standard'
+        ? { ...std, jsonSchema }
+        : key === OPENED_FROM
+          ? target
+          : Reflect.get(target, key, receiver),
   });
 }
 
-function withoutClosedObjects(node: unknown): never {
-  if (Array.isArray(node)) return node.map(withoutClosedObjects) as never;
+const SAFE = Number.MAX_SAFE_INTEGER;
+
+function compact(node: unknown, open: boolean): never {
+  if (Array.isArray(node)) return node.map((n) => compact(n, open)) as never;
   if (!node || typeof node !== 'object') return node as never;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(node)) {
-    if (k === 'additionalProperties' && v === false) continue;
-    out[k] = withoutClosedObjects(v);
+    if (k === '$schema') continue;
+    if (open && k === 'additionalProperties' && v === false) continue;
+    if ((k === 'minimum' && v === -SAFE) || (k === 'maximum' && v === SAFE)) continue;
+    out[k] = compact(v, open);
   }
   return out as never;
 }

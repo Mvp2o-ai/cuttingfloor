@@ -16,19 +16,32 @@ import type {
   ExportVideoInput,
   JobGetInput,
   JobListInput,
+  JobListResult,
   JobRef,
+  JobView,
   JudgeAskInput,
+  JudgeAskResult,
   LoudnessInput,
+  LoudnessResult,
   MediaAnalyzeInput,
+  MediaAnalyzeResult,
   MediaImportInput,
   MediaInfo,
   MediaRefInput,
   MediaUploadInput,
+  MediaUploadResult,
   QaCheckInput,
+  QaCheckResult,
   RenderFramesInput,
+  RenderFramesResult,
   TimelineCreateInput,
+  TimelineCreateResult,
   TimelineDiffInput,
+  TimelineDiffResult,
+  TimelineGetResult,
   TimelineHistoryInput,
+  TimelineHistoryResult,
+  TimelineIdResult,
   TimelineLoadInput,
   TimelineRef,
   editInput,
@@ -173,7 +186,7 @@ export interface ToolOutputs {
   'audio.duck': z.output<typeof EditResult>;
   'audio.fade': z.output<typeof EditResult>;
   'audio.set_gain': z.output<typeof EditResult>;
-  'audio.set_loudness': z.output<typeof EditResult>;
+  'audio.set_loudness': z.output<typeof LoudnessResult>;
   'audio.set_master': z.output<typeof EditResult>;
   'audio.set_pan': z.output<typeof EditResult>;
   'caption.add': z.output<typeof EditResult>;
@@ -207,24 +220,24 @@ export interface ToolOutputs {
   'filter.add': z.output<typeof EditResult>;
   'filter.remove': z.output<typeof EditResult>;
   'filter.set': z.output<typeof EditResult>;
-  'job.cancel': Record<string, unknown>;
-  'job.get': Record<string, unknown>;
-  'job.list': Record<string, unknown>;
-  'judge.ask': Record<string, unknown>;
-  'media.analyze': z.output<typeof MediaInfo>;
-  'media.get': Record<string, unknown>;
+  'job.cancel': z.output<typeof JobView>;
+  'job.get': z.output<typeof JobView>;
+  'job.list': z.output<typeof JobListResult>;
+  'judge.ask': z.output<typeof JudgeAskResult>;
+  'media.analyze': z.output<typeof MediaAnalyzeResult>;
+  'media.get': z.output<typeof MediaInfo>;
   'media.import': z.output<typeof MediaInfo>;
-  'media.upload': Record<string, unknown>;
-  'qa.check': Record<string, unknown>;
+  'media.upload': z.output<typeof MediaUploadResult>;
+  'qa.check': z.output<typeof QaCheckResult>;
   'range.extract': z.output<typeof EditResult>;
   'range.lift': z.output<typeof EditResult>;
-  'render.frames': Record<string, unknown>;
+  'render.frames': z.output<typeof RenderFramesResult>;
   'text.set': z.output<typeof EditResult>;
-  'timeline.create': Record<string, unknown>;
-  'timeline.diff': Record<string, unknown>;
-  'timeline.get': Record<string, unknown>;
-  'timeline.history': Record<string, unknown>;
-  'timeline.load': Record<string, unknown>;
+  'timeline.create': z.output<typeof TimelineCreateResult>;
+  'timeline.diff': z.output<typeof TimelineDiffResult>;
+  'timeline.get': z.output<typeof TimelineGetResult>;
+  'timeline.history': z.output<typeof TimelineHistoryResult>;
+  'timeline.load': z.output<typeof TimelineIdResult>;
   'timeline.set_sequence': z.output<typeof EditResult>;
   'title.add': z.output<typeof EditResult>;
   'track.add': z.output<typeof EditResult>;

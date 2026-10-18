@@ -23,12 +23,11 @@ describe('protocol surface', () => {
     expect(client.getInstructions()).toMatch(/timeline_id/);
   });
 
-  it('advertises open output schemas, so added result fields never break cached clients', async () => {
+  it('advertises an open output schema on every tool, so code can chain calls and added fields never break cached clients', async () => {
     const client = await connect(env.runtime);
     const { tools } = await client.listTools();
-    const withOutput = tools.filter((t) => t.outputSchema);
-    expect(withOutput.length).toBeGreaterThan(5);
-    for (const t of withOutput) {
+    expect(tools.filter((t) => !t.outputSchema).map((t) => t.name)).toEqual([]);
+    for (const t of tools) {
       expect(JSON.stringify(t.outputSchema), t.name).not.toContain('"additionalProperties":false');
     }
   });

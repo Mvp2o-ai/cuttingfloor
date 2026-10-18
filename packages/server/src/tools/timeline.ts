@@ -11,11 +11,14 @@ import {
 import { lengthFrames, measureMix } from '@cuttingfloor/engine';
 import {
   BatchInput,
+  BatchResult,
   CfError,
   EDIT_TOOLS,
-  type EditTool,
   editInput,
+  EditResult,
+  type EditTool,
   LoudnessInput,
+  LoudnessResult,
   TimelineCreateInput,
   TimelineCreateResult,
   TimelineDiffInput,
@@ -27,6 +30,7 @@ import {
   TimelineIdResult,
   TimelineLoadInput,
   TimelineRef,
+  withJob,
 } from '@cuttingfloor/schema';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import {
@@ -356,6 +360,7 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
         title: meta.title,
         description: `${meta.description} ${RETURNS}`,
         inputSchema: editInput(tool),
+      outputSchema: EditResult,
         annotations: { ...annotations, title: meta.title },
       },
       guard(
@@ -384,6 +389,7 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
       description:
         'Apply many edits as one change: one new timeline_id, one preview. All apply or none do. Use {"$ref":"ops[N].clip_id"} (or track_id, clip_ids[M]) to use an id an earlier op made. Returns the edit result plus results: [{tool, clip_id?, clip_ids?, track_id?}] per op.',
       inputSchema: BatchInput,
+      outputSchema: BatchResult,
       annotations: { ...annotations, title: 'Batch edit' },
     },
     guard(async (args) =>
@@ -411,6 +417,7 @@ function registerLoudness(server: McpServer, deps: ServerDeps): void {
       description:
         'Measure the mix and set the master gain and a limiter so the whole timeline lands on target_lufs (default -14, the usual for online video) with peaks under true_peak_db. Returns the edit result plus measured {before_lufs, lufs, true_peak_db}. Short timelines answer at once; longer ones return a task or job.',
       inputSchema: LoudnessInput,
+      outputSchema: withJob(LoudnessResult),
       annotations: {
         title: 'Set loudness',
         readOnlyHint: false,

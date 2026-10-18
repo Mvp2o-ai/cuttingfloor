@@ -15,11 +15,13 @@ import {
   JUDGE_LIMITS,
   type JudgeAnswer,
   MediaAnalyzeInput,
+  MediaAnalyzeResult,
   MediaImportInput,
   MediaInfo,
   MediaRefInput,
   MediaUploadInput,
   MediaUploadResult,
+  withJob,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { askJev, JEV_MODEL, JEV_URL } from '../jev.ts';
@@ -144,6 +146,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         'Importing the same file again returns the same media_id.',
       ].join(' '),
       inputSchema: MediaImportInput,
+      outputSchema: withJob(MediaInfo),
       annotations: {
         title: 'Import media',
         readOnlyHint: false,
@@ -276,6 +279,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         `The result gives each question's spans (when a noul reads yes, which choice holds when); every frame's answers stay with the media (media.get include ['look'], the last 10 runs). Up to ${LOOK_MAX_FRAMES} frames and ${JUDGE_LIMITS.lookQuestions} questions a call. For one judgment about text, a still or a single frame, judge.ask answers at once. Full guide to writing questions: https://docs.typesafe.ai/primitives and https://docs.typesafe.ai/images.`,
       ].join('\n'),
       inputSchema: MediaAnalyzeInput,
+      outputSchema: withJob(MediaAnalyzeResult),
       annotations: {
         title: 'Analyze media',
         readOnlyHint: false,

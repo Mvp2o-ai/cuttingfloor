@@ -2,7 +2,13 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { mediaInfo } from '@cuttingfloor/engine';
-import { CfError, CODE_DENIED_TOOLS, CodeRunInput, type CodeRunResult } from '@cuttingfloor/schema';
+import {
+  CfError,
+  CODE_DENIED_TOOLS,
+  CodeRunInput,
+  CodeRunResult,
+  withJob,
+} from '@cuttingfloor/schema';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, type McpServer } from '@modelcontextprotocol/server';
 import type * as z from 'zod/v4';
@@ -43,6 +49,7 @@ export function registerCodeTools(server: McpServer, deps: ServerDeps): void {
         'Long-running: a task, or {job_id} for job.get. A non-zero exit fails with code_failed and the logs.',
       ].join(' '),
       inputSchema: CodeRunInput,
+      outputSchema: withJob(CodeRunResult),
       annotations: {
         title: 'Run code',
         readOnlyHint: false,

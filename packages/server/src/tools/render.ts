@@ -12,6 +12,7 @@ import {
 import type { JobContext } from '@cuttingfloor/jobs';
 import {
   CfError,
+  ExportResult,
   ExportVideoInput,
   JobGetInput,
   JobListInput,
@@ -23,6 +24,7 @@ import {
   RenderFramesInput,
   RenderFramesResult,
   type TimelineDoc,
+  withJob,
 } from '@cuttingfloor/schema';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import { assertOnline, framesUri, sourcesFor, timelineImage } from '../render.ts';
@@ -113,6 +115,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         'Run qa.check first if you want the exact checks.',
       ].join(' '),
       inputSchema: ExportVideoInput,
+      outputSchema: withJob(ExportResult),
       annotations: {
         title: 'Export video',
         readOnlyHint: false,
@@ -213,7 +216,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       description:
         'Exact checks on the rendered timeline: gaps in the picture, offline media, black frames, silence, loudness against a target (default -14 LUFS, true peak -1 dBTP) and the rendered frame count. Short timelines answer at once; longer ones return a task or job.',
       inputSchema: QaCheckInput,
-      outputSchema: QaCheckResult,
+      outputSchema: withJob(QaCheckResult),
       annotations: { ...readOnly, title: 'QA check' },
     },
     guard(async (args, ctx) => {

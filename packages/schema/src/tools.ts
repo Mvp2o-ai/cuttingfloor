@@ -668,6 +668,43 @@ export const MediaInfo = z.object({
 });
 export type MediaInfo = z.infer<typeof MediaInfo>;
 
+export const MediaAnalyzeResult = z.object({
+  media_id: MediaId,
+  kind: z.enum(['transcript', 'beats', 'faces', 'track', 'look']),
+  summary: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe('The summary media.get gives under analyses; look: where each answer holds'),
+  model: z.string().optional().describe('look: the Jev model'),
+  frames: z.number().optional().describe('look: frames asked about'),
+  transcript: Transcript.optional(),
+  beats: BeatsAnalysis.optional(),
+  faces: FacesAnalysis.optional(),
+  look: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe('look: this run (id, model, questions, frames with answers)'),
+  track: z
+    .object({
+      rate: z.number(),
+      points: z.array(
+        z.object({
+          time: z.number(),
+          x: z.number(),
+          y: z.number(),
+          w: z.number(),
+          h: z.number(),
+          found: z.boolean(),
+        }),
+      ),
+    })
+    .optional(),
+  note: z
+    .string()
+    .optional()
+    .describe('In place of the analysis when it is too long to return: where to read it'),
+});
+
 // Create: new media from a recipe. Always a job; the result is a media_id for clip.add.
 const createCommon = {
   name: z.string().min(1).max(200).optional(),
@@ -869,6 +906,32 @@ export const JobListInput = z.object({
 });
 export const JobListResult = z.object({ jobs: z.array(JobView) });
 
+/** What a long-running tool answers while it works: poll job.get with job_id for the result. */
+export const JobHandle = z.object({
+  job_id: JobId,
+  status: JobStatus,
+  status_uri: z.string(),
+  media_id: MediaId.optional().describe('The media it is making; usable in edits once processing'),
+  hint: z.string(),
+});
+
+const finished = new WeakMap<z.ZodType, z.ZodType>();
+
+/**
+ * A long-running tool's output: its result when it finishes in the call, or a JobHandle while it
+ * works (job.get then gives the result). code.run's cf follows the job, so scripts get the result.
+ */
+export function withJob<T extends z.ZodType>(result: T) {
+  const schema = z.union([result, JobHandle]);
+  finished.set(schema, result);
+  return schema;
+}
+
+/** The result inside a withJob output, or undefined for any other schema. */
+export function finishedResult(schema: unknown): z.ZodType | undefined {
+  return finished.get(schema as z.ZodType);
+}
+
 // Render and export
 export const RenderFramesInput = z
   .object({
@@ -992,6 +1055,14 @@ export const LoudnessInput = z.object({
   preview: Preview,
   target_lufs: z.number().min(-40).max(-5).default(-14),
   true_peak_db: z.number().min(-9).max(0).default(-1),
+});
+
+export const LoudnessResult = EditResult.extend({
+  measured: z.object({
+    before_lufs: z.number().nullable(),
+    lufs: z.number().nullable(),
+    true_peak_db: z.number().nullable(),
+  }),
 });
 
 export const QaCheckInput = z.object({

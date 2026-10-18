@@ -20,8 +20,10 @@ import {
   CreateMotionInput,
   CreateStillInput,
   CreateVoiceoverInput,
+  MediaInfo,
   MOTION_LIMITS,
   MotionRequest,
+  withJob,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { renderInSandbox } from '../motion.ts';
@@ -176,6 +178,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         'Long-running: returns a task, or {job_id, media_id} for job.get. The same recipe returns the same media.',
       ].join(' '),
       inputSchema: CreateMotionInput,
+      outputSchema: withJob(MediaInfo),
       annotations: annotations('Create a motion graphic'),
     },
     guard(async (args, ctx) => {
@@ -216,6 +219,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         'Long-running: returns a task, or {job_id, media_id} for job.get.',
       ].join(' '),
       inputSchema: CreateStillInput,
+      outputSchema: withJob(MediaInfo),
       annotations: annotations('Create a still'),
     },
     guard(async (args, ctx) => {
@@ -247,6 +251,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       description:
         'A solid or gradient picture (PNG, any length on a timeline): backgrounds, slugs, colour washes with clip.set_blend. Gradients work like CSS: angle 180 runs top to bottom; radial reaches the corners; colours may carry alpha (#RRGGBBAA). Long-running like every create.* tool, but quick.',
       inputSchema: CreateMatteInput,
+      outputSchema: withJob(MediaInfo),
       annotations: annotations('Create a matte'),
     },
     guard(async (args, ctx) => {
@@ -280,6 +285,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       description:
         'English text spoken by a natural voice (Kokoro, local; the model downloads once) as WAV media. words (default) times each word into the media transcript for caption.add {from_transcript}. Long-running: a task, or {job_id, media_id} for job.get.',
       inputSchema: CreateVoiceoverInput,
+      outputSchema: withJob(MediaInfo),
       annotations: annotations('Create a voiceover'),
     },
     guard(async (args, ctx) => {
@@ -327,6 +333,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       description:
         'A subject without its background, local: ProRes 4444 with alpha and the sound, or a PNG, to lay over a new background. subject any (BiRefNet) cuts out products, animals or objects; people (MODNet) is fast enough for long video. Long-running: a task, or {job_id, media_id} for job.get.',
       inputSchema: CreateCutoutInput,
+      outputSchema: withJob(MediaInfo),
       annotations: annotations('Cut out a subject'),
     },
     guard(async (args, ctx) => {
