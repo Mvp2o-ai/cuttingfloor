@@ -2,6 +2,7 @@ import { Bay } from './bay.tsx';
 import { Capabilities } from './capabilities.tsx';
 import { Connect } from './connect.tsx';
 import { PLANS } from './pricing.ts';
+import { ALTERNATIVES, DOCS_URL, FAQS, structuredData } from './seo.ts';
 
 /** Solved: a check, drawn on once in the accent. */
 function Check() {
@@ -14,11 +15,16 @@ function Check() {
 
 // Signing up (or in) is the account page: WorkOS sign-in, then the trial, plans and the connect box.
 const SIGN_UP = '/account';
-const DOCS = 'https://github.com/mvp2o-ai/cuttingfloor';
+const DOCS = DOCS_URL;
 
 export default function Home() {
   return (
     <>
+      <script
+        type="application/ld+json"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: our own constant data, serialised for crawlers
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData()) }}
+      />
       <header className="nav">
         <div className="nav-inner">
           <a className="wordmark" href="/">
@@ -40,22 +46,22 @@ export default function Home() {
       <main className="frame">
         <section className="cell hero marks">
           <span className="mark-b" />
-          <div className="leader rise">
+          <h1 className="leader rise">
             <b>cuttingfloor</b>
             <span className="dots" />
-            <span>agentic video editing</span>
-          </div>
-          <h1 className="display rise d1">
+            <span>the video editing agent for Claude, Cursor and ChatGPT</span>
+          </h1>
+          <p className="display title rise d1">
             Video editing,
             <br />
             solved.
             <Check />
-          </h1>
+          </p>
           <div className="hero-row">
             <div className="rise d2">
               <p className="lede">
-                Your agent edits video now. Connect Kazi, Claude, Cursor or ChatGPT and say what you
-                want cut.{' '}
+                Your agent edits video now. Connect Kazi, Claude, Cursor or ChatGPT to one MCP
+                server and say what you want cut.{' '}
                 <em>
                   It imports your footage, reads the transcript, trims, captions, mixes and hands
                   back a finished file.
@@ -80,17 +86,22 @@ export default function Home() {
           <video src="/floor.mp4" poster="/floor.jpg" muted loop playsInline autoPlay />
           <div className="floor-cap">
             <span className="label">01 / The floor</span>
-            <span className="label">Your agent, one MCP server, every edit a call</span>
+            <span className="label">
+              Agentic video editing: your agent, one MCP server, every edit a call
+            </span>
           </div>
         </section>
 
         <section className="cell" aria-label="A session">
           <div className="head">
             <span className="label">02 / The bay</span>
-            <p className="lede">
-              Every edit is a tool call. Every call returns a new timeline and a picture of it, so
-              the agent sees what it did.
-            </p>
+            <h2 className="lede">
+              Agentic video editing, one tool call at a time.{' '}
+              <em>
+                Every call returns a new timeline and a picture of it, so the agent sees what it
+                did.
+              </em>
+            </h2>
           </div>
           <Bay />
         </section>
@@ -102,7 +113,10 @@ export default function Home() {
             62 tools.
             <br />
             No timeline UI.
-            <small>Granular primitives an agent composes, plus code when it needs a loop.</small>
+            <small>
+              A video editing API built for agents: granular primitives it composes, plus code when
+              it needs a loop.
+            </small>
           </h2>
           <Capabilities />
         </section>
@@ -117,8 +131,9 @@ export default function Home() {
               <span className="n">01</span>
               <h3>Connect your agent.</h3>
               <p>
-                Add <code>cuttingfloorai.apifunnel.ai/mcp</code> as an MCP server. Your client opens
-                a sign-in page; Google, GitHub, Microsoft, Apple or email.
+                Add <code>cuttingfloorai.apifunnel.ai/mcp</code> as an MCP server in Claude, Cursor,
+                ChatGPT or Kazi. Your client opens a sign-in page; Google, GitHub, Microsoft, Apple
+                or email.
               </p>
             </li>
             <li>
@@ -201,40 +216,50 @@ export default function Home() {
           </p>
         </section>
 
+        <section className="cell" id="compare">
+          <div className="head">
+            <span className="label">07 / Compared</span>
+            <div>
+              <h2 className="display">Edits, not templates.</h2>
+              <p className="compare-lede">
+                Looking for a Remotion, Shotstack, Creatomate or JSON2Video alternative? Those
+                render a video you have already described in code or JSON. cuttingfloor is a video
+                editing API your agent drives call by call, looking at each result.
+              </p>
+            </div>
+          </div>
+          <table className="compare-table">
+            <thead>
+              <tr>
+                <th>Tool</th>
+                <th>What it is</th>
+                <th>Pick it when</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ALTERNATIVES.map((a) => (
+                <tr key={a.name} className={'ours' in a && a.ours ? 'ours' : ''}>
+                  <td className="tier">{a.name}</td>
+                  <td>{a.is}</td>
+                  <td className="note">{a.when}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
         <section className="cell">
           <div className="head">
-            <span className="label">07 / Questions</span>
+            <span className="label">08 / Questions</span>
             <h2 className="display">Asked.</h2>
           </div>
           <div className="faq">
-            <details>
-              <summary>Which agents work with it?</summary>
-              <p>
-                Any MCP client with remote servers: Kazi, Claude (web, desktop and Code), Cursor,
-                ChatGPT in developer mode, VS Code, and anything built on the MCP SDKs.
-              </p>
-            </details>
-            <details>
-              <summary>Where does my footage go?</summary>
-              <p>
-                To our servers, for as long as you work on it. Media and renders expire after seven
-                days, timelines after a day without use. No one else can see them.
-              </p>
-            </details>
-            <details>
-              <summary>Can I run it myself?</summary>
-              <p>
-                Yes. cuttingfloor is open source and runs in one Docker image on your own machine.
-                The hosted version is the same image, run for you.
-              </p>
-            </details>
-            <details>
-              <summary>Do I need my own AI keys?</summary>
-              <p>
-                No. Transcription, voiceover, cutouts and graphics run on our servers. Your agent is
-                whatever you already use.
-              </p>
-            </details>
+            {FAQS.map((f) => (
+              <details key={f.q}>
+                <summary>{f.q}</summary>
+                <p>{f.a}</p>
+              </details>
+            ))}
           </div>
         </section>
 

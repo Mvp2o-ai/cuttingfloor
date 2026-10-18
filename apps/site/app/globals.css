@@ -191,6 +191,8 @@ a {
   padding-top: clamp(40px, 7vw, 88px);
 }
 .leader {
+  margin: 0;
+  font-weight: 400;
   display: flex;
   align-items: baseline;
   gap: 10px;
@@ -214,7 +216,7 @@ a {
   line-height: 0.86;
   margin: 0;
 }
-.hero h1 {
+.hero .title {
   font-size: clamp(64px, 17.5vw, 252px);
   margin-top: 28px;
 }
@@ -230,6 +232,10 @@ a {
   line-height: 1.4;
   max-width: 36ch;
   margin: 0;
+}
+h2.lede {
+  font-weight: inherit;
+  letter-spacing: normal;
 }
 .lede em {
   font-style: normal;
@@ -857,6 +863,49 @@ a {
   font-size: 15px;
 }
 
+/* ---------- compared ---------- */
+
+.compare-lede {
+  margin: 20px 0 0;
+  color: var(--mute);
+  max-width: 60ch;
+}
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 16px;
+}
+.compare-table th,
+.compare-table td {
+  text-align: left;
+  padding: 18px 16px 18px 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+.compare-table thead th {
+  font-family: var(--font-pixel), monospace;
+  font-weight: 400;
+  font-size: 20px;
+  text-transform: uppercase;
+  color: var(--mute);
+  border-bottom-color: var(--mute);
+}
+.compare-table .tier {
+  font-size: clamp(22px, 2.2vw, 30px);
+  font-weight: 800;
+  font-variation-settings: "wdth" 70;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  white-space: nowrap;
+}
+.compare-table td.note {
+  color: var(--mute);
+  max-width: 34ch;
+}
+.compare-table tr.ours .tier {
+  color: var(--key);
+}
+
 /* ---------- faq ---------- */
 
 .faq {
@@ -1014,6 +1063,22 @@ a {
   .price-table td.over::before {
     content: "then ";
     color: var(--mute);
+  }
+  .compare-table thead {
+    display: none;
+  }
+  .compare-table tr {
+    display: grid;
+    gap: 6px;
+    border-bottom: 1px solid var(--rule);
+    padding: 14px 0;
+  }
+  .compare-table td {
+    border: 0;
+    padding: 0;
+  }
+  .compare-table td.note::before {
+    content: "Pick it when ";
   }
 }
 
