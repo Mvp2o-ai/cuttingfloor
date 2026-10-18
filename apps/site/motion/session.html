@@ -1,0 +1,340 @@
+<!-- The session: a user asks for a teaser, the agent cuts it in ten tool calls. Source for
+     public/session.mp4 (1920×1080) and public/session-tall.mp4 (1080×1440), rendered with
+     create.motion (assets: Archivo.ttf, JBM.ttf, VT323.ttf). The layout follows the viewport's
+     shape. Everything is a pure function of the time, so __seek(s) draws any frame and the loop
+     closes on an empty pane. -->
+<style>
+  @font-face { font-family: Display; src: url(assets/Archivo.ttf); font-weight: 100 900; font-stretch: 62% 125%; }
+  @font-face { font-family: Mono; src: url(assets/JBM.ttf); font-weight: 100 800; }
+  @font-face { font-family: Pix; src: url(assets/VT323.ttf); }
+  :root {
+    --bg: #0e0d0b; --bg-2: #161511; --bg-3: #0a0908; --ink: #eee8dc; --mute: #8f887c;
+    --rule: #2a2722; --rule-2: #3a362f; --key: #00b140; --gold: #d9a845;
+    --u: 1px; --pad: 56px;
+  }
+  @media (max-aspect-ratio: 1/1) { :root { --u: 1.45px; --pad: 44px; } }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 100%; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden; }
+  body { padding: var(--pad); font-family: Display, sans-serif; }
+  .frame {
+    height: 100%; display: grid; grid-template-columns: 1fr calc(620 * var(--u));
+    border: 2px solid var(--rule-2); background: var(--bg-3);
+  }
+  @media (max-aspect-ratio: 1/1) { .frame { grid-template-columns: 1fr; grid-template-rows: 1fr calc(470 * var(--u)); } }
+  .pane { position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+  .pane + .pane { border-left: 2px solid var(--rule-2); }
+  @media (max-aspect-ratio: 1/1) { .pane + .pane { border-left: 0; border-top: 2px solid var(--rule-2); } }
+  .bar {
+    display: flex; align-items: center; gap: calc(14 * var(--u)); flex: none;
+    height: calc(54 * var(--u)); padding: 0 calc(24 * var(--u)); border-bottom: 2px solid var(--rule);
+    font: calc(30 * var(--u)) Pix, monospace; color: var(--mute); letter-spacing: 0.04em; background: var(--bg-2);
+  }
+  .bar b { font-weight: 400; color: var(--ink); }
+  .bar .grow { flex: 1; }
+  .dot { width: calc(12 * var(--u)); height: calc(12 * var(--u)); border-radius: 50%; background: var(--key); box-shadow: 0 0 calc(12 * var(--u)) var(--key); }
+
+  /* The conversation */
+  .view { position: relative; flex: 1; overflow: hidden; }
+  .log { position: absolute; inset: 0 0 auto 0; padding: calc(30 * var(--u)) calc(36 * var(--u)); display: flex; flex-direction: column; gap: calc(16 * var(--u)); }
+  .msg { opacity: 0; }
+  .who { font: calc(24 * var(--u)) Pix, monospace; letter-spacing: 0.12em; color: var(--mute); margin-bottom: calc(6 * var(--u)); }
+  .user { align-self: flex-end; max-width: 82%; background: var(--bg-2); border: 2px solid var(--rule-2); padding: calc(16 * var(--u)) calc(22 * var(--u)); }
+  .user p { font-size: calc(29 * var(--u)); line-height: 1.32; font-weight: 500; }
+  .agent { border-left: calc(4 * var(--u)) solid var(--key); padding: calc(4 * var(--u)) 0 calc(4 * var(--u)) calc(20 * var(--u)); max-width: 88%; }
+  .agent .who { color: var(--key); }
+  .agent p { font-size: calc(28 * var(--u)); line-height: 1.34; color: var(--ink); font-stretch: 96%; }
+  .call {
+    font-family: Mono, monospace; font-size: calc(19 * var(--u)); line-height: 1.5;
+    background: var(--bg-3); border: 1px solid var(--rule); padding: calc(10 * var(--u)) calc(16 * var(--u));
+    margin-left: calc(24 * var(--u)); max-width: calc(100% - 24 * var(--u));
+  }
+  .call .fn { color: var(--gold); font-weight: 600; }
+  .call .args { color: var(--mute); }
+  .call .ret { color: #6f695f; white-space: nowrap; }
+  .call .ret i { font-style: normal; color: var(--mute); }
+  .call .wait { color: var(--gold); letter-spacing: 0.2em; }
+  .caret { display: inline-block; width: 0.5em; height: 0.12em; background: var(--ink); vertical-align: baseline; margin-left: 2px; }
+
+  /* The preview */
+  .right { display: grid; grid-template-rows: auto 1fr auto auto; }
+  @media (max-aspect-ratio: 1/1) {
+    .right { grid-template-rows: auto 1fr auto; grid-template-columns: calc(270 * var(--u)) 1fr; }
+    .right .bar { grid-column: 1 / -1; }
+    .right .stage { grid-row: 2 / 4; }
+  }
+  .stage { display: grid; place-items: center; padding: calc(26 * var(--u)) 0 calc(18 * var(--u)); min-height: 0; }
+  .phone {
+    position: relative; height: 100%; aspect-ratio: 9 / 16; border: calc(6 * var(--u)) solid #24221d;
+    border-radius: calc(26 * var(--u)); background: #050504; overflow: hidden; container-type: size;
+  }
+  .phone .empty { position: absolute; inset: 0; display: grid; place-items: center; font: 8cqw Pix, monospace; color: #4a463e; letter-spacing: 0.08em; text-align: center; }
+  .shot { position: absolute; inset: 0; opacity: 0; }
+  .shot svg { width: 100%; height: 100%; display: block; }
+  .cap {
+    position: absolute; left: 6%; right: 6%; bottom: 20%; text-align: center; opacity: 0;
+    font: 800 8.4cqw / 1.1 Display, sans-serif; font-stretch: 112%; text-transform: uppercase;
+    color: #fff; text-shadow: 0 2px 0 #000, 0 0 calc(10 * var(--u)) #000;
+  }
+  .cap .w.on { color: var(--key); }
+  
+  .tc { position: absolute; top: 3%; left: 0; right: 0; text-align: center; font: 7cqw Mono, monospace; color: var(--ink); text-shadow: 0 1px 3px #000; }
+  
+  .lufs { position: absolute; top: 8.5%; right: 7%; font: 6.4cqw Pix, monospace; color: var(--gold); opacity: 0; }
+  .qa { position: absolute; inset: 0; display: grid; place-content: center; gap: 2.5cqw; background: rgba(5,5,4,0.72); opacity: 0; font: 8cqw Pix, monospace; color: var(--ink); padding: 0 12%; }
+  .qa span::before { content: '✓ '; color: var(--key); }
+  .export { position: absolute; left: 8%; right: 8%; bottom: 7%; height: 2.4cqw; background: rgba(255,255,255,0.12); opacity: 0; }
+  .bar-fill { display: block; height: 100%; width: 0; background: var(--key); }
+  .done { position: absolute; left: 0; right: 0; bottom: 3%; text-align: center; font: 6.6cqw Pix, monospace; color: var(--key); opacity: 0; }
+
+  .tracks { padding: calc(4 * var(--u)) calc(28 * var(--u)) calc(14 * var(--u)); display: grid; gap: calc(9 * var(--u)); align-content: center; }
+  .track { display: grid; grid-template-columns: calc(44 * var(--u)) 1fr; align-items: center; gap: calc(10 * var(--u)); }
+  .track span { font: calc(24 * var(--u)) Pix, monospace; color: var(--mute); }
+  .lane { position: relative; height: calc(26 * var(--u)); background: var(--bg-2); border: 1px solid var(--rule); }
+  .seg { position: absolute; top: 2px; bottom: 2px; width: 0; }
+  .V1 .seg { background: var(--key); }
+  .V2 .seg, .A1 .seg { background: var(--gold); }
+  .status {
+    display: flex; justify-content: space-between; align-items: center; gap: calc(12 * var(--u));
+    padding: calc(14 * var(--u)) calc(28 * var(--u)); border-top: 2px solid var(--rule);
+    font: calc(26 * var(--u)) Pix, monospace; color: var(--mute); background: var(--bg-2);
+  }
+  .status .state { color: var(--ink); }
+  .status .state.idle { color: var(--key); }
+  .status .replay { border: 1px solid var(--rule-2); padding: 0 calc(10 * var(--u)); }
+  @media (max-aspect-ratio: 1/1) { .status .replay { display: none; } .status { font-size: calc(22 * var(--u)); white-space: nowrap; } }
+  .fade { position: absolute; inset: 0; background: var(--bg); opacity: 0; pointer-events: none; }
+</style>
+
+<div class="frame">
+  <section class="pane">
+    <div class="bar"><span class="dot"></span><b>connected</b><span>· cuttingfloor mcp</span><span class="grow"></span><span>agent: claude</span></div>
+    <div class="view"><div class="log" id="log"></div></div>
+  </section>
+  <section class="pane right">
+    <div class="bar"><b>preview</b><span>9:16</span><span class="grow"></span><span id="tl">no timeline</span></div>
+    <div class="stage">
+      <div class="phone">
+        <div class="empty" id="empty">waiting for<br>a timeline</div>
+        <div class="shot" id="shot0"></div><div class="shot" id="shot1"></div><div class="shot" id="shot2"></div>
+        <div class="tc" id="tc"></div>
+        <div class="lufs" id="lufs">−14.1 LUFS</div>
+        <div class="cap" id="cap"></div>
+        <div class="qa" id="qa"><span>no gaps</span><span>no black frames</span><span>sync ok</span></div>
+        <div class="export" id="export"><i class="bar-fill" id="exportBar"></i></div>
+        <div class="done" id="done">teaser.mp4 ✓</div>
+      </div>
+    </div>
+    <div class="tracks">
+      <div class="track V2"><span>V2</span><div class="lane" id="V2"></div></div>
+      <div class="track V1"><span>V1</span><div class="lane" id="V1"></div></div>
+      <div class="track A1"><span>A1</span><div class="lane" id="A1"></div></div>
+    </div>
+    <div class="status"><span class="state" id="state">agent working</span><span class="replay">↻ replay</span></div>
+  </section>
+</div>
+<div class="fade" id="fade"></div>
+
+<script>
+const T = 24;
+const cl = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const eo = (v) => 1 - (1 - cl(v)) ** 3;
+const pad = (n) => String(n).padStart(2, '0');
+const $ = (id) => document.getElementById(id);
+
+// The session, in order. at: when it lands (s); ret: how long the call takes to answer.
+const EV = [
+  { at: 0.5, kind: 'user', text: 'Cut my 40-minute interview into a 60-second vertical teaser. Captions on, loud enough for phones.' },
+  { at: 3.0, kind: 'agent', text: 'On it. Importing the footage and reading the transcript first.' },
+  { at: 4.4, kind: 'call', fn: 'media.import', args: '{ source: { url: "…/interview.mp4" } }', ret: 'm_7f2c · 40:12 · 1080p · ready' },
+  { at: 5.1, kind: 'call', fn: 'media.analyze', args: '{ kind: "transcript" }', ret: '6,412 words, timed' },
+  { at: 6.0, kind: 'agent', text: 'I have the transcript. Three passages hold the argument — taking those.' },
+  { at: 7.5, kind: 'call', fn: 'timeline.create', args: '{ 1080x1920, 30fps }', ret: 'tl_01 · empty' },
+  { at: 8.2, kind: 'call', fn: 'clip.add', args: '{ words: [812, 861] }', ret: 'V1 00:00–00:14', clip: [0, 14] },
+  { at: 8.9, kind: 'call', fn: 'clip.add', args: '{ words: [2209, 2260] }', ret: 'V1 00:14–00:31', clip: [14, 31] },
+  { at: 9.6, kind: 'call', fn: 'clip.add', args: '{ words: [5120, 5198] }', ret: 'V1 00:31–00:58', clip: [31, 58] },
+  { at: 10.6, kind: 'agent', text: 'Checking my own work before I hand it over.' },
+  { at: 11.8, kind: 'call', fn: 'caption.add', args: '{ from_transcript: true }', ret: '84 captions on V2' },
+  { at: 12.5, kind: 'call', fn: 'audio.set_loudness', args: '{ target_lufs: -14 }', ret: 'measured −14.1 LUFS' },
+  { at: 13.2, kind: 'call', fn: 'qa.check', args: '{ timeline_id: "tl_06" }', ret: 'no gaps, no black frames, sync ok' },
+  { at: 14.4, kind: 'call', fn: 'export.video', args: '{ preset: "social_9x16_h264" }', ret: 'teaser.mp4 · 00:00:58:12 · signed link', wait: 1.8 },
+  { at: 16.8, kind: 'agent', text: 'Done — 58 seconds, captioned, −14 LUFS, and it passes its own checks. Here’s the file.' },
+];
+const CALL_WAIT = 0.45;
+const answered = (e) => e.at + (e.wait ?? CALL_WAIT);
+const FADE = [22.9, 23.7];
+const CALLS = EV.filter((e) => e.kind === 'call').length;
+const byFn = (fn) => EV.find((e) => e.fn === fn);
+const CLIPS = EV.filter((e) => e.clip);
+
+const log = $('log');
+for (const e of EV) {
+  const el = document.createElement('div');
+  el.className = `msg ${e.kind}`;
+  if (e.kind === 'call') {
+    el.innerHTML = `<div><span class="fn">${e.fn}</span> <span class="args"></span></div><div class="ret"></div>`;
+    el.querySelector('.args').textContent = e.args;
+  } else {
+    el.innerHTML = `<div class="who">${e.kind === 'user' ? 'YOU' : 'AGENT'}</div><p></p>`;
+  }
+  e.el = el;
+  log.append(el);
+}
+
+// Laid out once, full, so every message keeps its height while it types in.
+function measure() {
+  for (const e of EV) {
+    if (e.kind === 'call') e.el.querySelector('.ret').innerHTML = `<i>←</i> ${e.ret}`;
+    else e.el.querySelector('p').textContent = e.text;
+  }
+  const view = log.parentElement.clientHeight;
+  const gap = parseFloat(getComputedStyle(log).rowGap) || 0;
+  for (const e of EV) e.scroll = Math.max(0, e.el.offsetTop + e.el.offsetHeight + gap * 2 - view);
+}
+
+// Three framings of the interview: one speaker, warm key light, the room falling off.
+function shot(i) {
+  const tone = [['#3a2a1d', '#120d09'], ['#24302c', '#0b0f0d'], ['#3b2f24', '#100c09']][i];
+  const sx = [0, -18, 14][i];
+  const zoom = [1, 1.18, 1.08][i];
+  return `<svg viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice"><defs>
+    <radialGradient id="g${i}" cx="${0.38 + i * 0.1}" cy="0.32" r="0.9"><stop offset="0" stop-color="${tone[0]}"/><stop offset="1" stop-color="${tone[1]}"/></radialGradient>
+    <linearGradient id="s${i}" x1="0" x2="1"><stop offset="0" stop-color="#e3b48a"/><stop offset="0.12" stop-color="#5a3f2e"/><stop offset="0.4" stop-color="#1c1510"/><stop offset="1" stop-color="#120d0a"/></linearGradient></defs>
+    <rect width="90" height="160" fill="url(#g${i})"/>
+    <rect x="${62 + sx / 3}" y="20" width="14" height="70" fill="#000" opacity="0.25"/>
+    <g transform="translate(${45 + sx} 92) scale(${zoom}) translate(-45 -92)">
+      <path d="M8 160 C10 122 26 112 45 110 C64 112 80 122 82 160 Z" fill="#14110e" stroke="#6b4d36" stroke-width="0.6"/>
+      <path d="M38 104 L52 104 L50 116 L40 116 Z" fill="#1c1510"/>
+      <ellipse cx="45" cy="80" rx="15.5" ry="19.5" fill="url(#s${i})"/>
+      <path d="M29 76 C28 58 38 54 46 55 C57 55 63 62 61 78 C58 66 50 62 42 64 C35 65 31 70 29 76 Z" fill="#17120e"/>
+    </g></svg>`;
+}
+for (let i = 0; i < 3; i++) $(`shot${i}`).innerHTML = shot(i);
+
+const LINES = [
+  ['Nobody', 'watches', 'forty', 'minutes.'],
+  ['They', 'watch', 'one', 'line.'],
+  ['So', 'cut', 'to', 'it.'],
+];
+const segs = {};
+for (const t of ['V1', 'V2', 'A1']) segs[t] = [];
+function seg(track, from, to) {
+  const s = document.createElement('i');
+  s.className = 'seg';
+  s.style.left = `${(from / 60) * 100}%`;
+  s.dataset.w = String(((to - from) / 60) * 100);
+  $(track).append(s);
+  return s;
+}
+for (const c of CLIPS) {
+  segs.V1.push({ at: answered(c), el: seg('V1', c.clip[0] + 0.15, c.clip[1] - 0.15) });
+  segs.A1.push({ at: answered(c), el: seg('A1', c.clip[0] + 0.15, c.clip[1] - 0.15) });
+}
+segs.V2.push({ at: answered(byFn('caption.add')), el: seg('V2', 0.15, 57.85) });
+
+function type(text, since, cps) {
+  const n = Math.floor(cl(since * cps, 0, text.length));
+  return n;
+}
+
+function draw(t) {
+  t = ((t % T) + T) % T;
+  let scroll = 0;
+  let current = -1;
+  for (const [i, e] of EV.entries()) {
+    const since = t - e.at;
+    const on = since >= 0;
+    e.el.style.opacity = on ? String(eo(since / 0.3)) : '0';
+    e.el.style.transform = on ? `translateY(${(1 - eo(since / 0.3)) * 14}px)` : 'none';
+    if (!on) continue;
+    current = i;
+    scroll = lerpScroll(i, since);
+    if (e.kind === 'call') {
+      const ret = e.el.querySelector('.ret');
+      const back = since >= (e.wait ?? CALL_WAIT);
+      if (back) ret.innerHTML = `<i>←</i> ${e.ret}`;
+      else ret.innerHTML = `<span class="wait">${'·'.repeat(1 + (Math.floor(since * 6) % 3))}</span>`;
+    } else {
+      const p = e.el.querySelector('p');
+      const cps = e.kind === 'user' ? 48 : 70;
+      const n = type(e.text, since, cps);
+      p.textContent = e.text.slice(0, n);
+      if (n < e.text.length) p.insertAdjacentHTML('beforeend', '<span class="caret"></span>');
+      // The rest is laid out but unseen, so the bubble never grows as it types.
+      const rest = document.createElement('span');
+      rest.style.visibility = 'hidden';
+      rest.textContent = e.text.slice(n);
+      p.append(rest);
+    }
+  }
+  log.style.transform = `translateY(${-scroll}px)`;
+
+  // The preview
+  const created = answered(byFn('timeline.create'));
+  const landed = CLIPS.filter((c) => t >= answered(c));
+  $('empty').style.opacity = t >= created ? '0' : '1';
+  $('tl').textContent = t < created ? 'no timeline' : `tl_${pad(Math.min(7, 1 + EV.filter((e) => e.kind === 'call' && e.fn !== 'media.import' && e.fn !== 'media.analyze' && t >= answered(e)).length - 1))}`;
+  const shown = landed.length - 1;
+  for (let i = 0; i < 3; i++) {
+    const c = CLIPS[i];
+    const since = t - answered(c);
+    // The newest clip is on screen; after the last lands the preview cycles through all three.
+    let vis = i === shown ? 1 : 0;
+    if (landed.length === 3 && t > answered(CLIPS[2]) + 1.2) vis = i === Math.floor((t - answered(CLIPS[2]) - 1.2) / 2.2) % 3 ? 1 : 0;
+    $(`shot${i}`).style.opacity = since >= 0 ? String(vis * eo(since / 0.35)) : '0';
+  }
+  let secs = 0;
+  if (landed.length) {
+    const c = landed[landed.length - 1];
+    secs = c.clip[0] + (c.clip[1] - c.clip[0]) * eo((t - answered(c)) / 0.6);
+  }
+  const frames = Math.round(secs * 30);
+  $('tc').textContent = t >= created ? `00:00:${pad(Math.floor(frames / 30))}:${pad(frames % 30)}` : '';
+
+  const capAt = answered(byFn('caption.add'));
+  const cap = $('cap');
+  if (t >= capAt) {
+    const k = Math.floor((t - capAt) / 0.32);
+    const line = LINES[Math.floor(k / 4) % LINES.length];
+    const w = k % 4;
+    cap.innerHTML = line.map((x, j) => `<span class="w${j === w ? ' on' : ''}">${x}</span>`).join(' ');
+    cap.style.opacity = String(eo((t - capAt) / 0.3));
+  } else cap.style.opacity = '0';
+
+  const loudAt = answered(byFn('audio.set_loudness'));
+  $('lufs').style.opacity = t >= loudAt ? String(eo((t - loudAt) / 0.3)) : '0';
+  const qaAt = answered(byFn('qa.check'));
+  $('qa').style.opacity = String(t >= qaAt ? eo((t - qaAt) / 0.25) * (1 - eo((t - qaAt - 1.1) / 0.3)) : 0);
+  const ex = byFn('export.video');
+  const exSince = t - ex.at;
+  $('export').style.opacity = exSince >= 0 ? String(1 - eo((exSince - ex.wait - 0.4) / 0.3)) : '0';
+  $('exportBar').style.width = `${cl(exSince / ex.wait) * 100}%`;
+  $('done').style.opacity = t >= answered(ex) ? String(eo((t - answered(ex)) / 0.3)) : '0';
+
+  for (const list of Object.values(segs))
+    for (const s of list) s.el.style.width = `${Number(s.el.dataset.w) * eo((t - s.at) / 0.5)}%`;
+  // A1 lands dim with each clip and comes up to full once its loudness is set.
+  $('A1').style.opacity = String(t >= loudAt ? 0.45 + 0.55 * eo((t - loudAt) / 0.4) : 0.45);
+
+  const idle = t >= EV[EV.length - 1].at + 1.2;
+  const st = $('state');
+  st.className = `state${idle ? ' idle' : ''}`;
+  st.textContent = idle ? `idle · ${CALLS} tool calls · 58s of video` : current < 0 ? 'waiting for a prompt' : 'agent working';
+
+  $('fade').style.opacity = String(cl((t - FADE[0]) / (FADE[1] - FADE[0])) * (t < T - 0.05 ? 1 : 0));
+}
+
+function lerpScroll(i, since) {
+  const prev = i > 0 ? EV[i - 1].scroll : 0;
+  return prev + (EV[i].scroll - prev) * eo(since / 0.45);
+}
+
+window.__ready = Promise.all([
+  document.fonts.load('28px Display'),
+  document.fonts.load('19px Mono'),
+  document.fonts.load('24px Pix'),
+]).then(() => {
+  measure();
+  draw(0);
+});
+window.__seek = (s) => draw(s);
+</script>

@@ -28,6 +28,11 @@ const CLIENTS = [
     line: `{ "mcpServers": { "cuttingfloor": { "url": "${MCP_URL}" } } }`,
   },
   {
+    name: 'Codex',
+    how: 'Run this, then codex mcp login cuttingfloor to sign in.',
+    line: `codex mcp add cuttingfloor --url ${MCP_URL}`,
+  },
+  {
     name: 'ChatGPT',
     how: 'Settings → Apps → Create (developer mode). Paste the address, auth: OAuth.',
     line: MCP_URL,
