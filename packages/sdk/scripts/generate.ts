@@ -62,19 +62,22 @@ export async function generateTools(): Promise<string> {
     return s;
   };
   const tools = seen.sort((a, b) => a.name.localeCompare(b.name));
+  const opened = (schema: unknown) =>
+    (schema as Record<symbol, unknown> | undefined)?.[OPENED_FROM] ?? schema;
   const inputs = tools.map(({ name, input }) => {
-    const known = names.get(input);
+    const known = names.get(opened(input));
+    if (!known && !edit.has(name)) {
+      throw new Error(`${name} has no named input schema in @cuttingfloor/schema`);
+    }
     const t = known
       ? `z.input<typeof ${type(known)}>`
-      : edit.has(name)
-        ? `z.input<ReturnType<typeof ${type('editInput')}<'${name}'>>>`
-        : 'Record<string, unknown>';
+      : `z.input<ReturnType<typeof ${type('editInput')}<'${name}'>>>`;
     return `  '${name}': ${t};`;
   });
   // Every tool declares its output. The server registers an opened copy of each schema, and a
   // long-running tool's is its result or a job handle; code gets the result, so that is the type.
   const outputs = tools.map(({ name, output }) => {
-    const declared = (output as Record<symbol, unknown> | undefined)?.[OPENED_FROM] ?? output;
+    const declared = opened(output);
     const known = names.get(finishedResult(declared) ?? declared);
     if (!known) throw new Error(`${name} has no named output schema in @cuttingfloor/schema`);
     return `  '${name}': z.output<typeof ${type(known)}>;`;
