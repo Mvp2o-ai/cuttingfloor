@@ -82,5 +82,7 @@ export function timelineLabel(n: number): string {
 }
 
 export function idleStatus(s: Schedule): string {
-  return `idle · ${s.calls} tool calls · ${Math.round(s.seconds)}s of video`;
+  const secs = Math.round(s.seconds);
+  const length = secs < 120 ? `${secs}s` : `${Math.floor(secs / 60)}:${pad(secs % 60)}`;
+  return `idle · ${s.calls} tool calls · ${length} of video`;
 }

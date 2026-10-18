@@ -3,21 +3,10 @@ import { Capabilities } from './capabilities.tsx';
 import { Connect } from './connect.tsx';
 import { PLANS } from './pricing.ts';
 import { Prompts } from './prompts.tsx';
-import { ALTERNATIVES, DOCS_URL, FAQS, structuredData } from './seo.ts';
+import { ALTERNATIVES, FAQS, structuredData } from './seo.ts';
 import { Session } from './session/session.tsx';
+import { Check, Footer, JsonLd, Nav, SIGN_UP } from './shell.tsx';
 
-/** Solved: a check, drawn on once in the accent. */
-function Check() {
-  return (
-    <svg className="check" viewBox="0 0 48 40" role="img" aria-label="solved">
-      <path d="M5 21 L18 33 L43 6" />
-    </svg>
-  );
-}
-
-// Signing up (or in) is the account page: WorkOS sign-in, then the trial, plans and the connect box.
-const SIGN_UP = '/account';
-const DOCS = DOCS_URL;
 // Linking here plays the session from the top.
 const SESSION_ID = 'session';
 
@@ -27,28 +16,8 @@ const CLIENTS = ['Kazi', 'Claude', 'Claude Code', 'Cursor', 'ChatGPT', 'Codex'] 
 export default function Home() {
   return (
     <>
-      <script
-        type="application/ld+json"
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: our own constant data, serialised for crawlers
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData()) }}
-      />
-      <header className="nav">
-        <div className="nav-inner">
-          <a className="wordmark" href="/">
-            <span className="marker" aria-hidden="true" />
-            cuttingfloor
-          </a>
-          <nav className="nav-links" aria-label="Sections">
-            <a href="#how">How it works</a>
-            <a href="#pricing">Pricing</a>
-            <a href={DOCS}>Open source</a>
-            <a href={SIGN_UP}>Sign in</a>
-          </nav>
-          <a className="nav-cta" href={SIGN_UP}>
-            Start free
-          </a>
-        </div>
-      </header>
+      <JsonLd data={structuredData()} />
+      <Nav />
 
       <main className="frame">
         <section className="cell hero marks">
@@ -299,32 +268,7 @@ export default function Home() {
           </div>
         </section>
 
-        <footer className="cell footer marks">
-          <span className="mark-b" />
-          <div>
-            <p className="display">
-              Video editing, solved.
-              <Check />
-            </p>
-            <div className="footer-links">
-              <a href={SIGN_UP}>Start free</a>
-              <a href={DOCS}>GitHub</a>
-              <a href="mailto:ken@mvp2o.com">Contact</a>
-            </div>
-          </div>
-          <div className="win">
-            <div className="win-bar">
-              <span>About</span>
-              <span className="grip" />
-            </div>
-            <p>
-              cuttingfloor 0.10
-              <br />© 2026 mvp2o
-              <br />
-              Cut on a warm black.
-            </p>
-          </div>
-        </footer>
+        <Footer />
       </main>
     </>
   );

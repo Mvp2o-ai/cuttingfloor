@@ -8,7 +8,18 @@ import type { SessionData, Track } from './types.ts';
 
 const TRACKS: Track[] = ['V2', 'V1', 'A1'];
 
-export function Session({ id, data, note }: { id: string; data: SessionData; note: string }) {
+export function Session({
+  id,
+  data,
+  note,
+  families = false,
+}: {
+  id: string;
+  data: SessionData;
+  note: string;
+  /** Colour each call by its tool family (media, clip, audio…) instead of all in gold. */
+  families?: boolean;
+}) {
   const s = schedule(data);
   const { length, fps, aspect, captions } = data.preview;
   const all = clips(s.steps);
@@ -26,21 +37,30 @@ export function Session({ id, data, note }: { id: string; data: SessionData; not
         (e.type === 'clip' && e.tracks.includes(track)) ||
         (e.type === 'captions' && e.track === track);
       if (!on) return [];
-      const from = e.from + 0.15;
-      const to = e.to - 0.15;
-      return [{ key: i, at: step.answered, left: from / length, width: (to - from) / length }];
+      const edges = [e.from, ...(e.type === 'clip' ? (e.cuts ?? []) : []), e.to];
+      // A hair of lane between clips, so each cut shows.
+      const gap = length / 400;
+      return edges.slice(1).map((to, j) => {
+        const from = (edges[j] ?? 0) + gap;
+        return {
+          key: `${i}-${j}`,
+          at: step.answered,
+          left: from / length,
+          width: (to - gap - from) / length,
+        };
+      });
     }),
   }));
 
   return (
-    <figure className="session" data-session={id}>
+    <figure className={`session${families ? ' families' : ''}`} data-session={id}>
       <div className="sx">
         <div className={`sx-frame${aspect === '16:9' ? ' wide' : ''}`}>
           <section className="sx-pane" aria-label="The conversation">
             <div className="sx-bar" aria-hidden="true">
               <span className="sx-dot" />
               <b>connected</b>
-              <span>· cuttingfloor mcp</span>
+              <span className="sx-mcp">· cuttingfloor mcp</span>
               <span className="sx-grow" />
               <span>agent: {data.agent}</span>
             </div>
