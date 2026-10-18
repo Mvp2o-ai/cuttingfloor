@@ -17,6 +17,7 @@
     "@cuttingfloor/server",
     "@cuttingfloor/hosted",
     "@cuttingfloor/motion",
-    "@cuttingfloor/sdk"
+    "@cuttingfloor/sdk",
+    "@cuttingfloor/skills"
   ]
 }
