@@ -627,9 +627,13 @@ export const Transcript = z.object({
   model: z.string(),
   language: z.string(),
   text: z.string(),
-  words: z.array(
-    z.object({ text: z.string(), start: z.number(), end: z.number(), confidence: z.number() }),
-  ),
+  words: z
+    .array(
+      z.object({ text: z.string(), start: z.number(), end: z.number(), confidence: z.number() }),
+    )
+    .describe(
+      'Media seconds, up to about a second off: starts can sit in the silence before a word and ends run over the pause after it; short ums are often missing',
+    ),
 });
 export const BeatsAnalysis = z.object({
   bpm: z.number(),
