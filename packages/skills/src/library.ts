@@ -88,16 +88,18 @@ export function parseRelated(raw: string | undefined): SkillRelated[] {
 function frontmatterFields(block: string): Record<string, string> {
   const fields: Record<string, string> = {};
   for (const line of block.split('\n')) {
-    const m = line.trim().match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
-    if (!m) continue;
-    let value = (m[2] as string).trim();
+    const trimmed = line.trim();
+    const colon = trimmed.indexOf(':');
+    const key = trimmed.slice(0, colon);
+    if (colon < 1 || !/^[a-zA-Z0-9_-]+$/.test(key)) continue;
+    let value = trimmed.slice(colon + 1).trim();
     if (
       (value.startsWith('"') && value.endsWith('"')) ||
       (value.startsWith("'") && value.endsWith("'"))
     ) {
       value = value.slice(1, -1);
     }
-    fields[m[1] as string] = value;
+    fields[key] = value;
   }
   return fields;
 }
@@ -174,8 +176,8 @@ function checkSections(lines: string[]): string[] {
   const errors: string[] = [];
   const found: Array<{ heading: string; content: string[] }> = [];
   for (const line of lines) {
-    const h = /^##(?!#)\s+(.+?)\s*$/.exec(line);
-    if (h) found.push({ heading: h[1] as string, content: [] });
+    const heading = /^##\s/.test(line) ? line.slice(2).trim() : '';
+    if (heading) found.push({ heading, content: [] });
     else found.at(-1)?.content.push(line);
   }
   for (const { heading } of found) {
