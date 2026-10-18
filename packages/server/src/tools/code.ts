@@ -5,6 +5,7 @@ import { mediaInfo } from '@cuttingfloor/engine';
 import {
   CfError,
   CODE_DENIED_TOOLS,
+  CODE_LIMITS,
   CodeRunInput,
   CodeRunResult,
   type ToolError,
@@ -49,6 +50,7 @@ export function registerCodeTools(server: McpServer, deps: ServerDeps): void {
         'inputs are fetched into in/; files written to out/ come back as media (video, audio, images, fonts, LUTs), out/*.timeline.json as timelines (the timeline.get JSON), and text or data (vtt, srt, json, txt, csv, …) as files. Every output has a signed download url; one that cannot be kept is marked failed with the reason, and the others and stdout are still returned.',
         'Preinstalled: Node 24, Python 3 (numpy, Pillow, OpenCV), FFmpeg, melt, Chromium. No network.',
         'Long-running: a task, or {job_id} for job.get. A non-zero exit fails with code_failed and the logs.',
+        `stdout and stderr keep their last ${CODE_LIMITS.logTail / 1024} KB each (the start is cut, and says so): print summaries, or write long results to out/ as a file.`,
       ].join(' '),
       inputSchema: CodeRunInput,
       outputSchema: withJob(CodeRunResult),

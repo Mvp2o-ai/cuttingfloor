@@ -1683,6 +1683,12 @@ describe('time and views', () => {
     expect(() => fromView(view, resolve)).not.toThrow();
   });
 
+  it('reports a master change and timeline effects in the diff', () => {
+    const before = start();
+    const mastered = edit(before, { tool: 'audio.set_master', args: { gain_db: -3 } }).doc;
+    expect(diff(before, mastered)).toEqual([{ id: 'master', type: 'master', change: 'modified' }]);
+  });
+
   it('round-trips through the view and reports a structural diff', () => {
     const { doc } = edit(
       start(),
