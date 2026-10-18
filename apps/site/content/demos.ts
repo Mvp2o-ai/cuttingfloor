@@ -473,7 +473,108 @@ const LISTING: Demo = {
   ],
 };
 
-export const DEMOS: Demo[] = [DANCE, INTERVIEW, PRODUCT, LISTING];
+// A creator's raw tips video, four takes (generated footage, edited for real by cuttingfloor).
+const TIPS: Demo = {
+  id: 'tips',
+  slug: 'remove-pauses-and-restarts-from-a-talking-video',
+  title: 'Remove the pauses and restarts from a talking video',
+  description:
+    'A creator asks Claude to cut the long pauses, the restart and the repeated line out of a 40-second tips video. cuttingfloor keeps every point, adds big word-by-word captions and a hook title: a 21-second Short.',
+  steps: [
+    'Followed the steps for cleaning up a talking video.',
+    'Lined up every word with where she’s really talking in each take.',
+    'Had Jev, its own vision model, mark the restart and the repeated line, then checked each one.',
+    'Kept the clean second try of “Number one” and dropped the first.',
+    'Dropped the second “Just post the thing.”',
+    'Cut the long pause, the coffee sip and the silences between takes.',
+    'Softened every cut and zoomed in a little on every other part, so nothing jumps.',
+    'Made the sound louder without clipping.',
+    'Added big word-by-word captions with the spoken word in yellow.',
+    'Put a hook title across the top for the first 5 seconds, and exported it vertical.',
+  ],
+  uploaded: '2026-10-18',
+  skill: 'cut-pauses-ums-and-restarts',
+  moments: [
+    { name: 'Hook', start: 0, end: 5.6 },
+    { name: 'Tip 1: the first three seconds', start: 5.6, end: 10.4 },
+    { name: 'Tip 2: your first 50 are practice', start: 10.4, end: 15.2 },
+    { name: 'Tip 3: just post it', start: 15.2, end: 19.6 },
+    { name: 'Follow for part two', start: 19.6, end: 21.5 },
+  ],
+  agent: 'Claude',
+  raw: {
+    src: '/demo/tips/raw.mp4',
+    poster: '/demo/tips/raw.jpg',
+    label: 'posting-tips.mp4 · 0:40',
+    seconds: 40,
+  },
+  transcript: [
+    { text: 'Okay, so three things I wish I knew before I started posting.' },
+    { text: '[long pause, looks away]', cut: 0 },
+    { text: 'Number one, nobody, nobody, wait, let me start that again.', cut: 0 },
+    { text: 'Number one: nobody watches past three seconds unless you give them a reason.' },
+    { text: '[silence]', cut: 0 },
+    { text: 'Number two: your first 50 videos are practice' },
+    { text: '[long pause]', cut: 0 },
+    { text: 'and that’s fine.' },
+    { text: '[coffee sip]', cut: 0 },
+    { text: 'Number three: just post it. Seriously, just post the thing.' },
+    { text: 'Just post the thing.', cut: 0 },
+    { text: 'Okay, follow for part two.' },
+    { text: '[silence]', cut: 0 },
+  ],
+  turns: [
+    {
+      prompt: 'Cut out the long pauses, the ums and the bits where I start over.',
+      reply:
+        'On it. I’ll find where you’re really talking, mark the restarts and repeats, and keep your last clean try of each line.',
+      calls: [
+        { fn: 'skills.search', note: 'the cleanup steps' },
+        { fn: 'media.analyze', note: 'every word, timed' },
+        { fn: 'code.run', note: 'words beside speech, per take' },
+        { fn: 'code.run', note: 'Jev marked restarts and repeats' },
+        { fn: 'edit.batch', note: 'kept 6 parts, in order' },
+        { fn: 'edit.batch', note: 'smoothed the cuts' },
+        { fn: 'audio.set_master', note: 'louder, no clipping' },
+        { fn: 'render.frames', note: 'checked both sides of each cut' },
+        { fn: 'export.video', note: 'vertical, 0:21' },
+      ],
+      status: 'Cutting the pauses and restarts…',
+      done: 'Done: 40 seconds down to 21. I cut the restart, the repeated line, the long pause and the coffee sip, and kept every point in order. Want big captions?',
+      video: {
+        src: '/demo/tips/clean.mp4',
+        poster: '/demo/tips/clean.jpg',
+        label: 'posting-tips-clean.mp4 · 0:21',
+        seconds: 21.5,
+        captions: '/demo/tips/clean.vtt',
+      },
+    },
+    {
+      prompt: 'Yes, big captions.',
+      reply:
+        'Big bold captions coming, a word at a time, with a title up top for the first few seconds.',
+      calls: [
+        { fn: 'media.analyze', note: 'exact word timings' },
+        { fn: 'code.run', note: 'captions and hook title' },
+        { fn: 'render.frames', note: 'checked the caption size' },
+        { fn: 'edit.batch', note: 'bigger text' },
+        { fn: 'qa.check', note: 'length and volume' },
+        { fn: 'export.video', note: 'vertical, 0:21' },
+      ],
+      status: 'Adding captions…',
+      done: 'Here it is, ready to post: big yellow captions all the way through and “3 things I wish I knew before posting” across the top. Want a thumbnail too?',
+      video: {
+        src: '/demo/tips/short.mp4',
+        poster: '/demo/tips/short.jpg',
+        label: 'posting-tips-short.mp4 · 0:21',
+        seconds: 21.5,
+        captions: '/demo/tips/short.vtt',
+      },
+    },
+  ],
+};
+
+export const DEMOS: Demo[] = [DANCE, INTERVIEW, PRODUCT, LISTING, TIPS];
 
 export function demo(slug: string): Demo | undefined {
   return DEMOS.find((d) => d.slug === slug);
