@@ -32,6 +32,10 @@ import type {
   QaCheckResult,
   RenderFramesInput,
   RenderFramesResult,
+  SkillsGetInput,
+  SkillsGetResult,
+  SkillsSearchInput,
+  SkillsSearchResult,
   TimelineCreateInput,
   TimelineCreateResult,
   TimelineDiffInput,
@@ -95,6 +99,8 @@ export type ToolName =
   | 'range.extract'
   | 'range.lift'
   | 'render.frames'
+  | 'skills.get'
+  | 'skills.search'
   | 'text.set'
   | 'timeline.create'
   | 'timeline.diff'
@@ -159,6 +165,8 @@ export interface ToolInputs {
   'range.extract': z.input<ReturnType<typeof editInput<'range.extract'>>>;
   'range.lift': z.input<ReturnType<typeof editInput<'range.lift'>>>;
   'render.frames': z.input<typeof RenderFramesInput>;
+  'skills.get': z.input<typeof SkillsGetInput>;
+  'skills.search': z.input<typeof SkillsSearchInput>;
   'text.set': z.input<ReturnType<typeof editInput<'text.set'>>>;
   'timeline.create': z.input<typeof TimelineCreateInput>;
   'timeline.diff': z.input<typeof TimelineDiffInput>;
@@ -224,6 +232,8 @@ export interface ToolOutputs {
   'range.extract': z.output<typeof EditResult>;
   'range.lift': z.output<typeof EditResult>;
   'render.frames': z.output<typeof RenderFramesResult>;
+  'skills.get': z.output<typeof SkillsGetResult>;
+  'skills.search': z.output<typeof SkillsSearchResult>;
   'text.set': z.output<typeof EditResult>;
   'timeline.create': z.output<typeof TimelineCreateResult>;
   'timeline.diff': z.output<typeof TimelineDiffResult>;
@@ -289,6 +299,8 @@ export const TOOL_NAMES: readonly ToolName[] = [
   'range.extract',
   'range.lift',
   'render.frames',
+  'skills.get',
+  'skills.search',
   'text.set',
   'timeline.create',
   'timeline.diff',

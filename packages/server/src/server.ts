@@ -11,6 +11,7 @@ import { registerInterchangeTools } from './tools/interchange.ts';
 import { registerJudgeTools } from './tools/judge.ts';
 import { registerMediaTools } from './tools/media.ts';
 import { registerRenderTools } from './tools/render.ts';
+import { registerSkillTools } from './tools/skills.ts';
 import { registerTimelineTools } from './tools/timeline.ts';
 import { SERVER_NAME, SERVER_VERSION } from './version.ts';
 
@@ -46,6 +47,7 @@ Typical flow:
    Code: code.run runs a node/python/bash script in the sandbox for anything the tools don't cover. Inside it, cf.domain.verb(args) calls these same tools on the same media and timelines, and files written to out/ come back as media or timelines, so code and tools hand work to each other.
 4. Look at the result with preview: "inline" on an edit, or render.frames (stills). To watch it play, with motion, timing and sound, when you or your client take video in: export.video a range with preset review_h264; its result links the file (video://jobs/{job_id}/output) and gives a signed url, fps and duration.
 5. qa.check, then export.video (long-running) for a signed download URL: presets for web, masters, 9:16 social, AV1, GIF and audio, with size/fps/bitrate overrides (video://catalog/presets). export.timeline hands the edit to another editor (FCPXML, OTIO, EDL) or writes captions (SRT, VTT).
+Skills: step-by-step instructions for common jobs, such as cutting the pauses and ums out of a talking video. Before composing one yourself, skills.search in the user's words, then skills.get and follow its steps.
 Time is integer frames at the sequence rate; ranges are end-exclusive. Timelines expire 24 h after last use (timeline.get + timeline.load restores one); media and outputs after 7 days.`;
 
 /** Builds one MCP server instance over the shared runtime. Transports live in apps/. */
@@ -67,6 +69,7 @@ export function createServer(deps: ServerDeps): McpServer {
   registerCodeTools(server, deps);
   registerRenderTools(server, deps);
   registerInterchangeTools(server, deps);
+  registerSkillTools(server);
   return server;
 }
 

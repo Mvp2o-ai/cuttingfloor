@@ -102,6 +102,8 @@ describe('protocol surface', () => {
         'range.extract',
         'range.lift',
         'render.frames',
+        'skills.get',
+        'skills.search',
         'text.set',
         'timeline.create',
         'timeline.diff',
