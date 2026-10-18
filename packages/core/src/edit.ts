@@ -447,6 +447,19 @@ function neighbours(track: StoredTrack, clip: StoredClip): { prevEnd: number; ne
 
 function checkSourceRange(doc: TimelineDoc, clip: StoredClip): void {
   const media = clipSource(doc, clip);
+  if (
+    clip.in < 0 &&
+    (clip.type === 'title' || clip.type === 'caption' || clip.type === 'adjustment')
+  ) {
+    const what = clip.type === 'adjustment' ? 'an adjustment clip' : `a ${clip.type}`;
+    throw new CfError(
+      'bad_request',
+      `Clip ${clip.id} is ${what}: its start can't be trimmed earlier than where it was added`,
+      {
+        hint: `To start it earlier, clip.move it to the new start, then clip.trim its end to where it should end${clip.type === 'adjustment' ? '' : `, or add it again with ${clip.type}.add at the new frame`}`,
+      },
+    );
+  }
   if (clip.in < 0) {
     throw new CfError(
       'bad_request',
@@ -1483,7 +1496,12 @@ function inClipSegments(
       if (first < 0 || i < first) first = i;
       if (i > last) last = i;
     });
-    return first < 0 ? undefined : { start_frame: start + first, end_frame: start + last + 1 };
+    if (first < 0) return undefined;
+    // Something already playing when the clip starts begins at its first frame, not a frame in
+    // (a frame shows a stretch of source; the cut can fall inside it), so captions per clip meet
+    // at a cut with no gap.
+    if (first === 1 && from < (times[1] as number)) first = 0;
+    return { start_frame: start + first, end_frame: start + last + 1 };
   };
   const out: Segment[] = [];
   for (const seg of given.segments) {

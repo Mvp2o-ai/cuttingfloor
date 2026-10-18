@@ -1606,6 +1606,30 @@ describe('transcripts', () => {
       ['end.', 41, 42],
     ]);
   });
+
+  it("starts a caption at the cut when it begins inside the clip's first frame", () => {
+    // The clip's first frame shows source 1.36–1.40 s; speech from 1.38 s starts at the cut,
+    // not a frame after it, so captions made per clip meet with no gap.
+    let { doc } = run(textStart(), {
+      tool: 'clip.add',
+      args: { track_id: 't1', media_id: AV, source: { in: 34, out: 76 } },
+    });
+    const added = run(doc, {
+      tool: 'caption.add',
+      args: {
+        track_id: 't2',
+        in_clip: { clip_id: 'c5', segments: [{ start: 1.38, end: 2, text: 'Right at the cut' }] },
+      },
+    });
+    doc = added.doc;
+    const caption = added.results[0]?.clip_id ?? '';
+    expect(toView('tl_x', doc).tracks[1]?.clips.map((c) => [c.start, c.end])).toEqual([[0, 16]]);
+    // A caption is not trimmed back past where it was added; the error says what to do instead.
+    doc = run(doc, { tool: 'clip.move', args: { clip_id: caption, to_frame: 20 } }).doc;
+    expect(() =>
+      run(doc, { tool: 'clip.trim', args: { clip_id: caption, edge: 'start', to_frame: 15 } }),
+    ).toThrow(/is a caption: its start can't be trimmed earlier/);
+  });
 });
 
 describe('time and views', () => {
