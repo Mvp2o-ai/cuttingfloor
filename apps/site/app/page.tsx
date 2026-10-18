@@ -1,9 +1,10 @@
+import { HOME_SESSION } from '../content/home-session.ts';
 import { Capabilities } from './capabilities.tsx';
 import { Connect } from './connect.tsx';
 import { PLANS } from './pricing.ts';
 import { Prompts } from './prompts.tsx';
 import { ALTERNATIVES, DOCS_URL, FAQS, structuredData } from './seo.ts';
-import { SESSION_ID, Session } from './session.tsx';
+import { Session } from './session/session.tsx';
 
 /** Solved: a check, drawn on once in the accent. */
 function Check() {
@@ -17,6 +18,8 @@ function Check() {
 // Signing up (or in) is the account page: WorkOS sign-in, then the trial, plans and the connect box.
 const SIGN_UP = '/account';
 const DOCS = DOCS_URL;
+// Linking here plays the session from the top.
+const SESSION_ID = 'session';
 
 // The agents it already works in. Kazi is ours, so it leads, in the accent.
 const CLIENTS = ['Kazi', 'Claude', 'Claude Code', 'Cursor', 'ChatGPT', 'Codex'] as const;
@@ -114,7 +117,11 @@ export default function Home() {
               Agentic video editing, one tool call at a time. <em>Here is one.</em>
             </h2>
           </div>
-          <Session />
+          <Session
+            id={SESSION_ID}
+            data={HOME_SESSION}
+            note="Every edit is a tool call. Every call returns a timeline and a picture of it, so the agent sees what it made before it ships."
+          />
         </section>
 
         <section className="cell" aria-label="Things to ask for">

@@ -422,18 +422,411 @@ h2.lede {
 .session {
   margin: 0;
 }
-.session-screen {
+/* The session is drawn in the page from data (session/). One unit, --u, scales the whole frame
+   with its width, so it reads the same in a 1440 column and on a phone. */
+.sx {
   position: relative;
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid #3a362f;
+  container: sx / inline-size;
+  --bg-3: #0a0908;
+  --rule-2: #3a362f;
+  --gold: #d9a845;
+}
+.sx-frame {
+  --u: calc(100cqw / 1808);
+  aspect-ratio: 1808 / 968;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(620 * var(--u));
+  border: 2px solid var(--rule-2);
+  background: var(--bg-3);
   box-shadow: 6px 6px 0 #000;
 }
-.session-screen video {
+.sx-frame.wide {
+  grid-template-columns: minmax(0, 1fr) calc(820 * var(--u));
+}
+.sx-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg);
+}
+.sx-pane + .sx-pane {
+  border-left: 2px solid var(--rule-2);
+}
+.sx-bar {
+  display: flex;
+  align-items: center;
+  gap: calc(14 * var(--u));
+  flex: none;
+  height: calc(54 * var(--u));
+  padding: 0 calc(24 * var(--u));
+  border-bottom: 2px solid var(--rule);
+  background: var(--bg-2);
+  font:
+    calc(30 * var(--u)) var(--font-pixel),
+    monospace;
+  letter-spacing: 0.04em;
+  color: var(--mute);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sx-bar b {
+  font-weight: 400;
+  color: var(--ink);
+}
+.sx-grow {
+  flex: 1;
+}
+.sx-dot {
+  flex: none;
+  width: calc(12 * var(--u));
+  height: calc(12 * var(--u));
+  border-radius: 50%;
+  background: var(--key);
+  box-shadow: 0 0 calc(12 * var(--u)) var(--key);
+}
+
+/* The conversation. Finished, it scrolls and starts at the end; playing, it slides up. */
+.sx-view {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column-reverse;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-2) transparent;
+}
+.sx.live .sx-view {
+  overflow: hidden;
+  display: block;
+}
+.sx-log {
+  list-style: none;
+  margin: 0;
+  padding: calc(30 * var(--u)) calc(36 * var(--u));
+  display: flex;
+  flex-direction: column;
+  gap: calc(16 * var(--u));
+}
+.sx.live .sx-log {
+  position: absolute;
+  inset: 0 0 auto 0;
+}
+.sx.live .sx-msg {
+  opacity: 0;
+}
+.sx-who {
+  font:
+    calc(24 * var(--u)) var(--font-pixel),
+    monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: calc(6 * var(--u));
+}
+.sx-msg p {
+  margin: 0;
+}
+.sx-user {
+  align-self: flex-end;
+  max-width: 82%;
+  background: var(--bg-2);
+  border: 2px solid var(--rule-2);
+  padding: calc(16 * var(--u)) calc(22 * var(--u));
+}
+.sx-user p {
+  font-size: calc(29 * var(--u));
+  line-height: 1.32;
+  font-weight: 500;
+}
+.sx-agent {
+  max-width: 88%;
+  border-left: calc(4 * var(--u)) solid var(--key);
+  padding: calc(4 * var(--u)) 0 calc(4 * var(--u)) calc(20 * var(--u));
+}
+.sx-agent .sx-who {
+  color: var(--key);
+}
+.sx-agent p {
+  font-size: calc(28 * var(--u));
+  line-height: 1.34;
+  font-variation-settings: "wdth" 96;
+}
+.sx-call {
+  font-family: var(--font-mono), monospace;
+  font-size: calc(19 * var(--u));
+  line-height: 1.5;
+  background: var(--bg-3);
+  border: 1px solid var(--rule);
+  padding: calc(10 * var(--u)) calc(16 * var(--u));
+  margin-left: calc(24 * var(--u));
+  max-width: calc(100% - 24 * var(--u));
+}
+.sx-call code {
+  font: inherit;
+}
+.sx-fn {
+  color: var(--gold);
+  font-weight: 600;
+}
+.sx-args {
+  color: var(--mute);
+}
+.sx-ret {
+  color: #6f695f;
+}
+.sx-ret i {
+  font-style: normal;
+  color: var(--mute);
+}
+.sx-wait {
+  color: var(--gold);
+  letter-spacing: 0.2em;
+}
+.sx-caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.12em;
+  margin-left: 2px;
+  background: var(--ink);
+}
+
+/* The preview */
+.sx-right {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+}
+.sx-stage {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: calc(26 * var(--u)) calc(24 * var(--u)) calc(18 * var(--u));
+}
+.sx-screen {
+  position: relative;
+  height: 100%;
+  aspect-ratio: 9 / 16;
+  border: calc(6 * var(--u)) solid #24221d;
+  border-radius: calc(26 * var(--u));
+  background: #050504;
+  overflow: hidden;
+  container-type: size;
+}
+.wide .sx-screen {
+  height: auto;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: calc(10 * var(--u));
+}
+.sx-screen > * {
+  position: absolute;
+}
+.sx-empty {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  font:
+    8cqw var(--font-pixel),
+    monospace;
+  letter-spacing: 0.08em;
+  color: #4a463e;
+  opacity: 0;
+}
+.sx-shot {
+  inset: 0;
+}
+.sx-shot svg {
   display: block;
   width: 100%;
   height: 100%;
 }
+.sx-tc {
+  top: 3%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font:
+    7cqw var(--font-mono),
+    monospace;
+  text-shadow: 0 1px 3px #000;
+}
+.wide .sx-tc {
+  font-size: 4cqw;
+}
+.sx-lufs {
+  top: 8.5%;
+  right: 7%;
+  font:
+    6.4cqw var(--font-pixel),
+    monospace;
+  color: var(--gold);
+}
+.wide .sx-lufs {
+  top: 4%;
+  font-size: 3.6cqw;
+}
+.sx-cap {
+  left: 6%;
+  right: 6%;
+  bottom: 20%;
+  text-align: center;
+  font:
+    800 8.4cqw / 1.1 var(--font-display),
+    sans-serif;
+  font-variation-settings: "wdth" 112;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow:
+    0 2px 0 #000,
+    0 0 calc(10 * var(--u)) #000;
+}
+.wide .sx-cap {
+  bottom: 14%;
+  font-size: 4.6cqw;
+}
+.sx-cap .on {
+  color: var(--key);
+}
+.sx-qa {
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 2.5cqw;
+  padding: 0 12%;
+  background: rgba(5, 5, 4, 0.72);
+  font:
+    8cqw var(--font-pixel),
+    monospace;
+  opacity: 0;
+}
+.wide .sx-qa {
+  font-size: 4.4cqw;
+}
+.sx-qa span::before {
+  content: "✓ ";
+  color: var(--key);
+}
+.sx-export {
+  left: 8%;
+  right: 8%;
+  bottom: 7%;
+  height: 2.4cqw;
+  background: rgba(255, 255, 255, 0.12);
+  opacity: 0;
+}
+.sx-export i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--key);
+}
+.sx-done {
+  left: 0;
+  right: 0;
+  bottom: 3%;
+  text-align: center;
+  font:
+    6.6cqw var(--font-pixel),
+    monospace;
+  color: var(--key);
+}
+.wide .sx-done {
+  font-size: 3.6cqw;
+}
+.sx-tracks {
+  display: grid;
+  gap: calc(9 * var(--u));
+  align-content: center;
+  padding: calc(4 * var(--u)) calc(28 * var(--u)) calc(14 * var(--u));
+}
+.sx-track {
+  display: grid;
+  grid-template-columns: calc(44 * var(--u)) 1fr;
+  align-items: center;
+  gap: calc(10 * var(--u));
+}
+.sx-track > span {
+  font:
+    calc(24 * var(--u)) var(--font-pixel),
+    monospace;
+  color: var(--mute);
+}
+.sx-lane {
+  position: relative;
+  height: calc(26 * var(--u));
+  background: var(--bg-2);
+  border: 1px solid var(--rule);
+}
+.sx-lane i {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+}
+.V1 .sx-lane i {
+  background: var(--key);
+}
+.V2 .sx-lane i,
+.A1 .sx-lane i {
+  background: var(--gold);
+}
+.sx-status {
+  padding: calc(14 * var(--u)) calc(28 * var(--u));
+  border-top: 2px solid var(--rule);
+  background: var(--bg-2);
+  font:
+    calc(26 * var(--u)) var(--font-pixel),
+    monospace;
+  white-space: nowrap;
+}
+.sx-state.idle {
+  color: var(--key);
+}
+.sx-fade {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Phones: the chat on top, the preview under it beside its tracks. */
+@container sx (max-width: 760px) {
+  .sx-frame,
+  .sx-frame.wide {
+    --u: calc(100cqw / 992 * 1.45);
+    aspect-ratio: auto;
+    height: calc(1352 * var(--u));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) calc(470 * var(--u));
+  }
+  .sx-pane + .sx-pane {
+    border-left: 0;
+    border-top: 2px solid var(--rule-2);
+  }
+  .sx-call {
+    font-size: calc(23 * var(--u));
+  }
+  .sx-right {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-columns: calc(270 * var(--u)) minmax(0, 1fr);
+  }
+  .wide .sx-right {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .sx-right .sx-bar {
+    grid-column: 1 / -1;
+  }
+  .sx-right .sx-stage {
+    grid-row: 2 / 4;
+  }
+  .sx-status {
+    font-size: calc(22 * var(--u));
+  }
+}
+
 .session figcaption {
   display: flex;
   justify-content: space-between;
@@ -449,6 +842,7 @@ h2.lede {
 }
 .replay {
   flex: none;
+  white-space: nowrap;
   background: none;
   border: 1px solid var(--rule);
   color: var(--ink);
