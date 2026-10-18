@@ -186,7 +186,7 @@ export const EditArgs = {
       .max(32)
       .optional()
       .describe(
-        'Speed ramp: rates at fractions of the clip (first at 0, last at 1), linear between',
+        'Speed ramp: rates at fractions of the clip as it plays after the change (first at 0, last at 1; 0.5 is halfway through the new length), linear between. timeline.get gives each point its clip frame and source frame',
       ),
     reverse: z.boolean().optional(),
     preserve_pitch: z.boolean().optional().describe('Keep voices at their pitch (default true)'),

@@ -720,6 +720,14 @@ describe('timing', () => {
     }).doc;
     // Mean rate 2: the 100 source frames take 50 timeline frames.
     expect(layout(doc, 0)[0]).toEqual([0, 50, 50]);
+    // Each point says where it falls in the clip and what source frame shows there.
+    expect(clipView(doc, 'c4')?.speed).toMatchObject({
+      curve: [
+        { at: 0, rate: 1, frame: 0, source_frame: 50 },
+        { at: 0.5, rate: 3, frame: 25, source_frame: 100 },
+        { at: 1, rate: 1, frame: 49 },
+      ],
+    });
     const before = [5, 20, 30, 45].map((f) => at(doc, 'c4', f));
     doc = edit(doc, { tool: 'clip.split', args: { clip_id: 'c4', at_frame: 25 } }).doc;
     const right = doc.tracks[0]?.clips[1]?.id ?? '';

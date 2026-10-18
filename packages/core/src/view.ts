@@ -26,7 +26,7 @@ import {
   timelineEnd,
   transitionHalves,
 } from './edit.ts';
-import { span } from './speed.ts';
+import { frameSource, span } from './speed.ts';
 import { framesToTicks, ticksPerFrame, ticksToFrames } from './time.ts';
 
 /** A clip's speed, audio and compositing settings in tool form (frames from the clip start). */
@@ -45,7 +45,22 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
   if (c.speed) {
     const { rate, curve, reverse, preserve_pitch } = c.speed;
     out.speed = {
-      ...(curve ? { curve: curve.map((p) => ({ at: p.t / c.duration, rate: p.rate })) } : {}),
+      ...(curve
+        ? {
+            curve: curve.map((p) => {
+              const frame = Math.min(
+                Math.round(p.t / tpf),
+                Math.max(0, Math.round(c.duration / tpf) - 1),
+              );
+              return {
+                at: p.t / c.duration,
+                rate: p.rate,
+                frame,
+                source_frame: Math.round(frameSource(c, tpf, frame) / tpf),
+              };
+            }),
+          }
+        : {}),
       ...(rate !== undefined ? { rate } : {}),
       ...(reverse ? { reverse } : {}),
       ...(preserve_pitch === false ? { preserve_pitch } : {}),

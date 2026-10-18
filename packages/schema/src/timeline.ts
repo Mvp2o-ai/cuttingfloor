@@ -50,7 +50,22 @@ export type StoredSpeed = z.infer<typeof StoredSpeed>;
 export const SpeedView = z.object({
   rate: z.number().min(0).max(100).optional(),
   curve: z
-    .array(z.object({ at: z.number().min(0).max(1), rate: z.number().min(0).max(100) }))
+    .array(
+      z.object({
+        at: z.number().min(0).max(1),
+        rate: z.number().min(0).max(100),
+        frame: z
+          .number()
+          .int()
+          .optional()
+          .describe('timeline.get: the clip frame (from its start) this point falls on'),
+        source_frame: z
+          .number()
+          .int()
+          .optional()
+          .describe('timeline.get: the source frame showing there, from the start of the media'),
+      }),
+    )
     .min(2)
     .max(64)
     .optional(),
