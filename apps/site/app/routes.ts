@@ -1,3 +1,4 @@
+import { DEMOS } from '../content/demos.ts';
 import { SKILLS, SKILLS_UPDATED } from '../content/skills.ts';
 import { WALKTHROUGHS } from '../content/walkthroughs.ts';
 
@@ -7,6 +8,15 @@ export type Route = { path: string; title: string; updated: string };
 
 export const ROUTES: Route[] = [
   { path: '/', title: 'cuttingfloor: the video editing MCP server', updated: '2026-10-18' },
+  {
+    path: '/demos',
+    title: 'Demos',
+    updated:
+      DEMOS.map((d) => d.uploaded)
+        .sort()
+        .at(-1) ?? '',
+  },
+  ...DEMOS.map((d) => ({ path: `/demos/${d.slug}`, title: d.title, updated: d.uploaded })),
   { path: '/walkthroughs', title: 'Walkthroughs', updated: '2026-10-18' },
   ...WALKTHROUGHS.map((w) => ({
     path: `/walkthroughs/${w.slug}`,

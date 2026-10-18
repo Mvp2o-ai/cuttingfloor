@@ -3,6 +3,15 @@
 
 export type DemoCall = { fn: string; note: string };
 
+export type DemoVideo = {
+  src: string;
+  poster?: string;
+  label: string;
+  seconds: number;
+  /** WebVTT of what is said, in this video's own times. */
+  captions?: string;
+};
+
 export type DemoTurn = {
   prompt: string;
   /** The agent's answer before it works: one or two plain sentences. */
@@ -13,7 +22,7 @@ export type DemoTurn = {
   /** Its last word: the result, and the next thing it offers. */
   done: string;
   /** The video the preview shows once this turn is done. */
-  video: { src: string; poster?: string; label: string };
+  video: DemoVideo;
 };
 
 export type DemoWord = {
@@ -24,9 +33,23 @@ export type DemoWord = {
 
 export type Demo = {
   id: string;
+  /** Its watch page is /demos/<slug>: the job, in the words people search it with. */
+  slug: string;
+  /** The page's heading and the video's name in search. */
+  title: string;
+  /** One or two sentences: the meta description and the video's description. */
+  description: string;
+  /** What the agent did, one plain line each. */
+  steps: string[];
+  /** When the finished video was made (YYYY-MM-DD). */
+  uploaded: string;
+  /** The skill the agent followed, if one fits: /skills/<skill>. */
+  skill?: string;
+  /** Chapters of the finished video, in its seconds, for key moments in search. */
+  moments?: { name: string; start: number; end: number }[];
   agent: 'Claude' | 'ChatGPT' | 'Kazi';
   /** The clip as it came in. */
-  raw: { src: string; poster?: string; label: string };
+  raw: DemoVideo;
   transcript: DemoWord[];
   turns: DemoTurn[];
 };
@@ -34,11 +57,25 @@ export type Demo = {
 // A creator's raw tips video (generated footage, edited for real by cuttingfloor).
 const TIPS: Demo = {
   id: 'tips',
+  slug: 'remove-pauses-from-a-talking-video',
+  title: 'Remove pauses, ums and restarts from a talking video',
+  description:
+    'A creator asks Claude to cut the long pauses, the ums and the restarts out of a 40-second tips video, then add big captions. cuttingfloor makes every cut and hands back a 22-second short.',
+  steps: [
+    'Read every word of the clip, with its timing.',
+    'Cut the pauses, the um, the restart, the coffee break and the line said twice.',
+    'Smoothed every cut so it doesn’t jump.',
+    'Made it louder, with the peaks kept under −1 dB.',
+    'Added big captions, word by word, and exported it vertical.',
+  ],
+  uploaded: '2026-10-18',
+  skill: 'cut-pauses-ums-and-restarts',
   agent: 'Claude',
   raw: {
     src: '/demo/tips/raw.mp4',
     poster: '/demo/tips/raw.jpg',
     label: 'posting-tips.mp4 · 0:40',
+    seconds: 40.03,
   },
   transcript: [
     { text: 'Okay, so three things I wish I knew before I started posting.' },
@@ -72,6 +109,7 @@ const TIPS: Demo = {
         src: '/demo/tips/clean.mp4',
         poster: '/demo/tips/clean.jpg',
         label: 'posting-tips-clean.mp4 · 0:22',
+        seconds: 21.96,
       },
     },
     {
@@ -87,6 +125,7 @@ const TIPS: Demo = {
         src: '/demo/tips/short.mp4',
         poster: '/demo/tips/short.jpg',
         label: 'posting-tips-captioned.mp4 · 0:22',
+        seconds: 21.96,
       },
     },
   ],
@@ -95,11 +134,25 @@ const TIPS: Demo = {
 // A real estate agent's listing clip (generated footage, edited for real by cuttingfloor).
 const LISTING: Demo = {
   id: 'listing',
+  slug: 'edit-a-real-estate-listing-video',
+  title: 'Edit a real estate listing video with ChatGPT',
+  description:
+    'A realtor asks ChatGPT to cut a wrong address and the dead air from a listing clip, then add captions and a price card. cuttingfloor turns 20 seconds into a 15-second post.',
+  steps: [
+    'Read every word of the clip, with its timing.',
+    'Cut the wrong address and the dead air.',
+    'Smoothed the cuts and evened out the sound.',
+    'Added captions and a listing card with the address and price.',
+    'Exported it vertical, ready to post.',
+  ],
+  uploaded: '2026-10-18',
+  skill: 'cut-pauses-ums-and-restarts',
   agent: 'ChatGPT',
   raw: {
     src: '/demo/listing/raw.mp4',
     poster: '/demo/listing/raw.jpg',
     label: 'listing-214-maple.mp4 · 0:20',
+    seconds: 20.02,
   },
   transcript: [
     { text: 'Hey everyone! So I’m here at' },
@@ -126,6 +179,7 @@ const LISTING: Demo = {
         src: '/demo/listing/clean.mp4',
         poster: '/demo/listing/clean.jpg',
         label: 'listing-clean.mp4 · 0:15',
+        seconds: 14.71,
       },
     },
     {
@@ -142,9 +196,24 @@ const LISTING: Demo = {
         src: '/demo/listing/short.mp4',
         poster: '/demo/listing/short.jpg',
         label: 'listing-214-maple-post.mp4 · 0:15',
+        seconds: 14.71,
       },
     },
   ],
 };
 
 export const DEMOS: Demo[] = [TIPS, LISTING];
+
+export function demo(slug: string): Demo | undefined {
+  return DEMOS.find((d) => d.slug === slug);
+}
+
+/** The finished video: the last turn's. */
+export function finished(d: Demo): DemoVideo {
+  return d.turns.at(-1)?.video ?? d.raw;
+}
+
+/** The demo that shows a skill, for a link from the skill's page. */
+export function demoForSkill(slug: string): Demo | undefined {
+  return DEMOS.find((d) => d.skill === slug);
+}

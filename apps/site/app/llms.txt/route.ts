@@ -1,3 +1,4 @@
+import { DEMOS } from '../../content/demos.ts';
 import { SKILLS } from '../../content/skills.ts';
 import { PLANS } from '../pricing.ts';
 import { ALTERNATIVES, DESCRIPTION, DOCS_URL, FAQS, MCP_ADDRESS, SITE_URL } from '../seo.ts';
@@ -26,6 +27,11 @@ export function GET() {
     `- [Home](${SITE_URL}): overview, pricing and sign-up`,
     `- [Source and docs](${DOCS_URL}): open source, runs in one Docker image`,
     `- [Skills](${SITE_URL}/skills): step-by-step instructions an agent follows with cuttingfloor's tools`,
+    `- [Demos](${SITE_URL}/demos): real clips edited by an agent with cuttingfloor connected, before and after`,
+    '',
+    '## Demos',
+    '',
+    ...DEMOS.map((d) => `- [${d.title}](${SITE_URL}/demos/${d.slug}): ${d.description}`),
     '',
     '## Skills',
     '',
