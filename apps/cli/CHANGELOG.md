@@ -1,5 +1,19 @@
 # cuttingfloor
 
+## 0.16.0
+
+### Minor Changes
+
+- cf7ab12: **skills.search and skills.get:** step-by-step instructions for common jobs, found and read through cuttingfloor itself. `skills.search {query}` takes the user's words ("remove the ums from my video") and returns the skills that fit, best first, scored on each skill's name and description by keywords (BM25) and by meaning with a small model that runs on the CPU in the image, with no provider key. Without the model, search is keywords only. `skills.get {slug}` returns the whole skill as Markdown, ready to follow. The skills are `skills/*.md` in the repo, checked against one-mcp's playbook format.
+- 9b5bb71: **Granular tools with full contracts.** Every tool declares its output schema, and the code.run SDK types every result. Tools no longer make choices for the agent:
+
+  - `audio.set_loudness` and `audio.duck` are gone: set the mix with `audio.set_master` and `audio.set_gain` keyframes, and read loudness from audio previews or `qa.check`.
+  - `qa.check` returns measurements (gaps, frame counts, loudness, true peak, and black or silent stretches with the settings you give), not pass or fail.
+  - `caption.add {in_clip}` places captions timed in a clip's source seconds, through speed changes; `from_transcript` is gone, so you group the words.
+  - `media.analyze` gains `silence` and `scenes`, with required settings; import no longer detects them.
+  - `faces` returns face boxes only.
+  - Tasks clients get tasks from long-running tools again.
+
 ## 0.15.0
 
 ### Minor Changes
