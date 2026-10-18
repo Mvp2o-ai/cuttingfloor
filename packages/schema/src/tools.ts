@@ -527,7 +527,7 @@ export const MediaAnalyzeInput = z.object({
   kind: z
     .enum(['transcript', 'beats', 'faces', 'track', 'look'])
     .describe(
-      'transcript: words with times (whisper.cpp, local); beats: tempo and beat times; faces: faces over time and a focus path for reframing; track: follow a region; look: your own questions answered on sampled frames',
+      'transcript: words with times (whisper.cpp, local); beats: tempo and beat times; faces: face boxes over time; track: follow a region; look: your own questions answered on sampled frames',
     ),
   questions: z
     .record(JudgeName, JudgeQuestion)
@@ -602,7 +602,6 @@ export const FacesAnalysis = z.object({
       ),
     }),
   ),
-  focus: z.array(z.object({ time: z.number(), x: z.number(), y: z.number() })),
 });
 
 export const MediaStatus = z.enum(['importing', 'processing', 'ready', 'failed']);

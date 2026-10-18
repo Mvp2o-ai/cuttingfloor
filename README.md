@@ -43,7 +43,7 @@ On Docker Desktop for Mac, raise the memory limit for long 4K timelines; bind-mo
 ## How an agent uses it
 
 1. `media.import` each file. It's long-running: a task for clients that support MCP Tasks, otherwise a `job_id` to poll with `job.get`. The `media_id` is usable once the job reports `processing`.
-2. `media.analyze` turns media into data an agent can edit with: `transcript` (every word with its time; whisper.cpp on the CPU, the model downloads once), `beats` (tempo, beats, downbeats), `faces` (face boxes over time and a smoothed focus point for reframing) and `track` (follow a region). Then cut by words with `clip.add {source: {words: [i, j]}}` and caption with `caption.add {from_transcript: {clip_id}}`.
+2. `media.analyze` turns media into data an agent can edit with: `transcript` (every word with its time; whisper.cpp on the CPU, the model downloads once), `beats` (tempo, beats, downbeats), `faces` (face boxes over time) and `track` (follow a region). Then cut by words with `clip.add {source: {words: [i, j]}}` and caption with `caption.add {from_transcript: {clip_id}}`.
 3. `timeline.create` with a sequence (`{width, height, fps: {num, den}}`).
 4. Edit: `clip.add`, `clip.trim` (with `side` for J/L cuts), `clip.split`, `clip.move`, `clip.remove` (with `ripple`), `clip.link`, `track.*`, or `edit.batch` to apply many edits at once, using `{"$ref": "ops[0].clip_id"}` for ids made earlier in the batch.
 5. Time: `clip.set_speed` (constant rate, a speed-ramp `curve`, `reverse`; pitch is kept), `clip.freeze`, `clip.roll`, `clip.slip`, `clip.slide`, `clip.replace`, and `range.extract` / `range.lift` to cut a span out of every track at once. `clip.add {nested_timeline_id}` nests a whole timeline as one clip.

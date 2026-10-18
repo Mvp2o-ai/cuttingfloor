@@ -3188,7 +3188,6 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
       const res = await analyze({ media_id: faceMedia.media_id, kind: 'faces' });
       const faces = res.faces as {
         frames: Array<{ faces: Array<{ x: number; y: number; w: number; h: number }> }>;
-        focus: Array<{ x: number; y: number }>;
       };
       expect(faces.frames.filter((f) => f.faces.length === 1).length).toBeGreaterThan(5);
       const face = faces.frames[0]?.faces[0];

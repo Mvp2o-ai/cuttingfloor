@@ -268,7 +268,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Analyze media',
       description: [
-        'Find what is in imported media, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). beats: tempo, beat and downbeat times. faces: face boxes over time plus a smoothed focus point for reframing (e.g. to 9:16 with clip.set_transform keyframes). track: follow a region you give from a moment on. look: your own questions about what is on screen, answered on sampled frames.',
+        'Find what is in imported media, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). beats: tempo, beat and downbeat times. faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on. look: your own questions about what is on screen, answered on sampled frames.',
         'Times are media seconds; boxes are fractions of the picture. Results stay with the media (media.get include) except track, which comes back in the result. A result too long to return (a long transcript) comes back as its summary and a note on reading it in code.run.',
         'Long-running: returns a task, or a job_id for job.get.',
         '',
