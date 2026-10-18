@@ -57,7 +57,7 @@ services:
       - no-new-privileges:true
       - seccomp=./tools/motion/seccomp.json
     init: true
-    cpus: 2
+    cpus: 4
     mem_limit: 4g
     memswap_limit: 4g
     pids_limit: 256
