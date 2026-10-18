@@ -1903,6 +1903,43 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(colour(await pixel(image, 700, 1260))).toBe('green');
     }, 240_000);
 
+    it('shows a graphic at its own pixel size with fit none, in previews and full size', async () => {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'native',
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+        tracks: { video: 1, audio: 0 },
+      });
+      // card.png is 400x300 blue; contain would scale it to 960x720 on this 1280x720 frame.
+      const placed = await ok<{ timeline_id: string }>(client, 'edit.batch', {
+        timeline_id,
+        preview: 'none',
+        ops: [
+          { tool: 'clip.add', args: { track_id: 't1', media_id: media.card, duration_frames: 25 } },
+          {
+            tool: 'clip.set_transform',
+            args: { clip_id: { $ref: 'ops[0].clip_id' }, fit: 'none' },
+          },
+        ],
+      });
+      for (const [size, k] of [
+        ['full', 1],
+        ['preview', 0.5],
+      ] as const) {
+        const res = await call(client, 'render.frames', {
+          timeline_id: placed.timeline_id,
+          frames: [5],
+          layout: 'single',
+          format: 'png',
+          size,
+        });
+        const image = Buffer.from((res.content[0]?.data as string) ?? '', 'base64');
+        expect(colour(await pixel(image, 640 * k, 360 * k)), size).toBe('blue');
+        expect(colour(await pixel(image, 820 * k, 360 * k)), size).toBe('blue');
+        expect(colour(await pixel(image, 860 * k, 360 * k)), size).toBe('black');
+        expect(colour(await pixel(image, 640 * k, 530 * k)), size).toBe('black');
+      }
+    }, 120_000);
+
     it('moves a caption highlight from word to word in time', async () => {
       const t = await onGreen([
         {

@@ -66,7 +66,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.add': {
     title: 'Add clip',
     description:
-      'Place media on the timeline. A/V media lands as a linked pair on a video and an audio track. Default: the whole media, after the last clip, overwriting.',
+      'Place media on the timeline. A/V media lands as a linked pair on a video and an audio track. Default: the whole media, after the last clip, overwriting. A picture is scaled to fit the frame (a small logo fills it edge to edge); clip.set_transform {fit: "none"} keeps its own pixel size.',
   },
   'clip.remove': {
     title: 'Remove clip',
@@ -194,7 +194,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.set_transform': {
     title: 'Set transform',
     description:
-      'Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; eases are listed at video://catalog/eases. Omitted fields keep their value; null resets one.',
+      'Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). fit none shows a graphic at its own pixel size, so scale 1 is its real size; the default contain scales it to touch the frame edges. Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; eases are listed at video://catalog/eases. Omitted fields keep their value; null resets one.',
   },
   'clip.set_blend': {
     title: 'Set blend mode',

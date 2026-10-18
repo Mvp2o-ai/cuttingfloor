@@ -41,6 +41,8 @@ const COMPOSITING: Record<BlendMode, number> = {
 export interface Frame {
   width: number;
   height: number;
+  /** Render pixels per sequence pixel (a preview is smaller than the sequence). Default 1. */
+  pixel?: number;
 }
 
 export interface SourceSize {
@@ -70,6 +72,9 @@ function rectFor(clip: StoredClip, s: TransformState, src: SourceSize, out: Fram
   } else if (fit === 'fill') {
     fw = W;
     fh = H;
+  } else if (fit === 'none') {
+    fw = src.width * (out.pixel ?? 1);
+    fh = src.height * (out.pixel ?? 1);
   }
   const dw = fw * s.scale * s.scale_x;
   const dh = fh * s.scale * s.scale_y;
