@@ -601,7 +601,7 @@ export function diff(a: TimelineDoc, b: TimelineDoc): Change[] {
   const tracksA = new Map(a.tracks.map((t) => [t.id, t]));
   const tracksB = new Map(b.tracks.map((t) => [t.id, t]));
   const props = (t: TimelineDoc['tracks'][number]) =>
-    JSON.stringify([t.kind, t.name, t.muted, t.hidden, t.locked, t.transitions ?? []]);
+    JSON.stringify([t.kind, t.name, t.muted, t.hidden, t.locked, t.effects ?? []]);
   for (const [id, t] of tracksB) {
     const before = tracksA.get(id);
     if (!before) out.push({ id, type: 'track', change: 'added' });
@@ -609,6 +609,47 @@ export function diff(a: TimelineDoc, b: TimelineDoc): Change[] {
   }
   for (const id of tracksA.keys())
     if (!tracksB.has(id)) out.push({ id, type: 'track', change: 'removed' });
+  if (JSON.stringify(a.effects ?? []) !== JSON.stringify(b.effects ?? [])) {
+    out.push({ id: 'effects', type: 'effects', change: 'modified' });
+  }
+  if (JSON.stringify(a.master ?? null) !== JSON.stringify(b.master ?? null)) {
+    out.push({ id: 'master', type: 'master', change: 'modified' });
+  }
+
+  // Each transition by id, with its track, kind and the frames it covers around its cut.
+  const tpf = ticksPerFrame(b.sequence.fps);
+  const transitions = (d: TimelineDoc) =>
+    new Map(
+      d.tracks.flatMap((t) =>
+        (t.transitions ?? []).map(
+          (x) => [x.id, { track: t, x, key: JSON.stringify([t.id, x]) }] as const,
+        ),
+      ),
+    );
+  const transA = transitions(a);
+  const transB = transitions(b);
+  for (const [id, { track, x, key }] of transB) {
+    const before = transA.get(id);
+    if (before && before.key === key) continue;
+    const clipA = track.clips.find((c) => c.id === x.a);
+    const { before: lead, after: tail } = transitionHalves(x.duration, tpf);
+    const cut = clipA ? clipA.start + clipA.duration : undefined;
+    out.push({
+      id,
+      type: 'transition',
+      change: before ? 'modified' : 'added',
+      track_id: track.id,
+      kind: x.kind,
+      ...(cut === undefined
+        ? {}
+        : {
+            start: ticksToFrames(cut - lead, b.sequence.fps),
+            end: ticksToFrames(cut + tail, b.sequence.fps),
+          }),
+    });
+  }
+  for (const id of transA.keys())
+    if (!transB.has(id)) out.push({ id, type: 'transition', change: 'removed' });
 
   const clips = (d: TimelineDoc) =>
     new Map(

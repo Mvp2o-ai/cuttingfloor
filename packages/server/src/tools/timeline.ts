@@ -181,7 +181,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'transition.add': {
     title: 'Add transition',
     description:
-      'Transition at the cut after a clip, into the clip that touches it (video://catalog/transitions). Linked audio gets a crossfade at the same cut. mode overlap (default) overlaps the clips and moves later clips earlier; handles uses source past the cut and moves nothing.',
+      'Transition at the cut after a clip, into the clip that touches it (video://catalog/transitions). Linked audio gets a crossfade at the same cut. kind crossfade is sound only: on a video clip it crossfades the linked audio and the picture cuts hard (use mode handles for that). mode overlap (default) overlaps the clips and moves later clips earlier; handles uses source past the cut and moves nothing. changed lists each transition added, with its track and kind.',
   },
   'transition.set': {
     title: 'Set transition',

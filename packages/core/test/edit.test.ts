@@ -1048,10 +1048,39 @@ describe('transitions', () => {
   });
 
   it('takes crossfades on audio only, and needs touching clips', () => {
+    // On a linked video clip a crossfade goes on its sound; the picture cuts hard. Overlapping
+    // the sound alone would pull it out of sync, so it needs handles.
     expect(() =>
       edit(two(), {
         tool: 'transition.add',
         args: { clip_id: 'c4', kind: 'crossfade', duration_frames: 10 },
+      }),
+    ).toThrow(/out of sync/);
+    const before = two();
+    const { doc } = edit(before, {
+      tool: 'transition.add',
+      args: { clip_id: 'c4', kind: 'crossfade', duration_frames: 4, mode: 'handles' },
+    });
+    expect(doc.tracks[0]?.transitions).toBeUndefined();
+    expect(doc.tracks[1]?.transitions).toMatchObject([{ kind: 'crossfade' }]);
+    // The edit says which transition it added, where, and what kind.
+    expect(diff(before, doc)).toEqual([
+      {
+        id: doc.tracks[1]?.transitions?.[0]?.id,
+        type: 'transition',
+        change: 'added',
+        track_id: doc.tracks[1]?.id,
+        kind: 'crossfade',
+        start: 98,
+        end: 102,
+      },
+    ]);
+    // A video clip with no sound linked to it takes no crossfade.
+    const unlinked = edit(two(), { tool: 'clip.unlink', args: { clip_id: 'c4' } }).doc;
+    expect(() =>
+      edit(unlinked, {
+        tool: 'transition.add',
+        args: { clip_id: 'c4', kind: 'crossfade', duration_frames: 4, mode: 'handles' },
       }),
     ).toThrow(/for audio tracks/);
     const apart = edit(two(), { tool: 'clip.move', args: { clip_id: 'c7', to_frame: 120 } }).doc;

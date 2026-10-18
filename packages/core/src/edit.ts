@@ -1692,7 +1692,7 @@ function checkKind(track: StoredTrack, kind: StoredTransition['kind']): void {
       'bad_request',
       track.kind === 'audio'
         ? `Audio tracks take crossfade transitions, not ${kind}`
-        : 'crossfade is for audio tracks; video takes dissolve, wipes, slides and the rest',
+        : 'crossfade is for audio tracks, or a video clip with sound linked to it; video alone takes dissolve, wipes, slides and the rest',
       { hint: 'See video://catalog/transitions' },
     );
   }
@@ -1739,7 +1739,14 @@ function transitionAdd(doc: TimelineDoc, a: EditArgsOf<'transition.add'>): OpOut
       },
     );
   }
-  checkKind(ref.track, a.kind);
+  // A crossfade is sound only: on a video clip it goes on the audio linked to it, and the
+  // picture cuts hard.
+  const soundOnly = a.kind === 'crossfade';
+  if (soundOnly && ref.track.kind !== 'audio') {
+    if (!members.some((m) => m.track.kind === 'audio')) checkKind(ref.track, a.kind);
+  } else {
+    checkKind(ref.track, a.kind);
+  }
   const tpf = ticksPerFrame(doc.sequence.fps);
   const duration = framesToTicks(a.duration_frames, doc.sequence.fps);
   const { before, after } = transitionHalves(duration, tpf);
@@ -1748,8 +1755,27 @@ function transitionAdd(doc: TimelineDoc, a: EditArgsOf<'transition.add'>): OpOut
   for (const m of members) {
     const b = m === ref ? next : touching(m.track, m.clip).after;
     if (!b || (m !== ref && next.link && b.link !== next.link)) continue;
+    if (soundOnly && m.track.kind !== 'audio') continue;
     assertUnlocked(m.track);
     cuts.push({ track: m.track, a: m.clip, b });
+  }
+  if (soundOnly && a.mode === 'overlap' && members.some((m) => m.track.kind !== 'audio')) {
+    throw new CfError(
+      'bad_request',
+      'A crossfade on linked clips would overlap the sound alone and pull it out of sync with the picture',
+      {
+        hint: "Use mode: 'handles' for a sound-only crossfade (it moves nothing), or a video kind such as dissolve to blend picture and sound together",
+      },
+    );
+  }
+  if (!cuts.length) {
+    throw new CfError(
+      'bad_request',
+      `No audio clip linked to ${a.clip_id} meets the next one at this cut`,
+      {
+        hint: 'Put the crossfade on the audio clip before the cut, or use a video kind such as dissolve',
+      },
+    );
   }
   if (a.mode === 'overlap') {
     // Free source on each side of the cut by overlapping the clips; later clips move earlier.

@@ -293,11 +293,16 @@ export type TimelineInput = z.infer<typeof TimelineInput>;
 
 export const Change = z.object({
   id: z.string(),
-  type: z.enum(['clip', 'track', 'sequence', 'name']),
+  type: z.enum(['clip', 'track', 'transition', 'effects', 'master', 'sequence', 'name']),
   change: z.enum(['added', 'removed', 'modified']),
-  /** Where an added or modified clip now sits, so a follow-up edit needs no timeline.get. */
+  /**
+   * Where an added or modified clip or transition now sits (its frames, end exclusive), so a
+   * follow-up edit needs no timeline.get.
+   */
   track_id: z.string().optional(),
   start: z.number().int().optional(),
   end: z.number().int().optional(),
+  /** Transitions: what kind it is. */
+  kind: z.string().optional(),
 });
 export type Change = z.infer<typeof Change>;
