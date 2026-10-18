@@ -649,7 +649,13 @@ export const MediaInfo = z.object({
   analyses: z
     .object({
       transcript: z
-        .object({ model: z.string(), language: z.string(), words: z.number() })
+        .object({
+          model: z.string(),
+          language: z.string(),
+          words: z
+            .number()
+            .describe('How many words; the words themselves are in transcript.words'),
+        })
         .optional(),
       beats: z.object({ bpm: z.number(), beats: z.number() }).optional(),
       faces: z.object({ rate: z.number(), frames_with_faces: z.number() }).optional(),
@@ -659,8 +665,12 @@ export const MediaInfo = z.object({
         .describe('frames and questions: the latest run'),
     })
     .optional()
-    .describe('Summaries of media.analyze results; media.get include returns them in full'),
-  transcript: Transcript.optional(),
+    .describe(
+      'Summaries of media.analyze results (counts, not data); include puts each in full at the top level',
+    ),
+  transcript: Transcript.optional().describe(
+    'With include ["transcript"]: every word as {text, start, end, confidence}',
+  ),
   beats: BeatsAnalysis.optional(),
   faces: FacesAnalysis.optional(),
   look: LookAnalysis.optional(),

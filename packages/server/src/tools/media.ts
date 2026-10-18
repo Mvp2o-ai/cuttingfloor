@@ -518,7 +518,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get media',
       description:
-        'Status, streams, duration, frame rate, conform reasons, scene cuts, loudness, silences and summaries of media.analyze results; include returns those results in full (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
+        'Status, streams, duration, frame rate, conform reasons, scene cuts, loudness, silences and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
       inputSchema: MediaRefInput,
       outputSchema: MediaInfo,
       annotations: {
