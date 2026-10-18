@@ -63,7 +63,7 @@ Time is integer frames at the sequence rate, end-exclusive. `timeline.get` retur
 
 ## Hosted mode
 
-The same image with `CUTTINGFLOOR_MODE=hosted`: no path imports (URLs only), no exports folder, and every request needs `Authorization: Bearer <key>` from `CUTTINGFLOOR_API_KEYS` (`owner:key,owner2:key2`, or the `cuttingfloor_api_keys` Docker secret). Each key's owner has separate timelines, media and jobs. Set `CUTTINGFLOOR_PUBLIC_URL` so download links point at the right host.
+The same image with `CUTTINGFLOOR_MODE=hosted`: no path imports (URLs only), no exports folder, and every request needs `Authorization: Bearer <key>` from `CUTTINGFLOOR_API_KEYS` (`owner:key,owner2:key2`, or the `cuttingfloor_api_keys` Docker secret). Each key's owner has separate timelines, media and jobs. `CUTTINGFLOOR_PUBLIC_URL` is required: download links are built from it, and the server won't start without it.
 
 | Variable | Default | |
 |---|---|---|
@@ -72,6 +72,7 @@ The same image with `CUTTINGFLOOR_MODE=hosted`: no path imports (URLs only), no 
 | `CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS` | `24` | Signed download link lifetime |
 | `CUTTINGFLOOR_MAX_DOWNLOAD_BYTES` | 10 GiB | URL import size cap |
 | `CUTTINGFLOOR_MOTION_URL` | unset (compose sets it) | The sandbox for `create.motion`, `create.still` and `code.run`; without it those tools explain how to start one |
+| `CUTTINGFLOOR_MOTION_WORKERS` | one per two CPUs, up to 4 | Browsers that share a `create.motion` render; set on the sandbox |
 
 ## Develop
 

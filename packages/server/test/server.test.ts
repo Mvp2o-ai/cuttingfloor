@@ -1,12 +1,12 @@
-import { BatchResult, EditResult } from '@cuttingfloor/schema';
+import { BatchResult, CfError, EditResult } from '@cuttingfloor/schema';
 import { TASKS_EXTENSION_ID_V2 } from '@modelcontextprotocol/ext-tasks/core/v2';
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as z from 'zod/v4';
 import { call, connect, ok, SEQ_720P25, type TestEnv, testRuntime } from './helpers.ts';
 
 const anyResult = z.object({}).passthrough();
-/** tools/list as JSON, in bytes (about 4 bytes per token). */
-const BUDGET_BYTES = 110_000;
+/** tools/list as JSON, in bytes (about 4 bytes per token). Raised from 110 000 for the look guide in media.analyze. */
+const BUDGET_BYTES = 115_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -18,6 +18,31 @@ describe('protocol surface', () => {
     const client = await connect(env.runtime);
     expect(client.getServerCapabilities()?.extensions).toHaveProperty(TASKS_EXTENSION_ID_V2);
     expect(client.getInstructions()).toMatch(/timeline_id/);
+  });
+
+  it('advertises open output schemas, so added result fields never break cached clients', async () => {
+    const client = await connect(env.runtime);
+    const { tools } = await client.listTools();
+    const withOutput = tools.filter((t) => t.outputSchema);
+    expect(withOutput.length).toBeGreaterThan(5);
+    for (const t of withOutput) {
+      expect(JSON.stringify(t.outputSchema), t.name).not.toContain('"additionalProperties":false');
+    }
+  });
+
+  it('waits on a job with wait_seconds instead of polling', async () => {
+    const client = await connect(env.runtime, 'waiter');
+    const job = await env.runtime.jobs.store.create({ owner: 'waiter', tool: 'export.video' });
+    setTimeout(() => {
+      void env.runtime.jobs.store.update(job, { status: 'completed', progress: 1 });
+    }, 300);
+    const started = Date.now();
+    const got = await ok<{ status: string }>(client, 'job.get', {
+      job_id: job.id,
+      wait_seconds: 5,
+    });
+    expect(got.status).toBe('completed');
+    expect(Date.now() - started).toBeLessThan(3000);
   });
 
   it('lists the tools, each annotated', async () => {
@@ -132,10 +157,15 @@ describe('protocol surface', () => {
 describe('timelines', () => {
   it('creates, edits immutably, and keeps history', async () => {
     const client = await connect(env.runtime);
-    const { timeline_id: t0 } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
-      name: 'Cut',
-      sequence: SEQ_720P25,
-    });
+    const { timeline_id: t0, tracks } = await ok<{
+      timeline_id: string;
+      tracks: Array<{ id: string; kind: string; name: string }>;
+    }>(client, 'timeline.create', { name: 'Cut', sequence: SEQ_720P25 });
+    // The track ids come back, so the first clip.add needs no timeline.get or guess.
+    expect(tracks).toEqual([
+      { id: 't1', kind: 'video', name: 'V1' },
+      { id: 't2', kind: 'audio', name: 'A1' },
+    ]);
     const added = await ok<{
       timeline_id: string;
       track_id: string;
@@ -256,11 +286,129 @@ describe('timelines', () => {
 });
 
 describe('media and jobs without engines', () => {
+  it('moves analyses a record kept inline into their own files, keeping every one', async () => {
+    const { readFile, readdir } = await import('node:fs/promises');
+    const client = await connect(env.runtime, 'legacy');
+    const id = 'm_aaaaaaaaaaaaaaaaaaaaaaaaab';
+    const dir = env.runtime.media.dir('legacy', id);
+    const now = new Date().toISOString();
+    const run = { id: 'j_a', model: 'jev-1.14.0', questions: {}, with_previous: false, frames: [] };
+    await env.runtime.ws.writeJson(`${dir}/media.json`, {
+      media_id: id,
+      name: 'old.mp4',
+      status: 'ready',
+      source: { path: '/media/old.mp4' },
+      file: null,
+      size: null,
+      fingerprint: null,
+      probe: null,
+      conform: [],
+      mezzanine: null,
+      proxy: null,
+      analysis: null,
+      analyses: {
+        beats: { bpm: 120, beats: [0.5], downbeats: [0.5] },
+        look: { runs: [run] },
+      },
+      created_at: now,
+      updated_at: now,
+    });
+    const got = await ok<Record<string, unknown>>(client, 'media.get', {
+      media_id: id,
+      include: ['beats', 'look'],
+    });
+    expect(got).toMatchObject({ beats: { bpm: 120 }, look: { runs: [{ id: 'j_a' }] } });
+    expect(JSON.parse(await readFile(`${dir}/media.json`, 'utf8'))).not.toHaveProperty('analyses');
+    expect((await readdir(`${dir}/analyses`)).sort()).toEqual([
+      'beats.json',
+      `look-${'0'.repeat(14)}-j_a.json`,
+    ]);
+
+    // Two runs stored at the same moment (two servers) both stay; only the newest 10 are kept.
+    await Promise.all(
+      Array.from({ length: 11 }, (_, i) =>
+        env.runtime.media.saveAnalysis('legacy', id, 'look', { ...run, id: `j_${i}` }),
+      ),
+    );
+    const after = await env.runtime.media.get('legacy', id);
+    expect(after.analyses?.look?.runs).toHaveLength(10);
+    expect(after.analyses?.beats?.bpm).toBe(120);
+  });
+
+  it('asks for a TypeSafe key and questions before a look starts a job', async () => {
+    const bare = await connect(env.runtime, 'looker');
+    const look = { media_id: 'm_aaaaaaaaaaaaaaaaaaaaaaaaaa', kind: 'look' };
+    const noKey = await call(bare, 'media.analyze', {
+      ...look,
+      questions: { speaker: { type: 'noul', instructions: 'Is a person in `frame`?' } },
+    });
+    expect(noKey.structured).toMatchObject({
+      code: 'credential_required',
+      detail: { provider: 'typesafe', env: 'TYPESAFE_API_KEY' },
+    });
+    const keyed = await connect(env.runtime, 'looker', { TYPESAFE_API_KEY: 'ts-secret-test' });
+    const noQuestions = await call(keyed, 'media.analyze', look);
+    expect(noQuestions.structured).toMatchObject({ code: 'bad_request' });
+    expect((await ok<{ jobs: unknown[] }>(keyed, 'job.list', {})).jobs).toHaveLength(0);
+    expect(JSON.stringify([noKey, noQuestions])).not.toContain('ts-secret-test');
+  });
+
   it('refuses paths outside the media roots before creating a job', async () => {
     const client = await connect(env.runtime);
     const res = await call(client, 'media.import', { source: { path: '/etc/passwd' } });
     expect(res.structured).toMatchObject({ code: 'path_not_allowed' });
     expect((await ok<{ jobs: unknown[] }>(client, 'job.list', {})).jobs).toHaveLength(0);
+  });
+
+  it('drops cached frames on start, so a new build never serves an old render', async () => {
+    const { mkdir, writeFile, access } = await import('node:fs/promises');
+    const stale = env.runtime.ws.path('cache', 'frames', 'tl_x-1-640.webp');
+    await mkdir(env.runtime.ws.path('cache', 'frames'), { recursive: true });
+    await writeFile(stale, 'old');
+    await env.runtime.start({ sweep: false });
+    await expect(access(stale)).rejects.toThrow();
+  });
+
+  it('imports only a completed export.video, and says why not otherwise', async () => {
+    const client = await connect(env.runtime, 'renders');
+    const store = env.runtime.jobs.store;
+    const notExport = await store.create({ owner: 'renders', tool: 'qa.check' });
+    const rendering = await store.create({ owner: 'renders', tool: 'export.video' });
+    const missing = await call(client, 'media.import', {
+      source: { job_id: 'j_aaaaaaaaaaaaaaaaaaaaaaaaaa' },
+    });
+    expect(missing.structured).toMatchObject({ code: 'not_found' });
+    const wrong = await call(client, 'media.import', { source: { job_id: notExport.id } });
+    expect(wrong.structured).toMatchObject({ code: 'bad_request' });
+    const busy = await call(client, 'media.import', { source: { job_id: rendering.id } });
+    expect(busy.structured).toMatchObject({ code: 'media_not_ready' });
+  });
+
+  it('shows a job whose tool failed as failed', async () => {
+    const client = await connect(env.runtime, 'failer');
+    const job = await env.runtime.jobs.store.create({ owner: 'failer', tool: 'media.import' });
+    await env.runtime.jobs.store.update(job, {
+      status: 'completed',
+      statusMessage: 'failed',
+      result: {
+        isError: true,
+        content: [],
+        structuredContent: { code: 'path_not_allowed', message: 'nope' },
+      } as never,
+    });
+    const view = await ok<{ status: string; error: { code: string } }>(client, 'job.get', {
+      job_id: job.id,
+    });
+    expect(view.status).toBe('failed');
+    expect(view.error.code).toBe('path_not_allowed');
+  });
+
+  it('names the host folder behind a media root when a path is not found', async () => {
+    const local = await testRuntime({ mediaHostPath: '/Users/someone/Movies' });
+    local.runtime.media.config.hostFolders = { [local.mediaDir]: '/Users/someone/Movies' };
+    const client = await connect(local.runtime);
+    const res = await call(client, 'media.import', { source: { path: '/Users/someone/clip.mp4' } });
+    expect(String(res.structured.hint)).toContain(`${local.mediaDir} is /Users/someone/Movies`);
   });
 
   it('answers tasks/get only for the owner, and unknown jobs as errors', async () => {
@@ -287,6 +435,28 @@ describe('media and jobs without engines', () => {
     const view = await ok<{ status: string; error: { code: string } }>(client, 'job.get', {
       job_id: job.id,
     });
-    expect(view).toMatchObject({ status: 'completed', error: { code: 'interrupted' } });
+    expect(view).toMatchObject({ status: 'failed', error: { code: 'interrupted' } });
+  });
+});
+
+describe('access', () => {
+  it('runs no tool for an owner the access check refuses, and says where to subscribe', async () => {
+    const env = await testRuntime();
+    let allowed = false;
+    const client = await connect(env.runtime, 'user_x', {}, async () => {
+      if (!allowed)
+        throw new CfError('subscription_required', 'The free trial ended', {
+          hint: 'Subscribe at https://example.com/account',
+        });
+    });
+    const sequence = SEQ_720P25;
+    const refused = await call(client, 'timeline.create', { name: 'A', sequence });
+    expect(refused.isError).toBe(true);
+    expect(refused.structured).toMatchObject({ code: 'subscription_required' });
+    expect(String(refused.structured.hint)).toContain('/account');
+    // Listing tools still works, so the client can show the refusal's hint.
+    expect((await client.listTools()).tools.length).toBeGreaterThan(40);
+    allowed = true;
+    expect((await call(client, 'timeline.create', { name: 'A', sequence })).isError).toBe(false);
   });
 });

@@ -429,6 +429,12 @@ export const TimelineCreateInput = z.object({
 export const TimelineRef = z.object({ timeline_id: TimelineId });
 export const TimelineLoadInput = z.object({ timeline: TimelineInput });
 export const TimelineIdResult = z.object({ timeline_id: TimelineId });
+export const TimelineCreateResult = z.object({
+  timeline_id: TimelineId,
+  tracks: z
+    .array(z.object({ id: z.string(), kind: TrackKind, name: z.string() }))
+    .describe('The new tracks; edits take the id (track_id), not the name'),
+});
 export const TimelineGetResult = TimelineView;
 export const TimelineHistoryInput = z.object({
   timeline_id: TimelineId,
@@ -458,6 +464,11 @@ export const MediaSource = z.union([
       .describe('A file under a media root, e.g. /media/videos/clip.mp4 (local mode)'),
   }),
   z.object({ url: z.url().describe('An http(s) URL to download') }),
+  z.object({
+    job_id: JobId.describe(
+      'A completed export.video: its rendered file becomes media, e.g. to re-edit a finished cut or place it in a sequence of another shape',
+    ),
+  }),
 ]);
 
 export const MediaImportInput = z.object({
@@ -466,7 +477,7 @@ export const MediaImportInput = z.object({
   idempotency_key: z.string().min(1).max(200).optional(),
 });
 
-export const ANALYSES = ['transcript', 'beats', 'faces'] as const;
+export const ANALYSES = ['transcript', 'beats', 'faces', 'look'] as const;
 
 export const MediaRefInput = z.object({
   media_id: MediaId,
@@ -476,13 +487,100 @@ export const MediaRefInput = z.object({
     .describe('Also return these analyses in full (otherwise only their summaries)'),
 });
 
+/** Text a judgment model reads: a string, or structure that clarifies it (definitions, examples). */
+const JudgmentText = z.union([
+  z.string().min(1),
+  z.record(z.string(), z.unknown()),
+  z.array(z.unknown()),
+]);
+
+/** One look question, in TypeSafe Jev's own format. Answered on every sampled frame independently. */
+export const LookQuestion = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('noul'),
+    instructions: JudgmentText,
+    criteria: z.object({ true: JudgmentText, false: JudgmentText }).partial().optional(),
+  }),
+  z.object({
+    type: z.literal('choice'),
+    instructions: JudgmentText,
+    criteria: z.record(z.string(), JudgmentText.nullable()).describe('option: what it means'),
+  }),
+  z.object({
+    type: z.literal('score'),
+    instructions: JudgmentText,
+    criteria: z.array(JudgmentText).min(2).max(10).describe('levels, lowest first'),
+  }),
+  z.object({ type: z.literal('box'), instructions: JudgmentText }),
+]);
+
+export const LookAnswer = z.union([
+  z.object({ noul: z.number() }),
+  z.object({
+    choice: z.string(),
+    probabilities: z.record(z.string(), z.number()),
+    confidence: z.number(),
+  }),
+  z.object({
+    score: z.number(),
+    probabilities: z.record(z.string(), z.number()),
+    confidence: z.number(),
+  }),
+  z.object({
+    box: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }),
+    confidence: z.number(),
+  }),
+]);
+export type LookAnswer = z.infer<typeof LookAnswer>;
+
+/** Stored look runs. Loosely typed in results: the shapes are the question and answer types above. */
+export const LookAnalysis = z.object({
+  runs: z.array(
+    z.object({
+      id: z.string(),
+      model: z.string(),
+      questions: z.record(z.string(), z.unknown()),
+      with_previous: z.boolean(),
+      frames: z.array(
+        z.object({
+          time: z.number(),
+          answers: z.record(z.string(), z.record(z.string(), z.unknown())),
+        }),
+      ),
+    }),
+  ),
+});
+
 export const MediaAnalyzeInput = z.object({
   media_id: MediaId,
   kind: z
-    .enum(['transcript', 'beats', 'faces', 'track'])
+    .enum(['transcript', 'beats', 'faces', 'track', 'look'])
     .describe(
-      'transcript: words with times (whisper.cpp, local); beats: tempo and beat times; faces: faces over time and a focus path for reframing; track: follow a region',
+      'transcript: words with times (whisper.cpp, local); beats: tempo and beat times; faces: faces over time and a focus path for reframing; track: follow a region; look: your own questions answered on sampled frames',
     ),
+  questions: z
+    .record(z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/), LookQuestion)
+    .optional()
+    .describe(
+      'look: id (yours, not shown to the model) to question; up to 32, all asked of every frame',
+    ),
+  every_seconds: z
+    .number()
+    .min(0.04)
+    .max(3600)
+    .optional()
+    .describe('look: sample a frame this often. Default 1'),
+  at_seconds: z
+    .array(z.number().min(0))
+    .min(1)
+    .max(600)
+    .optional()
+    .describe('look: sample exactly these times instead'),
+  from_seconds: z.number().min(0).optional().describe('look: start sampling here. Default 0'),
+  with_previous: z
+    .boolean()
+    .default(false)
+    .describe('look: also show the frame sampled before, as `previous`'),
   model: z
     .enum(['tiny', 'base', 'small'])
     .default('base')
@@ -500,7 +598,7 @@ export const MediaAnalyzeInput = z.object({
     .describe(
       'track: the box to follow (top-left x, y and size, fractions of the picture) and when',
     ),
-  until_seconds: z.number().min(0).optional().describe('track: stop here. Default: the end'),
+  until_seconds: z.number().min(0).optional().describe('track, look: stop here. Default: the end'),
   idempotency_key: z.string().min(1).max(200).optional(),
 });
 
@@ -567,12 +665,17 @@ export const MediaInfo = z.object({
         .optional(),
       beats: z.object({ bpm: z.number(), beats: z.number() }).optional(),
       faces: z.object({ rate: z.number(), frames_with_faces: z.number() }).optional(),
+      look: z
+        .object({ runs: z.number(), frames: z.number(), questions: z.array(z.string()) })
+        .optional()
+        .describe('frames and questions: the latest run'),
     })
     .optional()
     .describe('Summaries of media.analyze results; media.get include returns them in full'),
   transcript: Transcript.optional(),
   beats: BeatsAnalysis.optional(),
   faces: FacesAnalysis.optional(),
+  look: LookAnalysis.optional(),
   error: ToolError.optional(),
 });
 export type MediaInfo = z.infer<typeof MediaInfo>;
@@ -667,6 +770,7 @@ export const CodeRunResult = z.object({
   stdout: z.string(),
   stderr: z.string(),
   seconds: z.number(),
+  warnings: z.array(z.string()).optional(),
 });
 
 /** Kokoro's English voices, in speaker-id order: a = American, b = British; f/m = female/male. */
@@ -763,6 +867,14 @@ export const JobView = z.object({
   error: ToolError.optional(),
 });
 export const JobRef = z.object({ job_id: JobId });
+export const JobGetInput = JobRef.extend({
+  wait_seconds: z
+    .number()
+    .min(0)
+    .max(50)
+    .default(0)
+    .describe('Hold the call up to this long for the job to finish, instead of polling'),
+});
 export const JobListInput = z.object({
   status: JobStatus.optional(),
   limit: z.number().int().min(1).max(200).default(50),
@@ -805,6 +917,7 @@ export const ExportPreset = z
     'social_9x16_h264',
     'web_1080p_av1',
     'gif',
+    'review_h264',
     'audio_wav_48k',
     'audio_mp3',
   ])

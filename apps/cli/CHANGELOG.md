@@ -1,5 +1,35 @@
 # cuttingfloor
 
+## 0.12.0
+
+### Minor Changes
+
+- 96921a6: Agents no longer have to guess. The server instructions now offer two ways to work: make new media with `create.*`, where a reference the user shows you is rebuilt in HTML rather than imported, or `media.import` the user's own files. `timeline.create` returns its tracks, so the first `clip.add` knows its `track_id`. `job.get {wait_seconds}` holds the call until a job finishes, instead of repeated polling. Output schemas no longer forbid extra fields, so a field added in a later release doesn't fail results in clients still holding the old schema. Media at exactly 24, 30 or 60 fps is no longer read as 23.976, 29.97 or 59.94.
+
+  Titles and captions placed after the first frame of a timeline now render (libass was timed from the clip, but reads timeline time). Edit results say where each added or moved clip now sits (`track_id`, `start`, `end`). A transition left short of source by a speed change, trim or slip is shortened to fit instead of removed. A title with a reveal previews once it's fully shown. Cached preview frames are cleared on start, so a new build never serves an old render.
+
+  `media.import {source: {job_id}}` imports a completed `export.video` render as media, so a finished edit can be re-cut, baked, or placed in a sequence of another shape. Nesting a timeline of a different shape is refused with that route as the hint (it rendered wrongly); same-shape nesting is unchanged. Each nesting level decodes media with its own producers, which fixes multi-frame previews when the same media is fitted differently inside and outside a nested timeline. `job.get` shows a job whose tool failed as `failed`, not `completed`.
+
+  Job status keeps up: a progress update that arrives within a second of the last is held and shown, not dropped, so a job no longer sits on "fetching inputs" or "downloading the model" after it has moved on, and jobs waiting on the same model download see its progress. Exports report progress while they render. A `media.analyze` result too long to return (a long talk's transcript) comes back as its summary and a note on reading it in `code.run`; short results are unchanged. `code.run` marks output it cut ("[N earlier characters of stdout cut…]"), its description lists the `out` option of `motion()` and `still()`, and its result warns when a rendered page kept the placeholder name.
+
+  A model that takes video in can now watch a cut. The new `review_h264` preset renders a small MP4 with sound at the sequence rate. Every `export.video` result links its file twice, as `video://jobs/{job_id}/output` and as the signed https URL, with MCP `annotations.audience` set to `assistant` for a review and `user` for any other render, so a host knows which to show its model. Results also give `fps` and `duration_seconds`. `job.get` now carries a finished job's links and media, as `tasks/result` does. Models without video keep using `render.frames`.
+
+  Hosted mode refuses to start without `CUTTINGFLOOR_PUBLIC_URL`, instead of handing out download links to the server's own loopback address.
+
+- cf078f4: Hosted servers take OAuth: set `CUTTINGFLOOR_OAUTH_ISSUER` and MCP clients sign in through that authorization server (Protected Resource Metadata, audience-bound JWT access tokens). API keys keep working alongside.
+- 6603aa0: Hosted plans: a signed-in account works for a 3-day trial, then with a subscription (or a comped admin or lifetime account). Past that, tools return `subscription_required` with where to subscribe. API keys, for maintenance, are never gated.
+- 754899c: Safe for many accounts on several servers that share one data root.
+  - **Analyses:** each analysis is its own file beside the media. Two servers analysing the same media at once both keep their results. Records that held analyses inline move them out on first read.
+  - **Jobs:** each job carries its server's name (`CUTTINGFLOOR_NODE`; hosted defaults to the hostname) and a heartbeat every 30 s.
+    - A server restarting ends only its own jobs as `interrupted`.
+    - Any server ends a job whose heartbeat has stopped for 2 minutes.
+    - A cancel made through one server stops a job running on another.
+  - **Hosted look cap:** hosted servers limit look frames per account per day (`CUTTINGFLOOR_LOOK_FRAMES_PER_DAY`, default 5000). A call that would pass the limit fails at once with `quota_exceeded`, naming what's used, what's left and when the limit resets.
+  - **Deploy:** `deploy/hetzner` runs one hosted server on Hetzner Cloud with TLS and the sandbox under gVisor.
+- 3fae5e9: `media.analyze {kind: "look"}` answers your own questions about what is on screen. TypeSafe's Jev, a fast judgment model (images are in preview), answers every question on frames sampled `every_seconds` or `at_seconds` (optionally between `from_seconds` and `until_seconds`), about 0.15 s a frame. Questions use Jev's own types: noul (yes/no probability), choice (one of named options), score (a degree on ordered levels) and box (where one thing is, as `{x, y, w, h}` fractions like faces and track). `with_previous` also shows the frame sampled before, as `previous`, for questions about what changed. The tool description teaches how to write questions Jev answers well. The result gives each question's spans; every frame's answers stay with the media (`media.get include ['look']`, the last 10 runs). Up to 600 frames and 32 questions a call.
+
+  It needs `TYPESAFE_API_KEY` in the `.env` next to `compose.yaml`; without one, a look fails at once with `credential_required`, before any job starts. The key never appears in a result, error or stored file. Hosted servers use their own TypeSafe key for every account, with requests from all jobs sharing one limit per server.
+
 ## 0.11.0
 
 ### Minor Changes

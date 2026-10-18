@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { availableParallelism } from 'node:os';
+import { availableParallelism, hostname } from 'node:os';
 import { join } from 'node:path';
 import { ownerKey, TimelineStore, Workspace } from '@cuttingfloor/core';
 import { MEDIA_TTL_MS, MediaLibrary } from '@cuttingfloor/engine';
@@ -25,6 +25,14 @@ export interface RuntimeConfig {
   modelsDir?: string;
   /** The motion sandbox (cuttingfloor motion-worker) for create.motion and create.still. */
   motionUrl: string | null;
+  /** This server's name in job records, so servers sharing a data root know whose jobs are whose. */
+  node?: string;
+  /** Look frames each owner may ask about a day; unset means no limit (local mode). */
+  lookFramesPerDay?: number;
+  /** TypeSafe's API, for media.analyze look. Default: api.typesafe.ai. */
+  typesafeUrl?: string;
+  /** Local mode: the folder on the user's machine compose mounts at /media/videos. */
+  mediaHostPath?: string;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
@@ -53,6 +61,16 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     inlineMaxBytes: Number(env.CUTTINGFLOOR_INLINE_MAX_BYTES ?? 32 * 1024 ** 2),
     ...(env.CUTTINGFLOOR_MODELS ? { modelsDir: env.CUTTINGFLOOR_MODELS } : {}),
     motionUrl: env.CUTTINGFLOOR_MOTION_URL?.replace(/\/$/, '') || null,
+    node: env.CUTTINGFLOOR_NODE ?? (mode === 'local' ? 'local' : hostname()),
+    ...(env.CUTTINGFLOOR_LOOK_FRAMES_PER_DAY || mode === 'hosted'
+      ? { lookFramesPerDay: Number(env.CUTTINGFLOOR_LOOK_FRAMES_PER_DAY ?? 5000) }
+      : {}),
+    ...(env.CUTTINGFLOOR_TYPESAFE_URL
+      ? { typesafeUrl: env.CUTTINGFLOOR_TYPESAFE_URL.replace(/\/$/, '') }
+      : {}),
+    ...(mode === 'local' && env.CUTTINGFLOOR_MEDIA_HOST_PATH
+      ? { mediaHostPath: env.CUTTINGFLOOR_MEDIA_HOST_PATH }
+      : {}),
   };
 }
 
@@ -67,6 +85,7 @@ export class Runtime {
   readonly modelsDir: string;
   #secret: Buffer | undefined;
   #sweeper: NodeJS.Timeout | undefined;
+  #reaper: NodeJS.Timeout | undefined;
 
   constructor(config: RuntimeConfig) {
     this.config = config;
@@ -78,29 +97,47 @@ export class Runtime {
       maxDownloadBytes: config.maxDownloadBytes,
       downloadTimeoutMs: 30 * 60_000,
       allowPrivateUrls: config.allowPrivateUrls,
+      ...(config.mediaHostPath ? { hostFolders: { '/media/videos': config.mediaHostPath } } : {}),
     });
-    this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs);
+    this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs, {
+      ...(config.node ? { node: config.node } : {}),
+    });
   }
 
-  /** Loads the signing secret, recovers interrupted jobs and starts the hourly TTL sweep. */
+  /**
+   * Loads the signing secret, recovers interrupted jobs and starts the hourly TTL sweep. Cached
+   * frames go: a timeline id names the edit, not the renderer, so frames an older build drew
+   * would otherwise outlive a fix to how they are drawn.
+   */
   async start(options: { sweep?: boolean } = {}): Promise<void> {
     await this.secret();
+    await this.ws.remove(this.ws.path('cache', 'frames'));
     await this.jobs.recover();
     if (options.sweep !== false) {
       await this.sweep();
       this.#sweeper = setInterval(() => void this.sweep().catch(() => undefined), 3_600_000);
       this.#sweeper.unref();
+      // Jobs whose server died, wherever they ran, end interrupted within a few minutes.
+      this.#reaper = setInterval(
+        () => void this.jobs.recover({ startup: false }).catch(() => undefined),
+        60_000,
+      );
+      this.#reaper.unref();
     }
   }
 
   stop(): void {
     if (this.#sweeper) clearInterval(this.#sweeper);
+    if (this.#reaper) clearInterval(this.#reaper);
   }
 
   async sweep(): Promise<void> {
     await this.timelines.sweep();
     await this.media.sweep(MEDIA_TTL_MS);
     await this.jobs.store.sweep();
+    for (const owner of await this.ws.owners()) {
+      await this.ws.sweep(this.ws.path('owners', owner, 'usage'), 2 * 24 * 3_600_000);
+    }
     await this.ws.sweep(this.ws.path('cache', 'frames'), 24 * 3_600_000);
   }
 

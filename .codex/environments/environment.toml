@@ -1,0 +1,8 @@
+version = 1
+name = "cuttingfloor"
+
+[setup]
+script = '''
+cd "${CODEX_WORKTREE_PATH:-$PWD}"
+"$(git rev-parse --show-toplevel)/scripts/worktree-setup.sh"
+'''

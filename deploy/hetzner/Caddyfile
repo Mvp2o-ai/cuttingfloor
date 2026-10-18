@@ -1,0 +1,7 @@
+# TLS from Let's Encrypt for the domain in CUTTINGFLOOR_DOMAIN; everything goes to the node.
+{$CUTTINGFLOOR_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy cuttingfloor:8787 {
+		flush_interval -1
+	}
+}

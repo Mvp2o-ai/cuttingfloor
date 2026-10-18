@@ -295,5 +295,9 @@ export const Change = z.object({
   id: z.string(),
   type: z.enum(['clip', 'track', 'sequence', 'name']),
   change: z.enum(['added', 'removed', 'modified']),
+  /** Where an added or modified clip now sits, so a follow-up edit needs no timeline.get. */
+  track_id: z.string().optional(),
+  start: z.number().int().optional(),
+  end: z.number().int().optional(),
 });
 export type Change = z.infer<typeof Change>;

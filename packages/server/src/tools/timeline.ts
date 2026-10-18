@@ -17,6 +17,7 @@ import {
   editInput,
   LoudnessInput,
   TimelineCreateInput,
+  TimelineCreateResult,
   TimelineDiffInput,
   TimelineDiffResult,
   type TimelineDoc,
@@ -239,15 +240,18 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
     {
       title: 'Create timeline',
       description:
-        'Start an empty timeline. Returns its timeline_id. Timelines are immutable: every edit returns a new timeline_id, and older ids stay valid for 24 hours after last use.',
+        'Start an empty timeline. Returns its timeline_id and its tracks (ids for track_id). Timelines are immutable: every edit returns a new timeline_id, and older ids stay valid for 24 hours after last use.',
       inputSchema: TimelineCreateInput,
-      outputSchema: TimelineIdResult,
+      outputSchema: TimelineCreateResult,
       annotations: { ...annotations, title: 'Create timeline' },
     },
     guard(async (args) => {
       const doc = newTimeline(args.name, args.sequence, args.tracks);
       doc.op = { tool: 'timeline.create', args };
-      return ok({ timeline_id: await rt.timelines.put(deps.owner(), doc) });
+      return ok({
+        timeline_id: await rt.timelines.put(deps.owner(), doc),
+        tracks: doc.tracks.map(({ id, kind, name }) => ({ id, kind, name })),
+      });
     }),
   );
 

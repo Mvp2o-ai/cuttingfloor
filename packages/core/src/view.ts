@@ -278,6 +278,7 @@ export function fromView(input: TimelineInput, media: MediaLookup): TimelineDoc 
   assertTransitions(doc);
   for (const n of Object.values(nested))
     assertTransitions({ ...n, parent: null, op: null, nested });
+  for (const body of [doc, ...Object.values(nested)]) assertCaptionWords(body.tracks);
   replayProps(doc, input.tracks);
   loadEffects(doc, input.tracks, input.effects, media);
   for (const key of Object.keys(views)) {
@@ -615,12 +616,42 @@ export function diff(a: TimelineDoc, b: TimelineDoc): Change[] {
     );
   const clipsA = clips(a);
   const clipsB = clips(b);
+  const f = (ticks: number) => ticksToFrames(ticks, b.sequence.fps);
+  const at = new Map(
+    b.tracks.flatMap((t) =>
+      t.clips.map(
+        (c) => [c.id, { track_id: t.id, start: f(c.start), end: f(c.start + c.duration) }] as const,
+      ),
+    ),
+  );
   for (const [id, c] of clipsB) {
     const before = clipsA.get(id);
-    if (before === undefined) out.push({ id, type: 'clip', change: 'added' });
-    else if (before !== c) out.push({ id, type: 'clip', change: 'modified' });
+    if (before === undefined) out.push({ id, type: 'clip', change: 'added', ...at.get(id) });
+    else if (before !== c) out.push({ id, type: 'clip', change: 'modified', ...at.get(id) });
   }
   for (const id of clipsA.keys())
     if (!clipsB.has(id)) out.push({ id, type: 'clip', change: 'removed' });
   return out;
+}
+
+/**
+ * Refuses a caption whose words spell something other than its text: the words are what renders
+ * (they time the highlights), so an edit to text alone would silently not show.
+ */
+function assertCaptionWords(tracks: TimelineDoc['tracks']): void {
+  const squash = (t: string) => t.replace(/\s+/g, ' ').trim();
+  for (const t of tracks)
+    for (const c of t.clips) {
+      if (c.type !== 'caption' || !c.words?.length) continue;
+      const spelled = squash(c.words.map((w) => w.text).join(' '));
+      if (spelled !== squash(c.text)) {
+        throw new CfError(
+          'bad_request',
+          `Caption ${c.id}: its words spell "${spelled}" but its text is "${squash(c.text)}"`,
+          {
+            hint: 'The words are what renders. Change words[].text to match, or drop words (losing the word timing)',
+          },
+        );
+      }
+    }
 }

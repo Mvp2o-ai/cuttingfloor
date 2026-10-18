@@ -162,7 +162,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
   };
 
   const sandboxNote = rt.config.motionUrl
-    ? 'Runs in the sandbox: no network (inline everything, pass images and fonts as assets, load libraries from lib/), fixed memory and time limits.'
+    ? "Runs in the sandbox: no network (inline everything, load libraries from lib/; assets are for imported files the page must show as they are, like the user's logo or a font), fixed memory and time limits. To match a reference you were shown, rebuild it in HTML/SVG; it does not need importing."
     : 'Needs the motion sandbox, which is not running on this server.';
 
   server.registerTool(
@@ -313,10 +313,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
                 signal,
                 onProgress: (f, m) => progress(f, `timing words: ${m}`),
               });
-              const latest = await rt.media.get(deps.owner(), record.media_id);
-              latest.analyses = { ...latest.analyses, transcript };
-              await rt.media.save(deps.owner(), latest);
-              return latest;
+              return rt.media.saveAnalysis(deps.owner(), record.media_id, 'transcript', transcript);
             }
           : undefined,
       );

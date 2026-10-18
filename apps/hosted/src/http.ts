@@ -11,7 +11,14 @@ import { Readable } from 'node:stream';
 import type { CredentialStore } from '@cuttingfloor/credentials';
 import { createServer, outputMime, type Runtime } from '@cuttingfloor/server';
 import { toWebRequest } from '@modelcontextprotocol/node';
-import { createMcpHandler } from '@modelcontextprotocol/server';
+import {
+  createMcpHandler,
+  getOAuthProtectedResourceMetadataUrl,
+  type OAuthMetadata,
+  oauthMetadataResponse,
+  requireBearerAuth,
+} from '@modelcontextprotocol/server';
+import type { JwtTokenVerifier } from './oauth.ts';
 
 export interface HttpOptions {
   runtime: Runtime;
@@ -21,6 +28,16 @@ export interface HttpOptions {
    * the server only answers on loopback host names.
    */
   apiKeys?: Map<string, string>;
+  /**
+   * Hosted mode: MCP authorization (2026-07-28) with this server as the OAuth resource `resource`
+   * (its /mcp URL) and tokens from the verifier's authorization server, alongside any API keys.
+   */
+  oauth?: { verifier: JwtTokenVerifier; resource: URL };
+  /**
+   * Hosted: whether a signed-in owner may work (trial, plan); throws a CfError when not. Applies
+   * to OAuth sign-ins only: API keys are for maintenance and are never gated.
+   */
+  access?: (owner: string) => Promise<void>;
 }
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
@@ -30,11 +47,17 @@ const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
  * signed output downloads at /outputs/…, and /healthz.
  */
 export function createHttpServer(options: HttpOptions): Server {
-  const { runtime, credentials } = options;
+  const { runtime, credentials, oauth } = options;
   const handler = createMcpHandler(
     (ctx) => {
       const owner = ctx.authInfo?.clientId ?? 'local';
-      return createServer({ runtime, credentials, owner: () => owner });
+      const gate = ctx.authInfo?.extra?.via === 'oauth' ? options.access : undefined;
+      return createServer({
+        runtime,
+        credentials,
+        owner: () => owner,
+        ...(gate ? { access: () => gate(owner) } : {}),
+      });
     },
     { onerror: (error) => process.stderr.write(`mcp: ${error.message}\n`) },
   );
@@ -43,12 +66,45 @@ export function createHttpServer(options: HttpOptions): Server {
     owner,
   }));
 
+  const resourceMetadataUrl = oauth && getOAuthProtectedResourceMetadataUrl(oauth.resource);
+  const requireToken =
+    oauth &&
+    requireBearerAuth({
+      verifier: oauth.verifier,
+      expectedResource: oauth.resource,
+      ...(resourceMetadataUrl ? { resourceMetadataUrl } : {}),
+    });
+
+  /** An API key's owner, if the request carries one. */
+  function apiKeyOwner(req: IncomingMessage): string | undefined {
+    const token = /^Bearer (.+)$/i.exec(req.headers.authorization ?? '')?.[1];
+    if (!token || !hashedKeys.length) return undefined;
+    const digest = createHash('sha256').update(token).digest();
+    return hashedKeys.find((k) => timingSafeEqual(k.digest, digest))?.owner;
+  }
+
   return createNodeServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
       if (url.pathname === '/healthz') {
         res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
         return;
+      }
+      // The discovery documents: Protected Resource Metadata (RFC 9728), and the authorization
+      // server's metadata for clients from before it.
+      if (oauth && url.pathname.startsWith('/.well-known/')) {
+        const metadata = oauthMetadataResponse(
+          new Request(webUrl(req), { method: req.method ?? 'GET' }),
+          {
+            oauthMetadata: oauth.verifier.metadata as OAuthMetadata,
+            resourceServerUrl: oauth.resource,
+            resourceName: 'cuttingfloor',
+          },
+        );
+        if (metadata) {
+          await sendResponse(res, metadata);
+          return;
+        }
       }
       if (url.pathname.startsWith('/outputs/') && (req.method === 'GET' || req.method === 'HEAD')) {
         const file = await runtime.verifyOutput(
@@ -68,11 +124,22 @@ export function createHttpServer(options: HttpOptions): Server {
         return;
       }
       let owner = 'local';
-      if (hashedKeys.length) {
-        const token = /^Bearer (.+)$/i.exec(req.headers.authorization ?? '')?.[1];
-        const digest = token ? createHash('sha256').update(token).digest() : undefined;
-        const match = digest && hashedKeys.find((k) => timingSafeEqual(k.digest, digest));
-        if (!match) {
+      let via = 'local';
+      const request = await toWebRequest(req as IncomingMessage & { method: string; url: string });
+      if (hashedKeys.length || requireToken) {
+        const keyOwner = apiKeyOwner(req);
+        if (keyOwner) {
+          owner = keyOwner;
+          via = 'key';
+        } else if (requireToken) {
+          const auth = await requireToken(request);
+          if (auth instanceof Response) {
+            await sendResponse(res, auth);
+            return;
+          }
+          owner = String(auth.extra?.sub);
+          via = 'oauth';
+        } else {
           res
             .writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' })
             .end(
@@ -83,7 +150,6 @@ export function createHttpServer(options: HttpOptions): Server {
             );
           return;
         }
-        owner = match.owner;
       } else {
         // Local mode: refuse DNS-rebinding and cross-site browser requests.
         const host = (req.headers.host ?? '').replace(/:\d+$/, '');
@@ -93,29 +159,38 @@ export function createHttpServer(options: HttpOptions): Server {
           return;
         }
       }
-      const request = await toWebRequest(req as IncomingMessage & { method: string; url: string });
       const response = await handler.fetch(request, {
-        authInfo: { token: 'redacted', clientId: owner, scopes: [] },
+        authInfo: { token: 'redacted', clientId: owner, scopes: [], extra: { via } },
       });
-      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
-      if (!response.body) {
-        res.end();
-        return;
-      }
-      const body = Readable.fromWeb(response.body as never);
-      // Stop streaming only if the client goes away before the response is done. (The
-      // request's own 'close' fires once its body is read, which is too early.)
-      res.on('close', () => {
-        if (!res.writableFinished) body.destroy();
-      });
-      body.on('error', () => res.destroy());
-      body.pipe(res);
+      await sendResponse(res, response);
     } catch (error) {
       process.stderr.write(`http: ${(error as Error).stack ?? error}\n`);
       if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain' });
       res.end('internal error');
     }
   });
+}
+
+/** The request's URL as the client addressed it, for web-standard handlers. */
+function webUrl(req: IncomingMessage): string {
+  return new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`).toString();
+}
+
+/** Writes a web Response to a Node response, streaming its body. */
+async function sendResponse(res: ServerResponse, response: Response): Promise<void> {
+  res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+  if (!response.body) {
+    res.end();
+    return;
+  }
+  const body = Readable.fromWeb(response.body as never);
+  // Stop streaming only if the client goes away before the response is done. (The
+  // request's own 'close' fires once its body is read, which is too early.)
+  res.on('close', () => {
+    if (!res.writableFinished) body.destroy();
+  });
+  body.on('error', () => res.destroy());
+  body.pipe(res);
 }
 
 /** Streams a file with single-range support, so players can seek. */

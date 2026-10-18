@@ -287,8 +287,19 @@ function execute(
       },
     );
     const tail = { stdout: '', stderr: '' };
+    const seen = { stdout: 0, stderr: 0 };
     const keep = (k: 'stdout' | 'stderr') => (d: Buffer) => {
-      tail[k] = (tail[k] + d.toString()).slice(-CODE_LIMITS.logTail);
+      const text = d.toString();
+      seen[k] += text.length;
+      tail[k] = (tail[k] + text).slice(-CODE_LIMITS.logTail);
+    };
+    /** The end of a stream, saying so when the start was cut. */
+    const shown = (k: 'stdout' | 'stderr', limit: number = CODE_LIMITS.logTail) => {
+      const kept = tail[k].slice(-limit);
+      const cut = seen[k] - kept.length;
+      return cut > 0
+        ? `[${cut} earlier characters of ${k} cut; only the last ${kept.length} are kept. Print less, or a summary]\n${kept}`
+        : kept;
     };
     child.stdout.on('data', keep('stdout'));
     child.stderr.on('data', keep('stderr'));
@@ -323,7 +334,7 @@ function execute(
         return reject(
           new CfError('limit_exceeded', `The script ran longer than ${timeoutSeconds} s`, {
             hint: 'Raise timeout_seconds (up to 1800), or do less per run',
-            detail: { stdout: tail.stdout.slice(-4000), stderr: tail.stderr.slice(-4000) },
+            detail: { stdout: shown('stdout', 4000), stderr: shown('stderr', 4000) },
           }),
         );
       }
@@ -340,8 +351,8 @@ function execute(
         resolve({
           exit_code: code,
           signal: sig,
-          stdout: tail.stdout,
-          stderr: tail.stderr,
+          stdout: shown('stdout'),
+          stderr: shown('stderr'),
           outputs,
           seconds: Math.round((Date.now() - started) / 100) / 10,
         });

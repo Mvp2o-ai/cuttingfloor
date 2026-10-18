@@ -1,0 +1,736 @@
+<!-- The floor: an agent editing over MCP, seen from above. Source for public/floor.mp4, rendered
+     with create.motion (assets: VT323.ttf, JBM.ttf). Every motion is periodic in T, so it loops. -->
+<style>
+  @font-face { font-family: Pix; src: url(assets/VT323.ttf); }
+  @font-face { font-family: Mono; src: url(assets/JBM.ttf); }
+  html, body { margin: 0; background: #0e0d0b; }
+  canvas { display: block; }
+</style>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+const cv = document.getElementById('c');
+const x = cv.getContext('2d');
+const W = 1920, H = 1080, T = 12, OX = 1120, OY = 575, TW = 70, TH = 35, N = 5;
+const C = {
+  bg: '#0e0d0b', bg2: '#161511', ink: '#eee8dc', mute: '#8f887c',
+  rule: '#2a2722', rule2: '#3a362f', key: '#00b140',
+};
+const K = (a) => `rgba(0,177,64,${a})`;
+const I = (a) => `rgba(238,232,220,${a})`;
+const TAU = Math.PI * 2;
+const cl = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const eo = (v) => 1 - (1 - cl(v)) ** 3;
+const eio = (v) => { v = cl(v); return v < 0.5 ? 4 * v * v * v : 1 - (-2 * v + 2) ** 3 / 2; };
+const md = (v, m) => ((v % m) + m) % m;
+const lerp = (a, b, f) => a + (b - a) * f;
+const hash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+
+const P = (gx, gy, z = 0) => [OX + (gx - gy) * TW, OY + (gx + gy) * TH - z];
+
+function poly(pts, fill, stroke, lw = 1) {
+  x.beginPath();
+  pts.forEach((p, i) => {
+    if (i) x.lineTo(p[0], p[1]);
+    else x.moveTo(p[0], p[1]);
+  });
+  x.closePath();
+  if (fill) { x.fillStyle = fill; x.fill(); }
+  if (stroke) { x.strokeStyle = stroke; x.lineWidth = lw; x.stroke(); }
+}
+function line(a, b, stroke, lw = 1, dash, off = 0) {
+  x.beginPath();
+  x.setLineDash(dash || []);
+  x.lineDashOffset = off;
+  x.moveTo(a[0], a[1]);
+  x.lineTo(b[0], b[1]);
+  x.strokeStyle = stroke;
+  x.lineWidth = lw;
+  x.stroke();
+  x.setLineDash([]);
+}
+// An iso box; faces below zmin are cut off (things sinking into a plate).
+function box(gx, gy, w, d, h, z, s) {
+  const zmin = s.zmin ?? 0;
+  if (z < zmin) { h -= zmin - z; z = zmin; }
+  if (h <= 0) return;
+  const lw = s.lw || 1;
+  poly([P(gx, gy + d, z), P(gx + w, gy + d, z), P(gx + w, gy + d, z + h), P(gx, gy + d, z + h)], s.left, s.stroke, lw);
+  poly([P(gx + w, gy, z), P(gx + w, gy + d, z), P(gx + w, gy + d, z + h), P(gx + w, gy, z + h)], s.right, s.stroke, lw);
+  poly([P(gx, gy, z + h), P(gx + w, gy, z + h), P(gx + w, gy + d, z + h), P(gx, gy + d, z + h)], s.top, s.stroke, lw);
+}
+// Text lying on the floor (dir x: along +gx; dir y: along -gy), or on a side face (face x / face y).
+const FRAMES = {
+  x: [0.894, 0.447, -0.894, 0.447],
+  y: [0.894, -0.447, 0.894, 0.447],
+  fy: [0.894, 0.447, 0, 1],
+  fx: [0.894, -0.447, 0, 1],
+};
+function onPlane(dir, at, fn) {
+  const m = FRAMES[dir];
+  x.save();
+  x.setTransform(m[0], m[1], m[2], m[3], at[0], at[1]);
+  fn();
+  x.restore();
+}
+function tag(gx, gy, dir, text, act = 0, size = 24) {
+  onPlane(dir, P(gx, gy), () => {
+    x.font = `${size}px Pix`;
+    const w = x.measureText(text).width;
+    x.fillStyle = 'rgba(14,13,11,0.94)';
+    x.fillRect(-10, -size * 0.82, w + 20, size * 1.12);
+    x.strokeStyle = act > 0 ? K(0.35 + 0.65 * act) : C.rule2;
+    x.lineWidth = 1.5;
+    x.strokeRect(-10, -size * 0.82, w + 20, size * 1.12);
+    x.fillStyle = C.mute;
+    x.fillText(text, 0, 0);
+    if (act > 0) { x.globalAlpha = act; x.fillStyle = C.key; x.fillText(text, 0, 0); }
+  });
+}
+function cross(p, s, col, lw = 1.2) {
+  line([p[0] - s, p[1]], [p[0] + s, p[1]], col, lw);
+  line([p[0], p[1] - s], [p[0], p[1] + s], col, lw);
+}
+
+// ---------- the session: six calls, one every two seconds ----------
+const CALLS = [
+  { fn: 'media.import', arg: '{ url: "…/raw_0132.mov" }', ret: 'conformed to 30p · proxy ready', st: 'imp' },
+  { fn: 'media.analyze', arg: '{ kind: "transcript" }', ret: 'logged · 6,412 words · 41 scenes', st: 'tr' },
+  { fn: 'clip.add', arg: '{ words: [812, 861] }', ret: 'rough cut · ripple · J-cut 00:14', st: 'tl' },
+  { fn: 'create.motion', arg: '{ html: lower third }', ret: 'lower third · 4 s · alpha', st: 'mo' },
+  { fn: 'audio.set_loudness', arg: '{ target_lufs: -14 }', ret: 'mixed · ducked · −14.1 LUFS', st: 'au' },
+  { fn: 'export.video', arg: '{ preset: "web_1080p" }', ret: 'delivered · cut.mp4 · 1080p', st: 're' },
+];
+const PATHS = {
+  imp: [[0, 1], [0, 3.6], [-1.0, 3.6]],
+  tr: [[-1, 0], [-3.8, 0]],
+  tl: [[1, 0], [2, 0], [2, -2.4]],
+  mo: [[0, -1], [0, -2.4], [-1.2, -2.4], [-1.2, -3.0]],
+  au: [[1, 0], [3.2, 0]],
+  re: [[0, 1], [0, 3.2], [2.4, 3.2]],
+};
+const LENS = {};
+for (const k in PATHS) {
+  const p = PATHS[k];
+  let L = 0;
+  const seg = [];
+  for (let i = 1; i < p.length; i++) {
+    const l = Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]);
+    seg.push(l);
+    L += l;
+  }
+  LENS[k] = { L, seg };
+}
+function along(k, f) {
+  const p = PATHS[k], { L, seg } = LENS[k];
+  let d = cl(f) * L;
+  for (let i = 0; i < seg.length; i++) {
+    if (d <= seg[i] || i === seg.length - 1) {
+      const u = seg[i] ? d / seg[i] : 0;
+      return [lerp(p[i][0], p[i + 1][0], u), lerp(p[i][1], p[i + 1][1], u)];
+    }
+    d -= seg[i];
+  }
+}
+const SEND = 0.25, ARRIVE = 0.85, BACK = 1.15, HOME = 1.6, UP = 1.85;
+const since = (t, st) => md(t - CALLS.findIndex((c) => c.st === st) * 2 - ARRIVE, T);
+const glowOf = (u, len = 2) => (u < len ? 1 - u / len : 0);
+
+function packet(gx, gy, z, s, col, glow) {
+  if (glow) { x.shadowColor = col; x.shadowBlur = glow; }
+  box(gx - s / 2, gy - s / 2, s, s, s * 64, z, { top: col, left: col, right: col });
+  x.shadowBlur = 0;
+}
+
+// ---------- background ----------
+function background(t) {
+  x.fillStyle = C.bg;
+  x.fillRect(0, 0, W, H);
+  for (let i = 0; i < 110; i++) {
+    const px = hash(i) * W, py = hash(i + 500) * H;
+    const a = 0.15 + 0.5 * (0.5 + 0.5 * Math.sin(TAU * (t * (1 + (i % 3)) / T) + hash(i + 9) * TAU));
+    x.globalAlpha = a;
+    x.fillStyle = i % 13 === 0 ? C.key : i % 3 ? C.rule2 : C.mute;
+    const s = i % 5 === 0 ? 4 : 2;
+    x.fillRect(Math.round(px), Math.round(py), s, s);
+  }
+  for (let i = 0; i < 18; i++) {
+    const px = Math.round(hash(i + 900) * W), len = 8 + hash(i + 77) * 26;
+    const py = md(hash(i + 300) * H - (H / T) * t * (1 + (i % 2)), H + 40) - 20;
+    x.globalAlpha = 0.35;
+    x.fillStyle = i % 4 ? C.rule2 : C.mute;
+    x.fillRect(px, py, 1, len);
+  }
+  x.globalAlpha = 1;
+}
+
+// ---------- the floor ----------
+function floor(t) {
+  const th = 30;
+  poly([P(-N, N, 0), P(N, N, 0), P(N, N, -th), P(-N, N, -th)], '#0b0a09', C.rule2);
+  poly([P(N, -N, 0), P(N, N, 0), P(N, N, -th), P(N, -N, -th)], '#11100d', C.rule2);
+  poly([P(-N, -N), P(N, -N), P(N, N), P(-N, N)], '#13120f', C.rule2, 1.5);
+  for (let i = -N + 1; i < N; i++) {
+    line(P(i, -N), P(i, N), C.rule);
+    line(P(-N, i), P(N, i), C.rule);
+  }
+  for (let i = -N + 1; i < N; i++)
+    for (let j = -N + 1; j < N; j++) {
+      const tw = hash(i * 31 + j * 7);
+      const on = tw > 0.9 && Math.sin(TAU * (t / 4) + tw * 40) > 0.6;
+      cross(P(i, j), 3, on ? K(0.8) : C.rule2);
+    }
+  // The front edge is a ruler, and a playhead walks it once a loop.
+  for (let g = -N; g <= N + 1e-6; g += 0.25) {
+    const major = Math.abs(g - Math.round(g)) < 1e-6;
+    line(P(g, N, 0), P(g, N, major ? -11 : -5), major ? C.mute : C.rule2);
+    if (major && g < N && Math.round(g) % 2 === 1)
+      onPlane('fy', P(g + 0.06, N, -24), () => {
+        x.font = '17px Pix';
+        x.fillStyle = C.mute;
+        x.fillText(`00:00:${String(Math.round(g) + 5).padStart(2, '0')}:00`, 0, 0);
+      });
+  }
+  const ph = -N + (2 * N * t) / T;
+  line(P(ph, N, 2), P(ph, N, -th), C.key, 2);
+  poly([P(ph - 0.1, N + 0.05, 0), P(ph + 0.1, N + 0.05, 0), P(ph, N + 0.05, -8)], C.key);
+  onPlane('fx', P(N, 2.5, -11), () => {
+    x.font = '20px Pix';
+    x.fillStyle = C.mute;
+    x.fillText('INGEST · LOG · CUT · RIPPLE · MIX · CAPTION · DELIVER', 0, 0);
+  });
+}
+
+function paths(t) {
+  for (const k in PATHS) {
+    const p = PATHS[k];
+    const g = glowOf(since(t, k) + ARRIVE - SEND, 1.4);
+    for (let i = 1; i < p.length; i++) {
+      line(P(p[i - 1][0], p[i - 1][1]), P(p[i][0], p[i][1]), g > 0 ? K(0.25 + 0.6 * g) : C.rule2, 1.5, [6, 6], -t * 40);
+    }
+    for (let i = 1; i < p.length - 1; i++) cross(P(p[i][0], p[i][1]), 5, K(0.7));
+  }
+}
+
+function tags(t) {
+  const a = (st) => glowOf(since(t, st), 2.2);
+  tag(-2.9, 4.7, 'x', 'INGEST', a('imp'));
+  tag(-3.55, 1.5, 'y', 'TRANSCRIBE', a('tr'));
+  tag(1.05, -2.0, 'x', 'ROUGH CUT  →  RIPPLE', a('tl'));
+  tag(0.2, -2.6, 'y', 'LOWER THIRD', a('mo'));
+  tag(4.45, 2.1, 'y', 'MIX  −14 LUFS', a('au'));
+  tag(2.35, 4.35, 'x', 'RENDER  →  DELIVER', a('re'));
+}
+
+// ---------- stations ----------
+function importStation(t) {
+  const u = since(t, 'imp');
+  box(-2.9, 2.9, 1.8, 1.4, 4, 0, { top: '#191814', left: '#0d0c0a', right: '#121110', stroke: C.rule2 });
+  const sink = 12 * eio((u - 0.8) / 1.0);
+  const fallZ = 4 + 4 * 12 - sink + 130 * (1 - eo(u / 0.45));
+  const fresh = u < 4 ? 1 - u / 4 : 0;
+  const drawCard = (z, fr, top, alpha = 1) => {
+    x.globalAlpha = alpha;
+    box(-2.8, 3.0, 1.6, 1.2, 8, z, {
+      top: '#22201b', left: '#121110', right: '#191814',
+      stroke: fr > 0 ? K(0.3 + 0.7 * fr) : C.rule2, zmin: 4, lw: 1.2,
+    });
+    if (top && z >= 4) {
+      x.fillStyle = C.bg;
+      for (let k = 0; k < 9; k++) {
+        const a = P(-2.7 + k * 0.17, 3.08, z + 8), b = P(-2.7 + k * 0.17, 4.12, z + 8);
+        x.fillRect(a[0] - 2, a[1] - 1, 4, 3);
+        x.fillRect(b[0] - 2, b[1] - 1, 4, 3);
+      }
+    }
+    x.globalAlpha = 1;
+  };
+  for (let j = 0; j < 4; j++) drawCard(4 + j * 12 - sink, 0, j === 3 && u < 0.05);
+  // The newest card falls in when the call lands, then the stack sinks one card.
+  if (u < 11.95) drawCard(fallZ, fresh, true, cl(u / 0.12));
+}
+
+function transcriptStation(t) {
+  const u = since(t, 'tr');
+  box(-4.3, -1.75, 0.4, 3.5, 6, 0, { top: '#191814', left: '#0d0c0a', right: '#121110', stroke: C.rule2 });
+  box(-4.14, -1.6, 0.12, 3.2, 150, 6, { top: '#2a2722', left: '#1a1915', right: '#141310', stroke: C.rule2 });
+  const fx = -4.02;
+  const s = (t * 26) / T;
+  const R0 = Math.floor(s);
+  const act = glowOf(u, 3);
+  for (let r = -1; r < 12; r++) {
+    const R = R0 + r;
+    const z = 140 - (R - s) * 12;
+    if (z < 20 || z > 146) continue;
+    const edge = cl((z - 20) / 14) * cl((146 - z) / 14);
+    let g = -1.42, w = 0;
+    const words = [];
+    while (true) {
+      const ww = 0.12 + hash(md(R, 26) * 13 + w) * 0.38;
+      if (g + ww > 1.42) break;
+      words.push([g, g + ww]);
+      g += ww + 0.09;
+      w++;
+    }
+    const reading = Math.abs(z - 84) < 6;
+    words.forEach(([a, b], i) => {
+      const hi = reading && i === md(Math.floor(t * 5), words.length);
+      x.globalAlpha = edge;
+      poly([P(fx, a, z), P(fx, b, z), P(fx, b, z - 5), P(fx, a, z - 5)], hi ? C.key : I(0.16 + (reading ? 0.2 : 0) + act * 0.12));
+    });
+  }
+  x.globalAlpha = 1;
+  // While the analysis runs, a scan line reads down the panel.
+  if (u < 2.2) {
+    const z = lerp(146, 22, eio(u / 2.2));
+    x.shadowColor = C.key; x.shadowBlur = 12;
+    line(P(fx, -1.6, z), P(fx, 1.6, z), K(0.9), 2);
+    x.shadowBlur = 0;
+  }
+}
+
+function timelineStation(t) {
+  const u = since(t, 'tl');
+  box(1, -4.4, 3.6, 2.0, 10, 0, { top: '#171612', left: '#0e0d0b', right: '#12110e', stroke: C.rule2 });
+  const LANES = { V2: [-4.25, -3.8], V1: [-3.65, -3.2], A1: [-3.05, -2.55] };
+  for (const k in LANES) {
+    const [a, b] = LANES[k];
+    poly([P(1.05, a, 10), P(4.55, a, 10), P(4.55, b, 10), P(1.05, b, 10)], '#1c1b17');
+  }
+  const z = 10;
+  const clip = (g0, g1, lane, s, alpha = 1, dz = 0) => {
+    const [a, b] = LANES[lane];
+    x.globalAlpha = alpha;
+    box(g0, a, g1 - g0, b - a, 7, z + dz, s);
+    x.globalAlpha = 1;
+  };
+  const vid = { top: '#3a362f', left: '#1d1b17', right: '#28251f' };
+  const aud = { top: '#26241e', left: '#151410', right: '#1b1a16' };
+  // clip.add drops the new clip into the gap, then the clip after it ripples left to join.
+  const drop = eo(u / 0.45);
+  const join = eio((u - 0.55) / 0.4);
+  const undo = eio((u - 6.0) / 0.8);
+  const bx = lerp(3.25, 2.95, join * (1 - undo));
+  const fresh = u < 6 ? cl(1 - (u - 1) / 4, 0.25, 1) : 0.25;
+  clip(1.12, 2.15, 'V1', vid);
+  clip(1.12, 2.15, 'A1', aud);
+  clip(bx, Math.min(4.5, bx + 1.3), 'V1', vid);
+  clip(bx, Math.min(4.5, bx + 1.3), 'A1', aud);
+  const nAlpha = 1 - undo;
+  if (nAlpha > 0.01) {
+    const dz = 120 * (1 - drop) + 40 * undo;
+    clip(2.15, 2.95, 'V1', { ...vid, stroke: K(fresh), lw: 1.5 }, nAlpha, dz);
+    clip(2.15, 2.95, 'A1', { ...aud, stroke: K(fresh * 0.8) }, nAlpha, dz);
+  }
+  // Seams flash when they join.
+  if (u > 0.9 && u < 1.6) {
+    const a = 1 - (u - 0.9) / 0.7;
+    x.shadowColor = C.key; x.shadowBlur = 14;
+    for (const g of [2.15, 2.95]) line(P(g, -3.7, 19), P(g, -2.5, 19), K(a), 2.5);
+    x.shadowBlur = 0;
+  }
+  // Waveform ticks on the audio clips.
+  for (let g = 1.18; g < 4.45; g += 0.07) {
+    const h = 2 + 5 * Math.abs(Math.sin(g * 9.1) * Math.cos(g * 3.3));
+    const p = P(g, -2.8, 17.5);
+    x.fillStyle = I(0.35);
+    x.fillRect(p[0], p[1] - h, 1.5, h * 2);
+  }
+  // V2 carries captions, written as the playhead passes.
+  const ph = 1.1 + 3.4 * (md(t, 3) / 3);
+  for (let g = 1.15; g < 4.4; g += 0.32) {
+    if (g > ph) break;
+    const cur = ph - g < 0.32;
+    clip(g, g + 0.24, 'V2', { top: cur ? C.key : '#4a463d', left: '#1d1b17', right: '#28251f' }, 1, -3);
+  }
+  x.shadowColor = C.key; x.shadowBlur = 8;
+  line(P(ph, -4.4, 18), P(ph, -2.4, 18), C.key, 2);
+  line(P(ph, -4.4, 10), P(ph, -4.4, 46), C.key, 2);
+  poly([P(ph, -4.4, 46), P(ph + 0.08, -4.48, 54), P(ph - 0.08, -4.32, 54)], C.key);
+  x.shadowBlur = 0;
+}
+
+function hub(t) {
+  let g = 0;
+  for (let k = 0; k < 6; k++) {
+    const u = md(t - k * 2, T);
+    g = Math.max(g, u < 0.45 ? 1 - u / 0.45 : 0, u > HOME && u < UP + 0.3 ? 1 - (u - HOME) / 0.6 : 0);
+  }
+  if (g > 0) { x.shadowColor = C.key; x.shadowBlur = 8 * g; }
+  box(-1, -1, 2, 2, 34, 0, { top: '#1c1a16', left: '#0f0e0c', right: '#151410', stroke: g > 0 ? K(0.3 + 0.6 * g) : C.rule2, lw: 1.5 });
+  x.shadowBlur = 0;
+  poly([P(-0.72, -0.72, 34), P(0.72, -0.72, 34), P(0.72, 0.72, 34), P(-0.72, 0.72, 34)], null, K(0.35 + 0.5 * g), 1.5);
+  for (let k = 0; k < 16; k++) {
+    const side = Math.floor(k / 4), f = (k % 4) / 4 + 0.125;
+    const q = [[-0.86 + 1.72 * f, -0.86], [0.86, -0.86 + 1.72 * f], [0.86 - 1.72 * f, 0.86], [-0.86, 0.86 - 1.72 * f]][side];
+    const lit = md(Math.floor(t * 4) - k, 16) < 3;
+    const p = P(q[0], q[1], 34);
+    x.fillStyle = lit ? C.key : C.rule2;
+    x.fillRect(p[0] - 2, p[1] - 1, 4, 3);
+  }
+  onPlane('x', P(-0.47, 0.2, 34), () => {
+    x.font = '50px Pix';
+    x.fillStyle = I(0.9);
+    x.fillText('MCP', 0, 0);
+  });
+  onPlane('fy', P(-0.86, 1, 9), () => { x.font = '19px Pix'; x.fillStyle = C.mute; x.fillText('62 TOOLS', 0, 0); });
+  onPlane('fx', P(1, 0.86, 9), () => { x.font = '19px Pix'; x.fillStyle = C.mute; x.fillText('ONE SERVER', 0, 0); });
+}
+
+// The agent is whichever client is connected: Kazi, then the others, three seconds each.
+const AGENTS = [{ n: 'KAZI', key: true }, { n: 'CLAUDE' }, { n: 'CURSOR' }, { n: 'CHATGPT' }];
+const agentAt = (t) => AGENTS[Math.floor(md(t, T) / 3) % 4];
+
+function agent(t) {
+  const zc = 300 + 8 * Math.sin((TAU * t) / 3);
+  const hh = 66, r = 0.78, th = (TAU * t) / 6, rr = 1.4;
+  let g = 0;
+  for (let k = 0; k < 6; k++) {
+    const u = md(t - k * 2, T);
+    g = Math.max(g, u < 0.4 ? 1 - u / 0.4 : 0);
+  }
+  // Beam to the server: calls go down it, results come back up.
+  line(P(0, 0, 36), P(0, 0, zc - hh - 6), C.rule2, 1.5, [5, 5], t * 40);
+  const shadow = P(0, 0, 34);
+  x.fillStyle = 'rgba(0,0,0,0.3)';
+  x.beginPath(); x.ellipse(shadow[0], shadow[1], 40, 20, 0, 0, TAU); x.fill();
+  const ring = (front) => {
+    for (let k = 0; k < 3; k++) {
+      const a = (TAU * t) / 4 + (k * TAU) / 3;
+      const cx = Math.cos(a) * rr, cy = Math.sin(a) * rr;
+      if ((cx + cy > 0) !== front) continue;
+      const p = P(cx, cy, zc - 4);
+      x.fillStyle = C.ink;
+      x.fillRect(p[0] - 3, p[1] - 3, 6, 6);
+    }
+  };
+  const ringPts = [];
+  for (let k = 0; k <= 64; k++) { const a = (k / 64) * TAU; ringPts.push(P(Math.cos(a) * rr, Math.sin(a) * rr, zc - 4)); }
+  x.beginPath(); ringPts.forEach((p, i) => {
+    if (i) x.lineTo(p[0], p[1]);
+    else x.moveTo(p[0], p[1]);
+  });
+  x.setLineDash([3, 6]); x.strokeStyle = C.rule2; x.lineWidth = 1.2; x.stroke(); x.setLineDash([]);
+  ring(false);
+  const top = P(0, 0, zc + hh), bot = P(0, 0, zc - hh);
+  const Q = [], ang = [];
+  for (let k = 0; k < 4; k++) { const a = th + (k * TAU) / 4; Q.push(P(Math.cos(a) * r, Math.sin(a) * r, zc)); ang.push(a); }
+  const faces = [];
+  for (let k = 0; k < 4; k++) {
+    const k2 = (k + 1) % 4, mid = ang[k] + TAU / 8;
+    faces.push({ pts: [top, Q[k], Q[k2]], mid, up: true });
+    faces.push({ pts: [bot, Q[k2], Q[k]], mid, up: false });
+  }
+  const who = agentAt(t);
+  if (g > 0) { x.shadowColor = who.key ? C.key : C.ink; x.shadowBlur = 16 * g; }
+  for (const f of faces) {
+    const [a, b, c] = f.pts;
+    const area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    if (area > 0) continue;
+    const l = 0.5 + 0.5 * Math.cos(f.mid - Math.PI * 0.75);
+    const v = Math.round(lerp(22, f.up ? 84 : 52, l));
+    poly(f.pts, `rgb(${v},${v - 3},${v - 9})`, who.key ? K(0.6 + 0.4 * g) : C.ink, 1.5);
+  }
+  x.shadowBlur = 0;
+  ring(true);
+  // Name plate: the new client's name rolls up over the old one.
+  const lp = P(0, 0, zc + hh + 30);
+  const su = md(t, 3), sw = eo(su / 0.3);
+  const prev = AGENTS[md(Math.floor(md(t, T) / 3) - 1, 4)];
+  x.font = '30px Pix';
+  const w = lerp(x.measureText(prev.n).width, x.measureText(who.n).width, sw) + 24;
+  x.fillStyle = 'rgba(14,13,11,0.94)';
+  x.fillRect(lp[0] - w / 2, lp[1] - 25, w, 34);
+  x.strokeStyle = who.key ? K(0.9) : C.rule2; x.lineWidth = 1.5;
+  x.strokeRect(lp[0] - w / 2, lp[1] - 25, w, 34);
+  x.save();
+  x.beginPath(); x.rect(lp[0] - w / 2, lp[1] - 25, w, 34); x.clip();
+  for (const [a, dy, al] of [[prev, -34 * sw, 1 - sw], [who, 34 * (1 - sw), 1]]) {
+    if (al <= 0) continue;
+    x.globalAlpha = al;
+    x.fillStyle = a.key ? C.key : C.ink;
+    x.fillText(a.n, lp[0] - x.measureText(a.n).width / 2, lp[1] + dy);
+  }
+  x.restore();
+  x.globalAlpha = 1;
+  x.font = '18px Pix';
+  x.fillStyle = C.mute;
+  x.fillText('YOUR AGENT', lp[0] - x.measureText('YOUR AGENT').width / 2, lp[1] - 34);
+}
+
+function motionStation(t) {
+  const u = since(t, 'mo');
+  box(-2.45, -3.42, 2.5, 0.32, 6, 0, { top: '#191814', left: '#0d0c0a', right: '#121110', stroke: C.rule2 });
+  const act = u < 4.6;
+  box(-2.4, -3.32, 2.4, 0.12, 124, 6, { top: '#2a2722', left: '#141310', right: '#1a1915', stroke: act && u < 2 ? K(1 - (u / 2) * 0.6) : C.rule2 });
+  const fy = -3.2, F = (g, z) => P(g + 1.6, fy, z);
+  // Safe-area corners
+  for (const [g, z, dg, dz] of [[-3.85, 120, 0.2, -12], [-1.75, 120, -0.2, -12], [-3.85, 14, 0.2, 12], [-1.75, 14, -0.2, 12]]) {
+    line(F(g, z), F(g + dg, z), C.mute, 1.2);
+    line(F(g, z), F(g, z + dz), C.mute, 1.2);
+  }
+  if (act) {
+    const fade = 1 - cl((u - 4) / 0.6);
+    x.globalAlpha = fade;
+    const b1 = eo(u / 0.7), b2 = eo((u - 0.25) / 0.7), b3 = eo((u - 0.5) / 0.6);
+    poly([F(-3.7, 54), F(-3.7 + 1.55 * b1, 54), F(-3.7 + 1.55 * b1, 40), F(-3.7, 40)], C.key);
+    poly([F(-3.7, 34), F(-3.7 + 1.0 * b2, 34), F(-3.7 + 1.0 * b2, 28), F(-3.7, 28)], I(0.75));
+    poly([F(-3.7, 24), F(-3.7 + 0.65 * b3, 24), F(-3.7 + 0.65 * b3, 20), F(-3.7, 20)], I(0.4));
+    const bz = 92 + 14 * Math.abs(Math.sin(u * 4)) * (1 - cl(u / 2.5));
+    const pc = F(-2.25, bz);
+    x.globalAlpha = fade * b1;
+    cross(pc, 12, C.ink, 3);
+    x.globalAlpha = 1;
+  } else {
+    const p = F(-2.8, 70);
+    x.globalAlpha = 0.3 + 0.2 * Math.sin(TAU * t);
+    cross(p, 10, C.mute, 2);
+    x.globalAlpha = 1;
+  }
+}
+
+function audioStation(t) {
+  const u = since(t, 'au');
+  box(3.35, -1.55, 0.95, 3.6, 5, 0, { top: '#191814', left: '#0d0c0a', right: '#121110', stroke: C.rule2 });
+  const k = u < 3.2 ? eio(u / 0.5) * (1 - eio((u - 2.6) / 0.6)) : 0;
+  const target = 40;
+  const cols = [];
+  for (let row = 0; row < 2; row++)
+    for (let i = 0; i < 15; i++) {
+      const gy = -1.42 + i * 0.23, gx = 3.5 + row * 0.42;
+      const raw = Math.abs(Math.sin(TAU * (t / 1.5) + i * 0.55 + row * 0.9)) * (0.55 + 0.45 * Math.sin(TAU * (t / 6) + i * 1.3 + row));
+      let h = 8 + 56 * raw;
+      h = lerp(h, target - 8 + 10 * raw, k);
+      cols.push({ gx, gy, h });
+    }
+  cols.sort((a, b) => a.gx + a.gy - (b.gx + b.gy));
+  for (const c of cols) {
+    const hot = k > 0.3 && c.h > target - 14;
+    box(c.gx, c.gy, 0.13, 0.13, c.h, 5, { top: hot ? C.key : '#b9b2a4', left: '#3a362f', right: '#565148' });
+  }
+  if (k > 0.01) {
+    x.globalAlpha = k;
+    x.shadowColor = C.key; x.shadowBlur = 10;
+    line(P(3.42, -1.5, target + 5), P(3.42, 2.0, target + 5), C.key, 2);
+    line(P(4.0, -1.5, target + 5), P(4.0, 2.0, target + 5), K(0.6), 1.5);
+    x.shadowBlur = 0;
+    x.globalAlpha = 1;
+  }
+}
+
+function renderStation(t) {
+  const u = since(t, 're');
+  box(2.4, 2.4, 1.6, 1.6, 6, 0, { top: '#191814', left: '#0d0c0a', right: '#121110', stroke: C.rule2 });
+  const p = u < 1.6 ? u / 1.6 : u < 3.2 ? 1 : u < 3.7 ? 1 - (u - 3.2) / 0.5 : 0;
+  const flash = u > 1.6 && u < 2.1 ? 1 - (u - 1.6) / 0.5 : 0;
+  for (let i = 0; i < 7; i++) {
+    const on = i < p * 7 - 1e-6;
+    if (flash && i === 6) { x.shadowColor = C.key; x.shadowBlur = 14 * flash; }
+    box(2.5, 2.5, 1.4, 1.4, 9, 8 + i * 13, on
+      ? { top: '#2c2a24', left: '#16150f', right: '#1f1d18', stroke: K(0.6), lw: 1.3 }
+      : { top: '#171612', left: '#0e0d0b', right: '#12110e', stroke: C.rule2 });
+    x.shadowBlur = 0;
+  }
+}
+
+// ---------- the factory: raw footage in at the back, finished cuts out at the front ----------
+const IN = { g0: -8, g1: -2.9, gy: 3.6 }, OUT = { g0: 4.0, g1: 9.5, gy: 3.2 };
+const V_IN = (IN.g1 - IN.g0) / T, V_OUT = 0.5;
+// A point on the floor plane, in a frame rotated by th around (cx, cy).
+const L2P = (cx, cy, z, th, u, v) => P(cx + u * Math.cos(th) - v * Math.sin(th), cy + u * Math.sin(th) + v * Math.cos(th), z);
+const rect = (cx, cy, z, th, u0, v0, u1, v1) => [L2P(cx, cy, z, th, u0, v0), L2P(cx, cy, z, th, u1, v0), L2P(cx, cy, z, th, u1, v1), L2P(cx, cy, z, th, u0, v1)];
+function belt(b, v, t) {
+  for (let g = b.g0; g < b.g1 - 1e-6; g += 0.25) {
+    const a = b === OUT ? cl((b.g1 - g) / 2.2) : cl((g - b.g0) / 1.8);
+    x.globalAlpha = a;
+    box(g, b.gy - 0.36, 0.25, 0.72, 7, 0, { top: '#1a1915', left: '#0d0c0a', right: '#121110' });
+  }
+  for (let g = b.g0 + md(v * t, 0.25); g < b.g1; g += 0.25) {
+    const a = b === OUT ? cl((b.g1 - g) / 2.2) : cl((g - b.g0) / 1.8);
+    x.globalAlpha = a;
+    line(P(g, b.gy - 0.36, 7), P(g, b.gy + 0.36, 7), C.rule2, 1);
+  }
+  x.globalAlpha = 1;
+}
+function inBelt(t) {
+  belt(IN, V_IN, t);
+  const L = IN.g1 - IN.g0;
+  for (let i = 0; i < 6; i++) {
+    const g = IN.g0 + md(hash(i + 70) * L + V_IN * t + i * 0.9, L);
+    const a = cl((g - IN.g0) / 1.6) * cl((IN.g1 - g) / 0.5);
+    if (a <= 0) continue;
+    const w = 0.42 + 0.42 * hash(i + 1), d = 0.28 + 0.26 * hash(i + 2);
+    const th = (hash(i + 3) - 0.5) * 1.3 + 0.25 * Math.sin((TAU * t) / 3 + i * 1.7);
+    const cy = IN.gy + (hash(i + 4) - 0.5) * 0.28;
+    const z = 9 + 5 * Math.abs(Math.sin((TAU * t) / 1.5 + i));
+    const torn = hash(i + 5) > 0.45;
+    x.globalAlpha = a;
+    const half = (s, du, dv, dth) => {
+      const t2 = th + dth;
+      poly(rect(g + du, cy + dv, z, t2, s ? 0 : -w / 2, -d / 2, s ? w / 2 : 0, d / 2), '#34312a', C.mute, 1);
+      for (let k = 0; k < 3; k++) {
+        const v0 = -d / 2 + ((k + 0.6) * d) / 3.4;
+        const len = (w / 2 - 0.04) * (0.3 + 0.7 * hash(i * 7 + k + (s ? 9 : 0)));
+        const off = (hash(i * 3 + k) - 0.5) * 0.08;
+        const u0 = (s ? 0.02 : -w / 2 + 0.02) + off;
+        poly(rect(g + du, cy + dv, z, t2, u0, v0, u0 + len, v0 + 0.035), k === 1 ? I(0.55) : I(0.3));
+      }
+    };
+    if (torn) {
+      half(false, 0, 0, 0);
+      half(true, 0.06, 0.05, 0.25);
+    } else {
+      half(false, 0, 0, 0);
+      half(true, 0, 0, 0);
+    }
+  }
+  x.globalAlpha = 1;
+}
+function outBelt(t) {
+  belt(OUT, V_OUT, t);
+  for (let k = -1; k < 6; k++) {
+    const g = OUT.g0 + 0.15 + k + md(V_OUT * t, 1);
+    if (g < OUT.g0) continue;
+    const a = cl((g - OUT.g0) / 0.5) * cl((OUT.g1 - 0.6 - g) / 2.2);
+    if (a <= 0) continue;
+    const lift = 4 * (1 - cl((g - OUT.g0) / 0.6));
+    const z = 9 + lift, w = 0.8, d = 0.48, cx = g + w / 2, cy = OUT.gy;
+    x.globalAlpha = a;
+    box(g, cy - d / 2, w, d, 3, z - 3, { top: '#1f1d19', left: '#121110', right: '#191814', stroke: I(0.75), lw: 1.3 });
+    poly(rect(cx, cy, z, 0, -w / 2 + 0.05, -d / 2 + 0.05, w / 2 - 0.05, d / 2 - 0.05), '#0e0d0b');
+    poly(rect(cx, cy, z, 0, -w / 2 + 0.05, 0.02, w / 2 - 0.05, d / 2 - 0.05), '#2a2722');
+    poly([L2P(cx, cy, z, 0, -0.07, -0.1), L2P(cx, cy, z, 0, 0.1, 0), L2P(cx, cy, z, 0, -0.07, 0.1)], C.key);
+    poly(rect(cx, cy, z, 0, -w / 2 + 0.05, d / 2 - 0.09, -w / 2 + 0.05 + (w - 0.1) * 0.62, d / 2 - 0.06), C.key);
+  }
+  x.globalAlpha = 1;
+}
+
+// ---------- packets ----------
+function packets(t, list) {
+  for (let k = 0; k < 6; k++) {
+    const c = CALLS[k];
+    const u = md(t - k * 2, T);
+    if (u < SEND) {
+      const z = lerp(228, 36, eio(u / SEND));
+      list.push({ d: 0.02, f: () => packet(0, 0, z, 0.2, C.key, 18) });
+    } else if (u < ARRIVE) {
+      const f = eio((u - SEND) / (ARRIVE - SEND));
+      for (let j = 4; j >= 0; j--) {
+        if (f - j * 0.035 < 0) continue;
+        const q = along(c.st, f - j * 0.035);
+        list.push({ d: q[0] + q[1], f: () => { x.globalAlpha = 1 - j * 0.2; packet(q[0], q[1], 2, j ? 0.12 : 0.2, C.key, j ? 0 : 18); x.globalAlpha = 1; } });
+      }
+    } else if (u > BACK && u < HOME) {
+      const f = 1 - eio((u - BACK) / (HOME - BACK));
+      const q = along(c.st, f);
+      list.push({ d: q[0] + q[1], f: () => packet(q[0], q[1], 2, 0.15, C.ink, 10) });
+    } else if (u >= HOME && u < UP) {
+      const z = lerp(36, 228, eio((u - HOME) / (UP - HOME)));
+      list.push({ d: 0.02, f: () => packet(0, 0, z, 0.14, C.ink, 10) });
+    }
+  }
+  // Ambient traffic: smaller calls and results on every route.
+  const keys = Object.keys(PATHS);
+  for (let i = 0; i < 24; i++) {
+    const per = [2, 3, 4, 6][i % 4];
+    let f = md(t / per + hash(i + 40), 1);
+    if (i % 2) f = 1 - f;
+    const q = along(keys[i % 6], f);
+    const a = Math.min(1, f * 6, (1 - f) * 6) * 0.7;
+    list.push({ d: q[0] + q[1], f: () => { x.globalAlpha = a; packet(q[0], q[1], 1, 0.1, i % 2 ? C.ink : C.key); x.globalAlpha = 1; } });
+  }
+}
+
+// ---------- the agent's own view of the session ----------
+function logWindow(t) {
+  const X0 = 64, Y0 = 84, Wd = 510, Hd = 300;
+  x.fillStyle = '#000';
+  x.fillRect(X0 + 6, Y0 + 6, Wd, Hd);
+  x.fillStyle = C.bg2;
+  x.fillRect(X0, Y0, Wd, Hd);
+  x.strokeStyle = C.rule2; x.lineWidth = 1;
+  x.strokeRect(X0 + 0.5, Y0 + 0.5, Wd - 1, Hd - 1);
+  x.fillStyle = C.ink;
+  x.fillRect(X0, Y0, Wd, 30);
+  x.font = '24px Pix';
+  x.fillStyle = C.bg;
+  x.fillText('AGENT', X0 + 12, Y0 + 22);
+  const who = agentAt(t);
+  x.fillStyle = who.key ? '#00742c' : C.bg;
+  x.fillText(`· ${who.n}`, X0 + 74, Y0 + 22);
+  x.fillStyle = C.bg;
+  for (let k = 0; k < 4; k++) x.fillRect(X0 + 180, Y0 + 9 + k * 3, Wd - 296, 1);
+  x.fillStyle = C.key;
+  x.fillText('● MCP', X0 + Wd - 88, Y0 + 22);
+  x.fillRect(X0 + 18, Y0 + 48, 2, 40);
+  x.font = '16px Mono';
+  x.fillStyle = C.ink;
+  x.fillText('Cut the interview to 60 s for LinkedIn.', X0 + 32, Y0 + 63);
+  x.fillText('Captions, a lower third, a clean mix.', X0 + 32, Y0 + 84);
+  const events = [];
+  for (let k = Math.floor(t / 2) - 8; k <= Math.floor(t / 2); k++) {
+    const c = CALLS[md(k, 6)];
+    events.push({ time: k * 2, out: true, c });
+    events.push({ time: k * 2 + UP, out: false, c });
+  }
+  const past = events.filter((e) => e.time <= t).sort((a, b) => a.time - b.time).slice(-8);
+  const latest = past[past.length - 1];
+  const sp = eo((t - latest.time) / 0.3);
+  const lh = 23, bottom = Y0 + Hd - 18;
+  x.save();
+  x.beginPath(); x.rect(X0, Y0 + 104, Wd, Hd - 110); x.clip();
+  past.forEach((e, i) => {
+    const y = bottom - (past.length - 1 - i) * lh + (1 - sp) * lh;
+    x.globalAlpha = i === past.length - 1 ? sp : 1;
+    x.font = '16px Mono';
+    let xx = X0 + 20;
+    if (e.out) {
+      x.fillStyle = C.mute; x.fillText('→', xx, y); xx += 22;
+      x.fillStyle = C.key; x.fillText(e.c.fn, xx, y); xx += x.measureText(e.c.fn).width + 10;
+      x.fillStyle = C.mute; x.fillText(e.c.arg, xx, y);
+    } else {
+      x.fillStyle = C.mute; x.fillText('←', xx, y); xx += 22;
+      x.fillStyle = I(0.82); x.fillText(e.c.ret, xx, y);
+    }
+  });
+  x.restore();
+  x.globalAlpha = 1;
+  // cursor
+  if (Math.floor(t * 2) % 2 === 0) { x.fillStyle = C.ink; x.fillRect(X0 + 20, bottom + 6, 9, 2); }
+}
+
+function vignette() {
+  const g = x.createRadialGradient(OX - 160, OY - 20, 560, OX - 160, OY - 20, 1350);
+  g.addColorStop(0, 'rgba(14,13,11,0)');
+  g.addColorStop(1, 'rgba(14,13,11,0.88)');
+  x.fillStyle = g;
+  x.fillRect(0, 0, W, H);
+}
+
+function draw(t) {
+  t = md(t, T);
+  x.setTransform(1, 0, 0, 1, 0, 0);
+  background(t);
+  floor(t);
+  paths(t);
+  tags(t);
+  const list = [
+    { d: -3, f: () => inBelt(t) },
+    { d: 1.6, f: () => importStation(t) },
+    { d: -4.2, f: () => transcriptStation(t) },
+    { d: -0.7, f: () => timelineStation(t) },
+    { d: 0, f: () => hub(t) },
+    { d: 0.05, f: () => agent(t) },
+    { d: -4.4, f: () => motionStation(t) },
+    { d: 4.1, f: () => audioStation(t) },
+    { d: 6.4, f: () => renderStation(t) },
+    { d: 7.5, f: () => outBelt(t) },
+  ];
+  packets(t, list);
+  for (const o of list.sort((a, b) => a.d - b.d)) o.f();
+  vignette();
+  logWindow(t);
+}
+
+window.__ready = Promise.all([document.fonts.load('24px Pix'), document.fonts.load('16px Mono')]).then(() => draw(0));
+window.__seek = (s) => draw(s);
+</script>

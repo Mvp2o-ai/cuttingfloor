@@ -15,6 +15,7 @@ import {
   sample,
   span,
   TimelineStore,
+  ticksPerFrame,
   timelineIdOf,
   toView,
   transformAt,
@@ -899,6 +900,28 @@ describe('nested timelines', () => {
     expect(toView('tl_x', fromView(view, resolve))).toEqual({ ...view, parent: null });
   });
 
+  it('nests only timelines of the same shape, and says how to place another shape', () => {
+    const store: Record<string, TimelineDoc> = {
+      tl_00000000000000000000000000000001: inner(),
+    };
+    const tall = { ...seq, width: seq.height, height: seq.width };
+    expect(() =>
+      nestIn(newTimeline('t', tall, { video: 1, audio: 1 }), store, {
+        tool: 'clip.add',
+        args: { track_id: 't1', nested_timeline_id: 'tl_00000000000000000000000000000001' },
+      }),
+    ).toThrow(/different shape/);
+    // Same shape at another size nests; reshaping the parent afterwards is refused.
+    const half = { ...seq, width: seq.width / 2, height: seq.height / 2 };
+    const { doc } = nestIn(newTimeline('t', half, { video: 1, audio: 1 }), store, {
+      tool: 'clip.add',
+      args: { track_id: 't1', nested_timeline_id: 'tl_00000000000000000000000000000001' },
+    });
+    expect(() => edit(doc, { tool: 'timeline.set_sequence', args: { sequence: tall } })).toThrow(
+      /different shape/,
+    );
+  });
+
   it('flattens nesting, edits compound clips like any clip, and drops what is no longer used', () => {
     const store: Record<string, TimelineDoc> = { tl_00000000000000000000000000000001: inner() };
     store.tl_00000000000000000000000000000002 = nestIn(start(), store, {
@@ -1021,7 +1044,7 @@ describe('transitions', () => {
         tool: 'transition.add',
         args: { clip_id: 'c4', kind: 'dissolve', duration_frames: 10, mode: 'handles' },
       }),
-    ).toThrow(/no source past its end/);
+    ).toThrow(/too little source past its end/);
   });
 
   it('takes crossfades on audio only, and needs touching clips', () => {
@@ -1038,6 +1061,32 @@ describe('transitions', () => {
         args: { clip_id: 'c4', kind: 'dissolve', duration_frames: 10 },
       }),
     ).toThrow(/no cut/);
+  });
+
+  it('shortens a transition a speed change leaves short of source, instead of dropping it', () => {
+    // An overlap transition trims each clip by half its length to make handles; speeding the
+    // second clip up then needs more source before its start than those handles hold.
+    const placed = edit(
+      start(),
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 200, out: 250 } } },
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 0, out: 50 } } },
+    );
+    const [a, b] = [placed.results[0]?.clip_id ?? '', placed.results[1]?.clip_id ?? ''];
+    const withTransition = edit(placed.doc, {
+      tool: 'transition.add',
+      args: { clip_id: a, kind: 'dip_to_black', duration_frames: 12 },
+    });
+    const id = withTransition.results[0]?.clip_ids?.[0] ?? '';
+    const faster = edit(withTransition.doc, {
+      tool: 'clip.set_speed',
+      args: { clip_id: b, rate: 1.5 },
+    });
+    expect(faster.outcome.warnings.join('\n')).toMatch(
+      new RegExp(`Transition ${id} shortened from 12 to \\d+ frames`),
+    );
+    const kept = toView('tl_x', faster.doc).tracks[0]?.transitions?.[0];
+    expect(kept?.id).toBe(id);
+    expect((kept?.end ?? 0) - (kept?.start ?? 0)).toBeLessThan(12);
   });
 
   it('drops a transition an edit breaks, and says so', () => {
@@ -1067,6 +1116,25 @@ describe('transitions', () => {
 
 describe('text', () => {
   const textStart = () => newTimeline('t', seq, { video: 2, audio: 0 });
+
+  it('previews a revealed title once it is fully shown', () => {
+    const tpf = ticksPerFrame(seq.fps);
+    const typed = edit(textStart(), {
+      tool: 'title.add',
+      args: {
+        track_id: 't2',
+        text: 'Hi',
+        at_frame: 10,
+        style: { reveal: 'typewriter', reveal_frames: 15 },
+      },
+    });
+    expect(typed.outcome.focus / tpf).toBe(25);
+    const plain = edit(textStart(), {
+      tool: 'title.add',
+      args: { track_id: 't2', text: 'Hi', at_frame: 10 },
+    });
+    expect(plain.outcome.focus / tpf).toBe(10);
+  });
 
   it('adds a styled title and restyles it, with null resetting a field', () => {
     let { doc } = edit(textStart(), {
@@ -1483,6 +1551,34 @@ describe('time and views', () => {
     expect(layout(doc, 0)).toEqual([[60, 90, 0]]);
   });
 
+  it('refuses a loaded caption whose words and text disagree', () => {
+    const { doc } = edit(newTimeline('t', seq, { video: 2, audio: 0 }), {
+      tool: 'caption.add',
+      args: {
+        track_id: 't2',
+        segments: [
+          {
+            start_frame: 0,
+            end_frame: 20,
+            text: 'Hello there',
+            words: [
+              { text: 'Hello', start_frame: 0, end_frame: 10 },
+              { text: 'there', start_frame: 10, end_frame: 20 },
+            ],
+          },
+        ],
+      },
+    });
+    const view = toView('tl_x', doc);
+    const caption = view.tracks[1]?.clips[0] as { text: string; words: Array<{ text: string }> };
+    caption.text = 'HELLO THERE';
+    expect(() => fromView(view, resolve)).toThrow(
+      /words spell "Hello there" but its text is "HELLO THERE"/,
+    );
+    for (const w of caption.words) w.text = w.text.toUpperCase();
+    expect(() => fromView(view, resolve)).not.toThrow();
+  });
+
   it('round-trips through the view and reports a structural diff', () => {
     const { doc } = edit(
       start(),
@@ -1505,6 +1601,17 @@ describe('time and views', () => {
     });
     const changed = diff(back, next);
     expect(changed.filter((c) => c.change === 'removed')).toHaveLength(2);
+    // Added and modified clips say where they now sit.
+    const moved = edit(back, {
+      tool: 'clip.move',
+      args: { clip_id: view.tracks[0]?.clips[1]?.id ?? '', to_frame: 100 },
+    });
+    expect(diff(back, moved.doc).find((c) => c.type === 'clip')).toMatchObject({
+      change: 'modified',
+      track_id: 't1',
+      start: 100,
+      end: 140,
+    });
     expect(() => fromView(view, () => undefined)).toThrow(/not available/);
   });
 });

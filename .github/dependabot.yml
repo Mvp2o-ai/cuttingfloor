@@ -3,6 +3,7 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly }
+    target-branch: develop
     groups:
       mcp:
         patterns: ['@modelcontextprotocol/*']
@@ -20,11 +21,13 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    target-branch: develop
   # Moves the pinned base image digest (Node and the Debian FFmpeg/MLT engines). Node stays on
   # the 24 LTS line; majors move by hand.
   - package-ecosystem: docker
     directory: /
     schedule: { interval: weekly }
+    target-branch: develop
     ignore:
       - dependency-name: node
         update-types: ['version-update:semver-major']

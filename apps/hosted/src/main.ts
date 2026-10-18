@@ -1,10 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { configFromEnv, Runtime } from '@cuttingfloor/server';
+import { AccessCheck } from './access.ts';
 import { createHttpServer, parseApiKeys } from './http.ts';
+import { discoverAuthorizationServer, JwtTokenVerifier } from './oauth.ts';
 
 // `cuttingfloor serve`: the long-running HTTP node. Local mode (compose) is one user on
-// loopback; hosted mode requires bearer API keys and takes provider keys per tenant.
+// loopback; hosted mode requires bearer API keys or OAuth and takes provider keys per tenant.
 const config = configFromEnv();
 const port = Number(process.env.PORT ?? 8787);
 // 0.0.0.0 inside the container; compose publishes it on the host's loopback only.
@@ -17,25 +19,74 @@ const apiKeys = parseApiKeys(
       () => undefined,
     )),
 );
-if (config.mode === 'hosted' && apiKeys.size === 0) {
+const publicUrl = process.env.CUTTINGFLOOR_PUBLIC_URL?.replace(/\/$/, '');
+const issuer = process.env.CUTTINGFLOOR_OAUTH_ISSUER;
+if (config.mode === 'hosted' && apiKeys.size === 0 && !issuer) {
   process.stderr.write(
-    'Hosted mode needs CUTTINGFLOOR_API_KEYS (owner:key,...) or the cuttingfloor_api_keys secret\n',
+    'Hosted mode needs CUTTINGFLOOR_OAUTH_ISSUER, or CUTTINGFLOOR_API_KEYS (owner:key,...) or the cuttingfloor_api_keys secret\n',
   );
   process.exit(1);
 }
+// Download links are built from it, and it names this server to the authorization server.
+if (config.mode === 'hosted' && !publicUrl) {
+  process.stderr.write(
+    'Hosted mode needs CUTTINGFLOOR_PUBLIC_URL, the https address clients reach this server at (download links and the OAuth resource are built from it)\n',
+  );
+  process.exit(1);
+}
+// MCP authorization: this server is the OAuth resource at /mcp; users sign in at the issuer.
+const oauth =
+  config.mode === 'hosted' && issuer && publicUrl
+    ? {
+        verifier: new JwtTokenVerifier(
+          await discoverAuthorizationServer(issuer).catch((error: Error) => {
+            process.stderr.write(`oauth: ${error.message}\n`);
+            process.exit(1);
+          }),
+        ),
+        resource: new URL(`${publicUrl}/mcp`),
+      }
+    : undefined;
+// Registration settings change at the authorization server; it caches its metadata five minutes.
+if (oauth && issuer)
+  setInterval(() => {
+    discoverAuthorizationServer(issuer).then(
+      (metadata) => oauth.verifier.update(metadata),
+      (error: Error) => process.stderr.write(`oauth: ${error.message}\n`),
+    );
+  }, 300_000).unref();
+
+// Trial and plan checks for signed-in users: WorkOS holds the account, Stripe the subscription.
+const access =
+  oauth && process.env.WORKOS_API_KEY && process.env.STRIPE_SECRET_KEY
+    ? new AccessCheck({
+        workosKey: process.env.WORKOS_API_KEY,
+        stripeKey: process.env.STRIPE_SECRET_KEY,
+        accountUrl:
+          process.env.CUTTINGFLOOR_ACCOUNT_URL ?? 'https://cuttingfloor-site.vercel.app/account',
+      })
+    : undefined;
+if (oauth && !access)
+  process.stderr.write(
+    'access: WORKOS_API_KEY or STRIPE_SECRET_KEY unset; every sign-in may work\n',
+  );
 
 const runtime = new Runtime(config);
 await runtime.start();
-// Hosted provider keys are per tenant and never come from this process's environment.
+// Hosted, the server's own TypeSafe key answers media.analyze look for every account; no other
+// provider key comes from this process's environment.
 const credentials = new LocalCredentialStore(
-  config.mode === 'local' ? process.env : {},
+  config.mode === 'local' ? process.env : { TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY },
   config.mode === 'local',
 );
 const server = createHttpServer({
   runtime,
   credentials,
   ...(config.mode === 'hosted' ? { apiKeys } : {}),
+  ...(oauth ? { oauth } : {}),
+  ...(access ? { access: (owner: string) => access.require(owner) } : {}),
 });
+if (oauth) process.stderr.write(`oauth: sign-in at ${issuer} for ${oauth.resource}\n`);
 
 server.listen(port, host, () => {
   process.stderr.write(

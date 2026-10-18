@@ -8,12 +8,13 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { startMotionWorker } from '@cuttingfloor/motion';
-import { Runtime } from '@cuttingfloor/server';
+import { createServer, Runtime } from '@cuttingfloor/server';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import {
   createTaskSessionFromClient,
   resultFromTaskOutcome,
 } from '@modelcontextprotocol/ext-tasks/client';
+import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHttpServer } from '../src/http.ts';
 
@@ -1070,6 +1071,83 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(Object.values(view.nested)[0]?.duration).toBe(50);
     }, 120_000);
 
+    it('reports export progress while it renders, not only at the end', async () => {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'slow',
+        sequence: { width: 1920, height: 1080, fps: { num: 25, den: 1 } },
+      });
+      const slow = await ok<{ timeline_id: string }>(client, 'edit.batch', {
+        timeline_id,
+        preview: 'none',
+        ops: [
+          { tool: 'clip.add', args: { track_id: 't1', media_id: media.av } },
+          { tool: 'clip.add', args: { track_id: 't1', media_id: media.av } },
+          { tool: 'clip.add', args: { track_id: 't1', media_id: media.av } },
+          { tool: 'filter.add', args: { timeline: true, name: 'blur', params: { radius: 0.02 } } },
+        ],
+      });
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: slow.timeline_id,
+        preset: 'master_prores_422hq',
+        filename: 'progress-check',
+      });
+      const seen: number[] = [];
+      for (;;) {
+        const view = await ok<{ status: string; progress?: number }>(client, 'job.get', {
+          job_id: started.job_id,
+        });
+        if (view.progress !== undefined) seen.push(view.progress);
+        if (view.status !== 'working') break;
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      expect(seen.some((p) => p > 0 && p < 1)).toBe(true);
+    }, 240_000);
+
+    it('renders a small review of a range that reads back as video for a model to watch', async () => {
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'review',
+        sequence: { width: 1920, height: 1080, fps: { num: 25, den: 1 } },
+      });
+      const cut = await ok<{ timeline_id: string }>(client, 'clip.add', {
+        timeline_id,
+        track_id: 't1',
+        media_id: media.av,
+        preview: 'none',
+      });
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: cut.timeline_id,
+        preset: 'review_h264',
+        range: { start: 0, end: 50 },
+        filename: 'review-check',
+      });
+      const done = await waitJob(started.job_id, 120_000);
+      if (done.error) throw new Error(`export failed: ${JSON.stringify(done.error)}`);
+      expect(done.result).toMatchObject({
+        width: 854,
+        height: 480,
+        fps: 25,
+        duration_seconds: 2,
+        mime_type: 'video/mp4',
+        uri: `video://jobs/${started.job_id}/output`,
+      });
+      // What a host sees: links to the file, marked for the model, one fetchable over https.
+      const got = await client.callTool({ name: 'job.get', arguments: { job_id: started.job_id } });
+      const links = (got.content as Array<Record<string, unknown>>).filter(
+        (c) => c.type === 'resource_link',
+      );
+      expect(links.map((l) => String(l.uri).split(':')[0])).toEqual(['video', 'http']);
+      for (const l of links) {
+        expect(l).toMatchObject({
+          mimeType: 'video/mp4',
+          annotations: { audience: ['assistant'] },
+        });
+      }
+      const read = await client.readResource({ uri: `video://jobs/${started.job_id}/output` });
+      const file = read.contents[0] as { mimeType: string; blob: string };
+      expect(file.mimeType).toBe('video/mp4');
+      expect(Buffer.from(file.blob, 'base64').subarray(4, 8).toString()).toBe('ftyp');
+    }, 120_000);
+
     it('exports what the preview shows', async () => {
       const pip = await withEdit('clip.set_transform', {
         clip_id: 'c4',
@@ -1651,6 +1729,97 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(across).toContain('white');
       expect(colour(await pixel(image, 40, 40))).toBe('green');
     }, 120_000);
+
+    it('shows a title that starts later in the timeline, in frames and in exports', async () => {
+      // libass reads the timeline time, so text placed after frame 0 must be timed there too.
+      const t = await onGreen([
+        {
+          tool: 'title.add',
+          args: {
+            track_id: 't2',
+            text: 'LATER',
+            at_frame: 30,
+            duration_frames: 20,
+            style: { size: 0.25, color: '#FFFFFF', shadow: null, outline: null },
+          },
+        },
+      ]);
+      const whiteAcross = async (image: Buffer) =>
+        (
+          await Promise.all(
+            [440, 520, 600, 680, 760, 840].map(async (x) => colour(await pixel(image, x, 360))),
+          )
+        ).includes('white');
+      expect(await whiteAcross(await frame(t, 10))).toBe(false);
+      expect(await whiteAcross(await frame(t, 30))).toBe(true);
+      expect(await whiteAcross(await frame(t, 40))).toBe(true);
+
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: t,
+        preset: 'master_prores_422hq',
+        filename: 'title-later',
+      });
+      const job = await waitJob(started.job_id);
+      const file = join(
+        env.exportsDir,
+        String((job.result as { file: string }).file)
+          .split('/')
+          .pop() ?? '',
+      );
+      const still = join(env.dir, 'title-later.png');
+      await ff(['-i', file, '-vf', 'select=eq(n\\,40)', '-frames:v', '1', still]);
+      expect(await whiteAcross(await readFile(still))).toBe(true);
+    }, 240_000);
+
+    it('imports a rendered export as media and re-frames it to 9:16', async () => {
+      const wide = await onGreen([
+        {
+          tool: 'title.add',
+          args: {
+            track_id: 't2',
+            text: 'WIDE',
+            at_frame: 0,
+            duration_frames: 50,
+            style: { size: 0.25, shadow: null, outline: null },
+          },
+        },
+      ]);
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: wide,
+        preset: 'master_prores_422hq',
+        filename: 'wide-master',
+      });
+      await waitJob(started.job_id);
+      const imported = await importMedia({ job_id: started.job_id });
+      expect(imported).toMatchObject({ width: 1280, height: 720 });
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'tall',
+        sequence: { width: 720, height: 1280, fps: { num: 25, den: 1 } },
+        tracks: { video: 1, audio: 0 },
+      });
+      const tall = await ok<{ timeline_id: string }>(client, 'edit.batch', {
+        timeline_id,
+        preview: 'none',
+        ops: [
+          { tool: 'clip.add', args: { track_id: 't1', media_id: imported.media_id, av: 'video' } },
+          {
+            tool: 'clip.set_transform',
+            args: { clip_id: { $ref: 'ops[0].clip_id' }, fit: 'cover' },
+          },
+        ],
+      });
+      // Covered: green reaches the top and bottom edges of the tall frame.
+      const res = await call(client, 'render.frames', {
+        timeline_id: tall.timeline_id,
+        frames: [10],
+        layout: 'single',
+        format: 'png',
+        size: 'full',
+      });
+      const image = Buffer.from((res.content[0]?.data as string) ?? '', 'base64');
+      expect(colour(await pixel(image, 20, 20))).toBe('green');
+      expect(colour(await pixel(image, 700, 1260))).toBe('green');
+    }, 240_000);
 
     it('moves a caption highlight from word to word in time', async () => {
       const t = await onGreen([
@@ -2399,6 +2568,53 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     );
 
     it.skipIf(!chromium)(
+      'renders across several browsers as one would, even a page that counts its own frames',
+      async () => {
+        // Three browsers share the 50 frames. The box moves 20 px per animation frame the page
+        // has seen, not per second, so a browser that skipped any frame would draw it short.
+        const before = process.env.CUTTINGFLOOR_MOTION_WORKERS;
+        process.env.CUTTINGFLOOR_MOTION_WORKERS = '3';
+        try {
+          const motion = await create('create.motion', {
+            html: `<canvas id="c" width="1280" height="720"></canvas>
+<script>
+  const ctx = document.getElementById('c').getContext('2d');
+  let seen = 0;
+  function draw() {
+    seen += 1;
+    ctx.clearRect(0, 0, 1280, 720);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(20 * seen, 300, 20, 120);
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+</script>`,
+            duration_seconds: 2,
+            width: 1280,
+            height: 720,
+            fps: 25,
+          });
+          // The page draws once while loading and once more at frame 0, so frame n has seen
+          // n + 2 frames: its box spans x 20(n + 2) to 20(n + 3). 37 and 47 are other browsers'.
+          for (const n of [0, 37, 47]) {
+            const x = 20 * (n + 2);
+            expect(
+              await look(await over(motion.media_id, n), [
+                [x + 10, 360],
+                [x - 30, 360],
+                [x + 50, 360],
+              ]),
+            ).toEqual(['white', 'red', 'red']);
+          }
+        } finally {
+          if (before === undefined) delete process.env.CUTTINGFLOOR_MOTION_WORKERS;
+          else process.env.CUTTINGFLOOR_MOTION_WORKERS = before;
+        }
+      },
+      180_000,
+    );
+
+    it.skipIf(!chromium)(
       'loads bundled libraries from lib/',
       async () => {
         const motion = await create('create.motion', {
@@ -2679,6 +2895,36 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
   });
 
   describe('code', () => {
+    it.skipIf(!chromium)(
+      'says when output was cut and when a rendered page kept its placeholder name',
+      async () => {
+        const started = await ok<{ job_id: string }>(client, 'code.run', {
+          timeout_seconds: 300,
+          script: `
+import { still } from 'cuttingfloor';
+await still({ html: '<b>x</b>', width: 64, height: 64 });
+await still({ html: '<b>y</b>', width: 64, height: 64, out: 'out/named.png' });
+console.log('a'.repeat(40000));
+console.log('the end');
+`,
+        });
+        const done = await waitJob(started.job_id, 300_000);
+        if (done.error) throw new Error(`code.run failed: ${JSON.stringify(done.error)}`);
+        const result = done.result as {
+          stdout: string;
+          outputs: Array<{ name: string }>;
+          warnings?: string[];
+        };
+        expect(result.outputs.map((o) => o.name).sort()).toEqual(['named.png', 'still-1.png']);
+        expect(result.stdout).toMatch(/^\[\d+ earlier characters of stdout cut/);
+        expect(result.stdout).toMatch(/the end\n$/);
+        expect(result.warnings).toEqual([
+          expect.stringMatching(/^still-1\.png kept the placeholder/),
+        ]);
+      },
+      300_000,
+    );
+
     it.skipIf(!chromium)(
       'a script renders a graphic, imports it, cuts to the beat and previews; tools refine and export',
       async () => {
@@ -2972,6 +3218,239 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
     }, 300_000);
   });
 
+  describe('look', () => {
+    const KEY = 'ts-e2e-secret-key';
+    let jev: Server;
+    const seen: Array<{ headers: Record<string, unknown>; body: Record<string, unknown> }> = [];
+    let busy = 1;
+
+    /** Width and height from a JPEG's start-of-frame marker. */
+    function jpegSize(b: Buffer): { width: number; height: number; baseline: boolean } {
+      for (let i = 2; i < b.length; ) {
+        const marker = b[i + 1] as number;
+        const len = b.readUInt16BE(i + 2);
+        if (marker >= 0xc0 && marker <= 0xc2) {
+          return {
+            height: b.readUInt16BE(i + 5),
+            width: b.readUInt16BE(i + 7),
+            baseline: marker === 0xc0,
+          };
+        }
+        i += 2 + len;
+      }
+      throw new Error('no SOF');
+    }
+
+    /** A connection whose server holds the given TypeSafe key, acting as the local owner. */
+    async function keyed(key: string): Promise<Client> {
+      const server = createServer({
+        runtime: env.runtime,
+        credentials: new LocalCredentialStore({ TYPESAFE_API_KEY: key }, false),
+        owner: () => 'local',
+      });
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      await server.connect(a);
+      const c = new Client({ name: 'look', version: '0' });
+      await c.connect(b);
+      return c;
+    }
+
+    beforeAll(async () => {
+      // A stand-in for api.typesafe.ai: rate-limits the first call, refuses a wrong key, and
+      // answers every question with fixed values so the conversion can be checked exactly.
+      jev = createPlainServer(async (req, res) => {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>;
+        seen.push({ headers: req.headers, body });
+        if (req.headers.authorization !== `Bearer ${KEY}`) return res.writeHead(401).end('{}');
+        if (busy-- > 0) return res.writeHead(429).end('{}');
+        const answers: Record<string, unknown> = {};
+        for (const [id, q] of Object.entries(body.questions as Record<string, { type: string }>)) {
+          answers[id] =
+            q.type === 'noul'
+              ? { type: 'noul', noul: 0.81 }
+              : q.type === 'choice'
+                ? {
+                    type: 'choice',
+                    choice: 'bars',
+                    probabilities: { bars: 0.9, none: 0.1 },
+                    confidence: 0.8,
+                  }
+                : q.type === 'score'
+                  ? {
+                      type: 'score',
+                      score: 1.5,
+                      legend: {},
+                      probabilities: { 0: 0, 1: 0.5, 2: 0.5 },
+                      confidence: 0.4,
+                    }
+                  : {
+                      type: 'box',
+                      box: { top: 0.1, bottom: 0.5, left: 0.2, right: 0.6 },
+                      confidence: 0.9,
+                    };
+        }
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            model: 'jev-1.14.0',
+            answers,
+            usage: { input_tokens: 1, output_tokens: 1 },
+          }),
+        );
+      });
+      await new Promise<void>((r) => jev.listen(0, '127.0.0.1', r));
+      (env.runtime.config as { typesafeUrl?: string }).typesafeUrl =
+        `http://127.0.0.1:${(jev.address() as AddressInfo).port}`;
+    });
+    afterAll(() => jev?.close());
+
+    it('asks every question of each sampled frame and keeps the answers with the media', async () => {
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=640x360:rate=25',
+        '-t',
+        '3',
+        '-pix_fmt',
+        'yuv420p',
+        join(env.mediaDir, 'look.mp4'),
+      ]);
+      const media = await importMedia({ path: join(env.mediaDir, 'look.mp4') });
+      const c = await keyed(KEY);
+      const started = await ok<{ job_id: string }>(c, 'media.analyze', {
+        media_id: media.media_id,
+        kind: 'look',
+        every_seconds: 1,
+        with_previous: true,
+        questions: {
+          bars: { type: 'noul', instructions: 'Does `frame` show colour bars?' },
+          kind: {
+            type: 'choice',
+            instructions: 'What fills `frame`?',
+            criteria: { bars: null, none: 'Anything else' },
+          },
+          busy: {
+            type: 'score',
+            instructions: 'How busy is `frame`?',
+            criteria: ['Empty', 'Some', 'Full'],
+          },
+          clock: { type: 'box', instructions: 'the moving clock in `frame`' },
+        },
+      });
+      const done = (await waitJob(started.job_id)) as { result?: Record<string, unknown> };
+      const result = done.result as {
+        frames: number;
+        summary: Record<string, unknown>;
+        look: { frames: Array<{ time: number; answers: Record<string, unknown> }> };
+      };
+      // Times 0, 1 and 2: the first is shown only as `previous`, so two frames are asked.
+      expect(result.frames).toBe(2);
+      expect(result.look.frames.map((f) => f.time)).toEqual([1, 2]);
+      expect(result.look.frames[0]?.answers).toEqual({
+        bars: { noul: 0.81 },
+        kind: { choice: 'bars', probabilities: { bars: 0.9, none: 0.1 }, confidence: 0.8 },
+        busy: { score: 1.5, probabilities: { 0: 0, 1: 0.5, 2: 0.5 }, confidence: 0.4 },
+        clock: { box: { x: 0.2, y: 0.1, w: 0.4, h: 0.4 }, confidence: 0.9 },
+      });
+      expect(result.summary).toMatchObject({
+        bars: { yes_at: [{ from: 1, to: 2 }] },
+        kind: { spans: [{ choice: 'bars', from: 1, to: 2 }] },
+      });
+
+      // What Jev received: the key only in its header, the preview header, the pinned model,
+      // and baseline JPEGs inside its size limits, named as the questions name them.
+      const asked = seen.filter((r) => r.headers.authorization === `Bearer ${KEY}`);
+      expect(asked).toHaveLength(3); // one 429, retried
+      for (const r of asked) {
+        expect(r.headers['typesafe-danger-zone-images']).toBe('true');
+        const body = r.body as {
+          model: string;
+          state: Record<string, unknown>;
+          assets: Record<string, { format: string; data_base64: string }>;
+        };
+        expect(body.model).toBe('jev-1.14.0');
+        expect(body.state.seconds_between).toBe(1);
+        for (const name of ['frame', 'previous']) {
+          const asset = body.assets[body.state[name] as string];
+          expect(asset?.format).toBe('jpg');
+          const size = jpegSize(Buffer.from(asset?.data_base64 ?? '', 'base64'));
+          expect(size).toEqual({ width: 512, height: 288, baseline: true });
+        }
+      }
+
+      const stored = await ok<{ analyses: Record<string, unknown>; look: { runs: unknown[] } }>(
+        c,
+        'media.get',
+        { media_id: media.media_id, include: ['look'] },
+      );
+      expect(stored.analyses.look).toEqual({
+        runs: 1,
+        frames: 2,
+        questions: ['bars', 'kind', 'busy', 'clock'],
+      });
+      expect(stored.look.runs).toHaveLength(1);
+
+      // Two runs at once both stay with the media.
+      const ask = { media_id: media.media_id, kind: 'look', at_seconds: [0.5] };
+      const twice = await Promise.all(
+        [0, 1].map(() =>
+          ok<{ job_id: string }>(c, 'media.analyze', {
+            ...ask,
+            questions: { bars: { type: 'noul', instructions: 'Does `frame` show colour bars?' } },
+          }),
+        ),
+      );
+      for (const j of twice) await waitJob(j.job_id);
+      const both = await ok<{ look: { runs: Array<{ id: string }> } }>(c, 'media.get', {
+        media_id: media.media_id,
+        include: ['look'],
+      });
+      expect(both.look.runs.map((r) => r.id)).toEqual(
+        expect.arrayContaining(twice.map((j) => j.job_id)),
+      );
+
+      // A daily cap (hosted) refuses the call that would pass it, before any job; 4 used today.
+      (env.runtime.config as { lookFramesPerDay?: number }).lookFramesPerDay = 5;
+      const capped = await call(c, 'media.analyze', {
+        ...ask,
+        at_seconds: [0.5, 1.5],
+        questions: { bars: { type: 'noul', instructions: 'Does `frame` show colour bars?' } },
+      });
+      expect(capped.structured).toMatchObject({
+        code: 'quota_exceeded',
+        detail: { limit: 5, used: 4 },
+      });
+      delete (env.runtime.config as { lookFramesPerDay?: number }).lookFramesPerDay;
+
+      // A key TypeSafe refuses ends the job with credential_invalid; no key appears anywhere.
+      const bad = await keyed('ts-wrong-key');
+      const refused = await ok<{ job_id: string }>(bad, 'media.analyze', {
+        media_id: media.media_id,
+        kind: 'look',
+        at_seconds: [0.5],
+        questions: { bars: { type: 'noul', instructions: 'Does `frame` show colour bars?' } },
+      });
+      const failed = await waitJob(refused.job_id);
+      expect(JSON.stringify(failed)).toContain('credential_invalid');
+      const record = await readFile(
+        env.runtime.ws.ownerDir('local', 'media', media.media_id, 'media.json'),
+        'utf8',
+      );
+      for (const text of [
+        JSON.stringify(done),
+        JSON.stringify(failed),
+        JSON.stringify(stored),
+        record,
+      ]) {
+        expect(text).not.toContain(KEY);
+        expect(text).not.toContain('ts-wrong-key');
+      }
+    }, 300_000);
+  });
+
   it('refuses crafted media', async () => {
     for (const file of ['evil.m3u8', 'fake.mp4']) {
       const started = await ok<{ job_id: string }>(client, 'media.import', {
@@ -3140,7 +3619,7 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
     const view = await ok<{ status: string; error?: { code: string } }>(client, 'job.get', {
       job_id: job.job_id,
     });
-    expect(view.status).toBe('completed');
+    expect(view.status).toBe('failed');
     expect(view.error?.code).toBe('interrupted');
     const retry = await ok<{ job_id: string }>(client, 'export.video', {
       timeline_id: timeline,

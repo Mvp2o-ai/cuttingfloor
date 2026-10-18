@@ -74,33 +74,34 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
     `<profile width="${width}" height="${height}" frame_rate_num="${fps.num}" frame_rate_den="${fps.den}" progressive="1" sample_aspect_num="1" sample_aspect_den="1" display_aspect_num="${width / g}" display_aspect_den="${height / g}" colorspace="709"/>`,
   );
 
-  // One producer per media item and stream, shared by every level of nesting.
+  // One producer per media item and stream at each level of nesting. Levels don't share one:
+  // MLT keeps a producer's last scaled image, so a picture fitted one way inside a nested
+  // timeline leaked into the same media fitted another way outside it.
   const nested = doc.nested ?? {};
   const bodies: NestedDoc[] = [doc, ...Object.values(nested)];
-  const used = new Map<string, Set<'video' | 'audio'>>();
+  const level = new Map<NestedDoc, string>(bodies.map((b, i) => [b, i ? `l${i}_` : '']));
+  const used = new Map<string, { mediaId: string; kind: 'video' | 'audio' }>();
   for (const body of bodies)
     for (const t of body.tracks)
       for (const c of t.clips) {
         if (!c.enabled || c.type !== 'media') continue;
-        const set = used.get(c.media_id) ?? new Set();
-        set.add(c.kind);
-        used.set(c.media_id, set);
+        used.set(`${level.get(body)}${c.media_id}_${c.kind[0]}`, {
+          mediaId: c.media_id,
+          kind: c.kind,
+        });
       }
-  for (const [mediaId, kinds] of used) {
+  for (const [id, { mediaId, kind }] of used) {
     const src = options.sources.get(mediaId);
     if (!src) throw new CfError('media_offline', `Media ${mediaId} is not available for rendering`);
-    for (const kind of kinds) {
-      const id = `${mediaId}_${kind[0]}`;
-      if (src.image) {
-        x.push(
-          `<producer id="${id}" in="0" out="${15_000_000 - 1}"><property name="mlt_service">pixbuf</property><property name="resource">${esc(src.path)}</property><property name="length">15000000</property><property name="ttl">1</property></producer>`,
-        );
-      } else {
-        const only = kind === 'video' ? 'audio_index' : 'video_index';
-        x.push(
-          `<producer id="${id}"><property name="mlt_service">avformat</property><property name="resource">${esc(src.path)}</property><property name="${only}">-1</property><property name="seekable">1</property></producer>`,
-        );
-      }
+    if (src.image) {
+      x.push(
+        `<producer id="${id}" in="0" out="${15_000_000 - 1}"><property name="mlt_service">pixbuf</property><property name="resource">${esc(src.path)}</property><property name="length">15000000</property><property name="ttl">1</property></producer>`,
+      );
+    } else {
+      const only = kind === 'video' ? 'audio_index' : 'video_index';
+      x.push(
+        `<producer id="${id}"><property name="mlt_service">avformat</property><property name="resource">${esc(src.path)}</property><property name="${only}">-1</property><property name="seekable">1</property></producer>`,
+      );
     }
   }
 
@@ -283,6 +284,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
               tpf,
               head: cp.head,
               length,
+              at: from,
               fontFamily: (id) => options.sources.get(id)?.family,
             }),
           );
@@ -299,7 +301,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
         } else {
           const producer =
             c.type === 'media'
-              ? `${c.media_id}_${c.kind[0]}`
+              ? `${level.get(body) ?? ''}${c.media_id}_${c.kind[0]}`
               : c.type === 'timeline'
                 ? (tractors.get(c.timeline) as string)
                 : '';

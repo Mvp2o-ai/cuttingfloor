@@ -75,7 +75,7 @@ export function jobReply(job: Job, ctx: unknown): CallToolResult {
     status: job.status,
     status_uri: `video://jobs/${job.id}`,
     ...(job.meta?.media_id ? { media_id: job.meta.media_id } : {}),
-    hint: 'Long-running: call job.get with this job_id until status is completed',
+    hint: 'Long-running: call job.get {job_id, wait_seconds: 50} until status is completed',
   });
 }
 
@@ -84,7 +84,8 @@ export function jobView(job: Job) {
   return {
     job_id: job.id,
     tool: job.tool,
-    status: job.status,
+    // A tool error completes the MCP task, but to anyone reading a job it failed.
+    status: result?.isError && job.status === 'completed' ? 'failed' : job.status,
     ...(job.statusMessage ? { status_message: job.statusMessage } : {}),
     ...(job.progress !== undefined ? { progress: job.progress } : {}),
     created_at: job.createdAt,

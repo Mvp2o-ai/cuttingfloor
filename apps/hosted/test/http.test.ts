@@ -1,5 +1,5 @@
 import { mkdtemp } from 'node:fs/promises';
-import { request, type Server } from 'node:http';
+import { createServer as createNodeServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,20 +8,35 @@ import { Runtime } from '@cuttingfloor/server';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHttpServer, parseApiKeys } from '../src/http.ts';
+import { JwtTokenVerifier } from '../src/oauth.ts';
 
 const KEY = 'test-key-0123456789abcdefghij';
 let runtime: Runtime;
 const servers: Server[] = [];
 
-async function listen(apiKeys?: Map<string, string>): Promise<string> {
+async function listen(
+  apiKeys?: Map<string, string>,
+  oauth?: (base: string) => { verifier: JwtTokenVerifier; resource: URL },
+): Promise<string> {
+  // The OAuth resource names the server's own address, so take a free port first.
+  const port = oauth ? await freePort() : 0;
   const server = createHttpServer({
     runtime,
     credentials: new LocalCredentialStore({}, false),
     ...(apiKeys ? { apiKeys } : {}),
+    ...(oauth ? { oauth: oauth(`http://127.0.0.1:${port}`) } : {}),
   });
-  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  await new Promise<void>((r) => server.listen(port, '127.0.0.1', r));
   servers.push(server);
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+}
+
+async function freePort(): Promise<number> {
+  const probe = createNodeServer();
+  await new Promise<void>((r) => probe.listen(0, '127.0.0.1', r));
+  const { port } = probe.address() as AddressInfo;
+  await new Promise((r) => probe.close(r));
+  return port;
 }
 
 beforeAll(async () => {
@@ -126,5 +141,54 @@ describe('HTTP face', () => {
     expect(() => parseApiKeys('alice')).toThrow(/owner:key/);
     expect(() => parseApiKeys('alice:short')).toThrow(/too short/);
     expect(parseApiKeys('').size).toBe(0);
+  });
+
+  it('challenges for OAuth and describes itself as a protected resource', async () => {
+    const issuer = 'https://auth.example.com';
+    const base = await listen(parseApiKeys(`ken:${KEY}`), (b) => ({
+      // The authorization server's metadata as AuthKit publishes it; no token is checked here.
+      verifier: new JwtTokenVerifier({
+        issuer,
+        authorization_endpoint: `${issuer}/oauth2/authorize`,
+        token_endpoint: `${issuer}/oauth2/token`,
+        jwks_uri: `${issuer}/oauth2/jwks`,
+        response_types_supported: ['code'],
+      }),
+      resource: new URL(`${b}/mcp`),
+    }));
+    const prmUrl = `${base}/.well-known/oauth-protected-resource/mcp`;
+
+    const anon = await fetch(`${base}/mcp`, { method: 'POST', body: '{}' });
+    expect(anon.status).toBe(401);
+    expect(anon.headers.get('www-authenticate')).toMatch(/^Bearer /);
+    expect(anon.headers.get('www-authenticate')).toContain(`resource_metadata="${prmUrl}"`);
+    const prm = await (await fetch(prmUrl)).json();
+    expect(prm).toMatchObject({
+      resource: `${base}/mcp`,
+      authorization_servers: [issuer],
+      resource_name: 'cuttingfloor',
+    });
+    const asMeta = (await (
+      await fetch(`${base}/.well-known/oauth-authorization-server`)
+    ).json()) as { issuer: string };
+    expect(asMeta.issuer).toBe(issuer);
+
+    const bad = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer not-a-token' },
+      body: '{}',
+    });
+    expect(bad.status).toBe(401);
+    expect(bad.headers.get('www-authenticate')).toContain('error="invalid_token"');
+
+    // API keys keep working alongside OAuth.
+    const keyed = new Client({ name: 't', version: '0' });
+    await keyed.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { authorization: `Bearer ${KEY}` } },
+      }),
+    );
+    expect((await keyed.listTools()).tools.length).toBeGreaterThan(0);
+    await keyed.close();
   });
 });

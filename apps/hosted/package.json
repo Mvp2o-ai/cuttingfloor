@@ -5,10 +5,12 @@
   "description": "The HTTP node: Streamable HTTP MCP, signed output downloads, bearer API keys in hosted mode.",
   "type": "module",
   "dependencies": {
-    "@modelcontextprotocol/server": "2.3.1",
-    "@modelcontextprotocol/node": "2.1.1",
+    "@cuttingfloor/credentials": "workspace:*",
     "@cuttingfloor/server": "workspace:*",
-    "@cuttingfloor/credentials": "workspace:*"
+    "@modelcontextprotocol/node": "2.1.1",
+    "@modelcontextprotocol/server": "2.3.1",
+    "jose": "6.2.12",
+    "@cuttingfloor/schema": "workspace:*"
   },
   "scripts": {
     "start": "node src/main.ts"
@@ -18,8 +20,8 @@
     "./http": "./src/http.ts"
   },
   "devDependencies": {
+    "@cuttingfloor/motion": "workspace:*",
     "@modelcontextprotocol/client": "2.3.1",
-    "@modelcontextprotocol/ext-tasks": "0.2.2",
-    "@cuttingfloor/motion": "workspace:*"
+    "@modelcontextprotocol/ext-tasks": "0.2.2"
   }
 }

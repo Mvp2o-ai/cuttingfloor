@@ -42,6 +42,28 @@ describe('JobRunner', () => {
     });
   });
 
+  it('shows the latest progress even when it came within a second of the last', async () => {
+    const { store, runner } = await setup();
+    const job = await store.create({ owner: 'o', tool: 't' });
+    let finish = () => {};
+    runner.start(job, async ({ progress }) => {
+      progress(0, 'fetching inputs');
+      progress(0.1, 'running');
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      return { content: [], structuredContent: {} };
+    });
+    await new Promise((r) => setTimeout(r, 1300));
+    expect(await store.get(job.id, 'o')).toMatchObject({
+      status: 'working',
+      statusMessage: 'running',
+      progress: 0.1,
+    });
+    finish();
+    await runner.settled(job.id);
+  });
+
   it('queues beyond its concurrency, and cancels running and queued jobs', async () => {
     const { store, runner } = await setup(1);
     const running = await store.create({ owner: 'o', tool: 't' });
@@ -73,5 +95,41 @@ describe('JobRunner', () => {
     expect(await store.findIdempotent('o', 'media.import', 'k')).toBeUndefined();
     await store.update(job, { status: 'cancelled' });
     expect(await store.findIdempotent('o', 'export.video', 'k')).toBeUndefined();
+  });
+
+  it('shares one data root between servers: whose jobs, remote cancel, dead servers', async () => {
+    const ws = new Workspace(await mkdtemp(join(tmpdir(), 'cf-nodes-')));
+    const store = new FileJobStore(ws);
+    const a = new JobRunner(store, 2, { node: 'a', heartbeatMs: 50, staleMs: 400 });
+    const b = new JobRunner(store, 2, { node: 'b', heartbeatMs: 50, staleMs: 400 });
+
+    // A job running on a: b starting up leaves it alone, and it carries a's name.
+    const live = await store.create({ owner: 'o', tool: 't' });
+    a.start(live, forever);
+    await new Promise((r) => setTimeout(r, 120));
+    expect(await b.recover()).toBe(0);
+    expect(await store.get(live.id, 'o')).toMatchObject({ status: 'working', node: 'a' });
+
+    // Cancelled through b, it stops on a at its next heartbeat and stays cancelled.
+    await b.cancel(live.id, 'o');
+    await a.settled(live.id);
+    expect(await store.get(live.id, 'o')).toMatchObject({ status: 'cancelled' });
+
+    // A job whose server died: b ends it only once its heartbeat is stale.
+    const orphan = await store.create({ owner: 'o', tool: 't' });
+    await store.update(orphan, { node: 'c' });
+    expect(await b.recover({ startup: false })).toBe(0);
+    await new Promise((r) => setTimeout(r, 450));
+    expect(await b.recover({ startup: false })).toBe(1);
+    expect(await store.get(orphan.id, 'o')).toMatchObject({
+      status: 'completed',
+      result: { structuredContent: { code: 'interrupted' } },
+    });
+
+    // A server restarting under its old name ends its own jobs at once.
+    const mine = await store.create({ owner: 'o', tool: 't' });
+    await store.update(mine, { node: 'a' });
+    const restarted = new JobRunner(store, 2, { node: 'a' });
+    expect(await restarted.recover()).toBe(1);
   });
 });

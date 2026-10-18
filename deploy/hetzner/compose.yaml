@@ -1,0 +1,63 @@
+# One hosted cuttingfloor server: the node, its sandbox under gVisor, and Caddy for TLS.
+#   docker compose up -d        (up.sh runs this on the server)
+services:
+  cuttingfloor:
+    image: ${CUTTINGFLOOR_IMAGE:-ghcr.io/mvp2o-ai/cuttingfloor:latest}
+    container_name: cuttingfloor
+    restart: unless-stopped
+    networks: [default, motion]
+    env_file: [cuttingfloor.env]
+    environment:
+      CUTTINGFLOOR_MODE: hosted
+      CUTTINGFLOOR_MEDIA_ROOTS: ""
+      CUTTINGFLOOR_MOTION_URL: http://motion:8790
+    volumes:
+      - /var/lib/cuttingfloor:/data
+
+  # The sandbox, as locally, plus gVisor: agent-written code runs on a user-space kernel.
+  motion:
+    image: ${CUTTINGFLOOR_IMAGE:-ghcr.io/mvp2o-ai/cuttingfloor:latest}
+    container_name: cuttingfloor-motion
+    command: ["cuttingfloor", "motion-worker"]
+    runtime: runsc
+    restart: unless-stopped
+    networks: [motion]
+    environment:
+      PORT: "8790"
+      HOME: /tmp
+      TMPDIR: /tmp
+      # Browsers per create.motion render, about one per two CPUs. Set here because gVisor
+      # may not show the container its CPU limit.
+      CUTTINGFLOOR_MOTION_WORKERS: ${CUTTINGFLOOR_MOTION_WORKERS:-3}
+    user: node
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=2g
+      - /data:rw,noexec,nosuid,nodev,size=64k
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./seccomp.json
+    init: true
+    cpus: ${CUTTINGFLOOR_MOTION_CPUS:-6}
+    mem_limit: 6g
+    memswap_limit: 6g
+    pids_limit: 256
+    shm_size: 1g
+
+  caddy:
+    image: caddy:2.10.2
+    container_name: caddy
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    env_file: [cuttingfloor.env]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+
+networks:
+  motion:
+    internal: true
+
+volumes:
+  caddy-data:

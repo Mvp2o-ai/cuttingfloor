@@ -1,4 +1,4 @@
-import { open, realpath, stat } from 'node:fs/promises';
+import { copyFile, mkdir, open, realpath, stat } from 'node:fs/promises';
 import { basename, extname, join, sep } from 'node:path';
 import { randomId, secondsToTicks, type Workspace } from '@cuttingfloor/core';
 import { CfError, type MediaInfo, type MediaRef, type ToolError } from '@cuttingfloor/schema';
@@ -14,7 +14,11 @@ export interface MediaRecord {
   name: string;
   status: 'importing' | 'processing' | 'ready' | 'failed';
   /** Where it came from: a path, a URL, or a create.* tool and the hash of its recipe. */
-  source: { path: string } | { url: string } | { created: string; recipe: string };
+  source:
+    | { path: string }
+    | { url: string }
+    | { job: string }
+    | { created: string; recipe: string };
   /** The original: the user's file in place, or the downloaded copy. */
   file: string | null;
   size: number | null;
@@ -29,11 +33,17 @@ export interface MediaRecord {
     transcript?: NonNullable<MediaInfo['transcript']>;
     beats?: NonNullable<MediaInfo['beats']>;
     faces?: NonNullable<MediaInfo['faces']>;
+    look?: NonNullable<MediaInfo['look']>;
   };
   error?: ToolError;
   created_at: string;
   updated_at: string;
 }
+
+type LookRun = NonNullable<MediaInfo['look']>['runs'][number];
+
+/** Look runs kept with each media. */
+export const LOOK_RUNS_KEPT = 10;
 
 export interface MediaConfig {
   /** Folders path imports may read from (realpath-checked). Empty disables path imports. */
@@ -41,6 +51,8 @@ export interface MediaConfig {
   maxDownloadBytes: number;
   downloadTimeoutMs: number;
   allowPrivateUrls: boolean;
+  /** Local mode: which folder on the user's machine a media root is, for hints. */
+  hostFolders?: Record<string, string>;
 }
 
 export type Progress = (fraction: number, message: string) => void;
@@ -71,12 +83,77 @@ export class MediaLibrary {
   }
 
   async find(owner: string, id: string): Promise<MediaRecord | undefined> {
-    return this.#ws.readJson<MediaRecord>(join(this.dir(owner, id), 'media.json'), { touch: true });
+    const record = await this.#ws.readJson<MediaRecord>(join(this.dir(owner, id), 'media.json'), {
+      touch: true,
+    });
+    if (!record) return undefined;
+    // Each analysis is its own file, so analyses running on different servers never overwrite
+    // each other. A record from before that kept them inline: move them out once.
+    const dir = join(this.dir(owner, id), 'analyses');
+    if (record.analyses) {
+      const { look, ...rest } = record.analyses;
+      for (const [kind, value] of Object.entries(rest)) {
+        await this.#ws.writeJson(join(dir, `${kind}.json`), value, { exclusive: true });
+      }
+      for (const [i, run] of (look?.runs ?? []).entries()) {
+        await this.#ws.writeJson(
+          join(dir, `look-${String(i).padStart(14, '0')}-${run.id}.json`),
+          run,
+          {
+            exclusive: true,
+          },
+        );
+      }
+      delete record.analyses;
+      await this.save(owner, record);
+    }
+    const names = (await this.#ws.list(dir)).filter((n) => n.endsWith('.json')).sort();
+    const analyses: NonNullable<MediaRecord['analyses']> = {};
+    const runs: LookRun[] = [];
+    for (const name of names) {
+      const value = await this.#ws.readJson<never>(join(dir, name));
+      if (!value) continue;
+      if (name.startsWith('look-')) runs.push(value);
+      else analyses[name.slice(0, -5) as 'transcript' | 'beats' | 'faces'] = value;
+    }
+    if (runs.length) analyses.look = { runs: runs.slice(-LOOK_RUNS_KEPT) };
+    if (Object.keys(analyses).length) record.analyses = analyses;
+    return record;
   }
 
+  /** The record itself; analyses are written apart, with saveAnalysis. */
   async save(owner: string, record: MediaRecord): Promise<void> {
     record.updated_at = new Date().toISOString();
-    await this.#ws.writeJson(join(this.dir(owner, record.media_id), 'media.json'), record);
+    const { analyses: _kept, ...rest } = record;
+    await this.#ws.writeJson(join(this.dir(owner, record.media_id), 'media.json'), rest);
+  }
+
+  /**
+   * Stores one analysis beside the record. transcript, beats and faces replace the last of their
+   * kind; each look run is a new file, named so they sort by time, and only the newest are kept.
+   */
+  async saveAnalysis(
+    owner: string,
+    id: string,
+    kind: 'transcript' | 'beats' | 'faces' | 'look',
+    value: unknown,
+  ): Promise<MediaRecord> {
+    const dir = join(this.dir(owner, id), 'analyses');
+    if (kind === 'look') {
+      const run = value as LookRun;
+      await this.#ws.writeJson(
+        join(dir, `look-${Date.now().toString().padStart(14, '0')}-${run.id}.json`),
+        run,
+        {
+          exclusive: true,
+        },
+      );
+      const looks = (await this.#ws.list(dir)).filter((n) => n.startsWith('look-')).sort();
+      for (const old of looks.slice(0, -LOOK_RUNS_KEPT)) await this.#ws.remove(join(dir, old));
+    } else {
+      await this.#ws.writeJson(join(dir, `${kind}.json`), value);
+    }
+    return this.get(owner, id);
   }
 
   /** Checks a path import against the media roots and returns its real path. */
@@ -91,7 +168,13 @@ export class MediaLibrary {
       real = await realpath(path);
     } catch {
       throw new CfError('not_found', `No file at ${path}`, {
-        hint: `Media roots: ${this.config.roots.join(', ')}. In local mode, host folders are mounted under /media`,
+        hint: `The server sees only ${this.config.roots.join(', ')}.${Object.entries(
+          this.config.hostFolders ?? {},
+        )
+          .map(([inside, host]) => ` ${inside} is ${host} on the user's machine.`)
+          .join(
+            '',
+          )} To recreate a reference, no import is needed: rebuild it with create.motion or create.still. For the user's own footage, use a path there (copy the file into that folder first) or an http(s) URL`,
       });
     }
     for (const root of this.config.roots) {
@@ -113,6 +196,20 @@ export class MediaLibrary {
     throw new CfError('path_not_allowed', `${path} is outside the media roots`, {
       hint: `Allowed: ${this.config.roots.join(', ')}`,
     });
+  }
+
+  /** Copies a file the server made (a rendered export) into a new record's folder. */
+  async adopt(owner: string, record: MediaRecord, file: string): Promise<string> {
+    const dir = this.dir(owner, record.media_id);
+    await mkdir(dir, { recursive: true });
+    const dest = join(
+      dir,
+      `source${extname(file)
+        .slice(0, 8)
+        .replace(/[^.\w]/g, '')}`,
+    );
+    await copyFile(file, dest);
+    return dest;
   }
 
   /** An existing usable import of the same content, for dedupe. */
@@ -153,7 +250,9 @@ export class MediaLibrary {
           ? basename(source.path)
           : 'url' in source
             ? decodeURIComponent(new URL(source.url).pathname.split('/').pop() || 'download')
-            : source.created),
+            : 'job' in source
+              ? source.job
+              : source.created),
       status: 'importing',
       source,
       file: null,
@@ -298,7 +397,7 @@ export function mediaRef(record: MediaRecord): MediaRef | undefined {
 
 export function mediaInfo(
   record: MediaRecord,
-  include: Array<'transcript' | 'beats' | 'faces'> = [],
+  include: Array<'transcript' | 'beats' | 'faces' | 'look'> = [],
 ): MediaInfo {
   const p = record.probe;
   const a = record.analyses;
@@ -319,6 +418,15 @@ export function mediaInfo(
               faces: {
                 rate: a.faces.rate,
                 frames_with_faces: a.faces.frames.filter((f) => f.faces.length).length,
+              },
+            }
+          : {}),
+        ...(a.look?.runs.length
+          ? {
+              look: {
+                runs: a.look.runs.length,
+                frames: a.look.runs.at(-1)?.frames.length ?? 0,
+                questions: Object.keys(a.look.runs.at(-1)?.questions ?? {}),
               },
             }
           : {}),

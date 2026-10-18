@@ -35,6 +35,8 @@ export interface Job {
   error?: { code: number; message: string };
   /** Ids known when the job starts, e.g. `media_id` for imports. */
   meta?: Record<string, string>;
+  /** The server running it. With `lastUpdatedAt` as its heartbeat, any server can tell it died. */
+  node?: string;
 }
 
 export const JOB_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -169,21 +171,39 @@ export interface JobContext {
 
 export type JobWork = (ctx: JobContext) => Promise<JobResult>;
 
+export interface RunnerOptions {
+  /** This server's name in job records. Default `local`. */
+  node?: string;
+  /** How often a running job's record is rewritten to show it is alive. */
+  heartbeatMs?: number;
+  /** A working job not written for this long has lost its server. */
+  staleMs?: number;
+}
+
 /**
  * Runs jobs in this process, at most `concurrency` at a time; the rest wait as "queued".
  * A domain error ends the job `completed` with `isError: true`; cancelling ends it `cancelled`.
+ * Several servers can share one data root: each running job carries its server's name and a
+ * heartbeat, a cancel written by another server stops it at its next write, and any server
+ * ends a job whose heartbeat has stopped.
  */
 export class JobRunner {
   readonly store: FileJobStore;
+  readonly node: string;
   readonly #concurrency: number;
+  readonly #heartbeatMs: number;
+  readonly #staleMs: number;
   readonly #running = new Map<string, AbortController>();
   readonly #queue: Array<() => void> = [];
   readonly #done = new Map<string, Promise<void>>();
   #active = 0;
 
-  constructor(store: FileJobStore, concurrency = 2) {
+  constructor(store: FileJobStore, concurrency = 2, options: RunnerOptions = {}) {
     this.store = store;
     this.#concurrency = Math.max(1, concurrency);
+    this.node = options.node ?? 'local';
+    this.#heartbeatMs = options.heartbeatMs ?? 30_000;
+    this.#staleMs = options.staleMs ?? 120_000;
   }
 
   /** Starts `work` for a job already written with `store.create`. */
@@ -212,12 +232,22 @@ export class JobRunner {
       await this.#done.get(id);
       return this.store.get(id, owner);
     }
+    // Running on another server (or nowhere): it sees this at its next write and stops.
     return this.store.update(job, { status: 'cancelled', statusMessage: 'cancelled' });
   }
 
-  /** On startup: jobs left working by a previous process end `interrupted`. */
-  async recover(): Promise<number> {
-    const stale = (await this.store.working()).filter((j) => !this.#running.has(j.id));
+  /**
+   * Ends `interrupted` the working jobs no server is running: this server's own from before a
+   * restart (`startup`), and any whose heartbeat stopped. Safe to run on every server at once.
+   */
+  async recover(options: { startup?: boolean } = { startup: true }): Promise<number> {
+    const cutoff = Date.now() - this.#staleMs;
+    const stale = (await this.store.working()).filter(
+      (j) =>
+        !this.#running.has(j.id) &&
+        ((options.startup && (j.node ?? this.node) === this.node) ||
+          Date.parse(j.lastUpdatedAt) < cutoff),
+    );
     for (const job of stale) {
       await this.store.update(job, {
         status: 'completed',
@@ -234,8 +264,49 @@ export class JobRunner {
   }
 
   async #run(job: Job, work: JobWork, controller: AbortController): Promise<void> {
+    let current: Job = job;
+    let pending: Promise<unknown> = Promise.resolve();
+    // Every write while working goes through here, one at a time: a record another server has
+    // ended (cancelled, or interrupted for a stopped heartbeat) stops the job instead.
+    const save = (patch: Partial<Job>) => {
+      pending = pending.then(async () => {
+        if (controller.signal.aborted) return;
+        const disk = await this.store.get(current.id, current.owner);
+        if (disk && disk.status !== 'working') {
+          controller.abort();
+          return;
+        }
+        current = await this.store.update(current, { ...patch, node: this.node });
+      });
+      return pending;
+    };
+    void save({}).catch(() => undefined);
+    const heartbeat = setInterval(() => void save({}).catch(() => undefined), this.#heartbeatMs);
+    heartbeat.unref();
+    try {
+      await this.#work(
+        job,
+        work,
+        controller,
+        save,
+        () => current,
+        () => pending,
+      );
+    } finally {
+      clearInterval(heartbeat);
+    }
+  }
+
+  async #work(
+    job: Job,
+    work: JobWork,
+    controller: AbortController,
+    save: (patch: Partial<Job>) => Promise<unknown>,
+    latest: () => Job,
+    writes: () => Promise<unknown>,
+  ): Promise<void> {
     if (this.#active >= this.#concurrency) {
-      await this.store.update(job, { statusMessage: 'queued' });
+      await save({ statusMessage: 'queued' });
       // Wait for a slot; a job cancelled while queued leaves without ever taking one.
       const granted = await new Promise<boolean>((resolve) => {
         const take = () => resolve(true);
@@ -253,51 +324,62 @@ export class JobRunner {
         );
       });
       if (!granted) {
-        const latest = (await this.store.get(job.id, job.owner)) ?? job;
-        await this.store.update(latest, { status: 'cancelled', statusMessage: 'cancelled' });
+        await writes().catch(() => undefined);
+        await this.#end(latest(), { status: 'cancelled', statusMessage: 'cancelled' });
         return;
       }
     } else {
       this.#active += 1;
     }
-    let current = (await this.store.get(job.id, job.owner)) ?? job;
     let lastWrite = 0;
-    let pending: Promise<unknown> = Promise.resolve();
+    // An update inside the second is held, not dropped: the latest one is written when the
+    // second is up, so a quick "running" after "fetching inputs" still shows.
+    let held: { fraction: number; message: string } | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const write = (fraction: number, message: string) => {
+      lastWrite = Date.now();
+      void save({ progress: Math.max(0, Math.min(1, fraction)), statusMessage: message });
+    };
     const progress = (fraction: number, message: string) => {
-      const now = Date.now();
-      if (now - lastWrite < 1000 && fraction < 1) return;
-      lastWrite = now;
-      pending = pending.then(async () => {
-        if (controller.signal.aborted) return;
-        current = await this.store.update(current, {
-          progress: Math.max(0, Math.min(1, fraction)),
-          statusMessage: message,
-        });
-      });
+      const wait = lastWrite + 1000 - Date.now();
+      if (wait <= 0 || fraction >= 1) {
+        held = undefined;
+        write(fraction, message);
+        return;
+      }
+      held = { fraction, message };
+      timer ??= setTimeout(() => {
+        timer = undefined;
+        if (held) write(held.fraction, held.message);
+        held = undefined;
+      }, wait);
+    };
+    const settle = () => {
+      clearTimeout(timer);
+      held = undefined;
     };
     try {
       if (controller.signal.aborted) throw new CfError('cancelled', 'Cancelled');
       const result = await work({ signal: controller.signal, progress });
-      await pending;
-      current = await this.store.update(current, {
+      settle();
+      await writes();
+      await this.#end(latest(), {
         status: 'completed',
         progress: 1,
         statusMessage: result.isError ? 'failed' : 'done',
         result,
       });
     } catch (error) {
-      await pending.catch(() => undefined);
+      settle();
+      await writes().catch(() => undefined);
       if (controller.signal.aborted) {
-        current = await this.store.update(current, {
-          status: 'cancelled',
-          statusMessage: 'cancelled',
-        });
+        await this.#end(latest(), { status: 'cancelled', statusMessage: 'cancelled' });
       } else {
         const cf =
           error instanceof CfError
             ? error
             : new CfError('engine_error', error instanceof Error ? error.message : String(error));
-        current = await this.store.update(current, {
+        await this.#end(latest(), {
           status: 'completed',
           statusMessage: 'failed',
           result: errorResult(cf),
@@ -308,6 +390,13 @@ export class JobRunner {
       if (next) next();
       else this.#active -= 1;
     }
+  }
+
+  /** The final write. A job another server already ended (cancelled, interrupted) stays so. */
+  async #end(job: Job, patch: Partial<Job>): Promise<void> {
+    const disk = await this.store.get(job.id, job.owner);
+    if (disk && disk.status !== 'working') return;
+    await this.store.update(job, { ...patch, node: this.node });
   }
 }
 
