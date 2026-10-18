@@ -341,14 +341,17 @@ const fs = await import('node:fs');
 out['/data'] = fs.readdirSync('/data').length ? 'has files' : 'empty';
 out['other jobs in /tmp'] = fs.readdirSync('/tmp').filter((d) => !process.cwd().endsWith(d)).length ? 'visible' : 'none';
 let worker = 'invisible';
+// /proc lists the container's PIDs, but kill() takes this namespace's, where the same number can
+// be one of this script's own threads (ignored: the script is init here). So the worker is
+// signalled only by the PID it has at this script's namespace depth (NSpid); none, unreachable.
+const nspid = (p) => (fs.readFileSync('/proc/' + p + '/status', 'utf8').match(/^NSpid:\\s*(.*)$/m)?.[1] ?? '').trim().split(/\\s+/);
+const depth = nspid('self').length;
 for (const pid of fs.readdirSync('/proc').filter((p) => /^\\d+$/.test(p))) {
-  // /proc lists the container's PIDs, but kill() takes this namespace's: container PID 1
-  // (docker-init ... motion-worker) is this script's own PID here.
-  if (Number(pid) === process.pid) continue;
   try {
-    if (fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8').includes('motion-worker')) {
-      try { process.kill(Number(pid), 'SIGTERM'); worker = 'killed'; } catch { worker = 'listed, not signalable'; }
-    }
+    if (!fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8').includes('motion-worker')) continue;
+    const ns = nspid(pid);
+    if (ns.length < depth) { worker = 'listed, not signalable'; continue; }
+    try { process.kill(Number(ns[depth - 1]), 'SIGTERM'); worker = 'killed'; } catch { worker = 'listed, not signalable'; }
   } catch {}
 }
 out.worker = worker;
