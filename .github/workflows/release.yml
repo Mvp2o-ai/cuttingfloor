@@ -1,8 +1,9 @@
 name: Release
 
-# When changesets land on main (a promotion of develop):bump the version, commit the changelog, tag vX.Y.Z, create the
-# GitHub release, and publish the image as :X.Y.Z and :X.Y. (The organisation doesn't let Actions
-# open pull requests, so there is no "version packages" PR: merging the changeset is the release.)
+# A promotion of develop into main is the release. scripts/promote-develop.sh versions pending
+# changesets on develop first (version, changelog), so main only ever takes pull requests; here,
+# a version on main without its tag gets the tag vX.Y.Z, a GitHub release, and the image as
+# :X.Y.Z and :X.Y.
 
 on:
   push:
@@ -19,7 +20,6 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
-    if: "!startsWith(github.event.head_commit.message, 'chore: release')"
     outputs:
       released: ${{ steps.release.outputs.released }}
       version: ${{ steps.release.outputs.version }}
@@ -27,48 +27,22 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
       - id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          pending=0
-          for f in .changeset/*.md; do
-            [ -e "$f" ] && [ "$(basename "$f")" != README.md ] && pending=1
-          done
-          if [ "$pending" = 0 ]; then
-            echo "No changesets: nothing to release."
+          version=$(node -p "require('./apps/cli/package.json').version")
+          if git rev-parse -q --verify "refs/tags/v${version}" >/dev/null; then
+            echo "v${version} is already released."
             echo "released=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          pnpm changeset version
-          pnpm biome check --write apps/cli/package.json
-          version=$(node -p "require('./apps/cli/package.json').version")
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m "chore: release v${version}"
           git tag "v${version}"
-          git push origin HEAD:main "v${version}"
+          git push origin "v${version}"
           awk -v v="## ${version}" '$0==v{on=1;next} /^## /{if(on)exit} on' apps/cli/CHANGELOG.md > notes.md
           gh release create "v${version}" --title "v${version}" --notes-file notes.md
           echo "released=true" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          # develop takes the release commit too, so it stays ahead of main and its version and
-          # changelog match. Best effort: a conflict leaves develop for the next promotion.
-          git fetch -q origin develop
-          git switch -q -c back-merge origin/develop
-          if git merge -q --no-ff "v${version}" -m "chore: merge v${version} into develop"; then
-            git push origin HEAD:develop || echo "::warning::develop moved; merge v${version} by hand"
-          else
-            git merge --abort
-            echo "::warning::v${version} does not merge into develop cleanly; merge it by hand"
-          fi
 
   image:
     needs: release

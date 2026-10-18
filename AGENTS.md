@@ -22,7 +22,7 @@ Open source: outside contributors fork, branch from `develop` and open pull requ
 - The main checkout (first in `git worktree list`) is the person's and stays on `develop`. Never edit, commit or switch branches there.
 - Start: a worktree off `origin/develop` on a branch prefixed with the harness (`claude/…`, `cursor/…`, `codex/…`). Claude Code worktrees live in `.claude/worktrees/`; run `scripts/worktree-setup.sh` in a new one (env files and its own `pnpm install`).
 - Ship: `pnpm check` in the worktree, then `git push origin HEAD:develop` (rebase on `origin/develop` if rejected), or a pull request into `develop`.
-- Promote: `scripts/promote-develop.sh "<summary>"` opens the develop → main pull request, waits for its checks and merges it. Changesets on `main` cut the release, tag the image and merge back into `develop`. Only `develop` may open a pull request into `main` (the Flow check).
+- Promote: `scripts/promote-develop.sh "<summary>"` opens the develop → main pull request, waits for its checks and merges it. It versions pending changesets on `develop` first; on `main` the release workflow tags the version and publishes the image. `main` takes nothing but that pull request. Only `develop` may open a pull request into `main` (the Flow check).
 - Finish: `scripts/finish-release.sh <worktree>` waits for main's runs, removes the worktree and fast-forwards the main checkout.
 - Whether something exists is answered from `origin/develop` and `origin/main` (`git grep -n <term> origin/develop --`), not a working tree that may be behind.
 
