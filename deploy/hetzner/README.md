@@ -26,7 +26,7 @@ One server first. It's the same image as local, in hosted mode:
    - starts everything
 6. Point an A record for the domain at the address it prints. Caddy gets the certificate on first request.
    Or let `up.sh` set it: `CUTTINGFLOOR_ZONE=example.com` for a Hetzner DNS zone, plus `CUTTINGFLOOR_DNS_TOKEN` when the zone is in another project.
-7. Run `./up.sh` again to deploy a new image.
+7. After that, deploys are automatic: every merge into `main` publishes the image and the `Deploy` workflow pulls it here. Run `./up.sh` again only to change the server or its `cuttingfloor.env`.
 
 **Check it:** `CF_KEY=<a key from CUTTINGFLOOR_API_KEYS> node scripts/smoke-hosted.ts https://<domain>`. It checks that a request without a key is refused, then the sandbox (`create.still`, `create.motion`, `code.run`), `look` on the server's TypeSafe key, and an export's signed link.
 

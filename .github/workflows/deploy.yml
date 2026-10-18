@@ -1,0 +1,69 @@
+name: Deploy
+
+# Every image published from main goes to the hosted server (image.yml calls this after it
+# publishes; run it by hand to redeploy main): copy the compose files, pull the
+# image by its commit, restart, and check that /mcp answers with the sign-in challenge. The
+# server's own cuttingfloor.env (secrets) stays on the server and is never touched here; to change
+# it, edit it there or run deploy/hetzner/up.sh. The site deploys itself: Vercel builds main.
+#
+# Secrets, in the production environment: DEPLOY_HOST (the server's address), DEPLOY_SSH_KEY
+# (a key in the server's authorized_keys), DEPLOY_KNOWN_HOSTS (ssh-keyscan of the server).
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/mvp2o-ai/cuttingfloor
+  URL: https://cuttingfloorai.apifunnel.ai/mcp
+
+jobs:
+  hetzner:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ env.URL }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: SSH
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
+      - name: Pull and restart
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          SHA: ${{ github.sha }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          image="$IMAGE:$SHA"
+          scp -q deploy/hetzner/compose.yaml deploy/hetzner/Caddyfile tools/motion/seccomp.json "root@$HOST:/opt/cuttingfloor/"
+          echo "$TOKEN" | ssh "root@$HOST" docker login ghcr.io -u "$ACTOR" --password-stdin
+          # .env pins the image for compose, so a reboot or a later `compose up` keeps this one.
+          ssh "root@$HOST" "cd /opt/cuttingfloor && echo CUTTINGFLOOR_IMAGE=$image > .env \
+            && docker compose pull cuttingfloor motion && docker compose up -d && docker logout ghcr.io \
+            && docker image prune -f >/dev/null"
+          echo "Deployed $image"
+      - name: Check
+        run: |
+          for i in $(seq 1 30); do
+            head=$(curl -s -o /dev/null -D - -X POST "$URL" || true)
+            if grep -qi '^www-authenticate:.*resource_metadata' <<<"$head"; then
+              echo "$URL answers with the sign-in challenge"; exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::$URL did not answer with the sign-in challenge"; exit 1

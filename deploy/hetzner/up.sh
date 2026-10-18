@@ -64,5 +64,5 @@ else
   IMAGE=${CUTTINGFLOOR_IMAGE:-ghcr.io/mvp2o-ai/cuttingfloor:latest}
   "${SSH[@]}" "cd /opt/cuttingfloor && CUTTINGFLOOR_IMAGE=$IMAGE docker compose pull cuttingfloor motion"
 fi
-"${SSH[@]}" "cd /opt/cuttingfloor && CUTTINGFLOOR_IMAGE=$IMAGE docker compose up -d"
+"${SSH[@]}" "cd /opt/cuttingfloor && echo CUTTINGFLOOR_IMAGE=$IMAGE > .env && docker compose up -d"
 echo "Up: https://$DOMAIN/mcp on $IP ($IMAGE)"
