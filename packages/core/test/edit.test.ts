@@ -1526,6 +1526,20 @@ describe('transcripts', () => {
       ),
     ).toThrow(/no transcript/);
   });
+
+  it('leaves out words a cut only clips the edge of', () => {
+    // Source 1.36–3.04 s: the last 0.04 s of w0 and the first 0.04 s of "end." play.
+    let { doc } = run(textStart(), {
+      tool: 'clip.add',
+      args: { track_id: 't1', media_id: AV, source: { in: 34, out: 76 } },
+    });
+    doc = run(doc, {
+      tool: 'caption.add',
+      args: { track_id: 't2', from_transcript: { clip_id: 'c5', max_words: 4 } },
+    }).doc;
+    const clips = toView('tl_x', doc).tracks[1]?.clips ?? [];
+    expect(clips.map((c) => c.text)).toEqual(['w1 w2 w3']);
+  });
 });
 
 describe('time and views', () => {

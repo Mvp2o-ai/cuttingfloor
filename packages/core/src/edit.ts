@@ -1520,9 +1520,14 @@ function transcriptSegments(
   const tpf = ticksPerFrame(doc.sequence.fps);
   const start = Math.round(clip.start / tpf);
   const n = Math.round(clip.duration / tpf);
-  const placed = new Map<number, { first: number; last: number }>();
+  const placed = new Map<number, { first: number; last: number; lo: number; hi: number }>();
+  // Source seconds one frame plays: what a word covers per frame it is seen in.
+  let step = 0;
+  let prevT: number | undefined;
   for (let i = 0; i < n; i++) {
     const t = frameSource(clip, tpf, i) / TICKS_PER_SECOND;
+    if (prevT !== undefined) step = Math.max(step, Math.abs(t - prevT));
+    prevT = t;
     // The word playing at t: the last that starts at or before it, if t is inside it.
     let lo = 0;
     let hi = words.length - 1;
@@ -1537,9 +1542,17 @@ function transcriptSegments(
     if (p) {
       p.first = Math.min(p.first, i);
       p.last = Math.max(p.last, i);
-    } else placed.set(lo, { first: i, last: i });
+      p.lo = Math.min(p.lo, t);
+      p.hi = Math.max(p.hi, t);
+    } else placed.set(lo, { first: i, last: i, lo: t, hi: t });
   }
+  // Whisper stretches words over the pauses around them, so a cut can clip a frame or two of one
+  // the clip doesn't really say. Caption a word only when at least half of it plays here.
   const ordered = [...placed.entries()]
+    .filter(([index, f]) => {
+      const w = words[index] as { start: number; end: number };
+      return Math.min(f.hi + step, w.end) - f.lo >= (w.end - w.start) / 2;
+    })
     .map(([index, f]) => ({ text: (words[index] as { text: string }).text, ...f }))
     .sort((x, y) => x.first - y.first);
   const pause = Math.round((0.6 * doc.sequence.fps.num) / doc.sequence.fps.den);
