@@ -319,17 +319,18 @@ console.log('done');`,
       },
     })) as { structuredContent: { job_id: string } };
     const id = started.structuredContent.job_id;
+    // The call's own queue message lands just after the script starts waiting on it.
+    const waiting =
+      /^running; waiting on media\.import j_\w+: queued: next in line, waiting for a free job slot \(2 run at once on this server; running now: export\.video, qa\.check\)$/;
     let seen = '';
-    for (let i = 0; i < 100 && !/waiting on media\.import/.test(seen); i++) {
+    for (let i = 0; i < 100 && !waiting.test(seen); i++) {
       await new Promise((r) => setTimeout(r, 50));
       const got = (await client.callTool({ name: 'job.get', arguments: { job_id: id } })) as {
         structuredContent: { status_message?: string };
       };
       seen = got.structuredContent.status_message ?? '';
     }
-    expect(seen).toMatch(
-      /^running; waiting on media\.import j_\w+: queued: next in line, waiting for a free job slot \(2 run at once on this server; running now: export\.video, qa\.check\)$/,
-    );
+    expect(seen).toMatch(waiting);
     // Queued for longer than the script's whole limit, it still finishes.
     await new Promise((r) => setTimeout(r, 3000));
     for (const b of blockers) await runtime.jobs.cancel(b.id, 'bob');
