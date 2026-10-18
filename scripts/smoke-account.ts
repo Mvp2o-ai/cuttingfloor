@@ -70,7 +70,9 @@ try {
   const page = await browser.newPage();
   await page.setViewport({ width: 1440, height: 900 });
   if (bypass)
-    await page.goto(`${site}/?x-vercel-protection-bypass=${bypass}&x-vercel-set-bypass-cookie=true`);
+    await page.goto(
+      `${site}/?x-vercel-protection-bypass=${bypass}&x-vercel-set-bypass-cookie=true`,
+    );
   await page.goto(`${site}/account`, { waitUntil: 'networkidle2' });
   await page.waitForSelector('input[type=email], input[name=email]', { timeout: 30_000 });
   await page.type('input[type=email], input[name=email]', email);
