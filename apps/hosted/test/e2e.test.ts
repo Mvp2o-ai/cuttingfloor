@@ -640,6 +640,32 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     expect(grid.content.filter((c) => c.type === 'image')).toHaveLength(1);
   }, 120_000);
 
+  it('links frames and media for download, and renders JPEG at a quality', async () => {
+    const sizes: number[] = [];
+    for (const quality of [30, 95]) {
+      const res = await ok<{ images: Array<{ url: string; mime_type: string; bytes: number }> }>(
+        client,
+        'render.frames',
+        { timeline_id: timeline, frames: [10, 30], layout: 'single', format: 'jpeg', quality },
+      );
+      expect(res.images).toHaveLength(2);
+      expect(res.images[0]?.mime_type).toBe('image/jpeg');
+      const got = await fetch(res.images[0]?.url ?? '');
+      expect(got.headers.get('content-type')).toBe('image/jpeg');
+      const body = Buffer.from(await got.arrayBuffer());
+      expect(body.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+      expect(body.length).toBe(res.images[0]?.bytes);
+      sizes.push(body.length);
+    }
+    expect(sizes[0]).toBeLessThan(sizes[1] as number);
+    const info = await ok<{ url: string }>(client, 'media.get', { media_id: media.card });
+    const file = await fetch(info.url);
+    expect(file.status).toBe(200);
+    expect(Buffer.from(await file.arrayBuffer())).toEqual(
+      await readFile(join(env.mediaDir, 'card.png')),
+    );
+  }, 120_000);
+
   it('serves previews as links that render on read', async () => {
     const trimmed = await ok<{ timeline_id: string; preview: { uri: string; frames: number[] } }>(
       client,

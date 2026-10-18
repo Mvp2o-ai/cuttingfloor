@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CfError,
+  type CodeDone,
   type CodeEvent,
   CodeRequest,
   MOTION_LIMITS,
@@ -30,6 +31,11 @@ import type { MotionJob } from './render.ts';
 const JOB = fileURLToPath(new URL('./job.ts', import.meta.url));
 const MAX_BODY = Math.ceil(MOTION_LIMITS.maxAssetBytes * 1.4) + MOTION_LIMITS.maxHtmlBytes + 65_536;
 const KEEP_MS = 10 * 60_000;
+/**
+ * A finished script keeps the sandbox until the main server has fetched its out/ files and let
+ * it go, or this long without a request from it (a main server that went away).
+ */
+const CODE_IDLE_MS = 60_000;
 
 export interface MotionWorkerOptions {
   port: number;
@@ -77,7 +83,7 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
     }
     for (const [id, job] of codeJobs) {
       codeJobs.delete(id);
-      await dropCodeJob(job);
+      await drop(job);
     }
   }
 
@@ -171,20 +177,42 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
       const job = await newCodeJob(scratch);
       codeJobs.set(job.id, job);
       send({ job: { id: job.id, secret: job.secret } });
+      let done: CodeDone;
       try {
-        send({ done: await runCode(job, parsed.data, send, abort.signal) });
-        job.timer = setTimeout(() => {
-          codeJobs.delete(job.id);
-          void dropCodeJob(job);
-        }, KEEP_MS);
-        job.timer.unref();
+        done = await runCode(job, parsed.data, send, abort.signal);
       } catch (error) {
         codeJobs.delete(job.id);
         await dropCodeJob(job);
         send({ error: errorBody(error) });
+        res.end();
+        return;
       }
+      // The next job purges this one's files, so this one keeps the sandbox until the main
+      // server has fetched its out/ files and deleted it (or stops asking).
+      const released = new Promise<void>((resolve) => {
+        job.release = resolve;
+      });
+      idle(job);
+      send({ done });
       res.end();
+      await released;
     });
+  }
+
+  /** Starts (or restarts) a finished job's idle clock; it lets the sandbox go when it runs out. */
+  function idle(job: CodeJob): void {
+    if (job.timer) clearTimeout(job.timer);
+    if (!job.release) return;
+    job.timer = setTimeout(() => void drop(job), CODE_IDLE_MS);
+    job.timer.unref();
+  }
+
+  async function drop(job: CodeJob): Promise<void> {
+    codeJobs.delete(job.id);
+    await dropCodeJob(job);
+    const release = job.release;
+    job.release = undefined;
+    release?.();
   }
 
   async function codeRoute(
@@ -201,10 +229,25 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
       return json(res, 404, { error: { code: 'not_found', message: 'No such job' } });
     }
     if (req.method === 'DELETE' && !what) {
-      codeJobs.delete(id);
-      await dropCodeJob(job);
+      await drop(job);
       return json(res, 200, { ok: true });
     }
+    // A request in flight (a big out/ file streaming) holds the idle clock.
+    if (job.timer) clearTimeout(job.timer);
+    try {
+      await jobRoute(req, res, job, what, rid);
+    } finally {
+      idle(job);
+    }
+  }
+
+  async function jobRoute(
+    req: IncomingMessage,
+    res: ServerResponse,
+    job: CodeJob,
+    what: string | undefined,
+    rid: string | undefined,
+  ): Promise<void> {
     if (req.method === 'POST' && what === 'reply' && rid) {
       replyTo(job, rid, (await readBody(req, 64 * 1024 * 1024)) as never);
       return json(res, 200, { ok: true });

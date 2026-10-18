@@ -551,7 +551,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get media',
       description:
-        'Status, streams, duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
+        'Status, a signed download url for the file, streams, duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
       inputSchema: MediaRefInput,
       outputSchema: MediaInfo,
       annotations: {
@@ -562,9 +562,15 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         openWorldHint: false,
       },
     },
-    guard(async (args) =>
-      ok(mediaInfo(await rt.media.get(deps.owner(), args.media_id), args.include ?? [])),
-    ),
+    guard(async (args) => {
+      const owner = deps.owner();
+      const record = await rt.media.get(owner, args.media_id);
+      const link = await rt.signMedia(owner, record);
+      return ok({
+        ...mediaInfo(record, args.include ?? []),
+        ...(link ? { url: link.url, expires_at: link.expiresAt } : {}),
+      });
+    }),
   );
 }
 

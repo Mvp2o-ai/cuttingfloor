@@ -116,7 +116,8 @@ export function createHttpServer(options: HttpOptions): Server {
           res.writeHead(403, { 'content-type': 'text/plain' }).end('invalid or expired link');
           return;
         }
-        await sendFile(req, res, file);
+        const name = decodeURIComponent(url.pathname.split('/').pop() ?? '');
+        await sendFile(req, res, file, name);
         return;
       }
       if (url.pathname.startsWith('/uploads/')) {
@@ -306,7 +307,12 @@ async function sendResponse(res: ServerResponse, response: Response): Promise<vo
 }
 
 /** Streams a file with single-range support, so players can seek. */
-async function sendFile(req: IncomingMessage, res: ServerResponse, file: string): Promise<void> {
+async function sendFile(
+  req: IncomingMessage,
+  res: ServerResponse,
+  file: string,
+  name = file.split('/').pop() ?? 'output',
+): Promise<void> {
   let size: number;
   try {
     size = (await stat(file)).size;
@@ -314,13 +320,13 @@ async function sendFile(req: IncomingMessage, res: ServerResponse, file: string)
     res.writeHead(404, { 'content-type': 'text/plain' }).end('gone');
     return;
   }
-  const type = outputMime(file);
-  const name = file.split('/').pop() ?? 'output';
+  const type = outputMime(name.includes('.') ? name : file);
   const headers: Record<string, string | number> = {
     'content-type': type,
     'accept-ranges': 'bytes',
     'content-disposition': `attachment; filename="${name.replace(/"/g, '')}"`,
     'cache-control': 'private, max-age=3600',
+    'x-content-type-options': 'nosniff',
   };
   const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '');
   if (range && (range[1] || range[2])) {

@@ -55,6 +55,8 @@ export interface CodeJob {
   /** Files the script is importing now: rid → path. */
   uploads: Map<string, string>;
   timer?: NodeJS.Timeout;
+  /** Once finished: lets the sandbox go to the next job. */
+  release?: (() => void) | undefined;
 }
 
 const SCRIPT: Record<CodeRequest['language'], { file: string; run: string[] }> = {

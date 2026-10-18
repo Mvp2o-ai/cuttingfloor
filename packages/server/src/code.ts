@@ -26,13 +26,18 @@ export interface CodeHandlers {
   }>;
   /** Where to put an out/ file the script wrote. */
   output(name: string): Promise<string>;
-  /** A file the script imports while it runs, fetched to `output(name)`: the media it became. */
+  /** Where to put a file the script imports while it runs. */
+  scratch(name: string): Promise<string>;
+  /** A file the script imports while it runs, fetched to `scratch(name)`: the media it became. */
   upload(name: string, path: string): Promise<unknown>;
 }
 
 export interface CodeRun extends CodeDone {
-  /** out/ files, fetched to the paths `output` gave. */
-  files: Array<{ name: string; path: string }>;
+  /**
+   * out/ files: fetched to the paths `output` gave, or the reason one could not be fetched (the
+   * others are still there).
+   */
+  files: Array<{ name: string; path: string } | { name: string; error: ToolError }>;
 }
 
 const errorOf = (error: unknown): ToolError =>
@@ -98,7 +103,7 @@ export async function runCodeInSandbox(
       try {
         const r = await fetch(url(`/upload/${rid}`), { headers: headers(), signal });
         if (!r.ok || !r.body) throw new CfError('engine_error', `Could not fetch ${name}`);
-        const dest = await handlers.output(`upload-${rid}-${name}`);
+        const dest = await handlers.scratch(`upload-${rid}-${name}`);
         await pipeline(Readable.fromWeb(r.body as never), createWriteStream(dest));
         body = { result: await handlers.upload(name, dest) };
       } catch (error) {
@@ -169,14 +174,37 @@ export async function runCodeInSandbox(
     const files: CodeRun['files'] = [];
     if (done.exit_code === 0) {
       for (const o of done.outputs) {
-        const r = await fetch(url(`/out/${encodeURIComponent(o.name)}`), {
-          headers: headers(),
-          signal,
-        });
-        if (!r.ok || !r.body) throw new CfError('engine_error', `Could not fetch out/${o.name}`);
-        const dest = await handlers.output(o.name);
-        await pipeline(Readable.fromWeb(r.body as never), createWriteStream(dest));
-        files.push({ name: o.name, path: dest });
+        // One file that can't be fetched is that file's failure, not the run's.
+        try {
+          const r = await fetch(url(`/out/${encodeURIComponent(o.name)}`), {
+            headers: headers(),
+            signal,
+          });
+          if (!r.ok || !r.body) {
+            throw new CfError(
+              'engine_error',
+              `Could not fetch out/${o.name} from the sandbox: HTTP ${r.status}${r.status === 404 ? ' (the sandbox no longer has it)' : ''}`,
+              { hint: 'Run the script again to make this file; the other outputs were kept' },
+            );
+          }
+          const dest = await handlers.output(o.name);
+          await pipeline(Readable.fromWeb(r.body as never), createWriteStream(dest));
+          files.push({ name: o.name, path: dest });
+        } catch (error) {
+          if (signal.aborted) throw new CfError('cancelled', 'Cancelled');
+          const e = errorOf(error);
+          files.push({
+            name: o.name,
+            error:
+              error instanceof CfError
+                ? e
+                : {
+                    ...e,
+                    message: `Could not fetch out/${o.name} from the sandbox: ${e.message}`,
+                    hint: 'Run the script again to make this file; the other outputs were kept',
+                  },
+          });
+        }
       }
     }
     return { ...done, files };

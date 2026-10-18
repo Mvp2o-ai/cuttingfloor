@@ -12,8 +12,63 @@ const TYPES: Record<string, string> = {
   '.srt': 'application/x-subrip',
   '.vtt': 'text/vtt',
   '.zip': 'application/zip',
+  '.pdf': 'application/pdf',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.webm': 'video/webm',
+  '.mkv': 'video/x-matroska',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.flac': 'audio/flac',
+  '.ogg': 'audio/ogg',
+  '.opus': 'audio/ogg',
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.cube': 'text/plain',
+  '.json': 'application/json',
+  '.txt': 'text/plain',
+  '.md': 'text/markdown',
+  '.csv': 'text/csv',
+  '.tsv': 'text/tab-separated-values',
+  '.html': 'text/html',
+  '.xml': 'application/xml',
+  '.ass': 'text/plain',
+  '.ssa': 'text/plain',
+  '.yaml': 'application/yaml',
+  '.yml': 'application/yaml',
+  '.log': 'text/plain',
 };
+
+/**
+ * Extensions code.run hands back as plain files (a download link) rather than importing as media:
+ * text and data a timeline can't play.
+ */
+export const DATA_EXTENSIONS = new Set([
+  '.vtt',
+  '.srt',
+  '.ass',
+  '.ssa',
+  '.json',
+  '.txt',
+  '.md',
+  '.csv',
+  '.tsv',
+  '.html',
+  '.xml',
+  '.yaml',
+  '.yml',
+  '.log',
+  '.otio',
+  '.fcpxml',
+  '.edl',
+  '.zip',
+  '.pdf',
+]);
 
 /** The media type of an output file, by its extension. */
 export function outputMime(name: string): string {

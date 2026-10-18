@@ -11,6 +11,7 @@ import { createServer, Runtime } from '@cuttingfloor/server';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createHttpServer } from '../src/http.ts';
 
 // code.run against a real sandbox worker (in-process here) and the real server: scripts in each
 // language call tools through the SDK, read inputs, write timelines to out/, and fail cleanly.
@@ -37,6 +38,7 @@ const python = await exec('python3', ['--version']).then(
 );
 
 let worker: Server;
+let http: Server;
 let runtime: Runtime;
 const clients: Client[] = [];
 
@@ -60,7 +62,15 @@ interface Run {
     exit_code: number;
     stdout: string;
     stderr: string;
-    outputs: Array<{ name: string; timeline_id?: string; media_id?: string; error?: unknown }>;
+    outputs: Array<{
+      name: string;
+      type: string;
+      timeline_id?: string;
+      media_id?: string;
+      url?: string;
+      mime_type?: string;
+      error?: { code: string; message: string };
+    }>;
   };
   error?: { code: string; message: string; detail?: { stdout?: string; stderr?: string } };
 }
@@ -100,11 +110,22 @@ beforeAll(async () => {
     motionUrl: `http://127.0.0.1:${(worker.address() as AddressInfo).port}`,
   });
   await runtime.start({ sweep: false });
+  http = createHttpServer({ runtime, credentials: new LocalCredentialStore({}, false) });
+  await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
 });
+
+/** Downloads a signed link from the HTTP server (the runtime's public URL names no real port). */
+async function download(url: string | undefined): Promise<Response> {
+  const at = new URL(url ?? '');
+  return fetch(
+    `http://127.0.0.1:${(http.address() as AddressInfo).port}${at.pathname}${at.search}`,
+  );
+}
 
 afterAll(async () => {
   for (const c of clients) await c.close().catch(() => undefined);
   worker?.close();
+  http?.close();
   runtime?.stop();
 });
 
@@ -226,6 +247,52 @@ except CfError as e:
     // The worker is fine afterwards.
     const after = await run(client, { language: 'bash', script: 'echo ok' });
     expect(after.result?.stdout).toBe('ok\n');
+  }, 60_000);
+
+  it('hands back text files with links, and keeps the rest when one file fails', async () => {
+    const client = await connect('alice');
+    const done = await run(client, {
+      language: 'bash',
+      script: [
+        'printf "WEBVTT\\n\\n00:00.000 --> 00:01.000\\nHi\\n" > out/captions.vtt',
+        'echo \'{"a":1}\' > out/notes.json',
+        'echo "not a movie" > out/broken.mov',
+        'echo still here',
+      ].join('\n'),
+    });
+    expect(done.error).toBeUndefined();
+    expect(done.result?.stdout).toBe('still here\n');
+    const byName = Object.fromEntries((done.result?.outputs ?? []).map((o) => [o.name, o]));
+    expect(byName['captions.vtt']).toMatchObject({ type: 'file', mime_type: 'text/vtt' });
+    expect(byName['notes.json']).toMatchObject({ type: 'file', mime_type: 'application/json' });
+    const vtt = await download(byName['captions.vtt']?.url);
+    expect(vtt.status).toBe(200);
+    expect(await vtt.text()).toContain('WEBVTT');
+    // The file that could not be imported is marked failed, with its cause and its bytes.
+    expect(byName['broken.mov']).toMatchObject({
+      type: 'failed',
+      error: { code: expect.any(String) },
+    });
+    expect(await (await download(byName['broken.mov']?.url)).text()).toBe('not a movie\n');
+    // A link that was tampered with is refused.
+    const forged = new URL(byName['notes.json']?.url ?? '');
+    forged.searchParams.set('sig', 'x');
+    expect((await download(forged.href)).status).toBe(403);
+  }, 60_000);
+
+  it('keeps every out/ file when two owners run scripts at once', async () => {
+    const [alice, bob] = [await connect('alice'), await connect('bob')];
+    const script = (who: string) => ({
+      language: 'bash',
+      script: `for i in 1 2 3; do echo ${who}-$i > out/${who}-$i.txt; done`,
+    });
+    const [a, b] = await Promise.all([run(alice, script('a')), run(bob, script('b'))]);
+    for (const [who, r] of [['a', a] as const, ['b', b] as const]) {
+      expect(r.error).toBeUndefined();
+      expect(r.result?.outputs.map((o) => o.type)).toEqual(['file', 'file', 'file']);
+      const text = await (await download(r.result?.outputs[2]?.url)).text();
+      expect(text).toBe(`${who}-3\n`);
+    }
   }, 60_000);
 
   it.skipIf(!namespaces)(

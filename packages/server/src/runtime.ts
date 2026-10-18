@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { availableParallelism, hostname } from 'node:os';
-import { join } from 'node:path';
+import { extname, join } from 'node:path';
 import { ownerKey, TimelineStore, Workspace } from '@cuttingfloor/core';
 import { MEDIA_TTL_MS, MediaLibrary } from '@cuttingfloor/engine';
 import { FileJobStore, JobRunner } from '@cuttingfloor/jobs';
@@ -147,6 +147,14 @@ export class Runtime {
     await this.timelines.sweep();
     await this.media.sweep(MEDIA_TTL_MS);
     await this.jobs.store.sweep();
+    // Frames kept for download (render.frames urls) last as long as their links.
+    for (const owner of await this.ws.owners()) {
+      await this.ws.sweep(
+        this.ws.path('owners', owner, 'outputs'),
+        this.config.outputUrlTtlMs,
+        (name) => !name.startsWith('f_'),
+      );
+    }
     await this.uploads.sweep();
     for (const owner of await this.ws.owners()) {
       await this.ws.sweep(this.ws.path('owners', owner, 'usage'), 2 * 24 * 3_600_000);
@@ -163,7 +171,10 @@ export class Runtime {
     return this.#secret;
   }
 
-  /** A signed, time-limited download URL for a job output. */
+  /**
+   * A signed, time-limited download URL for a file under `outputs/{id}/`: a job's output (`j_…`),
+   * or frames kept for download (`f_…`). A media id (`m_…`) signs the media's own file.
+   */
   async signOutput(
     owner: string,
     jobId: string,
@@ -180,13 +191,30 @@ export class Runtime {
     };
   }
 
-  /** Checks a signed output URL. Returns the file on disk, or undefined when invalid or expired. */
+  /** A signed download URL for a media item's file; undefined while it has none. */
+  async signMedia(
+    owner: string,
+    record: { media_id: string; name: string; file: string | null },
+  ): Promise<{ url: string; expiresAt: string } | undefined> {
+    if (!record.file) return undefined;
+    const name =
+      record.name.replace(/[^\w.-]+/g, '_').replace(/^[._]+/, '') ||
+      `${record.media_id}${extname(record.file)}`;
+    return this.signOutput(owner, record.media_id, name);
+  }
+
+  /**
+   * Checks a signed output URL. Returns the file on disk and the name to download it as, or
+   * undefined when invalid or expired.
+   */
   async verifyOutput(
     pathname: string,
     exp: string | null,
     sig: string | null,
   ): Promise<string | undefined> {
-    const m = /^\/outputs\/([A-Za-z0-9_-]{1,64})\/(j_[0-9a-z]{26})\/([^/]+)$/.exec(pathname);
+    const m = /^\/outputs\/([A-Za-z0-9_-]{1,64})\/((?:j|f|m)_[0-9a-z]{26})\/([^/]+)$/.exec(
+      pathname,
+    );
     if (!m || !exp || !sig || !(Number(exp) > Date.now())) return undefined;
     const expected = createHmac('sha256', await this.secret())
       .update(`${pathname}\n${exp}`)
@@ -195,6 +223,13 @@ export class Runtime {
     if (given.length !== expected.length || !timingSafeEqual(given, expected)) return undefined;
     const name = decodeURIComponent(m[3] ?? '');
     if (name.includes('/') || name.startsWith('.')) return undefined;
-    return this.ws.path('owners', m[1] ?? '', 'outputs', m[2] ?? '', name);
+    const key = m[1] ?? '';
+    const id = m[2] ?? '';
+    if (id.startsWith('m_')) {
+      // An owner key is its own key, so the media library finds the owner's media by it.
+      const record = await this.media.find(key, id);
+      return record?.file ?? undefined;
+    }
+    return this.ws.path('owners', key, 'outputs', id, name);
   }
 }

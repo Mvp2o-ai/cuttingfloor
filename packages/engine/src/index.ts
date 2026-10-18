@@ -46,6 +46,8 @@ export { conformReasons, type Probe, probe, standardRate } from './probe.ts';
 export { type QaOptions, type QaReport, qaCheck } from './qa.ts';
 export {
   exportTimeline,
+  type ImageFormat,
+  imageExtension,
   mediaStills,
   renderMediaFrames,
   renderTimelineFrames,

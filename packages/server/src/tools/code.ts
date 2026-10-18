@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename } from 'node:fs/promises';
+import { copyFile, link, mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { mediaInfo } from '@cuttingfloor/engine';
 import {
@@ -7,12 +7,14 @@ import {
   CODE_DENIED_TOOLS,
   CodeRunInput,
   CodeRunResult,
+  type ToolError,
   withJob,
 } from '@cuttingfloor/schema';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, type McpServer } from '@modelcontextprotocol/server';
 import type * as z from 'zod/v4';
 import { runCodeInSandbox } from '../code.ts';
+import { DATA_EXTENSIONS, outputMime } from '../mime.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import { createServer, type ServerDeps } from '../server.ts';
 
@@ -44,7 +46,7 @@ export function registerCodeTools(server: McpServer, deps: ServerDeps): void {
       description: [
         'Run a script (node, python or bash) in the sandbox for anything the tools do not cover: generated graphics, procedural or data-driven edits, custom FFmpeg or MLT work, batch jobs.',
         "Inside, `import { cf } from 'cuttingfloor'` (python `from cuttingfloor import cf`; bash `cf domain.verb '{json}'`) calls every tool except code.run, create.motion and create.still as cf.domain.verb(args), on the same media and timelines, following long jobs to their result: each call returns that tool's output schema (for a long-running tool, its finished result), so a script can chain calls on those fields. In node, motion({html, duration, width, height, fps, transparent, out}) and still({html, width, height, out}) from the same module render pages right there and return the file's path; out names it (e.g. 'out/title.mov').",
-        'inputs are fetched into in/; files written to out/ come back as media (video, audio, images, fonts, LUTs), and out/*.timeline.json as timelines (the timeline.get JSON).',
+        'inputs are fetched into in/; files written to out/ come back as media (video, audio, images, fonts, LUTs), out/*.timeline.json as timelines (the timeline.get JSON), and text or data (vtt, srt, json, txt, csv, …) as files. Every output has a signed download url; one that cannot be kept is marked failed with the reason, and the others and stdout are still returned.',
         'Preinstalled: Node 24, Python 3 (numpy, Pillow, OpenCV), FFmpeg, melt, Chromium. No network.',
         'Long-running: a task, or {job_id} for job.get. A non-zero exit fails with code_failed and the logs.',
       ].join(' '),
@@ -77,6 +79,9 @@ export function registerCodeTools(server: McpServer, deps: ServerDeps): void {
         const client = await ownerClient(deps, owner);
         const scratch = rt.ws.ownerDir(owner, 'code', job.id);
         await mkdir(scratch, { recursive: true });
+        // out/ files land with the job's outputs, where their download links point.
+        const outDir = rt.ws.ownerDir(owner, 'outputs', job.id);
+        await mkdir(outDir, { recursive: true });
         try {
           const run = await runCodeInSandbox(
             rt.config.motionUrl,
@@ -124,10 +129,17 @@ export function registerCodeTools(server: McpServer, deps: ServerDeps): void {
                   data: Buffer.from(JSON.stringify(got.structuredContent, null, 2)),
                 };
               },
-              output: async (name) => join(scratch, name),
+              output: async (name) => join(outDir, name),
+              scratch: async (name) => join(scratch, name),
               upload: async (name, path) =>
                 mediaInfo(
-                  await importFile(name, path, `${scriptHash}\0${job.id}\0up:${name}`, signal),
+                  await importFile(
+                    name,
+                    path,
+                    `${scriptHash}\0${job.id}\0up:${name}`,
+                    signal,
+                    'move',
+                  ),
                 ),
             },
             (f, m) => progress(0.05 + 0.85 * f, m),
@@ -166,29 +178,54 @@ export function registerCodeTools(server: McpServer, deps: ServerDeps): void {
           }) as never;
         } finally {
           await client.close().catch(() => undefined);
+          await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
         }
       });
 
-      /** A file the script made, as new media through the normal import. */
-      async function importFile(name: string, path: string, key: string, signal: AbortSignal) {
+      /**
+       * A file the script made, as new media through the normal import. An out/ file stays where
+       * its download link points (a hard link, so no second copy); an upload moves.
+       */
+      async function importFile(
+        name: string,
+        path: string,
+        key: string,
+        signal: AbortSignal,
+        how: 'move' | 'link',
+      ) {
         const recipe = createHash('sha256').update(key).digest('hex');
         const record = await rt.media.create(owner, { created: 'code.run', recipe }, name);
         const dest = join(
           rt.media.dir(owner, record.media_id),
           `source${extname(name).slice(0, 8)}`,
         );
-        await rename(path, dest);
+        if (how === 'move') await rename(path, dest);
+        else await link(path, dest).catch(() => copyFile(path, dest));
         record.file = dest;
         return rt.media.ingest(owner, record, () => undefined, signal);
       }
 
-      /** One out/ file: a timeline, or new media through the normal import. */
+      /**
+       * One out/ file: a timeline, new media through the normal import, or (text and data) a
+       * file. Each comes with a signed download link to the file as the script wrote it. One that
+       * fails is marked failed with its cause; the rest are kept either way.
+       */
       async function keep(
-        f: { name: string; path: string },
+        f: { name: string; path: string } | { name: string; error: ToolError },
         script: string,
         jobId: string,
         signal: AbortSignal,
       ): Promise<z.infer<typeof CodeRunResult>['outputs'][number]> {
+        if ('error' in f) return { name: f.name, type: 'failed', error: f.error };
+        const link = async () => {
+          const { url, expiresAt } = await rt.signOutput(owner, jobId, f.name);
+          return {
+            url,
+            expires_at: expiresAt,
+            bytes: (await stat(f.path)).size,
+            mime_type: outputMime(f.name),
+          };
+        };
         try {
           if (f.name.endsWith('.timeline.json')) {
             let timeline: unknown;
@@ -215,24 +252,42 @@ export function registerCodeTools(server: McpServer, deps: ServerDeps): void {
                   e.hint ? { hint: e.hint } : {},
                 );
               }
-              return { name: f.name, timeline_id: loaded.structuredContent?.timeline_id as string };
+              return {
+                name: f.name,
+                type: 'timeline',
+                timeline_id: loaded.structuredContent?.timeline_id as string,
+                ...(await link()),
+              };
             } finally {
               await client.close().catch(() => undefined);
             }
           }
-          const done = await importFile(f.name, f.path, `${script}\0${jobId}\0${f.name}`, signal);
+          if (DATA_EXTENSIONS.has(extname(f.name).toLowerCase())) {
+            return { name: f.name, type: 'file', ...(await link()) };
+          }
+          const done = await importFile(
+            f.name,
+            f.path,
+            `${script}\0${jobId}\0${f.name}`,
+            signal,
+            'link',
+          );
           const info = mediaInfo(done);
           return {
             name: f.name,
+            type: 'media',
             media_id: done.media_id,
             ...(info.kind ? { kind: info.kind } : {}),
+            ...(await link()),
           };
         } catch (error) {
           const e =
             error instanceof CfError
               ? error
               : new CfError('engine_error', (error as Error).message ?? String(error));
-          return { name: f.name, error: e.toJSON() };
+          // The file itself is still there to download, whatever went wrong with it.
+          const kept = await link().catch(() => undefined);
+          return { name: f.name, type: 'failed', error: e.toJSON(), ...(kept ?? {}) };
         }
       }
       return jobReply(job, ctx);

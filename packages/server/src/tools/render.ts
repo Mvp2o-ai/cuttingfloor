@@ -1,8 +1,10 @@
-import { copyFile, link, mkdir, rm, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { copyFile, link, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ticksPerFrame } from '@cuttingfloor/core';
 import {
   exportTimeline,
+  imageExtension,
   lengthFrames,
   qaCheck,
   renderMediaFrames,
@@ -27,6 +29,7 @@ import {
   withJob,
 } from '@cuttingfloor/schema';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
+import type * as z from 'zod/v4';
 import { assertOnline, framesUri, sourcesFor, timelineImage } from '../render.ts';
 import { guard, jobReply, jobView, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
@@ -48,7 +51,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Render frames',
       description:
-        'Look at a timeline (or a media file): up to 16 frames as one contact-sheet image (layout grid) or one image each (single). Media frames are numbered at the media frame rate. size full: up to 4 frames at the sequence (or media) size from the original media, for thumbnails and stills to keep.',
+        'Look at a timeline (or a media file): up to 16 frames as one contact-sheet image (layout grid) or one image each (single). Media frames are numbered at the media frame rate. size full: up to 4 frames at the sequence (or media) size from the original media, for thumbnails and stills to keep. format webp (default), png or jpeg, with quality for webp and jpeg. Each image comes inline and with a signed download url.',
       inputSchema: RenderFramesInput,
       outputSchema: RenderFramesResult,
       annotations: { ...readOnly, title: 'Render frames' },
@@ -56,10 +59,30 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     guard(async (args, ctx) => {
       const owner = deps.owner();
       const signal = (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal;
-      const mime = args.format === 'png' ? 'image/png' : 'image/webp';
+      const mime = `image/${args.format}`;
       const groups = args.layout === 'grid' ? [args.frames] : args.frames.map((f) => [f]);
-      const images: Array<{ uri: string; frames: number[] }> = [];
+      const images: z.infer<typeof RenderFramesResult>['images'] = [];
       const content: CallToolResult['content'] = [];
+      const quality = args.format === 'png' ? undefined : args.quality;
+      /** The image inline, and kept under outputs/ for its signed link. */
+      const add = async (uri: string, frames: number[], data: Buffer) => {
+        content.push({ type: 'image', data: data.toString('base64'), mimeType: mime });
+        const key = `${uri}\0${args.size}\0${args.long_edge}\0${quality ?? ''}`;
+        const dir = `f_${createHash('sha256').update(key).digest('hex').slice(0, 26)}`;
+        const name = `${uri.split('/')[3]}-${frames.join('_')}.${imageExtension(args.format)}`;
+        const folder = rt.ws.ownerDir(owner, 'outputs', dir);
+        await mkdir(folder, { recursive: true });
+        await writeFile(join(folder, name), data);
+        const { url, expiresAt } = await rt.signOutput(owner, dir, name);
+        images.push({
+          uri,
+          frames,
+          url,
+          expires_at: expiresAt,
+          mime_type: mime,
+          bytes: data.length,
+        });
+      };
       if (args.timeline_id) {
         const doc = await rt.timelines.get(owner, args.timeline_id);
         for (const frames of groups) {
@@ -67,13 +90,10 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
             longEdge: args.long_edge,
             full: args.size === 'full',
             format: args.format,
+            ...(quality ? { quality } : {}),
             ...(signal ? { signal } : {}),
           });
-          content.push({ type: 'image', data: data.toString('base64'), mimeType: mime });
-          images.push({
-            uri: framesUri('timeline', args.timeline_id, frames, args.format),
-            frames,
-          });
+          await add(framesUri('timeline', args.timeline_id, frames, args.format), frames, data);
         }
       } else if (args.media_id) {
         const record = await rt.media.get(owner, args.media_id);
@@ -86,17 +106,14 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         const rendered = await renderMediaFrames(file, fps, args.frames, {
           longEdge: full ? Math.max(v.width ?? 0, v.height ?? 0) || args.long_edge : args.long_edge,
           format: args.format,
+          ...(quality ? { quality } : {}),
           layout: args.layout,
           ...(signal ? { signal } : {}),
         });
-        rendered.forEach((data, i) => {
+        for (const [i, data] of rendered.entries()) {
           const frames = groups[i] ?? [];
-          content.push({ type: 'image', data: data.toString('base64'), mimeType: mime });
-          images.push({
-            uri: framesUri('media', args.media_id ?? '', frames, args.format),
-            frames,
-          });
-        });
+          await add(framesUri('media', args.media_id, frames, args.format), frames, data);
+        }
       }
       return ok({ images }, content);
     }),

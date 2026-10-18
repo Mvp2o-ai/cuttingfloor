@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { type MediaFacts, ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
 import {
+  type ImageFormat,
   lengthFrames,
   type MltSource,
   mediaRef,
@@ -156,7 +157,7 @@ export function framesUri(
   kind: 'timeline' | 'media',
   id: string,
   frames: number[],
-  format: 'webp' | 'png' = 'webp',
+  format: ImageFormat = 'webp',
 ): string {
   return `video://${kind}/${id}/frames/${frames.join('_')}.${format}`;
 }
@@ -173,7 +174,9 @@ export async function timelineImage(
   frames: number[],
   options: {
     longEdge?: number;
-    format?: 'webp' | 'png';
+    format?: ImageFormat;
+    /** WebP and JPEG, 1–100. */
+    quality?: number;
     signal?: AbortSignal;
     /** Full size from the original media instead of preview size from proxies. */
     full?: boolean;
@@ -186,7 +189,7 @@ export async function timelineImage(
   const cacheFile = rt.ws.path(
     'cache',
     'frames',
-    `${timelineId}-${frames.join('_')}-${longEdge}${options.full ? '-full' : ''}.${format}`,
+    `${timelineId}-${frames.join('_')}-${longEdge}${options.full ? '-full' : ''}${options.quality ? `-q${options.quality}` : ''}.${format}`,
   );
   try {
     return await readFile(cacheFile);
@@ -207,6 +210,7 @@ export async function timelineImage(
   const [image] = await renderTimelineFrames(doc, frames, sources, {
     longEdge,
     format,
+    ...(options.quality ? { quality: options.quality } : {}),
     layout: 'grid',
     ...(options.signal ? { signal: options.signal } : {}),
   });

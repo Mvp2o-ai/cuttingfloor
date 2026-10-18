@@ -653,6 +653,11 @@ export const MediaStatus = z.enum(['importing', 'processing', 'ready', 'failed']
 export const MediaInfo = z.object({
   media_id: MediaId,
   name: z.string(),
+  url: z
+    .string()
+    .optional()
+    .describe('media.get: a signed download of the file itself, once it has one'),
+  expires_at: z.string().optional().describe('When url stops working'),
   status: MediaStatus.describe(
     'importing: not probed yet; processing: usable in edits, proxy still rendering; ready; failed',
   ),
@@ -829,9 +834,21 @@ export const CodeRunResult = z.object({
   outputs: z.array(
     z.object({
       name: z.string(),
+      type: z
+        .enum(['media', 'timeline', 'file', 'failed'])
+        .describe(
+          'media: imported (media_id); timeline: loaded (timeline_id); file: text or data (vtt, srt, json, txt, csv, …) kept as it is; failed: this one file was not kept (error says why), the others were',
+        ),
       media_id: MediaId.optional(),
       timeline_id: TimelineId.optional(),
       kind: z.string().optional(),
+      url: z
+        .string()
+        .optional()
+        .describe('Signed download of the file exactly as the script wrote it'),
+      expires_at: z.string().optional(),
+      bytes: z.number().optional(),
+      mime_type: z.string().optional(),
       error: ToolError.optional(),
     }),
   ),
@@ -991,7 +1008,16 @@ export const RenderFramesInput = z
       .enum(['preview', 'full'])
       .default('preview')
       .describe('full: the sequence size from original media (long_edge ignored)'),
-    format: z.enum(['webp', 'png']).default('webp'),
+    format: z
+      .enum(['webp', 'png', 'jpeg'])
+      .default('webp')
+      .describe('jpeg: for places that take nothing else; png: lossless'),
+    quality: z
+      .int()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe('WebP and JPEG, 1–100 (default 82 WebP, 85 JPEG)'),
   })
   .refine((v) => Boolean(v.timeline_id) !== Boolean(v.media_id), {
     message: 'Give exactly one of timeline_id or media_id',
@@ -1001,7 +1027,16 @@ export const RenderFramesInput = z
   });
 
 export const RenderFramesResult = z.object({
-  images: z.array(z.object({ uri: z.string(), frames: z.array(frame) })),
+  images: z.array(
+    z.object({
+      uri: z.string().describe('MCP resource for the image'),
+      frames: z.array(frame),
+      url: z.string().describe('Signed download of this image'),
+      expires_at: z.string(),
+      mime_type: z.string(),
+      bytes: z.number(),
+    }),
+  ),
 });
 
 export const ExportPreset = z
