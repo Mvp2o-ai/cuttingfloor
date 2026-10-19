@@ -20,6 +20,35 @@ export interface DownloadOptions {
 const MAX_REDIRECTS = 5;
 
 /**
+ * The address a share link serves the file itself at. Dropbox and Google Drive share links open
+ * a web page about the file; the same file downloads with Dropbox's dl=1 and from Drive's
+ * download host. Anything else is returned as it is.
+ */
+export function directDownloadUrl(url: string): string {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return url;
+  }
+  const host = u.hostname.toLowerCase();
+  if (host === 'dropbox.com' || host === 'www.dropbox.com') {
+    u.searchParams.delete('raw');
+    u.searchParams.set('dl', '1');
+    return u.toString();
+  }
+  if (host === 'drive.google.com') {
+    const id =
+      /^\/file\/d\/([\w-]+)/.exec(u.pathname)?.[1] ??
+      (/^\/(open|uc)$/.test(u.pathname) ? u.searchParams.get('id') : null);
+    if (id) {
+      return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(id)}&export=download&confirm=t`;
+    }
+  }
+  return url;
+}
+
+/**
  * Downloads a URL to `dest` with SSRF protection: http(s) only; private, loopback, link-local,
  * multicast and metadata addresses refused; the checked address is the one connected to (DNS is
  * pinned per request); every redirect is re-checked; size and time are capped.

@@ -26,7 +26,7 @@ export {
   setRenderLimit,
   watchRenderQueue,
 } from './exec.ts';
-export { download, isBlockedAddress } from './fetch.ts';
+export { directDownloadUrl, download, isBlockedAddress } from './fetch.ts';
 export {
   fingerprint,
   hasAlpha,

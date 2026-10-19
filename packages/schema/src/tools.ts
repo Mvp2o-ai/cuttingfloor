@@ -472,6 +472,12 @@ export const TimelineDiffInput = z.object({ from: TimelineId, to: TimelineId });
 export const TimelineDiffResult = z.object({ changed: z.array(Change) });
 
 // Media
+/** Limits that protect the server. */
+export const MEDIA_LIMITS = {
+  /** Largest file a data: URI may carry. */
+  inlineBytes: 8 * 1024 ** 2,
+} as const;
+
 export const MediaSource = z.union([
   z.object({
     path: z
@@ -484,14 +490,41 @@ export const MediaSource = z.union([
     upload_id: UploadId.describe('A file sent to the URL media.upload gave, once fully sent'),
   }),
   z.object({
+    data: z
+      .string()
+      .min(6)
+      .max(Math.ceil((MEDIA_LIMITS.inlineBytes * 4) / 3) + 200)
+      .describe(
+        `A small file written out as a data: URI (data:image/png;base64,…), up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB: a logo, a still, a short sound. Bigger files go through media.upload`,
+      ),
+    sha256: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional()
+      .describe(
+        "The file's SHA-256 in hex; the import is refused if the data decodes to anything else",
+      ),
+  }),
+  z.object({
     job_id: JobId.describe(
       'A completed export.video: its rendered file becomes media, e.g. to re-edit a finished cut or place it in a sequence of another shape',
     ),
   }),
 ]);
 
+/** A file the client attached (ChatGPT passes these for fields named in openai/fileParams). */
+export const AttachedFile = z.object({
+  download_url: z.url().describe('Where the server downloads the file from'),
+  file_id: z.string().min(1),
+  mime_type: z.string().optional(),
+  file_name: z.string().optional(),
+});
+
 export const MediaImportInput = z.object({
-  source: MediaSource,
+  source: MediaSource.optional().describe('Where the file is. Give this or file'),
+  file: AttachedFile.optional().describe(
+    'A file the user attached in the chat, as the client passes it (instead of source)',
+  ),
   name: z.string().min(1).max(200).optional(),
   idempotency_key: z.string().min(1).max(200).optional(),
 });

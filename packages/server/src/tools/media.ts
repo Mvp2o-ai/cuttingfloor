@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import {
@@ -16,6 +17,7 @@ import {
   CfError,
   JUDGE_LIMITS,
   type JudgeAnswer,
+  MEDIA_LIMITS,
   MediaAnalyzeInput,
   MediaAnalyzeResult,
   MediaImportInput,
@@ -144,11 +146,13 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       description: [
         "Import the user's own video, audio, image or font to edit with or place as is: probe, fingerprint, conform if needed (VFR, rotation, HDR → BT.709), 540p proxy and integrated loudness. A reference image to recreate needs no import: rebuild it with create.motion or create.still.",
         'Long-running: returns a task, or {job_id, media_id} for job.get. The media_id is usable in edits as soon as the job reports processing.',
-        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL, the upload_id of a file sent through media.upload, or the job_id of a completed export.video (its render becomes media).`,
+        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL (Dropbox and Google Drive share links work as they are), the upload_id of a file sent through media.upload, a small file as a data: URI (up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB, with its sha256 so a garbled copy is refused), or the job_id of a completed export.video (its render becomes media). A file the user attached in the chat comes as file, when the client passes it.`,
         'Importing the same file again returns the same media_id.',
       ].join(' '),
       inputSchema: MediaImportInput,
       outputSchema: withJob(MediaInfo),
+      // ChatGPT passes a file the user attached as this argument.
+      _meta: { 'openai/fileParams': ['file'] },
       annotations: {
         title: 'Import media',
         readOnlyHint: false,
@@ -164,22 +168,40 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         const existing = await store.findIdempotent(owner, 'media.import', args.idempotency_key);
         if (existing) return jobReply(existing, ctx);
       }
+      if (Boolean(args.source) === Boolean(args.file)) {
+        throw new CfError('bad_request', 'Give either source or file', {
+          hint: 'media.import {source: {url: "https://…"}}, or file as the client attached it',
+        });
+      }
+      // An attached file downloads from its URL; a data: URI becomes an upload that is already in.
+      const given = args.file
+        ? { url: args.file.download_url }
+        : (args.source as NonNullable<typeof args.source>);
+      const source =
+        'data' in given
+          ? {
+              upload_id: await rt.uploads.put(
+                owner,
+                args.name ?? `inline${extensionFor(dataUriType(given.data))}`,
+                decodeDataUri(given.data, given.sha256),
+              ),
+            }
+          : given;
+      const named = args.name ?? (args.file?.file_name || undefined);
       // Path, upload and render imports fail fast (outside the roots, missing, unfinished) and
       // dedupe by fingerprint.
       const upload =
-        'upload_id' in args.source
-          ? await rt.uploads.take(owner, args.source.upload_id)
-          : undefined;
+        'upload_id' in source ? await rt.uploads.take(owner, source.upload_id) : undefined;
       const local =
-        'path' in args.source
-          ? await rt.media.resolvePath(args.source.path)
-          : 'job_id' in args.source
-            ? await renderedFile(owner, args.source.job_id)
+        'path' in source
+          ? await rt.media.resolvePath(source.path)
+          : 'job_id' in source
+            ? await renderedFile(owner, source.job_id)
             : upload?.file;
       if (local) {
         const known = await rt.media.findByFingerprint(owner, await fingerprint(local));
         if (known) {
-          if ('upload_id' in args.source) await rt.uploads.remove(owner, args.source.upload_id);
+          if ('upload_id' in source) await rt.uploads.remove(owner, source.upload_id);
           const done = await store.create({
             owner,
             tool: 'media.import',
@@ -198,7 +220,6 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           );
         }
       }
-      const source = args.source;
       const record = await rt.media.create(
         owner,
         'job_id' in source
@@ -206,7 +227,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           : 'upload_id' in source
             ? { upload: source.upload_id }
             : source,
-        args.name ?? upload?.name ?? (local && 'job_id' in source ? basename(local) : undefined),
+        named ?? upload?.name ?? (local && 'job_id' in source ? basename(local) : undefined),
       );
       if (local && 'job_id' in source) {
         // The render is copied: outputs and media expire on their own clocks.
@@ -244,6 +265,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       description: [
         "A signed URL to send one of the user's files to this server, for files on their machine that the server can't read: PUT the file there (curl --fail -T interview.mp4 '<url>'), then media.import {source: {upload_id}}. The URL needs no other credentials and works for a day.",
         'A broken upload resumes: HEAD the url for Upload-Offset (the bytes received), then PUT the rest with Content-Range: bytes <offset>-<last>/<total>. Large files can go in parts the same way.',
+        'Without a way to send it yourself, give the user the url: opened in a browser it is a page to drop the file on, which sends it and resumes on its own. media.import says whether the file is all in yet.',
       ].join(' '),
       inputSchema: MediaUploadInput,
       outputSchema: MediaUploadResult,
@@ -260,7 +282,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       return ok({
         ...upload,
         max_bytes: rt.uploads.maxBytes,
-        how: `curl --fail -T ${shellQuote(args.name)} '${upload.url}' then media.import {source: {upload_id: "${upload.upload_id}"}}`,
+        how: `curl --fail -T ${shellQuote(args.name)} '${upload.url}' (or the user opens the url in a browser and drops the file), then media.import {source: {upload_id: "${upload.upload_id}"}}`,
       });
     }),
   );
@@ -577,4 +599,76 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
 /** A file name as one shell word, for the example command. */
 function shellQuote(name: string): string {
   return /^[\w.@%+=:,/-]+$/.test(name) ? name : `'${name.replace(/'/g, "'\\''")}'`;
+}
+
+/** The MIME type a data: URI declares, or '' for none. */
+function dataUriType(uri: string): string {
+  return /^data:([^;,]*)/i.exec(uri)?.[1]?.toLowerCase() ?? '';
+}
+
+/** A data: URI's bytes (RFC 2397), checked against the SHA-256 the caller gave. */
+function decodeDataUri(uri: string, sha256: string | undefined): Buffer {
+  const m = /^data:[^,]*?(;base64)?,(.*)$/is.exec(uri);
+  if (!m) {
+    throw new CfError('bad_request', 'data must be a data: URI', {
+      hint: 'data:<type>;base64,<the file in base64>, e.g. data:image/png;base64,iVBORw0…',
+    });
+  }
+  const body = m[2] ?? '';
+  let bytes: Buffer;
+  if (m[1]) {
+    const clean = body.replace(/\s+/g, '');
+    if (!/^[A-Za-z0-9+/_-]*={0,2}$/.test(clean)) {
+      throw new CfError('bad_request', 'The base64 in data has characters base64 never uses', {
+        hint: 'Send the file again, base64-encoded exactly; for anything long, media.upload is safer',
+      });
+    }
+    bytes = Buffer.from(clean, 'base64');
+  } else {
+    bytes = Buffer.from(decodeURIComponent(body), 'utf8');
+  }
+  if (!bytes.length) throw new CfError('bad_request', 'data holds no bytes');
+  if (bytes.length > MEDIA_LIMITS.inlineBytes) {
+    throw new CfError(
+      'limit_exceeded',
+      `data holds ${bytes.length} bytes; a data: URI takes up to ${MEDIA_LIMITS.inlineBytes}`,
+      { hint: 'Send it with media.upload instead' },
+    );
+  }
+  if (sha256) {
+    const got = createHash('sha256').update(bytes).digest('hex');
+    if (got !== sha256) {
+      throw new CfError(
+        'bad_request',
+        `data decodes to a file with SHA-256 ${got}, not ${sha256}`,
+        {
+          hint: 'The copy was changed on the way; send it again, or use media.upload for the file itself',
+        },
+      );
+    }
+  }
+  return bytes;
+}
+
+/** A file extension for a MIME type, so the stored file reads as what it is. */
+function extensionFor(type: string): string {
+  const known: Record<string, string> = {
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    'image/svg+xml': '.svg',
+    'audio/mpeg': '.mp3',
+    'audio/wav': '.wav',
+    'audio/x-wav': '.wav',
+    'audio/mp4': '.m4a',
+    'audio/ogg': '.ogg',
+    'video/mp4': '.mp4',
+    'video/quicktime': '.mov',
+    'video/webm': '.webm',
+    'font/ttf': '.ttf',
+    'font/otf': '.otf',
+    'text/plain': '.txt',
+  };
+  return known[type] ?? '';
 }

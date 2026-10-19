@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { createServer as createPlainServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -564,6 +565,41 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       source: { upload_id: again.upload_id },
     });
     expect(dup.media_id).toBe(media.av);
+  }, 120_000);
+
+  it('imports a data: URI and a file the client attached', async () => {
+    const png = await readFile(join(env.mediaDir, 'card.png'));
+    await ff([
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=660:sample_rate=48000',
+      '-t',
+      '1',
+      join(env.mediaDir, 'chime.wav'),
+    ]);
+    const chime = await readFile(join(env.mediaDir, 'chime.wav'));
+    const inline = await importMedia({
+      data: `data:audio/wav;base64,${chime.toString('base64')}`,
+      sha256: createHash('sha256').update(chime).digest('hex'),
+    });
+    expect(inline).toMatchObject({ status: 'ready', kind: 'audio', name: 'inline.wav' });
+    // The same picture as an earlier import is that media.
+    const card = await ok<{ media_id: string }>(client, 'media.import', {
+      source: { data: `data:image/png;base64,${png.toString('base64')}` },
+    });
+    expect(card.media_id).toBe(media.card);
+
+    const started = await ok<{ job_id: string }>(client, 'media.import', {
+      file: {
+        download_url: `${fileBase}/portrait.mp4`,
+        file_id: 'file_1',
+        mime_type: 'video/mp4',
+        file_name: 'from the chat.mp4',
+      },
+    });
+    const done = await waitJob(started.job_id);
+    expect(done.result).toMatchObject({ status: 'ready', name: 'from the chat.mp4' });
   }, 120_000);
 
   let timeline = '';

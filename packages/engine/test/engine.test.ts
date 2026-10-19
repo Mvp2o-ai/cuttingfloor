@@ -6,6 +6,7 @@ import { framesToTicks, newTimeline, runEdits } from '@cuttingfloor/core';
 import {
   compileMlt,
   conformReasons,
+  directDownloadUrl,
   download,
   estimateTempo,
   isBlockedAddress,
@@ -75,6 +76,31 @@ describe('SSRF guard', () => {
     }
     for (const a of ['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111'])
       expect(isBlockedAddress(a), a).toBe(false);
+  });
+
+  it('downloads Dropbox and Google Drive share links from where they serve the file', () => {
+    expect(directDownloadUrl('https://www.dropbox.com/scl/fi/abc/talk.mp4?rlkey=k&dl=0')).toBe(
+      'https://www.dropbox.com/scl/fi/abc/talk.mp4?rlkey=k&dl=1',
+    );
+    expect(directDownloadUrl('https://dropbox.com/s/abc/talk.mp4?raw=1')).toBe(
+      'https://dropbox.com/s/abc/talk.mp4?dl=1',
+    );
+    const drive =
+      'https://drive.usercontent.google.com/download?id=1AbC-d_9&export=download&confirm=t';
+    expect(directDownloadUrl('https://drive.google.com/file/d/1AbC-d_9/view?usp=sharing')).toBe(
+      drive,
+    );
+    expect(directDownloadUrl('https://drive.google.com/open?id=1AbC-d_9')).toBe(drive);
+    expect(directDownloadUrl('https://drive.google.com/uc?id=1AbC-d_9&export=download')).toBe(
+      drive,
+    );
+    // Anything else, including Drive folders, is left as it is.
+    for (const url of [
+      'https://example.com/a.mp4?dl=0',
+      'https://drive.google.com/drive/folders/xyz',
+      'not a url',
+    ])
+      expect(directDownloadUrl(url)).toBe(url);
   });
 
   it('refuses to download from loopback, including after a redirect', async () => {

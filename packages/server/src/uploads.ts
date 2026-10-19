@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { stat, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -30,10 +30,13 @@ export interface UploadState {
 export class UploadRefused extends Error {
   readonly status: number;
   readonly received: number | undefined;
-  constructor(status: number, message: string, received?: number) {
+  /** Whether the upload is already complete (a PUT to one that is). */
+  readonly complete: boolean;
+  constructor(status: number, message: string, received?: number, complete = false) {
     super(message);
     this.status = status;
     this.received = received;
+    this.complete = complete;
   }
 }
 
@@ -99,6 +102,21 @@ export class Uploads {
     };
   }
 
+  /** An upload whose bytes are already here (a data: URI), complete at once. */
+  async put(owner: string, name: string, bytes: Buffer): Promise<string> {
+    const { upload_id } = await this.create(owner, name, bytes.length);
+    const key = ownerKey(owner);
+    const meta = await this.#meta(key, upload_id);
+    if (!meta) throw new CfError('engine_error', `Upload ${upload_id} vanished`);
+    await writeFile(join(this.#dir(key, upload_id), meta.file), bytes, { mode: 0o600 });
+    await this.#ws.writeJson(this.#record(key, upload_id), {
+      ...meta,
+      bytes: bytes.length,
+      complete: true,
+    });
+    return upload_id;
+  }
+
   /** The upload a signed URL names, or undefined when the URL is invalid or expired. */
   async verify(
     pathname: string,
@@ -139,6 +157,7 @@ export class Uploads {
         409,
         'this upload is complete; import it',
         await this.#size(owner, meta),
+        true,
       );
     }
     const key = `${owner}/${id}`;

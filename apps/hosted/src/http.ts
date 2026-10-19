@@ -19,6 +19,7 @@ import {
   requireBearerAuth,
 } from '@modelcontextprotocol/server';
 import type { JwtTokenVerifier } from './oauth.ts';
+import { uploadPage } from './upload-page.ts';
 
 export interface HttpOptions {
   runtime: Runtime;
@@ -226,6 +227,19 @@ async function handleUpload(
     reply(403, { error: 'invalid or expired upload link; call media.upload for a new one' });
     return;
   }
+  // Opened in a browser, the link is a page to drop the file on.
+  if (req.method === 'GET' && /\btext\/html\b/.test(req.headers.accept ?? '')) {
+    res.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'referrer-policy': 'no-referrer',
+      'x-frame-options': 'DENY',
+      'content-security-policy':
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    });
+    res.end(uploadPage(target.id));
+    return;
+  }
   if (req.method === 'HEAD' || req.method === 'GET') {
     const state = await runtime.uploads.state(target.owner, target.id);
     if (!state) reply(404, { error: 'no such upload, or it was imported or expired' });
@@ -275,7 +289,9 @@ async function handleUpload(
     // Stop reading a body the upload won't take; close the connection rather than drain it.
     if (!req.complete) res.setHeader('connection', 'close');
     const state =
-      error.received === undefined ? undefined : { received: error.received, complete: false };
+      error.received === undefined
+        ? undefined
+        : { received: error.received, complete: error.complete };
     reply(
       error.status,
       { error: error.message, ...(state ? { received: state.received } : {}) },
