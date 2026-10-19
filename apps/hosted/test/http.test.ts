@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtemp } from 'node:fs/promises';
 import { createServer as createNodeServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -225,6 +226,75 @@ describe('HTTP face', () => {
     expect(refused.status).toBe(413);
     await alice.close();
     await bob.close();
+  });
+
+  it('imports a data: URI, an attached file, and shows the upload page in a browser', async () => {
+    const base = await listen(parseApiKeys(`alice:${KEY}`));
+    (runtime.config as { publicUrl: string }).publicUrl = base;
+    const client = new Client({ name: 't', version: '0' });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { authorization: `Bearer ${KEY}` } },
+      }),
+    );
+    const tool = async (name: string, args: Record<string, unknown>) =>
+      (await client.callTool({ name, arguments: args })) as {
+        isError?: boolean;
+        structuredContent: Record<string, unknown>;
+      };
+    // ChatGPT reads which argument takes an attached file from the tool's _meta.
+    const { tools } = await client.listTools();
+    expect(tools.find((t) => t.name === 'media.import')?._meta).toMatchObject({
+      'openai/fileParams': ['file'],
+    });
+
+    const bytes = Buffer.from('a small sound, as far as this test cares');
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const data = `data:audio/wav;base64,${bytes.toString('base64')}`;
+    const garbled = await tool('media.import', {
+      source: { data, sha256: sha256.replace(/^./, sha256[0] === '0' ? '1' : '0') },
+    });
+    expect(garbled.structuredContent.code).toBe('bad_request');
+    expect(String(garbled.structuredContent.message)).toContain(sha256);
+    const notBase64 = await tool('media.import', { source: { data: 'data:;base64,@@@@' } });
+    expect(notBase64.structuredContent.code).toBe('bad_request');
+    const inline = await tool('media.import', { source: { data, sha256 }, name: 'beep.wav' });
+    expect(inline.isError).toBeFalsy();
+    expect(inline.structuredContent.media_id).toMatch(/^m_/);
+
+    // Exactly one of source and file.
+    expect((await tool('media.import', {})).structuredContent.code).toBe('bad_request');
+    const attached = {
+      download_url: 'https://files.example.com/f/abc',
+      file_id: 'file_abc',
+      mime_type: 'video/mp4',
+      file_name: 'take2.mp4',
+    };
+    expect(
+      (await tool('media.import', { source: { url: 'https://example.com/a.mp4' }, file: attached }))
+        .structuredContent.code,
+    ).toBe('bad_request');
+    const fromFile = await tool('media.import', { file: attached });
+    expect(fromFile.structuredContent.media_id).toMatch(/^m_/);
+
+    // The upload link, opened in a browser, is a page to drop the file on.
+    const up = (await tool('media.upload', { name: 'talk.mp4' })).structuredContent as {
+      upload_id: string;
+      url: string;
+    };
+    const page = await fetch(up.url, { headers: { accept: 'text/html,*/*' } });
+    expect(page.status).toBe(200);
+    expect(page.headers.get('content-type')).toContain('text/html');
+    expect(page.headers.get('content-security-policy')).toContain("connect-src 'self'");
+    expect(await page.text()).toContain(up.upload_id);
+    // Scripts still get the state as JSON.
+    expect(await (await fetch(up.url)).json()).toMatchObject({ received: 0, complete: false });
+    // A PUT to a complete upload says it is complete, so the page stops.
+    await fetch(up.url, { method: 'PUT', body: 'abc' });
+    const again = await fetch(up.url, { method: 'PUT', body: 'abc' });
+    expect(again.status).toBe(409);
+    expect(again.headers.get('upload-complete')).toBe('true');
+    await client.close();
   });
 
   it('validates API key configuration', () => {

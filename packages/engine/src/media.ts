@@ -4,7 +4,7 @@ import { randomId, secondsToTicks, type Workspace } from '@cuttingfloor/core';
 import { CfError, type MediaInfo, type MediaRef, type ToolError } from '@cuttingfloor/schema';
 import { createBLAKE3 } from 'hash-wasm';
 import { BIN, run } from './exec.ts';
-import { download } from './fetch.ts';
+import { directDownloadUrl, download } from './fetch.ts';
 import { conformReasons, type Probe, probe } from './probe.ts';
 
 export const MEDIA_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -259,7 +259,7 @@ export class MediaLibrary {
         ('path' in source
           ? basename(source.path)
           : 'url' in source
-            ? decodeURIComponent(new URL(source.url).pathname.split('/').pop() || 'download')
+            ? urlName(source.url)
             : 'job' in source
               ? source.job
               : 'upload' in source
@@ -297,7 +297,8 @@ export class MediaLibrary {
           .slice(0, 8)
           .replace(/[^.\w]/g, '');
         const dest = join(dir, `source${ext || '.bin'}`);
-        await download(record.source.url, dest, {
+        const direct = directDownloadUrl(record.source.url);
+        const got = await download(direct, dest, {
           maxBytes: this.config.maxDownloadBytes,
           timeoutMs: this.config.downloadTimeoutMs,
           allowPrivate: this.config.allowPrivateUrls,
@@ -308,6 +309,14 @@ export class MediaLibrary {
               `downloading ${(bytes / 1e6).toFixed(1)} MB`,
             ),
         });
+        // A share link's own path names a web page ("view"); the file's name comes with it.
+        if (
+          direct !== record.source.url &&
+          got.filename &&
+          record.name === urlName(record.source.url)
+        ) {
+          record.name = got.filename.slice(0, 200);
+        }
         record.file = dest;
       } else if ('path' in record.source) {
         record.file = await this.resolvePath(record.source.path);
@@ -665,4 +674,9 @@ async function analyse(
   const i = /I:\s+(-?[\d.]+) LUFS/.exec(stderr.slice(stderr.lastIndexOf('Summary')));
   const loudness = i ? Number(i[1]) : null;
   return { loudness_lufs: loudness !== null && loudness >= -70 ? loudness : null };
+}
+
+/** The name a URL import starts with: the last part of its path. */
+function urlName(url: string): string {
+  return decodeURIComponent(new URL(url).pathname.split('/').pop() || 'download');
 }

@@ -8,7 +8,9 @@
 // Checks that a request without a key is refused, then that create.still, create.motion and
 // code.run work in the server's sandbox (gVisor on Hetzner), media.analyze look answers on the
 // server's own TypeSafe key, an export comes back as a signed link that downloads, and that file,
-// sent back in two parts through media.upload, imports as media.
+// sent back in two parts through media.upload, imports as media; the upload link opens as a drop
+// page in a browser, a data: URI imports, and the export link passed as an attached file imports.
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
@@ -69,6 +71,23 @@ await client.connect(
 );
 const { tools } = await client.listTools();
 expect(tools.length > 40, `${tools.length} tools with a key`);
+
+step('a data: URI imports, checked by its SHA-256');
+const dot = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64',
+);
+const inline = await run('media.import', {
+  source: {
+    data: `data:image/png;base64,${dot.toString('base64')}`,
+    sha256: createHash('sha256').update(dot).digest('hex'),
+  },
+  name: 'dot.png',
+});
+expect(
+  inline.result?.status === 'ready' && inline.result?.kind === 'image',
+  `data: URI imports (${JSON.stringify(inline.error ?? inline.result?.status)})`,
+);
 
 step('create.still and create.motion in the sandbox');
 const still = await run('create.still', {
@@ -156,6 +175,31 @@ if (mediaId) {
     expect(
       imported.result?.status === 'ready' && imported.result?.kind === 'video',
       `uploaded file imports (${JSON.stringify(imported.error ?? imported.result?.status)})`,
+    );
+
+    step('the upload link is a drop page in a browser');
+    const fresh = await call('media.upload', { name: 'smoke-page.mp4' });
+    const page = await fetch(String(fresh.url), { headers: { accept: 'text/html' } });
+    const html = await page.text();
+    expect(
+      page.ok && html.includes(String(fresh.upload_id)) && html.includes('Send a file'),
+      `drop page (${page.status})`,
+    );
+
+    step('a file the client attached imports from its download URL');
+    const attached = await run('media.import', {
+      file: {
+        download_url: url,
+        file_id: 'smoke',
+        mime_type: 'video/mp4',
+        file_name: 'attached.mp4',
+      },
+    });
+    // The same bytes as the upload above, so it is that media.
+    expect(
+      attached.result?.status === 'ready' &&
+        attached.result?.media_id === imported.result?.media_id,
+      `attached file imports (${JSON.stringify(attached.error ?? attached.result?.status)})`,
     );
   }
 }
