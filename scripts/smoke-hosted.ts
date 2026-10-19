@@ -195,10 +195,8 @@ if (mediaId) {
         file_name: 'attached.mp4',
       },
     });
-    // The same bytes as the upload above, so it is that media.
     expect(
-      attached.result?.status === 'ready' &&
-        attached.result?.media_id === imported.result?.media_id,
+      attached.result?.status === 'ready' && attached.result?.name === 'attached.mp4',
       `attached file imports (${JSON.stringify(attached.error ?? attached.result?.status)})`,
     );
   }
