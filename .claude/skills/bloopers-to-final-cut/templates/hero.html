@@ -1,0 +1,40 @@
+<!-- create.motion, transparent, 1080x1920, 5.3 s, laid over the end-card line so only her voice is heard. Timings match "cuttingfloor AI. Editing, solved." -->
+<style>
+*{margin:0;box-sizing:border-box}
+html,body{width:1080px;height:1920px;overflow:hidden;background:transparent;font-family:"Inter",sans-serif}
+.bg{position:absolute;inset:0;background:radial-gradient(90% 55% at 50% 42%,#1d4f41 0%,#0d2a22 55%,#08140f 100%);opacity:0;animation:fade .3s ease-out 0s forwards}
+.grain{position:absolute;inset:0;background:repeating-linear-gradient(0deg,#ffffff05 0 2px,transparent 2px 4px);opacity:0;animation:fade .3s ease-out 0s forwards}
+.strip{position:absolute;left:-40px;right:-40px;height:90px;background:repeating-linear-gradient(90deg,#0000 0 34px,#ffffff10 34px 58px);opacity:0;animation:fade .6s ease-out .2s forwards}
+.wm{position:absolute;left:0;right:0;top:640px;text-align:center;color:#FFF6E5;font-weight:900;font-size:150px;letter-spacing:-5px;line-height:1}
+.half{display:block;height:75px;overflow:hidden;position:relative}
+.half span{display:block}
+.top{transform:translateX(-120%);animation:inL .45s cubic-bezier(.2,.9,.25,1) .25s forwards}
+.bot{transform:translateX(120%);animation:inR .45s cubic-bezier(.2,.9,.25,1) .25s forwards}
+.bot span{margin-top:-75px}
+.slash{position:absolute;left:-200px;top:705px;width:1480px;height:10px;background:#fff;box-shadow:0 0 30px #fff;transform:rotate(-9deg) scaleX(0);transform-origin:left;
+  animation:cut .28s ease-in .62s forwards, gone .2s ease-out .92s forwards}
+.ai{position:absolute;left:50%;top:830px;transform:translate(-50%,0) scale(2.6) rotate(-6deg);opacity:0;padding:10px 34px;border-radius:22px;background:#FFD43B;color:#111;
+  font-weight:900;font-size:96px;letter-spacing:4px;animation:stamp .18s ease-in 1.95s forwards}
+.line{position:absolute;left:0;right:0;top:1040px;text-align:center;font-weight:800;font-size:92px;color:#FFF6E5}
+.ed{display:inline-block;opacity:0;transform:translateY(40px);animation:up .3s ease-out 2.35s forwards}
+.so{display:inline-block;opacity:0;transform:scale(1.8);color:#FFD43B;animation:snap .16s ease-in 3.5s forwards}
+.chk{display:inline-block;width:86px;height:86px;margin-left:18px;vertical-align:-6px;border-radius:50%;background:#2DD4BF;color:#062a26;font-size:62px;line-height:86px;text-align:center;
+  opacity:0;transform:scale(0);animation:pop .3s cubic-bezier(.2,.9,.3,1.5) 3.75s forwards}
+.url{position:absolute;left:50%;top:1290px;transform:translate(-50%,20px);opacity:0;padding:22px 38px;border-radius:24px;border:3px solid #2DD4BF;color:#2DD4BF;
+  font-family:"Noto Sans Mono",monospace;font-weight:700;font-size:46px;white-space:nowrap;animation:urlin .5s ease-out 4.25s forwards}
+@keyframes fade{to{opacity:1}}
+@keyframes inL{to{transform:none}} @keyframes inR{to{transform:none}}
+@keyframes cut{to{transform:rotate(-9deg) scaleX(1)}} @keyframes gone{to{opacity:0}}
+@keyframes stamp{to{opacity:1;transform:translate(-50%,0) scale(1) rotate(-6deg)}}
+@keyframes up{to{opacity:1;transform:none}}
+@keyframes snap{to{opacity:1;transform:none}}
+@keyframes pop{to{opacity:1;transform:none}}
+@keyframes urlin{to{opacity:1;transform:translate(-50%,0)}}
+</style>
+<div class="bg"></div><div class="grain"></div>
+<div class="strip" style="top:300px"></div><div class="strip" style="top:1560px"></div>
+<div class="wm"><span class="half top"><span>cuttingfloor</span></span><span class="half bot"><span>cuttingfloor</span></span></div>
+<div class="slash"></div>
+<div class="ai">AI</div>
+<div class="line"><span class="ed">editing,&nbsp;</span><span class="so">solved.</span><span class="chk">✓</span></div>
+<div class="url">api.cuttingfloor.ai/mcp</div>
