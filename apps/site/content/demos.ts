@@ -574,7 +574,116 @@ const TIPS: Demo = {
   ],
 };
 
-export const DEMOS: Demo[] = [DANCE, INTERVIEW, PRODUCT, LISTING, TIPS];
+// Tip 1 of a 24-minute slide explainer, with a talking-head clip lip-synced to its narration
+// (generated presenter, edited for real by cuttingfloor).
+const MEMORY: Demo = {
+  id: 'memory',
+  slug: 'add-a-talking-head-to-your-explainer-video',
+  title: 'Add a talking head to a slide explainer, then make it a Short',
+  description:
+    'A creator asks Claude to put himself into Tip 1 of his 24-minute slide explainer. cuttingfloor finds the tip by its words, cuts him out of his background into the corner the slides leave empty, then makes a vertical Short: slides on top, him underneath, captions on the seam.',
+  steps: [
+    'Found where Tip 1 starts and ends in the 24-minute explainer from its words.',
+    'Started on the first frame of the Tip 1 slide, not the end of the one before.',
+    'Matched his clip’s sound to the explainer’s, so his lips land on the narration.',
+    'Cut him out of his background: it looked cleaner on the dark slides than a rounded box.',
+    'Had Jev check every second for an empty corner: the bottom right stays clear, so he stands there.',
+    'Slid him in at the start and faded him out at the end.',
+    'Kept the explainer’s sound and made it YouTube-loud.',
+    'For Shorts: slides across the top, him framed on his face underneath.',
+    'Big word-by-word captions on the seam, with a few misheard words fixed.',
+    'A “TIP 1: WRITE NOTES INLINE” title for the first few seconds, exported vertical.',
+  ],
+  uploaded: '2026-10-19',
+  moments: [
+    { name: 'The notepad tool', start: 0, end: 10.1 },
+    { name: 'The detour costs', start: 10.1, end: 17.2 },
+    { name: 'A convention, not a tool', start: 17.2, end: 66 },
+    { name: 'The streaming parse', start: 66, end: 78.7 },
+    { name: 'Notes are working memory', start: 78.7, end: 100.4 },
+    { name: 'Three details', start: 100.4, end: 131.7 },
+  ],
+  agent: 'Claude',
+  raw: {
+    src: '/demo/memory/raw.mp4',
+    poster: '/demo/memory/raw.jpg',
+    label: 'memory-explainer.mp4 · 2:11',
+    seconds: 131.8,
+    wide: true,
+  },
+  transcript: [
+    {
+      text: 'Most people give their assistant a notepad tool. The model stops mid-turn, emits a tool call, waits, then keeps going.',
+    },
+    {
+      text: 'We don’t give the assistant a tool. We give it a convention: it writes its notes inline, inside the response it’s already generating.',
+    },
+    { text: 'The notes ride the response stream. No tool call, no round trip.' },
+    {
+      text: 'A small state machine flips to recording on the open sentinel and done on the close.',
+    },
+    { text: 'That’s working memory. Persistence happens later, at eviction.' },
+    { text: '…three details that matter. Start there.' },
+  ],
+  turns: [
+    {
+      prompt: 'Put me in my explainer for tip one: a talking head in the corner.',
+      reply:
+        'I’ll cut Tip 1 out of the explainer by its words, line your clip up with the narration, cut you out of your background and put you in whichever corner the slides leave empty.',
+      calls: [
+        { fn: 'skills.search', note: 'looked for a recipe' },
+        { fn: 'code.run', note: 'found Tip 1’s words' },
+        { fn: 'media.analyze', note: 'found the quiet gaps' },
+        { fn: 'code.run', note: 'matched his sound to yours' },
+        { fn: 'create.cutout', note: 'cut out his background' },
+        { fn: 'media.analyze', note: 'Jev: which corner stays empty' },
+        { fn: 'edit.batch', note: 'tried a rounded box, then the cut-out' },
+        { fn: 'render.frames', note: 'compared the two' },
+        { fn: 'edit.batch', note: 'slide in, fade out' },
+        { fn: 'audio.set_master', note: 'YouTube-loud' },
+        { fn: 'export.video', note: 'widescreen, 2:11' },
+        { fn: 'media.analyze', note: 'Jev: checked he covers nothing' },
+      ],
+      status: 'Putting you in the corner…',
+      done: 'You’re in the bottom-right corner for all of Tip 1, cut out of your background and in sync with your voice. That corner stays empty the whole tip, so you never had to move. Want a vertical version for Shorts?',
+      video: {
+        src: '/demo/memory/talkinghead.mp4',
+        poster: '/demo/memory/talkinghead.jpg',
+        label: 'tip-1-talking-head.mp4 · 2:11',
+        seconds: 131.8,
+        captions: '/demo/memory/talkinghead.vtt',
+        wide: true,
+      },
+    },
+    {
+      prompt: 'Now make a vertical one for Shorts: slides on top, me underneath, with captions.',
+      reply:
+        'I’ll stack the slides on top and you underneath, framed on your face, with big word-by-word captions on the line between and a Tip 1 title at the start.',
+      calls: [
+        { fn: 'media.analyze', note: 'found his face' },
+        { fn: 'timeline.create', note: 'vertical' },
+        { fn: 'edit.batch', note: 'slides on top, him below, title' },
+        { fn: 'code.run', note: 'captions from the transcript' },
+        { fn: 'render.frames', note: 'checked the seam' },
+        { fn: 'text.set', note: 'captions onto the seam' },
+        { fn: 'clip.set_transform', note: 'cropped the slide’s progress bar' },
+        { fn: 'qa.check', note: 'length and volume' },
+        { fn: 'export.video', note: 'vertical, 2:11' },
+      ],
+      status: 'Stacking it for Shorts…',
+      done: 'Your Short is ready: slides on top, you underneath, big captions on the seam and a Tip 1 title for the first few seconds. At 2:11 it’s long for a Short. Want a 60-second cut next?',
+      video: {
+        src: '/demo/memory/short.mp4',
+        poster: '/demo/memory/short.jpg',
+        label: 'tip-1-short.mp4 · 2:11',
+        seconds: 131.7,
+        captions: '/demo/memory/short.vtt',
+      },
+    },
+  ],
+};
+
+export const DEMOS: Demo[] = [DANCE, INTERVIEW, PRODUCT, LISTING, TIPS, MEMORY];
 
 export function demo(slug: string): Demo | undefined {
   return DEMOS.find((d) => d.slug === slug);
@@ -588,6 +697,12 @@ export function finished(d: Demo): DemoVideo {
 /** A video's length as its label gives it: "0:24". */
 export function length(v: DemoVideo): string {
   return v.label.split(' · ').at(-1) ?? '';
+}
+
+/** Before and after lengths, "0:24 → 0:15", or one length when the edit kept it. */
+export function lengths(d: Demo): string {
+  const [before, after] = [length(d.raw), length(finished(d))];
+  return before === after ? after : `${before} → ${after}`;
 }
 
 /** The demo that shows a skill, for a link from the skill's page. */
