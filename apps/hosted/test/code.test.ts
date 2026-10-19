@@ -347,6 +347,53 @@ console.log('done');`,
     expect(done.result?.stdout).toMatch(/done\n$/);
   }, 60_000);
 
+  it('keeps telling a waiting job its place, so an idle timeout never drops it', async () => {
+    const quick = await startMotionWorker({ port: 0, host: '127.0.0.1', heartbeatMs: 50 });
+    const base = `http://127.0.0.1:${(quick.address() as AddressInfo).port}`;
+    const post = (script: string) =>
+      fetch(`${base}/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ language: 'bash', script, timeout_seconds: 10, inputs: [] }),
+      });
+    // Reads a stream's lines up to the first that matches, leaving the stream open.
+    const reader = (res: Response) => {
+      const stream = (res.body as ReadableStream<Uint8Array>).getReader();
+      const decoder = new TextDecoder();
+      let pending = '';
+      return async (until: (line: string) => boolean) => {
+        const seen: string[] = [];
+        for (;;) {
+          const { value, done } = await stream.read();
+          if (done) return seen;
+          pending += decoder.decode(value, { stream: true });
+          const parts = pending.split('\n');
+          pending = parts.pop() ?? '';
+          seen.push(...parts);
+          if (parts.some(until)) return seen;
+        }
+      };
+    };
+    try {
+      const first = reader(await post('sleep 1'));
+      const started = await first((l) => l.includes('"job"'));
+      const second = reader(await post('echo second'));
+      const head = [...started, ...(await first((l) => l.includes('"done"')))];
+      const job = head.map((l) => (l ? JSON.parse(l) : {})).find((e) => e.job)?.job;
+      // Its place, over and over, while the first script runs and then holds the sandbox.
+      let places = 0;
+      await second((l) => l.includes('1 ahead (1 code.run script)') && ++places === 5);
+      await fetch(`${base}/jobs/${job.id}`, {
+        method: 'DELETE',
+        headers: { 'x-cf-secret': job.secret },
+      });
+      const rest = await second((l) => l.includes('"done"'));
+      expect(rest.join('\n')).toMatch(/second/);
+    } finally {
+      quick.close();
+    }
+  }, 30_000);
+
   it.skipIf(!namespaces)(
     'has no network and cannot see the worker',
     async () => {

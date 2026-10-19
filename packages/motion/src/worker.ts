@@ -37,6 +37,12 @@ const KEEP_MS = 10 * 60_000;
  * it go, or this long without a request from it (a main server that went away).
  */
 const CODE_IDLE_MS = 60_000;
+/**
+ * How often an open stream hears from its job: its place while it waits, a blank line after. An
+ * HTTP client drops a stream idle for its body timeout (undici's is five minutes), and a job can
+ * wait longer than that behind other renders.
+ */
+const HEARTBEAT_MS = 20_000;
 
 export interface MotionWorkerOptions {
   port: number;
@@ -45,6 +51,8 @@ export interface MotionWorkerOptions {
   scratch?: string;
   /** Per-render limit; default scales with the work. */
   timeoutMs?: number;
+  /** How often an open stream hears from its job. Default HEARTBEAT_MS. */
+  heartbeatMs?: number;
 }
 
 /** Time allowed for a render: two minutes plus ten seconds per second of 1080p30. */
@@ -63,31 +71,44 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
   const codeJobs = new Map<string, CodeJob>();
   let queue: Promise<void> = Promise.resolve();
   /** What is in the sandbox now and waiting for it, in order: the first one runs. */
-  const lineup: string[] = [];
+  const lineup: Array<{ what: string }> = [];
   let waiting = 0;
 
-  /** Runs work after everything queued before it, one job at a time. */
-  function enqueue(what: string, work: () => Promise<void>): Promise<void> {
+  /**
+   * Runs work after everything queued before it, one job at a time, telling the caller on `res`
+   * where it stands until its stream ends.
+   */
+  function enqueue(what: string, res: ServerResponse, work: () => Promise<void>): Promise<void> {
+    const place = { what };
+    const beat = () => {
+      if (res.writableEnded) return;
+      const ahead = lineup.indexOf(place);
+      const message = ahead > 0 ? waitMessage(ahead) : undefined;
+      res.write(message ? `${JSON.stringify({ progress: 0, message })}\n` : '\n');
+    };
     waiting += 1;
-    lineup.push(what);
+    lineup.push(place);
+    if (lineup.length > 1) beat();
+    const timer = setInterval(beat, options.heartbeatMs ?? HEARTBEAT_MS);
+    timer.unref();
+    res.on('close', () => clearInterval(timer));
     const run = queue.then(async () => {
       waiting -= 1;
       try {
         await work();
       } finally {
         lineup.shift();
+        clearInterval(timer);
       }
     });
     queue = run.catch(() => undefined);
     return run;
   }
 
-  /** Where a new job stands: what it waits behind, in words. */
-  function waitMessage(): string | undefined {
-    const ahead = lineup.length;
-    if (!ahead) return undefined;
+  /** Where a job stands behind the first `ahead` in the lineup, in words. */
+  function waitMessage(ahead: number): string {
     const counts = new Map<string, number>();
-    for (const w of lineup) counts.set(w, (counts.get(w) ?? 0) + 1);
+    for (const { what: w } of lineup.slice(0, ahead)) counts.set(w, (counts.get(w) ?? 0) + 1);
     const what = [...counts].map(([w, n]) => `${n} ${w}${n > 1 ? 's' : ''}`).join(', ');
     return `queued in the sandbox: ${ahead} ahead (${what}); it runs one at a time`;
   }
@@ -159,9 +180,7 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
     const send = (e: MotionEvent) => res.write(`${JSON.stringify(e)}\n`);
     const abort = new AbortController();
     res.on('close', () => abort.abort());
-    const queued = waitMessage();
-    if (queued) send({ progress: 0, message: queued });
-    await enqueue(request.kind === 'still' ? 'still' : 'motion render', async () => {
+    await enqueue(request.kind === 'still' ? 'still' : 'motion render', res, async () => {
       if (abort.signal.aborted) return;
       try {
         const done = await render(request, send, abort.signal);
@@ -189,9 +208,7 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
     };
     const abort = new AbortController();
     res.on('close', () => abort.abort());
-    const queued = waitMessage();
-    if (queued) send({ progress: 0, message: queued });
-    await enqueue('code.run script', async () => {
+    await enqueue('code.run script', res, async () => {
       if (abort.signal.aborted) return;
       await purge();
       const job = await newCodeJob(scratch);
