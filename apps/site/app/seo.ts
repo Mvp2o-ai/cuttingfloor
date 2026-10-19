@@ -3,7 +3,7 @@
 import { PLANS } from './pricing.ts';
 
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cuttingfloor-site.vercel.app';
-export const MCP_ADDRESS = 'https://cuttingfloorai.apifunnel.ai/mcp';
+export const MCP_ADDRESS = 'https://api.cuttingfloor.ai/mcp';
 export const DOCS_URL = 'https://github.com/mvp2o-ai/cuttingfloor';
 
 export const TITLE = 'Video Editing MCP Server for Claude, Cursor & ChatGPT | cuttingfloor';

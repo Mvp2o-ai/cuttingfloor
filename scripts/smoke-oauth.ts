@@ -1,7 +1,7 @@
 // Smoke test for OAuth sign-in on a live hosted server, against the real WorkOS AuthKit.
 //
 //   WORKOS_API_KEY=sk_… CHROME_PATH=/path/to/chrome \
-//     node scripts/smoke-oauth.ts https://cuttingfloorai.apifunnel.ai
+//     node scripts/smoke-oauth.ts https://api.cuttingfloor.ai
 //
 // Makes a throwaway WorkOS user, then does what an MCP client does: gets a 401, reads the
 // protected resource metadata, registers itself with AuthKit, sends the user through AuthKit's
@@ -19,7 +19,7 @@ import {
 } from '@modelcontextprotocol/client';
 import puppeteer from 'puppeteer-core';
 
-const base = (process.argv[2] ?? 'https://cuttingfloorai.apifunnel.ai').replace(/\/$/, '');
+const base = (process.argv[2] ?? 'https://api.cuttingfloor.ai').replace(/\/$/, '');
 const workosKey = process.env.WORKOS_API_KEY;
 const chrome = process.env.CHROME_PATH;
 if (!workosKey) throw new Error('Set WORKOS_API_KEY to the environment’s API key');

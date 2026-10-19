@@ -5,3 +5,6 @@
 		flush_interval -1
 	}
 }
+
+# Server-local sites (caddy/*.caddy next to compose.yaml), such as a redirect from an old address.
+import /etc/caddy/sites/*.caddy

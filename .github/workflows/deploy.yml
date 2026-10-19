@@ -23,7 +23,7 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/mvp2o-ai/cuttingfloor
-  URL: https://cuttingfloorai.apifunnel.ai/mcp
+  URL: https://api.cuttingfloor.ai/mcp
 
 jobs:
   hetzner:

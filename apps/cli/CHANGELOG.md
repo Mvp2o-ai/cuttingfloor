@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.19.0
+
+### Minor Changes
+
+- 77e50b9: The hosted server moves to `https://api.cuttingfloor.ai/mcp`. The old address redirects there, and the site shows the new one.
+
 ## 0.18.0
 
 ### Minor Changes
