@@ -1,5 +1,12 @@
 # cuttingfloor
 
+## 0.17.1
+
+### Patch Changes
+
+- 40802fd: New demo: let AI pick your best take, then make the thumbnail. Jev watches four takes of a channel intro, keeps the best and picks the thumbnail frame.
+- 9a67ff8: New demo: add a talking head to a slide explainer, then make it a Short (Tip 1 of the infinite agentic memory explainer). Watch pages read right for a demo that adds rather than cuts.
+
 ## 0.17.0
 
 ### Minor Changes
