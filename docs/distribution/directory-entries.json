@@ -1,0 +1,41 @@
+{
+  "githubRepository": "https://github.com/Mvp2o-ai/cuttingfloor",
+  "homepage": "https://cuttingfloor.ai",
+  "hostedEndpoint": "https://api.cuttingfloor.ai/mcp",
+  "glama": {
+    "name": "cuttingfloor",
+    "description": "Video editing for AI agents: cuts, captions, audio, motion graphics, previews, and exports.",
+    "maintainer": "wiltshirek",
+    "serverSubmission": "https://glama.ai/mcp/servers",
+    "connectorSubmission": "https://glama.ai/mcp/connectors",
+    "status": "Not submitted through the signed-in form; official registry publication may be ingested independently."
+  },
+  "awesomeMcpServers": {
+    "repository": "punkpeye/awesome-mcp-servers",
+    "category": "Multimedia Process",
+    "entry": "- [Mvp2o-ai/cuttingfloor](https://github.com/Mvp2o-ai/cuttingfloor) \ud83d\udcc7 \ud83c\udfe0 \ud83c\udf4e \ud83e\ude9f \ud83d\udc27 - Headless video editing for AI agents: timeline cuts, captions, audio, motion graphics, previews, and exports; runs with Docker.",
+    "blockedBy": "Glama listing and evaluated score badge are required. Add the actual badge before submitting."
+  },
+  "awesomeRemoteMcpServers": {
+    "repository": "punkpeye/awesome-remote-mcp-servers",
+    "category": "Multimedia",
+    "name": "cuttingfloor",
+    "homepage": "https://cuttingfloor.ai",
+    "endpoint": "https://api.cuttingfloor.ai/mcp",
+    "authenticationMarker": "\ud83d\udd10",
+    "description": "Edit footage, add captions, mix audio, create motion graphics, and export downloadable videos.",
+    "blockedBy": "An existing Glama connector and its real score badge are required; the contributor account must star the list before final submission."
+  },
+  "cursorDirectory": {
+    "url": "https://cursor.directory/plugins/new",
+    "name": "cuttingfloor",
+    "description": "Edit video with your AI agent: cuts, captions, audio, motion graphics, previews, and downloadable exports.",
+    "repository": "https://github.com/Mvp2o-ai/cuttingfloor",
+    "homepage": "https://cuttingfloor.ai",
+    "configurationFile": ".mcp.json"
+  },
+  "mcpSo": {
+    "status": "submitted",
+    "url": "https://github.com/chatmcp/mcpso/issues/5759"
+  }
+}

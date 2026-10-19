@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cuttingfloor": {
+      "type": "http",
+      "url": "https://api.cuttingfloor.ai/mcp"
+    }
+  }
+}
