@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-export const MCP_URL = 'https://cuttingfloorai.apifunnel.ai/mcp';
+export const MCP_URL = 'https://api.cuttingfloor.ai/mcp';
 
 // Kazi is ours, so it leads, in the accent.
 const CLIENTS = [

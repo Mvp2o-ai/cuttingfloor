@@ -150,7 +150,7 @@ export default function Home() {
               <span className="n">01</span>
               <h3>Connect your agent.</h3>
               <p>
-                Add <code>cuttingfloorai.apifunnel.ai/mcp</code> as an MCP server in Claude, Cursor,
+                Add <code>api.cuttingfloor.ai/mcp</code> as an MCP server in Claude, Cursor,
                 ChatGPT or Kazi. Your client opens a sign-in page; Google, GitHub, Microsoft, Apple
                 or email.
               </p>

@@ -53,6 +53,7 @@ services:
     env_file: [cuttingfloor.env]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy:/etc/caddy/sites:ro
       - caddy-data:/data
 
 networks:

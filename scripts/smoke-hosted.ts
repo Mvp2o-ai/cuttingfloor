@@ -1,6 +1,6 @@
 // Smoke test for a live hosted server, as a client reaches it: over HTTPS with a bearer key.
 //
-//   node scripts/smoke-hosted.ts https://cuttingfloorai.apifunnel.ai
+//   node scripts/smoke-hosted.ts https://api.cuttingfloor.ai
 //
 // The maintenance key comes from CF_KEY, else the first key in deploy/hetzner/cuttingfloor.env
 // (git-ignored, the file up.sh deploys). Keys are for maintenance; clients sign in with OAuth.
@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
-const base = (process.argv[2] ?? 'https://cuttingfloorai.apifunnel.ai').replace(/\/$/, '');
+const base = (process.argv[2] ?? 'https://api.cuttingfloor.ai').replace(/\/$/, '');
 const key =
   process.env.CF_KEY ??
   (await readFile(new URL('../deploy/hetzner/cuttingfloor.env', import.meta.url), 'utf8').then(

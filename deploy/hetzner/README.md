@@ -28,6 +28,15 @@ One server first. It's the same image as local, in hosted mode:
    Or let `up.sh` set it: `CUTTINGFLOOR_ZONE=example.com` for a Hetzner DNS zone, plus `CUTTINGFLOOR_DNS_TOKEN` when the zone is in another project.
 7. After that, deploys are automatic: every merge into `main` publishes the image and the `Deploy` workflow pulls it here. Run `./up.sh` again only to change the server or its `cuttingfloor.env`.
 
+**Moving to a new domain:**
+- Point its A record at the server.
+- On the server, set `CUTTINGFLOOR_DOMAIN` and `CUTTINGFLOOR_PUBLIC_URL` in `cuttingfloor.env`.
+- Register `<new url>/mcp` with WorkOS as the default resource (step 4). Sign-in callbacks belong to the clients and need no change.
+- Keep the old address working with `caddy/redirect.caddy` next to `compose.yaml`: `old.example.com { redir https://new.example.com{uri} 308 }`.
+- Then `docker compose up -d --force-recreate`.
+
+Signed links cover only the path, so links made under the old address still work after the redirect. A client that signed in at the old address signs in once more.
+
 **Check it:** `CF_KEY=<a key from CUTTINGFLOOR_API_KEYS> node scripts/smoke-hosted.ts https://<domain>`. It checks that a request without a key is refused, then the sandbox (`create.still`, `create.motion`, `code.run`), `look` on the server's TypeSafe key, an export's signed link, and that file uploaded back in two parts and imported.
 
 **Check sign-in:** `WORKOS_API_KEY=sk_… CHROME_PATH=<chrome> node scripts/smoke-oauth.ts https://<domain>`. It makes a throwaway WorkOS user, registers a client with AuthKit as an MCP client does, signs in on AuthKit's page in headless Chrome, calls tools with the token, then deletes the user and the client. AuthKit caches its metadata for five minutes, so a registration setting changed there takes that long to show.
