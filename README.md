@@ -69,6 +69,7 @@ The same image with `CUTTINGFLOOR_MODE=hosted`: no path imports (URLs only), no 
 |---|---|---|
 | `CUTTINGFLOOR_DATA` | `/data` | Data root |
 | `CUTTINGFLOOR_MAX_JOBS` | cores ÷ 4 | Concurrent imports, exports and QA runs (sandbox jobs queue in the sandbox instead) |
+| `CUTTINGFLOOR_HEAVY_JOBS` | 1 | Concurrent `create.cutout` runs, in their own slots apart from the jobs above |
 | `CUTTINGFLOOR_MAX_RENDERS` | cores ÷ 2, at least 2 | Renders (melt, encodes, transcription) at once, jobs and inline previews together; the rest wait their turn |
 | `CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS` | `24` | Signed download link lifetime |
 | `CUTTINGFLOOR_MAX_DOWNLOAD_BYTES` | 10 GiB | Size cap for URL imports and uploads |

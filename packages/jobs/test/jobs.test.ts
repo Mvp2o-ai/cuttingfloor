@@ -114,6 +114,25 @@ describe('JobRunner', () => {
     await runner.cancel(script.id, 'o');
   });
 
+  it('runs heavy jobs one at a time in their own slots', async () => {
+    const { store, runner } = await setup(1);
+    const first = await store.create({ owner: 'o', tool: 'create.cutout' });
+    runner.start(first, forever, { lane: 'heavy' });
+    const second = await store.create({ owner: 'o', tool: 'create.cutout' });
+    runner.start(second, forever, { lane: 'heavy' });
+    // The second cut-out waits behind the first, and says for what.
+    expect(await messageOf(store, second.id, /heavy model work/)).toBe(
+      'queued: next in line, waiting for a free slot for heavy model work (1 run at once on this server; running now: create.cutout)',
+    );
+    // A voiceover started meanwhile runs at once, in the engine slot.
+    const voice = await store.create({ owner: 'o', tool: 'create.voiceover' });
+    runner.start(voice, async () => ({ content: [], structuredContent: { ok: true } }));
+    await runner.settled(voice.id);
+    expect(await store.get(voice.id, 'o')).toMatchObject({ status: 'completed' });
+    await runner.cancel(second.id, 'o');
+    await runner.cancel(first.id, 'o');
+  });
+
   it('scopes jobs to their owner and honours idempotency keys', async () => {
     const { store } = await setup();
     const job = await store.create({ owner: 'o', tool: 'export.video', idempotencyKey: 'k' });

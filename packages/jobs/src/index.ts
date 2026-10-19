@@ -182,15 +182,19 @@ export type JobWork = (ctx: JobContext) => Promise<JobResult>;
 /**
  * Which queue a job waits in. engine: work this server does itself (renders, imports, analysis),
  * at most `concurrency` at once. sandbox: work the sandbox does (create.motion, create.still,
- * code.run), which queues there instead, so it never holds a slot engine work could use.
+ * code.run), which queues there instead, so it never holds a slot engine work could use. heavy:
+ * a model that holds half the CPUs for minutes (create.cutout), in its own slots so a voiceover
+ * or an import never waits behind one.
  */
-export type JobLane = 'engine' | 'sandbox';
+export type JobLane = 'engine' | 'sandbox' | 'heavy';
 
 /** Sandbox jobs this server follows at once; the sandbox itself runs them one at a time. */
 const SANDBOX_LANE = 16;
 
 interface Lane {
   limit: number;
+  /** What a queued job waits for, in words. */
+  slot: string;
   /** Jobs holding a slot: id → tool. */
   running: Map<string, string>;
   queue: Array<{
@@ -208,6 +212,8 @@ export interface RunnerOptions {
   heartbeatMs?: number;
   /** A working job not written for this long has lost its server. */
   staleMs?: number;
+  /** Heavy-lane jobs at once. Default 1. */
+  heavy?: number;
   /** Wraps every job's work, e.g. to report what it waits for from deep inside. */
   around?: (ctx: JobContext, work: () => Promise<JobResult>) => Promise<JobResult>;
 }
@@ -238,8 +244,14 @@ export class JobRunner {
     this.#staleMs = options.staleMs ?? 120_000;
     this.#around = options.around;
     this.#lanes = {
-      engine: { limit: this.#concurrency, running: new Map(), queue: [] },
-      sandbox: { limit: SANDBOX_LANE, running: new Map(), queue: [] },
+      engine: { limit: this.#concurrency, slot: 'a free job slot', running: new Map(), queue: [] },
+      sandbox: { limit: SANDBOX_LANE, slot: 'a free job slot', running: new Map(), queue: [] },
+      heavy: {
+        limit: Math.max(1, options.heavy ?? 1),
+        slot: 'a free slot for heavy model work',
+        running: new Map(),
+        queue: [],
+      },
     };
   }
 
@@ -322,7 +334,7 @@ export class JobRunner {
     lane.queue.forEach((q, i) => {
       void q
         .save({
-          statusMessage: `queued: ${i === 0 ? 'next in line' : `${i} ahead`}, waiting for a free job slot (${lane.limit} run at once on this server${now ? `; running now: ${now}` : ''})`,
+          statusMessage: `queued: ${i === 0 ? 'next in line' : `${i} ahead`}, waiting for ${lane.slot} (${lane.limit} run at once on this server${now ? `; running now: ${now}` : ''})`,
         })
         .catch(() => undefined);
     });

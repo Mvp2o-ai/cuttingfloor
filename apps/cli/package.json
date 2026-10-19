@@ -1,6 +1,6 @@
 {
   "name": "cuttingfloor",
-  "version": "0.19.1",
+  "version": "0.19.2",
   "private": true,
   "description": "The cuttingfloor command: serve (HTTP) and mcp (stdio).",
   "type": "module",

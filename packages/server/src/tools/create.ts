@@ -65,7 +65,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       progress: (f: number, m: string) => void,
       signal: AbortSignal,
     ) => Promise<MediaRecord>,
-    /** sandbox: the work is the sandbox's, which queues it there. */
+    /** sandbox: the work is the sandbox's, which queues it there. heavy: a long model run. */
     lane: JobLane = 'engine',
   ) {
     const owner = deps.owner();
@@ -397,6 +397,8 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
           );
           return dest;
         },
+        undefined,
+        'heavy',
       );
     }),
   );
