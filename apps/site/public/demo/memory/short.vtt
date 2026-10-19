@@ -1,0 +1,166 @@
+WEBVTT
+
+00:00:00.230 --> 00:00:02.500
+Most people give their assistant a notepad tool.
+
+00:00:02.500 --> 00:00:05.770
+The model stops mid-turn, emits a tool call,
+
+00:00:05.770 --> 00:00:08.000
+waits for the result, then keeps going.
+
+00:00:08.000 --> 00:00:10.000
+It works.
+
+00:00:10.000 --> 00:00:11.680
+But every note costs a full,
+
+00:00:11.680 --> 00:00:14.000
+extra round trip through the model.
+
+00:00:14.000 --> 00:00:16.000
+Fine on a demo.
+
+00:00:16.000 --> 00:00:17.000
+At scale, you feel it.
+
+00:00:17.000 --> 00:00:18.000
+We do it differently.
+
+00:00:18.000 --> 00:00:20.000
+We don't give the assistant a tool.
+
+00:00:20.000 --> 00:00:22.000
+We give it a convention.
+
+00:00:22.000 --> 00:00:24.000
+It writes its notes inline.
+
+00:00:24.000 --> 00:00:27.000
+Inside the response, it's already generating.
+
+00:00:27.000 --> 00:00:29.000
+Wrapped in start and end sentinels.
+
+00:00:29.060 --> 00:00:31.000
+A scratchpad block.
+
+00:00:31.000 --> 00:00:34.550
+Fenced by delimiters, your parser can't confuse with
+
+00:00:34.550 --> 00:00:37.000
+prose. That's the whole trick.
+
+00:00:37.000 --> 00:00:39.000
+The notes ride the response stream.
+
+00:00:39.000 --> 00:00:42.000
+No tool call, no round trip,
+
+00:00:42.000 --> 00:00:44.000
+no second inference hop.
+
+00:00:44.000 --> 00:00:47.480
+The model is generating that text token by token
+
+00:00:47.480 --> 00:00:49.830
+anyway. So the notes come straight off the stream
+
+00:00:49.830 --> 00:00:51.000
+into the chat history.
+
+00:00:51.000 --> 00:00:54.000
+A tool call is a synchronous detour.
+
+00:00:54.000 --> 00:00:57.000
+The model stops, the runtime executes,
+
+00:00:57.000 --> 00:00:58.000
+the model resumes.
+
+00:00:58.230 --> 00:01:00.200
+And that loop costs latency,
+
+00:01:00.200 --> 00:01:03.000
+and more subtly, coherence.
+
+00:01:03.000 --> 00:01:06.000
+Inline notes are asynchronous and free.
+
+00:01:06.000 --> 00:01:08.000
+The model never breaks stride.
+
+00:01:08.000 --> 00:01:10.070
+To recognize the block, the runtime just runs a
+
+00:01:10.070 --> 00:01:13.000
+streaming parse over the token delta.
+
+00:01:13.000 --> 00:01:15.140
+A small state machine that flips to recording on
+
+00:01:15.140 --> 00:01:18.000
+the open sentinel and done on the close.
+
+00:01:18.000 --> 00:01:21.000
+Here's the part that trips people up.
+
+00:01:21.000 --> 00:01:24.000
+At capture time, we don't persist anything.
+
+00:01:24.220 --> 00:01:26.650
+The notes are already in the chat history,
+
+00:01:26.650 --> 00:01:31.000
+already in context, exactly where the reasoning happens.
+
+00:01:31.000 --> 00:01:33.000
+That's working memory.
+
+00:01:33.000 --> 00:01:35.000
+Nothing gets written yet.
+
+00:01:35.000 --> 00:01:38.000
+Persistence happens later, at eviction.
+
+00:01:38.000 --> 00:01:40.000
+Tip 8.
+
+00:01:40.000 --> 00:01:42.000
+Three details that matter.
+
+00:01:42.000 --> 00:01:45.000
+One, hide the block from the UI,
+
+00:01:45.000 --> 00:01:47.000
+but keep it on the record.
+
+00:01:47.000 --> 00:01:49.000
+Hidden output is not deleted state.
+
+00:01:49.230 --> 00:01:52.480
+Two, there's a small per turn token tax for
+
+00:01:52.480 --> 00:01:55.000
+the sentinels and the block.
+
+00:01:55.000 --> 00:01:58.420
+Budget for it, it's the cheapest durable state you'll
+
+00:01:58.420 --> 00:02:00.000
+ever get from a model.
+
+00:02:00.000 --> 00:02:03.600
+Three, you can push the buffer to the infrastructure
+
+00:02:03.600 --> 00:02:06.000
+layer so the model can't forget to do it.
+
+00:02:06.000 --> 00:02:09.310
+But just emitting the tags works and is far
+
+00:02:09.310 --> 00:02:11.000
+less to maintain.
+
+00:02:11.000 --> 00:02:11.733
+Start there.

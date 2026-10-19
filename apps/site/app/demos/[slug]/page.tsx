@@ -7,6 +7,7 @@ import {
   demo,
   finished,
   length,
+  lengths,
 } from '../../../content/demos.ts';
 import { skill } from '../../../content/skills.ts';
 import { Breadcrumbs, Footer, JsonLd, Nav } from '../../shell.tsx';
@@ -87,16 +88,18 @@ export default async function DemoPage({ params }: Props) {
               <figcaption>{d.raw.label}</figcaption>
             </figure>
             <div className="dm-notes">
-              <h3>What needs to go</h3>
+              <h3>{cuts ? 'What needs to go' : 'What it says'}</h3>
               <p className="dm-script">
                 {d.transcript.map((w, i) => (
                   // biome-ignore lint/suspicious/noArrayIndexKey: the transcript is fixed
                   <span key={i}>{w.cut === undefined ? w.text : <del>{w.text}</del>} </span>
                 ))}
               </p>
-              <p className="dm-key">
-                <del>Struck in red</del>: {cuts} {cuts === 1 ? 'thing' : 'things'} the agent cuts.
-              </p>
+              {cuts > 0 && (
+                <p className="dm-key">
+                  <del>Struck in red</del>: {cuts} {cuts === 1 ? 'thing' : 'things'} the agent cuts.
+                </p>
+              )}
             </div>
           </div>
         </section>
@@ -117,9 +120,7 @@ export default async function DemoPage({ params }: Props) {
             <span className="label">03</span>
             <div>
               <h2 className="display">After</h2>
-              <p className="lede">
-                Ready to post · {length(d.raw)} → {length(v)}
-              </p>
+              <p className="lede">Ready to post · {lengths(d)}</p>
             </div>
           </div>
           <div className={v.wide ? 'dm-side wide' : 'dm-side'}>

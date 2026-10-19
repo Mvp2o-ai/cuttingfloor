@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { DEMOS, type DemoVideo, finished, length } from '../../content/demos.ts';
+import { DEMOS, type DemoVideo, finished, length, lengths } from '../../content/demos.ts';
 import { Breadcrumbs, Footer, Nav } from '../shell.tsx';
 
 export const metadata: Metadata = {
@@ -41,7 +41,7 @@ export default function Demos() {
                     <h2>{d.title}</h2>
                     <p>{d.description}</p>
                     <span className="wt-hub-meta">
-                      {d.agent} · {length(d.raw)} → {length(v)}
+                      {d.agent} · {lengths(d)}
                     </span>
                   </a>
                 </li>
