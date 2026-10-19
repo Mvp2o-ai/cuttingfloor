@@ -23,6 +23,8 @@ export interface RuntimeConfig {
   mediaRoots: string[];
   exportsDir: string | null;
   maxJobs: number;
+  /** Cut-outs at once, apart from maxJobs. */
+  heavyJobs?: number;
   /**
    * Renders (melt, encodes, transcription) that may run at once, jobs and inline previews
    * together; the rest wait their turn. Default: half the CPUs, at least 2.
@@ -73,6 +75,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     maxJobs: Number(
       env.CUTTINGFLOOR_MAX_JOBS ?? Math.max(1, Math.floor(availableParallelism() / 4)),
     ),
+    ...(env.CUTTINGFLOOR_HEAVY_JOBS ? { heavyJobs: Number(env.CUTTINGFLOOR_HEAVY_JOBS) } : {}),
     ...(env.CUTTINGFLOOR_MAX_RENDERS ? { maxRenders: Number(env.CUTTINGFLOOR_MAX_RENDERS) } : {}),
     outputUrlTtlMs: Number(env.CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS ?? 24) * 3_600_000,
     maxDownloadBytes: Number(env.CUTTINGFLOOR_MAX_DOWNLOAD_BYTES ?? 10 * 1024 ** 3),
@@ -120,6 +123,7 @@ export class Runtime {
     if (config.maxRenders) setRenderLimit(config.maxRenders);
     this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs, {
       ...(config.node ? { node: config.node } : {}),
+      ...(config.heavyJobs ? { heavy: config.heavyJobs } : {}),
       // A job whose render waits for a slot says so, and where it stands.
       around: (ctx, work) =>
         watchRenderQueue(

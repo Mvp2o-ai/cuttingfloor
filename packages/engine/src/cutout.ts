@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { availableParallelism } from 'node:os';
+import { availableParallelism, setPriority } from 'node:os';
 import { CfError } from '@cuttingfloor/schema';
 import { BIN } from './exec.ts';
 
@@ -138,6 +138,15 @@ export function cutout(
             { stdio: ['pipe', 'pipe', 'pipe'] },
           );
     const out = spawn(BIN.ffmpeg, merge, { stdio: ['pipe', 'ignore', 'pipe'] });
+    // Minutes of model work: anything quicker on this server goes first. The model's threads
+    // start after it loads, so they take this priority too.
+    for (const p of [ff, cv, out]) {
+      try {
+        if (p.pid) setPriority(p.pid, 10);
+      } catch {
+        // Already gone, or not allowed here: it runs at the normal priority.
+      }
+    }
     ff.stdout.pipe(cv.stdin);
     cv.stdout.pipe(out.stdin);
     for (const s of [cv.stdin, out.stdin]) s.on('error', () => undefined);
