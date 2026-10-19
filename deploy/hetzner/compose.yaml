@@ -42,7 +42,13 @@ services:
     cpus: ${CUTTINGFLOOR_MOTION_CPUS:-6}
     mem_limit: 6g
     memswap_limit: 6g
-    pids_limit: 256
+    # Under gVisor (systrap) every guest thread costs host threads too, and a clone the host
+    # refuses panics the whole sandbox, failing every job in it. So the host limit is only a
+    # backstop; the real cap is nproc inside the sandbox, where a fork bomb fails its own job.
+    # A three-browser 1080x1920 render peaks near 400 threads.
+    pids_limit: 8192
+    ulimits:
+      nproc: 1024
     shm_size: 1g
 
   caddy:

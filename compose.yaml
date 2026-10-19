@@ -60,7 +60,8 @@ services:
     cpus: 4
     mem_limit: 4g
     memswap_limit: 4g
-    pids_limit: 256
+    # A three-browser render peaks near 400 threads.
+    pids_limit: 1024
     shm_size: 1g
 
 networks:
