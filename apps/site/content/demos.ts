@@ -574,6 +574,99 @@ const TIPS: Demo = {
   ],
 };
 
+// A tech creator's four takes of one channel intro (generated footage, judged by Jev and edited
+// for real by cuttingfloor).
+const JEV: Demo = {
+  id: 'jev',
+  slug: 'pick-your-best-take-with-ai',
+  title: 'Let AI pick your best take, then make the thumbnail',
+  description:
+    'A tech creator gives ChatGPT four takes of his channel intro. cuttingfloor has Jev, its own vision model, watch every quarter second of each take, keeps the best one, then picks the frame where he looks best for a thumbnail.',
+  steps: [
+    'Wrote down every word of each take, with when it was said.',
+    'Had Jev, cuttingfloor’s own vision model, look at each take every quarter second: looking at the lens, eyes closed, wincing, energy.',
+    'Checked which takes drag a word out, squint or crack up.',
+    'Picked take 1: on the lens in all 32 frames, no blinks, the most energy.',
+    'Trimmed it to where he speaks and put his closing line right after it.',
+    'Matched the closing line’s volume, then made it all louder and even.',
+    'Had Jev score 41 frames for open eyes, a smile, sharp focus and a closed mouth, and took the best.',
+    'Built a thumbnail from that frame and checked the title doesn’t cover his face.',
+    'Added the title for the first seconds and captions that light up each word, and exported it vertical.',
+  ],
+  uploaded: '2026-10-19',
+  moments: [
+    { name: 'The intro', start: 0, end: 5.2 },
+    { name: 'It looks at the frames', start: 5.2, end: 8.9 },
+    { name: 'Smile', start: 8.9, end: 10.1 },
+  ],
+  agent: 'ChatGPT',
+  raw: {
+    src: '/demo/jev/raw.mp4',
+    poster: '/demo/jev/raw.jpg',
+    label: 'intro-takes.mp4 · 0:40',
+    seconds: 40,
+    captions: '/demo/jev/raw.vtt',
+  },
+  transcript: [
+    { text: 'Take 1: “Hey, I’m Jake, and today I’m testing whether an AI can pick my best take.”' },
+    { text: 'Take 2: the same line, dragging out “an… AI…”, then a wince.', cut: 0 },
+    { text: 'Take 3: the same line, starting off at the monitor, flat.', cut: 0 },
+    { text: 'Take 4: the same line, a hard squint halfway, then he cracks up.', cut: 0 },
+    { text: '“It actually looks at the frames, not just the words.” (smiles)' },
+  ],
+  turns: [
+    {
+      prompt: 'Which of these intros is my best take? Use it and cut the rest.',
+      reply:
+        'I’ll read what you said in each take and have Jev look at your face every quarter second, then keep the winner and put your closing line after it.',
+      calls: [
+        { fn: 'media.import', note: 'five clips' },
+        { fn: 'media.analyze', note: 'every word, timed' },
+        { fn: 'media.analyze', note: 'Jev looked at 160 frames' },
+        { fn: 'judge.ask', note: 'stumbles, squint, laugh' },
+        { fn: 'render.frames', note: 'looked at each take' },
+        { fn: 'edit.batch', note: 'take 1, then the closer' },
+        { fn: 'audio.set_master', note: 'louder, even' },
+        { fn: 'render.frames', note: 'checked the cut' },
+        { fn: 'export.video', note: 'vertical, 0:10' },
+      ],
+      status: 'Watching your four takes…',
+      done: 'Take 1 wins: you’re on the lens in 32 of 32 frames, eyes never closed, and it has the most energy. Take 2 drags out “AI” and winces, take 3 starts on your monitor and is the flattest, take 4 squints mid-line and ends laughing. Want a thumbnail and a title?',
+      video: {
+        src: '/demo/jev/best.mp4',
+        poster: '/demo/jev/best.jpg',
+        label: 'intro-best-take.mp4 · 0:10',
+        seconds: 10.1,
+        captions: '/demo/jev/best.vtt',
+      },
+    },
+    {
+      prompt: 'Now pick a thumbnail frame where I look good, and put a title on the video.',
+      reply:
+        'I’ll have Jev check every quarter second for open eyes, looking at the lens, a smile and sharp focus, build the thumbnail from the best frame, and add a matching title and captions.',
+      calls: [
+        { fn: 'media.analyze', note: 'Jev scored 41 frames' },
+        { fn: 'render.frames', note: 'grabbed the best one' },
+        { fn: 'create.still', note: 'built the thumbnail' },
+        { fn: 'judge.ask', note: 'is his face clear?' },
+        { fn: 'code.run', note: 'word-by-word captions' },
+        { fn: 'create.still', note: 'a matching title' },
+        { fn: 'render.frames', note: 'checked the text' },
+        { fn: 'export.video', note: 'vertical, 0:10' },
+      ],
+      status: 'Finding your best frame…',
+      done: 'Your best frame is 5.1 seconds in: eyes open, smiling, on the lens. The thumbnail puts “CAN AI PICK MY BEST TAKE?” under your chin, and Jev confirmed your face is clear. The video opens with the same title, with captions that light up each word. Want a 6-second cut for a story?',
+      video: {
+        src: '/demo/jev/short.mp4',
+        poster: '/demo/jev/thumbnail.jpg',
+        label: 'can-ai-pick-my-best-take.mp4 · 0:10',
+        seconds: 10.1,
+        captions: '/demo/jev/short.vtt',
+      },
+    },
+  ],
+};
+
 // Tip 1 of a 24-minute slide explainer, with a talking-head clip lip-synced to its narration
 // (generated presenter, edited for real by cuttingfloor).
 const MEMORY: Demo = {
@@ -683,7 +776,7 @@ const MEMORY: Demo = {
   ],
 };
 
-export const DEMOS: Demo[] = [DANCE, INTERVIEW, PRODUCT, LISTING, TIPS, MEMORY];
+export const DEMOS: Demo[] = [DANCE, INTERVIEW, PRODUCT, LISTING, TIPS, JEV, MEMORY];
 
 export function demo(slug: string): Demo | undefined {
   return DEMOS.find((d) => d.slug === slug);
