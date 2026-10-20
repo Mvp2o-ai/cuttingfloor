@@ -346,6 +346,12 @@ export const EditArgs = {
       .describe(
         'overlap: the clips overlap by the duration and later clips move earlier; handles: use source past the cut, nothing moves',
       ),
+    other_tracks: z
+      .enum(['stay', 'extract'])
+      .default('stay')
+      .describe(
+        "overlap only: what the other tracks do. stay: they don't move, so what sits after the cut there plays later against the picture (the result warns which clips); extract: the same span comes out of them too, like range.extract, so everything stays in sync",
+      ),
   }),
   'transition.set': z.object({
     transition_id: z.string(),
