@@ -1,6 +1,7 @@
 import type { CredentialStore } from '@cuttingfloor/credentials';
 import { McpServer } from '@modelcontextprotocol/server';
 import { registerCatalogs } from './catalog.ts';
+import type { OwnerLimits } from './meter.ts';
 import { registerResources } from './resources.ts';
 import { toErrorResult } from './result.ts';
 import type { Runtime } from './runtime.ts';
@@ -25,6 +26,11 @@ export interface ServerDeps {
    * tool call returns instead of running. Absent locally.
    */
   access?: () => Promise<void>;
+  /**
+   * Hosted: the owner's plan as limits on the work they start (jobs at once, largest export,
+   * judgments a day), and a refusal when no job may start. Absent locally: no limits.
+   */
+  limits?: () => Promise<OwnerLimits>;
 }
 
 const INSTRUCTIONS = `cuttingfloor is a headless video editor. It makes video two ways, often both at once:

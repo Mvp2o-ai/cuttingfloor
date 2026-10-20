@@ -15,6 +15,7 @@ import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, type McpServer } from '@modelcontextprotocol/server';
 import type * as z from 'zod/v4';
 import { runCodeInSandbox } from '../code.ts';
+import { admitJob } from '../meter.ts';
 import { DATA_EXTENSIONS, outputMime } from '../mime.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import { createServer, type ServerDeps } from '../server.ts';
@@ -69,6 +70,9 @@ export function registerCodeTools(server: McpServer, deps: ServerDeps): void {
         const existing = await store.findIdempotent(owner, 'code.run', args.idempotency_key);
         if (existing) return jobReply(existing, ctx);
       }
+      // Refused when the plan has no time left; it takes none of the owner's job slots, since the
+      // jobs its script starts take them.
+      await admitJob(deps.limits);
       const scriptHash = createHash('sha256').update(args.script).digest('hex').slice(0, 16);
       const job = await store.create({
         owner,

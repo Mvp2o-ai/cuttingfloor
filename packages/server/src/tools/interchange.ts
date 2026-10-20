@@ -12,6 +12,7 @@ import {
   withJob,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
+import { admitJob } from '../meter.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 import { defaultName, exists, publish } from './render.ts';
@@ -84,88 +85,96 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
       const records = captions
         ? []
         : await Promise.all(mediaIds(doc).map((id) => rt.media.get(owner, id)));
+      const admit = await admitJob(deps.limits);
       const job = await store.create({
         owner,
         tool: 'export.timeline',
         statusMessage: 'writing',
         ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),
       });
-      rt.jobs.start(job, async ({ signal, progress }) => {
-        const warnings: string[] = [];
-        const media = new Map<string, InterchangeMedia>();
-        const files = new Map<string, string>();
-        const used = new Set<string>();
-        for (const r of records) {
-          const original = r.file ?? ('path' in r.source ? r.source.path : undefined);
-          if (!original) {
-            warnings.push(
-              `${r.name} (${r.media_id}) has no file to refer to; its clips are left out`,
-            );
-            continue;
-          }
-          let path = hostPath(original);
-          if (collect) {
-            // media/<name>.<ext>, unique in the bundle.
-            const stem = basename(r.name, extname(r.name)).replace(/[^\w .-]+/g, '_') || r.media_id;
-            const fileExt = extname(original).slice(0, 8);
-            let file = `${stem}${fileExt}`;
-            for (let i = 2; used.has(file.toLowerCase()); i++) file = `${stem}-${i}${fileExt}`;
-            used.add(file.toLowerCase());
-            files.set(file, original);
-            path = `media/${file}`;
-          } else if (path === original && rt.config.mode === 'hosted') {
-            warnings.push(
-              `${r.name} is referred to by its server path; use media: collect to take the files along`,
-            );
-          }
-          const p = r.probe;
-          media.set(r.media_id, {
-            name: r.name,
-            path,
-            duration: p?.duration ? Math.round(p.duration * TICKS_PER_SECOND) : null,
-            ...(p?.video ? { width: p.video.width, height: p.video.height, fps: p.video.fps } : {}),
-            ...(p?.audio ? { channels: p.audio.channels, sample_rate: p.audio.sample_rate } : {}),
-          });
-        }
-        const written = writeInterchange(args.format, doc, (id) => media.get(id));
-        warnings.push(...written.warnings);
-        const outDir = rt.ws.ownerDir(owner, 'outputs', job.id);
-        await mkdir(outDir, { recursive: true });
-        const out = join(outDir, name);
-        if (!collect) {
-          await writeFile(out, written.text);
-        } else {
-          const dir = await mkdtemp(join(tmpdir(), 'cf-collect-'));
-          try {
-            await writeFile(join(dir, `${base}.${ext}`), written.text);
-            await mkdir(join(dir, 'media'));
-            let i = 0;
-            for (const [file, from] of files) {
-              progress(0.1 + (0.6 * i++) / Math.max(1, files.size), `collecting ${file}`);
-              await copyFile(from, join(dir, 'media', file));
+      rt.jobs.start(
+        job,
+        async ({ signal, progress }) => {
+          const warnings: string[] = [];
+          const media = new Map<string, InterchangeMedia>();
+          const files = new Map<string, string>();
+          const used = new Set<string>();
+          for (const r of records) {
+            const original = r.file ?? ('path' in r.source ? r.source.path : undefined);
+            if (!original) {
+              warnings.push(
+                `${r.name} (${r.media_id}) has no file to refer to; its clips are left out`,
+              );
+              continue;
             }
-            progress(0.75, 'zipping');
-            // Stored, not compressed: media is compressed already.
-            await run(BIN.zip, ['-q', '-0', '-r', out, `${base}.${ext}`, 'media'], {
-              cwd: dir,
-              signal,
-              timeoutMs: 4 * 60 * 60_000,
+            let path = hostPath(original);
+            if (collect) {
+              // media/<name>.<ext>, unique in the bundle.
+              const stem =
+                basename(r.name, extname(r.name)).replace(/[^\w .-]+/g, '_') || r.media_id;
+              const fileExt = extname(original).slice(0, 8);
+              let file = `${stem}${fileExt}`;
+              for (let i = 2; used.has(file.toLowerCase()); i++) file = `${stem}-${i}${fileExt}`;
+              used.add(file.toLowerCase());
+              files.set(file, original);
+              path = `media/${file}`;
+            } else if (path === original && rt.config.mode === 'hosted') {
+              warnings.push(
+                `${r.name} is referred to by its server path; use media: collect to take the files along`,
+              );
+            }
+            const p = r.probe;
+            media.set(r.media_id, {
+              name: r.name,
+              path,
+              duration: p?.duration ? Math.round(p.duration * TICKS_PER_SECOND) : null,
+              ...(p?.video
+                ? { width: p.video.width, height: p.video.height, fps: p.video.fps }
+                : {}),
+              ...(p?.audio ? { channels: p.audio.channels, sample_rate: p.audio.sample_rate } : {}),
             });
-          } finally {
-            await rm(dir, { recursive: true, force: true });
           }
-        }
-        const result = {
-          ...(await publish(rt, owner, job.id, out, name)),
-          format: args.format,
-          mime_type: collect ? 'application/zip' : INTERCHANGE_FILES[args.format].type,
-          media: media.size,
-          warnings,
-        };
-        return ok(result, [
-          { type: 'resource_link', uri: result.uri, name, mimeType: result.mime_type },
-        ]) as never;
-      });
+          const written = writeInterchange(args.format, doc, (id) => media.get(id));
+          warnings.push(...written.warnings);
+          const outDir = rt.ws.ownerDir(owner, 'outputs', job.id);
+          await mkdir(outDir, { recursive: true });
+          const out = join(outDir, name);
+          if (!collect) {
+            await writeFile(out, written.text);
+          } else {
+            const dir = await mkdtemp(join(tmpdir(), 'cf-collect-'));
+            try {
+              await writeFile(join(dir, `${base}.${ext}`), written.text);
+              await mkdir(join(dir, 'media'));
+              let i = 0;
+              for (const [file, from] of files) {
+                progress(0.1 + (0.6 * i++) / Math.max(1, files.size), `collecting ${file}`);
+                await copyFile(from, join(dir, 'media', file));
+              }
+              progress(0.75, 'zipping');
+              // Stored, not compressed: media is compressed already.
+              await run(BIN.zip, ['-q', '-0', '-r', out, `${base}.${ext}`, 'media'], {
+                cwd: dir,
+                signal,
+                timeoutMs: 4 * 60 * 60_000,
+              });
+            } finally {
+              await rm(dir, { recursive: true, force: true });
+            }
+          }
+          const result = {
+            ...(await publish(rt, owner, job.id, out, name)),
+            format: args.format,
+            mime_type: collect ? 'application/zip' : INTERCHANGE_FILES[args.format].type,
+            media: media.size,
+            warnings,
+          };
+          return ok(result, [
+            { type: 'resource_link', uri: result.uri, name, mimeType: result.mime_type },
+          ]) as never;
+        },
+        admit,
+      );
       return jobReply(job, ctx);
     }),
   );
