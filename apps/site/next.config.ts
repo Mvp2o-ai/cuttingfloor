@@ -7,6 +7,14 @@ const config: NextConfig = {
   // Pages that moved keep working at their old addresses.
   async redirects() {
     return [
+      // One address for search engines and sign-in: www and the production vercel.app alias move
+      // to cuttingfloor.ai, path and query kept. Preview deployments have other hosts and stay put.
+      ...['www.cuttingfloor.ai', 'cuttingfloor-site.vercel.app'].map((value) => ({
+        source: '/:path*',
+        has: [{ type: 'host' as const, value }],
+        destination: 'https://cuttingfloor.ai/:path*',
+        permanent: true,
+      })),
       { source: '/demo', destination: '/demos', permanent: true },
       {
         source: '/walkthroughs/fix-jagged-cuts',
