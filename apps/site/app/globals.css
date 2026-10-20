@@ -2392,7 +2392,7 @@ button.link-big {
 .meter-line strong {
   font-size: 1.3em;
 }
-.meter-line span {
+.meter-line .meter-renews {
   color: var(--mute);
 }
 .meter-bar {

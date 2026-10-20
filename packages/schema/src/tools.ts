@@ -15,7 +15,7 @@ import {
 } from './compositing.ts';
 import { ToolError } from './errors.ts';
 import { JobId, MediaId, TimelineId, UploadId } from './ids.ts';
-import { JUDGE_LIMITS, JudgeName, JudgeQuestion, JudgeText } from './judge.ts';
+import { JUDGE_LIMITS, JudgeName, JudgeQuestion, JudgeText, NoulFields } from './judge.ts';
 import { ASSET_NAME, MOTION_LIMITS } from './motion.ts';
 import { Sequence } from './sequence.ts';
 import { Colour, TextStyle } from './text.ts';
@@ -788,6 +788,93 @@ export const MediaAnalyzeResult = z.object({
     .string()
     .optional()
     .describe('In place of the analysis when it is too long to return: where to read it'),
+});
+
+/** A media.seek criterion: a Jev noul, or its instructions alone as a plain statement. */
+export const SeekCriterion = z.union([z.string().min(1), z.object(NoulFields).strict()]);
+
+export const MediaSeekInput = z
+  .object({
+    media_id: MediaId.optional().describe('Seek in imported media (media seconds)'),
+    timeline_id: TimelineId.optional().describe(
+      'Seek in an edit as it renders (timeline seconds): gaps, cuts, titles and effects included',
+    ),
+    criteria: z
+      .record(JudgeName, SeekCriterion)
+      .describe(
+        `Name (yours, not shown to the model) to what a matching frame shows: a statement or question about the picture, or {instructions, criteria: {true, false}} to say what counts as yes and as no. Up to ${JUDGE_LIMITS.lookQuestions}, each judged on every frame`,
+      ),
+    state: z
+      .record(JudgeName, JudgeText)
+      .optional()
+      .describe(
+        'Text or JSON entries shown beside `frame` on every frame, by name, for criteria to refer to (a script line, what a term means)',
+      ),
+    every_seconds: z
+      .number()
+      .min(0.04)
+      .max(3600)
+      .optional()
+      .describe('Sample a frame this often. Default 1'),
+    at_seconds: z
+      .array(z.number().min(0))
+      .min(1)
+      .max(JUDGE_LIMITS.frames)
+      .optional()
+      .describe('Sample exactly these times instead'),
+    from_seconds: z.number().min(0).optional().describe('Start sampling here. Default 0'),
+    until_seconds: z.number().min(0).optional().describe('Stop here. Default: the end'),
+    with_previous: z
+      .boolean()
+      .default(false)
+      .describe(
+        'Also show the frame sampled before, as `previous`, for criteria about change. The first sample is only shown as `previous`',
+      ),
+    min_probability: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.5)
+      .describe('A frame matches a criterion when its probability is at least this'),
+    idempotency_key: z.string().min(1).max(200).optional(),
+  })
+  .refine((v) => Boolean(v.media_id) !== Boolean(v.timeline_id), {
+    message: 'Give exactly one of media_id or timeline_id',
+  });
+
+export const MediaSeekResult = z.object({
+  media_id: MediaId.optional(),
+  timeline_id: TimelineId.optional(),
+  model: z.string().describe('The Jev model that judged the frames'),
+  frames: z.number().describe('Frames judged'),
+  asked: z
+    .record(z.string(), z.record(z.string(), z.unknown()))
+    .describe('Per criterion: the noul question Jev was asked, as sent'),
+  matches: z
+    .record(
+      z.string(),
+      z.array(
+        z.object({
+          start: z.number().describe('First matching sample, in seconds'),
+          end: z.number().describe('Last matching sample of the run, in seconds'),
+          peak_seconds: z.number().describe('The sample most likely to match'),
+          peak_probability: z.number(),
+          frame: frame.describe('peak_seconds as a frame number, for render.frames'),
+          uri: z.string().describe('MCP resource: the picture at peak_seconds'),
+        }),
+      ),
+    )
+    .describe(
+      'Per criterion: runs of consecutive samples that match, in time order; empty when none do',
+    ),
+  samples: z
+    .array(
+      z.object({
+        seconds: z.number(),
+        probabilities: z.record(z.string(), z.number()).describe('Per criterion, 0 to 1'),
+      }),
+    )
+    .describe('Every judged sample, for your own cut-off or arithmetic'),
 });
 
 // Create: new media from a recipe. Always a job; the result is a media_id for clip.add.

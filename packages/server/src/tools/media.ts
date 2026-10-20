@@ -16,7 +16,6 @@ import {
 import {
   CfError,
   JUDGE_LIMITS,
-  type JudgeAnswer,
   MEDIA_LIMITS,
   MediaAnalyzeInput,
   MediaAnalyzeResult,
@@ -28,7 +27,8 @@ import {
   withJob,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { askJev, JEV_MODEL, JEV_URL } from '../jev.ts';
+import { askFrames, checkFrameState, type JudgedFrame, sampleTimes } from '../frames.ts';
+import { JEV_MODEL, JEV_URL } from '../jev.ts';
 import { admitJob } from '../meter.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
@@ -54,12 +54,7 @@ function inline(mediaId: string, kind: string, data: unknown): Record<string, un
   };
 }
 
-/** look: frames a call may ask about. Questions per frame are judge.ask's limit. */
-const LOOK_MAX_FRAMES = 600;
-/** State names look fills itself on every frame. */
-const LOOK_NAMES = ['frame', 'previous', 'seconds_between'];
-
-type LookFrame = { time: number; answers: Record<string, JudgeAnswer> };
+type LookFrame = JudgedFrame;
 
 /** Per question, where its answers sit: yes spans, choice spans, score range. */
 function lookDigest(questions: Record<string, { type: string }>, frames: LookFrame[]) {
@@ -298,7 +293,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Analyze media',
       description: [
-        'Find what is in imported media, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). The words are reliable; their times are not exact: they can be off by up to about a second, the start of a word can sit in the silence before it, its end can run on over the pause after it, and short ums and uhs are often left out. To cut on speech, take the edges from kind silence and move each cut to the nearest one. beats: tempo, beat and downbeat times. faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on. look: your own questions about what is on screen, answered on sampled frames. silence: stretches quieter than threshold_db for at least min_seconds. scenes: times the picture changes by more than threshold (0–100).',
+        'Find what is in imported media, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). The words are reliable; their times are not exact: they can be off by up to about a second, the start of a word can sit in the silence before it, its end can run on over the pause after it, and short ums and uhs are often left out. To cut on speech, take the edges from kind silence and move each cut to the nearest one. beats: tempo, beat and downbeat times. faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on. look: your own typed questions about what is on screen, answered on every sampled frame (to find where something happens from plain words, media.seek). silence: stretches quieter than threshold_db for at least min_seconds. scenes: times the picture changes by more than threshold (0–100).',
         'Times are media seconds; boxes are fractions of the picture. Results stay with the media (media.get include) except track, silence and scenes, which come back in the result. A result too long to return (a long transcript) comes back as its summary and a note on reading it in code.run.',
         'Long-running: returns a task, or a job_id for job.get.',
         '',
@@ -306,7 +301,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         'Choose the type by the answer you need. noul: yes or no, answered as noul, the probability of yes from 0 to 1. choice: one of options you name, answered as choice plus probabilities and confidence. score: a degree on levels you order, answered as score (0 is the first level; it can land between levels) plus confidence. box: where one thing is, answered as box {x, y, w, h} in fractions of the picture plus confidence.',
         'Write each question about the picture as it looks. Name the picture in backticks ("in `frame`"), ask about one thing, word it so yes means the thing is there, and describe it as it appears: "Does `frame` show a human being, even if only their face fills the picture?", "Is one large word laid over `frame`, much bigger than any other text?". To compare, name both pictures and the thing that differs: "Is there a button in `frame` that is not in `previous`?". To locate, name the one thing so only it fits ("the \'Get started for free\' button under the headline in `frame`") and, in the same call, a noul asking whether it is there; use the box on frames where that noul is high. Give a choice a none option for frames where nothing fits, and each score level a concrete situation.',
         'Read the answers this way: a noul of 0.5 or more reads as yes, and you can set your own cut-off; confidence tells you how far to trust a choice, a score or a box, and a loose box shows as low confidence. Work in passes: every_seconds 1 over the whole media, then at_seconds around the times where answers change. media.get scenes give when the picture cuts; look tells you what is on it.',
-        `The result gives each question's spans (when a noul reads yes, which choice holds when); every frame's answers stay with the media (media.get include ['look'], the last 10 runs). Up to ${LOOK_MAX_FRAMES} frames and ${JUDGE_LIMITS.lookQuestions} questions a call. For one judgment about text, a still or a single frame, judge.ask answers at once. Full guide to writing questions: https://docs.typesafe.ai/primitives and https://docs.typesafe.ai/images.`,
+        `The result gives each question's spans (when a noul reads yes, which choice holds when); every frame's answers stay with the media (media.get include ['look'], the last 10 runs). Up to ${JUDGE_LIMITS.frames} frames and ${JUDGE_LIMITS.lookQuestions} questions a call. To find the moments that match a description, media.seek takes it in plain words and returns where it holds. For one judgment about text, a still or a single frame, judge.ask answers at once. Full guide to writing questions: https://docs.typesafe.ai/primitives and https://docs.typesafe.ai/images.`,
       ].join('\n'),
       inputSchema: MediaAnalyzeInput,
       outputSchema: withJob(MediaAnalyzeResult),
@@ -326,12 +321,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           throw jevKeyRequired('look');
         }
         checkQuestions('look', args.questions, JUDGE_LIMITS.lookQuestions);
-        const taken = Object.keys(args.state ?? {}).filter((n) => LOOK_NAMES.includes(n));
-        if (taken.length) {
-          throw new CfError('bad_request', `look names ${taken.join(', ')} itself`, {
-            hint: 'Give your state entries other names, e.g. script or definition',
-          });
-        }
+        checkFrameState('look', args.state);
         checkText(args.state ?? {});
       }
       if (args.idempotency_key) {
@@ -361,38 +351,9 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       // look: the sample times, checked before any job exists.
       let times: number[] = [];
       if (args.kind === 'look') {
-        const duration = p?.kind === 'image' ? 0 : (p?.duration ?? 0);
-        const step = args.every_seconds ?? 1;
-        const from = args.from_seconds ?? 0;
-        const to = Math.min(args.until_seconds ?? duration, duration);
-        if (p?.kind === 'image' || !duration) times = [0];
-        else if (args.at_seconds) times = [...new Set(args.at_seconds)].sort((a, b) => a - b);
-        else for (let t = from; t < to - 1e-6; t += step) times.push(Math.round(t * 1000) / 1000);
-        const late = times.find((t) => duration && t >= duration);
-        if (late !== undefined) {
-          throw new CfError(
-            'bad_request',
-            `${late} s is past the end of the media (${duration} s)`,
-            {
-              hint: `Sample times from 0 up to ${duration} s`,
-            },
-          );
-        }
-        if (!times.length) {
-          throw new CfError('bad_request', `Nothing to sample between ${from} s and ${to} s`, {
-            hint: `The media runs ${duration} s; from_seconds must come before until_seconds`,
-          });
-        }
-        const asked = times.length - (args.with_previous && times.length > 1 ? 1 : 0);
-        if (asked > LOOK_MAX_FRAMES) {
-          throw new CfError(
-            'limit_exceeded',
-            `That samples ${asked} frames; a call takes up to ${LOOK_MAX_FRAMES}`,
-            {
-              hint: `every_seconds ${Math.ceil(((to - from) / LOOK_MAX_FRAMES) * 100) / 100} covers it in one call, or split it with from_seconds and until_seconds`,
-            },
-          );
-        }
+        const sampled = sampleTimes(p?.kind === 'image' ? 0 : (p?.duration ?? 0), args);
+        times = sampled.times;
+        const asked = sampled.asked;
         await checkQuota(
           rt.ws,
           owner,
@@ -487,44 +448,18 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
                 onFrame: (n) =>
                   progress(0.02 + (0.28 * n) / times.length, `look: frame ${n} of ${times.length}`),
               });
-              // with_previous: the first frame is only ever shown as `previous`.
-              const first = args.with_previous && times.length > 1 ? 1 : 0;
-              const frames: LookFrame[] = new Array(times.length - first);
-              let next = first;
-              let done = 0;
-              const worker = async () => {
-                while (next < times.length) {
-                  const i = next++;
-                  const t = times[i] as number;
-                  const prev = i > 0 && args.with_previous ? i - 1 : -1;
-                  const { answers } = await askJev({
-                    base: rt.config.typesafeUrl ?? JEV_URL,
-                    key,
-                    images: [
-                      ...(prev >= 0 ? [{ name: 'previous', jpeg: stills[prev] as Buffer }] : []),
-                      { name: 'frame', jpeg: stills[i] as Buffer },
-                    ],
-                    state: {
-                      ...args.state,
-                      ...(prev >= 0
-                        ? {
-                            seconds_between:
-                              Math.round((t - (times[prev] as number)) * 1000) / 1000,
-                          }
-                        : {}),
-                    },
-                    questions,
-                    signal,
-                  });
-                  frames[i - first] = { time: t, answers };
-                  done++;
-                  progress(
-                    0.3 + (0.7 * done) / frames.length,
-                    `look: asked ${done} of ${frames.length} frames`,
-                  );
-                }
-              };
-              await Promise.all(Array.from({ length: Math.min(8, frames.length) }, worker));
+              const frames = await askFrames({
+                base: rt.config.typesafeUrl ?? JEV_URL,
+                key,
+                times,
+                stills,
+                withPrevious: args.with_previous,
+                state: args.state,
+                questions,
+                signal,
+                onFrame: (done, of) =>
+                  progress(0.3 + (0.7 * done) / of, `look: asked ${done} of ${of} frames`),
+              });
               const run = {
                 id: job.id,
                 model: JEV_MODEL,

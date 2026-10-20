@@ -110,11 +110,13 @@ function Meter({ usage, plan }: { usage: Usage; plan: PlanId }) {
   return (
     <div className="meter">
       <p className="meter-line">
-        <strong>{Math.round(used).toLocaleString('en-US')}</strong>
-        {included === null
-          ? ' render minutes this month'
-          : ` of ${included.toLocaleString('en-US')} render minutes used`}
         <span>
+          <strong>{Math.round(used).toLocaleString('en-US')}</strong>
+          {included === null
+            ? ' render minutes this month'
+            : ` of ${included.toLocaleString('en-US')} render minutes used`}
+        </span>
+        <span className="meter-renews">
           {renews} {day(usage.period.end)}
         </span>
       </p>
