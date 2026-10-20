@@ -55,6 +55,28 @@ export class FileJobStore {
     return this.#ws.ownerDir(owner, 'jobs', `${id}.json`);
   }
 
+  /**
+   * A cancel asked of a job another server runs. Its own file, written once and never rewritten,
+   * so the running server's next write can't erase it the way it can a status in the record.
+   */
+  #cancelFile(owner: string, id: string): string {
+    return this.#file(owner, id).replace(/\.json$/, '.cancel');
+  }
+
+  async requestCancel(owner: string, id: string): Promise<void> {
+    await this.#ws.writeJson(
+      this.#cancelFile(owner, id),
+      { at: new Date().toISOString() },
+      {
+        exclusive: true,
+      },
+    );
+  }
+
+  async cancelRequested(owner: string, id: string): Promise<boolean> {
+    return (await this.#ws.readJson(this.#cancelFile(owner, id))) !== undefined;
+  }
+
   #idemFile(owner: string, tool: string, key: string): string {
     const h = createHash('sha256').update(`${tool}\0${key}`).digest('hex').slice(0, 40);
     return this.#ws.ownerDir(owner, 'jobs-idem', `${h}.json`);
@@ -159,6 +181,7 @@ export class FileJobStore {
         if (!job || job.status === 'working') continue;
         if (Date.parse(job.lastUpdatedAt) + job.ttlMs < Date.now()) {
           await this.#ws.remove(join(dir, name));
+          await this.#ws.remove(join(dir, `${job.id}.cancel`));
           await this.#ws.remove(this.#ws.path('owners', key, 'outputs', job.id));
           n += 1;
         }
@@ -303,6 +326,7 @@ export class JobRunner {
       return this.store.get(id, owner);
     }
     // Running on another server (or nowhere): it sees this at its next write and stops.
+    await this.store.requestCancel(owner, id);
     return this.store.update(job, { status: 'cancelled', statusMessage: 'cancelled' });
   }
 
@@ -379,7 +403,11 @@ export class JobRunner {
         .then(async () => {
           if (controller.signal.aborted) return;
           const disk = await this.store.get(current.id, current.owner);
-          if (disk && disk.status !== 'working') {
+          // The marker too: this server's own write may have landed over a remote cancel's.
+          if (
+            (disk && disk.status !== 'working') ||
+            (await this.store.cancelRequested(current.owner, current.id))
+          ) {
             controller.abort();
             return;
           }

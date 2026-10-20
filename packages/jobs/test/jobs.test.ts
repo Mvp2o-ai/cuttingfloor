@@ -224,7 +224,8 @@ describe('JobRunner', () => {
     };
     runner.start(job, forever);
     for (let i = 0; i < 100 && !failed; i++) await new Promise((r) => setTimeout(r, 10));
-    await update((await store.get(job.id, 'o')) ?? job, { status: 'cancelled' });
+    // Cancelled from another server.
+    await new JobRunner(store, 1, { node: 'other' }).cancel(job.id, 'o');
     await runner.settled(job.id);
     expect((await store.get(job.id, 'o'))?.status).toBe('cancelled');
   });
