@@ -26,6 +26,7 @@ import {
 } from '@modelcontextprotocol/server';
 import type { JwtTokenVerifier } from './oauth.ts';
 import { uploadPage } from './upload-page.ts';
+import { watchPage } from './watch-page.ts';
 
 export interface HttpOptions {
   runtime: Runtime;
@@ -57,7 +58,8 @@ const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 
 /**
  * The HTTP face: Streamable HTTP MCP at /mcp (2026-07-28, with stateless 2025 fallback),
- * signed output downloads at /outputs/…, signed uploads at /uploads/…, and /healthz.
+ * signed output downloads at /outputs/… (and the page that plays one at /watch/…), signed uploads
+ * at /uploads/…, and /healthz.
  */
 export function createHttpServer(options: HttpOptions): Server {
   const { runtime, credentials, oauth } = options;
@@ -134,6 +136,38 @@ export function createHttpServer(options: HttpOptions): Server {
         }
         const name = decodeURIComponent(url.pathname.split('/').pop() ?? '');
         await sendFile(req, res, file, name);
+        return;
+      }
+      // The page that plays a signed output: the same signature as its /outputs/ URL.
+      if (url.pathname.startsWith('/watch/') && (req.method === 'GET' || req.method === 'HEAD')) {
+        const filePath = `/outputs/${url.pathname.slice('/watch/'.length)}`;
+        const exp = url.searchParams.get('exp');
+        const sig = url.searchParams.get('sig');
+        const file = await runtime.verifyOutput(filePath, exp, sig);
+        if (!file) {
+          res.writeHead(403, { 'content-type': 'text/plain' }).end('invalid or expired link');
+          return;
+        }
+        const name = decodeURIComponent(filePath.split('/').pop() ?? '');
+        res.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'private, no-store',
+          'referrer-policy': 'no-referrer',
+          'x-content-type-options': 'nosniff',
+          'content-security-policy':
+            "default-src 'none'; media-src 'self'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+        });
+        res.end(
+          req.method === 'HEAD'
+            ? undefined
+            : watchPage({
+                name,
+                mime: outputMime(name.includes('.') ? name : file),
+                fileUrl: `${filePath}?${new URLSearchParams({ exp: exp ?? '', sig: sig ?? '' })}`,
+                base: runtime.config.publicUrl,
+                expiresAt: new Date(Number(exp)),
+              }),
+        );
         return;
       }
       if (url.pathname.startsWith('/uploads/')) {

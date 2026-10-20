@@ -219,19 +219,22 @@ export class Runtime {
   /**
    * A signed, time-limited download URL for a file under `outputs/{id}/`: a job's output (`j_…`),
    * or frames kept for download (`f_…`). A media id (`m_…`) signs the media's own file.
+   * `pageUrl` is the same signature on /watch/…, a page that plays the file in a browser.
    */
   async signOutput(
     owner: string,
     jobId: string,
     file: string,
-  ): Promise<{ url: string; expiresAt: string }> {
+  ): Promise<{ url: string; pageUrl: string; expiresAt: string }> {
     const exp = Date.now() + this.config.outputUrlTtlMs;
     const path = `/outputs/${ownerKey(owner)}/${jobId}/${encodeURIComponent(file)}`;
     const sig = createHmac('sha256', await this.secret())
       .update(`${path}\n${exp}`)
       .digest('base64url');
+    const query = `?exp=${exp}&sig=${sig}`;
     return {
-      url: `${this.config.publicUrl}${path}?exp=${exp}&sig=${sig}`,
+      url: `${this.config.publicUrl}${path}${query}`,
+      pageUrl: `${this.config.publicUrl}/watch${path.slice('/outputs'.length)}${query}`,
       expiresAt: new Date(exp).toISOString(),
     };
   }
@@ -240,7 +243,7 @@ export class Runtime {
   async signMedia(
     owner: string,
     record: { media_id: string; name: string; file: string | null },
-  ): Promise<{ url: string; expiresAt: string } | undefined> {
+  ): Promise<{ url: string; pageUrl: string; expiresAt: string } | undefined> {
     if (!record.file) return undefined;
     const name =
       record.name.replace(/[^\w.-]+/g, '_').replace(/^[._]+/, '') ||

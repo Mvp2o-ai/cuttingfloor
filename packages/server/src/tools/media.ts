@@ -30,6 +30,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { askFrames, checkFrameState, type JudgedFrame, sampleTimes } from '../frames.ts';
 import { JEV_MODEL, JEV_URL } from '../jev.ts';
 import { admitJob } from '../meter.ts';
+import { PLAYER_TOOL_META } from '../player.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 import { addUsage, checkQuota } from '../usage.ts';
@@ -527,9 +528,10 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get media',
       description:
-        'Status, a signed download url for the file, streams, duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
+        'Status, a signed download url for the file and a page_url that plays or shows it in any browser (to give a person), streams, duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
       inputSchema: MediaRefInput,
       outputSchema: MediaInfo,
+      _meta: PLAYER_TOOL_META,
       annotations: {
         title: 'Get media',
         readOnlyHint: true,
@@ -544,7 +546,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       const link = await rt.signMedia(owner, record);
       return ok({
         ...mediaInfo(record, args.include ?? []),
-        ...(link ? { url: link.url, expires_at: link.expiresAt } : {}),
+        ...(link ? { url: link.url, page_url: link.pageUrl, expires_at: link.expiresAt } : {}),
       });
     }),
   );

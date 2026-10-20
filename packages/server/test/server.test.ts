@@ -152,6 +152,26 @@ describe('protocol surface', () => {
     );
   });
 
+  it('offers a player view (MCP Apps) on export.video and media.get results', async () => {
+    const client = await connect(env.runtime);
+    const { tools } = await client.listTools();
+    const withPlayer = tools
+      .filter((t) => (t._meta as { ui?: { resourceUri?: string } })?.ui?.resourceUri)
+      .map((t) => t.name);
+    expect(withPlayer.sort()).toEqual(['export.video', 'media.get']);
+    const { resources } = await client.listResources();
+    const listed = resources.find((r) => r.uri === 'ui://cuttingfloor/player');
+    expect(listed?.mimeType).toBe('text/html;profile=mcp-app');
+    const res = await client.readResource({ uri: 'ui://cuttingfloor/player' });
+    const page = res.contents[0] as { mimeType?: string; text?: string; _meta?: unknown };
+    expect(page.mimeType).toBe('text/html;profile=mcp-app');
+    expect(page.text).toContain("'ui/initialize'");
+    // The sandbox may load media only from this server.
+    expect(page._meta).toEqual({
+      ui: { csp: { resourceDomains: ['http://127.0.0.1:8787'] }, prefersBorder: false },
+    });
+  });
+
   it('serves health without key values', async () => {
     const client = await connect(env.runtime);
     const res = await client.readResource({ uri: 'video://server/health' });

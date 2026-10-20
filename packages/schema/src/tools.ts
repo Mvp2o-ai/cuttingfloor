@@ -694,7 +694,13 @@ export const MediaInfo = z.object({
     .string()
     .optional()
     .describe('media.get: a signed download of the file itself, once it has one'),
-  expires_at: z.string().optional().describe('When url stops working'),
+  page_url: z
+    .string()
+    .optional()
+    .describe(
+      'media.get: a page that plays or shows the file in any browser, with no sign-in, to give a person; works until expires_at',
+    ),
+  expires_at: z.string().optional().describe('When url and page_url stop working'),
   status: MediaStatus.describe(
     'importing: not probed yet; processing: usable in edits, proxy still rendering; ready; failed',
   ),
@@ -1246,6 +1252,11 @@ export const ExportTimelineResult = z.object({
 
 export const ExportResult = z.object({
   url: z.string().describe('Signed download URL'),
+  page_url: z
+    .string()
+    .describe(
+      'A page that plays the file in any browser, with no sign-in: the link to give a person to watch or share it. Works until expires_at',
+    ),
   expires_at: z.string(),
   uri: z.string().describe('MCP resource for the output'),
   file: z

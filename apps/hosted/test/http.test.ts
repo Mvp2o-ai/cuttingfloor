@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { createServer as createNodeServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -136,6 +136,29 @@ describe('HTTP face', () => {
     expect((await fetch(local)).status).toBe(404);
     expect((await fetch(local.replace(/sig=[^&]+/, 'sig=AAAA'))).status).toBe(403);
     expect((await fetch(local.replace(/exp=\d+/, 'exp=1'))).status).toBe(403);
+  });
+
+  it('plays a signed output on its watch page, and refuses a forged one', async () => {
+    const base = await listen();
+    const id = 'j_bbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const dir = runtime.ws.ownerDir('local', 'outputs', id);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'cut "1".mp4'), 'not really a video');
+    const { pageUrl } = await runtime.signOutput('local', id, 'cut "1".mp4');
+    const signed = new URL(pageUrl);
+    const page = `${base}${signed.pathname}${signed.search}`;
+    const res = await fetch(page);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/^text\/html/);
+    expect(res.headers.get('content-security-policy')).toContain("media-src 'self'");
+    const html = await res.text();
+    expect(html).toContain('<title>cut &quot;1&quot;.mp4</title>');
+    const src = /<video src="([^"]+)"/.exec(html)?.[1]?.replace(/&amp;/g, '&');
+    expect(src).toMatch(/^\/outputs\/[^?]+\?exp=\d+&sig=/);
+    const file = await fetch(`${base}${src}`);
+    expect(file.status).toBe(200);
+    expect(await file.text()).toBe('not really a video');
+    expect((await fetch(page.replace(/sig=[^&]+/, 'sig=AAAA'))).status).toBe(403);
   });
 
   it('takes signed, resumable uploads for the owner who asked', async () => {
