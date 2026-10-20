@@ -178,4 +178,32 @@ describe('JobRunner', () => {
     const restarted = new JobRunner(store, 2, { node: 'a' });
     expect(await restarted.recover()).toBe(1);
   });
+
+  it('runs an owner’s jobs within their own limit, apart from other owners, and reports each end', async () => {
+    const { store } = await setup();
+    const ended: string[] = [];
+    const runner = new JobRunner(store, 4, {
+      onEnd: (job) => ended.push(`${job.id}:${job.status}`),
+    });
+    const a = await store.create({ owner: 'o', tool: 't' });
+    const b = await store.create({ owner: 'o', tool: 't' });
+    const c = await store.create({ owner: 'p', tool: 't' });
+    for (const job of [a, b]) runner.start(job, forever, { ownerLimit: 1 });
+    runner.start(c, forever, { ownerLimit: 1 });
+    expect(await messageOf(store, b.id, /your own jobs/)).toBe(
+      'queued: waiting for one of your own jobs to finish (1 at once on your plan)',
+    );
+    // Another owner's job runs at once, even on the same limit.
+    for (let i = 0; i < 100 && !(await store.get(c.id, 'p'))?.startedAt; i++)
+      await new Promise((r) => setTimeout(r, 10));
+    expect((await store.get(c.id, 'p'))?.startedAt).toBeTruthy();
+    expect((await store.get(b.id, 'o'))?.startedAt).toBeUndefined();
+    await runner.cancel(a.id, 'o');
+    for (let i = 0; i < 100 && !(await store.get(b.id, 'o'))?.startedAt; i++)
+      await new Promise((r) => setTimeout(r, 10));
+    expect((await store.get(b.id, 'o'))?.startedAt).toBeTruthy();
+    await runner.cancel(b.id, 'o');
+    await runner.cancel(c.id, 'p');
+    expect(ended.sort()).toEqual([a, b, c].map((j) => `${j.id}:cancelled`).sort());
+  });
 });
