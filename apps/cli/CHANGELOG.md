@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.20.1
+
+### Patch Changes
+
+- 3a9d1cc: A job no longer misses a cancel, or ends "interrupted" while still running, after two writes to its record landed in the same millisecond.
+
 ## 0.20.0
 
 ### Minor Changes
