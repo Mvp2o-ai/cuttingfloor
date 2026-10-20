@@ -9,6 +9,7 @@ import {
   type LOOP_ANIMATIONS,
   MASK_SHAPES,
   type MaskShape,
+  TEXT_DEFAULTS,
   type TEXT_REVEALS,
   type TransitionKind,
 } from '@cuttingfloor/schema';
@@ -151,7 +152,8 @@ const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<u
   text: {
     title: 'Text styles',
     body: {
-      note: 'Sizes are fractions of the frame height (size) or of the text size (outline, shadow, box padding, letter_spacing); x, y and max_width are fractions of the frame. Captions default to bold white Inter with a black outline at the bottom; titles to bold white Inter with a soft shadow in the centre. Highlights need caption word timings.',
+      note: 'Sizes are fractions of the frame height (size) or of the text size (outline, shadow, box padding, letter_spacing); x, y and max_width are fractions of the frame. A style field left out takes its value from defaults (title or caption); timeline.get shows the full style of each text clip. Set any field to change it, or null to turn off an outline, shadow, box or highlight. Highlights need caption word timings.',
+      defaults: TEXT_DEFAULTS,
       highlight: HIGHLIGHT_TEXT,
       reveal: REVEAL_TEXT,
     },
