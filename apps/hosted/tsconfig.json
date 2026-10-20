@@ -17,6 +17,12 @@
     },
     {
       "path": "../../packages/schema"
+    },
+    {
+      "path": "../../packages/plans"
+    },
+    {
+      "path": "../../packages/jobs"
     }
   ]
 }

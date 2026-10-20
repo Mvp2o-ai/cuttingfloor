@@ -27,6 +27,7 @@ import {
   withJob,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
+import { admitJob } from '../meter.ts';
 import { renderInSandbox } from '../motion.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
@@ -92,6 +93,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         ctx,
       );
     }
+    const admit = await admitJob(deps.limits);
     const record = await rt.media.create(
       owner,
       { created: tool, recipe: hash },
@@ -120,7 +122,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         await rt.media.rememberRecipe(owner, hash, done.media_id);
         return ok(mediaInfo(done)) as never;
       },
-      { lane },
+      { lane, ...admit },
     );
     return jobReply(job, ctx);
   }

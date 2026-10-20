@@ -25,4 +25,8 @@ export const ROUTES: Route[] = [
   })),
   { path: '/skills', title: 'Skills', updated: SKILLS_UPDATED },
   ...SKILLS.map((s) => ({ path: `/skills/${s.slug}`, title: s.title, updated: SKILLS_UPDATED })),
+  { path: '/terms', title: 'Terms', updated: '2026-10-20' },
+  { path: '/privacy', title: 'Privacy', updated: '2026-10-20' },
+  { path: '/refunds', title: 'Refunds', updated: '2026-10-20' },
+  { path: '/acceptable-use', title: 'Acceptable use', updated: '2026-10-20' },
 ];

@@ -1,0 +1,10 @@
+{
+  "name": "@cuttingfloor/plans",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The hosted plans: prices, included render minutes and limits. The site's pricing, checkout and account pages and the hosted server's access checks all read this one file.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

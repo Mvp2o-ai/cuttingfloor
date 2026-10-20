@@ -1,5 +1,23 @@
 # cuttingfloor
 
+## 0.20.2
+
+### Patch Changes
+
+- 985914c: A job cancelled from another server always stops: the running server's own heartbeat could write over the cancel and keep it running.
+
+## 0.20.1
+
+### Patch Changes
+
+- 3a9d1cc: A job no longer misses a cancel, or ends "interrupted" while still running, after two writes to its record landed in the same millisecond.
+
+## 0.20.0
+
+### Minor Changes
+
+- 63bf48b: Hosted plans are enforced as sold. Each plan's render minutes are counted per job, and at the limit new jobs wait for the renewal (editing and previews keep working; nothing is billed past the price). Jobs at once, the largest export and judgments a day follow the plan. Account checks fail closed, a failed payment keeps working for 7 days, and account email (welcome, trial ending, minutes at 80% and 100%, payment failed) comes from support@cuttingfloor.ai. Self-hosted servers are unchanged: no plan, no limits.
+
 ## 0.19.2
 
 ### Patch Changes

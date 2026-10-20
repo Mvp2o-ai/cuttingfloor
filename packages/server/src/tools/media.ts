@@ -29,6 +29,7 @@ import {
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { askJev, JEV_MODEL, JEV_URL } from '../jev.ts';
+import { admitJob } from '../meter.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 import { addUsage, checkQuota } from '../usage.ts';
@@ -220,6 +221,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           );
         }
       }
+      const admit = await admitJob(deps.limits);
       const record = await rt.media.create(
         owner,
         'job_id' in source
@@ -245,15 +247,19 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         statusMessage: `importing ${record.media_id}`,
         ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),
       });
-      rt.jobs.start(job, async ({ signal, progress }) => {
-        const done = await rt.media.ingest(
-          owner,
-          record,
-          (f, m) => progress(f, `${record.media_id}: ${m}`),
-          signal,
-        );
-        return ok(mediaInfo(done)) as never;
-      });
+      rt.jobs.start(
+        job,
+        async ({ signal, progress }) => {
+          const done = await rt.media.ingest(
+            owner,
+            record,
+            (f, m) => progress(f, `${record.media_id}: ${m}`),
+            signal,
+          );
+          return ok(mediaInfo(done)) as never;
+        },
+        admit,
+      );
       return jobReply(job, ctx);
     }),
   );
@@ -387,10 +393,17 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
             },
           );
         }
-        await checkQuota(rt.ws, owner, JUDGMENTS, asked, rt.config.judgmentsPerDay, {
-          unit: 'judgments (one a frame)',
-          hint: 'Sample fewer frames (a larger every_seconds, or at_seconds around the moments you need)',
-        });
+        await checkQuota(
+          rt.ws,
+          owner,
+          JUDGMENTS,
+          asked,
+          (await deps.limits?.())?.judgmentsPerDay ?? rt.config.judgmentsPerDay,
+          {
+            unit: 'judgments (one a frame)',
+            hint: 'Sample fewer frames (a larger every_seconds, or at_seconds around the moments you need)',
+          },
+        );
       }
       if (args.kind === 'track' && !args.region) {
         throw new CfError('bad_request', 'track needs a region: {at_seconds, x, y, w, h}');
@@ -408,6 +421,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           hint: 'Lower finds subtler cuts, e.g. {threshold: 10}',
         });
       }
+      const admit = await admitJob(deps.limits);
       const job = await store.create({
         owner,
         tool: 'media.analyze',
@@ -415,155 +429,160 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         statusMessage: `${args.kind}: starting`,
         ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),
       });
-      rt.jobs.start(job, async ({ signal, progress }) => {
-        const file = renderSource(record, 'export');
-        const v = p?.video;
-        const size = pictureSize(record);
-        const keep = (kind: 'transcript' | 'beats' | 'faces', value: unknown) =>
-          rt.media.saveAnalysis(owner, args.media_id, kind, value);
-        switch (args.kind) {
-          case 'transcript': {
-            const transcript = await transcribe(file, {
-              model: args.model,
-              modelsDir: rt.modelsDir,
-              language: args.language,
-              signal,
-              onProgress: (f, m) => progress(f, `transcript: ${m}`),
-            });
-            const latest = await keep('transcript', transcript);
-            return ok({
-              media_id: args.media_id,
-              kind: args.kind,
-              summary: mediaInfo(latest).analyses?.transcript,
-              ...inline(args.media_id, 'transcript', transcript),
-            }) as never;
+      rt.jobs.start(
+        job,
+        async ({ signal, progress }) => {
+          const file = renderSource(record, 'export');
+          const v = p?.video;
+          const size = pictureSize(record);
+          const keep = (kind: 'transcript' | 'beats' | 'faces', value: unknown) =>
+            rt.media.saveAnalysis(owner, args.media_id, kind, value);
+          switch (args.kind) {
+            case 'transcript': {
+              const transcript = await transcribe(file, {
+                model: args.model,
+                modelsDir: rt.modelsDir,
+                language: args.language,
+                signal,
+                onProgress: (f, m) => progress(f, `transcript: ${m}`),
+              });
+              const latest = await keep('transcript', transcript);
+              return ok({
+                media_id: args.media_id,
+                kind: args.kind,
+                summary: mediaInfo(latest).analyses?.transcript,
+                ...inline(args.media_id, 'transcript', transcript),
+              }) as never;
+            }
+            case 'beats': {
+              progress(0.1, 'beats: listening');
+              const beats = await analyseBeats(file, signal);
+              const latest = await keep('beats', beats);
+              return ok({
+                media_id: args.media_id,
+                kind: args.kind,
+                summary: mediaInfo(latest).analyses?.beats,
+                ...inline(args.media_id, 'beats', beats),
+              }) as never;
+            }
+            case 'faces': {
+              progress(0.1, 'faces: looking');
+              const faces = await detectFaces(file, size, { signal });
+              const latest = await keep('faces', faces);
+              return ok({
+                media_id: args.media_id,
+                kind: args.kind,
+                summary: mediaInfo(latest).analyses?.faces,
+                ...inline(args.media_id, 'faces', faces),
+              }) as never;
+            }
+            case 'look': {
+              const key = await deps.credentials.resolve(owner, 'typesafe');
+              if (!key) throw new CfError('credential_required', 'The TypeSafe API key went away');
+              const questions = args.questions as NonNullable<typeof args.questions>;
+              progress(0.02, `look: taking ${times.length} frames`);
+              const stills = await mediaStills(file, size, times, {
+                ...PICTURE,
+                signal,
+                onFrame: (n) =>
+                  progress(0.02 + (0.28 * n) / times.length, `look: frame ${n} of ${times.length}`),
+              });
+              // with_previous: the first frame is only ever shown as `previous`.
+              const first = args.with_previous && times.length > 1 ? 1 : 0;
+              const frames: LookFrame[] = new Array(times.length - first);
+              let next = first;
+              let done = 0;
+              const worker = async () => {
+                while (next < times.length) {
+                  const i = next++;
+                  const t = times[i] as number;
+                  const prev = i > 0 && args.with_previous ? i - 1 : -1;
+                  const { answers } = await askJev({
+                    base: rt.config.typesafeUrl ?? JEV_URL,
+                    key,
+                    images: [
+                      ...(prev >= 0 ? [{ name: 'previous', jpeg: stills[prev] as Buffer }] : []),
+                      { name: 'frame', jpeg: stills[i] as Buffer },
+                    ],
+                    state: {
+                      ...args.state,
+                      ...(prev >= 0
+                        ? {
+                            seconds_between:
+                              Math.round((t - (times[prev] as number)) * 1000) / 1000,
+                          }
+                        : {}),
+                    },
+                    questions,
+                    signal,
+                  });
+                  frames[i - first] = { time: t, answers };
+                  done++;
+                  progress(
+                    0.3 + (0.7 * done) / frames.length,
+                    `look: asked ${done} of ${frames.length} frames`,
+                  );
+                }
+              };
+              await Promise.all(Array.from({ length: Math.min(8, frames.length) }, worker));
+              const run = {
+                id: job.id,
+                model: JEV_MODEL,
+                questions,
+                with_previous: args.with_previous,
+                ...(args.state ? { state: args.state } : {}),
+                frames,
+              };
+              await rt.media.saveAnalysis(owner, args.media_id, 'look', run);
+              await addUsage(rt.ws, owner, JUDGMENTS, job.id, frames.length);
+              return ok({
+                media_id: args.media_id,
+                kind: args.kind,
+                model: JEV_MODEL,
+                frames: frames.length,
+                summary: lookDigest(questions, frames),
+                ...inline(args.media_id, 'look', run),
+              }) as never;
+            }
+            case 'track': {
+              progress(0.1, 'track: following');
+              const region = args.region as NonNullable<typeof args.region>;
+              const fps = v?.fps ? Math.min(30, v.fps.num / v.fps.den) : 25;
+              const points = await trackRegion(file, size, {
+                start: region.at_seconds,
+                box: { x: region.x, y: region.y, w: region.w, h: region.h },
+                ...(args.until_seconds !== undefined ? { until: args.until_seconds } : {}),
+                rate: fps,
+                signal,
+              });
+              return ok({
+                media_id: args.media_id,
+                kind: args.kind,
+                track: { rate: fps, points },
+              }) as never;
+            }
+            case 'silence': {
+              progress(0.1, 'silence: listening');
+              const silences = await detectSilences(file, {
+                thresholdDb: args.threshold_db as number,
+                minSeconds: args.min_seconds as number,
+                ...(p?.duration ? { duration: p.duration } : {}),
+                signal,
+              });
+              return ok({ media_id: args.media_id, kind: args.kind, silences }) as never;
+            }
+            case 'scenes': {
+              progress(0.1, 'scenes: looking');
+              const scenes = await detectScenes(file, {
+                threshold: args.threshold as number,
+                signal,
+              });
+              return ok({ media_id: args.media_id, kind: args.kind, scenes }) as never;
+            }
           }
-          case 'beats': {
-            progress(0.1, 'beats: listening');
-            const beats = await analyseBeats(file, signal);
-            const latest = await keep('beats', beats);
-            return ok({
-              media_id: args.media_id,
-              kind: args.kind,
-              summary: mediaInfo(latest).analyses?.beats,
-              ...inline(args.media_id, 'beats', beats),
-            }) as never;
-          }
-          case 'faces': {
-            progress(0.1, 'faces: looking');
-            const faces = await detectFaces(file, size, { signal });
-            const latest = await keep('faces', faces);
-            return ok({
-              media_id: args.media_id,
-              kind: args.kind,
-              summary: mediaInfo(latest).analyses?.faces,
-              ...inline(args.media_id, 'faces', faces),
-            }) as never;
-          }
-          case 'look': {
-            const key = await deps.credentials.resolve(owner, 'typesafe');
-            if (!key) throw new CfError('credential_required', 'The TypeSafe API key went away');
-            const questions = args.questions as NonNullable<typeof args.questions>;
-            progress(0.02, `look: taking ${times.length} frames`);
-            const stills = await mediaStills(file, size, times, {
-              ...PICTURE,
-              signal,
-              onFrame: (n) =>
-                progress(0.02 + (0.28 * n) / times.length, `look: frame ${n} of ${times.length}`),
-            });
-            // with_previous: the first frame is only ever shown as `previous`.
-            const first = args.with_previous && times.length > 1 ? 1 : 0;
-            const frames: LookFrame[] = new Array(times.length - first);
-            let next = first;
-            let done = 0;
-            const worker = async () => {
-              while (next < times.length) {
-                const i = next++;
-                const t = times[i] as number;
-                const prev = i > 0 && args.with_previous ? i - 1 : -1;
-                const { answers } = await askJev({
-                  base: rt.config.typesafeUrl ?? JEV_URL,
-                  key,
-                  images: [
-                    ...(prev >= 0 ? [{ name: 'previous', jpeg: stills[prev] as Buffer }] : []),
-                    { name: 'frame', jpeg: stills[i] as Buffer },
-                  ],
-                  state: {
-                    ...args.state,
-                    ...(prev >= 0
-                      ? {
-                          seconds_between: Math.round((t - (times[prev] as number)) * 1000) / 1000,
-                        }
-                      : {}),
-                  },
-                  questions,
-                  signal,
-                });
-                frames[i - first] = { time: t, answers };
-                done++;
-                progress(
-                  0.3 + (0.7 * done) / frames.length,
-                  `look: asked ${done} of ${frames.length} frames`,
-                );
-              }
-            };
-            await Promise.all(Array.from({ length: Math.min(8, frames.length) }, worker));
-            const run = {
-              id: job.id,
-              model: JEV_MODEL,
-              questions,
-              with_previous: args.with_previous,
-              ...(args.state ? { state: args.state } : {}),
-              frames,
-            };
-            await rt.media.saveAnalysis(owner, args.media_id, 'look', run);
-            await addUsage(rt.ws, owner, JUDGMENTS, job.id, frames.length);
-            return ok({
-              media_id: args.media_id,
-              kind: args.kind,
-              model: JEV_MODEL,
-              frames: frames.length,
-              summary: lookDigest(questions, frames),
-              ...inline(args.media_id, 'look', run),
-            }) as never;
-          }
-          case 'track': {
-            progress(0.1, 'track: following');
-            const region = args.region as NonNullable<typeof args.region>;
-            const fps = v?.fps ? Math.min(30, v.fps.num / v.fps.den) : 25;
-            const points = await trackRegion(file, size, {
-              start: region.at_seconds,
-              box: { x: region.x, y: region.y, w: region.w, h: region.h },
-              ...(args.until_seconds !== undefined ? { until: args.until_seconds } : {}),
-              rate: fps,
-              signal,
-            });
-            return ok({
-              media_id: args.media_id,
-              kind: args.kind,
-              track: { rate: fps, points },
-            }) as never;
-          }
-          case 'silence': {
-            progress(0.1, 'silence: listening');
-            const silences = await detectSilences(file, {
-              thresholdDb: args.threshold_db as number,
-              minSeconds: args.min_seconds as number,
-              ...(p?.duration ? { duration: p.duration } : {}),
-              signal,
-            });
-            return ok({ media_id: args.media_id, kind: args.kind, silences }) as never;
-          }
-          case 'scenes': {
-            progress(0.1, 'scenes: looking');
-            const scenes = await detectScenes(file, {
-              threshold: args.threshold as number,
-              signal,
-            });
-            return ok({ media_id: args.media_id, kind: args.kind, scenes }) as never;
-          }
-        }
-      });
+        },
+        admit,
+      );
       return jobReply(job, ctx);
     }),
   );

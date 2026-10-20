@@ -154,10 +154,17 @@ export function registerJudgeTools(server: McpServer, deps: ServerDeps): void {
       }
       checkText(text);
       const units = judgeUnits(Object.keys(args.questions).length, refs.length);
-      await checkQuota(rt.ws, owner, JUDGMENTS, units, rt.config.judgmentsPerDay, {
-        unit: 'judgments (one per 32 questions a call, plus one for each picture past the first)',
-        hint: 'Ask fewer pictures a call, or keep all your questions about one state in one call',
-      });
+      await checkQuota(
+        rt.ws,
+        owner,
+        JUDGMENTS,
+        units,
+        (await deps.limits?.())?.judgmentsPerDay ?? rt.config.judgmentsPerDay,
+        {
+          unit: 'judgments (one per 32 questions a call, plus one for each picture past the first)',
+          hint: 'Ask fewer pictures a call, or keep all your questions about one state in one call',
+        },
+      );
       const signal =
         (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal ??
         new AbortController().signal;

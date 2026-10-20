@@ -30,6 +30,7 @@ import {
 } from '@cuttingfloor/schema';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import type * as z from 'zod/v4';
+import { admitJob } from '../meter.ts';
 import { assertOnline, framesUri, sourcesFor, timelineImage } from '../render.ts';
 import { guard, jobReply, jobView, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
@@ -156,7 +157,19 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       const { sources, offline } = await sourcesFor(rt, owner, doc, 'export');
       assertOnline(offline);
       // Checks the preset fits the sequence and the overrides fit the preset, before any job.
-      const { spec } = resolvePreset(args.preset, doc.sequence, args.overrides);
+      const { spec, width, height } = resolvePreset(args.preset, doc.sequence, args.overrides);
+      const cap = (await deps.limits?.())?.shortSide;
+      if (cap && !spec.audioOnly && Math.min(width, height) > cap) {
+        const fit = width >= height ? `{height: ${cap}}` : `{width: ${cap}}`;
+        throw new CfError(
+          'limit_exceeded',
+          `This export would be ${width}x${height}; your plan exports up to ${cap}p`,
+          {
+            hint: `Pass overrides ${fit} to export at ${cap}p, or move to a plan with larger exports`,
+            detail: { width, height, short_side_limit: cap },
+          },
+        );
+      }
       const name = `${args.filename ?? defaultName(doc, args.timeline_id)}.${spec.extension}`;
       const exportsDir = rt.config.exportsDir;
       if (exportsDir && !args.overwrite && (await exists(join(exportsDir, name)))) {
@@ -164,64 +177,69 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
           hint: 'Pass overwrite: true, or a different filename',
         });
       }
+      const admit = await admitJob(deps.limits);
       const job = await store.create({
         owner,
         tool: 'export.video',
         statusMessage: 'starting',
         ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),
       });
-      rt.jobs.start(job, async ({ signal, progress }: JobContext) => {
-        const outDir = rt.ws.ownerDir(owner, 'outputs', job.id);
-        await mkdir(outDir, { recursive: true });
-        const out = join(outDir, name);
-        const started = Date.now();
-        const { frames, width, height } = await exportTimeline(doc, args.preset, sources, out, {
-          ...(args.range ? { range: args.range } : {}),
-          ...(args.overrides ? { overrides: args.overrides } : {}),
-          signal,
-          onProgress: (f) => {
-            const elapsed = (Date.now() - started) / 1000;
-            const left = f > 0.02 ? Math.round((elapsed / f) * (1 - f)) : null;
-            progress(
-              f * 0.98,
-              `encoding ${Math.round(f * 100)}%${left !== null ? ` · ${left}s left` : ''}`,
-            );
-          },
-        });
-        const rate = doc.sequence.fps.num / doc.sequence.fps.den;
-        const span = args.range ? args.range.end - args.range.start : lengthFrames(doc);
-        const result = {
-          ...(await publish(rt, owner, job.id, out, name)),
-          frames,
-          width,
-          height,
-          ...(spec.audioOnly ? {} : { fps: args.overrides?.fps ?? spec.gif?.fps ?? rate }),
-          duration_seconds: Math.round((span / rate) * 1000) / 1000,
-          preset: args.preset,
-          mime_type: spec.mime,
-        };
-        // A review is for the model to watch; any other render is for the person. The https link
-        // lets a host that can show video to its model fetch it without reading MCP resources.
-        const audience: Array<'user' | 'assistant'> =
-          args.preset === 'review_h264' ? ['assistant'] : ['user'];
-        return ok(result, [
-          {
-            type: 'resource_link',
-            uri: result.uri,
-            name,
-            mimeType: spec.mime,
-            annotations: { audience },
-          },
-          {
-            type: 'resource_link',
-            uri: result.url,
-            name,
-            mimeType: spec.mime,
-            description: `Signed download, valid until ${result.expires_at}`,
-            annotations: { audience },
-          },
-        ]) as never;
-      });
+      rt.jobs.start(
+        job,
+        async ({ signal, progress }: JobContext) => {
+          const outDir = rt.ws.ownerDir(owner, 'outputs', job.id);
+          await mkdir(outDir, { recursive: true });
+          const out = join(outDir, name);
+          const started = Date.now();
+          const { frames, width, height } = await exportTimeline(doc, args.preset, sources, out, {
+            ...(args.range ? { range: args.range } : {}),
+            ...(args.overrides ? { overrides: args.overrides } : {}),
+            signal,
+            onProgress: (f) => {
+              const elapsed = (Date.now() - started) / 1000;
+              const left = f > 0.02 ? Math.round((elapsed / f) * (1 - f)) : null;
+              progress(
+                f * 0.98,
+                `encoding ${Math.round(f * 100)}%${left !== null ? ` · ${left}s left` : ''}`,
+              );
+            },
+          });
+          const rate = doc.sequence.fps.num / doc.sequence.fps.den;
+          const span = args.range ? args.range.end - args.range.start : lengthFrames(doc);
+          const result = {
+            ...(await publish(rt, owner, job.id, out, name)),
+            frames,
+            width,
+            height,
+            ...(spec.audioOnly ? {} : { fps: args.overrides?.fps ?? spec.gif?.fps ?? rate }),
+            duration_seconds: Math.round((span / rate) * 1000) / 1000,
+            preset: args.preset,
+            mime_type: spec.mime,
+          };
+          // A review is for the model to watch; any other render is for the person. The https link
+          // lets a host that can show video to its model fetch it without reading MCP resources.
+          const audience: Array<'user' | 'assistant'> =
+            args.preset === 'review_h264' ? ['assistant'] : ['user'];
+          return ok(result, [
+            {
+              type: 'resource_link',
+              uri: result.uri,
+              name,
+              mimeType: spec.mime,
+              annotations: { audience },
+            },
+            {
+              type: 'resource_link',
+              uri: result.url,
+              name,
+              mimeType: spec.mime,
+              description: `Signed download, valid until ${result.expires_at}`,
+              annotations: { audience },
+            },
+          ]) as never;
+        },
+        admit,
+      );
       return jobReply(job, ctx);
     }),
   );
@@ -272,12 +290,13 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
           new AbortController().signal;
         return run({ signal, progress: () => undefined, status: () => undefined });
       }
+      const admit = await admitJob(deps.limits);
       const job = await rt.jobs.store.create({
         owner,
         tool: 'qa.check',
         statusMessage: 'starting',
       });
-      rt.jobs.start(job, run as never);
+      rt.jobs.start(job, run as never, admit);
       return jobReply(job, ctx);
     }),
   );

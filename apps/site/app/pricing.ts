@@ -1,48 +1,67 @@
-// Plans shown on the landing page. The billable unit is a render minute: one minute of a heavy
-// job (export, transcript, motion graphics, voiceover, cutout) on a 4-vCPU slot. Editing the
-// timeline is free. Costs and margins behind these numbers: plans/pricing.md.
+import { PLANS as ALL, type PlanId, PRICED, SUPPORT_EMAIL, TRIAL_DAYS } from '@cuttingfloor/plans';
+
+// The pricing table, worded from the one plans file the server enforces (packages/plans). The
+// billable unit is a render minute: one minute of a job running (export, import, transcript,
+// motion graphics, voiceover, cutout). Editing the timeline is free. At a plan's minutes new jobs
+// wait for the renewal or a bigger plan; nothing is billed past the price.
 export type Plan = {
+  id: PlanId;
   name: string;
   price: string;
   per: string;
+  /** Dollars a month, for structured data; absent when the price is agreed with us. */
+  amount?: number;
   included: string;
-  overage: string;
+  limits: string;
   note: string;
   pick?: boolean;
+  /** Where the plan is bought or asked for. */
+  href: string;
 };
 
-export const PLANS: Plan[] = [
-  {
-    name: 'Trial',
-    price: '$0',
-    per: '3 days',
-    included: '60 render min',
-    overage: '—',
-    note: 'Everything, no card. About six hours of an agent editing.',
-  },
-  {
-    name: 'Creator',
-    price: '$49',
+const resolution = (side: number | null) =>
+  side === null ? 'any size' : side >= 2160 ? '4K' : `${side}p`;
+const jobs = (n: number | null) =>
+  n === null ? 'no job limit' : n === 1 ? 'one job at a time' : `${n} jobs at once`;
+
+export const PLANS: Plan[] = PRICED.map((p) => {
+  const l = p.limits;
+  const common = {
+    id: p.id,
+    name: p.name,
+    note: p.note,
+    limits: `${jobs(l.jobs)[0]?.toUpperCase()}${jobs(l.jobs).slice(1)}, ${resolution(l.shortSide)}`,
+    ...(p.id === 'pro' ? { pick: true } : {}),
+  };
+  if (p.id === 'trial')
+    return {
+      ...common,
+      price: '$0',
+      per: `${TRIAL_DAYS} days`,
+      amount: 0,
+      included: `${l.renderMinutes} render min`,
+      href: '/start',
+    };
+  if (p.sold === 'contact')
+    return {
+      ...common,
+      price: 'Talk to us',
+      per: '',
+      included: `From ${l.renderMinutes?.toLocaleString('en-US')} min a seat`,
+      limits: 'Priority, more jobs at once, 4K',
+      href: `mailto:${SUPPORT_EMAIL}?subject=cuttingfloor%20Enterprise`,
+    };
+  return {
+    ...common,
+    price: `$${p.price?.month}`,
     per: '/ month',
-    included: '300 render min',
-    overage: '$0.08 / min',
-    note: 'About 30 hours of editing a month. One job at a time, up to 1080p.',
-  },
-  {
-    name: 'Pro',
-    price: '$99',
-    per: '/ month',
-    included: '900 render min',
-    overage: '$0.06 / min',
-    note: 'Agents editing most days. Two jobs at once, 4K.',
-    pick: true,
-  },
-  {
-    name: 'Enterprise',
-    price: '$499',
-    per: '/ seat / month',
-    included: '5,000 min a seat',
-    overage: '$0.05 / min',
-    note: 'Agents editing all day. Priority queue, SSO, an SLA. Dedicated servers from $1,500.',
-  },
-];
+    amount: p.price?.month ?? 0,
+    included: `${l.renderMinutes} render min a month`,
+    href: '/start',
+  };
+});
+
+/** A plan's prices for the account page's buttons. */
+export function prices(id: PlanId): { month: number; year: number } | undefined {
+  return ALL[id].price;
+}

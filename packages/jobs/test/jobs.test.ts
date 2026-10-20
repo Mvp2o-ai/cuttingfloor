@@ -178,4 +178,62 @@ describe('JobRunner', () => {
     const restarted = new JobRunner(store, 2, { node: 'a' });
     expect(await restarted.recover()).toBe(1);
   });
+
+  it('runs an owner’s jobs within their own limit, apart from other owners, and reports each end', async () => {
+    const { store } = await setup();
+    const ended: string[] = [];
+    const runner = new JobRunner(store, 4, {
+      onEnd: (job) => ended.push(`${job.id}:${job.status}`),
+    });
+    const a = await store.create({ owner: 'o', tool: 't' });
+    const b = await store.create({ owner: 'o', tool: 't' });
+    const c = await store.create({ owner: 'p', tool: 't' });
+    for (const job of [a, b]) runner.start(job, forever, { ownerLimit: 1 });
+    runner.start(c, forever, { ownerLimit: 1 });
+    expect(await messageOf(store, b.id, /your own jobs/)).toBe(
+      'queued: waiting for one of your own jobs to finish (1 at once on your plan)',
+    );
+    // Another owner's job runs at once, even on the same limit.
+    for (let i = 0; i < 100 && !(await store.get(c.id, 'p'))?.startedAt; i++)
+      await new Promise((r) => setTimeout(r, 10));
+    expect((await store.get(c.id, 'p'))?.startedAt).toBeTruthy();
+    expect((await store.get(b.id, 'o'))?.startedAt).toBeUndefined();
+    await runner.cancel(a.id, 'o');
+    for (let i = 0; i < 100 && !(await store.get(b.id, 'o'))?.startedAt; i++)
+      await new Promise((r) => setTimeout(r, 10));
+    expect((await store.get(b.id, 'o'))?.startedAt).toBeTruthy();
+    await runner.cancel(b.id, 'o');
+    await runner.cancel(c.id, 'p');
+    expect(ended.sort()).toEqual([a, b, c].map((j) => `${j.id}:cancelled`).sort());
+  });
+
+  it('keeps its heartbeat after a failed write, so a remote cancel still stops it', async () => {
+    const ws = new Workspace(await mkdtemp(join(tmpdir(), 'cf-flaky-')));
+    const store = new FileJobStore(ws);
+    const runner = new JobRunner(store, 1, { heartbeatMs: 30 });
+    const job = await store.create({ owner: 'o', tool: 't' });
+    // The first heartbeat write fails, as a rename racing another writer can.
+    const update = store.update.bind(store);
+    let failed = false;
+    store.update = async (j, patch) => {
+      if (!failed && j.id === job.id) {
+        failed = true;
+        throw new Error('ENOENT: rename');
+      }
+      return update(j, patch);
+    };
+    runner.start(job, forever);
+    for (let i = 0; i < 100 && !failed; i++) await new Promise((r) => setTimeout(r, 10));
+    // Cancelled from another server.
+    await new JobRunner(store, 1, { node: 'other' }).cancel(job.id, 'o');
+    await runner.settled(job.id);
+    expect((await store.get(job.id, 'o'))?.status).toBe('cancelled');
+  });
+
+  it('writes one file from many writers at once without losing a write', async () => {
+    const ws = new Workspace(await mkdtemp(join(tmpdir(), 'cf-race-')));
+    const file = ws.path('x.json');
+    await Promise.all(Array.from({ length: 50 }, (_, n) => ws.writeJson(file, { n })));
+    expect(await ws.readJson<{ n: number }>(file)).toHaveProperty('n');
+  });
 });

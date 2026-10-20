@@ -10,7 +10,9 @@
     "@modelcontextprotocol/node": "2.1.1",
     "@modelcontextprotocol/server": "2.3.1",
     "jose": "6.2.12",
-    "@cuttingfloor/schema": "workspace:*"
+    "@cuttingfloor/schema": "workspace:*",
+    "@cuttingfloor/plans": "workspace:*",
+    "@cuttingfloor/jobs": "workspace:*"
   },
   "scripts": {
     "start": "node src/main.ts"

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
 import { mkdir, open, readdir, readFile, rename, rm, stat, utimes } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -70,7 +70,9 @@ export class Workspace {
       }
       return true;
     }
-    const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
+    // Unique per write: two writers of one file in the same millisecond (a heartbeat and a
+    // cancel) must never share a temp file, or one rename fails.
+    const temp = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
     const handle = await open(temp, 'w', 0o600);
     try {
       await handle.writeFile(body);

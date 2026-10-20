@@ -55,6 +55,28 @@ export class FileJobStore {
     return this.#ws.ownerDir(owner, 'jobs', `${id}.json`);
   }
 
+  /**
+   * A cancel asked of a job another server runs. Its own file, written once and never rewritten,
+   * so the running server's next write can't erase it the way it can a status in the record.
+   */
+  #cancelFile(owner: string, id: string): string {
+    return this.#file(owner, id).replace(/\.json$/, '.cancel');
+  }
+
+  async requestCancel(owner: string, id: string): Promise<void> {
+    await this.#ws.writeJson(
+      this.#cancelFile(owner, id),
+      { at: new Date().toISOString() },
+      {
+        exclusive: true,
+      },
+    );
+  }
+
+  async cancelRequested(owner: string, id: string): Promise<boolean> {
+    return (await this.#ws.readJson(this.#cancelFile(owner, id))) !== undefined;
+  }
+
   #idemFile(owner: string, tool: string, key: string): string {
     const h = createHash('sha256').update(`${tool}\0${key}`).digest('hex').slice(0, 40);
     return this.#ws.ownerDir(owner, 'jobs-idem', `${h}.json`);
@@ -159,6 +181,7 @@ export class FileJobStore {
         if (!job || job.status === 'working') continue;
         if (Date.parse(job.lastUpdatedAt) + job.ttlMs < Date.now()) {
           await this.#ws.remove(join(dir, name));
+          await this.#ws.remove(join(dir, `${job.id}.cancel`));
           await this.#ws.remove(this.#ws.path('owners', key, 'outputs', job.id));
           n += 1;
         }
@@ -216,6 +239,23 @@ export interface RunnerOptions {
   heavy?: number;
   /** Wraps every job's work, e.g. to report what it waits for from deep inside. */
   around?: (ctx: JobContext, work: () => Promise<JobResult>) => Promise<JobResult>;
+  /** Told each job this server ran once it ends, as last written (metering). */
+  onEnd?: (job: Job) => void;
+}
+
+export interface StartOptions {
+  lane?: JobLane;
+  /**
+   * Jobs of this job's owner that may run at once on this server, across lanes; more wait their
+   * turn, before they wait for a lane's slot. Absent: no limit of the owner's own.
+   */
+  ownerLimit?: number;
+}
+
+/** An owner's jobs holding a slot of theirs, and the ones waiting for one. */
+interface OwnerSlots {
+  running: number;
+  queue: Array<{ take: () => void }>;
 }
 
 /**
@@ -232,6 +272,8 @@ export class JobRunner {
   readonly #heartbeatMs: number;
   readonly #staleMs: number;
   readonly #around: RunnerOptions['around'];
+  readonly #onEnd: RunnerOptions['onEnd'];
+  readonly #owners = new Map<string, OwnerSlots>();
   readonly #running = new Map<string, AbortController>();
   readonly #lanes: Record<JobLane, Lane>;
   readonly #done = new Map<string, Promise<void>>();
@@ -243,6 +285,7 @@ export class JobRunner {
     this.#heartbeatMs = options.heartbeatMs ?? 30_000;
     this.#staleMs = options.staleMs ?? 120_000;
     this.#around = options.around;
+    this.#onEnd = options.onEnd;
     this.#lanes = {
       engine: { limit: this.#concurrency, slot: 'a free job slot', running: new Map(), queue: [] },
       sandbox: { limit: SANDBOX_LANE, slot: 'a free job slot', running: new Map(), queue: [] },
@@ -256,11 +299,11 @@ export class JobRunner {
   }
 
   /** Starts `work` for a job already written with `store.create`. */
-  start(job: Job, work: JobWork, options: { lane?: JobLane } = {}): void {
+  start(job: Job, work: JobWork, options: StartOptions = {}): void {
     const controller = new AbortController();
     this.#running.set(job.id, controller);
     const lane = this.#lanes[options.lane ?? 'engine'];
-    const done = this.#run(job, work, controller, lane).finally(() => {
+    const done = this.#run(job, work, controller, lane, options.ownerLimit).finally(() => {
       this.#running.delete(job.id);
       this.#done.delete(job.id);
     });
@@ -283,6 +326,7 @@ export class JobRunner {
       return this.store.get(id, owner);
     }
     // Running on another server (or nowhere): it sees this at its next write and stops.
+    await this.store.requestCancel(owner, id);
     return this.store.update(job, { status: 'cancelled', statusMessage: 'cancelled' });
   }
 
@@ -340,39 +384,120 @@ export class JobRunner {
     });
   }
 
-  async #run(job: Job, work: JobWork, controller: AbortController, lane: Lane): Promise<void> {
+  async #run(
+    job: Job,
+    work: JobWork,
+    controller: AbortController,
+    lane: Lane,
+    ownerLimit: number | undefined,
+  ): Promise<void> {
     let current: Job = job;
     let pending: Promise<unknown> = Promise.resolve();
     // Every write while working goes through here, one at a time: a record another server has
     // ended (cancelled, or interrupted for a stopped heartbeat) stops the job instead.
     const save = (patch: Partial<Job>) => {
-      pending = pending.then(async () => {
-        if (controller.signal.aborted) return;
-        const disk = await this.store.get(current.id, current.owner);
-        if (disk && disk.status !== 'working') {
-          controller.abort();
-          return;
-        }
-        current = await this.store.update(current, { ...patch, node: this.node });
-      });
+      // One failed write must not end the chain: every later heartbeat (and so a remote cancel)
+      // would be skipped.
+      pending = pending
+        .catch(() => undefined)
+        .then(async () => {
+          if (controller.signal.aborted) return;
+          const disk = await this.store.get(current.id, current.owner);
+          // The marker too: this server's own write may have landed over a remote cancel's.
+          if (
+            (disk && disk.status !== 'working') ||
+            (await this.store.cancelRequested(current.owner, current.id))
+          ) {
+            controller.abort();
+            return;
+          }
+          current = await this.store.update(current, { ...patch, node: this.node });
+        });
       return pending;
     };
     void save({}).catch(() => undefined);
     const heartbeat = setInterval(() => void save({}).catch(() => undefined), this.#heartbeatMs);
     heartbeat.unref();
+    const slots = ownerLimit === undefined ? undefined : this.#ownerSlots(job.owner);
     try {
-      await this.#work(
-        job,
-        work,
-        controller,
-        lane,
-        save,
-        () => current,
-        () => pending,
-      );
+      if (
+        slots &&
+        ownerLimit !== undefined &&
+        !(await this.#takeOwnerSlot(slots, ownerLimit, controller, save))
+      ) {
+        await pending.catch(() => undefined);
+        await this.#end(current, { status: 'cancelled', statusMessage: 'cancelled' });
+        return;
+      }
+      try {
+        await this.#work(
+          job,
+          work,
+          controller,
+          lane,
+          save,
+          () => current,
+          () => pending,
+        );
+      } finally {
+        if (slots) this.#releaseOwnerSlot(job.owner, slots);
+      }
     } finally {
       clearInterval(heartbeat);
     }
+  }
+
+  #ownerSlots(owner: string): OwnerSlots {
+    let slots = this.#owners.get(owner);
+    if (!slots) {
+      slots = { running: 0, queue: [] };
+      this.#owners.set(owner, slots);
+    }
+    return slots;
+  }
+
+  /** Waits for one of the owner's own slots; false if the job was cancelled while it waited. */
+  async #takeOwnerSlot(
+    slots: OwnerSlots,
+    limit: number,
+    controller: AbortController,
+    save: (patch: Partial<Job>) => Promise<unknown>,
+  ): Promise<boolean> {
+    if (slots.running < Math.max(1, limit) && slots.queue.length === 0) {
+      slots.running += 1;
+      return true;
+    }
+    return new Promise<boolean>((resolve) => {
+      const entry = {
+        take: () => {
+          slots.running += 1;
+          resolve(true);
+        },
+      };
+      slots.queue.push(entry);
+      const ahead = slots.queue.length - 1;
+      void save({
+        statusMessage: `queued: waiting for one of your own jobs to finish (${limit} at once on your plan${ahead ? `; ${ahead} of yours ahead` : ''})`,
+      }).catch(() => undefined);
+      controller.signal.addEventListener(
+        'abort',
+        () => {
+          const at = slots.queue.indexOf(entry);
+          if (at >= 0) {
+            slots.queue.splice(at, 1);
+            resolve(false);
+          }
+        },
+        { once: true },
+      );
+    });
+  }
+
+  #releaseOwnerSlot(owner: string, slots: OwnerSlots): void {
+    slots.running -= 1;
+    const next = slots.queue.shift();
+    if (next) next.take();
+    else if (slots.running <= 0) this.#owners.delete(owner);
   }
 
   async #work(
@@ -488,7 +613,12 @@ export class JobRunner {
   async #end(job: Job, patch: Partial<Job>): Promise<void> {
     const disk = await this.store.get(job.id, job.owner);
     if (disk && disk.status !== 'working') return;
-    await this.store.update(job, { ...patch, node: this.node });
+    const ended = await this.store.update(job, { ...patch, node: this.node });
+    try {
+      this.#onEnd?.(ended);
+    } catch {
+      // A listener's failure never changes how the job ended.
+    }
   }
 }
 

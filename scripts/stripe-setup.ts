@@ -6,7 +6,7 @@
 //   node scripts/stripe-setup.ts            (STRIPE_SECRET_KEY, else deploy/hetzner/cuttingfloor.env)
 //
 // Prints the ids the site needs.
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 
 const key =
   process.env.STRIPE_SECRET_KEY ??
@@ -16,7 +16,8 @@ const key =
   ));
 if (!key) throw new Error('Set STRIPE_SECRET_KEY');
 
-const SITE = process.env.CUTTINGFLOOR_SITE_URL ?? 'https://cuttingfloor-site.vercel.app';
+const SITE = process.env.CUTTINGFLOOR_SITE_URL ?? 'https://cuttingfloor.ai';
+const SERVER = process.env.CUTTINGFLOOR_SERVER_URL ?? 'https://api.cuttingfloor.ai';
 // Software as a service, business use: eligible for Managed Payments.
 const TAX_CODE = 'txcd_10103001';
 
@@ -107,8 +108,8 @@ let portal = (portals.data as { id: string; metadata?: Record<string, string> }[
 )?.id;
 const portalBody: Record<string, string> = {
   'business_profile[headline]': 'cuttingfloor: editing, solved.',
-  'business_profile[privacy_policy_url]': `${SITE}/#questions`,
-  'business_profile[terms_of_service_url]': `${SITE}/#pricing`,
+  'business_profile[privacy_policy_url]': `${SITE}/privacy`,
+  'business_profile[terms_of_service_url]': `${SITE}/terms`,
   default_return_url: `${SITE}/account`,
   'features[customer_update][enabled]': 'true',
   'features[customer_update][allowed_updates][]': 'email',
@@ -136,4 +137,40 @@ else {
   process.stdout.write(`created portal configuration ${portal}\n`);
 }
 
-process.stdout.write(`\n${JSON.stringify({ prices, portal }, null, 2)}\n`);
+// The webhook that tells the MCP server a subscription changed or a payment failed. Stripe gives
+// its signing secret once, when it is made; it is written straight to the env file's
+// STRIPE_WEBHOOK_SECRET (never printed), for up.sh to take to the server.
+const WEBHOOK_EVENTS = [
+  'checkout.session.completed',
+  'customer.subscription.created',
+  'customer.subscription.updated',
+  'customer.subscription.deleted',
+  'invoice.paid',
+  'invoice.payment_failed',
+];
+const hooks = await stripe('/v1/webhook_endpoints?limit=100');
+const hookUrl = `${SERVER}/stripe/webhook`;
+const hook = (hooks.data as { id: string; url: string }[]).find((h) => h.url === hookUrl);
+const hookBody: Record<string, string> = { 'metadata[app]': 'cuttingfloor' };
+WEBHOOK_EVENTS.forEach((e, i) => {
+  hookBody[`enabled_events[${i}]`] = e;
+});
+if (hook) await stripe(`/v1/webhook_endpoints/${hook.id}`, hookBody);
+else {
+  const made = await stripe('/v1/webhook_endpoints', { ...hookBody, url: hookUrl });
+  const file = new URL('../deploy/hetzner/cuttingfloor.env', import.meta.url);
+  const env = await readFile(file, 'utf8').catch(() => '');
+  const line = `STRIPE_WEBHOOK_SECRET=${made.secret as string}`;
+  await writeFile(
+    file,
+    /^STRIPE_WEBHOOK_SECRET=.*$/m.test(env)
+      ? env.replace(/^STRIPE_WEBHOOK_SECRET=.*$/m, line)
+      : `${env.replace(/\n*$/, '\n')}${line}\n`,
+    { mode: 0o600 },
+  );
+  process.stdout.write(
+    `created webhook ${made.id} for ${hookUrl}; its secret is in cuttingfloor.env\n`,
+  );
+}
+
+process.stdout.write(`\n${JSON.stringify({ prices, portal, webhook: hookUrl }, null, 2)}\n`);

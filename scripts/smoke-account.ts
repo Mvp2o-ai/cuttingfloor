@@ -91,6 +91,13 @@ try {
   expect(text.includes(email), 'the page names the user');
   if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });
 
+  step('the welcome page walks through connecting');
+  await page.goto(`${site}/welcome`, { waitUntil: 'networkidle2' });
+  const welcome = await page.evaluate(() => document.body.innerText);
+  expect(welcome.includes('Connect your agent.'), 'the welcome page shows');
+  expect(welcome.includes('Waiting for your agent'), 'it waits for the first call');
+  await page.goto(`${site}/account`, { waitUntil: 'networkidle2' });
+
   step('Pro opens Stripe Checkout (stopping before payment)');
   const [pro] = await page.$$('xpath/.//button[contains(., "$99 / month")]');
   if (!pro) throw new Error('no Pro button');
@@ -116,6 +123,40 @@ try {
       now: () => Date.now() + offsetDays * 86_400_000,
     });
   expect((await at(0).resolve(userId)).allowed, 'a new account works (trial)');
+  const limits = await at(0).limits(userId);
+  expect(
+    limits.jobs === 1 && limits.shortSide === 1080 && !limits.refuseJobs,
+    `the trial runs one job at a time, up to 1080p (${JSON.stringify(limits)})`,
+  );
+  const usage = await at(0).usage(userId);
+  expect(
+    usage.plan === 'trial' && usage.included_minutes === 60 && usage.used_minutes === 0,
+    `the trial has 60 render minutes, none used (${JSON.stringify(usage)})`,
+  );
+  const outage = await new AccessCheck({
+    workosKey: 'sk_test_not_a_key',
+    stripeKey,
+    accountUrl: `${site}/account`,
+  })
+    .require(userId)
+    .then(
+      () => null,
+      (e: { code?: string }) => e,
+    );
+  expect(
+    outage?.code === 'service_unavailable',
+    'an account that cannot be checked is refused, retryably',
+  );
+  const unverified = await workos('/user_management/users', {
+    method: 'POST',
+    body: { email: `unverified-${email}`, password, email_verified: false },
+  });
+  const pending = await at(0).resolve(unverified.id as string);
+  expect(
+    !pending.allowed && pending.reason === 'email_unverified',
+    'an unverified email is refused until it is verified',
+  );
+  await workos(`/user_management/users/${unverified.id}`, { method: 'DELETE' });
   const later = await at(4).resolve(userId);
   expect(!later.allowed, 'four days later it is refused');
   const refusal = await at(4)

@@ -10,7 +10,8 @@ import {
   setRenderLimit,
   watchRenderQueue,
 } from '@cuttingfloor/engine';
-import { FileJobStore, JobRunner } from '@cuttingfloor/jobs';
+import { FileJobStore, type Job, JobRunner } from '@cuttingfloor/jobs';
+import { METER_TTL_MS, type MeterEntry, meterJob } from './meter.ts';
 import { Uploads } from './uploads.ts';
 
 export interface RuntimeConfig {
@@ -107,6 +108,7 @@ export class Runtime {
   #secret: Buffer | undefined;
   #sweeper: NodeJS.Timeout | undefined;
   #reaper: NodeJS.Timeout | undefined;
+  #onMetered = new Set<(job: Job, entry: MeterEntry) => void>();
 
   constructor(config: RuntimeConfig) {
     this.config = config;
@@ -124,6 +126,13 @@ export class Runtime {
     this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs, {
       ...(config.node ? { node: config.node } : {}),
       ...(config.heavyJobs ? { heavy: config.heavyJobs } : {}),
+      onEnd: (job) =>
+        void meterJob(this.ws, job).then(
+          (entry) => {
+            if (entry) for (const listener of this.#onMetered) listener(job, entry);
+          },
+          (error: Error) => process.stderr.write(`meter: ${job.id}: ${error.message}\n`),
+        ),
       // A job whose render waits for a slot says so, and where it stands.
       around: (ctx, work) =>
         watchRenderQueue(
@@ -167,6 +176,12 @@ export class Runtime {
     }
   }
 
+  /** Tells `listener` about each job this server meters, once its time is recorded. */
+  onMetered(listener: (job: Job, entry: MeterEntry) => void): () => void {
+    this.#onMetered.add(listener);
+    return () => this.#onMetered.delete(listener);
+  }
+
   stop(): void {
     if (this.#sweeper) clearInterval(this.#sweeper);
     if (this.#reaper) clearInterval(this.#reaper);
@@ -187,6 +202,7 @@ export class Runtime {
     await this.uploads.sweep();
     for (const owner of await this.ws.owners()) {
       await this.ws.sweep(this.ws.path('owners', owner, 'usage'), 2 * 24 * 3_600_000);
+      await this.ws.sweep(this.ws.path('owners', owner, 'meter'), METER_TTL_MS);
     }
     await this.ws.sweep(this.ws.path('cache', 'frames'), 24 * 3_600_000);
   }
