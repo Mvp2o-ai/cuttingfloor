@@ -3449,11 +3449,18 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
         seen.push({ headers: req.headers, body });
         if (req.headers.authorization !== `Bearer ${KEY}`) return res.writeHead(401).end('{}');
         if (busy-- > 0) return res.writeHead(429).end('{}');
+        // A question about black frames is answered from the frame itself: a black JPEG is tiny.
+        const state = body.state as Record<string, string>;
+        const assets = body.assets as Record<string, { data_base64: string }> | undefined;
+        const frameBytes = Buffer.from(assets?.[state.frame ?? '']?.data_base64 ?? '', 'base64');
+        const black = frameBytes.length < 5000 ? 0.93 : 0.07;
         const answers: Record<string, unknown> = {};
-        for (const [id, q] of Object.entries(body.questions as Record<string, { type: string }>)) {
+        for (const [id, q] of Object.entries(
+          body.questions as Record<string, { type: string; instructions?: unknown }>,
+        )) {
           answers[id] =
             q.type === 'noul'
-              ? { type: 'noul', noul: 0.81 }
+              ? { type: 'noul', noul: String(q.instructions).includes('black') ? black : 0.81 }
               : q.type === 'choice'
                 ? {
                     type: 'choice',
@@ -3765,6 +3772,164 @@ console.log(JSON.stringify(out));
       },
       180_000,
     );
+    it('media.seek finds the stretches that match, in media and in an edit as it renders', async () => {
+      // Two seconds of test pattern, two of black, two of test pattern.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=640x360:rate=25:duration=2',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=black:size=640x360:rate=25:duration=2',
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=640x360:rate=25:duration=2',
+        '-filter_complex',
+        '[0:v][1:v][2:v]concat=n=3:v=1:a=0',
+        '-pix_fmt',
+        'yuv420p',
+        join(env.mediaDir, 'seek.mp4'),
+      ]);
+      const media = await importMedia({ path: join(env.mediaDir, 'seek.mp4') });
+      const c = await keyed(KEY);
+      seen.length = 0;
+      const started = await ok<{ job_id: string }>(c, 'media.seek', {
+        media_id: media.media_id,
+        from_seconds: 0.25,
+        every_seconds: 0.5,
+        criteria: {
+          black: 'the picture is black',
+          named: {
+            instructions: 'Is `frame` black from edge to edge?',
+            criteria: { true: 'a black screen', false: 'anything you can see' },
+          },
+          bars: 'colour bars fill the picture',
+        },
+      });
+      type Seek = {
+        media_id: string;
+        frames: number;
+        asked: Record<string, { type: string; instructions: string; criteria?: unknown }>;
+        matches: Record<
+          string,
+          Array<{
+            start: number;
+            end: number;
+            peak_seconds: number;
+            peak_probability: number;
+            frame: number;
+            uri: string;
+          }>
+        >;
+        samples: Array<{ seconds: number; probabilities: Record<string, number> }>;
+      };
+      const done = (await waitJob(started.job_id)) as { result?: Seek };
+      const result = done.result as Seek;
+      expect(result.frames).toBe(12);
+      // Plain words are asked about `frame`; a criterion that names it is asked as written.
+      expect(result.asked.black).toEqual({
+        type: 'noul',
+        instructions: 'In `frame`: the picture is black',
+      });
+      expect(result.asked.named).toEqual({
+        type: 'noul',
+        instructions: 'Is `frame` black from edge to edge?',
+        criteria: { true: 'a black screen', false: 'anything you can see' },
+      });
+      const run = {
+        start: 2.25,
+        end: 3.75,
+        peak_seconds: 2.25,
+        peak_probability: 0.93,
+        frame: 56,
+        uri: `video://media/${media.media_id}/frames/56.webp`,
+      };
+      expect(result.matches.black).toEqual([run]);
+      expect(result.matches.named).toEqual([run]);
+      expect(result.matches.bars).toEqual([
+        expect.objectContaining({ start: 0.25, end: 5.75, peak_probability: 0.81 }),
+      ]);
+      expect(result.samples).toHaveLength(12);
+      expect(result.samples[4]).toEqual({
+        seconds: 2.25,
+        probabilities: { black: 0.93, named: 0.93, bars: 0.81 },
+      });
+      // A higher cut-off finds nothing for bars.
+      const strict = await ok<{ job_id: string }>(c, 'media.seek', {
+        media_id: media.media_id,
+        at_seconds: [1, 3],
+        min_probability: 0.9,
+        criteria: { bars: 'colour bars fill the picture' },
+      });
+      const strictDone = (await waitJob(strict.job_id)) as { result?: Seek };
+      expect(strictDone.result?.matches).toEqual({ bars: [] });
+
+      // An edit with a one-second gap: the gap renders black, and seek finds it.
+      const { timeline_id } = await ok<{ timeline_id: string }>(c, 'timeline.create', {
+        name: 'seek',
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+        tracks: { video: 1, audio: 0 },
+      });
+      const cut = await ok<{ timeline_id: string }>(c, 'edit.batch', {
+        timeline_id,
+        preview: 'none',
+        ops: [
+          {
+            tool: 'clip.add',
+            args: { track_id: 't1', media_id: media.media_id, source: { in: 0, out: 50 } },
+          },
+          {
+            tool: 'clip.add',
+            args: {
+              track_id: 't1',
+              media_id: media.media_id,
+              at_frame: 75,
+              source: { in: 100, out: 150 },
+            },
+          },
+        ],
+      });
+      seen.length = 0;
+      const edit = await ok<{ job_id: string }>(c, 'media.seek', {
+        timeline_id: cut.timeline_id,
+        at_seconds: [1, 2.5, 4],
+        with_previous: true,
+        criteria: { gap: 'the picture is black' },
+      });
+      const editDone = (await waitJob(edit.job_id)) as { result?: Seek & { timeline_id: string } };
+      expect(editDone.result).toMatchObject({
+        timeline_id: cut.timeline_id,
+        frames: 2,
+        matches: {
+          gap: [
+            {
+              start: 2.5,
+              end: 2.5,
+              frame: 62,
+              uri: `video://timeline/${cut.timeline_id}/frames/62.webp`,
+            },
+          ],
+        },
+      });
+      // Timeline frames go to Jev as baseline JPEGs inside its size limits, with `previous`.
+      const asked = seen.filter((r) => r.headers.authorization === `Bearer ${KEY}`);
+      expect(asked).toHaveLength(2);
+      for (const r of asked) {
+        const body = r.body as {
+          state: Record<string, unknown>;
+          assets: Record<string, { data_base64: string }>;
+        };
+        expect(body.state.seconds_between).toBeGreaterThan(0);
+        for (const name of ['frame', 'previous']) {
+          const asset = body.assets[body.state[name] as string];
+          const size = jpegSize(Buffer.from(asset?.data_base64 ?? '', 'base64'));
+          expect(size).toEqual({ width: 512, height: 288, baseline: true });
+        }
+      }
+    }, 300_000);
   });
 
   it('refuses crafted media', async () => {

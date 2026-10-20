@@ -2,7 +2,8 @@ import * as z from 'zod/v4';
 import { MediaId } from './ids.ts';
 
 // Questions for TypeSafe Jev, a judgment model, and its typed answers. judge.ask asks them about
-// any state you give (text, JSON, pictures); media.analyze look asks them of sampled frames.
+// any state you give (text, JSON, pictures); media.analyze look asks them of sampled frames, and
+// media.seek asks its criteria (noul questions) of them.
 
 /**
  * Per call: questions (Jev has no count limit, only a 64k-token context; look asks its questions of
@@ -11,6 +12,8 @@ import { MediaId } from './ids.ts';
 export const JUDGE_LIMITS = {
   questions: 300,
   lookQuestions: 32,
+  /** Frames media.analyze look or media.seek judges in one call. */
+  frames: 600,
   images: 8,
   textChars: 200_000,
 } as const;
@@ -19,19 +22,21 @@ export const JUDGE_LIMITS = {
 export const JudgeName = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/);
 
 /** Text a judgment model reads: a string, or structure that clarifies it (definitions, examples). */
-const JudgmentText = z.union([
+export const JudgmentText = z.union([
   z.string().min(1),
   z.record(z.string(), z.unknown()),
   z.array(z.unknown()),
 ]);
 
+/** A yes/no question's fields: what to judge, and optionally what counts as yes and as no. */
+export const NoulFields = {
+  instructions: JudgmentText,
+  criteria: z.object({ true: JudgmentText, false: JudgmentText }).partial().optional(),
+};
+
 /** One question, in Jev's own format. All questions in a call see the same state. */
 export const JudgeQuestion = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('noul'),
-    instructions: JudgmentText,
-    criteria: z.object({ true: JudgmentText, false: JudgmentText }).partial().optional(),
-  }),
+  z.object({ type: z.literal('noul'), ...NoulFields }),
   z.object({
     type: z.literal('choice'),
     instructions: JudgmentText,

@@ -245,3 +245,52 @@ describe('judge.ask', () => {
     await gone; // The request to Jev was dropped, not left running.
   });
 });
+
+// media.seek's checks before any job: frames and Jev's answers on them are checked in
+// apps/hosted/test/e2e.test.ts, where FFmpeg and melt are.
+describe('media.seek', () => {
+  const media = { media_id: 'm_aaaaaaaaaaaaaaaaaaaaaaaaaa' };
+  const dark = { too_dark: 'the faces are too dark to make out their eyes' };
+
+  it('needs a TypeSafe key', async () => {
+    const bare = await connect(env.runtime, 'seek');
+    const res = await call(bare, 'media.seek', { ...media, criteria: dark });
+    expect(res.structured).toMatchObject({
+      code: 'credential_required',
+      detail: { provider: 'typesafe', env: 'TYPESAFE_API_KEY' },
+    });
+  });
+
+  it('refuses what it cannot judge before asking Jev', async () => {
+    const c = await keyed();
+    const none = await call(c, 'media.seek', { ...media, criteria: {} });
+    expect(none.structured).toMatchObject({ code: 'bad_request' });
+    expect(String(none.structured.hint)).toMatch(/criteria: \{too_dark/);
+    const many = Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`c${i}`, 'black']));
+    const tooMany = await call(c, 'media.seek', { ...media, criteria: many });
+    expect(tooMany.structured).toMatchObject({ code: 'bad_request' });
+    expect(String(tooMany.structured.hint)).toMatch(/Split the criteria/);
+    const both = await call(c, 'media.seek', {
+      ...media,
+      timeline_id: 'tl_aaaaaaaaaaaaaaaaaaaaaaaaaa',
+      criteria: dark,
+    });
+    expect(both.isError).toBe(true);
+    const reserved = await call(c, 'media.seek', {
+      ...media,
+      criteria: dark,
+      state: { previous: 'mine' },
+    });
+    expect(reserved.structured).toMatchObject({ code: 'bad_request' });
+    const missing = await call(c, 'media.seek', { ...media, criteria: dark });
+    expect(missing.structured).toMatchObject({ code: 'not_found' });
+    const { timeline_id } = await ok<{ timeline_id: string }>(c, 'timeline.create', {
+      name: 'empty',
+      sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+    });
+    const empty = await call(c, 'media.seek', { timeline_id, criteria: dark });
+    expect(empty.structured).toMatchObject({ code: 'bad_request' });
+    expect(String(empty.structured.message)).toMatch(/empty/);
+    expect(seen).toHaveLength(0);
+  });
+});

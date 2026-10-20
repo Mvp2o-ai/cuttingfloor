@@ -1,0 +1,5 @@
+---
+'cuttingfloor': minor
+---
+
+**media.seek: seek by natural language.** Say what you're looking for in plain words and get back where it shows, without watching the whole video. Each criterion is a statement about the picture, such as "the faces are too dark to make out their eyes", "the product dashboard fills the screen" or "the picture is black". Seek judges sampled frames with TypeSafe Jev and returns, for each criterion, the stretches where it holds, with the time, frame number and picture of the best frame in each. It also returns every frame's probability. It works on imported media and on an edit as it renders (`timeline_id`), so gaps, titles and effects are checked too. Uses: checking quality, finding where something starts, picking shots and thumbnails, spotting changes (`with_previous`) and finding room for overlays. Criteria take Jev's yes/no form, `{instructions, criteria: {true, false}}`, to say what counts. `media.analyze {kind: "look"}` remains for typed measurements on every frame.

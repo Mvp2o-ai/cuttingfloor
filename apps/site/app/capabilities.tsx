@@ -18,11 +18,12 @@ const CAPS = [
   },
   {
     title: 'It looks before it ships.',
-    body: 'Stills and filmstrips after every edit, a review render it can watch, and exact checks for gaps, black frames, clipping and sync. Other video agents apply an edit and hope; this one sees what it made and fixes it first.',
+    body: 'Stills and filmstrips after every edit, a review render it can watch, exact checks for gaps, black frames, clipping and sync, and a search for any shot that looks wrong, described in plain words. Other video agents apply an edit and hope; this one sees what it made and fixes it first.',
     feature: true,
     code: [
       ['render.frames', '{ timeline_id: "tl_12…", frames: [0, 120, 240] }'],
       ['qa.check', '{ timeline_id: "tl_12…" }'],
+      ['media.seek', '{ timeline_id: "tl_12…",\n  criteria: { dark: "faces too dark to see" } }'],
       ['export.video', '{ timeline_id: "tl_12…", preset: "web_1080p_h264" }'],
     ],
     note: 'FCPXML, OTIO, EDL out too',

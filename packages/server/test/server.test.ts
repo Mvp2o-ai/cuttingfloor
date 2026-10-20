@@ -10,9 +10,10 @@ const anyResult = z.object({}).passthrough();
  * tools/list as JSON, in bytes (about 4 bytes per token). Raised from 110 000 for the look guide
  * in media.analyze, from 115 000 for judge.ask, and from 123 000 to 230 000 when every tool
  * declared its full output schema (about 117 000 of the total): code.run scripts chain calls
- * on those shapes, so they are the contract and are not slimmed to fit a harness.
+ * on those shapes, so they are the contract and are not slimmed to fit a harness. Raised to
+ * 240 000 for media.seek, which finds moments from plain words.
  */
-const BUDGET_BYTES = 230_000;
+const BUDGET_BYTES = 240_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -98,6 +99,7 @@ describe('protocol surface', () => {
         'media.analyze',
         'media.get',
         'media.import',
+        'media.seek',
         'media.upload',
         'qa.check',
         'range.extract',

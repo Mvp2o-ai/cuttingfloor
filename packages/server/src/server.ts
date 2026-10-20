@@ -12,6 +12,7 @@ import { registerInterchangeTools } from './tools/interchange.ts';
 import { registerJudgeTools } from './tools/judge.ts';
 import { registerMediaTools } from './tools/media.ts';
 import { registerRenderTools } from './tools/render.ts';
+import { registerSeekTools } from './tools/seek.ts';
 import { registerSkillTools } from './tools/skills.ts';
 import { registerTimelineTools } from './tools/timeline.ts';
 import { SERVER_NAME, SERVER_VERSION } from './version.ts';
@@ -47,7 +48,7 @@ Typical flow:
    Audio: audio.set_gain (keyframes for rides), audio.set_pan, audio.fade, audio.set_master (gain and limiter on the mix). Audio edits preview as a waveform with measured loudness.
    Effects: filter.add on a clip, a track or the whole timeline (video://catalog/effects: colour, LUTs, blur, vignette, chroma key, glitch; EQ, compressor, denoise, pitch); adjustment.add for effects over everything below for a stretch.
    Analysis: media.analyze {kind: transcript | beats | faces | track | look | silence | scenes} turns media into data: cut by words (clip.add source {words}), caption from transcript times (caption.add in_clip), cut on beats, reframe on face boxes, pin a title to a tracked object.
-   Judgment: judge.ask answers your typed questions (yes/no, choice, score, box) about text, JSON and pictures you name (a still, a video frame, a transcript passage) in one fast call; media.analyze {kind: look} asks them of frames sampled across a video.
+   Judgment: judge.ask answers your typed questions (yes/no, choice, score, box) about text, JSON and pictures you name (a still, a video frame, a transcript passage) in one fast call; media.analyze {kind: look} asks them of frames sampled across a video. To find moments without watching, media.seek takes what you are looking for in plain words (a shot too dark, black frames, where the demo starts) and returns where it holds in a video or a rendered edit.
    Overlays and picture-in-picture: put a clip on a higher video track, then clip.set_transform, clip.set_mask, clip.set_blend and clip.set_animation. Catalogues of accepted names are resources at video://catalog/{name}.
    Create: create.motion (any animated HTML, rendered frame-exactly with alpha in a sandbox), create.still (HTML to a PNG), create.matte (solid or gradient), create.voiceover (speech with timed words) and create.cutout (a subject without its background) make new media to place with clip.add.
    Code: code.run runs a node/python/bash script in the sandbox for anything the tools don't cover. Inside it, cf.domain.verb(args) calls these same tools on the same media and timelines, and files written to out/ come back as media or timelines, so code and tools hand work to each other.
@@ -70,6 +71,7 @@ export function createServer(deps: ServerDeps): McpServer {
   registerCatalogs(server);
   registerTimelineTools(server, deps);
   registerMediaTools(server, deps);
+  registerSeekTools(server, deps);
   registerJudgeTools(server, deps);
   registerCreateTools(server, deps);
   registerCodeTools(server, deps);
