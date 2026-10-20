@@ -2,7 +2,7 @@
 // structured data and llms.txt so the three never disagree. Volumes behind the phrasing: MVP-172.
 import { PLANS } from './pricing.ts';
 
-export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cuttingfloor-site.vercel.app';
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cuttingfloor.ai';
 export const MCP_ADDRESS = 'https://api.cuttingfloor.ai/mcp';
 export const DOCS_URL = 'https://github.com/mvp2o-ai/cuttingfloor';
 
