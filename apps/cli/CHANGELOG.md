@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.20.2
+
+### Patch Changes
+
+- 985914c: A job cancelled from another server always stops: the running server's own heartbeat could write over the cancel and keep it running.
+
 ## 0.20.1
 
 ### Patch Changes
