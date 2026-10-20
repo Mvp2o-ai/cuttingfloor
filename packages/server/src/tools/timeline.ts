@@ -135,12 +135,12 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'title.add': {
     title: 'Add title',
     description:
-      'Text on a video track, over the tracks below: styled with font, size, colour, outline, shadow and box, placed by x/y, revealed with a typewriter or word animation. It is a clip, so transforms, masks, animations and transitions apply.',
+      'Text on a video track, over the tracks below: styled with font, size, colour, outline, shadow and box, placed by x/y, revealed with a typewriter or word animation. A style field you leave out takes the published default (video://catalog/text: bold white Inter at 9% of the frame height, centred, with a soft shadow); timeline.get shows the full style. It is a clip, so transforms, masks, animations and transitions apply.',
   },
   'caption.add': {
     title: 'Add captions',
     description:
-      "Captions on a video track from segments (with optional word timings for highlights), from SRT/VTT text, or in_clip: segments timed in seconds of a clip's media, such as transcript word times, placed where they play. One clip per caption; returns their clip_ids. Burned in when exported.",
+      "Captions on a video track from segments (with optional word timings for highlights), from SRT/VTT text, or in_clip: segments timed in seconds of a clip's media, such as transcript word times, placed where they play. One clip per caption; returns their clip_ids. A style field you leave out takes the published default (video://catalog/text: bold white Inter at 6% of the frame height, near the bottom, with a black outline); timeline.get shows the full style. Burned in when exported.",
   },
   'text.set': {
     title: 'Set text',

@@ -1130,6 +1130,18 @@ function rangeRemove(doc: TimelineDoc, a: EditArgsOf<'range.lift'>, ripple: bool
     ? a.track_ids.map((id) => getTrack(doc, id))
     : doc.tracks.filter((t) => !t.locked);
   for (const t of tracks) assertUnlocked(t);
+  const removed = removeSpan(doc, tracks, from, to, ripple);
+  return ok(from, { clip_ids: removed, temporal: true });
+}
+
+/** Clears [from, to) on the tracks (closing the gap with ripple); returns the clips that went. */
+function removeSpan(
+  doc: TimelineDoc,
+  tracks: StoredTrack[],
+  from: number,
+  to: number,
+  ripple: boolean,
+): string[] {
   const before = new Set(doc.tracks.flatMap((t) => t.clips.map((c) => c.id)));
   // Pieces cut off the right of a linked clip form their own link group.
   const relinked = new Map<string, string>();
@@ -1143,10 +1155,7 @@ function rangeRemove(doc: TimelineDoc, a: EditArgsOf<'range.lift'>, ripple: bool
     if (ripple) shiftFrom(track, to, from - to);
   }
   tidyLinks(doc);
-  const removed = [...before].filter(
-    (id) => !doc.tracks.some((t) => t.clips.some((c) => c.id === id)),
-  );
-  return ok(from, { clip_ids: removed, temporal: true });
+  return [...before].filter((id) => !doc.tracks.some((t) => t.clips.some((c) => c.id === id)));
 }
 
 // --------------------------------------------------------------------------------- effects
@@ -1831,18 +1840,40 @@ function transitionAdd(doc: TimelineDoc, a: EditArgsOf<'transition.add'>): OpOut
       },
     );
   }
+  const warnings: string[] = [];
   if (a.mode === 'overlap') {
     // Free source on each side of the cut by overlapping the clips; later clips move earlier.
+    const cutAt = end(ref.clip);
+    const others = doc.tracks.filter((t) => !cuts.some((c) => c.track === t));
+    if (a.other_tracks === 'extract') {
+      // The same span out of every other unlocked track, so what plays after the cut stays in sync.
+      removeSpan(
+        doc,
+        others.filter((t) => !t.locked),
+        cutAt - after,
+        cutAt + before,
+        true,
+      );
+    } else {
+      const late = others.flatMap((t) =>
+        t.clips.filter((c) => end(c) > cutAt - after).map((c) => `${c.id} (${t.id})`),
+      );
+      if (late.length) {
+        warnings.push(
+          `Everything after the cut on ${ref.track.id} moved ${Math.round((before + after) / tpf)} frames earlier; clips on other tracks did not, so these now play ${Math.round((before + after) / tpf)} frames later against it: ${late.join(', ')}. other_tracks: 'extract' takes the same span out of the other tracks to keep them in sync`,
+        );
+      }
+    }
     for (const cut of cuts) {
       if (cut.a.duration <= after || cut.b.duration <= before) {
         throw new CfError('bad_request', 'The transition is longer than one of its clips', {
           hint: 'Use a shorter duration',
         });
       }
-      const cutAt = end(cut.a);
+      const at = end(cut.a);
       moveEdge(cut.a, 'end', -after);
       moveEdge(cut.b, 'start', before);
-      shiftFrom(cut.track, cutAt + before, -(before + after));
+      shiftFrom(cut.track, at + before, -(before + after));
       checkSourceRange(doc, cut.a);
       checkSourceRange(doc, cut.b);
     }
@@ -1851,7 +1882,12 @@ function transitionAdd(doc: TimelineDoc, a: EditArgsOf<'transition.add'>): OpOut
     putTransition(doc, cut, cut.track.kind === 'audio' ? 'crossfade' : a.kind, duration),
   );
   const focus = end(ref.clip);
-  return ok(focus, { clip_ids: ids, temporal: true, ...(ids[0] ? { clip_id: ids[0] } : {}) });
+  return ok(focus, {
+    clip_ids: ids,
+    temporal: true,
+    ...(ids[0] ? { clip_id: ids[0] } : {}),
+    ...(warnings.length ? { warnings } : {}),
+  });
 }
 
 function transitionSet(doc: TimelineDoc, a: EditArgsOf<'transition.set'>): OpOutcome {

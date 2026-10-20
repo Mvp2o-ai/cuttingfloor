@@ -31,6 +31,7 @@ import {
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import type * as z from 'zod/v4';
 import { admitJob } from '../meter.ts';
+import { PLAYER_TOOL_META } from '../player.ts';
 import { assertOnline, framesUri, sourcesFor, timelineImage } from '../render.ts';
 import { guard, jobReply, jobView, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
@@ -126,7 +127,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       title: 'Export video',
       description: [
         'Render the timeline to a file. Presets: web_1080p_h264 (MP4, fits 1920x1080), master_prores_422hq (MOV, sequence size), social_9x16_h264 (9:16 sequences, 1080x1920), web_1080p_av1 (MP4, AV1/Opus), gif (640 px, 15 fps), review_h264 (MP4, fits 854x854 with sound: small and quick, to watch a cut), audio_wav_48k, audio_mp3. overrides changes size, fps, bitrate or crf (video://catalog/presets).',
-        'Long-running: returns a task, or {job_id} for job.get. The result links the file (a resource_link to video://jobs/{job_id}/output, which reads as the file, or its signed URL when large), has a signed download URL',
+        `Long-running: returns a task, or {job_id} for job.get. The result links the file (a resource_link to video://jobs/{job_id}/output, which reads as the file, or its signed URL when large), has a signed download URL and a page_url that plays it in any browser (the link to give a person to watch or share), both working for ${Math.round(rt.config.outputUrlTtlMs / 3_600_000)} h`,
         rt.config.exportsDir
           ? `and the file in the exports folder (${rt.config.exportsDir}).`
           : '.',
@@ -134,6 +135,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       ].join(' '),
       inputSchema: ExportVideoInput,
       outputSchema: withJob(ExportResult),
+      _meta: PLAYER_TOOL_META,
       annotations: {
         title: 'Export video',
         readOnlyHint: false,
@@ -207,7 +209,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
           const rate = doc.sequence.fps.num / doc.sequence.fps.den;
           const span = args.range ? args.range.end - args.range.start : lengthFrames(doc);
           const result = {
-            ...(await publish(rt, owner, job.id, out, name)),
+            ...(await publish(rt, owner, job.id, out, name, { page: true })),
             frames,
             width,
             height,
@@ -385,6 +387,7 @@ export async function publish(
   jobId: string,
   out: string,
   name: string,
+  options: { page?: boolean } = {},
 ) {
   let file: string | undefined;
   const exportsDir = rt.config.exportsDir;
@@ -395,9 +398,10 @@ export async function publish(
     await link(out, target).catch(() => copyFile(out, target));
     file = join(process.env.CUTTINGFLOOR_EXPORTS_HOST_PATH ?? exportsDir, name);
   }
-  const { url, expiresAt } = await rt.signOutput(owner, jobId, name);
+  const { url, pageUrl, expiresAt } = await rt.signOutput(owner, jobId, name);
   return {
     url,
+    ...(options.page ? { page_url: pageUrl } : {}),
     expires_at: expiresAt,
     uri: `video://jobs/${jobId}/output`,
     ...(file ? { file } : {}),

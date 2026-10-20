@@ -1,4 +1,9 @@
-import type { FrameRate, StoredClip, TextStyle } from '@cuttingfloor/schema';
+import {
+  type FrameRate,
+  type StoredClip,
+  TEXT_DEFAULTS,
+  type TextStyle,
+} from '@cuttingfloor/schema';
 
 // Titles and captions as ASS scripts for libass (MLT's avfilter.ass with alpha on, over a
 // transparent layer). Sizes and positions are fractions of the frame, turned into pixels at
@@ -23,33 +28,6 @@ export interface AssOptions {
   /** The family of an imported font, by its media id. */
   fontFamily?: (mediaId: string) => string | undefined;
 }
-
-const DEFAULTS: Record<'title' | 'caption', TextStyle> = {
-  title: {
-    font: 'Inter',
-    size: 0.09,
-    color: '#FFFFFF',
-    bold: true,
-    align: 'center',
-    x: 0.5,
-    y: 0.5,
-    anchor: 'middle',
-    max_width: 0.9,
-    shadow: { color: '#00000099', distance: 0.03, blur: 0.04 },
-  },
-  caption: {
-    font: 'Inter',
-    size: 0.06,
-    color: '#FFFFFF',
-    bold: true,
-    align: 'center',
-    x: 0.5,
-    y: 0.9,
-    anchor: 'bottom',
-    max_width: 0.84,
-    outline: { color: '#000000', width: 0.09 },
-  },
-};
 
 /** #RRGGBB(AA) as an ASS colour, &HAABBGGRR, where alpha 00 is opaque. */
 function assColour(hex: string): string {
@@ -87,7 +65,7 @@ function alignment(style: TextStyle): number {
 
 /** The ASS script for a title or caption clip, timed on its render span. */
 export function buildAss(clip: TextClip, o: AssOptions): string {
-  const style: TextStyle = { ...DEFAULTS[clip.type], ...clip.style };
+  const style: TextStyle = { ...TEXT_DEFAULTS[clip.type], ...clip.style };
   const px = (fraction: number) => Math.round(fraction * o.height * 100) / 100;
   const size = px(style.size ?? 0.06);
   const fps = o.fps.num / o.fps.den;

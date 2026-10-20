@@ -1052,6 +1052,61 @@ describe('transitions', () => {
     expect(toView('tl_x', fromView(view, resolve))).toEqual({ ...view, parent: null });
   });
 
+  it('leaves other tracks where they are and names what is out of sync, or extracts the same span', () => {
+    const added = edit(two(), { tool: 'track.add', args: { kind: 'video' } });
+    const v2 = added.results[0]?.track_id as string;
+    const titled = edit(
+      added.doc,
+      {
+        tool: 'title.add',
+        args: { track_id: v2, text: 'early', at_frame: 20, duration_frames: 40 },
+      },
+      {
+        tool: 'title.add',
+        args: { track_id: v2, text: 'across', at_frame: 80, duration_frames: 40 },
+      },
+      {
+        tool: 'title.add',
+        args: { track_id: v2, text: 'late', at_frame: 120, duration_frames: 20 },
+      },
+    );
+    const [early, across, late] = titled.results.map((r) => r.clip_id);
+    const titles = (doc: TimelineDoc) => {
+      const view = toView('tl_x', doc);
+      return view.tracks.find((t) => t.id === v2)?.clips.map((c) => [c.start, c.end]);
+    };
+    const stay = edit(titled.doc, {
+      tool: 'transition.add',
+      args: { clip_id: 'c4', kind: 'dissolve', duration_frames: 20 },
+    });
+    expect(titles(stay.doc)).toEqual([
+      [20, 60],
+      [80, 120],
+      [120, 140],
+    ]);
+    expect(stay.outcome.warnings.join('\n')).toContain(
+      `moved 20 frames earlier; clips on other tracks did not, so these now play 20 frames later against it: ${across} (${v2}), ${late} (${v2})`,
+    );
+    expect(stay.outcome.warnings.join('\n')).not.toContain(`${early} (`);
+    // The 20 frames around the cut (90–110) come out of the titles too: the one across the cut
+    // is cut in two that play back to back, as range.extract leaves it.
+    const extract = edit(titled.doc, {
+      tool: 'transition.add',
+      args: { clip_id: 'c4', kind: 'dissolve', duration_frames: 20, other_tracks: 'extract' },
+    });
+    expect(titles(extract.doc)).toEqual([
+      [20, 60],
+      [80, 90],
+      [90, 100],
+      [100, 120],
+    ]);
+    expect(layout(extract.doc, 0)).toEqual([
+      [0, 90, 50],
+      [90, 130, 60],
+    ]);
+    expect(extract.outcome.warnings).toEqual([]);
+  });
+
   it('uses handles without moving anything, and refuses when there is no source past the cut', () => {
     const { doc } = edit(two(), {
       tool: 'transition.add',

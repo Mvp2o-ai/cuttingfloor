@@ -13,7 +13,7 @@ export const TEXT_REVEALS = ['none', 'typewriter', 'word_fade', 'word_pop'] as c
 export const HIGHLIGHTS = ['none', 'fill', 'word', 'karaoke', 'pop'] as const;
 
 /**
- * Text style. Every field is optional; titles and captions have their own defaults. Colours
+ * Text style. Every field is optional; a field left out takes its TEXT_DEFAULTS value. Colours
  * are #RRGGBB or #RRGGBBAA; sizes are fractions (see video://catalog/text).
  */
 export const TextStyle = z
@@ -65,6 +65,38 @@ export const TextStyle = z
   })
   .meta({ id: 'TextStyle' });
 export type TextStyle = z.infer<typeof TextStyle>;
+
+/**
+ * What a title or caption looks like in each style field it was not given. They are published
+ * (video://catalog/text) and timeline.get shows each text clip's style with them filled in, so
+ * nothing about how text looks is decided out of sight.
+ */
+export const TEXT_DEFAULTS: Record<'title' | 'caption', TextStyle> = {
+  title: {
+    font: 'Inter',
+    size: 0.09,
+    color: '#FFFFFF',
+    bold: true,
+    align: 'center',
+    x: 0.5,
+    y: 0.5,
+    anchor: 'middle',
+    max_width: 0.9,
+    shadow: { color: '#00000099', distance: 0.03, blur: 0.04 },
+  },
+  caption: {
+    font: 'Inter',
+    size: 0.06,
+    color: '#FFFFFF',
+    bold: true,
+    align: 'center',
+    x: 0.5,
+    y: 0.9,
+    anchor: 'bottom',
+    max_width: 0.84,
+    outline: { color: '#000000', width: 0.09 },
+  },
+};
 
 /** A caption word, timed in ticks from the start of the caption's source (like media). */
 export const StoredWord = z.object({

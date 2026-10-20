@@ -2,6 +2,7 @@ import type { CredentialStore } from '@cuttingfloor/credentials';
 import { McpServer } from '@modelcontextprotocol/server';
 import { registerCatalogs } from './catalog.ts';
 import type { OwnerLimits } from './meter.ts';
+import { registerPlayer } from './player.ts';
 import { registerResources } from './resources.ts';
 import { toErrorResult } from './result.ts';
 import type { Runtime } from './runtime.ts';
@@ -53,7 +54,7 @@ Typical flow:
    Create: create.motion (any animated HTML, rendered frame-exactly with alpha in a sandbox), create.still (HTML to a PNG), create.matte (solid or gradient), create.voiceover (speech with timed words) and create.cutout (a subject without its background) make new media to place with clip.add.
    Code: code.run runs a node/python/bash script in the sandbox for anything the tools don't cover. Inside it, cf.domain.verb(args) calls these same tools on the same media and timelines, and files written to out/ come back as media or timelines, so code and tools hand work to each other.
 4. Look at the result with preview: "inline" on an edit, or render.frames (stills). To watch it play, with motion, timing and sound, when you or your client take video in: export.video a range with preset review_h264; its result links the file (video://jobs/{job_id}/output) and gives a signed url, fps and duration.
-5. qa.check, then export.video (long-running) for a signed download URL: presets for web, masters, 9:16 social, AV1, GIF and audio, with size/fps/bitrate overrides (video://catalog/presets). export.timeline hands the edit to another editor (FCPXML, OTIO, EDL) or writes captions (SRT, VTT).
+5. qa.check, then export.video (long-running) for a signed download URL and a page_url to give the user, which plays it in any browser: presets for web, masters, 9:16 social, AV1, GIF and audio, with size/fps/bitrate overrides (video://catalog/presets). export.timeline hands the edit to another editor (FCPXML, OTIO, EDL) or writes captions (SRT, VTT).
 Skills: step-by-step instructions for common jobs, such as cutting the pauses and ums out of a talking video. Before composing one yourself, skills.search in the user's words, then skills.get and follow its steps.
 Time is integer frames at the sequence rate; ranges are end-exclusive. Timelines expire 24 h after last use (timeline.get + timeline.load restores one); media and outputs after 7 days.`;
 
@@ -69,6 +70,7 @@ export function createServer(deps: ServerDeps): McpServer {
   registerTasks(server, deps);
   registerResources(server, deps);
   registerCatalogs(server);
+  registerPlayer(server, deps);
   registerTimelineTools(server, deps);
   registerMediaTools(server, deps);
   registerSeekTools(server, deps);

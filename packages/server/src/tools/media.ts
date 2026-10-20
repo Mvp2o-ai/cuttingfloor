@@ -30,6 +30,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { askFrames, checkFrameState, type JudgedFrame, sampleTimes } from '../frames.ts';
 import { JEV_MODEL, JEV_URL } from '../jev.ts';
 import { admitJob } from '../meter.ts';
+import { PLAYER_TOOL_META } from '../player.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 import { addUsage, checkQuota } from '../usage.ts';
@@ -141,8 +142,8 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       title: 'Import media',
       description: [
         "Import the user's own video, audio, image or font to edit with or place as is: probe, fingerprint, conform if needed (VFR, rotation, HDR → BT.709), 540p proxy and integrated loudness. A reference image to recreate needs no import: rebuild it with create.motion or create.still.",
-        'Long-running: returns a task, or {job_id, media_id} for job.get. The media_id is usable in edits as soon as the job reports processing.',
-        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL (Dropbox and Google Drive share links work as they are), the upload_id of a file sent through media.upload, a small file as a data: URI (up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB, with its sha256 so a garbled copy is refused), or the job_id of a completed export.video (its render becomes media). A file the user attached in the chat comes as file, when the client passes it.`,
+        'Long-running: returns a task, or {job_id, media_id} for job.get. The media_id is usable in edits as soon as the job reports processing, so with many files, start every import first and edit while they finish.',
+        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL (Dropbox and Google Drive share links work as they are), the upload_id of a file sent through media.upload, a small file as a data: URI (up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB, with its sha256 so a garbled copy is refused), or the job_id of a completed export.video (its render becomes media). A URL is fetched once, when the import starts: it only has to work until then (a short-lived signed link from the user's own storage is enough), and the copy stays here 7 days after last use. A file the user attached in the chat comes as file, when the client passes it.`,
         'Importing the same file again returns the same media_id.',
       ].join(' '),
       inputSchema: MediaImportInput,
@@ -527,9 +528,10 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get media',
       description:
-        'Status, a signed download url for the file, streams, duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
+        'Status, a signed download url for the file and a page_url that plays or shows it in any browser (to give a person), streams, duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
       inputSchema: MediaRefInput,
       outputSchema: MediaInfo,
+      _meta: PLAYER_TOOL_META,
       annotations: {
         title: 'Get media',
         readOnlyHint: true,
@@ -544,7 +546,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       const link = await rt.signMedia(owner, record);
       return ok({
         ...mediaInfo(record, args.include ?? []),
-        ...(link ? { url: link.url, expires_at: link.expiresAt } : {}),
+        ...(link ? { url: link.url, page_url: link.pageUrl, expires_at: link.expiresAt } : {}),
       });
     }),
   );

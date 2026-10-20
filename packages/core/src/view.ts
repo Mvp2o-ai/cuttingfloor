@@ -11,6 +11,7 @@ import {
   type StoredClip,
   type StoredEffect,
   type StoredSpeed,
+  TEXT_DEFAULTS,
   TextStyle,
   type TimelineDoc,
   type TimelineInput,
@@ -119,8 +120,9 @@ function sourceView(c: StoredClip, tpf: number): Partial<ClipView> {
       return { media_id: c.media_id };
     case 'timeline':
       return { nested_timeline: c.timeline };
+    // The style as it renders: the defaults for every field the clip doesn't set.
     case 'title':
-      return { text: c.text, ...(c.style ? { style: c.style } : {}) };
+      return { text: c.text, style: { ...TEXT_DEFAULTS.title, ...c.style } };
     case 'caption':
       return {
         text: c.text,
@@ -133,7 +135,7 @@ function sourceView(c: StoredClip, tpf: number): Partial<ClipView> {
               })),
             }
           : {}),
-        ...(c.style ? { style: c.style } : {}),
+        style: { ...TEXT_DEFAULTS.caption, ...c.style },
       };
     case 'adjustment':
       return {};
