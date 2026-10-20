@@ -10,7 +10,9 @@
     "start": "next start"
   },
   "dependencies": {
+    "@cuttingfloor/plans": "workspace:*",
     "@cuttingfloor/skills": "workspace:*",
+    "@vercel/analytics": "2.0.1",
     "@workos-inc/authkit-nextjs": "4.4.0",
     "next": "16.2.9",
     "react": "19.2.0",

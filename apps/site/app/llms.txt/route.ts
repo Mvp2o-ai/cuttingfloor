@@ -41,9 +41,12 @@ export function GET() {
     '',
     '## Pricing',
     '',
-    ...PLANS.map((p) => `- ${p.name}: ${p.price} ${p.per}, ${p.included}. ${p.note}`),
+    ...PLANS.map(
+      (p) =>
+        `- ${p.name}: ${[p.price, p.per].filter(Boolean).join(' ')}, ${p.included}. ${p.limits}. ${p.note}`,
+    ),
     '',
-    'A render minute is one minute of a heavy job (export, transcript, graphics, voiceover, cutout). Editing the timeline is free.',
+    "A render minute is one minute of a job running (export, import, transcript, graphics, voiceover, cutout). Editing the timeline is free. At a plan's minutes new jobs wait for the renewal; nothing is billed past the price.",
     '',
     '## Compared with alternatives',
     '',
