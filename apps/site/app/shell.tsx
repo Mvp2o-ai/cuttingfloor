@@ -1,9 +1,13 @@
+import { LEGAL_NAME, SUPPORT_EMAIL } from '@cuttingfloor/plans';
+import cli from '../../cli/package.json' with { type: 'json' };
 import { DOCS_URL, SITE_URL } from './seo.ts';
 
 // The chrome every page shares: the nav, the footer and the breadcrumb trail.
 
-// Signing up (or in) is the account page: WorkOS sign-in, then the trial, plans and the connect box.
-export const SIGN_UP = '/account';
+// Signing up: WorkOS's sign-up screen, then the welcome page that connects the agent.
+export const SIGN_UP = '/start';
+// Signing in: WorkOS's sign-in screen, then the account page.
+export const SIGN_IN = '/account';
 
 /** Solved: a check, drawn on once in the accent. */
 export function Check() {
@@ -30,7 +34,7 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
           <a href="/#how">How it works</a>
           <a href="/#pricing">Pricing</a>
           <a href={DOCS_URL}>Open source</a>
-          <a href={SIGN_UP}>Sign in</a>
+          <a href={SIGN_IN}>Sign in</a>
         </nav>
         <a className="nav-cta" href={SIGN_UP}>
           {cta}
@@ -54,7 +58,12 @@ export function Footer({ cta = 'Start free' }: { cta?: string }) {
           <a href="/walkthroughs">Walkthroughs</a>
           <a href="/skills">Skills</a>
           <a href={DOCS_URL}>GitHub</a>
-          <a href="mailto:ken@mvp2o.com">Contact</a>
+          <a href={`mailto:${SUPPORT_EMAIL}`}>Support</a>
+          <a href="/status">Status</a>
+          <a href="/terms">Terms</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/refunds">Refunds</a>
+          <a href="/acceptable-use">Acceptable use</a>
         </div>
       </div>
       <div className="win">
@@ -63,10 +72,10 @@ export function Footer({ cta = 'Start free' }: { cta?: string }) {
           <span className="grip" />
         </div>
         <p>
-          cuttingfloor 0.10
-          <br />© 2026 mvp2o
+          cuttingfloor {cli.version}
+          <br />© {new Date().getFullYear()} {LEGAL_NAME}
           <br />
-          Cut on a warm black.
+          <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
         </p>
       </div>
     </footer>

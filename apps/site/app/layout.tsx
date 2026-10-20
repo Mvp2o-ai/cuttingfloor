@@ -1,3 +1,4 @@
+import { Analytics } from '@vercel/analytics/next';
 import type { Metadata } from 'next';
 import { Archivo, JetBrains_Mono, VT323 } from 'next/font/google';
 import { DESCRIPTION, SITE_URL, TITLE } from './seo.ts';
@@ -26,7 +27,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${display.variable} ${pixel.variable} ${mono.variable}`}>
-      <body>{children}</body>
+      <body>
+        {children}
+        {/* Page views only: no cookies, no ad trackers (privacy page). */}
+        <Analytics />
+      </body>
     </html>
   );
 }

@@ -214,7 +214,7 @@ export default function Home() {
                 <th>Plan</th>
                 <th>Price</th>
                 <th>Included</th>
-                <th>Over that</th>
+                <th>Runs</th>
                 <th>For</th>
               </tr>
             </thead>
@@ -223,19 +223,27 @@ export default function Home() {
                 <tr key={p.name} className={p.pick ? 'pick' : ''}>
                   <td className="tier">{p.name}</td>
                   <td className="amount">
-                    {p.price} <small>{p.per}</small>
+                    {p.amount === undefined ? (
+                      <a href={p.href}>{p.price}</a>
+                    ) : (
+                      <>
+                        {p.price} <small>{p.per}</small>
+                      </>
+                    )}
                   </td>
                   <td>{p.included}</td>
-                  <td className="over">{p.overage}</td>
+                  <td className="over">{p.limits}</td>
                   <td className="note">{p.note}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           <p className="price-foot">
-            A render minute is a minute of our servers working for you: exports, transcripts,
-            graphics, voiceovers, cutouts. Planning and editing the timeline cost nothing. Yearly
-            plans get two months free. Payments by Stripe; cancel any time.
+            A render minute is a minute of our servers working for you: exports, imports,
+            transcripts, graphics, voiceovers, cutouts. Planning and editing the timeline cost
+            nothing. When a plan's minutes are used, new jobs wait until they renew or you move up;
+            you are never charged more than the price. Yearly plans get two months free. Payments by
+            Stripe; cancel any time. <a href="/terms">Terms</a> · <a href="/refunds">Refunds</a>
           </p>
         </section>
 

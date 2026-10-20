@@ -19,6 +19,8 @@ export const ErrorCode = z.enum([
   'limit_exceeded',
   'quota_exceeded',
   'subscription_required',
+  'email_unverified',
+  'service_unavailable',
   'server_busy',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

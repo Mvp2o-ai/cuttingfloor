@@ -9,7 +9,13 @@ import {
 } from 'node:http';
 import { Readable } from 'node:stream';
 import type { CredentialStore } from '@cuttingfloor/credentials';
-import { createServer, outputMime, type Runtime, UploadRefused } from '@cuttingfloor/server';
+import {
+  createServer,
+  type OwnerLimits,
+  outputMime,
+  type Runtime,
+  UploadRefused,
+} from '@cuttingfloor/server';
 import { toWebRequest } from '@modelcontextprotocol/node';
 import {
   createMcpHandler,
@@ -39,6 +45,12 @@ export interface HttpOptions {
    * to OAuth sign-ins only: API keys are for maintenance and are never gated.
    */
   access?: (owner: string) => Promise<void>;
+  /** Hosted: a signed-in owner's plan as limits on the work they start (OAuth sign-ins only). */
+  limits?: (owner: string) => Promise<OwnerLimits>;
+  /** Told of each signed-in owner's MCP request (first-call records). */
+  onCall?: (owner: string) => void;
+  /** Routes of the hosting app (billing webhooks, account data); true when it answered. */
+  route?: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>;
 }
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
@@ -52,12 +64,15 @@ export function createHttpServer(options: HttpOptions): Server {
   const handler = createMcpHandler(
     (ctx) => {
       const owner = ctx.authInfo?.clientId ?? 'local';
-      const gate = ctx.authInfo?.extra?.via === 'oauth' ? options.access : undefined;
+      const signedIn = ctx.authInfo?.extra?.via === 'oauth';
+      const gate = signedIn ? options.access : undefined;
+      const limits = signedIn ? options.limits : undefined;
       return createServer({
         runtime,
         credentials,
         owner: () => owner,
         ...(gate ? { access: () => gate(owner) } : {}),
+        ...(limits ? { limits: () => limits(owner) } : {}),
       });
     },
     { onerror: (error) => process.stderr.write(`mcp: ${error.message}\n`) },
@@ -125,6 +140,7 @@ export function createHttpServer(options: HttpOptions): Server {
         await handleUpload(runtime, req, res, url);
         return;
       }
+      if (options.route && (await options.route(req, res, url))) return;
       if (url.pathname !== '/mcp') {
         res.writeHead(404, { 'content-type': 'text/plain' }).end('not found');
         return;
@@ -145,6 +161,7 @@ export function createHttpServer(options: HttpOptions): Server {
           }
           owner = String(auth.extra?.sub);
           via = 'oauth';
+          options.onCall?.(owner);
         } else {
           res
             .writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' })

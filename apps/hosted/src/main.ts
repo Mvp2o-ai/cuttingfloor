@@ -2,7 +2,9 @@ import { readFile } from 'node:fs/promises';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { configFromEnv, Runtime } from '@cuttingfloor/server';
 import { AccessCheck } from './access.ts';
+import { Mailer } from './email.ts';
 import { createHttpServer, parseApiKeys } from './http.ts';
+import { Lifecycle } from './lifecycle.ts';
 import { discoverAuthorizationServer, JwtTokenVerifier } from './oauth.ts';
 
 // `cuttingfloor serve`: the long-running HTTP node. Local mode (compose) is one user on
@@ -56,23 +58,52 @@ if (oauth && issuer)
     );
   }, 300_000).unref();
 
-// Trial and plan checks for signed-in users: WorkOS holds the account, Stripe the subscription.
-const access =
-  oauth && process.env.WORKOS_API_KEY && process.env.STRIPE_SECRET_KEY
-    ? new AccessCheck({
-        workosKey: process.env.WORKOS_API_KEY,
-        stripeKey: process.env.STRIPE_SECRET_KEY,
-        accountUrl:
-          process.env.CUTTINGFLOOR_ACCOUNT_URL ?? 'https://cuttingfloor-site.vercel.app/account',
-      })
-    : undefined;
-if (oauth && !access)
-  process.stderr.write(
-    'access: WORKOS_API_KEY or STRIPE_SECRET_KEY unset; every sign-in may work\n',
-  );
-
 const runtime = new Runtime(config);
 await runtime.start();
+
+// Trial and plan checks for signed-in users: WorkOS holds the account, Stripe the subscription.
+// Signing in without them would let everyone in, so hosted mode won't start that way.
+const workosKey = process.env.WORKOS_API_KEY;
+const stripeKey = process.env.STRIPE_SECRET_KEY;
+if (oauth && (!workosKey || !stripeKey)) {
+  process.stderr.write(
+    "OAuth sign-in needs WORKOS_API_KEY and STRIPE_SECRET_KEY, to check each account's trial and plan\n",
+  );
+  process.exit(1);
+}
+const accountUrl = process.env.CUTTINGFLOOR_ACCOUNT_URL ?? 'https://cuttingfloor.ai/account';
+const access =
+  oauth && workosKey && stripeKey
+    ? new AccessCheck({ workosKey, stripeKey, accountUrl, ws: runtime.ws })
+    : undefined;
+const lifecycle =
+  access && workosKey && stripeKey
+    ? new Lifecycle({
+        runtime,
+        access,
+        workosKey,
+        stripeKey,
+        accountUrl,
+        welcomeUrl: new URL('/welcome', accountUrl).toString(),
+        serverUrl: publicUrl ?? '',
+        ...(process.env.RESEND_API_KEY ? { mailer: new Mailer(process.env.RESEND_API_KEY) } : {}),
+        ...(process.env.STRIPE_WEBHOOK_SECRET
+          ? { stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET }
+          : {}),
+        ...(process.env.CUTTINGFLOOR_ACCOUNT_KEY
+          ? { accountKey: process.env.CUTTINGFLOOR_ACCOUNT_KEY }
+          : {}),
+      })
+    : undefined;
+if (lifecycle) {
+  lifecycle.start();
+  for (const [name, set] of [
+    ['RESEND_API_KEY', process.env.RESEND_API_KEY],
+    ['STRIPE_WEBHOOK_SECRET', process.env.STRIPE_WEBHOOK_SECRET],
+    ['CUTTINGFLOOR_ACCOUNT_KEY', process.env.CUTTINGFLOOR_ACCOUNT_KEY],
+  ] as const)
+    if (!set) process.stderr.write(`lifecycle: ${name} unset; that part is off\n`);
+}
 // Hosted, the server's own TypeSafe key answers judge.ask and media.analyze look for every
 // account; no other provider key comes from this process's environment.
 const credentials = new LocalCredentialStore(
@@ -84,7 +115,18 @@ const server = createHttpServer({
   credentials,
   ...(config.mode === 'hosted' ? { apiKeys } : {}),
   ...(oauth ? { oauth } : {}),
-  ...(access ? { access: (owner: string) => access.require(owner) } : {}),
+  ...(access
+    ? {
+        access: async (owner: string) => void (await access.require(owner)),
+        limits: (owner: string) => access.limits(owner),
+      }
+    : {}),
+  ...(lifecycle
+    ? {
+        onCall: (owner: string) => lifecycle.called(owner),
+        route: (req, res, url) => lifecycle.route(req, res, url),
+      }
+    : {}),
 });
 if (oauth) process.stderr.write(`oauth: sign-in at ${issuer} for ${oauth.resource}\n`);
 
@@ -97,6 +139,7 @@ server.listen(port, host, () => {
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     runtime.stop();
+    lifecycle?.stop();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 5000).unref();
   });

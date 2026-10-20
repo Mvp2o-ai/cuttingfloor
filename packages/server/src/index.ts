@@ -1,3 +1,4 @@
+export { admitJob, type MeterEntry, meteredSeconds, type OwnerLimits } from './meter.ts';
 export { outputMime } from './mime.ts';
 export { HEALTH_URI } from './resources.ts';
 export { configFromEnv, Runtime, type RuntimeConfig } from './runtime.ts';
