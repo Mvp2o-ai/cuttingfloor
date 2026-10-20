@@ -39,6 +39,14 @@ Signed links cover only the path, so links made under the old address still work
 
 **Check it:** `CF_KEY=<a key from CUTTINGFLOOR_API_KEYS> node scripts/smoke-hosted.ts https://<domain>`. It checks that a request without a key is refused, then the sandbox (`create.still`, `create.motion`, `code.run`), `look` on the server's TypeSafe key, an export's signed link, and that file uploaded back in two parts and imported.
 
+**Billing and account email:**
+- `node scripts/stripe-setup.ts` makes (or updates) the prices, the billing portal and the webhook at `<CUTTINGFLOOR_PUBLIC_URL>/stripe/webhook`, and writes the webhook's secret to `cuttingfloor.env`.
+- `RESEND_API_KEY` sends account email from support@cuttingfloor.ai (the domain is verified in Resend, its records in the Hetzner DNS zone).
+- `CUTTINGFLOOR_ACCOUNT_KEY` is shared with the site, which reads each account's render minutes from `GET /account/usage`.
+- Plans, their minutes and limits are `packages/plans`; the server and the site both read it.
+
+**Check accounts and billing:** `CHROME_PATH=<chrome> node scripts/smoke-account.ts https://cuttingfloor.ai`. It signs a throwaway user up on the site, checks the account and welcome pages, opens Checkout, then checks the server's rules on the real WorkOS and Stripe: trial limits, a refused unverified email, refusal when WorkOS can't be reached, trial over, subscribed, lifetime.
+
 **Check sign-in:** `WORKOS_API_KEY=sk_… CHROME_PATH=<chrome> node scripts/smoke-oauth.ts https://<domain>`. It makes a throwaway WorkOS user, registers a client with AuthKit as an MCP client does, signs in on AuthKit's page in headless Chrome, calls tools with the token, then deletes the user and the client. AuthKit caches its metadata for five minutes, so a registration setting changed there takes that long to show.
 
 **If the image is private:** export `GHCR_USER` and `GHCR_TOKEN` (`read:packages`) before running `up.sh`. Or make the GHCR package public in the GitHub UI. Or build on the server from this checkout's HEAD: `CUTTINGFLOOR_BUILD=1 ./up.sh`.
