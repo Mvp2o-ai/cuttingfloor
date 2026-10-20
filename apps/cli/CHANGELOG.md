@@ -1,5 +1,17 @@
 # cuttingfloor
 
+## 0.22.0
+
+### Minor Changes
+
+- 55e3b5c: **Overlap transitions keep other tracks in sync on request.** An overlap transition moves later clips on its own track earlier. `transition.add` now warns which clips on other tracks are left playing late, and `other_tracks: "extract"` takes the same span out of the other tracks (like `range.extract`) so titles, overlays and sound stay in sync with the picture.
+- 8b30d24: **Share and show exports.** `export.video` and `media.get` now return a `page_url`: a page that plays the file in any browser with no sign-in, to give a person to watch or share. It lasts as long as the signed download (24 hours by default). In clients that support MCP Apps, `export.video` and `media.get` results also play in the chat: the player follows a running export and plays it when it's done.
+
+### Patch Changes
+
+- 9b46980: Clearer tool descriptions: `media.import` says a URL only has to work until the import starts (a short-lived signed link is enough) and that edits needn't wait for imports to finish; `code.run` says plainly why `create.motion` and `create.still` are called as `motion()` and `still()` inside a script.
+- adb7dc1: **Text styles are never decided out of sight.** `video://catalog/text` publishes the exact default style for titles and captions, `title.add` and `caption.add` say what it is, and `timeline.get` shows each title's and caption's full style as it renders.
+
 ## 0.21.0
 
 ### Minor Changes
