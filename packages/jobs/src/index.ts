@@ -372,15 +372,19 @@ export class JobRunner {
     // Every write while working goes through here, one at a time: a record another server has
     // ended (cancelled, or interrupted for a stopped heartbeat) stops the job instead.
     const save = (patch: Partial<Job>) => {
-      pending = pending.then(async () => {
-        if (controller.signal.aborted) return;
-        const disk = await this.store.get(current.id, current.owner);
-        if (disk && disk.status !== 'working') {
-          controller.abort();
-          return;
-        }
-        current = await this.store.update(current, { ...patch, node: this.node });
-      });
+      // One failed write must not end the chain: every later heartbeat (and so a remote cancel)
+      // would be skipped.
+      pending = pending
+        .catch(() => undefined)
+        .then(async () => {
+          if (controller.signal.aborted) return;
+          const disk = await this.store.get(current.id, current.owner);
+          if (disk && disk.status !== 'working') {
+            controller.abort();
+            return;
+          }
+          current = await this.store.update(current, { ...patch, node: this.node });
+        });
       return pending;
     };
     void save({}).catch(() => undefined);

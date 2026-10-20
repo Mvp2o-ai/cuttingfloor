@@ -206,4 +206,33 @@ describe('JobRunner', () => {
     await runner.cancel(c.id, 'p');
     expect(ended.sort()).toEqual([a, b, c].map((j) => `${j.id}:cancelled`).sort());
   });
+
+  it('keeps its heartbeat after a failed write, so a remote cancel still stops it', async () => {
+    const ws = new Workspace(await mkdtemp(join(tmpdir(), 'cf-flaky-')));
+    const store = new FileJobStore(ws);
+    const runner = new JobRunner(store, 1, { heartbeatMs: 30 });
+    const job = await store.create({ owner: 'o', tool: 't' });
+    // The first heartbeat write fails, as a rename racing another writer can.
+    const update = store.update.bind(store);
+    let failed = false;
+    store.update = async (j, patch) => {
+      if (!failed && j.id === job.id) {
+        failed = true;
+        throw new Error('ENOENT: rename');
+      }
+      return update(j, patch);
+    };
+    runner.start(job, forever);
+    for (let i = 0; i < 100 && !failed; i++) await new Promise((r) => setTimeout(r, 10));
+    await update((await store.get(job.id, 'o')) ?? job, { status: 'cancelled' });
+    await runner.settled(job.id);
+    expect((await store.get(job.id, 'o'))?.status).toBe('cancelled');
+  });
+
+  it('writes one file from many writers at once without losing a write', async () => {
+    const ws = new Workspace(await mkdtemp(join(tmpdir(), 'cf-race-')));
+    const file = ws.path('x.json');
+    await Promise.all(Array.from({ length: 50 }, (_, n) => ws.writeJson(file, { n })));
+    expect(await ws.readJson<{ n: number }>(file)).toHaveProperty('n');
+  });
 });
