@@ -7,12 +7,13 @@ coverage/
 !.env.example
 .DS_Store
 # Local planning docs for whoever is building this; not published.
-plans/
+/plans/
 # Agent worktrees
 .claude/worktrees/
 
 # Hosted deploy secrets
 deploy/hetzner/cuttingfloor.env
+deploy/hetzner/*.key
 
 # Skill vectors, written per image build (packages/skills/scripts/write-vectors.ts)
 packages/skills/vectors.json
