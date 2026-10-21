@@ -2431,6 +2431,65 @@ a.buy {
   display: inline-block;
   text-decoration: none;
 }
+/* account: the drop zone for the agent's files */
+.files {
+  max-width: 640px;
+}
+.drop {
+  display: grid;
+  gap: 4px;
+  padding: 40px 16px;
+  border: 2px dashed var(--rule-2, var(--rule));
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease);
+}
+.drop span {
+  color: var(--mute);
+}
+.drop:hover,
+.drop.over {
+  border-color: var(--key);
+}
+.drop input {
+  display: none;
+}
+.files-head {
+  margin: 28px 0 8px;
+  color: var(--mute);
+}
+.file-list {
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.files-head + .file-list {
+  margin-top: 0;
+}
+.file-list li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.file-name {
+  overflow-wrap: anywhere;
+}
+.file-note {
+  color: var(--mute);
+}
+.file-list li.done .file-note {
+  color: var(--key);
+}
+.file-list li.failed .file-note {
+  color: #e0573f;
+}
+.file-list .meter-bar {
+  flex-basis: 100%;
+  height: 6px;
+}
 .account-help {
   margin: 24px 0 0;
   color: var(--mute);

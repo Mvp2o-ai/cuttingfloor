@@ -10,6 +10,8 @@ import { CfError } from '@cuttingfloor/schema';
 
 export interface DownloadOptions {
   maxBytes: number;
+  /** What to do about a file over maxBytes, when the limit isn't simply the server's. */
+  tooBigHint?: string;
   timeoutMs: number;
   signal?: AbortSignal;
   /** Tests only: allow loopback and private addresses. */
@@ -86,6 +88,7 @@ export async function download(
       throw new CfError(
         'limit_exceeded',
         `The file is larger than the ${options.maxBytes} byte import limit`,
+        options.tooBigHint ? { hint: options.tooBigHint } : undefined,
       );
     }
     let bytes = 0;
@@ -96,6 +99,7 @@ export async function download(
           new CfError(
             'limit_exceeded',
             `The file is larger than the ${options.maxBytes} byte import limit`,
+            options.tooBigHint ? { hint: options.tooBigHint } : undefined,
           ),
         );
       }

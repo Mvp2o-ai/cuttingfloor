@@ -37,7 +37,7 @@ export interface ServerDeps {
 
 const INSTRUCTIONS = `cuttingfloor is a headless video editor. It makes video two ways, often both at once:
 - Make new: create.motion (animated HTML), create.still, create.matte and create.voiceover build media from nothing. An image, mockup or page the user shows you is a reference for you to look at and rebuild in HTML, not a file to import.
-- Edit what the user has: media.import their footage, music or logo (a path under the media roots, a URL, a file on the user's machine sent with media.upload or dropped on its page, or a small file as a data: URI; to try it, /samples/sample.mp4 and /samples/card.png where available).
+- Edit what the user has: media.import their footage, music or logo (a path under the media roots, a URL, a file on the user's machine sent with media.upload or dropped on its page, a file the user dropped on their account page (media.list shows those by name), or a small file as a data: URI; to try it, /samples/sample.mp4 and /samples/card.png where available).
 The tools are granular primitives that do exactly what their arguments say; you compose them. edit.batch applies a planned sequence as one change. When the composition needs logic (loops, arithmetic over timeline.get or media.analyze data, generated files), write it as one code.run script: inside, cf.domain.verb(args) calls these same tools.
 Typical flow:
 1. Get media: create.* for new material, media.import for the user's own files (both long-running: a task, or job.get {job_id, wait_seconds: 50}). Use the media_id once status is processing or ready.

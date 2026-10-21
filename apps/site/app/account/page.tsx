@@ -2,7 +2,9 @@ import { PLANS, type PlanId, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import { withAuth } from '@workos-inc/authkit-nextjs';
 import { Connect } from '../connect.tsx';
 import { accountOf, type Status, type Usage, usageOf } from '../lib/billing.ts';
+import { filesOf } from '../lib/files.ts';
 import { AccountNav } from './chrome.tsx';
+import { FilesPanel } from './files.tsx';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Account — cuttingfloor', robots: { index: false } };
@@ -21,7 +23,11 @@ export default async function Account({
   searchParams: Promise<{ subscribed?: string }>;
 }) {
   const { user } = await withAuth({ ensureSignedIn: true });
-  const [{ status }, usage] = await Promise.all([accountOf(user.id), usageOf(user.id)]);
+  const [{ status }, usage, files] = await Promise.all([
+    accountOf(user.id),
+    usageOf(user.id),
+    filesOf(user.id),
+  ]);
   const { subscribed } = await searchParams;
   const plan = planOf(status);
 
@@ -38,6 +44,19 @@ export default async function Account({
           {plan ? <Limits plan={plan} /> : null}
           <Billing status={status} />
         </section>
+
+        {files ? (
+          <section className="cell">
+            <div className="head">
+              <span className="label">Files</span>
+              <p className="lede">
+                Files on this computer your agent can’t reach? Drop them here, then tell your agent
+                which ones to use by name.
+              </p>
+            </div>
+            <FilesPanel initial={files} />
+          </section>
+        ) : null}
 
         <section className="cell">
           <div className="head">
@@ -150,6 +169,9 @@ function Limits({ plan }: { plan: PlanId }) {
     l.judgmentsPerDay === null
       ? 'Frame checks without a daily cap'
       : `${l.judgmentsPerDay.toLocaleString('en-US')} frame checks a day`,
+    l.storageGb === null
+      ? 'Storage without a cap'
+      : `${l.storageGb.toLocaleString('en-US')} GB of storage`,
   ];
   return (
     <ul className="plan-limits">

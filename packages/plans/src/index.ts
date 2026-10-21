@@ -14,6 +14,12 @@ export interface Limits {
   shortSide: number | null;
   /** judge.ask and media.analyze look judgments a day; null for the server's own limit. */
   judgmentsPerDay: number | null;
+  /**
+   * Gigabytes the account may keep on the server at once: uploads, imported media and its proxies,
+   * exports. Everything still expires on its own clock; this caps what is held meanwhile. null
+   * for no cap.
+   */
+  storageGb: number | null;
 }
 
 export interface Plan {
@@ -39,7 +45,7 @@ export const PLANS: Record<PlanId, Plan> = {
     id: 'trial',
     name: 'Trial',
     sold: 'none',
-    limits: { renderMinutes: 60, jobs: 1, shortSide: 1080, judgmentsPerDay: 300 },
+    limits: { renderMinutes: 60, jobs: 1, shortSide: 1080, judgmentsPerDay: 300, storageGb: 5 },
     note: `Everything, no card, for ${TRIAL_DAYS} days. About six hours of an agent editing.`,
   },
   creator: {
@@ -47,7 +53,7 @@ export const PLANS: Record<PlanId, Plan> = {
     name: 'Creator',
     sold: 'self',
     price: { month: 49, year: 490 },
-    limits: { renderMinutes: 300, jobs: 1, shortSide: 1080, judgmentsPerDay: 1500 },
+    limits: { renderMinutes: 300, jobs: 1, shortSide: 1080, judgmentsPerDay: 1500, storageGb: 50 },
     note: 'About 30 hours of editing a month. One job at a time, up to 1080p.',
   },
   pro: {
@@ -55,28 +61,40 @@ export const PLANS: Record<PlanId, Plan> = {
     name: 'Pro',
     sold: 'self',
     price: { month: 99, year: 990 },
-    limits: { renderMinutes: 900, jobs: 2, shortSide: 2160, judgmentsPerDay: 5000 },
+    limits: { renderMinutes: 900, jobs: 2, shortSide: 2160, judgmentsPerDay: 5000, storageGb: 200 },
     note: 'Agents editing most days. Two jobs at once, up to 4K.',
   },
   enterprise: {
     id: 'enterprise',
     name: 'Enterprise',
     sold: 'contact',
-    limits: { renderMinutes: 5000, jobs: 4, shortSide: 2160, judgmentsPerDay: 20000 },
+    limits: {
+      renderMinutes: 5000,
+      jobs: 4,
+      shortSide: 2160,
+      judgmentsPerDay: 20000,
+      storageGb: 1000,
+    },
     note: 'Agents editing all day, for a team. Minutes, seats and dedicated servers to suit.',
   },
   lifetime: {
     id: 'lifetime',
     name: 'Lifetime',
     sold: 'none',
-    limits: { renderMinutes: 900, jobs: 2, shortSide: 2160, judgmentsPerDay: 5000 },
+    limits: { renderMinutes: 900, jobs: 2, shortSide: 2160, judgmentsPerDay: 5000, storageGb: 200 },
     note: 'Pro, for good.',
   },
   staff: {
     id: 'staff',
     name: 'Staff',
     sold: 'none',
-    limits: { renderMinutes: null, jobs: null, shortSide: null, judgmentsPerDay: null },
+    limits: {
+      renderMinutes: null,
+      jobs: null,
+      shortSide: null,
+      judgmentsPerDay: null,
+      storageGb: null,
+    },
     note: 'The team running cuttingfloor.',
   },
 };

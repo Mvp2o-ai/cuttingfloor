@@ -6,11 +6,13 @@
 // automation bypass secret (Settings → Deployment Protection; VERCEL_BYPASS in the env file).
 //
 // Keys come from deploy/hetzner/cuttingfloor.env. Makes a throwaway WorkOS user, signs in on the
-// site through AuthKit, checks the account page shows the trial, opens Stripe Checkout for Pro
+// site through AuthKit, checks the account page shows the trial, drops a file on its drop zone, opens Stripe Checkout for Pro
 // (stopping before payment), then checks the MCP server's access rules: trial, trial over,
 // subscribed (a $0 trialing subscription with no card), and lifetime. Deletes everything after.
 import { randomBytes } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { AccessCheck } from '../apps/hosted/src/access.ts';
 
@@ -90,6 +92,30 @@ try {
   expect(text.includes('On the trial.'), 'the page says the trial is on');
   expect(text.includes(email), 'the page names the user');
   if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });
+
+  step('drops a file on the account page and it reaches the server');
+  const dropped = join(await mkdtemp(join(tmpdir(), 'cf-smoke-drop-')), 'smoke-drop.mp4');
+  await writeFile(dropped, randomBytes(64 * 1024));
+  const picker = await page.waitForSelector('.drop input[type=file]', { timeout: 10_000 });
+  expect(Boolean(picker), 'the account page has the drop zone');
+  if (picker) {
+    await (picker as unknown as { uploadFile(path: string): Promise<void> }).uploadFile(dropped);
+    const sent = await page
+      .waitForFunction(() => document.body.innerText.includes('Sent. Ask your agent'), {
+        timeout: 60_000,
+      })
+      .then(
+        () => true,
+        () => false,
+      );
+    expect(sent, 'the file is sent');
+    const listed = await page.evaluate(() =>
+      [...document.querySelectorAll('.file-list li')].some(
+        (li) => li.textContent?.includes('smoke-drop.mp4') && li.textContent.includes('kept until'),
+      ),
+    );
+    expect(listed, 'it waits for the agent, with when it expires');
+  }
 
   step('the welcome page walks through connecting');
   await page.goto(`${site}/welcome`, { waitUntil: 'networkidle2' });
