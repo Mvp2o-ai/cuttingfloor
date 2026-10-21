@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readdir } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import {
   analyseBeats,
@@ -21,6 +21,8 @@ import {
   MediaAnalyzeResult,
   MediaImportInput,
   MediaInfo,
+  MediaListInput,
+  MediaListResult,
   MediaRefInput,
   MediaUploadInput,
   MediaUploadResult,
@@ -33,6 +35,7 @@ import { admitJob } from '../meter.ts';
 import { PLAYER_TOOL_META } from '../player.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
+import { listHeld, startUpload, storageRoom } from '../storage.ts';
 import { addUsage, checkQuota } from '../usage.ts';
 import {
   checkQuestions,
@@ -217,6 +220,13 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           );
         }
       }
+      // A download or a copied render adds to what the account holds; an upload is already in.
+      const room =
+        'url' in source
+          ? await storageRoom(rt.ws, owner, await deps.limits?.())
+          : local && 'job_id' in source
+            ? await storageRoom(rt.ws, owner, await deps.limits?.(), (await stat(local)).size)
+            : undefined;
       const admit = await admitJob(deps.limits);
       const record = await rt.media.create(
         owner,
@@ -251,6 +261,13 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
             record,
             (f, m) => progress(f, `${record.media_id}: ${m}`),
             signal,
+            room === undefined
+              ? {}
+              : {
+                  maxBytes: room,
+                  tooBigHint:
+                    "That is more than the account's storage has left. Files expire on their own (uploads after a day, media and exports 7 days after last use); media.list shows what is held",
+                },
           );
           return ok(mediaInfo(done)) as never;
         },
@@ -280,13 +297,39 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       },
     },
     guard(async (args) => {
-      const upload = await rt.uploads.create(deps.owner(), args.name, args.bytes);
+      const upload = await startUpload(
+        rt,
+        deps.owner(),
+        args.name,
+        args.bytes,
+        await deps.limits?.(),
+      );
       return ok({
         ...upload,
-        max_bytes: rt.uploads.maxBytes,
         how: `curl --fail -T ${shellQuote(args.name)} '${upload.url}' (or the user opens the url in a browser and drops the file), then media.import {source: {upload_id: "${upload.upload_id}"}}`,
       });
     }),
+  );
+
+  server.registerTool(
+    'media.list',
+    {
+      title: 'List media',
+      description: [
+        "What the user has here: imported and created media, and files they sent that aren't imported yet (through media.upload, or dropped on their account page at cuttingfloor.ai/account), with names, sizes and when each expires, plus the account's storage used and its cap.",
+        'When the user mentions a file they sent or dropped ("the interview I uploaded"), find it here by name and media.import {source: {upload_id}} it; complete says it is all in. Listing does not count as a use, so nothing here lasts longer for being listed.',
+      ].join(' '),
+      inputSchema: MediaListInput,
+      outputSchema: MediaListResult,
+      annotations: {
+        title: 'List media',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    guard(async () => ok(await listHeld(rt, deps.owner(), await deps.limits?.()))),
   );
 
   server.registerTool(

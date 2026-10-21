@@ -18,6 +18,8 @@ interface UploadMeta {
   bytes: number | null;
   complete: boolean;
   created_at: string;
+  /** The most this upload takes, when the account's storage left is less than `maxBytes`. */
+  max_bytes?: number;
 }
 
 export interface UploadState {
@@ -65,12 +67,16 @@ export class Uploads {
     this.maxBytes = options.maxBytes;
   }
 
-  /** Starts an upload: its record, and the signed URL to PUT the file to. */
+  /**
+   * Starts an upload: its record, and the signed URL to PUT the file to. `room` is the account's
+   * storage left, when it has a cap; the upload takes no more than that.
+   */
   async create(
     owner: string,
     name: string,
     bytes: number | undefined,
-  ): Promise<{ upload_id: string; url: string; expires_at: string }> {
+    room?: number,
+  ): Promise<{ upload_id: string; url: string; expires_at: string; max_bytes: number }> {
     if (bytes !== undefined && bytes > this.maxBytes) {
       throw new CfError(
         'bad_request',
@@ -91,6 +97,7 @@ export class Uploads {
       bytes: bytes ?? null,
       complete: false,
       created_at: new Date().toISOString(),
+      ...(room !== undefined && room < this.maxBytes ? { max_bytes: room } : {}),
     };
     await this.#ws.writeJson(this.#record(ownerKey(owner), id), meta);
     const exp = Date.now() + UPLOAD_TTL_MS;
@@ -99,6 +106,7 @@ export class Uploads {
       upload_id: id,
       url: `${this.#publicUrl()}${path}?exp=${exp}&sig=${await this.#sign(path, exp)}`,
       expires_at: new Date(exp).toISOString(),
+      max_bytes: meta.max_bytes ?? this.maxBytes,
     };
   }
 
@@ -170,16 +178,20 @@ export class Uploads {
         throw new UploadRefused(409, `the upload has ${received} bytes; send from there`, received);
       }
       const total = request.range ? request.range.total : request.length;
-      if ((total ?? 0) > this.maxBytes || start + (request.length ?? 0) > this.maxBytes) {
-        throw new UploadRefused(413, `uploads take up to ${this.maxBytes} bytes`, received);
+      const limit = meta.max_bytes ?? this.maxBytes;
+      const tooBig =
+        meta.max_bytes === undefined
+          ? `uploads take up to ${limit} bytes`
+          : `the account's storage has room for ${limit} more bytes; let older files expire or move to a bigger plan`;
+      if ((total ?? 0) > limit || start + (request.length ?? 0) > limit) {
+        throw new UploadRefused(413, tooBig, received);
       }
       const file = join(this.#dir(owner, id), meta.file);
       let size = start;
-      const limit = this.maxBytes;
       const counted = async function* (source: Readable) {
         for await (const chunk of source) {
           size += (chunk as Buffer).length;
-          if (size > limit) throw new UploadRefused(413, `uploads take up to ${limit} bytes`);
+          if (size > limit) throw new UploadRefused(413, tooBig);
           yield chunk;
         }
       };
@@ -229,6 +241,39 @@ export class Uploads {
       );
     }
     return { file: join(this.#dir(key, id), meta.file), name: meta.name };
+  }
+
+  /** The owner's uploads not yet imported, newest first. */
+  async list(owner: string): Promise<
+    Array<{
+      upload_id: string;
+      name: string;
+      received_bytes: number;
+      bytes: number | null;
+      complete: boolean;
+      created_at: string;
+      expires_at: string;
+    }>
+  > {
+    const key = ownerKey(owner);
+    const out = [];
+    for (const id of await this.#ws.list(this.#ws.path('owners', key, 'uploads'))) {
+      if (!/^u_[0-9a-z]{26}$/.test(id)) continue;
+      const meta = await this.#meta(key, id);
+      if (!meta) continue;
+      const expires = Date.parse(meta.created_at) + UPLOAD_TTL_MS;
+      if (expires <= Date.now()) continue;
+      out.push({
+        upload_id: id,
+        name: meta.name,
+        received_bytes: await this.#size(key, meta),
+        bytes: meta.bytes,
+        complete: meta.complete,
+        created_at: meta.created_at,
+        expires_at: new Date(expires).toISOString(),
+      });
+    }
+    return out.sort((a, b) => b.created_at.localeCompare(a.created_at));
   }
 
   /** Forgets an upload once imported. */

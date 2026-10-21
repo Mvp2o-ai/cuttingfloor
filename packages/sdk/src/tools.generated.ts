@@ -25,6 +25,8 @@ import type {
   MediaAnalyzeResult,
   MediaImportInput,
   MediaInfo,
+  MediaListInput,
+  MediaListResult,
   MediaRefInput,
   MediaSeekInput,
   MediaSeekResult,
@@ -96,6 +98,7 @@ export type ToolName =
   | 'media.analyze'
   | 'media.get'
   | 'media.import'
+  | 'media.list'
   | 'media.seek'
   | 'media.upload'
   | 'qa.check'
@@ -163,6 +166,7 @@ export interface ToolInputs {
   'media.analyze': z.input<typeof MediaAnalyzeInput>;
   'media.get': z.input<typeof MediaRefInput>;
   'media.import': z.input<typeof MediaImportInput>;
+  'media.list': z.input<typeof MediaListInput>;
   'media.seek': z.input<typeof MediaSeekInput>;
   'media.upload': z.input<typeof MediaUploadInput>;
   'qa.check': z.input<typeof QaCheckInput>;
@@ -231,6 +235,7 @@ export interface ToolOutputs {
   'media.analyze': z.output<typeof MediaAnalyzeResult>;
   'media.get': z.output<typeof MediaInfo>;
   'media.import': z.output<typeof MediaInfo>;
+  'media.list': z.output<typeof MediaListResult>;
   'media.seek': z.output<typeof MediaSeekResult>;
   'media.upload': z.output<typeof MediaUploadResult>;
   'qa.check': z.output<typeof QaCheckResult>;
@@ -299,6 +304,7 @@ export const TOOL_NAMES: readonly ToolName[] = [
   'media.analyze',
   'media.get',
   'media.import',
+  'media.list',
   'media.seek',
   'media.upload',
   'qa.check',

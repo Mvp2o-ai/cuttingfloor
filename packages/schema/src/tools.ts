@@ -760,6 +760,54 @@ export const MediaInfo = z.object({
 });
 export type MediaInfo = z.infer<typeof MediaInfo>;
 
+/** Limits that protect the server: the most of each list one media.list returns. */
+export const MEDIA_LIST_LIMIT = 200;
+
+export const MediaListInput = z.object({});
+
+export const MediaListResult = z.object({
+  media: z
+    .array(
+      z.object({
+        media_id: MediaId,
+        name: z.string(),
+        status: MediaStatus,
+        kind: z.enum(['video', 'audio', 'image', 'font', 'lut']).nullable(),
+        duration_seconds: z.number().nullable(),
+        from: z
+          .enum(['upload', 'url', 'path', 'render', 'created'])
+          .describe(
+            'upload: a file the user sent; url: downloaded; path: a media root; render: an export.video; created: a create.* tool',
+          ),
+        bytes: z.number().nullable().describe('Size of the original file'),
+        created_at: z.string(),
+        expires_at: z.string().describe('7 days after last use; any use pushes it back'),
+      }),
+    )
+    .describe(`Imported and created media, most recently used first (up to ${MEDIA_LIST_LIMIT})`),
+  media_count: z.number().int().describe('All media held, including any not listed'),
+  uploads: z
+    .array(
+      z.object({
+        upload_id: UploadId,
+        name: z.string(),
+        received_bytes: z.number(),
+        bytes: z.number().nullable().describe('The size given when the upload began, if any'),
+        complete: z.boolean().describe('All sent: media.import {source: {upload_id}} takes it'),
+        created_at: z.string(),
+        expires_at: z.string(),
+      }),
+    )
+    .describe(
+      `Files sent to the server and not imported yet, newest first (up to ${MEDIA_LIST_LIMIT}): through media.upload, or dropped on the account page by the user`,
+    ),
+  upload_count: z.number().int(),
+  storage: z.object({
+    used_bytes: z.number().describe('Everything held: uploads, media with its proxies, exports'),
+    max_bytes: z.number().nullable().describe("The plan's cap; null for none"),
+  }),
+});
+
 export const MediaAnalyzeResult = z.object({
   media_id: MediaId,
   kind: z.enum(['transcript', 'beats', 'faces', 'track', 'look', 'silence', 'scenes']),

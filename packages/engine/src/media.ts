@@ -288,6 +288,8 @@ export class MediaLibrary {
     record: MediaRecord,
     progress: Progress,
     signal: AbortSignal,
+    /** A tighter cap on a download than the server's (the account's storage left), and why. */
+    options: { maxBytes?: number; tooBigHint?: string } = {},
   ): Promise<MediaRecord> {
     const dir = this.dir(owner, record.media_id);
     try {
@@ -299,7 +301,12 @@ export class MediaLibrary {
         const dest = join(dir, `source${ext || '.bin'}`);
         const direct = directDownloadUrl(record.source.url);
         const got = await download(direct, dest, {
-          maxBytes: this.config.maxDownloadBytes,
+          maxBytes: Math.min(this.config.maxDownloadBytes, options.maxBytes ?? Infinity),
+          ...(options.maxBytes !== undefined &&
+          options.maxBytes < this.config.maxDownloadBytes &&
+          options.tooBigHint
+            ? { tooBigHint: options.tooBigHint }
+            : {}),
           timeoutMs: this.config.downloadTimeoutMs,
           allowPrivate: this.config.allowPrivateUrls,
           signal,
@@ -378,6 +385,25 @@ export class MediaLibrary {
       await this.save(owner, record);
       throw error;
     }
+  }
+
+  /** Every media the owner has, newest use first, with when each expires. Doesn't count as a use. */
+  async list(owner: string): Promise<Array<MediaRecord & { expires_at: string }>> {
+    const base = this.#ws.ownerDir(owner, 'media');
+    const out: Array<MediaRecord & { expires_at: string; used: number }> = [];
+    for (const id of await this.#ws.list(base)) {
+      const file = join(base, id, 'media.json');
+      const [record, used] = await Promise.all([
+        this.#ws.readJson<MediaRecord>(file),
+        stat(file).then(
+          (s) => s.mtimeMs,
+          () => undefined,
+        ),
+      ]);
+      if (!record || used === undefined) continue;
+      out.push({ ...record, used, expires_at: new Date(used + MEDIA_TTL_MS).toISOString() });
+    }
+    return out.sort((a, b) => b.used - a.used).map(({ used: _used, ...record }) => record);
   }
 
   async sweep(ttlMs = MEDIA_TTL_MS): Promise<number> {

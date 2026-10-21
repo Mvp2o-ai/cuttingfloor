@@ -100,6 +100,10 @@ export class AccessCheck {
       ...(limits.jobs !== null ? { jobs: limits.jobs } : {}),
       ...(limits.shortSide !== null ? { shortSide: limits.shortSide } : {}),
       ...(limits.judgmentsPerDay !== null ? { judgmentsPerDay: limits.judgmentsPerDay } : {}),
+      ...(limits.storageGb !== null ? { storageBytes: limits.storageGb * 1e9 } : {}),
+      ...(access.plan !== 'staff' && access.plan !== 'enterprise'
+        ? { account: this.#o.accountUrl }
+        : {}),
     };
     const usage = await this.usage(owner, access);
     if (usage.included_minutes !== null && usage.used_minutes >= usage.included_minutes) {

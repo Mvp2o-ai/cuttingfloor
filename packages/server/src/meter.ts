@@ -71,6 +71,10 @@ export interface OwnerLimits {
   shortSide?: number;
   /** Judgments a day on the server's key (judge.ask, media.analyze look). */
   judgmentsPerDay?: number;
+  /** Bytes the owner may keep on the server at once (uploads, media, exports). */
+  storageBytes?: number;
+  /** Where the owner moves to a bigger plan, for refusals that a bigger plan lifts. */
+  account?: string;
   /** Why no new job may start now (the plan's render minutes are used up). */
   refuseJobs?: CfError;
 }

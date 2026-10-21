@@ -50,6 +50,52 @@ async function titled(client: Client, sequence = SEQ_720P25): Promise<string> {
 }
 
 describe('plan limits', () => {
+  it("keeps uploads and imports within the plan's storage, and lists what is held", async () => {
+    let cap = 1000;
+    const client = await connectWith('storage', async () => ({
+      storageBytes: cap,
+      account: 'https://cuttingfloor.ai/account',
+    }));
+    const big = await call(client, 'media.upload', { name: 'big.mp4', bytes: 5000 });
+    expect(big.isError).toBe(true);
+    expect(big.structured.code).toBe('quota_exceeded');
+    expect(big.structured.hint).toContain('https://cuttingfloor.ai/account');
+
+    const up = await ok<{ upload_id: string; max_bytes: number }>(client, 'media.upload', {
+      name: 'interview.mp4',
+    });
+    // The upload takes no more than the room left: all of it, while nothing else is held.
+    expect(up.max_bytes).toBe(1000);
+
+    const listed = await ok<{
+      media: unknown[];
+      uploads: Array<{ upload_id: string; name: string; complete: boolean; expires_at: string }>;
+      upload_count: number;
+      storage: { used_bytes: number; max_bytes: number | null };
+    }>(client, 'media.list', {});
+    expect(listed.media).toEqual([]);
+    expect(listed.upload_count).toBe(1);
+    expect(listed.uploads[0]).toMatchObject({
+      upload_id: up.upload_id,
+      name: 'interview.mp4',
+      complete: false,
+    });
+    expect(Date.parse(listed.uploads[0]?.expires_at ?? '')).toBeGreaterThan(Date.now());
+    expect(listed.storage.max_bytes).toBe(1000);
+    expect(listed.storage.used_bytes).toBeGreaterThan(0);
+
+    // Once full, a download is refused before it starts, and so is another upload.
+    cap = listed.storage.used_bytes;
+    const fetched = await call(client, 'media.import', {
+      source: { url: 'https://example.com/clip.mp4' },
+    });
+    expect(fetched.structured.code).toBe('quota_exceeded');
+    expect((await call(client, 'media.upload', { name: 'more.mp4' })).structured.code).toBe(
+      'quota_exceeded',
+    );
+    await client.close();
+  });
+
   it('refuses new jobs once the minutes are used, while editing still works', async () => {
     const refusal = new CfError('quota_exceeded', "This period's 300 render minutes are used", {
       hint: 'Wait until they renew',

@@ -1,7 +1,8 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PLANS, TRIAL_DAYS } from '@cuttingfloor/plans';
-import type { MeterEntry, Runtime } from '@cuttingfloor/server';
+import { CfError, MediaUploadInput } from '@cuttingfloor/schema';
+import { listHeld, type MeterEntry, type Runtime, startUpload } from '@cuttingfloor/server';
 import type { AccessCheck } from './access.ts';
 import type { Mailer } from './email.ts';
 
@@ -30,7 +31,10 @@ export interface LifecycleOptions {
   mailer?: Mailer;
   /** Signs Stripe's webhook calls (whsec_…). Without it the webhook is refused. */
   stripeWebhookSecret?: string;
-  /** Lets the site read an account's usage (`GET /account/usage`). */
+  /**
+   * Lets the site act for a signed-in account: read its usage (`GET /account/usage`) and its files
+   * (`GET /account/media`), and start an upload (`POST /account/uploads`).
+   */
   accountKey?: string;
 }
 
@@ -222,8 +226,8 @@ export class Lifecycle {
   }
 
   /**
-   * The routes the site and Stripe call: `POST /stripe/webhook` and `GET /account/usage`.
-   * Returns false for any other path.
+   * The routes the site and Stripe call: `POST /stripe/webhook`, `GET /account/usage`,
+   * `GET /account/media` and `POST /account/uploads`. Returns false for any other path.
    */
   async route(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     if (url.pathname === '/stripe/webhook' && req.method === 'POST') {
@@ -234,13 +238,79 @@ export class Lifecycle {
       await this.#usageRoute(req, res, url);
       return true;
     }
+    if (url.pathname === '/account/media' && req.method === 'GET') {
+      await this.#mediaRoute(req, res, url);
+      return true;
+    }
+    if (url.pathname === '/account/uploads' && req.method === 'POST') {
+      await this.#uploadRoute(req, res);
+      return true;
+    }
     return false;
   }
 
-  async #usageRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  /** Whether the call comes from the site, carrying the account key. */
+  #fromSite(req: IncomingMessage): boolean {
     const key = this.#o.accountKey;
     const given = /^Bearer (.+)$/i.exec(req.headers.authorization ?? '')?.[1] ?? '';
-    if (!key || !same(given, key)) return json(res, 401, { error: 'unauthorized' });
+    return Boolean(key) && same(given, key ?? '');
+  }
+
+  /** The account's media, uploads not imported yet and storage, as media.list gives them. */
+  async #mediaRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
+    const owner = url.searchParams.get('user') ?? '';
+    if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+    try {
+      const access = await this.#o.access.get(owner);
+      if (!access.allowed) return json(res, 200, { allowed: false, reason: access.reason });
+      const limits = await this.#o.access.limits(owner);
+      return json(res, 200, { allowed: true, ...(await listHeld(this.#o.runtime, owner, limits)) });
+    } catch {
+      return json(res, 503, { error: 'account check unavailable' });
+    }
+  }
+
+  /** Starts an upload for the account: a signed URL the browser sends the file to directly. */
+  async #uploadRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
+    let body: { user?: unknown; name?: unknown; bytes?: unknown };
+    try {
+      body = JSON.parse(await readBody(req, 16 * 1024));
+    } catch {
+      return json(res, 400, { error: 'body must be JSON: {user, name, bytes}' });
+    }
+    const owner = typeof body.user === 'string' ? body.user : '';
+    if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+    const file = MediaUploadInput.safeParse({ name: body.name, bytes: body.bytes });
+    if (!file.success) return json(res, 400, { error: 'name must be a file name; bytes its size' });
+    try {
+      const limits = await this.#o.access.limits(owner);
+      const upload = await startUpload(
+        this.#o.runtime,
+        owner,
+        file.data.name,
+        file.data.bytes,
+        limits,
+      );
+      return json(res, 200, upload);
+    } catch (error) {
+      if (error instanceof CfError && error.code !== 'service_unavailable')
+        return json(
+          res,
+          error.code === 'quota_exceeded' || error.code === 'bad_request' ? 413 : 403,
+          {
+            error: error.message,
+            code: error.code,
+            ...(error.hint ? { hint: error.hint } : {}),
+          },
+        );
+      return json(res, 503, { error: 'account check unavailable' });
+    }
+  }
+
+  async #usageRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
     const owner = url.searchParams.get('user') ?? '';
     if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
     try {

@@ -21,6 +21,8 @@ export type Plan = {
 
 const resolution = (side: number | null) =>
   side === null ? 'any size' : side >= 2160 ? '4K' : `${side}p`;
+const storage = (gb: number | null) =>
+  gb === null ? 'unlimited storage' : gb >= 1000 ? `${gb / 1000} TB storage` : `${gb} GB storage`;
 const jobs = (n: number | null) =>
   n === null ? 'no job limit' : n === 1 ? 'one job at a time' : `${n} jobs at once`;
 
@@ -30,7 +32,7 @@ export const PLANS: Plan[] = PRICED.map((p) => {
     id: p.id,
     name: p.name,
     note: p.note,
-    limits: `${jobs(l.jobs)[0]?.toUpperCase()}${jobs(l.jobs).slice(1)}, ${resolution(l.shortSide)}`,
+    limits: `${jobs(l.jobs)[0]?.toUpperCase()}${jobs(l.jobs).slice(1)}, ${resolution(l.shortSide)}, ${storage(l.storageGb)}`,
     ...(p.id === 'pro' ? { pick: true } : {}),
   };
   if (p.id === 'trial')

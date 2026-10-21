@@ -99,6 +99,7 @@ describe('protocol surface', () => {
         'media.analyze',
         'media.get',
         'media.import',
+        'media.list',
         'media.seek',
         'media.upload',
         'qa.check',
