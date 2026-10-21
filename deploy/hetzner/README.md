@@ -49,6 +49,43 @@ Signed links cover only the path, so links made under the old address still work
 
 **Check sign-in:** `WORKOS_API_KEY=sk_… CHROME_PATH=<chrome> node scripts/smoke-oauth.ts https://<domain>`. It makes a throwaway WorkOS user, registers a client with AuthKit as an MCP client does, signs in on AuthKit's page in headless Chrome, calls tools with the token, then deletes the user and the client. AuthKit caches its metadata for five minutes, so a registration setting changed there takes that long to show.
 
+## Moving authentication from staging to production
+
+WorkOS environments have separate users, client IDs, keys and configuration. A production key
+does not have to begin with `sk_live_`; validate which environment it belongs to instead of
+inferring that from its prefix.
+
+Before switching the running services:
+- Configure production's callback (`https://cuttingfloor.ai/callback`), logout
+  (`https://cuttingfloor.ai/`), homepage and sign-in endpoint (`https://cuttingfloor.ai/account`).
+- Enable the intended sign-in methods, CIMD and DCR, and register
+  `https://api.cuttingfloor.ai/mcp` as the default resource. Check the issuer's discovery document.
+- Configure production's branding and terms/privacy links. The CLI's dashboard session also
+  authorizes the dashboard GraphQL operations used by the CLI; a missing CLI flag does not mean
+  a setting necessarily requires a manual dashboard edit.
+- Recreate existing accounts with their verified-email state and metadata. Preserve plan tags
+  and Stripe customer links; update each linked Stripe customer's `workos_user_id` metadata.
+  Passwords and active sessions do not transfer: existing users sign in again using an email code.
+- Copy each account's data from `owners/<staging-user-id>` to `owners/<production-user-id>`.
+  Update stored media paths and completed job ownership to the new ID, preserving file mtimes
+  and immutable timeline documents. Keep the original directory for rollback and check that no
+  jobs are running during the final synchronization.
+- Verify the Resend sending domain in Hetzner DNS. Use a domain-scoped sending key for the
+  hosted server. WorkOS's Resend provider also checks domain verification and requires a separate
+  full-access key; a sending-only key cannot configure that provider. Set its sender and reply-to
+  to `support@cuttingfloor.ai`.
+
+Back up the server env and Vercel production env privately. Change the production WorkOS key
+and client ID in Vercel, rotate its cookie password to invalidate staging sessions, and change
+the server's WorkOS key/client ID, OAuth issuer and Resend key. Keep previews and local development
+on staging. Deploy through the release flow, then run both account and OAuth smoke tests against
+production. For a configuration-only restart of the existing main image, the Deploy workflow
+also supports `gh workflow run deploy.yml --ref main`.
+
+Use a custom AuthKit hostname only after its DNS, TLS and discovery document work. A pending
+custom hostname does not prevent using the production environment's assigned AuthKit hostname.
+Treat an authorization error from WorkOS as a separate unresolved configuration issue.
+
 **If the image is private:** export `GHCR_USER` and `GHCR_TOKEN` (`read:packages`) before running `up.sh`. Or make the GHCR package public in the GitHub UI. Or build on the server from this checkout's HEAD: `CUTTINGFLOOR_BUILD=1 ./up.sh`.
 
 **Verified under gVisor:** `create.still`, `create.motion` and `code.run` run with the sandbox under `runsc` (systrap). The deeper escape and abuse checks in `scripts/smoke-motion.ts` still run only against the local compose file.
