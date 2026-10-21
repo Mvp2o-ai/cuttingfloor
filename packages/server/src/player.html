@@ -198,8 +198,10 @@
   @keyframes sheen { to { background-position: -200% 0; } }
 
   /* Fullscreen: the stage takes everything the info strip leaves. */
-  .full .card { height: 100vh; display: flex; flex-direction: column; border-radius: 0; border: 0; }
-  .full .stage { flex: 1; max-height: none; aspect-ratio: auto; }
+  /* .fill: the host declared a fixed height (containerDimensions.height), so the card fills it. */
+  .full .card, .fill .card { height: 100vh; display: flex; flex-direction: column; }
+  .full .card { border-radius: 0; border: 0; }
+  .full .stage, .fill .stage { flex: 1; max-height: none; aspect-ratio: auto; }
 
   @media (max-width: 460px) {
     .narrow-hide { display: none; }
@@ -248,7 +250,10 @@
       if (view?.onMode) view.onMode();
     }
     const dims = ctx.containerDimensions;
-    if (dims && (dims.maxHeight || dims.height)) host.maxHeight = dims.maxHeight || dims.height;
+    if (dims) {
+      host.maxHeight = dims.height || dims.maxHeight || null;
+      html.classList.toggle('fill', !!dims.height);
+    }
     if (ctx.toolInfo?.tool) host.tool = ctx.toolInfo.tool.name;
     fitCap();
   }
@@ -876,6 +881,8 @@
     }
   });
 
+  // The card reports its height (ui/notifications/size-changed); a host that sizes the frame
+  // follows it. A host with a fixed box says so in containerDimensions.height (see applyContext).
   new ResizeObserver(() => {
     notify('ui/notifications/size-changed', { width: Math.ceil(html.scrollWidth), height: Math.ceil(root.getBoundingClientRect().height) });
   }).observe(root);
