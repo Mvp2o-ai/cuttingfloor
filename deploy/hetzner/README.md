@@ -42,7 +42,7 @@ Signed links cover only the path, so links made under the old address still work
 **Billing and account email:**
 - `node scripts/stripe-setup.ts` makes (or updates) the prices, the billing portal and the webhook at `<CUTTINGFLOOR_PUBLIC_URL>/stripe/webhook`, and writes the webhook's secret to `cuttingfloor.env`.
 - `RESEND_API_KEY` sends account email from support@cuttingfloor.ai (the domain is verified in Resend, its records in the Hetzner DNS zone).
-- `CUTTINGFLOOR_ACCOUNT_KEY` is shared with the site, which reads each account's render minutes from `GET /account/usage`.
+- `CUTTINGFLOOR_ACCOUNT_KEY` is shared with the site, which acts for the signed-in account: its render minutes (`GET /account/usage`), its files and storage (`GET /account/media`), and starting an upload from the account page's drop zone (`POST /account/uploads`; the browser then sends the file straight to the signed upload URL).
 - Plans, their minutes and limits are `packages/plans`; the server and the site both read it.
 
 **Check accounts and billing:** `CHROME_PATH=<chrome> node scripts/smoke-account.ts https://cuttingfloor.ai`. It signs a throwaway user up on the site, checks the account and welcome pages, opens Checkout, then checks the server's rules on the real WorkOS and Stripe: trial limits, a refused unverified email, refusal when WorkOS can't be reached, trial over, subscribed, lifetime.
@@ -60,6 +60,12 @@ Before switching the running services:
   (`https://cuttingfloor.ai/`), homepage and sign-in endpoint (`https://cuttingfloor.ai/account`).
 - Enable the intended sign-in methods, CIMD and DCR, and register
   `https://api.cuttingfloor.ai/mcp` as the default resource. Check the issuer's discovery document.
+- Add each social sign-in provider with our own OAuth app. Staging shows Google and GitHub
+  through WorkOS's shared demo apps; production shows no provider until it has its own. Google
+  is the web client `cuttingfloor-workos` in the GCP project `cuttingfloor`, with the redirect URI
+  that WorkOS shows under Authentication → OAuth providers → Google. The CLI's dashboard session
+  can read providers (`oauthCredentialsByType`) but not create them, so credentials are entered
+  in the dashboard. Check that each provider's button appears on the sign-in page before switching.
 - Configure production's branding and terms/privacy links. The CLI's dashboard session also
   authorizes the dashboard GraphQL operations used by the CLI; a missing CLI flag does not mean
   a setting necessarily requires a manual dashboard edit.
