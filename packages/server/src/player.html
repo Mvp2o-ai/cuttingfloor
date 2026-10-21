@@ -1,0 +1,905 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cuttingfloor player</title>
+<style>
+  /*
+   * The card paints its own background, so its text reads whatever the host puts behind the
+   * frame. Host style variables (hostContext.styles) win when the host sends them.
+   */
+  :root {
+    --card: var(--color-background-primary, #ffffff);
+    --card-2: var(--color-background-secondary, #f3f4f1);
+    --fg: var(--color-text-primary, #16181a);
+    --muted: var(--color-text-secondary, #5d6166);
+    --line: var(--color-border-secondary, #e2e4df);
+    --accent: #12b84a;
+    --accent-fg: #ffffff;
+    --stage: #0b0d0c;
+    --radius: var(--border-radius-lg, 14px);
+    --font: var(--font-sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+    --mono: var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    --cap: 520px;
+    --ar: 16 / 9;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --card: var(--color-background-primary, #151816);
+      --card-2: var(--color-background-secondary, #1d211f);
+      --fg: var(--color-text-primary, #eceeea);
+      --muted: var(--color-text-secondary, #a2a6a0);
+      --line: var(--color-border-secondary, #2a2f2c);
+      --accent: #2bd665;
+      --accent-fg: #06210f;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --card: var(--color-background-primary, #151816);
+    --card-2: var(--color-background-secondary, #1d211f);
+    --fg: var(--color-text-primary, #eceeea);
+    --muted: var(--color-text-secondary, #a2a6a0);
+    --line: var(--color-border-secondary, #2a2f2c);
+    --accent: #2bd665;
+    --accent-fg: #06210f;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; }
+  body { font: 14px/1.45 var(--font); color: var(--fg); -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:focus-visible, [role="slider"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  svg.solid { fill: currentColor; stroke: none; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+
+  /* The stage: always full width, as tall as the picture allows up to the cap. */
+  .stage {
+    position: relative; width: 100%; aspect-ratio: var(--ar); max-height: var(--cap); min-height: 200px;
+    background: var(--stage); color: #fff; overflow: hidden; isolation: isolate; user-select: none;
+  }
+  .stage.audio { aspect-ratio: auto; height: 220px; }
+  .ambient { position: absolute; inset: -12%; width: 124%; height: 124%; filter: blur(42px) saturate(1.5); opacity: .55; z-index: -1; transform: translateZ(0); }
+  .stage video, .stage img.pic { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .wait::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 120px rgba(0,0,0,.45); z-index: 0; }
+
+  /* Big centre button and the icon that flashes on play/pause. */
+  .big { position: absolute; left: 50%; top: 50%; translate: -50% -50%; width: 72px; height: 72px; border-radius: 50%;
+    display: grid; place-items: center; background: rgba(12,14,13,.55); backdrop-filter: blur(10px) saturate(1.4);
+    border: 1px solid rgba(255,255,255,.18); box-shadow: 0 10px 40px rgba(0,0,0,.45); z-index: 2;
+    transition: transform .2s ease, opacity .2s ease, background .2s; }
+  .big svg { width: 30px; height: 30px; margin-left: 4px; }
+  .big:hover { transform: scale(1.06); background: var(--accent); color: var(--accent-fg); }
+  .playing .big { opacity: 0; pointer-events: none; transform: scale(.9); }
+  .flash { position: absolute; left: 50%; top: 50%; translate: -50% -50%; width: 64px; height: 64px; border-radius: 50%;
+    display: grid; place-items: center; background: rgba(0,0,0,.5); opacity: 0; pointer-events: none; z-index: 2; }
+  .flash svg { width: 26px; height: 26px; }
+  .flash.on { animation: flash .6s ease-out; }
+  @keyframes flash { 0% { opacity: .9; transform: scale(.8); } 100% { opacity: 0; transform: scale(1.35); } }
+  .toast { position: absolute; left: 50%; top: 14px; translate: -50% 0; padding: 4px 10px; border-radius: 999px; background: rgba(0,0,0,.6);
+    font: 600 12px/1.6 var(--mono); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 3; }
+  .toast.on { opacity: 1; }
+
+  /* Controls over the bottom of the picture. */
+  .controls { position: absolute; left: 0; right: 0; bottom: 0; padding: 28px 12px 8px; z-index: 3;
+    background: linear-gradient(to top, rgba(0,0,0,.78), rgba(0,0,0,.35) 60%, transparent);
+    transition: opacity .25s ease, transform .25s ease; }
+  .audio .controls { background: none; }
+  .playing.idle .controls { opacity: 0; transform: translateY(6px); pointer-events: none; }
+  .playing.idle { cursor: none; }
+  .bar { display: flex; align-items: center; gap: 2px; }
+  .bar .grow { flex: 1; }
+  .btn { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; color: #fff; opacity: .9; position: relative; }
+  .btn:hover { background: rgba(255,255,255,.12); opacity: 1; }
+  .btn.on { color: var(--accent); }
+  .btn .tag { position: absolute; font: 700 8px/1 var(--font); top: 50%; left: 50%; translate: -50% -35%; }
+  .time { font: 500 12.5px/1 var(--mono); padding: 6px 8px; border-radius: 6px; color: rgba(255,255,255,.92); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .time:hover { background: rgba(255,255,255,.12); }
+  .time .dur { color: rgba(255,255,255,.55); }
+  .rate { font: 700 12px/1 var(--font); width: auto; padding: 0 8px; }
+  .vol { display: flex; align-items: center; }
+  .vol input { width: 0; opacity: 0; transition: width .2s, opacity .2s; accent-color: #fff; height: 4px; }
+  .vol:hover input, .vol:focus-within input { width: 72px; opacity: 1; margin: 0 6px 0 2px; }
+
+  /* Scrubber. */
+  .scrub { position: relative; height: 18px; display: flex; align-items: center; cursor: pointer; margin: 0 4px 4px; touch-action: none; }
+  .track { position: relative; width: 100%; height: 4px; border-radius: 4px; background: rgba(255,255,255,.22); transition: height .15s; overflow: hidden; }
+  .scrub:hover .track, .scrub.drag .track { height: 6px; }
+  .track .buf, .track .hov, .track .done { position: absolute; left: 0; top: 0; bottom: 0; width: 0; }
+  .track .buf { background: rgba(255,255,255,.3); }
+  .track .hov { background: rgba(255,255,255,.25); opacity: 0; }
+  .scrub:hover .hov { opacity: 1; }
+  .track .done { background: var(--accent); }
+  .knob { position: absolute; top: 50%; width: 14px; height: 14px; margin-left: -7px; translate: 0 -50%; border-radius: 50%; background: #fff;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent), 0 2px 6px rgba(0,0,0,.4); transform: scale(0); transition: transform .15s; }
+  .scrub:hover .knob, .scrub.drag .knob, .scrub:focus-visible .knob { transform: scale(1); }
+  .tip { position: absolute; bottom: 24px; translate: -50% 0; display: none; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+  .scrub:hover .tip, .scrub.drag .tip { display: flex; }
+  .tip .thumb { width: 168px; aspect-ratio: var(--ar); max-height: 168px; border-radius: 8px; overflow: hidden; background: #000;
+    border: 2px solid rgba(255,255,255,.85); box-shadow: 0 8px 28px rgba(0,0,0,.55); }
+  .tip .thumb video { position: static; width: 100%; height: 100%; object-fit: cover; }
+  .tip span { font: 600 12px/1 var(--mono); background: rgba(0,0,0,.75); padding: 5px 7px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+
+  /* Playback speed menu. */
+  .menu { position: absolute; right: 8px; bottom: 54px; z-index: 5; background: rgba(18,20,19,.92); backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 4px; display: none; min-width: 112px; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+  .menu.open { display: block; }
+  .menu button { display: flex; width: 100%; justify-content: space-between; gap: 12px; padding: 5px 10px; border-radius: 6px; font-size: 13px; color: #fff; }
+  .menu button:hover { background: rgba(255,255,255,.1); }
+  .menu button.sel { color: var(--accent); font-weight: 600; }
+  .menu .hd { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; opacity: .55; padding: 4px 10px 2px; }
+
+  /* Audio: a cover with the name and a level meter that moves while it plays. */
+  .cover { position: absolute; inset: 0 0 64px; display: flex; align-items: center; gap: 18px; padding: 20px 24px; }
+  .cover .big { position: static; translate: none; flex: none; }
+  .playing .cover .big { opacity: 1; pointer-events: auto; transform: none; }
+  .cover .t { min-width: 0; }
+  .cover .t b { display: block; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cover .t small { color: rgba(255,255,255,.6); }
+  .meter { display: flex; align-items: flex-end; gap: 3px; height: 44px; margin-left: auto; flex: none; }
+  .meter i { width: 4px; height: 20%; border-radius: 2px; background: var(--accent); opacity: .85; }
+  .playing .meter i { animation: lvl 1s ease-in-out infinite alternate; }
+  @keyframes lvl { 0% { height: 15%; } 100% { height: 100%; } }
+
+  /* Info strip under the stage. */
+  .info { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--card); }
+  .info .ic { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 9px;
+    background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+  .info .who { min-width: 0; flex: 1; }
+  .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .chip { font-size: 11.5px; line-height: 20px; padding: 0 7px; border-radius: 6px; color: var(--muted); background: var(--card-2);
+    border: 1px solid var(--line); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .acts { display: flex; gap: 6px; flex: none; }
+  .act { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 9px; font-weight: 600; font-size: 13px;
+    background: var(--card-2); color: var(--fg); border: 1px solid var(--line); transition: background .15s, transform .1s; white-space: nowrap; }
+  .act svg { width: 16px; height: 16px; }
+  .act:hover { background: color-mix(in srgb, var(--fg) 8%, var(--card-2)); }
+  .act:active { transform: translateY(1px); }
+  .act.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+  .act.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+  .act.done { color: var(--accent); }
+
+  /* Waiting: a film strip runs along the edges while the ring fills. */
+  .wait { display: grid; place-items: center; }
+  .wait .glow { position: absolute; inset: -30%; z-index: -1;
+    background: radial-gradient(40% 40% at 30% 40%, color-mix(in srgb, var(--accent) 38%, transparent), transparent 70%),
+                radial-gradient(35% 35% at 70% 60%, rgba(70,110,255,.22), transparent 70%);
+    animation: drift 9s ease-in-out infinite alternate; }
+  @keyframes drift { 0% { transform: translate(-6%, -4%) rotate(0deg); } 100% { transform: translate(6%, 4%) rotate(25deg); } }
+  .strip { position: absolute; left: 0; right: 0; height: 18px; background-color: rgba(255,255,255,.04);
+    background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.16) 0 10px, transparent 10px 26px);
+    background-size: 26px 6px; background-repeat: repeat-x; background-position: 0 center; animation: run 1.2s linear infinite; opacity: .7; }
+  .strip.top { top: 0; } .strip.bot { bottom: 0; }
+  @keyframes run { to { background-position: 26px center; } }
+  .wait .mid { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 24px; }
+  .ring { position: relative; width: 96px; height: 96px; }
+  .ring svg { width: 96px; height: 96px; transform: rotate(-90deg); overflow: visible; }
+  .ring circle { fill: none; stroke-width: 6; }
+  .ring .bg { stroke: rgba(255,255,255,.12); }
+  .ring .fg { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .5s ease; }
+  .ring.spin svg { animation: spin 1.1s linear infinite; }
+  @keyframes spin { to { transform: rotate(270deg); } }
+  .ring .pct { position: absolute; inset: 0; display: grid; place-items: center; font: 700 20px/1 var(--font); font-variant-numeric: tabular-nums; }
+  .wait .msg { font-size: 15px; font-weight: 600; }
+  .wait .sub { font: 500 12px/1 var(--mono); color: rgba(255,255,255,.6); font-variant-numeric: tabular-nums; }
+  .wait .edge { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--accent); transition: width .5s ease; box-shadow: 0 0 12px var(--accent); }
+  .err .ic2 { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,90,90,.16); color: #ff7b7b; }
+  .err .ic2 svg { width: 26px; height: 26px; }
+  .err .sub { max-width: 46ch; font-family: var(--font); font-size: 13px; line-height: 1.45; }
+  .err .act { margin-top: 4px; }
+  .sk { height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--card-2), color-mix(in srgb, var(--fg) 10%, var(--card-2)), var(--card-2));
+    background-size: 200% 100%; animation: sheen 1.4s linear infinite; }
+  @keyframes sheen { to { background-position: -200% 0; } }
+
+  /* Fullscreen: the stage takes everything the info strip leaves. */
+  /* .fill: the host declared a fixed height (containerDimensions.height), so the card fills it. */
+  .full .card, .fill .card { height: 100vh; display: flex; flex-direction: column; }
+  .full .card { border-radius: 0; border: 0; }
+  .full .stage, .fill .stage { flex: 1; max-height: none; aspect-ratio: auto; }
+
+  @media (max-width: 460px) {
+    .narrow-hide { display: none; }
+    .act .lbl { display: none; }
+    .act { padding: 0 10px; }
+    .big { width: 60px; height: 60px; }
+    .info { flex-wrap: wrap; }
+    .info .ic { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion has to beat every rule above */
+    *, *::before, *::after { animation-duration: .001s !important; animation-iteration-count: 1 !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(() => {
+  const VERSION = '__VERSION__';
+  const root = document.getElementById('root');
+  const html = document.documentElement;
+
+  // ---------- host protocol (MCP Apps, ui/*) ----------
+  let nextId = 1;
+  const pending = new Map();
+  const host = { caps: {}, modes: [], mode: 'inline', maxHeight: null, tool: null, args: null };
+  const send = (msg) => window.parent.postMessage(msg, '*');
+  const request = (method, params) => new Promise((resolve, reject) => {
+    const id = nextId++;
+    pending.set(id, { resolve, reject });
+    send({ jsonrpc: '2.0', id, method, params });
+  });
+  const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
+  const openLink = (url) => request('ui/open-link', { url }).catch(() => window.open(url, '_blank', 'noopener'));
+
+  function applyContext(ctx) {
+    if (!ctx) return;
+    if (ctx.theme) html.dataset.theme = ctx.theme;
+    const vars = ctx.styles?.variables;
+    if (vars) for (const [k, v] of Object.entries(vars)) if (v) html.style.setProperty(k, v);
+    if (Array.isArray(ctx.availableDisplayModes)) host.modes = ctx.availableDisplayModes;
+    if (ctx.displayMode) {
+      host.mode = ctx.displayMode;
+      html.classList.toggle('full', host.mode === 'fullscreen');
+      if (view?.onMode) view.onMode();
+    }
+    const dims = ctx.containerDimensions;
+    if (dims) {
+      host.maxHeight = dims.height || dims.maxHeight || null;
+      html.classList.toggle('fill', !!dims.height);
+    }
+    if (ctx.toolInfo?.tool) host.tool = ctx.toolInfo.tool.name;
+    fitCap();
+  }
+
+  // The stage is as tall as the picture, up to a cap that leaves room for the info strip.
+  function fitCap() {
+    let cap = 520;
+    if (host.maxHeight) cap = Math.min(cap, host.maxHeight - 72);
+    html.style.setProperty('--cap', `${Math.max(cap, 220)}px`);
+  }
+
+  // ---------- helpers ----------
+  const el = (tag, attrs, ...kids) => {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (k === 'class') e.className = v;
+      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+      else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v);
+    }
+    for (const k of kids) if (k != null) e.append(k);
+    return e;
+  };
+  const ICONS = {
+    play: ['solid', '<path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/>'],
+    pause: ['solid', '<rect x="6" y="4" width="4.5" height="16" rx="1.2"/><rect x="13.5" y="4" width="4.5" height="16" rx="1.2"/>'],
+    back: ['', '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'],
+    fwd: ['', '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>'],
+    prevf: ['', '<path d="M6 5v14"/><path d="M18 6l-7 6 7 6"/>'],
+    nextf: ['', '<path d="M18 5v14"/><path d="M6 6l7 6-7 6"/>'],
+    vol: ['', '<path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/>'],
+    mute: ['', '<path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/>'],
+    loop: ['', '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>'],
+    max: ['', '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/>'],
+    min: ['', '<path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/>'],
+    pip: ['', '<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="12" width="7" height="5" rx="1"/>'],
+    down: ['', '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>'],
+    open: ['', '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'],
+    link: ['', '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'],
+    check: ['', '<path d="M20 6 9 17l-5-5"/>'],
+    alert: ['', '<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>'],
+    film: ['', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18"/><path d="M17 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/>'],
+    music: ['', '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'],
+    image: ['', '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>'],
+    retry: ['', '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/>'],
+  };
+  const icon = (name) => {
+    const [cls, body] = ICONS[name];
+    const t = document.createElement('template');
+    t.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"${cls ? ` class="${cls}"` : ''}>${body}</svg>`;
+    return t.content.firstChild;
+  };
+  const setIcon = (btn, name) => { const old = btn.querySelector('svg'); const n = icon(name); old ? old.replaceWith(n) : btn.prepend(n); };
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(`cf-player:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(`cf-player:${k}`, JSON.stringify(v)); } catch {} },
+  };
+  const pad = (n, w = 2) => String(Math.floor(n)).padStart(w, '0');
+  function clock(s) {
+    if (!Number.isFinite(s) || s < 0) s = 0;
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+    return h ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+  }
+  function timecode(s, fps) {
+    if (!Number.isFinite(s) || s < 0) s = 0;
+    const f = Math.round(fps);
+    const total = Math.floor(s * fps + 1e-6);
+    const ff = total % f, secs = Math.floor(total / f);
+    return `${pad(secs / 3600)}:${pad((secs % 3600) / 60)}:${pad(secs % 60)}:${pad(ff)}`;
+  }
+  function bytes(n) {
+    if (!n && n !== 0) return null;
+    const u = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return `${i ? n.toFixed(n < 10 ? 1 : 0) : n} ${u[i]}`;
+  }
+  const RATES = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 120];
+  function snapFps(x) {
+    if (!Number.isFinite(x) || x <= 0) return null;
+    const near = RATES.reduce((a, b) => (Math.abs(b - x) < Math.abs(a - x) ? b : a));
+    return Math.abs(near - x) < 0.06 ? near : Math.round(x * 100) / 100;
+  }
+  function untilText(iso) {
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) return null;
+    const ms = t - Date.now();
+    if (ms <= 0) return 'link expired';
+    const h = ms / 3600000;
+    if (h < 1) return `link expires in ${Math.max(1, Math.round(ms / 60000))} min`;
+    if (h < 48) return `link expires in ${Math.round(h)} h`;
+    return `link expires in ${Math.round(h / 24)} days`;
+  }
+
+  // ---------- views ----------
+  let view = null;
+  function show(next) {
+    if (view?.destroy) view.destroy();
+    view = next;
+    root.replaceChildren(next.node);
+  }
+
+  function kindOf(data) {
+    if (data.kind === 'video' || data.kind === 'audio' || data.kind === 'image') return data.kind;
+    return (data.mime_type || '').split('/')[0];
+  }
+  function nameOf(data) {
+    if (data.name) return data.name;
+    try { return decodeURIComponent(new URL(data.url).pathname.split('/').pop()); } catch { return 'Untitled'; }
+  }
+  function doing() {
+    if (host.tool === 'media.get') return 'Getting the file';
+    return 'Exporting';
+  }
+
+  // Waiting for a render or an import: a full-size stage with a ring that fills.
+  function waitingView() {
+    const started = Date.now();
+    const ring = el('div', { class: 'ring spin' });
+    ring.innerHTML = '<svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="44"/><circle class="fg" cx="50" cy="50" r="44"/></svg><div class="pct"></div>';
+    const arc = ring.querySelector('.fg');
+    const C = 2 * Math.PI * 44;
+    arc.style.strokeDasharray = C;
+    arc.style.strokeDashoffset = C * 0.75;
+    const pct = ring.querySelector('.pct');
+    const msg = el('div', { class: 'msg' }, `${doing()}…`);
+    const sub = el('div', { class: 'sub' }, '0:00');
+    const edge = el('div', { class: 'edge' });
+    const stage = el('div', { class: 'stage wait' },
+      el('div', { class: 'glow' }), el('div', { class: 'strip top' }), el('div', { class: 'strip bot' }),
+      el('div', { class: 'mid' }, ring, msg, sub), edge);
+    const title = el('div', { class: 'who' },
+      el('div', { class: 'sk', style: 'width: 46%' }),
+      el('div', { class: 'sk', style: 'width: 28%; margin-top: 8px; height: 10px' }));
+    const info = el('div', { class: 'info' }, el('div', { class: 'ic' }, icon('film')), title);
+    const node = el('div', { class: 'card' }, stage, info);
+    const timer = setInterval(() => { sub.textContent = `${clock((Date.now() - started) / 1000)} elapsed`; }, 1000);
+    return {
+      node,
+      update(text, progress) {
+        if (text) msg.textContent = text;
+        const known = typeof progress === 'number' && progress > 0;
+        ring.classList.toggle('spin', !known);
+        if (known) {
+          const p = Math.min(1, progress);
+          arc.style.strokeDashoffset = C * (1 - p);
+          pct.textContent = `${Math.round(p * 100)}%`;
+          edge.style.width = `${p * 100}%`;
+        }
+      },
+      destroy() { clearInterval(timer); },
+    };
+  }
+
+  function errorView(text, retry) {
+    const mid = el('div', { class: 'mid' },
+      el('div', { class: 'ic2' }, icon('alert')),
+      el('div', { class: 'msg' }, 'Can\'t play this'),
+      el('div', { class: 'sub' }, text));
+    if (retry) {
+      const b = el('button', { class: 'act', onclick: retry }, icon('retry'), el('span', { class: 'lbl' }, 'Try again'));
+      mid.append(b);
+    }
+    const stage = el('div', { class: 'stage wait err' }, el('div', { class: 'glow', style: 'opacity:.35' }), mid);
+    return { node: el('div', { class: 'card' }, stage) };
+  }
+
+  // The strip under the stage: what it is, how big, and what to do with it.
+  function infoStrip(data, kind) {
+    const chips = el('div', { class: 'chips' });
+    // Chips keep one order however late they arrive (some come from the file's metadata).
+    const ORDER = ['size', 'duration', 'fps', 'bytes', 'preset', 'expires'];
+    const chip = (key, text, title) => {
+      if (!text || chips.querySelector(`[data-k="${key}"]`)) return;
+      const c = el('span', { class: 'chip', 'data-k': key, title: title || null }, text);
+      const after = [...chips.children].find((x) => ORDER.indexOf(x.dataset.k) > ORDER.indexOf(key));
+      chips.insertBefore(c, after || null);
+    };
+    const name = nameOf(data);
+    const info = el('div', { class: 'info' },
+      el('div', { class: 'ic' }, icon(kind === 'audio' ? 'music' : kind === 'image' ? 'image' : 'film')),
+      el('div', { class: 'who' }, el('div', { class: 'name', title: name }, name), chips));
+    const acts = el('div', { class: 'acts' });
+    const shareUrl = data.page_url || data.url;
+    if (shareUrl) {
+      const copy = el('button', { class: 'act narrow-hide', title: 'Copy a link anyone can open' }, icon('link'), el('span', { class: 'lbl' }, 'Copy link'));
+      copy.addEventListener('click', async () => {
+        let ok = false;
+        try { await navigator.clipboard.writeText(shareUrl); ok = true; } catch {
+          const ta = el('textarea', { style: 'position:fixed;opacity:0' });
+          ta.value = shareUrl; document.body.append(ta); ta.select();
+          try { ok = document.execCommand('copy'); } catch {}
+          ta.remove();
+        }
+        if (!ok) return openLink(shareUrl);
+        setIcon(copy, 'check'); copy.classList.add('done'); copy.querySelector('.lbl').textContent = 'Copied';
+        setTimeout(() => { setIcon(copy, 'link'); copy.classList.remove('done'); copy.querySelector('.lbl').textContent = 'Copy link'; }, 1600);
+      });
+      acts.append(copy);
+    }
+    if (data.page_url) {
+      acts.append(el('button', { class: 'act', title: 'Open the watch page', onclick: () => openLink(data.page_url) },
+        icon('open'), el('span', { class: 'lbl' }, 'Open')));
+    }
+    if (data.url) {
+      acts.append(el('button', { class: 'act primary', title: 'Download the file', onclick: () => download(data, name) },
+        icon('down'), el('span', { class: 'lbl' }, 'Download')));
+    }
+    info.append(acts);
+    if (data.width && data.height) chip('size', `${data.width}×${data.height}`);
+    if (data.duration_seconds) chip('duration', clock(data.duration_seconds));
+    const fps = data.fps?.num ? snapFps(data.fps.num / data.fps.den) : null;
+    if (fps) chip('fps', `${fps} fps`);
+    chip('bytes', bytes(data.bytes));
+    if (data.preset) chip('preset', data.preset);
+    if (data.expires_at) chip('expires', untilText(data.expires_at), new Date(data.expires_at).toLocaleString());
+    return { node: info, chip, chips };
+  }
+
+  function download(data, name) {
+    const fallback = () => openLink(data.url);
+    if (!host.caps.downloadFile) return fallback();
+    request('ui/download-file', {
+      contents: [{ type: 'resource_link', uri: data.url, name, mimeType: data.mime_type || undefined }],
+    }).then((r) => { if (r?.isError) fallback(); }, fallback);
+  }
+
+  // Video and audio share one player: custom controls over the stage.
+  function mediaView(data, kind) {
+    const isAudio = kind === 'audio';
+    const media = el(isAudio ? 'audio' : 'video', { src: data.url, preload: 'metadata', playsinline: true });
+    const stage = el('div', { class: `stage${isAudio ? ' audio' : ''}`, tabindex: '-1' });
+    if (data.width && data.height) stage.style.setProperty('--ar', `${data.width} / ${data.height}`);
+    const strip = infoStrip(data, kind);
+    const node = el('div', { class: 'card' }, stage, strip.node);
+    let fps = data.fps?.num ? data.fps.num / data.fps.den : null;
+    let showTc = store.get('timecode', false);
+
+    // Ambient light: the picture, tiny and blurred, fills the bars around it.
+    let ambient = null, actx = null, lastAmb = 0;
+    if (!isAudio) {
+      ambient = el('canvas', { class: 'ambient', width: '48', height: '27' });
+      actx = ambient.getContext('2d');
+      stage.append(ambient, media);
+    } else {
+      ambient = el('div', { class: 'ambient', style: 'background: radial-gradient(50% 60% at 30% 50%, var(--accent), transparent 70%), radial-gradient(40% 50% at 80% 40%, #4a6cff, transparent 70%); opacity:.35' });
+      stage.append(ambient, media);
+    }
+    const paintAmbient = () => { if (actx && media.readyState >= 2) { try { actx.drawImage(media, 0, 0, 48, 27); } catch {} } };
+
+    const big = el('button', { class: 'big', 'aria-label': 'Play' }, icon('play'));
+    const flash = el('div', { class: 'flash' });
+    const toast = el('div', { class: 'toast' });
+    if (isAudio) {
+      const meter = el('div', { class: 'meter', 'aria-hidden': 'true' });
+      for (let i = 0; i < 14; i++) meter.append(el('i', { style: `animation-delay:-${((i * 0.37) % 1).toFixed(2)}s; animation-duration:${0.55 + ((i * 7) % 5) / 10}s` }));
+      stage.append(el('div', { class: 'cover' }, big, el('div', { class: 't' }, el('b', {}, nameOf(data)), el('small', {}, 'Audio')), meter));
+    } else {
+      stage.append(big, flash, toast);
+    }
+
+    // Scrubber with a hover preview of the frame under the pointer.
+    const buf = el('div', { class: 'buf' }), hov = el('div', { class: 'hov' }), done = el('div', { class: 'done' });
+    const knob = el('div', { class: 'knob' });
+    const tipTime = el('span');
+    const tip = el('div', { class: 'tip' });
+    let thumb = null;
+    if (!isAudio && matchMedia('(hover: hover)').matches) {
+      thumb = el('video', { src: data.url, muted: true, preload: 'none', playsinline: true });
+      thumb.muted = true;
+      tip.append(el('div', { class: 'thumb' }, thumb));
+    }
+    tip.append(tipTime);
+    const scrub = el('div', { class: 'scrub', role: 'slider', tabindex: '0', 'aria-label': 'Seek', 'aria-valuemin': '0' },
+      el('div', { class: 'track' }, buf, hov, done), knob, tip);
+
+    const btn = (ic, label, extra) => el('button', Object.assign({ class: 'btn', 'aria-label': label, title: label }, extra || {}), icon(ic));
+    const playBtn = btn('play', 'Play (k)');
+    const backBtn = btn('back', 'Back 5 s (j)');
+    backBtn.append(el('span', { class: 'tag' }, '5'));
+    const fwdBtn = btn('fwd', 'Forward 5 s (l)');
+    fwdBtn.append(el('span', { class: 'tag' }, '5'));
+    const prevBtn = btn('prevf', 'Previous frame (,)', { class: 'btn narrow-hide' });
+    const nextBtn = btn('nextf', 'Next frame (.)', { class: 'btn narrow-hide' });
+    const cur = el('span', {}, '0:00');
+    const dur = el('span', { class: 'dur' }, '');
+    const time = el('button', { class: 'time', title: 'Switch between clock and timecode' }, cur, dur);
+    const rateBtn = el('button', { class: 'btn rate', title: 'Playback speed' }, '1×');
+    const loopBtn = btn('loop', 'Loop', { class: 'btn narrow-hide' });
+    const muteBtn = btn('vol', 'Mute (m)');
+    const volIn = el('input', { type: 'range', min: '0', max: '1', step: '0.01', 'aria-label': 'Volume' });
+    const vol = el('div', { class: 'vol' }, muteBtn, volIn);
+    const fullBtn = btn('max', 'Full screen (f)');
+    const pipBtn = btn('pip', 'Picture in picture', { class: 'btn narrow-hide' });
+    const menu = el('div', { class: 'menu', role: 'menu' });
+    const row = el('div', { class: 'bar' }, playBtn, backBtn, fwdBtn);
+    if (!isAudio) row.append(prevBtn, nextBtn);
+    row.append(time, el('div', { class: 'grow' }), rateBtn);
+    if (!isAudio) row.append(loopBtn);
+    row.append(vol);
+    const canPip = !isAudio && document.pictureInPictureEnabled && typeof media.requestPictureInPicture === 'function';
+    if (canPip) row.append(pipBtn);
+    const canFull = !isAudio && (host.modes.includes('fullscreen') || document.fullscreenEnabled);
+    if (canFull) row.append(fullBtn);
+    const controls = el('div', { class: 'controls' }, scrub, row);
+    stage.append(controls, menu);
+
+    // ----- state to screen -----
+    const D = () => (Number.isFinite(media.duration) ? media.duration : data.duration_seconds || 0);
+    const fmt = (s) => (showTc && fps ? timecode(s, fps) : clock(s));
+    function paintTime() {
+      const d = D();
+      const p = d ? media.currentTime / d : 0;
+      done.style.width = `${p * 100}%`;
+      knob.style.left = `${p * 100}%`;
+      cur.textContent = fmt(media.currentTime);
+      dur.textContent = d ? ` / ${fmt(d)}` : '';
+      scrub.setAttribute('aria-valuemax', String(Math.round(d)));
+      scrub.setAttribute('aria-valuenow', String(Math.round(media.currentTime)));
+      scrub.setAttribute('aria-valuetext', `${clock(media.currentTime)} of ${clock(d)}`);
+      const b = media.buffered;
+      if (b?.length && d) buf.style.width = `${(b.end(b.length - 1) / d) * 100}%`;
+    }
+    function paintPlay() {
+      const playing = !media.paused && !media.ended;
+      stage.classList.toggle('playing', playing);
+      setIcon(playBtn, playing ? 'pause' : 'play');
+      setIcon(big, playing && isAudio ? 'pause' : 'play');
+      playBtn.setAttribute('aria-label', playing ? 'Pause (k)' : 'Play (k)');
+      big.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+      if (!playing) stage.classList.remove('idle');
+      else poke();
+    }
+    function paintVol() {
+      setIcon(muteBtn, media.muted || media.volume === 0 ? 'mute' : 'vol');
+      volIn.value = media.muted ? 0 : media.volume;
+      volIn.style.accentColor = '#fff';
+    }
+    let toastT = 0;
+    function say(text) {
+      if (isAudio) return;
+      toast.textContent = text; toast.classList.add('on');
+      clearTimeout(toastT); toastT = setTimeout(() => toast.classList.remove('on'), 900);
+    }
+    function pulse(name) {
+      if (isAudio) return;
+      flash.replaceChildren(icon(name));
+      flash.classList.remove('on'); void flash.offsetWidth; flash.classList.add('on');
+    }
+
+    // ----- actions -----
+    const toggle = () => {
+      if (media.paused || media.ended) { media.play().catch((e) => say(e && e.name === 'NotAllowedError' ? 'Tap play' : 'Can\'t play')); pulse('play'); }
+      else { media.pause(); pulse('pause'); }
+    };
+    const seek = (t) => { media.currentTime = Math.max(0, Math.min(D() || 0, t)); paintTime(); };
+    const nudge = (s) => { seek(media.currentTime + s); say(`${(s > 0 ? '+' : '−') + Math.abs(s)} s`); };
+    const step = (n) => {
+      media.pause();
+      const f = fps || 30;
+      seek((Math.round(media.currentTime * f) + n) / f + 0.0001);
+      say(fps ? `frame ${Math.round(media.currentTime * f)}` : (n > 0 ? '+1 frame' : '−1 frame'));
+    };
+    const setRate = (r) => {
+      media.playbackRate = r; rateBtn.textContent = `${r}×`; store.set('rate', r);
+      for (const b of menu.querySelectorAll('button')) b.classList.toggle('sel', Number(b.dataset.r) === r);
+    };
+    async function fullscreen() {
+      if (host.modes.includes('fullscreen')) {
+        const want = host.mode === 'fullscreen' ? 'inline' : 'fullscreen';
+        try {
+          const r = await request('ui/request-display-mode', { mode: want });
+          host.mode = (r?.mode) || want;
+          html.classList.toggle('full', host.mode === 'fullscreen');
+          onMode();
+        } catch {}
+        return;
+      }
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      else node.requestFullscreen?.().catch(() => {});
+    }
+    function onMode() {
+      const full = html.classList.contains('full') || !!document.fullscreenElement;
+      setIcon(fullBtn, full ? 'min' : 'max');
+    }
+
+    // ----- wiring -----
+    big.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+    playBtn.addEventListener('click', toggle);
+    backBtn.addEventListener('click', () => nudge(-5));
+    fwdBtn.addEventListener('click', () => nudge(5));
+    prevBtn.addEventListener('click', () => step(-1));
+    nextBtn.addEventListener('click', () => step(1));
+    time.addEventListener('click', () => {
+      if (!fps) return say('timecode needs the frame rate');
+      showTc = !showTc; store.set('timecode', showTc); paintTime();
+    });
+    for (const r of [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]) {
+      menu.append(el('button', { 'data-r': String(r), role: 'menuitemradio', onclick: () => { setRate(r); menu.classList.remove('open'); } },
+        el('span', {}, r === 1 ? 'Normal' : `${r}×`), el('span', {}, r === 1 ? '1×' : '')));
+    }
+    menu.prepend(el('div', { class: 'hd' }, 'Speed'));
+    rateBtn.addEventListener('click', (e) => { e.stopPropagation(); menu.classList.toggle('open'); });
+    document.addEventListener('click', (e) => { if (!menu.contains(e.target)) menu.classList.remove('open'); });
+    loopBtn.addEventListener('click', () => { media.loop = !media.loop; loopBtn.classList.toggle('on', media.loop); store.set('loop', media.loop); say(media.loop ? 'loop on' : 'loop off'); });
+    muteBtn.addEventListener('click', () => { media.muted = !media.muted; if (!media.muted && media.volume === 0) media.volume = 0.8; });
+    volIn.addEventListener('input', () => { media.volume = Number(volIn.value); media.muted = media.volume === 0; });
+    fullBtn.addEventListener('click', fullscreen);
+    pipBtn.addEventListener('click', () => {
+      (document.pictureInPictureElement ? document.exitPictureInPicture() : media.requestPictureInPicture()).catch(() => say('not available here'));
+    });
+    document.addEventListener('fullscreenchange', onMode);
+
+    if (!isAudio) {
+      media.addEventListener('click', toggle);
+      media.addEventListener('dblclick', () => canFull && fullscreen());
+    }
+    media.addEventListener('play', paintPlay);
+    media.addEventListener('pause', paintPlay);
+    media.addEventListener('ended', paintPlay);
+    media.addEventListener('timeupdate', paintTime);
+    media.addEventListener('progress', paintTime);
+    media.addEventListener('volumechange', () => { paintVol(); store.set('vol', { v: media.volume, m: media.muted }); });
+    media.addEventListener('loadedmetadata', () => {
+      if (!isAudio && media.videoWidth && media.videoHeight) stage.style.setProperty('--ar', `${media.videoWidth} / ${media.videoHeight}`);
+      if (thumb) tip.style.setProperty('--ar', `${media.videoWidth} / ${media.videoHeight}`);
+      if (!fps && data.frames && media.duration) fps = snapFps(data.frames / media.duration);
+      if (media.duration) strip.chip('duration', clock(media.duration));
+      if (media.videoWidth) strip.chip('size', `${media.videoWidth}×${media.videoHeight}`);
+      if (fps) strip.chip('fps', `${fps} fps`);
+      // Decode the first frame so the picture and its ambient light show before play.
+      if (!isAudio && media.currentTime === 0) media.currentTime = 0.001;
+      paintTime();
+    });
+    media.addEventListener('loadeddata', paintAmbient);
+    media.addEventListener('canplay', paintAmbient);
+    media.addEventListener('seeked', paintAmbient);
+    media.addEventListener('error', () => {
+      const expired = data.expires_at && Date.parse(data.expires_at) < Date.now();
+      show(errorView(expired
+        ? 'This link expired. Ask for the file again to get a fresh one.'
+        : 'The file did not load. The link may have expired, or the host blocked it.', () => show(mediaView(data, kind))));
+    });
+
+    // Paint the ambient light a few times a second while playing.
+    let raf = 0;
+    const loop = (t) => { if (t - lastAmb > 120) { lastAmb = t; paintAmbient(); } raf = requestAnimationFrame(loop); };
+    media.addEventListener('play', () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); });
+    media.addEventListener('pause', () => cancelAnimationFrame(raf));
+
+    // Scrubbing.
+    let dragging = false, wasPlaying = false, thumbBusy = false, thumbWant = null;
+    const at = (e) => { const r = scrub.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); };
+    const preview = (p) => {
+      const t = p * D();
+      hov.style.width = `${p * 100}%`;
+      tip.style.left = `${Math.max(84, Math.min(scrub.clientWidth - 84, p * scrub.clientWidth))}px`;
+      tipTime.textContent = fmt(t);
+      if (thumb) {
+        if (thumb.preload === 'none') thumb.preload = 'auto';
+        if (thumbBusy) thumbWant = t; else { thumbBusy = true; thumb.currentTime = t; }
+      }
+    };
+    if (thumb) thumb.addEventListener('seeked', () => {
+      thumbBusy = false;
+      if (thumbWant != null) { const t = thumbWant; thumbWant = null; thumbBusy = true; thumb.currentTime = t; }
+    });
+    scrub.addEventListener('pointermove', (e) => { preview(at(e)); if (dragging) seek(at(e) * D()); });
+    scrub.addEventListener('pointerdown', (e) => {
+      dragging = true; wasPlaying = !media.paused; media.pause();
+      scrub.setPointerCapture(e.pointerId); scrub.classList.add('drag');
+      preview(at(e)); seek(at(e) * D());
+    });
+    const endDrag = () => { if (!dragging) return; dragging = false; scrub.classList.remove('drag'); if (wasPlaying) media.play().catch(() => {}); };
+    scrub.addEventListener('pointerup', endDrag);
+    scrub.addEventListener('pointercancel', endDrag);
+    scrub.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); nudge(e.key === 'ArrowLeft' ? -5 : 5); }
+      if (e.key === 'Home') { e.preventDefault(); seek(0); }
+      if (e.key === 'End') { e.preventDefault(); seek(D()); }
+    });
+
+    // Controls fade while it plays and the pointer rests.
+    let idleT = 0;
+    function poke() {
+      stage.classList.remove('idle');
+      if (isAudio) return;
+      clearTimeout(idleT);
+      idleT = setTimeout(() => { if (!media.paused && !stage.matches(':focus-within') && !menu.classList.contains('open')) stage.classList.add('idle'); }, 2400);
+    }
+    stage.addEventListener('pointermove', poke);
+    stage.addEventListener('pointerleave', () => { if (!media.paused && !isAudio) stage.classList.add('idle'); });
+
+    // Keyboard, the usual player keys.
+    const onKey = (e) => {
+      if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === ' ' || k === 'k') { if (e.target instanceof HTMLButtonElement && k === ' ') return; e.preventDefault(); toggle(); }
+      else if (k === 'j' || k === 'arrowleft') { e.preventDefault(); nudge(-5); }
+      else if (k === 'l' || k === 'arrowright') { e.preventDefault(); nudge(5); }
+      else if (k === ',' && !isAudio) step(-1);
+      else if (k === '.' && !isAudio) step(1);
+      else if (k === 'm') media.muted = !media.muted;
+      else if (k === 'f' && canFull) fullscreen();
+      else if (k === 'arrowup') { e.preventDefault(); media.muted = false; media.volume = Math.min(1, media.volume + 0.1); say(`${Math.round(media.volume * 100)}%`); }
+      else if (k === 'arrowdown') { e.preventDefault(); media.volume = Math.max(0, media.volume - 0.1); say(`${Math.round(media.volume * 100)}%`); }
+      else if (k === '<' || k === '>') { const rs = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]; const i = rs.indexOf(media.playbackRate); const r = rs[Math.max(0, Math.min(rs.length - 1, i + (k === '>' ? 1 : -1)))]; setRate(r); say(`${r}×`); }
+      else if (k >= '0' && k <= '9') seek((Number(k) / 10) * D());
+      else return;
+      poke();
+    };
+    document.addEventListener('keydown', onKey);
+
+    // Remembered per viewer: volume, speed, loop.
+    const v = store.get('vol', null);
+    if (v) { media.volume = v.v; media.muted = v.m; }
+    setRate(store.get('rate', 1));
+    if (!isAudio && store.get('loop', false)) { media.loop = true; loopBtn.classList.add('on'); }
+    paintVol(); paintPlay(); paintTime();
+
+    return {
+      node,
+      onMode,
+      destroy() {
+        media.pause(); cancelAnimationFrame(raf);
+        document.removeEventListener('keydown', onKey);
+        document.removeEventListener('fullscreenchange', onMode);
+      },
+    };
+  }
+
+  function imageView(data) {
+    const img = el('img', { class: 'pic', src: data.url, alt: nameOf(data) });
+    const ambient = el('canvas', { class: 'ambient', width: '48', height: '27' });
+    const stage = el('div', { class: 'stage' }, ambient, img);
+    if (data.width && data.height) stage.style.setProperty('--ar', `${data.width} / ${data.height}`);
+    const strip = infoStrip(data, 'image');
+    img.addEventListener('load', () => {
+      stage.style.setProperty('--ar', `${img.naturalWidth} / ${img.naturalHeight}`);
+      strip.chip('size', `${img.naturalWidth}×${img.naturalHeight}`);
+      try { ambient.getContext('2d').drawImage(img, 0, 0, 48, 27); } catch {}
+    });
+    img.addEventListener('error', () => show(errorView('The image did not load. The link may have expired.')));
+    return { node: el('div', { class: 'card' }, stage, strip.node) };
+  }
+
+  // ---------- results ----------
+  let waiting = null;
+  function wait(text, progress) {
+    if (!waiting || view !== waiting) { waiting = waitingView(); show(waiting); }
+    waiting.update(text, progress);
+  }
+  const failed = (text, retry) => show(errorView(text, retry));
+
+  let following = 0;
+  async function follow(jobId) {
+    const mine = ++following;
+    for (;;) {
+      let job;
+      try {
+        const r = await request('tools/call', { name: 'job.get', arguments: { job_id: jobId, wait_seconds: 50 } });
+        if (mine !== following) return;
+        job = r?.structuredContent;
+        if (r?.isError) return failed((job?.message) || 'The job could not be read.');
+      } catch (e) {
+        if (mine !== following) return;
+        return failed(`Lost track of the export: ${e?.message ? e.message : 'the host did not answer'}.`, () => { wait('Checking…'); follow(jobId); });
+      }
+      if (!job) return failed('The job could not be read.');
+      if (job.status === 'completed' && job.result) return render(job.result);
+      if (job.status === 'failed' || job.status === 'cancelled') {
+        return failed((job.error?.message) || `The export ${job.status}.`);
+      }
+      wait(job.status_message || `${doing()}…`, job.progress);
+    }
+  }
+
+  function render(data) {
+    if (!data) return failed('Nothing to show.');
+    if (data.url) {
+      const kind = kindOf(data);
+      if (kind === 'video' || kind === 'audio') return show(mediaView(data, kind));
+      if (kind === 'image') return show(imageView(data));
+      return failed('This kind of file does not play here. Download it to open it.');
+    }
+    if (data.job_id && data.status && data.status !== 'completed') {
+      wait(data.status_message || `${doing()}…`, data.progress);
+      return follow(data.job_id);
+    }
+    if (data.status === 'importing' || data.status === 'processing') return wait('Still importing…');
+    failed('Nothing to play yet.');
+  }
+
+  function onResult(result) {
+    if (!result) return;
+    let data = result.structuredContent;
+    if (!data && Array.isArray(result.content)) {
+      const t = result.content.find((c) => c && c.type === 'text');
+      try { data = t && JSON.parse(t.text); } catch {}
+    }
+    if (result.isError) return failed((data?.message) || 'The call failed.');
+    render(data);
+  }
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== window.parent) return;
+    const msg = event.data;
+    if (msg?.jsonrpc !== '2.0') return;
+    if (msg.id !== undefined && pending.has(msg.id) && !msg.method) {
+      const p = pending.get(msg.id);
+      pending.delete(msg.id);
+      if (msg.error) p.reject(new Error(msg.error.message || 'error'));
+      else p.resolve(msg.result);
+      return;
+    }
+    const params = msg.params || {};
+    if (msg.method === 'ui/notifications/tool-result') onResult(params);
+    else if (msg.method === 'ui/notifications/tool-input') {
+      host.args = params.arguments || null;
+      if (!view || view === waiting) wait(`${doing()}…`);
+    } else if (msg.method === 'ui/notifications/tool-cancelled') failed(`The call was cancelled${params.reason ? `: ${params.reason}` : '.'}`);
+    else if (msg.method === 'ui/notifications/host-context-changed') applyContext(params);
+    else if (msg.method === 'ui/resource-teardown' && msg.id !== undefined) {
+      if (view?.destroy) view.destroy();
+      send({ jsonrpc: '2.0', id: msg.id, result: {} });
+    }
+  });
+
+  // The card reports its height (ui/notifications/size-changed); a host that sizes the frame
+  // follows it. A host with a fixed box says so in containerDimensions.height (see applyContext).
+  new ResizeObserver(() => {
+    notify('ui/notifications/size-changed', { width: Math.ceil(html.scrollWidth), height: Math.ceil(root.getBoundingClientRect().height) });
+  }).observe(root);
+  window.addEventListener('resize', fitCap);
+
+  wait('Getting ready…');
+  request('ui/initialize', {
+    appInfo: { name: 'cuttingfloor-player', version: VERSION },
+    appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] },
+    protocolVersion: '2026-01-26',
+  }).then((r) => {
+    host.caps = (r?.hostCapabilities) || {};
+    applyContext(r?.hostContext);
+    if (!view || view === waiting) wait(`${doing()}…`);
+    notify('ui/notifications/initialized', {});
+  }).catch(() => notify('ui/notifications/initialized', {}));
+})();
+</script>
+</body>
+</html>
