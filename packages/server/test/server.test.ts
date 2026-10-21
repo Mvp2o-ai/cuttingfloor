@@ -166,9 +166,14 @@ describe('protocol surface', () => {
     const page = res.contents[0] as { mimeType?: string; text?: string; _meta?: unknown };
     expect(page.mimeType).toBe('text/html;profile=mcp-app');
     expect(page.text).toContain("'ui/initialize'");
+    expect(page.text).not.toContain('__VERSION__');
     // The sandbox may load media only from this server.
     expect(page._meta).toEqual({
-      ui: { csp: { resourceDomains: ['http://127.0.0.1:8787'] }, prefersBorder: false },
+      ui: {
+        csp: { resourceDomains: ['http://127.0.0.1:8787'] },
+        permissions: { clipboardWrite: {} },
+        prefersBorder: false,
+      },
     });
   });
 
