@@ -1144,14 +1144,6 @@ export const JobView = z.object({
   error: ToolError.optional(),
 });
 export const JobRef = z.object({ job_id: JobId });
-export const JobGetInput = JobRef.extend({
-  wait_seconds: z
-    .number()
-    .min(0)
-    .max(50)
-    .default(0)
-    .describe('Hold the call up to this long for the job to finish, instead of polling'),
-});
 export const JobListInput = z.object({
   status: JobStatus.optional(),
   limit: z.number().int().min(1).max(200).default(50),

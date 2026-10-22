@@ -90,4 +90,19 @@ export async function ok<T = Record<string, unknown>>(
   return res.structured as T;
 }
 
+/** Checks a job with job.get until it is no longer working, and returns its record. */
+export async function settled<T = Record<string, unknown>>(
+  client: Client,
+  jobId: string,
+  timeoutMs = 20_000,
+): Promise<T & { status: string }> {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    const view = await ok<T & { status: string }>(client, 'job.get', { job_id: jobId });
+    if (view.status !== 'working') return view;
+    if (Date.now() > until) throw new Error(`job ${jobId} still working`);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
 export const SEQ_720P25 = { width: 1280, height: 720, fps: { num: 25, den: 1 } };
