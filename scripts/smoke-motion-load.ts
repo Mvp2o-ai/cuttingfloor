@@ -60,7 +60,7 @@ const results = await Promise.all(
     });
     let last = '';
     for (;;) {
-      const job = await call('job.get', { job_id: started.job_id, wait_seconds: 20 });
+      const job = await call('job.get', { job_id: started.job_id });
       const said = `${job.status} ${JSON.stringify(job.progress ?? '')}`;
       if (said !== last) process.stdout.write(`  ${n}: ${said}\n`);
       last = said;
@@ -70,6 +70,7 @@ const results = await Promise.all(
           ? { n, secs, error: job.error as { code: string; message: string } }
           : { n, secs, ok: true };
       }
+      await new Promise((r) => setTimeout(r, 2000));
     }
   }),
 );

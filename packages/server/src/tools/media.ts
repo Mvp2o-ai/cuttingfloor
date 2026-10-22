@@ -120,7 +120,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     }
     if (job.status === 'working') {
       throw new CfError('media_not_ready', `Export ${jobId} is still rendering`, {
-        hint: 'job.get {job_id, wait_seconds: 50} until it completes, then import it',
+        hint: 'Import it once job.get {job_id} says completed',
       });
     }
     const result = job.result as { isError?: boolean } | undefined;

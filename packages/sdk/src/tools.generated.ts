@@ -14,7 +14,6 @@ import type {
   ExportTimelineInput,
   ExportTimelineResult,
   ExportVideoInput,
-  JobGetInput,
   JobListInput,
   JobListResult,
   JobRef,
@@ -160,7 +159,7 @@ export interface ToolInputs {
   'filter.remove': z.input<ReturnType<typeof editInput<'filter.remove'>>>;
   'filter.set': z.input<ReturnType<typeof editInput<'filter.set'>>>;
   'job.cancel': z.input<typeof JobRef>;
-  'job.get': z.input<typeof JobGetInput>;
+  'job.get': z.input<typeof JobRef>;
   'job.list': z.input<typeof JobListInput>;
   'judge.ask': z.input<typeof JudgeAskInput>;
   'media.analyze': z.input<typeof MediaAnalyzeInput>;

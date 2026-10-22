@@ -9,7 +9,7 @@ import {
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { call, ok, SEQ_720P25, type TestEnv, testRuntime } from './helpers.ts';
+import { call, ok, SEQ_720P25, settled, type TestEnv, testRuntime } from './helpers.ts';
 
 // A hosted plan reaches the tools as limits: jobs at once, the largest export, a refusal once the
 // plan's minutes are used. Jobs are metered as they end.
@@ -143,8 +143,7 @@ describe('plan limits', () => {
     const since = new Date();
     const first = await ok<{ job_id: string }>(client, 'qa.check', { timeline_id: timeline });
     const second = await ok<{ job_id: string }>(client, 'qa.check', { timeline_id: timeline });
-    for (const job of [first, second])
-      await ok(client, 'job.get', { job_id: job.job_id, wait_seconds: 50 });
+    for (const job of [first, second]) await settled(client, job.job_id, 50_000);
     for (let i = 0; i < 100 && metered.length < 2; i++) await new Promise((r) => setTimeout(r, 20));
     off();
     const [a, b] = [first, second].map((j) => metered.find((m) => m.job_id === j.job_id));

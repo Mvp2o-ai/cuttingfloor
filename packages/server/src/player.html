@@ -810,10 +810,13 @@
   let following = 0;
   async function follow(jobId) {
     const mine = ++following;
-    for (;;) {
+    for (let first = true; ; first = false) {
+      // job.get answers at once, so the player checks back on its own interval.
+      if (!first) await new Promise((r) => setTimeout(r, 1000));
+      if (mine !== following) return;
       let job;
       try {
-        const r = await request('tools/call', { name: 'job.get', arguments: { job_id: jobId, wait_seconds: 50 } });
+        const r = await request('tools/call', { name: 'job.get', arguments: { job_id: jobId } });
         if (mine !== following) return;
         job = r?.structuredContent;
         if (r?.isError) return failed((job?.message) || 'The job could not be read.');

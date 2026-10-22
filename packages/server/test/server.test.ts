@@ -3,7 +3,7 @@ import { BatchResult, CfError, EditResult, QaCheckResult, withJob } from '@cutti
 import { TASKS_EXTENSION_ID_V2 } from '@modelcontextprotocol/ext-tasks/core/v2';
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as z from 'zod/v4';
-import { call, connect, ok, SEQ_720P25, type TestEnv, testRuntime } from './helpers.ts';
+import { call, connect, ok, SEQ_720P25, settled, type TestEnv, testRuntime } from './helpers.ts';
 
 const anyResult = z.object({}).passthrough();
 /**
@@ -36,19 +36,13 @@ describe('protocol surface', () => {
     }
   });
 
-  it('waits on a job with wait_seconds instead of polling', async () => {
-    const client = await connect(env.runtime, 'waiter');
-    const job = await env.runtime.jobs.store.create({ owner: 'waiter', tool: 'export.video' });
-    setTimeout(() => {
-      void env.runtime.jobs.store.update(job, { status: 'completed', progress: 1 });
-    }, 300);
+  it('answers job.get at once with where a working job stands', async () => {
+    const client = await connect(env.runtime, 'reader');
+    const job = await env.runtime.jobs.store.create({ owner: 'reader', tool: 'export.video' });
     const started = Date.now();
-    const got = await ok<{ status: string }>(client, 'job.get', {
-      job_id: job.id,
-      wait_seconds: 5,
-    });
-    expect(got.status).toBe('completed');
-    expect(Date.now() - started).toBeLessThan(3000);
+    const got = await ok<{ status: string }>(client, 'job.get', { job_id: job.id });
+    expect(got.status).toBe('working');
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it('lists the tools, each annotated', async () => {
@@ -540,10 +534,9 @@ describe('a busy or restarting sandbox', () => {
         const started = await ok<{ job_id: string }>(client, 'create.still', {
           html: `<b>${mode}</b>`,
         });
-        const view = await ok<{ status: string; error: { code: string; hint: string } }>(
+        const view = await settled<{ error: { code: string; hint: string } }>(
           client,
-          'job.get',
-          { job_id: started.job_id, wait_seconds: 20 },
+          started.job_id,
         );
         expect(view).toMatchObject({ status: 'failed', error: { code: 'server_busy' } });
         expect(view.error.hint).toMatch(/again in about a minute/);

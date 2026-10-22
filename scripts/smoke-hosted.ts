@@ -46,12 +46,13 @@ async function call(tool: string, args: Record<string, unknown>) {
 async function run(tool: string, args: Record<string, unknown>) {
   const started = await call(tool, args);
   if (!started.job_id) return { result: started };
-  for (let i = 0; i < 600; i++) {
-    const job = await call('job.get', { job_id: started.job_id, wait_seconds: 20 });
+  for (let i = 0; i < 6000; i++) {
+    const job = await call('job.get', { job_id: started.job_id });
     if (job.status !== 'working') {
       if (job.error) return { error: job.error as { code: string; message: string } };
       return { result: job.result as Record<string, unknown> };
     }
+    await new Promise((r) => setTimeout(r, 2000));
   }
   throw new Error(`${tool} never finished`);
 }
