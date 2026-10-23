@@ -54,8 +54,11 @@ export interface HttpOptions {
   access?: (owner: string) => Promise<void>;
   /** Hosted: a signed-in owner's plan as limits on the work they start (not maintenance keys). */
   limits?: (owner: string) => Promise<OwnerLimits>;
-  /** Told of each signed-in owner's MCP request (first-call records). */
-  onCall?: (owner: string) => void;
+  /**
+   * Told of each signed-in owner's MCP request, with the OAuth client it came through (first-call
+   * records, lifetime for some clients); awaited, so what it changes counts for this request.
+   */
+  onCall?: (owner: string, client?: string) => void | Promise<void>;
   /** Routes of the hosting app (billing webhooks, account data); true when it answered. */
   route?: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>;
 }
@@ -203,7 +206,7 @@ export function createHttpServer(options: HttpOptions): Server {
         } else if (scriptOwner) {
           owner = scriptOwner;
           via = 'script';
-          options.onCall?.(owner);
+          await options.onCall?.(owner);
         } else if (bearer && options.scriptKeys) {
           res
             .writeHead(401, {
@@ -226,7 +229,7 @@ export function createHttpServer(options: HttpOptions): Server {
           }
           owner = String(auth.extra?.sub);
           via = 'oauth';
-          options.onCall?.(owner);
+          await options.onCall?.(owner, auth.clientId);
         } else {
           res
             .writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' })

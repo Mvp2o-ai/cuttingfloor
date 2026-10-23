@@ -79,6 +79,18 @@ const access =
     : undefined;
 // Keys users make on the account page for scripts: only where accounts are checked.
 const scriptKeys = access ? new ScriptKeys(runtime.ws) : undefined;
+// OAuth clients whose users get lifetime: `<client_id>=<name>`, comma-separated (Kazi's two).
+const lifetimeClients = new Map(
+  (process.env.CUTTINGFLOOR_LIFETIME_CLIENTS ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const at = entry.lastIndexOf('=');
+      return [entry.slice(0, at), entry.slice(at + 1)] as [string, string];
+    })
+    .filter(([id, name]) => id && name),
+);
 const lifecycle =
   access && workosKey && stripeKey
     ? new Lifecycle({
@@ -97,6 +109,7 @@ const lifecycle =
         ...(process.env.CUTTINGFLOOR_ACCOUNT_KEY
           ? { accountKey: process.env.CUTTINGFLOOR_ACCOUNT_KEY }
           : {}),
+        ...(lifetimeClients.size ? { lifetimeClients } : {}),
       })
     : undefined;
 if (lifecycle) {
@@ -128,7 +141,7 @@ const server = createHttpServer({
     : {}),
   ...(lifecycle
     ? {
-        onCall: (owner: string) => lifecycle.called(owner),
+        onCall: (owner: string, client?: string) => lifecycle.called(owner, client),
         route: (req, res, url) => lifecycle.route(req, res, url),
       }
     : {}),

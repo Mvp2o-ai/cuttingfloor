@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PLANS, TRIAL_DAYS } from '@cuttingfloor/plans';
 import { CfError, MediaUploadInput } from '@cuttingfloor/schema';
 import { listHeld, type MeterEntry, type Runtime, startUpload } from '@cuttingfloor/server';
-import type { AccessCheck } from './access.ts';
+import type { Access, AccessCheck } from './access.ts';
 import type { Mailer } from './email.ts';
 import type { ScriptKeys } from './keys.ts';
 
@@ -14,6 +14,9 @@ import type { ScriptKeys } from './keys.ts';
 //   render minutes, and when a payment fails. A notice file under the owner's data claims each
 //   message once, across servers (`owners/{owner}/notices/{name}.json`, kept 400 days).
 // - Stripe's webhook tells the access check a subscription changed, so it shows at once.
+// - An account first used through a client that grants lifetime (Kazi) is tagged lifetime in its
+//   WorkOS metadata, with the reason and date (`plan_reason`, `plan_since`), so exactly those
+//   accounts can be found and the tag taken off again.
 
 const NOTICE_TTL_MS = 400 * 24 * 3_600_000;
 // How often new accounts and trials are looked at: a welcome arrives within this of signing up.
@@ -40,11 +43,26 @@ export interface LifecycleOptions {
   accountKey?: string;
   /** The accounts' script keys, made and revoked on the account page. */
   keys?: ScriptKeys;
+  /** OAuth client ids whose users get lifetime, each with the name its reason records. */
+  lifetimeClients?: Map<string, string>;
+}
+
+/** What to do with an account used through a lifetime client. */
+export function lifetimeFor(
+  metadata: Record<string, string>,
+  access: Access,
+): 'give' | 'tagged' | 'paying' {
+  if (metadata.plan) return 'tagged';
+  // A subscription keeps billing whatever the tag says; that stays the account owner's to end.
+  if (access.allowed ? access.plan !== 'trial' : access.reason === 'payment_failed')
+    return 'paying';
+  return 'give';
 }
 
 export class Lifecycle {
   #o: LifecycleOptions;
   #seen = new Set<string>();
+  #lifetime = new Set<string>();
   #timer: NodeJS.Timeout | undefined;
 
   constructor(options: LifecycleOptions) {
@@ -71,8 +89,20 @@ export class Lifecycle {
     if (this.#timer) clearInterval(this.#timer);
   }
 
-  /** A signed-in owner made a tool call: records the first one on their account. */
-  called(owner: string): void {
+  /**
+   * A signed-in owner made a tool call: records the first one on their account, and first gives
+   * lifetime to an account used through a client that grants it, so this call already counts it.
+   */
+  async called(owner: string, client?: string): Promise<void> {
+    const via = client ? this.#o.lifetimeClients?.get(client) : undefined;
+    if (via && !this.#lifetime.has(owner)) {
+      try {
+        await this.#giveLifetime(owner, via);
+        this.#lifetime.add(owner);
+      } catch (error) {
+        process.stderr.write(`lifecycle: ${owner}: lifetime: ${(error as Error).message}\n`);
+      }
+    }
     if (this.#seen.has(owner)) return;
     this.#seen.add(owner);
     void this.#markOnce(owner, 'first_call_at').catch((error: Error) => {
@@ -215,6 +245,31 @@ export class Lifecycle {
       await ws.remove(file).catch(() => undefined);
       throw error;
     }
+  }
+
+  /** Tags an account lifetime, recording why and when, unless it has a plan given or bought. */
+  async #giveLifetime(owner: string, via: string): Promise<void> {
+    if (!isUser(owner)) return;
+    const path = `/user_management/users/${encodeURIComponent(owner)}`;
+    const user = await this.#workos(path);
+    const metadata = (user.metadata ?? {}) as Record<string, string>;
+    const decision = lifetimeFor(metadata, await this.#o.access.get(owner));
+    if (decision === 'paying')
+      process.stderr.write(`lifecycle: ${owner} used ${via} while on a paid plan; left on it\n`);
+    if (decision !== 'give') return;
+    await this.#workos(path, {
+      method: 'PUT',
+      body: {
+        metadata: {
+          ...metadata,
+          plan: 'lifetime',
+          plan_reason: `via ${via}`,
+          plan_since: new Date().toISOString(),
+        },
+      },
+    });
+    this.#o.access.forget(owner);
+    process.stderr.write(`lifecycle: ${owner}: lifetime via ${via}\n`);
   }
 
   /** Sets a timestamp in the user's WorkOS metadata, if it isn't set yet. */
