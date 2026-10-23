@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Mvp2o-ai/cuttingfloor",
+  "title": "cuttingfloor",
+  "description": "Video editing for AI agents: cuts, captions, audio, motion graphics, previews, and exports.",
+  "version": "0.19.2",
+  "repository": {
+    "url": "https://github.com/Mvp2o-ai/cuttingfloor",
+    "source": "github"
+  },
+  "websiteUrl": "https://cuttingfloor.ai",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.cuttingfloor.ai/mcp"
+    }
+  ]
+}

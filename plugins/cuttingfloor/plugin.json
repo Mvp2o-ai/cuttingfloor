@@ -1,0 +1,91 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "cuttingfloor",
+  "version": "0.19.2",
+  "description": "Edit footage, add captions, mix audio, create motion graphics, and export video with your AI agent.",
+  "author": {
+    "name": "Mvp2o-ai",
+    "url": "https://cuttingfloor.ai"
+  },
+  "homepage": "https://cuttingfloor.ai",
+  "repository": "https://github.com/Mvp2o-ai/cuttingfloor",
+  "keywords": ["video", "video-editing", "captions", "motion-graphics", "mcp"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "cuttingfloor",
+        "shortDescription": "Video editing for AI agents",
+        "longDescription": "Import footage or generate new media, cut an immutable timeline, add titles and captions, mix audio, inspect previews, and export downloadable videos. Connect your Cuttingfloor account to use the hosted server. A trial or active plan is required. Timelines and media have retention limits; export files you want to keep.",
+        "developerName": "Mvp2o-ai",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"],
+        "websiteURL": "https://cuttingfloor.ai",
+        "supportURL": "https://github.com/Mvp2o-ai/cuttingfloor/issues",
+        "defaultPrompt": [
+          "Turn my footage into a captioned vertical clip.",
+          "Make a short animated title card and export an MP4.",
+          "Trim my video and give me a downloadable export."
+        ],
+        "brandColor": "#00852F",
+        "composerIcon": "./assets/icon.svg",
+        "logo": "./assets/icon.svg"
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Create an animated title card without source footage.",
+              "prompt": "Make a two-second 640 by 360 title card saying Hello Cuttingfloor, with a green background and a fade-in. Export an MP4 I can download.",
+              "tools_triggered": "create.motion, job.get, timeline.create, clip.add, export.video",
+              "expected_behavior": "Generates the title card, builds a timeline, exports an MP4, and returns a working download link."
+            },
+            {
+              "description": "Import public sample footage and make a precise trim.",
+              "prompt": "Use https://cuttingfloor.ai/demo/interview/raw.mp4. Keep only seconds 2 through 7, export an MP4, and give me the download link.",
+              "tools_triggered": "media.import, job.get, timeline.create, clip.add, clip.trim, export.video",
+              "expected_behavior": "Imports the supplied video, retains a five-second source range, exports it, and returns a working download link. Equivalent primitive compositions are acceptable."
+            },
+            {
+              "description": "Add captions from explicitly supplied text and timings.",
+              "prompt": "Make a three-second 640 by 360 clip with a green background. Add a caption saying Hello world from 0.5 to 2.5 seconds, then export an MP4.",
+              "tools_triggered": "create.motion, job.get, timeline.create, clip.add, caption.add, export.video",
+              "expected_behavior": "Produces the requested three-second video with the caption in the specified interval and a downloadable export."
+            },
+            {
+              "description": "Generate an HTML still and inspect the result.",
+              "prompt": "Make a 640 by 360 PNG title card saying Cuttingfloor in white on a green background. Show me the result.",
+              "tools_triggered": "create.still, job.get, media.get",
+              "expected_behavior": "Renders the requested PNG and returns a viewable result or link, without requiring a source upload."
+            },
+            {
+              "description": "Use sandboxed code to make a deterministic timeline, then inspect it.",
+              "prompt": "Use Cuttingfloor code execution to create an empty timeline named Review with a 640 by 360 sequence at 25 fps. Return its timeline ID, then inspect it.",
+              "tools_triggered": "code.run, job.get, timeline.get",
+              "expected_behavior": "Calls the same editing SDK inside the sandbox, returns a real timeline ID, and reads its sequence. Does not export an empty timeline."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Unrelated question should not invoke video tools.",
+              "prompt": "What is the capital of France?",
+              "expected_behavior": "Answers the question without calling Cuttingfloor tools."
+            },
+            {
+              "description": "Do not invent an upload or claim access to a local file.",
+              "prompt": "Edit the video on my desktop. I have not uploaded it or shared a URL.",
+              "expected_behavior": "Asks for the footage or supplies an upload route; does not invent a media ID or claim access to the desktop."
+            },
+            {
+              "description": "Do not claim to publish to a destination the server does not support.",
+              "prompt": "Publish the finished clip directly to my YouTube channel.",
+              "expected_behavior": "Explains that Cuttingfloor can export a download but has no YouTube publishing tool, and does not claim publication."
+            }
+          ]
+        }
+      },
+      "publication": {
+        "release_notes": "Initial public directory package for the Cuttingfloor hosted video editing MCP server."
+      }
+    }
+  }
+}

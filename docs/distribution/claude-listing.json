@@ -1,0 +1,25 @@
+{
+  "name": "cuttingfloor",
+  "slug": "cuttingfloor",
+  "oneLiner": "Edit video with your AI: cut footage, add captions, create motion graphics, mix audio, and export.",
+  "description": "Import footage or generate new media, cut an immutable timeline, add titles and captions, mix audio, inspect previews, and export downloadable videos. Connect your Cuttingfloor account to use the hosted server. A trial or active plan is required. Timelines and media have retention limits; export files you want to keep.",
+  "serverUrl": "https://api.cuttingfloor.ai/mcp",
+  "websiteUrl": "https://cuttingfloor.ai",
+  "documentationUrl": "https://github.com/Mvp2o-ai/cuttingfloor#readme",
+  "supportUrl": "https://github.com/Mvp2o-ai/cuttingfloor/issues",
+  "categories": ["Creative", "Media & entertainment"],
+  "authentication": "OAuth with dynamic client registration or client ID metadata documents",
+  "prerequisites": "A Cuttingfloor account with an active trial or plan. No local runtime needed for the hosted connector.",
+  "useCases": [
+    "Turn raw footage into a finished cut.",
+    "Add timed captions and titles.",
+    "Generate motion graphics and export a downloadable video."
+  ],
+  "dataHandling": "The server receives tool arguments and imported media. Timelines expire 24 hours after last use; media and exports expire after 7 days. Export work to keep it.",
+  "openItems": [
+    "Published privacy policy URL",
+    "Public support contact and legal publisher identity",
+    "Complete every-tool testing in Claude before acknowledging it in the portal"
+  ],
+  "reviewerAccount": "Dedicated account created; credentials must be entered privately in the portal."
+}
