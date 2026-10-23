@@ -8,7 +8,12 @@ import {
   type ServerResponse,
 } from 'node:http';
 import { Readable } from 'node:stream';
-import { type CredentialStore, RequestCredentialStore } from '@cuttingfloor/credentials';
+import {
+  type CredentialStore,
+  RequestCredentialStore,
+  SavedCredentialStore,
+  type SavedKeys,
+} from '@cuttingfloor/credentials';
 import {
   createServer,
   importSent,
@@ -54,8 +59,13 @@ export interface HttpOptions {
   access?: (owner: string) => Promise<void>;
   /** Hosted: a signed-in owner's plan as limits on the work they start (not maintenance keys). */
   limits?: (owner: string) => Promise<OwnerLimits>;
-  /** Told of each signed-in owner's MCP request (first-call records). */
-  onCall?: (owner: string) => void;
+  /**
+   * Told of each signed-in owner's MCP request, with the OAuth client it came through (first-call
+   * records, lifetime for some clients); awaited, so what it changes counts for this request.
+   */
+  onCall?: (owner: string, client?: string) => void | Promise<void>;
+  /** Provider keys signed-in users saved on their account page, after any in the request. */
+  savedKeys?: SavedKeys;
   /** Routes of the hosting app (billing webhooks, account data); true when it answered. */
   route?: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>;
 }
@@ -79,9 +89,13 @@ export function createHttpServer(options: HttpOptions): Server {
       // Hosted, provider keys come with each request (X-Cuttingfloor-Key-<Provider>) and live
       // only as long as it, or the job it starts; locally they come from env and secrets.
       const headers = runtime.config.mode === 'hosted' ? ctx.requestInfo?.headers : undefined;
+      // Then the keys the account saved on its page (none for maintenance keys).
+      const saved = options.savedKeys
+        ? new SavedCredentialStore(credentials, options.savedKeys)
+        : credentials;
       return createServer({
         runtime,
-        credentials: headers ? new RequestCredentialStore(credentials, headers) : credentials,
+        credentials: headers ? new RequestCredentialStore(saved, headers) : saved,
         owner: () => owner,
         ...(gate ? { access: () => gate(owner) } : {}),
         ...(limits ? { limits: () => limits(owner) } : {}),
@@ -203,7 +217,7 @@ export function createHttpServer(options: HttpOptions): Server {
         } else if (scriptOwner) {
           owner = scriptOwner;
           via = 'script';
-          options.onCall?.(owner);
+          await options.onCall?.(owner);
         } else if (bearer && options.scriptKeys) {
           res
             .writeHead(401, {
@@ -226,7 +240,7 @@ export function createHttpServer(options: HttpOptions): Server {
           }
           owner = String(auth.extra?.sub);
           via = 'oauth';
-          options.onCall?.(owner);
+          await options.onCall?.(owner, auth.clientId);
         } else {
           res
             .writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' })

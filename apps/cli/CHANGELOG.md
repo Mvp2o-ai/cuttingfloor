@@ -1,5 +1,12 @@
 # cuttingfloor
 
+## 0.26.0
+
+### Minor Changes
+
+- e62fca3: Accounts used through a client named in `CUTTINGFLOOR_LIFETIME_CLIENTS` (Kazi's two OAuth clients) get lifetime on their first call. It is tagged in WorkOS with its reason and date (`plan_reason: "via Kazi"`, `plan_since`), so exactly those accounts can be found and undone later. Accounts that already have a plan given or bought are left as they are, and usage keeps being metered.
+- ac0a95a: Save your sync. labs key once on the account page, and create.lipsync uses it from any client: no header needed. The key is stored only as ciphertext in your account, never shown again (just its last four characters), and can be removed there. A key sent in `X-Cuttingfloor-Key-Sync` still comes first. Without either, create.lipsync's error links to the page (`detail.keys_url`).
+
 ## 0.25.0
 
 ### Minor Changes

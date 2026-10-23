@@ -17,7 +17,7 @@
 - Every tool declares its output schema, and results always match it (including the job a long-running tool returns). Clients chain calls (in their own code execution) before any result exists, so the output signature is the contract. cuttingfloor runs no client code: running MCP servers from code is the client's job.
 - The deliberate exception is `skills.*` (`skills.search`, `skills.get`): not editing, but discovery of how to compose the primitives for a common job. A composition is a skill, `skills/<slug>.md` in one-mcp's playbook format (checked by `packages/skills`), never a tool.
 - Domain errors are `CfError` (typed code, actionable hint) and reach clients as `isError` results.
-- No provider key ever appears in a tool argument, result, error, log or stored file.
+- No provider key ever appears in a tool argument, result, error, log or stored file. A key the user saves on their account page (their sync. labs key) is kept only as ciphertext (AES-256-GCM, bound to the user, with a server-only secret) in their WorkOS metadata, never on the server's disk, and only its last four characters are shown.
 - Tests use the SDK `Client` against `createServer` (InMemoryTransport) or the HTTP server, not internal functions.
 
 ## Branches and releases
