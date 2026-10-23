@@ -51,6 +51,7 @@ export interface MediaRecord {
     beats?: NonNullable<MediaInfo['beats']>;
     faces?: NonNullable<MediaInfo['faces']>;
     look?: NonNullable<MediaInfo['look']>;
+    speech?: NonNullable<MediaInfo['speech']>;
   };
   error?: ToolError;
   created_at: string;
@@ -179,7 +180,7 @@ export class MediaLibrary {
       const value = await this.#ws.readJson<never>(join(dir, name));
       if (!value) continue;
       if (name.startsWith('look-')) runs.push(value);
-      else analyses[name.slice(0, -5) as 'transcript' | 'beats' | 'faces'] = value;
+      else analyses[name.slice(0, -5) as 'transcript' | 'beats' | 'faces' | 'speech'] = value;
     }
     if (runs.length) analyses.look = { runs: runs.slice(-LOOK_RUNS_KEPT) };
     if (Object.keys(analyses).length) record.analyses = analyses;
@@ -209,7 +210,7 @@ export class MediaLibrary {
   async saveAnalysis(
     owner: string,
     id: string,
-    kind: 'transcript' | 'beats' | 'faces' | 'look',
+    kind: 'transcript' | 'beats' | 'faces' | 'look' | 'speech',
     value: unknown,
   ): Promise<MediaRecord> {
     const dir = join(this.dir(owner, id), 'analyses');
@@ -607,7 +608,7 @@ export function mediaRef(record: MediaRecord): MediaRef | undefined {
 
 export function mediaInfo(
   record: MediaRecord,
-  include: Array<'transcript' | 'beats' | 'faces' | 'look'> = [],
+  include: Array<'transcript' | 'beats' | 'faces' | 'look' | 'speech'> = [],
   /** Everything the probe read (media.get gives it). */
   options: { probe?: boolean } = {},
 ): MediaInfo {
@@ -630,6 +631,15 @@ export function mediaInfo(
               faces: {
                 rate: a.faces.rate,
                 frames_with_faces: a.faces.frames.filter((f) => f.faces.length).length,
+              },
+            }
+          : {}),
+        ...(a.speech
+          ? {
+              speech: {
+                model: a.speech.model,
+                frames: a.speech.probabilities.length,
+                frame_seconds: a.speech.frame_seconds,
               },
             }
           : {}),

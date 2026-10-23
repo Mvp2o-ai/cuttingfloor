@@ -1,11 +1,13 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ticksPerFrame } from '@cuttingfloor/core';
-import { CfError, type TimelineDoc } from '@cuttingfloor/schema';
+import { span as sourceSpan, ticksPerFrame } from '@cuttingfloor/core';
+import { CfError, QA_CUTS_LIMIT, TICKS_PER_SECOND, type TimelineDoc } from '@cuttingfloor/schema';
 import { BIN, run } from './exec.ts';
 import { lengthFrames, type MltSource, scaledSize, writeMltProject } from './mlt.ts';
 import { countFrames } from './render.ts';
+import { type SpeechProbabilities, speechProbabilities } from './speech.ts';
+import type { TranscriptWord } from './transcribe.ts';
 
 interface Span {
   start: number;
@@ -24,6 +26,41 @@ export interface QaReport {
   silences?: Span[];
   integrated_lufs: number | null;
   true_peak_dbtp: number | null;
+  /** Only when speech settings were given: facts about every cut. */
+  cuts?: CutFact[];
+  cuts_total?: number;
+}
+
+/** The word a clip edge cuts through, in media seconds. */
+export interface CutWord {
+  text: string;
+  start: number;
+  end: number;
+  /** Where the edge is in the media. */
+  at: number;
+  /** Seconds of the word that don't play: after the edge for an out, before it for an in. */
+  seconds_cut: number;
+}
+
+export interface CutFact {
+  frame: number;
+  seconds: number;
+  /** Silero VAD speech probability of the mix just before and just after the cut. */
+  speech_before: number;
+  speech_after: number;
+  /** Both at or above min_probability: speech runs straight through the cut. */
+  in_speech: boolean;
+  /** Seconds with the speech probability under min_probability, back and on from the cut. */
+  silence_before_seconds: number;
+  silence_after_seconds: number;
+  /** The clip edges at this frame, per track, with any transcript word they cut through. */
+  edges: Array<{
+    track_id: string;
+    out_clip_id: string | null;
+    in_clip_id: string | null;
+    out_word: CutWord | null;
+    in_word: CutWord | null;
+  }>;
 }
 
 export interface QaOptions {
@@ -31,6 +68,8 @@ export interface QaOptions {
   /** A pixel at or under pixelThreshold (0–1) is black; a frame with pictureShare of them is. */
   black?: { pixelThreshold: number; pictureShare: number; minSeconds: number };
   silence?: { thresholdDb: number; minSeconds: number };
+  /** Cut facts: speech is a VAD probability at or above minProbability; words per media id. */
+  speech?: { minProbability: number; words: Map<string, TranscriptWord[]> };
   signal?: AbortSignal;
   onProgress?: (f: number) => void;
 }
@@ -187,6 +226,15 @@ export async function qaCheck(
     report.integrated_lufs = lufsMatch && Number(lufsMatch[1]) > -70 ? Number(lufsMatch[1]) : null;
     report.true_peak_dbtp =
       peakMatch && Number.isFinite(Number(peakMatch[1])) ? Number(peakMatch[1]) : null;
+    if (options.speech) {
+      options.onProgress?.(0.9);
+      const probs = await speechProbabilities(join(dir, 'qa.mkv'), {
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
+      const all = cutFacts(doc, range, probs, options.speech.minProbability, options.speech.words);
+      report.cuts = all.slice(0, QA_CUTS_LIMIT);
+      report.cuts_total = all.length;
+    }
     options.onProgress?.(1);
     return report;
   } finally {
@@ -207,4 +255,100 @@ function subtract(span: [number, number], holes: Span[]): Array<[number, number]
     });
   }
   return parts.filter(([s, e]) => e > s);
+}
+
+type MediaClip = Extract<TimelineDoc['tracks'][number]['clips'][number], { type: 'media' }>;
+
+/**
+ * Facts about each cut in the range: the frames where a media clip starts or ends on any track
+ * (inside the range, not at its edges), the mix's speech either side from `probs` (measured from
+ * the range start), and the transcript words each clip edge cuts through.
+ */
+export function cutFacts(
+  doc: TimelineDoc,
+  range: Span,
+  probs: Pick<SpeechProbabilities, 'frame_seconds' | 'probabilities'>,
+  minProbability: number,
+  words: Map<string, TranscriptWord[]>,
+): CutFact[] {
+  const fps = doc.sequence.fps;
+  const tpf = ticksPerFrame(fps);
+  const edges = new Map<number, CutFact['edges']>();
+  for (const track of doc.tracks) {
+    const at = new Map<number, { out?: MediaClip; in?: MediaClip }>();
+    for (const clip of track.clips) {
+      if (clip.type !== 'media' || !clip.enabled) continue;
+      const a = Math.round(clip.start / tpf);
+      const b = Math.round((clip.start + clip.duration) / tpf);
+      if (a > range.start && a < range.end) at.set(a, { ...at.get(a), in: clip });
+      if (b > range.start && b < range.end) at.set(b, { ...at.get(b), out: clip });
+    }
+    for (const [frame, pair] of at) {
+      const list = edges.get(frame) ?? [];
+      list.push({
+        track_id: track.id,
+        out_clip_id: pair.out?.id ?? null,
+        in_clip_id: pair.in?.id ?? null,
+        out_word: pair.out ? edgeWord(pair.out, 'out', words) : null,
+        in_word: pair.in ? edgeWord(pair.in, 'in', words) : null,
+      });
+      edges.set(frame, list);
+    }
+  }
+  const p = probs.probabilities;
+  const fs = probs.frame_seconds;
+  const total = ((range.end - range.start) * fps.den) / fps.num;
+  const round = (x: number) => Math.round(x * 1000) / 1000;
+  return [...edges.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([frame, list]) => {
+      const t = ((frame - range.start) * fps.den) / fps.num;
+      const i = Math.min(p.length, Math.round(t / fs));
+      const before = p[i - 1] ?? 0;
+      const after = p[i] ?? 0;
+      let k = i - 1;
+      while (k >= 0 && (p[k] as number) < minProbability) k--;
+      const silenceBefore = k >= 0 ? Math.max(0, t - (k + 1) * fs) : t;
+      let m = i;
+      while (m < p.length && (p[m] as number) < minProbability) m++;
+      const silenceAfter = m < p.length ? Math.max(0, m * fs - t) : total - t;
+      return {
+        frame,
+        seconds: round((frame * fps.den) / fps.num),
+        speech_before: before,
+        speech_after: after,
+        in_speech: before >= minProbability && after >= minProbability,
+        silence_before_seconds: round(silenceBefore),
+        silence_after_seconds: round(Math.max(0, silenceAfter)),
+        edges: list,
+      };
+    });
+}
+
+/** The transcript word a clip's in or out point lands inside, if its media has a transcript. */
+function edgeWord(
+  clip: MediaClip,
+  edge: 'in' | 'out',
+  words: Map<string, TranscriptWord[]>,
+): CutWord | null {
+  const list = words.get(clip.media_id);
+  if (!list?.length) return null;
+  const reverse = Boolean(clip.speed?.reverse);
+  const first = clip.in;
+  const last = clip.in + sourceSpan(clip);
+  // Forward, the clip starts at `in` and ends at in + span; reversed, the other way round.
+  const ticks = (edge === 'in') !== reverse ? first : last;
+  const at = ticks / TICKS_PER_SECOND;
+  const w = list.find((x) => x.start < at && at < x.end);
+  if (!w) return null;
+  // An out plays the part of the word before the edge; an in, the part after it.
+  const forwardOut = (edge === 'out') !== reverse;
+  const round = (x: number) => Math.round(x * 1000) / 1000;
+  return {
+    text: w.text,
+    start: w.start,
+    end: w.end,
+    at: round(at),
+    seconds_cut: round(forwardOut ? w.end - at : at - w.start),
+  };
 }

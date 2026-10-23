@@ -3,6 +3,7 @@ import * as z from 'zod/v4';
 /** Domain error codes returned as tool execution errors (`isError: true`). */
 export const ErrorCode = z.enum([
   'bad_request',
+  'no_audio',
   'not_found',
   'expired',
   'media_not_ready',

@@ -589,7 +589,7 @@ export const MediaUploadResult = z.object({
   how: z.string(),
 });
 
-export const ANALYSES = ['transcript', 'beats', 'faces', 'look'] as const;
+export const ANALYSES = ['transcript', 'beats', 'faces', 'look', 'speech'] as const;
 
 export const MediaRefInput = z.object({
   media_id: MediaId,
@@ -638,91 +638,165 @@ export const LookAnalysis = z.object({
   ),
 });
 
-export const MediaAnalyzeInput = z.object({
-  media_id: MediaId,
-  kind: z
-    .enum(['transcript', 'beats', 'faces', 'track', 'look', 'silence', 'scenes'])
-    .describe(
-      'transcript: words with times (whisper.cpp, local); beats: tempo and beat times; faces: face boxes over time; track: follow a region; look: your own questions answered on sampled frames; silence: stretches quieter than threshold_db for min_seconds; scenes: times the picture changes by more than threshold',
+/** media.analyze kinds that also measure a timeline's mix (timeline_id). */
+export const TIMELINE_ANALYSES = ['speech', 'loudness', 'silence'] as const;
+
+export const MediaAnalyzeInput = z
+  .object({
+    media_id: MediaId.optional().describe('Analyze imported media (media seconds)'),
+    timeline_id: TimelineId.optional().describe(
+      `Analyze an edit's mix as it plays (timeline seconds): ${TIMELINE_ANALYSES.join(', ')}`,
     ),
-  questions: z
-    .record(JudgeName, JudgeQuestion)
-    .optional()
-    .describe(
-      `look: id (yours, not shown to the model) to question; up to ${JUDGE_LIMITS.lookQuestions}, all asked of every frame`,
-    ),
-  state: z
-    .record(JudgeName, JudgeText)
-    .optional()
-    .describe(
-      'look: text or JSON entries shown beside `frame` on every frame, by name, for questions to refer to (a script line, a definition)',
-    ),
-  every_seconds: z
+    kind: z
+      .enum([
+        'transcript',
+        'beats',
+        'faces',
+        'track',
+        'look',
+        'silence',
+        'scenes',
+        'speech',
+        'loudness',
+      ])
+      .describe(
+        'transcript: words with times (whisper.cpp, then aligned to the sound); beats: tempo and beat times; faces: face boxes over time; track: follow a region; look: your own questions answered on sampled frames; silence: stretches quieter than threshold_db for min_seconds; scenes: times the picture changes by more than threshold; speech: where someone is speaking (Silero VAD probability every 32 ms, spans at or above min_probability); loudness: integrated loudness, true peak, loudness range, RMS and noise floor',
+      ),
+    questions: z
+      .record(JudgeName, JudgeQuestion)
+      .optional()
+      .describe(
+        `look: id (yours, not shown to the model) to question; up to ${JUDGE_LIMITS.lookQuestions}, all asked of every frame`,
+      ),
+    state: z
+      .record(JudgeName, JudgeText)
+      .optional()
+      .describe(
+        'look: text or JSON entries shown beside `frame` on every frame, by name, for questions to refer to (a script line, a definition)',
+      ),
+    every_seconds: z
+      .number()
+      .min(0.04)
+      .max(3600)
+      .optional()
+      .describe('look: sample a frame this often. Default 1'),
+    at_seconds: z
+      .array(z.number().min(0))
+      .min(1)
+      .max(600)
+      .optional()
+      .describe('look: sample exactly these times instead'),
+    from_seconds: z
+      .number()
+      .min(0)
+      .optional()
+      .describe(
+        'look: start sampling here; speech, loudness, silence: measure from here. Default 0',
+      ),
+    with_previous: z
+      .boolean()
+      .default(false)
+      .describe('look: also show the frame sampled before, as `previous`'),
+    min_probability: z
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .describe('speech (required): a 32 ms frame with at least this speech probability is speech'),
+    model: z
+      .enum(['tiny', 'base', 'small'])
+      .default('base')
+      .describe('transcript: speed vs accuracy'),
+    language: z.string().min(2).max(8).default('auto').describe("transcript: e.g. 'en', or 'auto'"),
+    region: z
+      .object({
+        at_seconds: z.number().min(0),
+        x: z.number().min(0).max(1),
+        y: z.number().min(0).max(1),
+        w: z.number().min(0.005).max(1),
+        h: z.number().min(0.005).max(1),
+      })
+      .optional()
+      .describe(
+        'track: the box to follow (top-left x, y and size, fractions of the picture) and when',
+      ),
+    until_seconds: z
+      .number()
+      .min(0)
+      .optional()
+      .describe('track, look, speech, loudness, silence: stop here. Default: the end'),
+    threshold_db: z
+      .number()
+      .min(-100)
+      .max(0)
+      .optional()
+      .describe('silence (required): quieter than this counts as silence, dBFS'),
+    min_seconds: z
+      .number()
+      .min(0.01)
+      .max(3600)
+      .optional()
+      .describe('silence (required): only stretches at least this long'),
+    threshold: z
+      .number()
+      .min(0)
+      .max(100)
+      .optional()
+      .describe('scenes (required): how much the picture must change to count as a cut, 0–100'),
+    idempotency_key: z.string().min(1).max(200).optional(),
+  })
+  .refine((v) => Boolean(v.media_id) !== Boolean(v.timeline_id), {
+    message: 'Give exactly one of media_id or timeline_id',
+  });
+
+/** Speech probability over time (Silero VAD), as stored with the media. */
+export const SpeechAnalysis = z.object({
+  model: z.string(),
+  frame_seconds: z.number().describe('Each probability covers this long'),
+  from: z.number().describe('Seconds where the first probability starts'),
+  probabilities: z.array(z.number()).describe('Speech probability 0–1, one per frame, in order'),
+});
+
+export const LoudnessFacts = z.object({
+  integrated_lufs: z.number().nullable().describe('EBU R128; null below its -70 LUFS gate'),
+  true_peak_dbtp: z.number().nullable(),
+  loudness_range_lu: z.number().nullable().describe('EBU R128 loudness range (LRA)'),
+  rms_dbfs: z.number().nullable().describe('RMS level over the whole stretch'),
+  noise_floor_dbfs: z
     .number()
-    .min(0.04)
-    .max(3600)
-    .optional()
-    .describe('look: sample a frame this often. Default 1'),
-  at_seconds: z
-    .array(z.number().min(0))
-    .min(1)
-    .max(600)
-    .optional()
-    .describe('look: sample exactly these times instead'),
-  from_seconds: z.number().min(0).optional().describe('look: start sampling here. Default 0'),
-  with_previous: z
-    .boolean()
-    .default(false)
-    .describe('look: also show the frame sampled before, as `previous`'),
-  model: z
-    .enum(['tiny', 'base', 'small'])
-    .default('base')
-    .describe('transcript: speed vs accuracy'),
-  language: z.string().min(2).max(8).default('auto').describe("transcript: e.g. 'en', or 'auto'"),
-  region: z
-    .object({
-      at_seconds: z.number().min(0),
-      x: z.number().min(0).max(1),
-      y: z.number().min(0).max(1),
-      w: z.number().min(0.005).max(1),
-      h: z.number().min(0.005).max(1),
-    })
-    .optional()
-    .describe(
-      'track: the box to follow (top-left x, y and size, fractions of the picture) and when',
-    ),
-  until_seconds: z.number().min(0).optional().describe('track, look: stop here. Default: the end'),
-  threshold_db: z
-    .number()
-    .min(-100)
-    .max(0)
-    .optional()
-    .describe('silence (required): quieter than this counts as silence, dBFS'),
-  min_seconds: z
-    .number()
-    .min(0.01)
-    .max(3600)
-    .optional()
-    .describe('silence (required): only stretches at least this long'),
-  threshold: z
-    .number()
-    .min(0)
-    .max(100)
-    .optional()
-    .describe('scenes (required): how much the picture must change to count as a cut, 0–100'),
-  idempotency_key: z.string().min(1).max(200).optional(),
+    .nullable()
+    .describe('Level of the quietest moments (FFmpeg astats noise floor): room tone or hiss'),
 });
 
 export const Transcript = z.object({
   model: z.string(),
   language: z.string(),
   text: z.string(),
+  aligned_by: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      "The model that moved word edges to where the letters sound (English); null: the times are whisper's own, up to about a second off",
+    ),
   words: z
     .array(
-      z.object({ text: z.string(), start: z.number(), end: z.number(), confidence: z.number() }),
+      z.object({
+        text: z.string(),
+        start: z.number(),
+        end: z.number(),
+        confidence: z.number().describe('0–1: how sure whisper is of the word itself'),
+        timing_confidence: z
+          .number()
+          .nullable()
+          .optional()
+          .describe(
+            '0–1: how clearly the letters were heard between start and end; null: not aligned (digits, symbols, other languages), times fitted between neighbours',
+          ),
+      }),
     )
     .describe(
-      'Media seconds, up to about a second off: starts can sit in the silence before a word and ends run over the pause after it; short ums are often missing',
+      'Media seconds. Aligned words start and end within about 0.05 s of where their letters sound; an end on a soft consonant (s, t, k, f) or a breath can ring on up to about 0.1 s more. Short ums are often missing from the words; kind speech finds them as speech',
     ),
 });
 export const BeatsAnalysis = z.object({
@@ -749,7 +823,7 @@ export const MediaPage = z.object({
   list: z
     .string()
     .describe(
-      "The list paged: transcript.words, beats.beats, faces.frames, or look runs[].frames (each run is cut the same way; first and the counts are the latest run's)",
+      "The list paged: transcript.words, beats.beats, faces.frames, speech.probabilities (one per frame_seconds from `from`), or look runs[].frames (each run is cut the same way; first and the counts are the latest run's)",
     ),
   first: z
     .int()
@@ -896,6 +970,9 @@ export const MediaInfo = z.object({
         .optional(),
       beats: z.object({ bpm: z.number(), beats: z.number() }).optional(),
       faces: z.object({ rate: z.number(), frames_with_faces: z.number() }).optional(),
+      speech: z
+        .object({ model: z.string(), frames: z.number(), frame_seconds: z.number() })
+        .optional(),
       look: z
         .object({ runs: z.number(), frames: z.number(), questions: z.array(z.string()) })
         .optional()
@@ -928,6 +1005,9 @@ export const MediaInfo = z.object({
     .describe(
       'media.get with a range, offset or limit: per included analysis, which piece of its list came back',
     ),
+  speech: SpeechAnalysis.optional().describe(
+    'With include ["speech"]: the speech probability of every 32 ms frame',
+  ),
   error: ToolError.optional(),
 });
 export type MediaInfo = z.infer<typeof MediaInfo>;
@@ -996,8 +1076,19 @@ export const MediaDeleteResult = z.object({
 });
 
 export const MediaAnalyzeResult = z.object({
-  media_id: MediaId,
-  kind: z.enum(['transcript', 'beats', 'faces', 'track', 'look', 'silence', 'scenes']),
+  media_id: MediaId.optional(),
+  timeline_id: TimelineId.optional(),
+  kind: z.enum([
+    'transcript',
+    'beats',
+    'faces',
+    'track',
+    'look',
+    'silence',
+    'scenes',
+    'speech',
+    'loudness',
+  ]),
   summary: z
     .record(z.string(), z.unknown())
     .optional()
@@ -1031,10 +1122,74 @@ export const MediaAnalyzeResult = z.object({
     .optional()
     .describe('silence: media seconds'),
   scenes: z.array(z.number()).optional().describe('scenes: cut times, media seconds'),
+  speech: z
+    .object({
+      model: z.string(),
+      min_probability: z.number(),
+      spans: z
+        .array(z.object({ start: z.number(), end: z.number() }))
+        .describe('Runs of frames at or above min_probability, seconds'),
+      frame_seconds: z.number(),
+      from: z.number(),
+      probabilities: z
+        .array(z.number())
+        .optional()
+        .describe('Every frame, when short enough to return; media: also media.get include speech'),
+    })
+    .optional(),
+  loudness: LoudnessFacts.extend({
+    from: z.number().describe('Seconds measured from'),
+    until: z.number().nullable().describe('Seconds measured until; null: the end'),
+  }).optional(),
   note: z
     .string()
     .optional()
     .describe('In place of the analysis when it is too long to return: where to read it'),
+});
+
+/** Limits that protect the server: the most sound media.correlate reads from each side. */
+export const CORRELATE_LIMITS = { maxSeconds: 600, maxOffsetSeconds: 300 } as const;
+
+const SoundRef = z
+  .object({
+    media_id: MediaId.optional().describe('Imported media (media seconds)'),
+    timeline_id: TimelineId.optional().describe("An edit's mix as it plays (timeline seconds)"),
+    from_seconds: z.number().min(0).optional().describe('Read from here. Default 0'),
+    until_seconds: z.number().min(0).optional().describe('Read until here. Default: the end'),
+  })
+  .refine((v) => Boolean(v.media_id) !== Boolean(v.timeline_id), {
+    message: 'Give exactly one of media_id or timeline_id',
+  });
+
+export const MediaCorrelateInput = z.object({
+  a: SoundRef.describe('The sound to line up against: the reference'),
+  b: SoundRef.describe('The sound whose offset you want'),
+  max_offset_seconds: z
+    .number()
+    .min(0.01)
+    .max(CORRELATE_LIMITS.maxOffsetSeconds)
+    .describe('Search offsets up to this far either way'),
+  idempotency_key: z.string().min(1).max(200).optional(),
+});
+
+export const MediaCorrelateResult = z.object({
+  offset_seconds: z
+    .number()
+    .nullable()
+    .describe(
+      "b's moment t lines up with a's moment t + offset_seconds, each in its own seconds; null when the sounds can't overlap by half within max_offset_seconds",
+    ),
+  strength: z
+    .number()
+    .nullable()
+    .describe(
+      'Correlation of the overlapping sound at that offset, -1 to 1: near 1 the same sound, near 0 unrelated',
+    ),
+  overlap_seconds: z.number().nullable().describe('How much sound overlaps at that offset'),
+  next_best: z
+    .object({ offset_seconds: z.number(), strength: z.number() })
+    .nullable()
+    .describe('The best offset outside the winning peak: close to strength means an unclear match'),
 });
 
 /** A media.seek criterion: a Jev noul, or its instructions alone as a plain statement. */
@@ -1508,9 +1663,30 @@ export const QaCheckInput = z.object({
     .describe(
       'Find silent stretches in the mix with these settings; left out, none are looked for',
     ),
+  speech: z
+    .object({
+      min_probability: z
+        .number()
+        .min(0)
+        .max(1)
+        .describe('A 32 ms frame of the mix with at least this speech probability is speech'),
+    })
+    .optional()
+    .describe(
+      'List every cut with speech facts (Silero VAD on the mix, and the transcript word each clip edge cuts through); left out, cuts are not listed',
+    ),
 });
 
 const QaSpan = z.object({ start: frame, end: frame });
+/** The most cuts one qa.check lists. */
+export const QA_CUTS_LIMIT = 500;
+const CutWord = z.object({
+  text: z.string(),
+  start: z.number().describe('Media seconds'),
+  end: z.number(),
+  at: z.number().describe('Where the clip edge is, media seconds'),
+  seconds_cut: z.number(),
+});
 export const QaCheckResult = z.object({
   range: QaSpan,
   gaps: z.array(QaSpan).describe('Frames with no picture on any visible video track'),
@@ -1523,4 +1699,40 @@ export const QaCheckResult = z.object({
   silences: z.array(QaSpan).optional().describe('With silence settings: silent stretches, frames'),
   integrated_lufs: z.number().nullable().describe('null below the EBU R128 -70 LUFS gate'),
   true_peak_dbtp: z.number().nullable(),
+  cuts: z
+    .array(
+      z.object({
+        frame,
+        seconds: z.number(),
+        speech_before: z.number().describe('Speech probability of the mix just before the cut'),
+        speech_after: z.number().describe('Speech probability of the mix just after the cut'),
+        in_speech: z
+          .boolean()
+          .describe('Both at least min_probability: the cut lands while someone is speaking'),
+        silence_before_seconds: z
+          .number()
+          .describe('Seconds without speech before the cut (to the range start if none)'),
+        silence_after_seconds: z
+          .number()
+          .describe('Seconds without speech after the cut (to the range end if none)'),
+        edges: z
+          .array(
+            z.object({
+              track_id: z.string(),
+              out_clip_id: z.string().nullable().describe('The clip ending here'),
+              in_clip_id: z.string().nullable().describe('The clip starting here'),
+              out_word: CutWord.nullable().describe(
+                'The transcript word the ending clip stops inside; seconds_cut of it is lost',
+              ),
+              in_word: CutWord.nullable().describe(
+                'The transcript word the starting clip begins inside; seconds_cut of it is lost',
+              ),
+            }),
+          )
+          .describe('Media clip edges on each track at this frame'),
+      }),
+    )
+    .optional()
+    .describe(`With speech settings: every cut in the range, in order (up to ${QA_CUTS_LIMIT})`),
+  cuts_total: z.number().optional().describe('With speech settings: how many cuts there are'),
 });

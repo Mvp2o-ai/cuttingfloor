@@ -4,10 +4,12 @@
  * See plans/spec.md §7–§8.
  */
 
-export { type Loudness, measureMix, renderWaveform } from './audio.ts';
+export { type Loudness, measureMix, renderMix, renderWaveform } from './audio.ts';
 export { analyseBeats, type Beats, estimateTempo, onsetEnvelope, trackBeats } from './beats.ts';
 export { compositeFor, rotoFilters } from './composite.ts';
+export { crossCorrelate, fft, type Offset } from './correlate.ts';
 export { gradientPosition, type MatteSpec, renderMatte } from './create.ts';
+export { alignGroups, forcedAlign, logSoftmax, W2V_LABELS, wordTokens } from './ctc.ts';
 export {
   CUTOUT_MODELS,
   type CutoutModel,
@@ -53,7 +55,14 @@ export {
   resolvePreset,
 } from './presets.ts';
 export { conformReasons, type Probe, probe, standardRate } from './probe.ts';
-export { type QaOptions, type QaReport, qaCheck } from './qa.ts';
+export {
+  type CutFact,
+  type CutWord,
+  cutFacts,
+  type QaOptions,
+  type QaReport,
+  qaCheck,
+} from './qa.ts';
 export {
   exportTimeline,
   type ImageFormat,
@@ -69,6 +78,22 @@ export {
   type SourcePass,
   sourceKey,
 } from './sourcepass.ts';
+export {
+  ALIGN_LANGUAGES,
+  type AlignedWord,
+  alignTranscriptWords,
+  extractSound,
+  fitWords,
+  type LoudnessFacts,
+  measureLoudness,
+  noAudio,
+  parseLoudness,
+  SPEECH_MODELS,
+  type SpeechProbabilities,
+  soundOffset,
+  speechProbabilities,
+  speechSpans,
+} from './speech.ts';
 export { type StabilizeOptions, stabilize } from './stabilize.ts';
 export {
   ensureModel,

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { CfError, VOICES } from '@cuttingfloor/schema';
 import { BIN, run } from './exec.ts';
 import { download } from './fetch.ts';
+import { alignTranscriptWords, SPEECH_MODELS } from './speech.ts';
 import { sha256File, type Transcript, type TranscriptWord, transcribe } from './transcribe.ts';
 
 // Local voiceover: Kokoro-82M v1.0 (Apache-2.0) through sherpa-onnx's offline TTS (CPU). The
@@ -190,7 +191,10 @@ export function alignWords(text: string, heard: TranscriptWord[]): TranscriptWor
   return out;
 }
 
-/** Word timings for spoken `text` in `file`, via whisper. */
+/**
+ * Word timings for spoken `text` in `file`: whisper places the words roughly, then forced
+ * alignment moves each one's edges to where its letters sound (the text is known exactly).
+ */
 export async function voiceWords(
   file: string,
   text: string,
@@ -205,9 +209,19 @@ export async function voiceWords(
     model: 'tiny',
     modelsDir: options.modelsDir,
     language: 'en',
+    align: false,
     ...(options.signal ? { signal: options.signal } : {}),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });
-  const words = alignWords(text, heard.words);
-  return { model: 'tiny', language: 'en', text: words.map((w) => w.text).join(' '), words };
+  const rough = alignWords(text, heard.words);
+  const words = rough.length
+    ? await alignTranscriptWords(file, rough, options.signal ? { signal: options.signal } : {})
+    : rough;
+  return {
+    model: 'tiny',
+    language: 'en',
+    text: words.map((w) => w.text).join(' '),
+    aligned_by: rough.length ? SPEECH_MODELS.align.name : null,
+    words,
+  };
 }

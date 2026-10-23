@@ -18,7 +18,7 @@ export interface Loudness {
 const MIX_TIMEOUT_MS = 30 * 60_000;
 
 /** Renders the mix of [start, end) frames to a WAV in `dir` and returns its path. */
-async function renderMix(
+export async function renderMix(
   doc: TimelineDoc,
   sources: Map<string, MltSource>,
   dir: string,

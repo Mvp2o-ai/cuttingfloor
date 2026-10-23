@@ -265,7 +265,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'QA check',
       description:
-        'Measure the rendered timeline: gaps in the picture, offline media, rendered against expected frame count, integrated loudness (LUFS) and true peak (dBTP), plus black and silent stretches when you give their settings. Facts only, no verdicts. Short timelines answer at once; longer ones return a task or job.',
+        "Measure the rendered timeline: gaps in the picture, offline media, rendered against expected frame count, integrated loudness (LUFS) and true peak (dBTP), plus black and silent stretches when you give their settings. With speech {min_probability}, every cut is listed with speech facts: the speech probability of the mix just before and after it (Silero VAD), whether it lands while someone is speaking, the seconds without speech each side, and, per clip edge, the transcript word it cuts through and how much of that word is lost (from the media's transcript, when it has one). Facts only, no verdicts. Short timelines answer at once; longer ones return a task or job.",
       inputSchema: QaCheckInput,
       outputSchema: withJob(QaCheckResult),
       annotations: { ...readOnly, title: 'QA check' },
@@ -275,7 +275,27 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       const doc = await rt.timelines.get(owner, args.timeline_id);
       const run = async ({ signal, progress }: JobContext) => {
         const { sources, offline } = await sourcesFor(rt, owner, doc, 'preview');
+        // Cut facts name the transcript words clip edges cut through, from each media's own.
+        const words = new Map<
+          string,
+          Array<{ text: string; start: number; end: number; confidence: number }>
+        >();
+        if (args.speech) {
+          const ids = new Set(
+            doc.tracks.flatMap((t) =>
+              t.clips.flatMap((c) => (c.type === 'media' ? [c.media_id] : [])),
+            ),
+          );
+          for (const id of ids) {
+            const record = await rt.media.find(owner, id).catch(() => undefined);
+            const list = record?.analyses?.transcript?.words;
+            if (list?.length) words.set(id, list);
+          }
+        }
         const report = await qaCheck(doc, sources, offline, {
+          ...(args.speech
+            ? { speech: { minProbability: args.speech.min_probability, words } }
+            : {}),
           ...(args.range ? { range: args.range } : {}),
           ...(args.black
             ? {
