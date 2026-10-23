@@ -11,11 +11,13 @@ import {
   renderSource,
   resolvePreset,
 } from '@cuttingfloor/engine';
-import type { JobContext } from '@cuttingfloor/jobs';
+import type { Job, JobContext } from '@cuttingfloor/jobs';
 import {
   CfError,
   ExportResult,
   ExportVideoInput,
+  JobGetInput,
+  JobGetResult,
   JobListInput,
   JobListResult,
   JobRef,
@@ -307,25 +309,43 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get job',
       description:
-        'Status, progress and, once completed, the result of a long-running call (media.import, media.analyze, create.*, export.video, qa.check). Same record as tasks/get. status_message says what it is doing, or, while it waits, where it stands in the queue and what it waits for. It answers at once with where the job stands.',
-      inputSchema: JobRef,
-      outputSchema: JobView,
+        'Status, progress and, once completed, the result of long-running calls (media.import, media.analyze, create.*, export.video, qa.check). Same record as tasks/get. status_message says what it is doing, or, while it waits, where it stands in the queue and what it waits for. It answers at once with where each job stands. job_id reads one job; job_ids reads many in one call and answers {jobs, not_found}.',
+      inputSchema: JobGetInput,
+      outputSchema: JobGetResult,
       annotations: { ...readOnly, title: 'Get job' },
     },
     guard(async (args) => {
       const owner = deps.owner();
-      const job = await rt.jobs.store.get(args.job_id, owner);
-      if (!job)
-        throw new CfError('not_found', `No job ${args.job_id}`, {
-          hint: 'Finished jobs are kept 7 days',
+      if (Boolean(args.job_id) === Boolean(args.job_ids)) {
+        throw new CfError('bad_request', 'Give either job_id or job_ids', {
+          hint: 'job.get {job_id: "j_…"} for one job, or {job_ids: ["j_…", "j_…"]} for many',
         });
+      }
       // A finished job's links and media come along, as they would from tasks/result.
-      const done = job.result as
-        | { isError?: boolean; content?: CallToolResult['content'] }
-        | undefined;
-      const extra =
-        done && !done.isError ? (done.content ?? []).filter((c) => c.type !== 'text') : [];
-      return ok(jobView(job), extra);
+      const extra = (job: Job) => {
+        const done = job.result as
+          | { isError?: boolean; content?: CallToolResult['content'] }
+          | undefined;
+        return done && !done.isError ? (done.content ?? []).filter((c) => c.type !== 'text') : [];
+      };
+      if (args.job_id) {
+        const job = await rt.jobs.store.get(args.job_id, owner);
+        if (!job)
+          throw new CfError('not_found', `No job ${args.job_id}`, {
+            hint: 'Finished jobs are kept 7 days',
+          });
+        return ok(jobView(job), extra(job));
+      }
+      const ids = [...new Set(args.job_ids)];
+      const found = await Promise.all(ids.map((id) => rt.jobs.store.get(id, owner)));
+      const jobs = found.filter((j): j is Job => Boolean(j));
+      return ok(
+        {
+          jobs: jobs.map(jobView),
+          not_found: ids.filter((_, i) => !found[i]),
+        },
+        jobs.flatMap(extra),
+      );
     }),
   );
 

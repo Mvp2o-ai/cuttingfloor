@@ -1127,6 +1127,24 @@ export const JobView = z.object({
   error: ToolError.optional(),
 });
 export const JobRef = z.object({ job_id: JobId });
+/** Limits that protect the server: the most jobs one job.get reads. */
+export const JOB_GET_LIMIT = 100;
+export const JobGetInput = z.object({
+  job_id: JobId.optional().describe('One job: the answer is that job'),
+  job_ids: z
+    .array(JobId)
+    .min(1)
+    .max(JOB_GET_LIMIT)
+    .optional()
+    .describe(`Many jobs at once (up to ${JOB_GET_LIMIT}): the answer is {jobs, not_found}`),
+});
+export const JobGetManyResult = z.object({
+  jobs: z.array(JobView).describe('The jobs found, in the order asked'),
+  not_found: z
+    .array(z.string())
+    .describe('Ids with no job of yours (finished jobs are kept 7 days)'),
+});
+export const JobGetResult = z.union([JobView, JobGetManyResult]);
 export const JobListInput = z.object({
   status: JobStatus.optional(),
   limit: z.number().int().min(1).max(200).default(50),

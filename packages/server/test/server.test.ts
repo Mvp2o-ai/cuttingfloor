@@ -46,6 +46,25 @@ describe('protocol surface', () => {
     expect(Date.now() - started).toBeLessThan(1000);
   });
 
+  it('reads many jobs in one job.get, saying which ids it has no job for', async () => {
+    const client = await connect(env.runtime, 'many');
+    const a = await env.runtime.jobs.store.create({ owner: 'many', tool: 'export.video' });
+    const b = await env.runtime.jobs.store.create({ owner: 'many', tool: 'media.import' });
+    const theirs = await env.runtime.jobs.store.create({ owner: 'other', tool: 'export.video' });
+    const got = await ok<{
+      jobs: Array<{ job_id: string; tool: string; status: string }>;
+      not_found: string[];
+    }>(client, 'job.get', { job_ids: [b.id, theirs.id, a.id, b.id] });
+    expect(got.jobs.map((j) => [j.job_id, j.tool, j.status])).toEqual([
+      [b.id, 'media.import', 'working'],
+      [a.id, 'export.video', 'working'],
+    ]);
+    expect(got.not_found).toEqual([theirs.id]);
+    expect(
+      (await call(client, 'job.get', { job_id: a.id, job_ids: [b.id] })).structured,
+    ).toMatchObject({ code: 'bad_request' });
+  });
+
   it('lists the tools, each annotated', async () => {
     const client = await connect(env.runtime);
     const { tools } = await client.listTools();
