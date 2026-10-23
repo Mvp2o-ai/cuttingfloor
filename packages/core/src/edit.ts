@@ -712,8 +712,10 @@ function clipAdd(
     place(doc, track, clip, a.mode);
     made.push(clip);
   }
+  const warnings =
+    a.mode === 'insert' ? rippleOthers(doc, targets.values(), start, duration, a.other_tracks) : [];
   const main = made.find((c) => c.kind === primary.kind) ?? made[0];
-  return ok(start, { clip_id: main?.id ?? '', clip_ids: made.map((c) => c.id) });
+  return ok(start, { clip_id: main?.id ?? '', clip_ids: made.map((c) => c.id), warnings });
 }
 
 function clipRemove(doc: TimelineDoc, a: EditArgsOf<'clip.remove'>): OpOutcome {
@@ -721,7 +723,17 @@ function clipRemove(doc: TimelineDoc, a: EditArgsOf<'clip.remove'>): OpOutcome {
   for (const m of members) assertUnlocked(m.track);
   removeAndRipple(members, a.ripple);
   const ref = members.find((m) => m.clip.id === a.clip_id) ?? members[0];
-  return ok(ref ? ref.clip.start : 0, { clip_ids: members.map((m) => m.clip.id) });
+  const warnings =
+    a.ripple && ref
+      ? rippleOthers(
+          doc,
+          members.map((m) => m.track),
+          ref.clip.start,
+          -ref.clip.duration,
+          a.other_tracks,
+        )
+      : [];
+  return ok(ref ? ref.clip.start : 0, { clip_ids: members.map((m) => m.clip.id), warnings });
 }
 
 function clipMove(doc: TimelineDoc, a: EditArgsOf<'clip.move'>): OpOutcome {
@@ -738,17 +750,27 @@ function clipMove(doc: TimelineDoc, a: EditArgsOf<'clip.move'>): OpOutcome {
   }
   for (const m of members) assertUnlocked(m.track);
   assertUnlocked(destination);
+  const own = [...members.map((m) => m.track), destination];
   removeAndRipple(members, a.ripple);
+  const warnings = a.ripple
+    ? rippleOthers(doc, own, ref.clip.start, -ref.clip.duration, a.other_tracks)
+    : [];
   for (const m of members) {
     const moved = { ...m.clip, start: m.clip.start + delta };
     if (moved.start < 0)
       throw new CfError('bad_request', 'The move would put a linked clip before frame 0');
     place(doc, m === ref ? destination : m.track, moved, a.mode);
   }
+  if (a.mode === 'insert') {
+    warnings.push(
+      ...rippleOthers(doc, own, ref.clip.start + delta, ref.clip.duration, a.other_tracks),
+    );
+  }
   return ok(ref.clip.start + delta, {
     clip_id: ref.clip.id,
     clip_ids: members.map((m) => m.clip.id),
     temporal: true,
+    warnings,
   });
 }
 
@@ -763,6 +785,12 @@ function clipTrim(doc: TimelineDoc, a: EditArgsOf<'clip.trim'>): OpOutcome {
   const target = framesToTicks(a.to_frame, doc.sequence.fps);
   const delta = a.edge === 'end' ? target - end(ref.clip) : target - ref.clip.start;
   for (const m of members) assertUnlocked(m.track);
+  // Where the ripple takes time out or adds it, from the clip itself (or the first one trimmed).
+  const lead = (members.find((m) => m === ref) ?? members[0] ?? ref).clip;
+  const shift =
+    a.edge === 'end'
+      ? { at: Math.min(end(lead), end(lead) + delta), delta }
+      : { at: lead.start, delta: -delta };
   for (const { track, clip } of members) {
     const oldEnd = end(clip);
     const { prevEnd, nextStart } = neighbours(track, clip);
@@ -799,11 +827,21 @@ function clipTrim(doc: TimelineDoc, a: EditArgsOf<'clip.trim'>): OpOutcome {
     }
     sortTrack(track);
   }
+  const warnings = a.ripple
+    ? rippleOthers(
+        doc,
+        members.map((m) => m.track),
+        shift.at,
+        shift.delta,
+        a.other_tracks,
+      )
+    : [];
   const focus = a.edge === 'end' ? end(ref.clip) : ref.clip.start;
   return ok(focus, {
     clip_id: ref.clip.id,
     clip_ids: members.map((m) => m.clip.id),
     temporal: true,
+    warnings,
   });
 }
 
@@ -904,6 +942,7 @@ function clipSetSpeed(doc: TimelineDoc, a: EditArgsOf<'clip.set_speed'>): OpOutc
     });
   }
   const tpf = ticksPerFrame(doc.sequence.fps);
+  const refEnd = end(ref.clip);
   for (const { track, clip } of members) {
     const oldEnd = end(clip);
     const sourceSpan = Math.max(span(clip), tpf);
@@ -941,10 +980,21 @@ function clipSetSpeed(doc: TimelineDoc, a: EditArgsOf<'clip.set_speed'>): OpOutc
     }
     sortTrack(track);
   }
+  const grew = end(ref.clip) - refEnd;
+  const warnings = a.ripple
+    ? rippleOthers(
+        doc,
+        members.map((m) => m.track),
+        Math.min(refEnd, refEnd + grew),
+        grew,
+        a.other_tracks,
+      )
+    : [];
   return ok(ref.clip.start, {
     clip_id: ref.clip.id,
     clip_ids: members.map((m) => m.clip.id),
     temporal: true,
+    warnings,
   });
 }
 
@@ -979,6 +1029,7 @@ function clipFreeze(doc: TimelineDoc, a: EditArgsOf<'clip.freeze'>): OpOutcome {
   for (const r of rights) r.link = link;
   // Everything from the frame on moves later on the clip's tracks; its sound has a gap there.
   for (const track of tracks) shiftFrom(track, holdAt, duration);
+  const warnings = rippleOthers(doc, tracks, holdAt, duration, a.other_tracks);
   const { speed: _s, animation: _a, ...look } = v;
   const frozen: StoredClip = {
     ...look,
@@ -993,7 +1044,7 @@ function clipFreeze(doc: TimelineDoc, a: EditArgsOf<'clip.freeze'>): OpOutcome {
   video.track.clips.push(frozen);
   sortTrack(video.track);
   tidyLinks(doc);
-  return ok(holdAt, { clip_id: frozen.id, temporal: true });
+  return ok(holdAt, { clip_id: frozen.id, temporal: true, warnings });
 }
 
 /** The clip on the same track that starts exactly where `clip` ends, and the one that ends where it starts. */
@@ -1131,7 +1182,18 @@ function rangeRemove(doc: TimelineDoc, a: EditArgsOf<'range.lift'>, ripple: bool
     : doc.tracks.filter((t) => !t.locked);
   for (const t of tracks) assertUnlocked(t);
   const removed = removeSpan(doc, tracks, from, to, ripple);
-  return ok(from, { clip_ids: removed, temporal: true });
+  // Only named tracks moved: the rest keep their place, which the result says.
+  const warnings = ripple
+    ? rippleOthers(
+        doc,
+        tracks,
+        from,
+        from - to,
+        'stay',
+        'Leave out track_ids to take the span out of every unlocked track',
+      )
+    : [];
+  return ok(from, { clip_ids: removed, temporal: true, warnings });
 }
 
 /** Clears [from, to) on the tracks (closing the gap with ripple); returns the clips that went. */
@@ -1156,6 +1218,73 @@ function removeSpan(
   }
   tidyLinks(doc);
   return [...before].filter((id) => !doc.tracks.some((t) => t.clips.some((c) => c.id === id)));
+}
+
+/** Opens a gap of `by` ticks at `at` on the tracks, splitting clips that cross it (insert edit). */
+function openSpan(doc: TimelineDoc, tracks: StoredTrack[], at: number, by: number): void {
+  // Pieces cut off the right of a linked clip form their own link group.
+  const relinked = new Map<string, string>();
+  for (const track of tracks) {
+    const piece = splitTrackAt(doc, track, at);
+    if (piece?.link) {
+      const link = relinked.get(piece.link) ?? nextId(doc, 'l');
+      relinked.set(piece.link, link);
+      piece.link = link;
+    }
+    shiftFrom(track, at, by);
+  }
+  tidyLinks(doc);
+}
+
+type OtherTracks = 'stay' | 'sync';
+
+const MAX_NAMED = 40;
+
+/**
+ * A ripple moved what follows `at` on the `moved` tracks by `delta` ticks: negative when the span
+ * [at, at - delta) was taken out, positive when that much time was added at `at`. With sync the
+ * other unlocked tracks get the same change; otherwise the warning names the clips there that no
+ * longer line up with what moved.
+ */
+function rippleOthers(
+  doc: TimelineDoc,
+  moved: Iterable<StoredTrack>,
+  at: number,
+  delta: number,
+  mode: OtherTracks,
+  hint = "other_tracks: 'sync' moves the other tracks too",
+): string[] {
+  if (delta === 0) return [];
+  const skip = new Set(moved);
+  const others = doc.tracks.filter((t) => !skip.has(t));
+  const follow = mode === 'sync' ? others.filter((t) => !t.locked) : [];
+  if (delta < 0) removeSpan(doc, follow, at, at - delta, true);
+  else openSpan(doc, follow, at, delta);
+  const left = others.filter((t) => !follow.includes(t));
+  const behind = left.flatMap((t) =>
+    t.clips.filter((c) => end(c) > at).map((c) => `${c.id} (${t.id})`),
+  );
+  if (!behind.length) return [];
+  const frames = Math.round(Math.abs(delta) / ticksPerFrame(doc.sequence.fps));
+  const names =
+    behind.length > MAX_NAMED
+      ? `${behind.slice(0, MAX_NAMED).join(', ')} and ${behind.length - MAX_NAMED} more`
+      : behind.join(', ');
+  const tracks = [...skip].map((t) => t.id).join(', ');
+  const way = delta < 0 ? 'earlier' : 'later';
+  const off = delta < 0 ? 'late' : 'early';
+  const locked = left.filter((t) => t.locked).map((t) => t.id);
+  const fix = [
+    left.some((t) => !t.locked) ? hint : '',
+    locked.length
+      ? `locked tracks (${locked.join(', ')}) never move: unlock them with track.set first`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('; ');
+  return [
+    `What follows frame ${Math.round(at / ticksPerFrame(doc.sequence.fps))} on ${tracks} moved ${frames} frames ${way}; these clips on other tracks did not, so they now play ${frames} frames ${off} against it: ${names}. ${fix}`,
+  ];
 }
 
 // --------------------------------------------------------------------------------- effects

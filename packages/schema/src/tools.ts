@@ -33,6 +33,13 @@ const Mode = z
   .default('overwrite')
   .describe('overwrite replaces what is underneath; insert pushes later clips right');
 
+const OtherTracks = z
+  .enum(['stay', 'sync'])
+  .default('stay')
+  .describe(
+    "What the other tracks do when this edit moves later clips on the clip's own tracks (linked clips always move with it). stay: they don't move, and the result warns which clips there now play early or late. sync: they get the same change, so titles, overlays and sound stay in step: time taken out here comes out of them too (like range.extract), time added here opens the same gap in them (clips crossing that point are split, as insert does). Locked tracks always stay",
+  );
+
 const anim = (limits: readonly [number, number], text: string) =>
   AnimatableValue.optional().describe(`${text}; ${limits[0]} to ${limits[1]}`);
 
@@ -148,10 +155,12 @@ export const EditArgs = {
       .optional()
       .describe('Track for the other half of a linked clip. Default: the first track of that kind'),
     mode: Mode,
+    other_tracks: OtherTracks,
   }),
   'clip.remove': z.object({
     clip_id: z.string(),
     ripple: z.boolean().default(false).describe('Close the gap by pulling later clips left'),
+    other_tracks: OtherTracks,
   }),
   'clip.move': z.object({
     clip_id: z.string(),
@@ -159,6 +168,7 @@ export const EditArgs = {
     to_track_id: z.string().optional(),
     mode: Mode,
     ripple: z.boolean().default(false).describe('Close the gap left behind'),
+    other_tracks: OtherTracks,
   }),
   'clip.trim': z.object({
     clip_id: z.string(),
@@ -172,6 +182,7 @@ export const EditArgs = {
       .enum(['both', 'video', 'audio'])
       .default('both')
       .describe('Trim only one half of a link group (J/L cuts)'),
+    other_tracks: OtherTracks,
   }),
   'clip.split': z.object({ clip_id: z.string(), at_frame: frame }),
   'clip.link': z.object({ clip_ids: z.array(z.string()).min(2) }),
@@ -194,11 +205,13 @@ export const EditArgs = {
       .boolean()
       .default(true)
       .describe('Move later clips as the clip gets longer or shorter'),
+    other_tracks: OtherTracks,
   }),
   'clip.freeze': z.object({
     clip_id: z.string(),
     at_frame: frame.describe('Timeline frame to hold'),
     duration_frames: z.number().int().positive().max(1_000_000),
+    other_tracks: OtherTracks,
   }),
   'clip.roll': z.object({
     clip_id: z.string().describe('The clip before the cut'),

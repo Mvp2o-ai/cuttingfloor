@@ -11,9 +11,10 @@ const anyResult = z.object({}).passthrough();
  * in media.analyze, from 115 000 for judge.ask, and from 123 000 to 230 000 when every tool
  * declared its full output schema (about 117 000 of the total): code.run scripts chain calls
  * on those shapes, so they are the contract and are not slimmed to fit a harness. Raised to
- * 240 000 for media.seek, which finds moments from plain words.
+ * 240 000 for media.seek, which finds moments from plain words, and to 250 000 for other_tracks
+ * on every rippling edit.
  */
-const BUDGET_BYTES = 240_000;
+const BUDGET_BYTES = 250_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -311,6 +312,70 @@ describe('timelines', () => {
       ],
     });
     expect(failed.structured).toMatchObject({ code: 'not_found', detail: { op_index: 1 } });
+  });
+});
+
+describe('cross-track ripple', () => {
+  it('warns which clips on other tracks a ripple trim leaves late, and keeps them in sync on request', async () => {
+    const client = await connect(env.runtime);
+    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      name: 'Ripple',
+      sequence: SEQ_720P25,
+    });
+    const built = await ok<{
+      timeline_id: string;
+      results: Array<{ clip_id?: string; track_id?: string }>;
+    }>(client, 'edit.batch', {
+      timeline_id,
+      preview: 'none',
+      ops: [
+        { tool: 'track.add', args: { kind: 'video', name: 'Titles' } },
+        {
+          tool: 'title.add',
+          args: { track_id: 't1', text: 'Cold open', at_frame: 0, duration_frames: 50 },
+        },
+        {
+          tool: 'title.add',
+          args: { track_id: 't1', text: 'Main', at_frame: 50, duration_frames: 50 },
+        },
+        {
+          tool: 'title.add',
+          args: {
+            track_id: { $ref: 'ops[0].track_id' },
+            text: 'Lower third',
+            at_frame: 60,
+            duration_frames: 20,
+          },
+        },
+      ],
+    });
+    const v2 = built.results[0]?.track_id as string;
+    const open = built.results[1]?.clip_id as string;
+    const third = built.results[3]?.clip_id as string;
+    const trim = {
+      timeline_id: built.timeline_id,
+      clip_id: open,
+      edge: 'end',
+      to_frame: 34,
+      ripple: true,
+      preview: 'none',
+    };
+    const stay = await ok<{ warnings: string[] }>(client, 'clip.trim', trim);
+    expect(EditResult.parse(stay)).toBeTruthy();
+    expect(stay.warnings.join('\n')).toContain(
+      `now play 16 frames late against it: ${third} (${v2})`,
+    );
+    const sync = await ok<{ timeline_id: string; warnings: string[] }>(client, 'clip.trim', {
+      ...trim,
+      other_tracks: 'sync',
+    });
+    expect(sync.warnings).toEqual([]);
+    const view = await ok<{
+      tracks: Array<{ id: string; clips: Array<{ id: string; start: number; end: number }> }>;
+    }>(client, 'timeline.get', { timeline_id: sync.timeline_id });
+    expect(view.tracks.find((t) => t.id === v2)?.clips).toMatchObject([
+      { id: third, start: 44, end: 64 },
+    ]);
   });
 });
 
