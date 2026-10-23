@@ -5,6 +5,12 @@ import { BIN, run } from './exec.ts';
 /** What import needs to know about a file. Durations are seconds. */
 export interface Probe {
   format: string;
+  /** The extension its format takes (".png", ".mp4"), from what the probe read, not the name. */
+  extension?: string;
+  /** Its MIME type, likewise. */
+  mime?: string;
+  /** Everything FFprobe read: format and every stream, as it gives them (no file name). */
+  raw?: { format: Record<string, unknown>; streams: Array<Record<string, unknown>> };
   kind: 'video' | 'audio' | 'image' | 'font' | 'lut';
   /** Font family, for fonts. */
   family?: string;
@@ -109,7 +115,18 @@ async function probeFont(path: string, signal?: AbortSignal): Promise<Probe | un
   }).catch(() => ({ stdout: '' }));
   const family = stdout.split('\n')[0]?.trim();
   if (!family) throw new CfError('bad_request', 'The font file could not be read');
-  return { format: 'font', kind: 'font', family, duration: null, video: null, audio: null };
+  const otf = magic === '4f54544f';
+  const ttc = magic === '74746366';
+  return {
+    format: 'font',
+    kind: 'font',
+    family,
+    extension: otf ? '.otf' : ttc ? '.ttc' : '.ttf',
+    mime: otf ? 'font/otf' : ttc ? 'font/collection' : 'font/ttf',
+    duration: null,
+    video: null,
+    audio: null,
+  };
 }
 
 const MAX_LUT_BYTES = 32 * 1024 * 1024;
@@ -129,7 +146,15 @@ async function probeLut(path: string): Promise<Probe | undefined> {
     if ((await handle.stat()).size > MAX_LUT_BYTES) {
       throw new CfError('limit_exceeded', 'LUT files are limited to 32 MB');
     }
-    return { format: 'cube', kind: 'lut', duration: null, video: null, audio: null };
+    return {
+      format: 'cube',
+      kind: 'lut',
+      extension: '.cube',
+      mime: 'text/plain',
+      duration: null,
+      video: null,
+      audio: null,
+    };
   } finally {
     await handle.close();
   }
@@ -167,7 +192,7 @@ export async function probe(path: string, signal?: AbortSignal): Promise<Probe> 
     throw error;
   }
   const json = JSON.parse(out) as {
-    format?: { format_name?: string; duration?: string };
+    format?: { format_name?: string; duration?: string; tags?: { major_brand?: string } };
     streams?: FfStream[];
   };
   const formatNames = (json.format?.format_name ?? '').split(',');
@@ -242,7 +267,72 @@ export async function probe(path: string, signal?: AbortSignal): Promise<Probe> 
         channels: a.channels ?? 2,
       }
     : null;
-  return { format, kind: isImage ? 'image' : video ? 'video' : 'audio', duration, video, audio };
+  const kind = isImage ? 'image' : video ? 'video' : 'audio';
+  const type = fileType(format, formatNames, kind, v?.codec_name, a?.codec_name, json.format);
+  // The server's path is not a fact about the media.
+  const { filename: _path, ...formatFacts } = (json.format ?? {}) as Record<string, unknown>;
+  return {
+    format,
+    ...type,
+    raw: { format: formatFacts, streams: streams as Array<Record<string, unknown>> },
+    kind,
+    duration,
+    video,
+    audio,
+  };
+}
+
+/** The extension and MIME type a probed file's format takes. */
+function fileType(
+  format: string,
+  names: string[],
+  kind: 'video' | 'audio' | 'image',
+  videoCodec: string | undefined,
+  audioCodec: string | undefined,
+  facts: { tags?: { major_brand?: string } } | undefined,
+): { extension: string; mime: string } {
+  const image: Record<string, [string, string]> = {
+    png: ['.png', 'image/png'],
+    mjpeg: ['.jpg', 'image/jpeg'],
+    webp: ['.webp', 'image/webp'],
+    tiff: ['.tif', 'image/tiff'],
+    bmp: ['.bmp', 'image/bmp'],
+  };
+  if (kind === 'image') {
+    const [extension, mime] = image[videoCodec ?? ''] ?? ['.png', 'image/png'];
+    return { extension, mime };
+  }
+  if (format === 'mov' || names.includes('mp4')) {
+    const brand = (facts?.tags?.major_brand ?? '').trim();
+    if (brand === 'qt') return { extension: '.mov', mime: 'video/quicktime' };
+    if (kind === 'audio') return { extension: '.m4a', mime: 'audio/mp4' };
+    if (brand.startsWith('3g')) return { extension: '.3gp', mime: 'video/3gpp' };
+    return { extension: '.mp4', mime: 'video/mp4' };
+  }
+  if (format === 'matroska' || format === 'webm') {
+    const web =
+      ['vp8', 'vp9', 'av1', undefined].includes(videoCodec) &&
+      ['opus', 'vorbis', undefined].includes(audioCodec);
+    if (web) return { extension: '.webm', mime: kind === 'audio' ? 'audio/webm' : 'video/webm' };
+    return { extension: '.mkv', mime: kind === 'audio' ? 'audio/x-matroska' : 'video/x-matroska' };
+  }
+  const known: Record<string, [string, string]> = {
+    avi: ['.avi', 'video/x-msvideo'],
+    mpegts: ['.ts', 'video/mp2t'],
+    mxf: ['.mxf', 'application/mxf'],
+    mpeg: ['.mpg', 'video/mpeg'],
+    flv: ['.flv', 'video/x-flv'],
+    wav: ['.wav', 'audio/wav'],
+    mp3: ['.mp3', 'audio/mpeg'],
+    flac: ['.flac', 'audio/flac'],
+    ogg: ['.ogg', kind === 'audio' ? 'audio/ogg' : 'video/ogg'],
+    aiff: ['.aiff', 'audio/aiff'],
+    aac: ['.aac', 'audio/aac'],
+    caf: ['.caf', 'audio/x-caf'],
+    w64: ['.w64', 'audio/x-w64'],
+  };
+  const [extension, mime] = known[format] ?? ['.bin', 'application/octet-stream'];
+  return { extension, mime };
 }
 
 function rational(s?: string): { num: number; den: number } | null {

@@ -285,12 +285,22 @@ export class Runtime {
   /** A signed download URL for a media item's file; undefined while it has none. */
   async signMedia(
     owner: string,
-    record: { media_id: string; name: string; file: string | null },
+    record: {
+      media_id: string;
+      name: string;
+      file: string | null;
+      probe?: { extension?: string } | null;
+    },
   ): Promise<{ url: string; pageUrl: string; expiresAt: string } | undefined> {
     if (!record.file) return undefined;
+    // Downloaded under the extension its format takes, whatever the name says (a PNG named .svg).
+    const ext = record.probe?.extension ?? extname(record.file);
+    const base = record.name.replace(/[^\w.-]+/g, '_').replace(/^[._]+/, '') || record.media_id;
+    const own = /^\.[A-Za-z0-9]{1,5}$/.test(extname(base)) ? extname(base) : '';
     const name =
-      record.name.replace(/[^\w.-]+/g, '_').replace(/^[._]+/, '') ||
-      `${record.media_id}${extname(record.file)}`;
+      own.toLowerCase() === ext.toLowerCase()
+        ? base
+        : `${base.slice(0, base.length - own.length) || base}${ext}`;
     return this.signOutput(owner, record.media_id, name);
   }
 

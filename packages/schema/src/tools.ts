@@ -852,6 +852,20 @@ export const MediaInfo = z.object({
     'importing: not probed yet; processing: usable in edits, proxy still rendering; ready; failed',
   ),
   kind: z.enum(['video', 'audio', 'image', 'font', 'lut']).nullable(),
+  extension: z
+    .string()
+    .optional()
+    .describe('The extension its format takes (.png, .mp4), from the file itself, not its name'),
+  mime_type: z.string().optional().describe('Its MIME type, likewise'),
+  probe: z
+    .object({
+      format: z.record(z.string(), z.unknown()),
+      streams: z.array(z.record(z.string(), z.unknown())),
+    })
+    .optional()
+    .describe(
+      'media.get: everything FFprobe read from the file, as it gives it: the format and every stream (codec, pix_fmt, color_space, color_primaries, color_transfer, color_range, bit depth, sample rate, channel layout, tags, side data). Not for fonts and LUTs',
+    ),
   font_family: z
     .string()
     .optional()
