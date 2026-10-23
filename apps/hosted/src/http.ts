@@ -8,7 +8,7 @@ import {
   type ServerResponse,
 } from 'node:http';
 import { Readable } from 'node:stream';
-import type { CredentialStore } from '@cuttingfloor/credentials';
+import { type CredentialStore, RequestCredentialStore } from '@cuttingfloor/credentials';
 import {
   createServer,
   importSent,
@@ -76,9 +76,12 @@ export function createHttpServer(options: HttpOptions): Server {
       const signedIn = via === 'oauth' || via === 'script';
       const gate = signedIn ? options.access : undefined;
       const limits = signedIn ? options.limits : undefined;
+      // Hosted, provider keys come with each request (X-Cuttingfloor-Key-<Provider>) and live
+      // only as long as it, or the job it starts; locally they come from env and secrets.
+      const headers = runtime.config.mode === 'hosted' ? ctx.requestInfo?.headers : undefined;
       return createServer({
         runtime,
-        credentials,
+        credentials: headers ? new RequestCredentialStore(credentials, headers) : credentials,
         owner: () => owner,
         ...(gate ? { access: () => gate(owner) } : {}),
         ...(limits ? { limits: () => limits(owner) } : {}),

@@ -16,7 +16,8 @@ export type ProviderId =
   | 'cartesia'
   | 'stability'
   | 'google'
-  | 'bfl';
+  | 'bfl'
+  | 'sync';
 
 /** Environment variable (and Docker secret name, lower-cased) for each provider in local mode. */
 export const PROVIDER_ENV: Record<ProviderId, string> = {
@@ -29,9 +30,15 @@ export const PROVIDER_ENV: Record<ProviderId, string> = {
   stability: 'STABILITY_API_KEY',
   google: 'GOOGLE_API_KEY',
   bfl: 'BFL_API_KEY',
+  sync: 'SYNC_API_KEY',
 };
 
-export type CredentialStatus = { configured: boolean; source?: 'secret' | 'env' };
+/** Hosted mode: the request header an MCP client sends a provider's key in. */
+export function providerHeader(provider: ProviderId): string {
+  return `X-Cuttingfloor-Key-${provider[0]?.toUpperCase()}${provider.slice(1)}`;
+}
+
+export type CredentialStatus = { configured: boolean; source?: 'secret' | 'env' | 'header' };
 
 export interface CredentialStore {
   status(owner: string, provider: ProviderId): Promise<CredentialStatus>;
@@ -76,5 +83,34 @@ export class LocalCredentialStore implements CredentialStore {
 
   async resolve(_owner: string, provider: ProviderId): Promise<string | undefined> {
     return (await this.#lookup(provider))?.key;
+  }
+}
+
+/**
+ * Hosted mode: the keys one MCP request carries in `X-Cuttingfloor-Key-<Provider>` headers, over
+ * a base store (the server's own TypeSafe key). Lives as long as the request's server instance;
+ * a job started from it holds the key in memory until it ends. Never written anywhere.
+ */
+export class RequestCredentialStore implements CredentialStore {
+  readonly #base: CredentialStore;
+  readonly #headers: Headers;
+
+  constructor(base: CredentialStore, headers: Headers) {
+    this.#base = base;
+    this.#headers = headers;
+  }
+
+  #header(provider: ProviderId): string | undefined {
+    return this.#headers.get(providerHeader(provider))?.trim() || undefined;
+  }
+
+  async status(owner: string, provider: ProviderId): Promise<CredentialStatus> {
+    return this.#header(provider)
+      ? { configured: true, source: 'header' }
+      : this.#base.status(owner, provider);
+  }
+
+  async resolve(owner: string, provider: ProviderId): Promise<string | undefined> {
+    return this.#header(provider) ?? this.#base.resolve(owner, provider);
   }
 }
