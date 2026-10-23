@@ -27,32 +27,32 @@ export default function Home() {
           <h1 className="leader rise">
             <b>cuttingfloor</b>
             <span className="dots" />
-            <span>the video editing agent for Claude, Cursor and ChatGPT</span>
+            <span>the control plane for AI video agents</span>
           </h1>
           <p className="display title rise d1">
             Video editing,
             <br />
-            solved.
+            finished.
             <Check />
           </p>
           <div className="hero-row">
             <div className="rise d2">
               <p className="lede">
-                Your agent edits video now. Connect Kazi, Claude, Cursor or ChatGPT to one MCP
-                server and say what you want cut.{' '}
+                One connection.{' '}
                 <em>
-                  It imports your footage, reads the transcript, trims, captions, mixes and hands
-                  back a finished file.
+                  Your AI assistant cuts, captions and mixes — then hands back a file a human editor
+                  can finish.
                 </em>
               </p>
               <div className="actions">
                 <a className="link-big" href={SIGN_UP}>
-                  Start free for 3 days
+                  Start free — 3 days
                 </a>
                 <a className="link-big quiet" href="/demos">
                   Watch it edit
                 </a>
               </div>
+              <span>Self-hosted · no external AI keys</span>
             </div>
             <div className="rise d3 works-in">
               <span className="label">Works in</span>
@@ -63,6 +63,7 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
+              <p>Any remote MCP client</p>
               <p>
                 Bring the agent you already use. Sign in, then add one server address; the setup for
                 each is <a href="#start">below</a>.
@@ -74,10 +75,8 @@ export default function Home() {
         <section className="cell floor" aria-label="An agent editing over MCP">
           <video src="/floor.mp4" poster="/floor.jpg" muted loop playsInline autoPlay />
           <div className="floor-cap">
-            <span className="label">01 / The floor</span>
-            <span className="label">
-              Agentic video editing: your agent, one MCP server, every edit a call
-            </span>
+            <span className="label">01 / The layer after generation</span>
+            <span className="label">Generation is cheap now. Assembly is not.</span>
           </div>
         </section>
 
@@ -100,7 +99,7 @@ export default function Home() {
             <div className="head">
               <span className="label">03 / In your agent</span>
               <h2 className="lede">
-                Plug cuttingfloor into the agent you already use. <em>It becomes your editor.</em>
+                Plug cuttingfloor into the agent you already use. <em>We make it finish.</em>
               </h2>
             </div>
             <AgentDemo demo={DEMOS[0]} />
@@ -129,13 +128,10 @@ export default function Home() {
           <span className="mark-b" />
           <span className="label">05 / What it does</span>
           <h2 className="display big-stat">
-            62 tools.
+            66 tools.
             <br />
-            No timeline UI.
-            <small>
-              A video editing API built for agents: granular primitives it composes, plus code when
-              it needs a loop.
-            </small>
+            No timeline.
+            <small>Granular tools an agent composes, plus code when it needs a loop.</small>
           </h2>
           <Capabilities />
         </section>
