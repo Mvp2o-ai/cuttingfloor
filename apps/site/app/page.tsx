@@ -131,10 +131,7 @@ export default function Home() {
             66 tools.
             <br />
             No timeline.
-            <small>
-              A video editing API built for agents: granular primitives it composes, plus code when
-              it needs a loop.
-            </small>
+            <small>Granular tools an agent composes, plus code when it needs a loop.</small>
           </h2>
           <Capabilities />
         </section>
