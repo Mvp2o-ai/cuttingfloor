@@ -1,4 +1,3 @@
-export { codeIsolation, type Isolation } from './code.ts';
 export { assertOffline, LIBRARIES, libraryPath, pageDocument } from './document.ts';
 export {
   CHROMIUM,

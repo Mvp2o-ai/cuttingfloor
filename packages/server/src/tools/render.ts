@@ -307,7 +307,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get job',
       description:
-        'Status, progress and, once completed, the result of a long-running call (media.import, create.*, export.video, qa.check, code.run). Same record as tasks/get. status_message says what it is doing, or, while it waits, where it stands in the queue and what it waits for. It answers at once with where the job stands.',
+        'Status, progress and, once completed, the result of a long-running call (media.import, media.analyze, create.*, export.video, qa.check). Same record as tasks/get. status_message says what it is doing, or, while it waits, where it stands in the queue and what it waits for. It answers at once with where the job stands.',
       inputSchema: JobRef,
       outputSchema: JobView,
       annotations: { ...readOnly, title: 'Get job' },

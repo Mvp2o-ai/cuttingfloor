@@ -9,8 +9,8 @@ const anyResult = z.object({}).passthrough();
 /**
  * tools/list as JSON, in bytes (about 4 bytes per token). Raised from 110 000 for the look guide
  * in media.analyze, from 115 000 for judge.ask, and from 123 000 to 230 000 when every tool
- * declared its full output schema (about 117 000 of the total): code.run scripts chain calls
- * on those shapes, so they are the contract and are not slimmed to fit a harness. Raised to
+ * declared its full output schema (about 117 000 of the total): clients chain calls on those
+ * shapes, so they are the contract and are not slimmed to fit a harness. Raised to
  * 240 000 for media.seek, which finds moments from plain words, to 250 000 for other_tracks
  * on every rippling edit, and to 256 000 for create.stabilized.
  */
@@ -28,7 +28,7 @@ describe('protocol surface', () => {
     expect(client.getInstructions()).toMatch(/timeline_id/);
   });
 
-  it('advertises an open output schema on every tool, so code can chain calls and added fields never break cached clients', async () => {
+  it('advertises an open output schema on every tool, so clients can chain calls and added fields never break cached clients', async () => {
     const client = await connect(env.runtime);
     const { tools } = await client.listTools();
     expect(tools.filter((t) => !t.outputSchema).map((t) => t.name)).toEqual([]);
@@ -75,7 +75,6 @@ describe('protocol surface', () => {
         'clip.split',
         'clip.trim',
         'clip.unlink',
-        'code.run',
         'create.cutout',
         'create.matte',
         'create.motion',

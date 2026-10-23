@@ -1,5 +1,4 @@
 import * as z from 'zod/v4';
-import { CODE_LIMITS, CodeLanguage } from './code.ts';
 import {
   AnimatableValue,
   BlendMode,
@@ -1000,64 +999,6 @@ export const CreateStillInput = z.object({
   ...createCommon,
 });
 
-export const CodeRunInput = z.object({
-  language: CodeLanguage.default('node'),
-  script: z
-    .string()
-    .min(1)
-    .max(CODE_LIMITS.maxScriptBytes)
-    .describe(
-      "The script (node: ES module JS). Inputs are files in in/; write results to out/. `import { cf } from 'cuttingfloor'` (python: `from cuttingfloor import cf`; bash: the `cf` command) calls any tool as cf.domain.verb(args).",
-    ),
-  inputs: z
-    .object({
-      media_ids: z.array(MediaId).max(CODE_LIMITS.maxInputs).default([]),
-      timeline_ids: z.array(TimelineId).max(CODE_LIMITS.maxInputs).default([]),
-    })
-    .default({ media_ids: [], timeline_ids: [] })
-    .describe(
-      'Fetched into in/ before the script starts: media as in/<media_id>.<ext>, timelines as in/<timeline_id>.timeline.json',
-    ),
-  timeout_seconds: z
-    .int()
-    .min(1)
-    .max(CODE_LIMITS.maxTimeoutSeconds)
-    .default(CODE_LIMITS.defaultTimeoutSeconds)
-    .describe(
-      "The script's own running time; time its calls spend queued behind other work is added on",
-    ),
-  idempotency_key: z.string().min(1).max(200).optional(),
-});
-
-export const CodeRunResult = z.object({
-  exit_code: z.int().nullable(),
-  outputs: z.array(
-    z.object({
-      name: z.string(),
-      type: z
-        .enum(['media', 'timeline', 'file', 'failed'])
-        .describe(
-          'media: imported (media_id); timeline: loaded (timeline_id); file: text or data (vtt, srt, json, txt, csv, …) kept as it is; failed: this one file was not kept (error says why), the others were',
-        ),
-      media_id: MediaId.optional(),
-      timeline_id: TimelineId.optional(),
-      kind: z.string().optional(),
-      url: z
-        .string()
-        .optional()
-        .describe('Signed download of the file exactly as the script wrote it'),
-      expires_at: z.string().optional(),
-      bytes: z.number().optional(),
-      mime_type: z.string().optional(),
-      error: ToolError.optional(),
-    }),
-  ),
-  stdout: z.string(),
-  stderr: z.string(),
-  seconds: z.number(),
-  warnings: z.array(z.string()).optional(),
-});
-
 /** Kokoro's English voices, in speaker-id order: a = American, b = British; f/m = female/male. */
 export const VOICES = [
   'af_alloy',
@@ -1177,7 +1118,7 @@ export const JobView = z.object({
     .string()
     .optional()
     .describe(
-      'What it is doing; while it waits, its place in the queue and what it waits for (a job slot, a render slot, the sandbox, or for code.run the call it is waiting on)',
+      'What it is doing; while it waits, its place in the queue and what it waits for (a job slot, a render slot or the sandbox)',
     ),
   progress: z.number().min(0).max(1).optional(),
   created_at: z.string(),
@@ -1201,21 +1142,12 @@ export const JobHandle = z.object({
   hint: z.string(),
 });
 
-const finished = new WeakMap<z.ZodType, z.ZodType>();
-
 /**
  * A long-running tool's output: its result when it finishes in the call, or a JobHandle while it
- * works (job.get then gives the result). code.run's cf follows the job, so scripts get the result.
+ * works (job.get then gives the result).
  */
 export function withJob<T extends z.ZodType>(result: T) {
-  const schema = z.union([result, JobHandle]);
-  finished.set(schema, result);
-  return schema;
-}
-
-/** The result inside a withJob output, or undefined for any other schema. */
-export function finishedResult(schema: unknown): z.ZodType | undefined {
-  return finished.get(schema as z.ZodType);
+  return z.union([result, JobHandle]);
 }
 
 // Render and export

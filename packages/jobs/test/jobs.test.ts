@@ -103,15 +103,15 @@ describe('JobRunner', () => {
 
   it('runs sandbox jobs without taking a slot engine work needs', async () => {
     const { store, runner } = await setup(1);
-    const script = await store.create({ owner: 'o', tool: 'code.run' });
-    runner.start(script, forever, { lane: 'sandbox' });
-    // An export started while a script runs starts at once, not behind it.
+    const render = await store.create({ owner: 'o', tool: 'create.motion' });
+    runner.start(render, forever, { lane: 'sandbox' });
+    // An export started while a render runs starts at once, not behind it.
     const exp = await store.create({ owner: 'o', tool: 'export.video' });
     runner.start(exp, async () => ({ content: [], structuredContent: { ok: true } }));
     await runner.settled(exp.id);
     expect(await store.get(exp.id, 'o')).toMatchObject({ status: 'completed' });
     expect((await store.get(exp.id, 'o'))?.startedAt).toEqual(expect.any(String));
-    await runner.cancel(script.id, 'o');
+    await runner.cancel(render.id, 'o');
   });
 
   it('runs heavy jobs one at a time in their own slots', async () => {

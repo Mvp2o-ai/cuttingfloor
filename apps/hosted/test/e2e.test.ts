@@ -108,19 +108,6 @@ const chromium = await exec('/usr/bin/chromium', ['--version']).then(
 if (engines && !chromium && process.env.CUTTINGFLOOR_REQUIRE_ENGINES) {
   throw new Error('CUTTINGFLOOR_REQUIRE_ENGINES is set but Chromium is missing');
 }
-// code.run scripts use namespaces where this host allows them; docker build does not.
-const namespaces = await exec('unshare', [
-  '--user',
-  '--map-current-user',
-  '--pid',
-  '--fork',
-  '--net',
-  'true',
-]).then(
-  () => true,
-  () => false,
-);
-if (!namespaces) process.env.CUTTINGFLOOR_CODE_ISOLATION = 'none';
 let motionWorker: Server | undefined;
 
 async function startTestMotion(): Promise<string | null> {
@@ -2614,15 +2601,15 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
 
     it('steadies shaky video into new media that keeps its length and sound', async () => {
       const m = env.mediaDir;
-      // A still, textured scene seen through a crop that jumps about: hand-held shake.
-      await exec('python3', [
-        '-c',
-        [
-          'import sys, cv2, numpy as np',
-          'a = cv2.GaussianBlur(np.random.default_rng(1).random((480, 800, 3)) * 255, (0, 0), 3)',
-          'a = (a - a.min()) / (a.max() - a.min()) * 255',
-          'cv2.imwrite(sys.argv[1], a.astype(np.uint8))',
-        ].join('\n'),
+      // A still scene with sharp detail (a Game of Life field) seen through a crop that jumps
+      // about: hand-held shake.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'life=s=800x480:random_fill_ratio=0.4:mold=0',
+        '-frames:v',
+        '1',
         join(m, 'scene.png'),
       ]);
       await ff([
@@ -2649,25 +2636,36 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         '-shortest',
         join(m, 'shaky.mp4'),
       ]);
-      /** Mean frame-to-frame shift of the picture's middle, in pixels (phase correlation). */
+      /**
+       * Mean frame-to-frame shift of the picture, in pixels: vidstabdetect's motion of each
+       * field between frames, the median per frame (a mismatched field doesn't count).
+       */
       const jitter = async (file: string) => {
-        const { stdout } = await exec('python3', [
-          '-c',
-          [
-            'import sys, cv2, numpy as np',
-            'cap = cv2.VideoCapture(sys.argv[1]); prev = None; d = []',
-            'while True:',
-            '    ok, f = cap.read()',
-            '    if not ok: break',
-            '    g = np.float32(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY))[60:300, 80:560]',
-            '    if prev is not None:',
-            '        (dx, dy), _ = cv2.phaseCorrelate(prev, g); d.append((dx * dx + dy * dy) ** 0.5)',
-            '    prev = g',
-            'print(float(np.mean(d)))',
-          ].join('\n'),
+        const trf = `${file}.jitter.trf`;
+        await exec('ffmpeg', [
+          '-v',
+          'error',
+          '-y',
+          '-i',
           file,
+          '-vf',
+          `vidstabdetect=shakiness=5:accuracy=15:result=${trf}`,
+          '-f',
+          'null',
+          '-',
         ]);
-        return Number(stdout.trim());
+        const median = (a: number[]) => [...a].sort((x, y) => x - y)[a.length >> 1] ?? 0;
+        const frames = (await readFile(trf, 'utf8'))
+          .split('\n')
+          .filter((l) => l.startsWith('Frame'))
+          .map((l) => {
+            const v = [...l.matchAll(/LM (-?\d+) (-?\d+)/g)];
+            return Math.hypot(
+              median(v.map((x) => Number(x[1]))),
+              median(v.map((x) => Number(x[2]))),
+            );
+          });
+        return frames.reduce((sum, x) => sum + x, 0) / (frames.length || 1);
       };
       const shaky = await importMedia({ path: join(m, 'shaky.mp4') });
       const steady = await create('create.stabilized', { media_id: shaky.media_id });
@@ -2678,8 +2676,8 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(Number(v?.nb_read_packets)).toBe(75);
       const before = await jitter(join(m, 'shaky.mp4'));
       const after = await jitter(file);
-      expect(before).toBeGreaterThan(8);
-      expect(after).toBeLessThan(before / 5);
+      expect(before, `before ${before}, after ${after}`).toBeGreaterThan(8);
+      expect(after, `before ${before}, after ${after}`).toBeLessThan(before / 5);
       // The same recipe answers with the same media; a still is refused.
       expect((await create('create.stabilized', { media_id: shaky.media_id })).media_id).toBe(
         steady.media_id,
@@ -3192,158 +3190,6 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(stdout).toContain('bundle.otio');
       expect(stdout).toMatch(/media\/formats\.mp4/);
     }, 600_000);
-  });
-
-  describe('code', () => {
-    it.skipIf(!chromium)(
-      'says when output was cut and when a rendered page kept its placeholder name',
-      async () => {
-        const started = await ok<{ job_id: string }>(client, 'code.run', {
-          timeout_seconds: 300,
-          script: `
-import { still } from 'cuttingfloor';
-// Started together, they render one at a time.
-await Promise.all([
-  still({ html: '<b>x</b>', width: 64, height: 64 }),
-  still({ html: '<b>y</b>', width: 64, height: 64, out: 'out/named.png' }),
-]);
-console.log('a'.repeat(40000));
-console.log('the end');
-`,
-        });
-        const done = await waitJob(started.job_id, 300_000);
-        if (done.error) throw new Error(`code.run failed: ${JSON.stringify(done.error)}`);
-        const result = done.result as {
-          stdout: string;
-          outputs: Array<{ name: string; type: string; url: string }>;
-          warnings?: string[];
-        };
-        expect(result.outputs.map((o) => o.name).sort()).toEqual(['named.png', 'still-1.png']);
-        expect(result.outputs.map((o) => o.type)).toEqual(['media', 'media']);
-        const png = await fetch(result.outputs[0]?.url ?? '');
-        expect(png.headers.get('content-type')).toBe('image/png');
-        expect(result.stdout).toMatch(/^\[\d+ earlier characters of stdout cut/);
-        expect(result.stdout).toMatch(/the end\n$/);
-        expect(result.warnings).toEqual([
-          expect.stringMatching(/^still-1\.png kept the placeholder/),
-        ]);
-      },
-      300_000,
-    );
-
-    it.skipIf(!chromium)(
-      'a script renders a graphic, imports it, cuts to the beat and previews; tools refine and export',
-      async () => {
-        const m = env.mediaDir;
-        await ff([
-          '-f',
-          'lavfi',
-          '-i',
-          'testsrc2=size=640x360:rate=25',
-          '-f',
-          'lavfi',
-          '-i',
-          "aevalsrc=exprs='if(lt(mod(t-0.25\\,0.5)\\,0.02)\\,sin(2*PI*1500*t)\\,0)':s=44100:d=8",
-          '-t',
-          '8',
-          '-c:v',
-          'libx264',
-          '-pix_fmt',
-          'yuv420p',
-          '-c:a',
-          'aac',
-          '-shortest',
-          join(m, 'beatclip.mp4'),
-        ]);
-        const clip = await importMedia({ path: join(m, 'beatclip.mp4') });
-        const started = await ok<{ job_id: string }>(client, 'code.run', {
-          inputs: { media_ids: [clip.media_id] },
-          timeout_seconds: 600,
-          script: `
-import { existsSync } from 'node:fs';
-import { cf, importFile, motion } from 'cuttingfloor';
-const clip = '${clip.media_id}';
-if (!existsSync('in/' + clip + '.mp4')) throw new Error('input missing');
-// 1. A graphic, rendered right here, imported as media.
-const file = await motion({
-  html: '<style>@keyframes s{from{transform:translateX(0)}to{transform:translateX(440px)}}</style><div style="position:absolute;left:0;top:0;width:200px;height:120px;background:#fff;animation:s 2s linear forwards"></div>',
-  width: 640, height: 360, fps: 25, duration: 2,
-});
-const graphic = await importFile(file, 'box.mov');
-// 2. Cuts on the beat: one beat of picture from every other beat, back to back.
-const { beats } = await cf.media.analyze({ media_id: clip, kind: 'beats' });
-const frames = beats.beats.filter((t) => t > 0.5 && t < 7).map((t) => Math.round(t * 25));
-const { timeline_id: empty } = await cf.timeline.create({
-  name: 'beat cut',
-  sequence: { width: 640, height: 360, fps: { num: 25, den: 1 } },
-  tracks: { video: 2, audio: 1 },
-});
-const ops = [];
-for (let i = 0; i + 1 < frames.length; i += 2) {
-  ops.push({ tool: 'clip.add', args: { track_id: 't1', media_id: clip, source: { in: frames[i], out: frames[i + 1] } } });
-}
-ops.push({ tool: 'clip.add', args: { track_id: 't2', media_id: graphic.media_id, at_frame: 0 } });
-const built = await cf.edit.batch({ timeline_id: empty, ops, preview: 'none' });
-// 3. A preview, through the same tools.
-const preview = await cf.render.frames({ timeline_id: built.timeline_id, frames: [0], layout: 'single', format: 'png' });
-console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 1, graphic: graphic.media_id, preview: preview.images.length }));
-`,
-        });
-        const done = await waitJob(started.job_id, 600_000);
-        if (done.error) throw new Error(`code.run failed: ${JSON.stringify(done.error)}`);
-        const result = done.result as { stdout: string; exit_code: number };
-        expect(result.exit_code).toBe(0);
-        const said = JSON.parse(result.stdout.trim().split('\n').pop() ?? '{}') as {
-          timeline_id: string;
-          cuts: number;
-          graphic: string;
-          preview: number;
-        };
-        expect(said.cuts).toBeGreaterThanOrEqual(5);
-        expect(said.preview).toBe(1);
-        const view = await ok<{
-          tracks: Array<{
-            id: string;
-            clips: Array<{ id: string; start: number; end: number }>;
-          }>;
-        }>(client, 'timeline.get', { timeline_id: said.timeline_id });
-        const cuts = view.tracks.find((t) => t.id === 't1')?.clips ?? [];
-        expect(cuts.length).toBe(said.cuts);
-        // Each cut is one beat long (0.5 s at 120 BPM, give or take a frame).
-        for (const c of cuts) expect(Math.abs(c.end - c.start - 12.5)).toBeLessThanOrEqual(1.5);
-
-        // The agent takes over with individual tools: tighten the last cut, then export.
-        const last = cuts[cuts.length - 1] as { id: string; start: number; end: number };
-        const trimmed = await ok<{ timeline_id: string }>(client, 'clip.trim', {
-          timeline_id: said.timeline_id,
-          clip_id: last.id,
-          edge: 'end',
-          to_frame: last.end - 3,
-          preview: 'none',
-        });
-        const exp = await ok<{ job_id: string }>(client, 'export.video', {
-          timeline_id: trimmed.timeline_id,
-          preset: 'web_1080p_h264',
-        });
-        const exported = await waitJob(exp.job_id, 600_000);
-        expect(exported.status).toBe('completed');
-        const file = (exported.result as { file?: string; local_path?: string }) ?? {};
-        expect(file).toBeTruthy();
-        // The graphic is on top at the start: white top-left in the first frame.
-        const first = await call(client, 'render.frames', {
-          timeline_id: trimmed.timeline_id,
-          frames: [0],
-          layout: 'single',
-          format: 'png',
-        });
-        const image = Buffer.from(
-          (first.content.find((c) => c.type === 'image')?.data as string) ?? '',
-          'base64',
-        );
-        expect(colour(await pixel(image, 20, 20))).toBe('white');
-      },
-      900_000,
-    );
   });
 
   describe('analysis', () => {
@@ -3926,33 +3772,6 @@ console.log(JSON.stringify({ timeline_id: built.timeline_id, cuts: ops.length - 
       expect(late.structured).toMatchObject({ code: 'bad_request' });
     }, 120_000);
 
-    it.skipIf(!chromium)(
-      'judge.ask runs from code.run as cf.judge.ask',
-      async () => {
-        const c = await keyed(KEY);
-        const started = await ok<{ job_id: string }>(c, 'code.run', {
-          timeout_seconds: 120,
-          script: `
-import { cf } from 'cuttingfloor';
-const lines = ['So basically the way this works is', 'You click the button'];
-const out = [];
-for (const line of lines) {
-  const { answers } = await cf.judge.ask({
-    state: { passage: line },
-    questions: { filler: { type: 'noul', instructions: 'Does \`passage\` hold a filler word?' } },
-  });
-  out.push(answers.filler.noul);
-}
-console.log(JSON.stringify(out));
-`,
-        });
-        const done = await waitJob(started.job_id, 120_000);
-        if (done.error) throw new Error(`code.run failed: ${JSON.stringify(done.error)}`);
-        const result = done.result as { stdout: string };
-        expect(JSON.parse(result.stdout.trim().split('\n').pop() ?? '[]')).toEqual([0.81, 0.81]);
-      },
-      180_000,
-    );
     it('media.seek finds the stretches that match, in media and in an edit as it renders', async () => {
       // Two seconds of test pattern, two of black, two of test pattern.
       await ff([

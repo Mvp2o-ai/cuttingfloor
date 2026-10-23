@@ -44,32 +44,6 @@ const TYPES: Record<string, string> = {
   '.log': 'text/plain',
 };
 
-/**
- * Extensions code.run hands back as plain files (a download link) rather than importing as media:
- * text and data a timeline can't play.
- */
-export const DATA_EXTENSIONS = new Set([
-  '.vtt',
-  '.srt',
-  '.ass',
-  '.ssa',
-  '.json',
-  '.txt',
-  '.md',
-  '.csv',
-  '.tsv',
-  '.html',
-  '.xml',
-  '.yaml',
-  '.yml',
-  '.log',
-  '.otio',
-  '.fcpxml',
-  '.edl',
-  '.zip',
-  '.pdf',
-]);
-
 /** The media type of an output file, by its extension. */
 export function outputMime(name: string): string {
   return TYPES[extname(name).toLowerCase()] ?? 'application/octet-stream';

@@ -9,7 +9,7 @@ import { libraryPath } from './document.ts';
 
 // The renders themselves: a page stepped a frame at a time on a virtual clock (clock.ts), each
 // frame captured by Chromium and piped to FFmpeg. These run in a job process the worker starts
-// for each request, or inside a code.run job, never in the main server: the page is agent code.
+// for each request, never in the main server: the page is agent code.
 //
 // Capturing a frame costs far more than stepping to it, so a motion render opens the page in
 // several browsers. Every browser steps through every frame, exactly as one browser would, so
@@ -92,7 +92,7 @@ async function openPage(
   const browser = await puppeteer.launch({
     executablePath: CHROMIUM,
     headless: true,
-    // Talk over a pipe, not a loopback port: code jobs run with no network at all.
+    // Talk over a pipe, not a loopback port: the browser needs no network at all.
     pipe: true,
     userDataDir: profile,
     args: [

@@ -9,7 +9,6 @@ export const ErrorCode = z.enum([
   'media_offline',
   'engine_error',
   'render_failed',
-  'code_failed',
   'interrupted',
   'cancelled',
   'credential_required',

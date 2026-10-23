@@ -37,7 +37,7 @@ One server first. It's the same image as local, in hosted mode:
 
 Signed links cover only the path, so links made under the old address still work after the redirect. A client that signed in at the old address signs in once more.
 
-**Check it:** `CF_KEY=<a key from CUTTINGFLOOR_API_KEYS> node scripts/smoke-hosted.ts https://<domain>`. It checks that a request without a key is refused, then the sandbox (`create.still`, `create.motion`, `code.run`), `look` on the server's TypeSafe key, an export's signed link, and that file uploaded back in two parts and imported.
+**Check it:** `CF_KEY=<a key from CUTTINGFLOOR_API_KEYS> node scripts/smoke-hosted.ts https://<domain>`. It checks that a request without a key is refused, then the sandbox (`create.still`, `create.motion`), `look` on the server's TypeSafe key, an export's signed link, and that file uploaded back in two parts and imported.
 
 **Billing and account email:**
 - `node scripts/stripe-setup.ts` makes (or updates) the prices, the billing portal and the webhook at `<CUTTINGFLOOR_PUBLIC_URL>/stripe/webhook`, and writes the webhook's secret to `cuttingfloor.env`.
@@ -94,7 +94,7 @@ Treat an authorization error from WorkOS as a separate unresolved configuration 
 
 **If the image is private:** export `GHCR_USER` and `GHCR_TOKEN` (`read:packages`) before running `up.sh`. Or make the GHCR package public in the GitHub UI. Or build on the server from this checkout's HEAD: `CUTTINGFLOOR_BUILD=1 ./up.sh`.
 
-**Verified under gVisor:** `create.still`, `create.motion` and `code.run` run with the sandbox under `runsc` (systrap). The deeper escape and abuse checks in `scripts/smoke-motion.ts` still run only against the local compose file.
+**Verified under gVisor:** `create.still` and `create.motion` run with the sandbox under `runsc` (systrap). The deeper escape and abuse checks in `scripts/smoke-motion.ts` still run only against the local compose file.
 
 ## Growing it
 

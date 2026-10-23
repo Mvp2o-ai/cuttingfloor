@@ -54,7 +54,7 @@ function inline(mediaId: string, kind: string, data: unknown): Record<string, un
   const chars = JSON.stringify(data).length;
   if (chars <= INLINE_CHARS) return { [kind]: data };
   return {
-    note: `The ${kind} is ${chars} characters, too long to return here. It is stored with the media: in code.run, cf.media.get({media_id: '${mediaId}', include: ['${kind}']}) gives all of it to search, and the script prints only what you need; media.get {include: ['${kind}']} returns it whole.`,
+    note: `The ${kind} is ${chars} characters, too long to return here. It is stored with the media: media.get {media_id: '${mediaId}', include: ['${kind}']} returns it.`,
   };
 }
 
@@ -338,7 +338,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       title: 'Analyze media',
       description: [
         'Find what is in imported media, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). The words are reliable; their times are not exact: they can be off by up to about a second, the start of a word can sit in the silence before it, its end can run on over the pause after it, and short ums and uhs are often left out. To cut on speech, take the edges from kind silence and move each cut to the nearest one. beats: tempo, beat and downbeat times. faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on, a box for each sampled time (found false where the subject was lost); to make a title, sticker, arrow or mask follow the subject, turn the boxes into clip.set_transform (or clip.set_mask) keyframes, no tracking of your own needed. look: your own typed questions about what is on screen, answered on every sampled frame (to find where something happens from plain words, media.seek). silence: stretches quieter than threshold_db for at least min_seconds. scenes: times the picture changes by more than threshold (0–100).',
-        'Times are media seconds; boxes are fractions of the picture. Results stay with the media (media.get include) except track, silence and scenes, which come back in the result. A result too long to return (a long transcript) comes back as its summary and a note on reading it in code.run.',
+        'Times are media seconds; boxes are fractions of the picture. Results stay with the media (media.get include) except track, silence and scenes, which come back in the result. A result too long to return (a long transcript) comes back as its summary and a note on reading it with media.get.',
         'Long-running: returns a task, or a job_id for job.get.',
         '',
         'HOW LOOK WORKS. TypeSafe Jev, a fast judgment model (preview), answers your questions about frames sampled from the media. Each sampled frame is its own request: Jev sees that one picture, named `frame`, and with with_previous also the frame sampled just before it, named `previous`, plus any state you give: text or JSON entries by name, the same on every frame (the script, what a term means). Every question is answered on every frame, independently and in parallel (about 0.15 s a frame), as typed data you then combine in your own code.',
@@ -571,7 +571,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get media',
       description:
-        'Status, a signed download url for the file and a page_url that plays or shows it in any browser (to give a person), streams, duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
+        'Status, a signed download url for the file and a page_url that plays or shows it in any browser (to give a person), streams, duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times.',
       inputSchema: MediaRefInput,
       outputSchema: MediaInfo,
       _meta: PLAYER_TOOL_META,
