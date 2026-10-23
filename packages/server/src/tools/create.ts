@@ -11,6 +11,7 @@ import {
   renderMatte,
   renderPicture,
   speak,
+  stabilize,
   voiceWords,
 } from '@cuttingfloor/engine';
 import type { JobLane } from '@cuttingfloor/jobs';
@@ -19,6 +20,7 @@ import {
   CreateCutoutInput,
   CreateMatteInput,
   CreateMotionInput,
+  CreateStabilizedInput,
   CreateStillInput,
   CreateVoiceoverInput,
   MediaInfo,
@@ -397,6 +399,62 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
             dest,
             { model, smooth: args.smooth, signal, onProgress: (f) => progress(f, 'matting') },
           );
+          return dest;
+        },
+        undefined,
+        'heavy',
+      );
+    }),
+  );
+
+  server.registerTool(
+    'create.stabilized',
+    {
+      title: 'Steady shaky video',
+      description:
+        'A steadied copy of shaky video, local (vid.stab): one pass measures the camera shake over the whole media, a second moves each frame against a smoothed camera path. New media, ProRes with the sound, to put on the timeline in place of the shaky clip (clip.replace keeps its place and timing). Long-running: a task, or {job_id, media_id} for job.get.',
+      inputSchema: CreateStabilizedInput,
+      outputSchema: withJob(MediaInfo),
+      annotations: annotations('Steady shaky video'),
+    },
+    guard(async (args, ctx) => {
+      const owner = deps.owner();
+      const source = await rt.media.get(owner, args.media_id);
+      const p = source.probe;
+      if (source.status !== 'ready' || !p) {
+        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`);
+      }
+      if (p.kind !== 'video' || !p.video) {
+        throw new CfError('bad_request', `Media ${args.media_id} is not a video`, {
+          hint: 'Stabilising needs moving pictures; a still has no shake',
+        });
+      }
+      const picture = renderPicture(source, 'export');
+      const recipe = {
+        engine: 'vidstab-1',
+        source: source.fingerprint ?? source.media_id,
+        shakiness: args.shakiness,
+        smoothing: args.smoothing,
+        tripod: args.tripod,
+        edges: args.edges,
+      };
+      return create(
+        ctx,
+        'create.stabilized',
+        { ...args, name: args.name ?? `${source.name} steadied` },
+        recipe,
+        async (dir, progress, signal) => {
+          const dest = join(dir, 'source.mov');
+          progress(0, 'measuring shake');
+          await stabilize(picture.path, dest, {
+            shakiness: args.shakiness,
+            smoothing: args.smoothing,
+            tripod: args.tripod,
+            edges: args.edges,
+            duration: p.duration,
+            signal,
+            onProgress: progress,
+          });
           return dest;
         },
         undefined,

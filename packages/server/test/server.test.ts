@@ -11,10 +11,10 @@ const anyResult = z.object({}).passthrough();
  * in media.analyze, from 115 000 for judge.ask, and from 123 000 to 230 000 when every tool
  * declared its full output schema (about 117 000 of the total): code.run scripts chain calls
  * on those shapes, so they are the contract and are not slimmed to fit a harness. Raised to
- * 240 000 for media.seek, which finds moments from plain words, and to 250 000 for other_tracks
- * on every rippling edit.
+ * 240 000 for media.seek, which finds moments from plain words, to 250 000 for other_tracks
+ * on every rippling edit, and to 256 000 for create.stabilized.
  */
-const BUDGET_BYTES = 250_000;
+const BUDGET_BYTES = 256_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -79,6 +79,7 @@ describe('protocol surface', () => {
         'create.cutout',
         'create.matte',
         'create.motion',
+        'create.stabilized',
         'create.still',
         'create.voiceover',
         'edit.batch',

@@ -60,6 +60,7 @@ export {
   renderMediaFrames,
   renderTimelineFrames,
 } from './render.ts';
+export { type StabilizeOptions, stabilize } from './stabilize.ts';
 export {
   ensureModel,
   type Transcript,

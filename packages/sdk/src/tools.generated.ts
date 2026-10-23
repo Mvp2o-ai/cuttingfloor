@@ -7,6 +7,7 @@ import type {
   CreateCutoutInput,
   CreateMatteInput,
   CreateMotionInput,
+  CreateStabilizedInput,
   CreateStillInput,
   CreateVoiceoverInput,
   EditResult,
@@ -82,6 +83,7 @@ export type ToolName =
   | 'create.cutout'
   | 'create.matte'
   | 'create.motion'
+  | 'create.stabilized'
   | 'create.still'
   | 'create.voiceover'
   | 'edit.batch'
@@ -150,6 +152,7 @@ export interface ToolInputs {
   'create.cutout': z.input<typeof CreateCutoutInput>;
   'create.matte': z.input<typeof CreateMatteInput>;
   'create.motion': z.input<typeof CreateMotionInput>;
+  'create.stabilized': z.input<typeof CreateStabilizedInput>;
   'create.still': z.input<typeof CreateStillInput>;
   'create.voiceover': z.input<typeof CreateVoiceoverInput>;
   'edit.batch': z.input<typeof BatchInput>;
@@ -219,6 +222,7 @@ export interface ToolOutputs {
   'create.cutout': z.output<typeof MediaInfo>;
   'create.matte': z.output<typeof MediaInfo>;
   'create.motion': z.output<typeof MediaInfo>;
+  'create.stabilized': z.output<typeof MediaInfo>;
   'create.still': z.output<typeof MediaInfo>;
   'create.voiceover': z.output<typeof MediaInfo>;
   'edit.batch': z.output<typeof BatchResult>;
@@ -288,6 +292,7 @@ export const TOOL_NAMES: readonly ToolName[] = [
   'create.cutout',
   'create.matte',
   'create.motion',
+  'create.stabilized',
   'create.still',
   'create.voiceover',
   'edit.batch',

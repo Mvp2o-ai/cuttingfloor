@@ -1110,6 +1110,35 @@ export const CreateCutoutInput = z.object({
   ...createCommon,
 });
 
+export const CreateStabilizedInput = z.object({
+  media_id: MediaId.describe('Video to steady'),
+  shakiness: z
+    .int()
+    .min(1)
+    .max(10)
+    .default(5)
+    .describe('How shaky the footage is: 1 a little, 10 a lot'),
+  smoothing: z
+    .int()
+    .min(0)
+    .max(500)
+    .default(10)
+    .describe(
+      'Frames each side the camera path is smoothed over: more is steadier but follows intended moves (pans) more slowly',
+    ),
+  tripod: z
+    .boolean()
+    .default(false)
+    .describe('Hold the picture still against its first frame, as if on a tripod'),
+  edges: z
+    .enum(['zoom', 'adaptive_zoom', 'black', 'keep'])
+    .default('zoom')
+    .describe(
+      'What fills the edges steadying moves into view. zoom: one zoom for the whole video, enough to hide them; adaptive_zoom: as little zoom as each moment needs; black: no zoom, black edges; keep: no zoom, edges filled from earlier frames',
+    ),
+  ...createCommon,
+});
+
 export const CreateMatteInput = z
   .object({
     color: Colour.optional().describe('A solid colour'),
