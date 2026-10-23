@@ -7,6 +7,7 @@ import { createHttpServer, parseApiKeys } from './http.ts';
 import { ScriptKeys } from './keys.ts';
 import { Lifecycle } from './lifecycle.ts';
 import { discoverAuthorizationServer, JwtTokenVerifier } from './oauth.ts';
+import { ProviderKeys } from './provider-keys.ts';
 
 // `cuttingfloor serve`: the long-running HTTP node. Local mode (compose) is one user on
 // loopback; hosted mode requires bearer API keys or OAuth and takes provider keys per tenant.
@@ -91,6 +92,10 @@ const lifetimeClients = new Map(
     })
     .filter(([id, name]) => id && name),
 );
+// Provider keys users save on the account page, encrypted with this server-only secret.
+const keySecret = process.env.CUTTINGFLOOR_KEY_SECRET;
+const providerKeys =
+  access && workosKey && keySecret ? new ProviderKeys(workosKey, keySecret) : undefined;
 const lifecycle =
   access && workosKey && stripeKey
     ? new Lifecycle({
@@ -110,6 +115,7 @@ const lifecycle =
           ? { accountKey: process.env.CUTTINGFLOOR_ACCOUNT_KEY }
           : {}),
         ...(lifetimeClients.size ? { lifetimeClients } : {}),
+        ...(providerKeys ? { providerKeys } : {}),
       })
     : undefined;
 if (lifecycle) {
@@ -118,6 +124,7 @@ if (lifecycle) {
     ['RESEND_API_KEY', process.env.RESEND_API_KEY],
     ['STRIPE_WEBHOOK_SECRET', process.env.STRIPE_WEBHOOK_SECRET],
     ['CUTTINGFLOOR_ACCOUNT_KEY', process.env.CUTTINGFLOOR_ACCOUNT_KEY],
+    ['CUTTINGFLOOR_KEY_SECRET', process.env.CUTTINGFLOOR_KEY_SECRET],
   ] as const)
     if (!set) process.stderr.write(`lifecycle: ${name} unset; that part is off\n`);
 }
@@ -133,6 +140,7 @@ const server = createHttpServer({
   ...(config.mode === 'hosted' ? { apiKeys } : {}),
   ...(scriptKeys ? { scriptKeys } : {}),
   ...(oauth ? { oauth } : {}),
+  ...(providerKeys ? { savedKeys: providerKeys } : {}),
   ...(access
     ? {
         access: async (owner: string) => void (await access.require(owner)),

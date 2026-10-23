@@ -32,21 +32,31 @@ export interface SyncLipsync {
   progress: (fraction: number, message: string) => void;
 }
 
-/** How to give the server a sync. labs key, for whichever mode it runs in (both, hosted first). */
-export function syncKeyHint(mode: 'local' | 'hosted'): string {
+/**
+ * How to give the server a sync. labs key, for whichever mode it runs in (both, hosted first).
+ * Hosted with saved keys, the account page comes first: the user adds the key there once.
+ */
+export function syncKeyHint(mode: 'local' | 'hosted', keysUrl?: string): string {
   const header = `send the header ${providerHeader('sync')}: <key> with each request (put it in the headers of this server's entry in your MCP client's config)`;
   const local =
     'add SYNC_API_KEY=<key> to the .env next to compose.yaml (or the Docker secret sync_api_key), then docker compose up -d';
   const where = 'Get a key at sync.so (Settings → API keys), then';
+  if (mode === 'hosted' && keysUrl)
+    return `Add your sync. labs key at ${keysUrl} (get one at sync.so → Settings → API keys), then call again. Or ${header}`;
   return mode === 'hosted'
     ? `${where} ${header}. Running it yourself instead: ${local}`
     : `${where} ${local}. On a hosted server: ${header}`;
 }
 
-export function syncKeyRequired(tool: string, mode: 'local' | 'hosted'): CfError {
+export function syncKeyRequired(tool: string, mode: 'local' | 'hosted', keysUrl?: string): CfError {
   return new CfError('credential_required', `${tool} needs your sync. labs API key`, {
-    detail: { provider: 'sync', env: 'SYNC_API_KEY', header: providerHeader('sync') },
-    hint: syncKeyHint(mode),
+    detail: {
+      provider: 'sync',
+      env: 'SYNC_API_KEY',
+      header: providerHeader('sync'),
+      ...(keysUrl ? { keys_url: keysUrl } : {}),
+    },
+    hint: syncKeyHint(mode, keysUrl),
   });
 }
 

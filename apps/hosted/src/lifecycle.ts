@@ -6,6 +6,7 @@ import { listHeld, type MeterEntry, type Runtime, startUpload } from '@cuttingfl
 import type { Access, AccessCheck } from './access.ts';
 import type { Mailer } from './email.ts';
 import type { ScriptKeys } from './keys.ts';
+import { type ProviderKeys, SAVABLE } from './provider-keys.ts';
 
 // What happens around an account as it is used, still without a database:
 // - WorkOS metadata records the first tool call and the first export (the site's welcome page
@@ -43,6 +44,8 @@ export interface LifecycleOptions {
   accountKey?: string;
   /** The accounts' script keys, made and revoked on the account page. */
   keys?: ScriptKeys;
+  /** Provider keys the account saves on its page (its sync. labs key), kept encrypted in WorkOS. */
+  providerKeys?: ProviderKeys;
   /** OAuth client ids whose users get lifetime, each with the name its reason records. */
   lifetimeClients?: Map<string, string>;
 }
@@ -307,6 +310,13 @@ export class Lifecycle {
       await this.#uploadRoute(req, res);
       return true;
     }
+    if (
+      url.pathname === '/account/provider-keys' ||
+      url.pathname === '/account/provider-keys/remove'
+    ) {
+      await this.#providerKeysRoute(req, res, url);
+      return true;
+    }
     if (url.pathname === '/account/keys' || url.pathname === '/account/keys/revoke') {
       await this.#keysRoute(req, res, url);
       return true;
@@ -345,6 +355,47 @@ export class Lifecycle {
       return json(res, 200, made);
     } catch (error) {
       return json(res, 409, { error: (error as Error).message });
+    }
+  }
+
+  /**
+   * The account's own provider keys. GET ?user= lists which are saved, by their last four
+   * characters; POST {user, provider, key} saves one (the key is never sent back); POST /remove
+   * {user, provider} takes it off.
+   */
+  async #providerKeysRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
+    const keys = this.#o.providerKeys;
+    if (!keys) return json(res, 503, { error: 'saved keys are off on this server' });
+    try {
+      if (req.method === 'GET') {
+        const owner = url.searchParams.get('user') ?? '';
+        if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+        return json(res, 200, { keys: await keys.list(owner), providers: SAVABLE });
+      }
+      if (req.method !== 'POST') return json(res, 405, { error: 'GET or POST' });
+      let body: { user?: unknown; provider?: unknown; key?: unknown };
+      try {
+        body = JSON.parse(await readBody(req, 16 * 1024));
+      } catch {
+        return json(res, 400, { error: 'body must be JSON' });
+      }
+      const owner = typeof body.user === 'string' ? body.user : '';
+      if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+      const provider = SAVABLE.find((p) => p === body.provider);
+      if (!provider)
+        return json(res, 400, { error: `provider must be one of ${SAVABLE.join(', ')}` });
+      if (url.pathname === '/account/provider-keys/remove') {
+        await keys.remove(owner, provider);
+        return json(res, 200, { removed: true });
+      }
+      const key = typeof body.key === 'string' ? body.key.trim() : '';
+      if (!key || key.length > 500 || /\s/.test(key))
+        return json(res, 400, { error: 'Paste the key itself: one line, no spaces' });
+      await keys.save(owner, provider, key);
+      return json(res, 200, { saved: true, provider, ends: key.slice(-4) });
+    } catch {
+      return json(res, 503, { error: 'keys could not be read or saved just now' });
     }
   }
 

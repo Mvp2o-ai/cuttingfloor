@@ -5,7 +5,8 @@ import { readFile } from 'node:fs/promises';
  * - no key ever passes through a tool argument, result, error, log or stored file;
  * - keys are per provider and resolved when a job starts;
  * - local mode reads Docker secrets, then the environment; hosted mode takes them from the
- *   client's request headers and never stores them.
+ *   client's request headers, then from keys the user saved on their account page, which are
+ *   kept encrypted in their WorkOS account and never on the server's disk.
  */
 export type ProviderId =
   | 'typesafe'
@@ -38,7 +39,10 @@ export function providerHeader(provider: ProviderId): string {
   return `X-Cuttingfloor-Key-${provider[0]?.toUpperCase()}${provider.slice(1)}`;
 }
 
-export type CredentialStatus = { configured: boolean; source?: 'secret' | 'env' | 'header' };
+export type CredentialStatus = {
+  configured: boolean;
+  source?: 'secret' | 'env' | 'header' | 'saved';
+};
 
 export interface CredentialStore {
   status(owner: string, provider: ProviderId): Promise<CredentialStatus>;
@@ -83,6 +87,32 @@ export class LocalCredentialStore implements CredentialStore {
 
   async resolve(_owner: string, provider: ProviderId): Promise<string | undefined> {
     return (await this.#lookup(provider))?.key;
+  }
+}
+
+/** Hosted mode: provider keys users saved on their account page, kept encrypted off this disk. */
+export interface SavedKeys {
+  get(owner: string, provider: ProviderId): Promise<string | undefined>;
+}
+
+/** Hosted mode: a user's saved keys over a base store (the server's own TypeSafe key). */
+export class SavedCredentialStore implements CredentialStore {
+  readonly #base: CredentialStore;
+  readonly #saved: SavedKeys;
+
+  constructor(base: CredentialStore, saved: SavedKeys) {
+    this.#base = base;
+    this.#saved = saved;
+  }
+
+  async status(owner: string, provider: ProviderId): Promise<CredentialStatus> {
+    return (await this.#saved.get(owner, provider))
+      ? { configured: true, source: 'saved' }
+      : this.#base.status(owner, provider);
+  }
+
+  async resolve(owner: string, provider: ProviderId): Promise<string | undefined> {
+    return (await this.#saved.get(owner, provider)) ?? this.#base.resolve(owner, provider);
   }
 }
 

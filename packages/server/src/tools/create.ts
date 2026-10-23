@@ -682,7 +682,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       // The key is looked up before any job, held in this closure while the job runs, and never
       // written: not in the recipe, the job record or the media.
       const key = await deps.credentials.resolve(owner, 'sync');
-      if (!key) throw syncKeyRequired('create.lipsync', mode);
+      if (!key) throw syncKeyRequired('create.lipsync', mode, rt.config.keysUrl);
       const video = await ready(args.video, 'video', 'video');
       const audio = await ready(args.audio, 'audio', 'audio');
       const videoSpan = inside('range', args.range, video.duration);

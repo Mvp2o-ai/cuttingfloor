@@ -14,7 +14,8 @@ import { createHttpServer, parseApiKeys } from '../src/http.ts';
 
 // create.lipsync end to end over HTTP in hosted mode: the user's sync. labs key arrives in the
 // X-Cuttingfloor-Key-Sync header and reaches a stand-in for api.sync.so (assets, generate, poll,
-// download); FFmpeg cuts the spans and imports the result. The key must never be stored.
+// download); FFmpeg cuts the spans and imports the result. The key must never be stored. Without
+// a header, a key the account saved on its page is used instead.
 
 const exec = promisify(execFile);
 const ffmpeg = await exec('ffmpeg', ['-version']).then(
@@ -27,6 +28,9 @@ if (!ffmpeg && process.env.CUTTINGFLOOR_REQUIRE_ENGINES) {
 
 const SYNC_KEY = 'sk-sync-test-secret-0123456789';
 const CF_KEY = 'cf_lipsync_test_key_0123456789';
+const SAVER_KEY = 'cf_lipsync_saver_key_0123456789';
+const SAVED_SYNC_KEY = 'sk-sync-saved-secret-9876543210';
+const KEYS_URL = 'https://cuttingfloor.ai/account#keys';
 
 interface Seen {
   method: string;
@@ -74,11 +78,11 @@ function readBody(req: import('node:http').IncomingMessage): Promise<Buffer> {
 const json = (res: import('node:http').ServerResponse, status: number, body: unknown) =>
   res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
 
-async function connect(headers: Record<string, string>): Promise<Client> {
+async function connect(headers: Record<string, string>, key = CF_KEY): Promise<Client> {
   const client = new Client({ name: 'lipsync-test', version: '0' });
   await client.connect(
     new StreamableHTTPClientTransport(new URL(`${mcpBase}/mcp`), {
-      requestInit: { headers: { authorization: `Bearer ${CF_KEY}`, ...headers } },
+      requestInit: { headers: { authorization: `Bearer ${key}`, ...headers } },
     }),
   );
   return client;
@@ -187,7 +191,7 @@ describe.skipIf(!ffmpeg)('create.lipsync with a stand-in sync. labs', () => {
       }
       if (raw.length) entry.body = JSON.parse(raw.toString()) as Record<string, unknown>;
       seen.push(entry);
-      if (req.headers['x-api-key'] !== SYNC_KEY) {
+      if (req.headers['x-api-key'] !== SYNC_KEY && req.headers['x-api-key'] !== SAVED_SYNC_KEY) {
         return json(res, 401, { statusCode: 401, message: 'Invalid API key' });
       }
       if (url.pathname === '/v2/assets/upload' && req.method === 'POST') {
@@ -246,13 +250,19 @@ describe.skipIf(!ffmpeg)('create.lipsync with a stand-in sync. labs', () => {
       inlineMaxBytes: 1024 ** 2,
       motionUrl: null,
       syncUrl: syncBase,
+      keysUrl: KEYS_URL,
     });
     await runtime.start({ sweep: false });
     mcp = createHttpServer({
       runtime,
       // Hosted, nothing but the server's own TypeSafe key comes from the environment.
       credentials: new LocalCredentialStore({}, false),
-      apiKeys: parseApiKeys(`creator:${CF_KEY}`),
+      apiKeys: parseApiKeys(`creator:${CF_KEY},saver:${SAVER_KEY}`),
+      // The key "saver" saved on the account page, as the hosted server reads it back.
+      savedKeys: {
+        get: async (owner, provider) =>
+          owner === 'saver' && provider === 'sync' ? SAVED_SYNC_KEY : undefined,
+      },
     });
     await new Promise<void>((r) => mcp.listen(0, '127.0.0.1', r));
     mcpBase = `http://127.0.0.1:${(mcp.address() as AddressInfo).port}`;
@@ -280,9 +290,12 @@ describe.skipIf(!ffmpeg)('create.lipsync with a stand-in sync. labs', () => {
       provider: 'sync',
       env: 'SYNC_API_KEY',
       header: 'X-Cuttingfloor-Key-Sync',
+      keys_url: KEYS_URL,
     });
+    // The account page comes first, as a link a client can hand the user; the header after.
+    expect(err.hint.startsWith(`Add your sync. labs key at ${KEYS_URL}`)).toBe(true);
     expect(err.hint).toMatch(/X-Cuttingfloor-Key-Sync: <key>/);
-    expect(err.hint).toMatch(/SYNC_API_KEY=<key>/);
+    expect(JSON.stringify(r.content)).toContain(KEYS_URL);
     const jobs = (await callTool(c, 'job.list', {})).structuredContent as { jobs: unknown[] };
     expect(jobs.jobs).toHaveLength(0);
     // Health says whether this request carries a key, never the key.
@@ -409,4 +422,27 @@ describe.skipIf(!ffmpeg)('create.lipsync with a stand-in sync. labs', () => {
     });
     expect((late.structuredContent as { code: string; hint: string }).hint).toMatch(/up to 4/);
   }, 60_000);
+
+  it('uses the key the account saved on its page when the request sends none', async () => {
+    const c = await connect({}, SAVER_KEY);
+    const health = await c.readResource({ uri: 'video://server/health' });
+    const text = String((health.contents[0] as { text: string }).text);
+    expect(JSON.parse(text).providers.sync).toEqual({ configured: true, source: 'saved' });
+    expect(text).not.toContain(SAVED_SYNC_KEY);
+    const video = await importUrl(c, 'talk.mp4');
+    const audio = await importUrl(c, 'line.wav');
+    seen.length = 0;
+    const r = await callTool(c, 'create.lipsync', {
+      video,
+      audio,
+      range: { start_seconds: 0, end_seconds: 2 },
+    });
+    expect(r.isError, JSON.stringify(r)).toBeFalsy();
+    const done = await settle(c, (r.structuredContent as { job_id: string }).job_id);
+    expect(done.status, JSON.stringify(done)).toBe('completed');
+    const api = seen.filter((s) => s.path.startsWith('/v2/'));
+    expect(api.length).toBeGreaterThan(0);
+    for (const s of api) expect(s.headers['x-api-key']).toBe(SAVED_SYNC_KEY);
+    expect(await allFiles(join(dir, 'data'))).not.toContain(SAVED_SYNC_KEY);
+  });
 });

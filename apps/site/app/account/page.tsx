@@ -4,9 +4,11 @@ import { Connect } from '../connect.tsx';
 import { accountOf, type Status, type Usage, usageOf } from '../lib/billing.ts';
 import { filesOf } from '../lib/files.ts';
 import { keysOf } from '../lib/keys.ts';
+import { providerKeysOf } from '../lib/provider-keys.ts';
 import { AccountNav } from './chrome.tsx';
 import { FilesPanel } from './files.tsx';
 import { KeysPanel } from './keys.tsx';
+import { ProviderKeysPanel } from './provider-keys.tsx';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Account — cuttingfloor', robots: { index: false } };
@@ -25,11 +27,12 @@ export default async function Account({
   searchParams: Promise<{ subscribed?: string }>;
 }) {
   const { user } = await withAuth({ ensureSignedIn: true });
-  const [{ status }, usage, files, keys] = await Promise.all([
+  const [{ status }, usage, files, keys, providerKeys] = await Promise.all([
     accountOf(user.id),
     usageOf(user.id),
     filesOf(user.id),
     keysOf(user.id),
+    providerKeysOf(user.id),
   ]);
   const { subscribed } = await searchParams;
   const plan = planOf(status);
@@ -71,6 +74,20 @@ export default async function Account({
           </div>
           <Connect />
         </section>
+
+        {providerKeys ? (
+          <section className="cell" id="keys">
+            <div className="head">
+              <span className="label">Your sync. labs key</span>
+              <p className="lede">
+                Lip sync runs at sync. labs on your own key, and they bill you for each second sent.
+                Get a key at sync.so (Settings, then API keys) and save it here once. It is stored
+                encrypted and never shown again.
+              </p>
+            </div>
+            <ProviderKeysPanel initial={providerKeys} />
+          </section>
+        ) : null}
 
         {keys ? (
           <section className="cell">

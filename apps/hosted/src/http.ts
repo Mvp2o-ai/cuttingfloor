@@ -8,7 +8,12 @@ import {
   type ServerResponse,
 } from 'node:http';
 import { Readable } from 'node:stream';
-import { type CredentialStore, RequestCredentialStore } from '@cuttingfloor/credentials';
+import {
+  type CredentialStore,
+  RequestCredentialStore,
+  SavedCredentialStore,
+  type SavedKeys,
+} from '@cuttingfloor/credentials';
 import {
   createServer,
   importSent,
@@ -59,6 +64,8 @@ export interface HttpOptions {
    * records, lifetime for some clients); awaited, so what it changes counts for this request.
    */
   onCall?: (owner: string, client?: string) => void | Promise<void>;
+  /** Provider keys signed-in users saved on their account page, after any in the request. */
+  savedKeys?: SavedKeys;
   /** Routes of the hosting app (billing webhooks, account data); true when it answered. */
   route?: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>;
 }
@@ -82,9 +89,13 @@ export function createHttpServer(options: HttpOptions): Server {
       // Hosted, provider keys come with each request (X-Cuttingfloor-Key-<Provider>) and live
       // only as long as it, or the job it starts; locally they come from env and secrets.
       const headers = runtime.config.mode === 'hosted' ? ctx.requestInfo?.headers : undefined;
+      // Then the keys the account saved on its page (none for maintenance keys).
+      const saved = options.savedKeys
+        ? new SavedCredentialStore(credentials, options.savedKeys)
+        : credentials;
       return createServer({
         runtime,
-        credentials: headers ? new RequestCredentialStore(credentials, headers) : credentials,
+        credentials: headers ? new RequestCredentialStore(saved, headers) : saved,
         owner: () => owner,
         ...(gate ? { access: () => gate(owner) } : {}),
         ...(limits ? { limits: () => limits(owner) } : {}),

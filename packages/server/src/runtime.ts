@@ -59,6 +59,8 @@ export interface RuntimeConfig {
   typesafeUrl?: string;
   /** sync. labs' API, for create.lipsync. Default: api.sync.so. */
   syncUrl?: string;
+  /** Hosted: the account page where users save their own provider keys (named in errors). */
+  keysUrl?: string;
   /** Local mode: the folder on the user's machine compose mounts at /media/videos. */
   mediaHostPath?: string;
 }
@@ -99,6 +101,11 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
       ? { typesafeUrl: env.CUTTINGFLOOR_TYPESAFE_URL.replace(/\/$/, '') }
       : {}),
     ...(env.CUTTINGFLOOR_SYNC_URL ? { syncUrl: env.CUTTINGFLOOR_SYNC_URL.replace(/\/$/, '') } : {}),
+    ...(mode === 'hosted' && env.CUTTINGFLOOR_KEY_SECRET
+      ? {
+          keysUrl: `${(env.CUTTINGFLOOR_ACCOUNT_URL ?? 'https://cuttingfloor.ai/account').replace(/\/$/, '')}#keys`,
+        }
+      : {}),
     ...(mode === 'local' && env.CUTTINGFLOOR_MEDIA_HOST_PATH
       ? { mediaHostPath: env.CUTTINGFLOOR_MEDIA_HOST_PATH }
       : {}),
