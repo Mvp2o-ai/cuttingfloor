@@ -577,7 +577,27 @@ export const MediaRefInput = z.object({
   include: z
     .array(z.enum(ANALYSES))
     .optional()
-    .describe('Also return these analyses in full (otherwise only their summaries)'),
+    .describe(
+      'Also return these analyses (otherwise only their summaries): in full, or the piece from_seconds, to_seconds, offset and limit choose',
+    ),
+  from_seconds: z
+    .number()
+    .min(0)
+    .optional()
+    .describe(
+      'Only what ends after this media time: transcript words, beats, face and look frames',
+    ),
+  to_seconds: z.number().positive().optional().describe('Only what starts before this media time'),
+  offset: z
+    .int()
+    .min(0)
+    .default(0)
+    .describe('Skip this many items of each included list (after the time range)'),
+  limit: z
+    .int()
+    .min(1)
+    .optional()
+    .describe('At most this many items of each included list; pages says where the next starts'),
 });
 
 /** Stored look runs. Loosely typed in results: the shapes are JudgeQuestion and JudgeAnswer. */
@@ -705,6 +725,28 @@ export const FacesAnalysis = z.object({
 
 export const MediaStatus = z.enum(['importing', 'processing', 'ready', 'failed']);
 
+/** Which piece of one analysis list media.get returned. */
+export const MediaPage = z.object({
+  list: z
+    .string()
+    .describe(
+      "The list paged: transcript.words, beats.beats, faces.frames, or look runs[].frames (each run is cut the same way; first and the counts are the latest run's)",
+    ),
+  first: z
+    .int()
+    .describe(
+      'Index in the whole list of the first item returned (transcript: the word index clip.add source {words} takes)',
+    ),
+  returned: z.int(),
+  matching: z.int().describe('Items in the time range (the whole list without one)'),
+  total: z.int().describe('Items in the whole list'),
+  next_offset: z
+    .int()
+    .nullable()
+    .describe('The offset that gives the next page of this range, or null at its end'),
+});
+export type MediaPage = z.infer<typeof MediaPage>;
+
 export const MediaInfo = z.object({
   media_id: MediaId,
   name: z.string(),
@@ -768,6 +810,12 @@ export const MediaInfo = z.object({
   beats: BeatsAnalysis.optional(),
   faces: FacesAnalysis.optional(),
   look: LookAnalysis.optional(),
+  pages: z
+    .partialRecord(z.enum(ANALYSES), MediaPage)
+    .optional()
+    .describe(
+      'media.get with a range, offset or limit: per included analysis, which piece of its list came back',
+    ),
   error: ToolError.optional(),
 });
 export type MediaInfo = z.infer<typeof MediaInfo>;

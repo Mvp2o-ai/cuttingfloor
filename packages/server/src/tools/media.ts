@@ -23,6 +23,7 @@ import {
   MediaInfo,
   MediaListInput,
   MediaListResult,
+  type MediaPage,
   MediaRefInput,
   MediaUploadInput,
   MediaUploadResult,
@@ -49,13 +50,83 @@ import {
 /** Analysis data longer than this stays with the media instead of filling the result. */
 const INLINE_CHARS = 20_000;
 
-/** An analysis for the result: whole when short, or a note on where to read it when long. */
+/** An analysis for the result: whole when short, or a note on how to read it in pieces. */
 function inline(mediaId: string, kind: string, data: unknown): Record<string, unknown> {
   const chars = JSON.stringify(data).length;
   if (chars <= INLINE_CHARS) return { [kind]: data };
   return {
-    note: `The ${kind} is ${chars} characters, too long to return here. It is stored with the media: media.get {media_id: '${mediaId}', include: ['${kind}']} returns it.`,
+    note: `The ${kind} is ${chars} characters, too long to return here. It is stored with the media: read it in pieces with media.get {media_id: '${mediaId}', include: ['${kind}'], from_seconds, to_seconds} for a stretch of the media, or offset and limit for a page; pages says where each piece sits in the whole list and where the next one starts.`,
   };
+}
+
+interface Window {
+  from?: number;
+  to?: number;
+  offset: number;
+  limit?: number;
+}
+
+/**
+ * One list cut to the window: items overlapping [from, to) in media time, then `offset` and
+ * `limit`. `span` gives an item's time span.
+ */
+function cut<T>(items: T[], span: (item: T) => [number, number], w: Window) {
+  const inRange = (item: T) => {
+    const [start, end] = span(item);
+    return (w.from === undefined || end > w.from) && (w.to === undefined || start < w.to);
+  };
+  const start = items.findIndex(inRange);
+  const matching = start < 0 ? [] : items.filter(inRange);
+  const kept = matching.slice(w.offset, w.limit === undefined ? undefined : w.offset + w.limit);
+  const after = w.offset + kept.length;
+  return {
+    kept,
+    page: (list: string): MediaPage => ({
+      list,
+      first: kept.length ? items.indexOf(kept[0] as T) : Math.max(start, 0) + w.offset,
+      returned: kept.length,
+      matching: matching.length,
+      total: items.length,
+      next_offset: after < matching.length ? after : null,
+    }),
+  };
+}
+
+/** The included analyses cut to the window, with where each piece sits in its whole list. */
+function paged(info: MediaInfo, w: Window): Partial<MediaInfo> {
+  const out: Partial<MediaInfo> = {};
+  const pages: NonNullable<MediaInfo['pages']> = {};
+  if (info.transcript) {
+    const { kept, page } = cut(info.transcript.words, (x) => [x.start, x.end], w);
+    out.transcript = { ...info.transcript, text: kept.map((x) => x.text).join(' '), words: kept };
+    pages.transcript = page('transcript.words');
+  }
+  if (info.beats) {
+    const { kept, page } = cut(info.beats.beats, (t) => [t, t], w);
+    const lo = kept[0] ?? Number.POSITIVE_INFINITY;
+    const hi = kept.at(-1) ?? Number.NEGATIVE_INFINITY;
+    out.beats = {
+      ...info.beats,
+      beats: kept,
+      downbeats: info.beats.downbeats.filter((t) => t >= lo && t <= hi),
+    };
+    pages.beats = page('beats.beats');
+  }
+  if (info.faces) {
+    const { kept, page } = cut(info.faces.frames, (f) => [f.time, f.time], w);
+    out.faces = { ...info.faces, frames: kept };
+    pages.faces = page('faces.frames');
+  }
+  if (info.look) {
+    const runs = info.look.runs.map((r) => ({
+      run: r,
+      ...cut(r.frames, (f) => [f.time, f.time], w),
+    }));
+    out.look = { runs: runs.map(({ run, kept }) => ({ ...run, frames: kept })) };
+    const latest = runs.at(-1);
+    if (latest) pages.look = latest.page('look runs[].frames');
+  }
+  return { ...out, pages };
 }
 
 type LookFrame = JudgedFrame;
@@ -338,7 +409,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       title: 'Analyze media',
       description: [
         'Find what is in imported media, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). The words are reliable; their times are not exact: they can be off by up to about a second, the start of a word can sit in the silence before it, its end can run on over the pause after it, and short ums and uhs are often left out. To cut on speech, take the edges from kind silence and move each cut to the nearest one. beats: tempo, beat and downbeat times. faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on, a box for each sampled time (found false where the subject was lost); to make a title, sticker, arrow or mask follow the subject, turn the boxes into clip.set_transform (or clip.set_mask) keyframes, no tracking of your own needed. look: your own typed questions about what is on screen, answered on every sampled frame (to find where something happens from plain words, media.seek). silence: stretches quieter than threshold_db for at least min_seconds. scenes: times the picture changes by more than threshold (0–100).',
-        'Times are media seconds; boxes are fractions of the picture. Results stay with the media (media.get include) except track, silence and scenes, which come back in the result. A result too long to return (a long transcript) comes back as its summary and a note on reading it with media.get.',
+        'Times are media seconds; boxes are fractions of the picture. Results stay with the media (media.get include) except track, silence and scenes, which come back in the result. A result too long to return (a long transcript) comes back as its summary and a note: read it in pieces with media.get include and a time range or page.',
         'Long-running: returns a task, or a job_id for job.get.',
         '',
         'HOW LOOK WORKS. TypeSafe Jev, a fast judgment model (preview), answers your questions about frames sampled from the media. Each sampled frame is its own request: Jev sees that one picture, named `frame`, and with with_previous also the frame sampled just before it, named `previous`, plus any state you give: text or JSON entries by name, the same on every frame (the script, what a term means). Every question is answered on every frame, independently and in parallel (about 0.15 s a frame), as typed data you then combine in your own code.',
@@ -570,8 +641,10 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     'media.get',
     {
       title: 'Get media',
-      description:
-        'Status, a signed download url for the file and a page_url that plays or shows it in any browser (to give a person), streams, duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times.',
+      description: [
+        'Status, a signed download url for the file and a page_url that plays or shows it in any browser (to give a person), streams, duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words).',
+        'include returns those results at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times. For long media, read them in pieces: from_seconds and to_seconds keep what overlaps that stretch of the media, offset and limit page through what is left, and pages says, per analysis, the index of the first item returned in the whole list (for transcript words, the index clip.add source {words} takes), how many matched and next_offset for the next page (null at the end).',
+      ].join(' '),
       inputSchema: MediaRefInput,
       outputSchema: MediaInfo,
       _meta: PLAYER_TOOL_META,
@@ -585,10 +658,31 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     },
     guard(async (args) => {
       const owner = deps.owner();
+      if (
+        args.from_seconds !== undefined &&
+        args.to_seconds !== undefined &&
+        args.to_seconds <= args.from_seconds
+      ) {
+        throw new CfError('bad_request', 'to_seconds must be after from_seconds');
+      }
       const record = await rt.media.get(owner, args.media_id);
       const link = await rt.signMedia(owner, record);
+      const info = mediaInfo(record, args.include ?? []);
+      const windowed =
+        args.from_seconds !== undefined ||
+        args.to_seconds !== undefined ||
+        args.offset > 0 ||
+        args.limit !== undefined;
       return ok({
-        ...mediaInfo(record, args.include ?? []),
+        ...info,
+        ...(windowed
+          ? paged(info, {
+              offset: args.offset,
+              ...(args.from_seconds !== undefined ? { from: args.from_seconds } : {}),
+              ...(args.to_seconds !== undefined ? { to: args.to_seconds } : {}),
+              ...(args.limit !== undefined ? { limit: args.limit } : {}),
+            })
+          : {}),
         ...(link ? { url: link.url, page_url: link.pageUrl, expires_at: link.expiresAt } : {}),
       });
     }),

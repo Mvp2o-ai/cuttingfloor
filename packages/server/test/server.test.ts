@@ -12,9 +12,10 @@ const anyResult = z.object({}).passthrough();
  * declared its full output schema (about 117 000 of the total): clients chain calls on those
  * shapes, so they are the contract and are not slimmed to fit a harness. Raised to
  * 240 000 for media.seek, which finds moments from plain words, to 250 000 for other_tracks
- * on every rippling edit, and to 256 000 for create.stabilized.
+ * on every rippling edit, to 256 000 for create.stabilized, and to 266 000 for paging media.get
+ * (time range, offset, limit and pages per analysis).
  */
-const BUDGET_BYTES = 256_000;
+const BUDGET_BYTES = 266_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -446,6 +447,70 @@ describe('media and jobs without engines', () => {
     const after = await env.runtime.media.get('legacy', id);
     expect(after.analyses?.look?.runs).toHaveLength(10);
     expect(after.analyses?.beats?.bpm).toBe(120);
+  });
+
+  it('reads a long transcript in pieces: by media time, then by page', async () => {
+    const client = await connect(env.runtime, 'pager');
+    const record = await env.runtime.media.create('pager', { path: '/media/talk.mp4' }, 'talk.mp4');
+    // A word every second: word i runs from i to i + 0.5.
+    const words = Array.from({ length: 50 }, (_, i) => ({
+      text: `w${i}`,
+      start: i,
+      end: i + 0.5,
+      confidence: 0.9,
+    }));
+    await env.runtime.media.saveAnalysis('pager', record.media_id, 'transcript', {
+      model: 'tiny',
+      language: 'en',
+      text: words.map((w) => w.text).join(' '),
+      words,
+    });
+    await env.runtime.media.saveAnalysis('pager', record.media_id, 'beats', {
+      bpm: 60,
+      beats: words.map((w) => w.start),
+      downbeats: words.filter((_, i) => i % 4 === 0).map((w) => w.start),
+    });
+    type Got = {
+      transcript: { text: string; words: Array<{ text: string }> };
+      beats: { beats: number[]; downbeats: number[] };
+      pages: Record<string, Record<string, unknown>>;
+    };
+    const stretch = await ok<Got>(client, 'media.get', {
+      media_id: record.media_id,
+      include: ['transcript', 'beats'],
+      from_seconds: 10.2,
+      to_seconds: 20,
+      limit: 4,
+    });
+    // w10 still runs at 10.2; w20 starts at 20, outside.
+    expect(stretch.transcript.words.map((w) => w.text)).toEqual(['w10', 'w11', 'w12', 'w13']);
+    expect(stretch.transcript.text).toBe('w10 w11 w12 w13');
+    expect(stretch.pages.transcript).toEqual({
+      list: 'transcript.words',
+      first: 10,
+      returned: 4,
+      matching: 10,
+      total: 50,
+      next_offset: 4,
+    });
+    expect(stretch.beats).toMatchObject({ beats: [11, 12, 13, 14], downbeats: [12] });
+    const last = await ok<Got>(client, 'media.get', {
+      media_id: record.media_id,
+      include: ['transcript'],
+      from_seconds: 10.2,
+      to_seconds: 20,
+      offset: 8,
+      limit: 4,
+    });
+    expect(last.transcript.words.map((w) => w.text)).toEqual(['w18', 'w19']);
+    expect(last.pages.transcript).toMatchObject({ first: 18, returned: 2, next_offset: null });
+    // Without a window, the whole list, as before.
+    const whole = await ok<Got>(client, 'media.get', {
+      media_id: record.media_id,
+      include: ['transcript'],
+    });
+    expect(whole.transcript.words).toHaveLength(50);
+    expect(whole).not.toHaveProperty('pages');
   });
 
   it('asks for a TypeSafe key and questions before a look starts a job', async () => {
