@@ -119,6 +119,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
       70bb6685eb0c2a1d18e2918dca3fbfbd39317010b1802eb1b6ea73a92f3fdec0 /models/rnnoise/sh.rnnn \
     | sha256sum -c -
 
+# Speech facts on the CPU, run by packages/engine/src/sound-worker.ts on ONNX Runtime: Silero
+# VAD v6.2.3 (MIT, snakers4/silero-vad) for speech probability, and wav2vec2-base-960h
+# (Apache-2.0, facebook/wav2vec2-base-960h, as the Transformers.js ONNX export) for aligning
+# transcript words to the sound. They ship in the image; each file pinned and checked.
+FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS speech-models
+ARG SILERO_COMMIT=5cd7945676eb32225748052e2e6a0580e4686a08
+ARG SILERO_SHA256=1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3
+ARG W2V_REVISION=a19f851b3d42865797e410752b4c570c871e4825
+ARG W2V_SHA256=e46614273f03ff4b87923a965e417fa72004825522cb007c9c25633b8475490d
+ARG W2V_VOCAB_SHA256=4178db26b3c7570f6a47f14ac6a1c7b32950b8c2800fb097287e53776934f1c5
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+ && mkdir -p /models/wav2vec2-base-960h \
+ && curl -fsSL -o /models/silero-vad-v6.2.3.onnx "https://raw.githubusercontent.com/snakers4/silero-vad/$SILERO_COMMIT/src/silero_vad/data/silero_vad.onnx" \
+ && echo "$SILERO_SHA256  /models/silero-vad-v6.2.3.onnx" | sha256sum -c - \
+ && curl -fsSL -o /models/wav2vec2-base-960h/model.onnx "https://huggingface.co/Xenova/wav2vec2-base-960h/resolve/$W2V_REVISION/onnx/model.onnx" \
+ && echo "$W2V_SHA256  /models/wav2vec2-base-960h/model.onnx" | sha256sum -c - \
+ && curl -fsSL -o /models/wav2vec2-base-960h/vocab.json "https://huggingface.co/Xenova/wav2vec2-base-960h/resolve/$W2V_REVISION/vocab.json" \
+ && echo "$W2V_VOCAB_SHA256  /models/wav2vec2-base-960h/vocab.json" | sha256sum -c -
+
 FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS base
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt tini fontconfig \
@@ -145,6 +164,7 @@ COPY --from=vision /opt/onnxruntime/lib/ /opt/onnxruntime/lib/
 COPY --from=vision /cf-segment /usr/local/bin/cf-segment
 COPY --from=skills-model /models/ /usr/share/cuttingfloor/models/
 COPY --from=denoise-models /models/ /usr/share/cuttingfloor/models/
+COPY --from=speech-models /models/ /usr/share/cuttingfloor/models/
 # Chromium for the sandbox (create.motion, create.still), only ever started by the
 # motion-worker role through this wrapper, which keeps its sandbox on and its network off.
 COPY tools/motion/cf-chromium /usr/local/bin/cf-chromium
