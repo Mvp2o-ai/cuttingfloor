@@ -13,7 +13,7 @@
     "@cuttingfloor/plans": "workspace:*",
     "@cuttingfloor/skills": "workspace:*",
     "@vercel/analytics": "2.0.1",
-    "@workos-inc/authkit-nextjs": "4.4.0",
+    "@workos-inc/authkit-nextjs": "4.5.0",
     "next": "16.2.9",
     "react": "19.2.0",
     "react-dom": "19.2.0",
