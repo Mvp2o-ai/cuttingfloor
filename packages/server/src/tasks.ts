@@ -45,7 +45,8 @@ export function registerTasks(server: McpServer, deps: ServerDeps): void {
   async function mustFind(d: ServerDeps, taskId: string): Promise<Job> {
     const job = /^j_[0-9a-z]{26}$/.test(taskId) ? await store.get(taskId, d.owner()) : undefined;
     if (!job) throw notFound(taskId);
-    return job;
+    // Its links signed again, as job.get does.
+    return d.runtime.freshLinks(job);
   }
 }
 

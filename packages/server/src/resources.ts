@@ -158,7 +158,7 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
       mimeType: 'application/json',
     },
     async (uri, vars) => {
-      const job = await rt.jobs.store.get(String(vars.job_id), deps.owner());
+      const job = await rt.freshLinks(await rt.jobs.store.get(String(vars.job_id), deps.owner()));
       if (!job)
         throw new ProtocolError(
           ProtocolErrorCode.InvalidParams,

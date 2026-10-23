@@ -138,7 +138,7 @@ export function createHttpServer(options: HttpOptions): Server {
           url.searchParams.get('sig'),
         );
         if (!file) {
-          res.writeHead(403, { 'content-type': 'text/plain' }).end('invalid or expired link');
+          res.writeHead(403, { 'content-type': 'text/plain' }).end(refusedLink(url));
           return;
         }
         const name = decodeURIComponent(url.pathname.split('/').pop() ?? '');
@@ -152,7 +152,7 @@ export function createHttpServer(options: HttpOptions): Server {
         const sig = url.searchParams.get('sig');
         const file = await runtime.verifyOutput(filePath, exp, sig);
         if (!file) {
-          res.writeHead(403, { 'content-type': 'text/plain' }).end('invalid or expired link');
+          res.writeHead(403, { 'content-type': 'text/plain' }).end(refusedLink(url));
           return;
         }
         const name = decodeURIComponent(filePath.split('/').pop() ?? '');
@@ -257,6 +257,14 @@ export function createHttpServer(options: HttpOptions): Server {
   // Uploads run as long as the file takes; each one has its own idle timeout instead.
   server.requestTimeout = 0;
   return server;
+}
+
+/** Why a signed link was refused, and how to get one that works. */
+function refusedLink(url: URL): string {
+  const exp = Number(url.searchParams.get('exp'));
+  return exp && exp <= Date.now()
+    ? `this link expired at ${new Date(exp).toISOString()}; job.get (for an export) or media.get (for media) gives a fresh one`
+    : 'invalid or expired link';
 }
 
 const UPLOAD_CORS = {
