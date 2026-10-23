@@ -76,11 +76,7 @@ export default function Home() {
           <video src="/floor.mp4" poster="/floor.jpg" muted loop playsInline autoPlay />
           <div className="floor-cap">
             <span className="label">01 / The layer after generation</span>
-            <span className="label">
-              Generating footage is now cheap and everywhere. Somebody still has to assemble it —
-              cut it, caption it, balance it, deliver it in the right shape for each platform. No AI
-              company ships that layer.
-            </span>
+            <span className="label">Generation is cheap now. Assembly is not.</span>
           </div>
         </section>
 
