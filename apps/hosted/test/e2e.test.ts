@@ -2615,13 +2615,14 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     it('steadies shaky video into new media that keeps its length and sound', async () => {
       const m = env.mediaDir;
       // A still, textured scene seen through a crop that jumps about: hand-held shake.
-      await ff([
-        '-f',
-        'lavfi',
-        '-i',
-        "nullsrc=size=800x480,geq=lum='random(1)*255':cb=128:cr=128,gblur=sigma=3",
-        '-frames:v',
-        '1',
+      await exec('python3', [
+        '-c',
+        [
+          'import sys, cv2, numpy as np',
+          'a = cv2.GaussianBlur(np.random.default_rng(1).random((480, 800, 3)) * 255, (0, 0), 3)',
+          'a = (a - a.min()) / (a.max() - a.min()) * 255',
+          'cv2.imwrite(sys.argv[1], a.astype(np.uint8))',
+        ].join('\n'),
         join(m, 'scene.png'),
       ]);
       await ff([
