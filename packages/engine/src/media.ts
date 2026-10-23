@@ -1,6 +1,6 @@
 import { copyFile, mkdir, open, readdir, realpath, rename, stat } from 'node:fs/promises';
 import { basename, extname, join, sep } from 'node:path';
-import { randomId, secondsToTicks, type Workspace } from '@cuttingfloor/core';
+import { ownerKey, randomId, secondsToTicks, type Workspace } from '@cuttingfloor/core';
 import {
   CfError,
   type MediaInfo,
@@ -14,6 +14,9 @@ import { directDownloadUrl, download } from './fetch.ts';
 import { conformReasons, type Probe, probe } from './probe.ts';
 
 export const MEDIA_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** How long the server remembers why a media is gone (deleted or expired). */
+const GONE_DAYS = 30;
 
 export interface MediaRecord {
   media_id: string;
@@ -88,12 +91,60 @@ export class MediaLibrary {
 
   async get(owner: string, id: string): Promise<MediaRecord> {
     const record = await this.find(owner, id);
-    if (!record) {
-      throw new CfError('not_found', `No media ${id}`, {
-        hint: 'Media expires 7 days after last use; import the file again with media.import',
+    if (!record) throw await this.missing(owner, id);
+    return record;
+  }
+
+  /** Why the owner has no such media: deleted, expired, another account's, or never here. */
+  async missing(owner: string, id: string): Promise<CfError> {
+    const again = 'import the file again with media.import (a saved copy, or its source)';
+    const gone = await this.#ws.readJson<{ reason: 'deleted' | 'expired'; at: string }>(
+      this.#ws.ownerDir(owner, 'media-gone', `${id}.json`),
+    );
+    if (gone?.reason === 'deleted') {
+      return new CfError('not_found', `Media ${id} was deleted with media.delete at ${gone.at}`, {
+        hint: `It can't come back; ${again}`,
+        detail: { media_id: id, reason: 'deleted', at: gone.at },
       });
     }
-    return record;
+    if (gone?.reason === 'expired') {
+      return new CfError(
+        'not_found',
+        `Media ${id} expired at ${gone.at}, 7 days after its last use`,
+        {
+          hint: `Use keeps media: to carry on, ${again}`,
+          detail: { media_id: id, reason: 'expired', at: gone.at },
+        },
+      );
+    }
+    const own = ownerKey(owner);
+    if (/^m_[0-9a-z]{26}$/.test(id)) {
+      for (const key of await this.#ws.owners()) {
+        if (key === own) continue;
+        const held = await stat(this.#ws.path('owners', key, 'media', id, 'media.json')).then(
+          () => true,
+          () => false,
+        );
+        if (held) {
+          return new CfError('not_found', `Media ${id} belongs to another account`, {
+            hint: "Media is kept per account; this one can't use it. Import the file into this account with media.import",
+            detail: { media_id: id, reason: 'other_owner' },
+          });
+        }
+      }
+    }
+    return new CfError('not_found', `No media ${id}`, {
+      hint: `Not an id this server has had in the last ${GONE_DAYS} days, or a typo: media.list shows what is held. Media expires 7 days after last use; ${again}`,
+      detail: { media_id: id, reason: 'unknown' },
+    });
+  }
+
+  /** Remembers why a media is gone, so a later lookup can say so. */
+  async #tombstone(owner: string, id: string, reason: 'deleted' | 'expired'): Promise<void> {
+    await this.#ws.writeJson(this.#ws.ownerDir(owner, 'media-gone', `${id}.json`), {
+      reason,
+      at: new Date().toISOString(),
+    });
   }
 
   async find(owner: string, id: string): Promise<MediaRecord | undefined> {
@@ -436,11 +487,7 @@ export class MediaLibrary {
   async remove(owner: string, id: string): Promise<number> {
     const dir = this.dir(owner, id);
     const record = await this.#ws.readJson<MediaRecord>(join(dir, 'media.json'));
-    if (!record) {
-      throw new CfError('not_found', `No media ${id}`, {
-        hint: 'It was deleted, or expired 7 days after last use; media.list shows what is held',
-      });
-    }
+    if (!record) throw await this.missing(owner, id);
     if (record.status === 'importing' || record.status === 'processing') {
       throw new CfError('media_not_ready', `Media ${id} is still importing`, {
         hint: 'Wait for its job to finish, or stop it with job.cancel, then delete it',
@@ -453,6 +500,7 @@ export class MediaLibrary {
       if (entry?.media_id === id) await this.#ws.remove(join(index, name));
     }
     await this.#ws.remove(dir);
+    await this.#tombstone(owner, id, 'deleted');
     return freed;
   }
 
@@ -467,6 +515,7 @@ export class MediaLibrary {
           const s = await stat(rec);
           if (s.mtimeMs < Date.now() - ttlMs) {
             await this.#ws.remove(join(base, id));
+            if (/^m_[0-9a-z]{26}$/.test(id)) await this.#tombstone(owner, id, 'expired');
             n += 1;
           }
         } catch {
@@ -474,6 +523,7 @@ export class MediaLibrary {
         }
       }
       await this.#ws.sweep(this.#ws.path('owners', owner, 'media-index'), ttlMs);
+      await this.#ws.sweep(this.#ws.path('owners', owner, 'media-gone'), GONE_DAYS * 86_400_000);
     }
     return n;
   }

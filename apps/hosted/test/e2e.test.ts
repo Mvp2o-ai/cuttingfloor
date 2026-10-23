@@ -2692,7 +2692,10 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       const stranger = new Client({ name: 'other', version: '0' });
       await stranger.connect(b);
       const refused = await call(stranger, 'media.delete', { media_id: matte.media_id });
-      expect(refused.structured.code).toBe('not_found');
+      expect(refused.structured).toMatchObject({
+        code: 'not_found',
+        detail: { reason: 'other_owner' },
+      });
       await stranger.close();
 
       const gone = await ok<{
@@ -2706,9 +2709,9 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         before.storage.used_bytes - gone.freed_bytes,
       );
       expect((await listed()).media.map((m) => m.media_id)).not.toContain(matte.media_id);
-      expect((await call(client, 'media.get', { media_id: matte.media_id })).structured.code).toBe(
-        'not_found',
-      );
+      expect(
+        (await call(client, 'media.get', { media_id: matte.media_id })).structured,
+      ).toMatchObject({ code: 'not_found', detail: { reason: 'deleted' } });
       expect(
         (await call(client, 'media.delete', { media_id: matte.media_id })).structured.code,
       ).toBe('not_found');
