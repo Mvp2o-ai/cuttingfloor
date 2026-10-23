@@ -50,6 +50,11 @@ export default function Privacy() {
           a video with media.analyze), the frames and text it names are sent to TypeSafe, the model
           provider that answers. They're used only to answer that question.
         </P>
+        <P>
+          When your agent lip-syncs a clip (create.lipsync) with your own sync. labs key, the
+          stretch of video and the speech it names are sent to sync. labs to make the new clip,
+          under your account with them. We don't keep your key.
+        </P>
       </Part>
       <Part title="Who helps us run it">
         <Items
@@ -59,6 +64,7 @@ export default function Privacy() {
             'Hetzner: the servers that run the editor and hold your media.',
             'Vercel: this website.',
             'TypeSafe: answers to judge.ask and look questions.',
+            'sync. labs, only with your own key: lip sync for create.lipsync.',
             'Resend: account email (trial ending, usage, payment problems).',
           ]}
         />
