@@ -507,6 +507,25 @@ export const MediaSource = z.union([
   z.object({
     upload_id: UploadId.describe('A file sent to the URL media.upload gave, once fully sent'),
   }),
+  z
+    .object({
+      upload: z.object({
+        name: z
+          .string()
+          .min(1)
+          .max(200)
+          .regex(/^[^/\\]+$/)
+          .describe('The file name with its extension, e.g. interview.mp4'),
+        bytes: z
+          .int()
+          .positive()
+          .optional()
+          .describe('The file size, to be refused now rather than part way if it is too big'),
+      }),
+    })
+    .describe(
+      'A file you send next: the answer is the new media with upload.url; PUT the file there and it imports once the last byte arrives',
+    ),
   z.object({
     data: z
       .string()
@@ -810,6 +829,17 @@ export const MediaInfo = z.object({
   beats: BeatsAnalysis.optional(),
   faces: FacesAnalysis.optional(),
   look: LookAnalysis.optional(),
+  upload: z
+    .object({
+      upload_id: UploadId,
+      url: z.string().describe('Signed: PUT the file here; no other credentials needed'),
+      expires_at: z.string(),
+      max_bytes: z.number(),
+    })
+    .optional()
+    .describe(
+      'media.import {source: {upload}}: where to send the file. It imports once the last byte arrives (the PUT answers with the job_id); media.get says where it stands',
+    ),
   pages: z
     .partialRecord(z.enum(ANALYSES), MediaPage)
     .optional()

@@ -20,6 +20,15 @@ interface UploadMeta {
   created_at: string;
   /** The most this upload takes, when the account's storage left is less than `maxBytes`. */
   max_bytes?: number;
+  /** media.import {source: {upload}}: the media it becomes once complete, and for whom. */
+  import?: SentImport;
+}
+
+/** What a sent upload becomes: the media media.import made for it, and the job's slot limit. */
+export interface SentImport {
+  owner: string;
+  media_id: string;
+  owner_limit?: number;
 }
 
 export interface UploadState {
@@ -77,6 +86,16 @@ export class Uploads {
     bytes: number | undefined,
     room?: number,
   ): Promise<{ upload_id: string; url: string; expires_at: string; max_bytes: number }> {
+    return this.#create(owner, name, bytes, room);
+  }
+
+  async #create(
+    owner: string,
+    name: string,
+    bytes: number | undefined,
+    room?: number,
+    then?: (id: string) => Promise<SentImport>,
+  ): Promise<{ upload_id: string; url: string; expires_at: string; max_bytes: number }> {
     if (bytes !== undefined && bytes > this.maxBytes) {
       throw new CfError(
         'bad_request',
@@ -98,6 +117,7 @@ export class Uploads {
       complete: false,
       created_at: new Date().toISOString(),
       ...(room !== undefined && room < this.maxBytes ? { max_bytes: room } : {}),
+      ...(then ? { import: await then(id) } : {}),
     };
     await this.#ws.writeJson(this.#record(ownerKey(owner), id), meta);
     const exp = Date.now() + UPLOAD_TTL_MS;
@@ -108,6 +128,30 @@ export class Uploads {
       expires_at: new Date(exp).toISOString(),
       max_bytes: meta.max_bytes ?? this.maxBytes,
     };
+  }
+
+  /**
+   * An upload that becomes media once it is complete: `then` gets the upload's id and says which
+   * media it becomes (`sent` hands that over when the last byte arrives).
+   */
+  async createImport(
+    owner: string,
+    name: string,
+    bytes: number | undefined,
+    room: number | undefined,
+    then: (id: string) => Promise<SentImport>,
+  ): Promise<{ upload_id: string; url: string; expires_at: string; max_bytes: number }> {
+    return this.#create(owner, name, bytes, room, then);
+  }
+
+  /**
+   * A complete upload that media.import made to become media: the media, and the file to adopt.
+   * Undefined for an ordinary upload, or one not complete (`owner` is the key in the URL).
+   */
+  async sent(owner: string, id: string): Promise<(SentImport & { file: string }) | undefined> {
+    const meta = await this.#meta(owner, id);
+    if (!meta?.complete || !meta.import) return undefined;
+    return { ...meta.import, file: join(this.#dir(owner, id), meta.file) };
   }
 
   /** An upload whose bytes are already here (a data: URI), complete at once. */
@@ -230,6 +274,13 @@ export class Uploads {
         hint: 'Uploads expire a day after media.upload, and each imports once; call media.upload again',
       });
     }
+    if (meta.import) {
+      throw new CfError(
+        'bad_request',
+        `Upload ${id} becomes media ${meta.import.media_id} on its own once it is all sent`,
+        { hint: `media.get {media_id: "${meta.import.media_id}"} says where it stands` },
+      );
+    }
     if (!meta.complete) {
       const received = await this.#size(key, meta);
       throw new CfError(
@@ -260,7 +311,8 @@ export class Uploads {
     for (const id of await this.#ws.list(this.#ws.path('owners', key, 'uploads'))) {
       if (!/^u_[0-9a-z]{26}$/.test(id)) continue;
       const meta = await this.#meta(key, id);
-      if (!meta) continue;
+      // One media.import made to become media is listed as that media.
+      if (!meta || meta.import) continue;
       const expires = Date.parse(meta.created_at) + UPLOAD_TTL_MS;
       if (expires <= Date.now()) continue;
       out.push({

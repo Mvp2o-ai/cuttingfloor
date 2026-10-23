@@ -7,12 +7,14 @@ import {
   detectScenes,
   detectSilences,
   fingerprint,
+  type MediaRecord,
   mediaInfo,
   mediaStills,
   renderSource,
   trackRegion,
   transcribe,
 } from '@cuttingfloor/engine';
+import type { Job } from '@cuttingfloor/jobs';
 import {
   CfError,
   JUDGE_LIMITS,
@@ -217,7 +219,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       description: [
         "Import the user's own video, audio, image or font to edit with or place as is: probe, fingerprint, conform if needed (VFR, rotation, HDR → BT.709), 540p proxy and integrated loudness. A reference image to recreate needs no import: rebuild it with create.motion or create.still.",
         'Long-running: returns a task, or {job_id, media_id} for job.get. The media_id is usable in edits as soon as the job reports processing, so with many files, start every import first and edit while they finish.',
-        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL (Dropbox and Google Drive share links work as they are), the upload_id of a file sent through media.upload, a small file as a data: URI (up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB, with its sha256 so a garbled copy is refused), or the job_id of a completed export.video (its render becomes media). A URL is fetched once, when the import starts: it only has to work until then (a short-lived signed link from the user's own storage is enough), and the copy stays here 7 days after last use. A file the user attached in the chat comes as file, when the client passes it.`,
+        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL (Dropbox and Google Drive share links work as they are), {upload: {name, bytes}} for a file you send yourself (the answer is the new media with upload.url: PUT the file there, curl --fail -T file '<url>', and it imports once the last byte arrives, with no base64 in a message; a broken PUT resumes as media.upload says), the upload_id of a file sent through media.upload, a small file as a data: URI (up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB, with its sha256 so a garbled copy is refused), or the job_id of a completed export.video (its render becomes media). A URL is fetched once, when the import starts: it only has to work until then (a short-lived signed link from the user's own storage is enough), and the copy stays here 7 days after last use. A file the user attached in the chat comes as file, when the client passes it.`,
         'Importing the same file again returns the same media_id.',
       ].join(' '),
       inputSchema: MediaImportInput,
@@ -248,6 +250,32 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       const given = args.file
         ? { url: args.file.download_url }
         : (args.source as NonNullable<typeof args.source>);
+      if ('upload' in given) {
+        // Media now, its file later: the PUT that completes the upload starts the import.
+        const limits = await deps.limits?.();
+        const room = await storageRoom(rt.ws, owner, limits, given.upload.bytes);
+        const admit = await admitJob(deps.limits);
+        let record: MediaRecord | undefined;
+        const upload = await rt.uploads.createImport(
+          owner,
+          given.upload.name,
+          given.upload.bytes,
+          room,
+          async (upload_id) => {
+            record = await rt.media.create(
+              owner,
+              { upload: upload_id },
+              args.name ?? given.upload.name,
+            );
+            return {
+              owner,
+              media_id: record.media_id,
+              ...(admit.ownerLimit === undefined ? {} : { owner_limit: admit.ownerLimit }),
+            };
+          },
+        );
+        return ok({ ...mediaInfo(record as MediaRecord), upload });
+      }
       const source =
         'data' in given
           ? {
@@ -317,33 +345,10 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         await rt.media.save(owner, record);
         await rt.uploads.remove(owner, source.upload_id);
       }
-      const job = await store.create({
-        owner,
-        tool: 'media.import',
-        meta: { media_id: record.media_id },
-        statusMessage: `importing ${record.media_id}`,
+      const job = await startIngest(rt, owner, record, admit, {
+        ...(room === undefined ? {} : { room }),
         ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),
       });
-      rt.jobs.start(
-        job,
-        async ({ signal, progress }) => {
-          const done = await rt.media.ingest(
-            owner,
-            record,
-            (f, m) => progress(f, `${record.media_id}: ${m}`),
-            signal,
-            room === undefined
-              ? {}
-              : {
-                  maxBytes: room,
-                  tooBigHint:
-                    "That is more than the account's storage has left. Files expire on their own (uploads after a day, media and exports 7 days after last use); media.list shows what is held",
-                },
-          );
-          return ok(mediaInfo(done)) as never;
-        },
-        admit,
-      );
       return jobReply(job, ctx);
     }),
   );
@@ -687,6 +692,70 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       });
     }),
   );
+}
+
+/** Starts the import job that ingests a media record whose file is in place (or downloads). */
+async function startIngest(
+  rt: ServerDeps['runtime'],
+  owner: string,
+  record: MediaRecord,
+  admit: Awaited<ReturnType<typeof admitJob>>,
+  options: { room?: number; idempotencyKey?: string } = {},
+): Promise<Job> {
+  const { room } = options;
+  const job = await rt.jobs.store.create({
+    owner,
+    tool: 'media.import',
+    meta: { media_id: record.media_id },
+    statusMessage: `importing ${record.media_id}`,
+    ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
+  });
+  rt.jobs.start(
+    job,
+    async ({ signal, progress }) => {
+      const done = await rt.media.ingest(
+        owner,
+        record,
+        (f, m) => progress(f, `${record.media_id}: ${m}`),
+        signal,
+        room === undefined
+          ? {}
+          : {
+              maxBytes: room,
+              tooBigHint:
+                "That is more than the account's storage has left. Files expire on their own (uploads after a day, media and exports 7 days after last use); media.list shows what is held",
+            },
+      );
+      return ok(mediaInfo(done)) as never;
+    },
+    admit,
+  );
+  return job;
+}
+
+/**
+ * After the PUT that completes an upload media.import made (source {upload}): moves the file
+ * into its media and starts the import. Undefined for any other upload. `key` is the owner key
+ * the upload URL names.
+ */
+export async function importSent(
+  rt: ServerDeps['runtime'],
+  key: string,
+  uploadId: string,
+): Promise<{ media_id: string; job_id: string } | undefined> {
+  const sent = await rt.uploads.sent(key, uploadId);
+  if (!sent) return undefined;
+  const record = await rt.media.get(sent.owner, sent.media_id);
+  record.file = await rt.media.adopt(sent.owner, record, sent.file, { move: true });
+  await rt.media.save(sent.owner, record);
+  await rt.uploads.remove(sent.owner, uploadId);
+  const job = await startIngest(
+    rt,
+    sent.owner,
+    record,
+    sent.owner_limit === undefined ? {} : { ownerLimit: sent.owner_limit },
+  );
+  return { media_id: record.media_id, job_id: job.id };
 }
 
 /** A file name as one shell word, for the example command. */
