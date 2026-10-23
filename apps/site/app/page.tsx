@@ -27,10 +27,12 @@ export default function Home() {
           <h1 className="leader rise">
             <b>cuttingfloor</b>
             <span className="dots" />
-            <span>the video editing agent for Claude, Cursor and ChatGPT</span>
+            <span>the control plane for AI video agents</span>
           </h1>
           <p className="display title rise d1">
-            The control plane for AI agents that finish video.
+            Video editing,
+            <br />
+            finished.
             <Check />
           </p>
           <div className="hero-row">
@@ -38,8 +40,8 @@ export default function Home() {
               <p className="lede">
                 One connection.{' '}
                 <em>
-                  Your AI assistant cuts by editing the words, adds captions, balances the sound,
-                  and hands back a file a human editor can open and finish.
+                  Your AI assistant cuts, captions and mixes — then hands back a file a human editor
+                  can finish.
                 </em>
               </p>
               <div className="actions">
@@ -50,7 +52,7 @@ export default function Home() {
                   Watch it edit
                 </a>
               </div>
-              <span className="label">Self-hosted — one container, no external AI keys.</span>
+              <span>Self-hosted · no external AI keys</span>
             </div>
             <div className="rise d3 works-in">
               <span className="label">Works in</span>
