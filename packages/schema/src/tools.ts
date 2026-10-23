@@ -797,6 +797,26 @@ export const MediaOrigin = z
       .object({ start: z.number(), end: z.number() })
       .optional()
       .describe('render: the frames exported, when not the whole timeline'),
+    sources: z
+      .array(
+        z.object({
+          track_id: z.string().describe('Track of the timeline; outer/inner inside a nested one'),
+          kind: z.enum(['video', 'audio']),
+          start: z.number().describe('Seconds into this file'),
+          end: z.number(),
+          media_id: MediaId.describe('The media this stretch plays'),
+          source_in: z.number().describe('Seconds into that media'),
+          source_out: z.number(),
+          speed: z
+            .record(z.string(), z.unknown())
+            .optional()
+            .describe("The clip's speed change, as clip.set_speed set it"),
+        }),
+      )
+      .optional()
+      .describe(
+        "render: where each stretch of this file comes from, per track, read from the timeline when it was exported (kept after the timeline expires). With a speed curve, source_in and source_out are the clip's whole source range",
+      ),
     tool: z.string().optional().describe('created: the create.* tool that made it'),
     recipe: z
       .string()

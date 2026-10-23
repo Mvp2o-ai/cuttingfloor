@@ -38,6 +38,7 @@ import { askFrames, checkFrameState, type JudgedFrame, sampleTimes } from '../fr
 import { JEV_MODEL, JEV_URL } from '../jev.ts';
 import { admitJob } from '../meter.ts';
 import { PLAYER_TOOL_META } from '../player.ts';
+import type { SourceSpan } from '../render.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 import { listHeld, startUpload, storageOf, storageRoom } from '../storage.ts';
@@ -192,7 +193,14 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         ?.preset as string | undefined);
     const start = Number(meta.range_start);
     const end = Number(meta.range_end);
+    let sources: unknown;
+    try {
+      sources = meta.sources ? JSON.parse(meta.sources) : undefined;
+    } catch {
+      sources = undefined;
+    }
     return {
+      ...(Array.isArray(sources) ? { sources: sources as SourceSpan[] } : {}),
       ...(meta.timeline_id ? { timeline_id: meta.timeline_id } : {}),
       ...(preset ? { preset } : {}),
       ...(meta.range_start && meta.range_end ? { range: { start, end } } : {}),
