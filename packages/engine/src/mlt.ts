@@ -16,6 +16,7 @@ import {
 } from '@cuttingfloor/schema';
 import { compositeFor, type RenderSpan, rotoFilters, type SourceSize } from './composite.ts';
 import { effectFilters, keysOutColour } from './effects.ts';
+import { sourceKey } from './sourcepass.ts';
 import { buildAss } from './text.ts';
 import {
   applyEffects,
@@ -78,6 +79,15 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
   // MLT keeps a producer's last scaled image, so a picture fitted one way inside a nested
   // timeline leaked into the same media fitted another way outside it.
   const nested = doc.nested ?? {};
+  // What a media clip plays: its cleaned sound when a source pass made one. Picture-only
+  // renders (frames) may go without it and play the media itself.
+  const playedKey = (c: StoredClip): string => {
+    const key = sourceKey(c);
+    if (c.type !== 'media' || key === c.media_id || options.sources.has(key)) return key;
+    if (options.frames) return c.media_id;
+    throw new CfError('media_offline', `The cleaned sound of clip ${c.id} was not prepared`);
+  };
+  const producerName = (key: string) => key.replace(/[^\w-]/g, '_');
   const bodies: NestedDoc[] = [doc, ...Object.values(nested)];
   const level = new Map<NestedDoc, string>(bodies.map((b, i) => [b, i ? `l${i}_` : '']));
   const used = new Map<string, { mediaId: string; kind: 'video' | 'audio' }>();
@@ -85,8 +95,9 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
     for (const t of body.tracks)
       for (const c of t.clips) {
         if (!c.enabled || c.type !== 'media') continue;
-        used.set(`${level.get(body)}${c.media_id}_${c.kind[0]}`, {
-          mediaId: c.media_id,
+        const key = playedKey(c);
+        used.set(`${level.get(body)}${producerName(key)}_${c.kind[0]}`, {
+          mediaId: key,
           kind: c.kind,
         });
       }
@@ -239,7 +250,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
         const length = n + cp.head + cp.tail;
         const span = { head: cp.head, tail: cp.tail };
         const src = c.kind === 'video' ? sourceSize(c, nested, options, width, height) : undefined;
-        const media = c.type === 'media' ? options.sources.get(c.media_id) : undefined;
+        const media = c.type === 'media' ? options.sources.get(playedKey(c)) : undefined;
         const chained = c.type === 'media' && Boolean(c.speed) && Boolean(media) && !media?.image;
         // Producer position of the clip's first frame, which is what filter keyframes count.
         const generated = c.type === 'title' || c.type === 'caption';
@@ -301,7 +312,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
         } else {
           const producer =
             c.type === 'media'
-              ? `${level.get(body) ?? ''}${c.media_id}_${c.kind[0]}`
+              ? `${level.get(body) ?? ''}${producerName(playedKey(c))}_${c.kind[0]}`
               : c.type === 'timeline'
                 ? (tractors.get(c.timeline) as string)
                 : '';

@@ -105,6 +105,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
  && fetch tokenizer_config.json "$MINILM_TOKENIZER_CONFIG_SHA256" \
  && fetch onnx/model_quantized.onnx "$MINILM_ONNX_SHA256"
 
+# RNNoise models for the voice_denoise effect (FFmpeg arnndn), pinned by commit and SHA-256:
+# beguiling-drafter keeps voice (laughs, breaths), somnolent-hogwash keeps speech only.
+# GregorR/rnnoise-models: the models are not subject to copyright; RNNoise itself is BSD.
+FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS denoise-models
+ARG RNNOISE_MODELS=https://raw.githubusercontent.com/GregorR/rnnoise-models/3eee541a283fd3b8f81b85b1748e3b9ccbefa04d
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/* && mkdir -p /models/rnnoise \
+ && curl -fsSL -o /models/rnnoise/bd.rnnn "$RNNOISE_MODELS/beguiling-drafter-2018-08-30/bd.rnnn" \
+ && curl -fsSL -o /models/rnnoise/sh.rnnn "$RNNOISE_MODELS/somnolent-hogwash-2018-09-01/sh.rnnn" \
+ && printf '%s  %s\n' \
+      ae3f7411e1e6a884f839a4a145c394408398f09854dbc1216ee02faafc98a17b /models/rnnoise/bd.rnnn \
+      70bb6685eb0c2a1d18e2918dca3fbfbd39317010b1802eb1b6ea73a92f3fdec0 /models/rnnoise/sh.rnnn \
+    | sha256sum -c -
+
 FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS base
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt tini fontconfig \
@@ -119,6 +133,8 @@ RUN apt-get update \
  && ffmpeg -hide_banner -encoders | grep -q prores_ks \
  && melt -query transitions | grep -q qtblend \
  && melt -query filters | grep -q rotoscoping \
+ && ffmpeg -hide_banner -filters | grep -q vidstabtransform \
+ && ffmpeg -hide_banner -filters | grep -q arnndn \
  && chromium --version \
  && python3 -c 'import numpy, PIL, cv2' \
  && unshare --version
@@ -131,6 +147,7 @@ COPY --from=vision /models/ /usr/share/cuttingfloor/models/
 COPY --from=vision /opt/onnxruntime/lib/ /opt/onnxruntime/lib/
 COPY --from=vision /cf-segment /usr/local/bin/cf-segment
 COPY --from=skills-model /models/ /usr/share/cuttingfloor/models/
+COPY --from=denoise-models /models/ /usr/share/cuttingfloor/models/
 # Chromium for the sandbox (create.motion, create.still, code.run), only ever started by the
 # motion-worker role through this wrapper, which keeps its sandbox on and its network off.
 # Python (numpy, Pillow, OpenCV) is for code.run scripts.

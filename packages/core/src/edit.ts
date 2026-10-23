@@ -1329,6 +1329,13 @@ export function storeEffectParams(
   if (spec.kind !== kind) {
     throw new CfError('bad_request', `${name} is a ${spec.kind} effect; this is ${kind}`);
   }
+  if (spec.sourcePass && (home.scope !== 'clip' || home.clip.type !== 'media')) {
+    throw new CfError(
+      'bad_request',
+      `${name} goes on a media clip: it cleans the clip's own source file`,
+      { hint: 'Add it to each audio clip that needs it' },
+    );
+  }
   const parsed = schema.safeParse(params);
   if (!parsed.success) {
     throw new CfError(

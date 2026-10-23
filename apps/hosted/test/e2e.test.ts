@@ -2198,6 +2198,109 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(rms(muffled.left, 0.5, 2.5)).toBeLessThan(rms(plain.left, 0.5, 2.5) * 0.7);
     }, 240_000);
 
+    it('cleans background noise out of speech with voice_denoise, and keeps the voice', async () => {
+      const m = env.mediaDir;
+      await exec('espeak-ng', [
+        '-s',
+        '140',
+        '-w',
+        join(m, 'denoise-speech.wav'),
+        'Hello there. This is a test of the noise reduction, with words to keep.',
+      ]);
+      // A second of noise alone, then the speech over the same noise.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=black:size=320x180:rate=25',
+        '-i',
+        join(m, 'denoise-speech.wav'),
+        '-f',
+        'lavfi',
+        '-i',
+        'anoisesrc=color=white:amplitude=0.03:sample_rate=48000',
+        '-filter_complex',
+        '[1:a]aresample=48000,adelay=1000|1000,apad[s];[s][2:a]amix=inputs=2:normalize=0:duration=first[a]',
+        '-map',
+        '0:v',
+        '-map',
+        '[a]',
+        '-t',
+        '5',
+        '-ac',
+        '2',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '256k',
+        join(m, 'denoise.mp4'),
+      ]);
+      const media = await importMedia({ path: join(m, 'denoise.mp4') });
+      const timeline = async (ops: Array<{ tool: string; args: Record<string, unknown> }>) => {
+        const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+          name: 'denoise',
+          sequence: { width: 320, height: 180, fps: { num: 25, den: 1 } },
+          tracks: { video: 1, audio: 1 },
+        });
+        return (
+          await ok<{ timeline_id: string }>(client, 'edit.batch', {
+            timeline_id,
+            preview: 'none',
+            ops: [{ tool: 'clip.add', args: { track_id: 't1', media_id: media.media_id } }, ...ops],
+          })
+        ).timeline_id;
+      };
+      const noisy = await exportPcm(await timeline([]));
+      const cleanedId = await timeline([
+        {
+          tool: 'filter.add',
+          args: { clip_id: { $ref: 'ops[0].clip_ids[1]' }, name: 'voice_denoise' },
+        },
+      ]);
+      const cleaned = await exportPcm(cleanedId);
+      const db = (r: number) => 20 * Math.log10(Math.max(r, 1e-9) / 32768);
+      // The noise alone drops by well over 12 dB; the speech stays within 3 dB.
+      expect(db(rms(cleaned.left, 0.1, 0.9))).toBeLessThan(db(rms(noisy.left, 0.1, 0.9)) - 12);
+      expect(Math.abs(db(rms(cleaned.left, 1.2, 3)) - db(rms(noisy.left, 1.2, 3)))).toBeLessThan(3);
+      // Its sound stays in step with the picture: the first word starts where it did.
+      const onset = (x: Float64Array) => {
+        const win = 480;
+        for (let i = 48_000 * 0.95; i + win < x.length; i += win / 4) {
+          let sum = 0;
+          for (let j = i; j < i + win; j++) sum += (x[j] ?? 0) ** 2;
+          if (Math.sqrt(sum / win) > 3000) return i / 48_000;
+        }
+        return -1;
+      };
+      expect(Math.abs(onset(cleaned.left) - onset(noisy.left))).toBeLessThan(0.03);
+      // Waveform previews play the cleaned sound too; a track or the timeline refuses it.
+      const plainId = await timeline([]);
+      const view = await ok<{ tracks: Array<{ kind: string; clips: Array<{ id: string }> }> }>(
+        client,
+        'timeline.get',
+        { timeline_id: plainId },
+      );
+      const audioClip = view.tracks.find((t) => t.kind === 'audio')?.clips[0]?.id;
+      const preview = await call(client, 'filter.add', {
+        timeline_id: plainId,
+        clip_id: audioClip,
+        name: 'voice_denoise',
+        params: { keep: 'speech', mix: 0.8 },
+      });
+      expect(preview.isError).toBe(false);
+      const refused = await call(client, 'filter.add', {
+        timeline_id: cleanedId,
+        track_id: 't2',
+        name: 'voice_denoise',
+      });
+      expect(refused.isError).toBe(true);
+      expect(JSON.stringify(refused.structured)).toMatch(/media clip/);
+    }, 300_000);
+
     it('fades in', async () => {
       const faded = await exportPcm(
         await tone([{ tool: 'audio.fade', args: { clip_id: 'c6', in_frames: 25 } }]),
@@ -2507,6 +2610,83 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         '-',
       ]);
       expect(Number(/mean_volume: (-?[\d.]+) dB/.exec(stderr)?.[1])).toBeGreaterThan(-35);
+    }, 300_000);
+
+    it('steadies shaky video into new media that keeps its length and sound', async () => {
+      const m = env.mediaDir;
+      // A still, textured scene seen through a crop that jumps about: hand-held shake.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        "nullsrc=size=800x480,geq=lum='random(1)*255':cb=128:cr=128,gblur=sigma=3",
+        '-frames:v',
+        '1',
+        join(m, 'scene.png'),
+      ]);
+      await ff([
+        '-loop',
+        '1',
+        '-i',
+        join(m, 'scene.png'),
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:sample_rate=48000',
+        '-t',
+        '3',
+        '-r',
+        '25',
+        '-vf',
+        'crop=640:360:80+12*sin(n*1.7):60+9*sin(n*2.3),format=yuv420p',
+        '-c:v',
+        'libx264',
+        '-crf',
+        '16',
+        '-c:a',
+        'aac',
+        '-shortest',
+        join(m, 'shaky.mp4'),
+      ]);
+      /** Mean frame-to-frame shift of the picture's middle, in pixels (phase correlation). */
+      const jitter = async (file: string) => {
+        const { stdout } = await exec('python3', [
+          '-c',
+          [
+            'import sys, cv2, numpy as np',
+            'cap = cv2.VideoCapture(sys.argv[1]); prev = None; d = []',
+            'while True:',
+            '    ok, f = cap.read()',
+            '    if not ok: break',
+            '    g = np.float32(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY))[60:300, 80:560]',
+            '    if prev is not None:',
+            '        (dx, dy), _ = cv2.phaseCorrelate(prev, g); d.append((dx * dx + dy * dy) ** 0.5)',
+            '    prev = g',
+            'print(float(np.mean(d)))',
+          ].join('\n'),
+          file,
+        ]);
+        return Number(stdout.trim());
+      };
+      const shaky = await importMedia({ path: join(m, 'shaky.mp4') });
+      const steady = await create('create.stabilized', { media_id: shaky.media_id });
+      expect(steady).toMatchObject({ kind: 'video', has_audio: true, width: 640, height: 360 });
+      const file = (await env.runtime.media.get('local', steady.media_id)).file as string;
+      const v = (await ffprobe(file)).streams.find((st) => st.codec_type === 'video');
+      expect(v?.codec_name).toBe('prores');
+      expect(Number(v?.nb_read_packets)).toBe(75);
+      const before = await jitter(join(m, 'shaky.mp4'));
+      const after = await jitter(file);
+      expect(before).toBeGreaterThan(8);
+      expect(after).toBeLessThan(before / 5);
+      // The same recipe answers with the same media; a still is refused.
+      expect((await create('create.stabilized', { media_id: shaky.media_id })).media_id).toBe(
+        steady.media_id,
+      );
+      const card = await importMedia({ path: join(m, 'scene.png') });
+      expect((await call(client, 'create.stabilized', { media_id: card.media_id })).isError).toBe(
+        true,
+      );
     }, 300_000);
 
     it('cuts a person out of a picture and a video (keeping the sound), and any subject out of a picture', async () => {

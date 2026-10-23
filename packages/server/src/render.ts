@@ -1,13 +1,16 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { type MediaFacts, ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
 import {
+  clipPasses,
   type ImageFormat,
   installedFonts,
   lengthFrames,
   type MltSource,
   mediaRef,
+  passedAudio,
   renderPicture,
+  renderSource,
   renderTimelineFrames,
   renderWaveform,
 } from '@cuttingfloor/engine';
@@ -20,6 +23,8 @@ export async function sourcesFor(
   owner: string,
   doc: TimelineDoc,
   purpose: 'preview' | 'export',
+  /** false for picture-only renders, which play clips without their cleaned sound. */
+  sound = true,
 ): Promise<{ sources: Map<string, MltSource>; offline: string[] }> {
   const sources = new Map<string, MltSource>();
   const offline: string[] = [];
@@ -62,6 +67,28 @@ export async function sourcesFor(
       });
     }
     sources.set(id, renderPicture(record, purpose));
+  }
+  // Sound effects that run over a clip's whole source (voice_denoise) play a cleaned copy, made
+  // from the best source there is and kept with the media.
+  if (sound) {
+    for (const body of bodies)
+      for (const t of body.tracks)
+        for (const c of t.clips) {
+          if (!c.enabled || c.type !== 'media') continue;
+          const passes = clipPasses(c);
+          const key = `${c.media_id}#${passes.map((p) => p.id).join('+')}`;
+          const plain = sources.get(c.media_id);
+          if (!passes.length || !plain || sources.has(key)) continue;
+          const record = await rt.media.find(owner, c.media_id);
+          if (!record) continue;
+          const input = record.mezzanine ?? record.file ?? renderSource(record, 'export');
+          const path = await passedAudio(
+            input,
+            join(rt.media.dir(owner, c.media_id), 'cleaned'),
+            passes,
+          );
+          sources.set(key, { ...plain, path, image: false });
+        }
   }
   return { sources, offline };
 }
@@ -244,6 +271,7 @@ export async function timelineImage(
     owner,
     doc,
     options.full ? 'export' : 'preview',
+    false,
   );
   assertOnline(offline);
   const [image] = await renderTimelineFrames(doc, frames, sources, {

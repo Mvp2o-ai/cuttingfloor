@@ -60,6 +60,13 @@ export {
   renderMediaFrames,
   renderTimelineFrames,
 } from './render.ts';
+export {
+  clipPasses,
+  DENOISE_MODELS,
+  passedAudio,
+  type SourcePass,
+  sourceKey,
+} from './sourcepass.ts';
 export { type StabilizeOptions, stabilize } from './stabilize.ts';
 export {
   ensureModel,

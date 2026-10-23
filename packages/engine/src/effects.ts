@@ -156,6 +156,9 @@ export function effectFilters(e: StoredEffect, ctx: EffectContext): string {
       });
     case 'noise_reduction':
       return av('afftdn', { nr: Number(raw('amount_db')) });
+    case 'voice_denoise':
+      // Applied to the clip's source sound before the render (sourcepass.ts).
+      return '';
     case 'de_esser':
       return av('deesser', { i: Number(raw('amount')) });
     case 'dialogue_enhance':
