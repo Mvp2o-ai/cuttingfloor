@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { CfError } from '@cuttingfloor/schema';
 import { BIN, run } from './exec.ts';
 import { download } from './fetch.ts';
+import { ALIGN_LANGUAGES, alignTranscriptWords, SPEECH_MODELS } from './speech.ts';
 
 // Local transcription with whisper.cpp (CPU). Models download on first use into the models
 // folder and are checked against pinned SHA-256s before they are used.
@@ -34,14 +35,21 @@ export interface TranscriptWord {
   /** Seconds in the media. */
   start: number;
   end: number;
-  /** 0–1. */
+  /** 0–1: how sure whisper is of the word. */
   confidence: number;
+  /**
+   * 0–1: how clearly the word's letters were heard between start and end (forced alignment);
+   * null when the times are whisper's own. Absent on transcripts made before alignment.
+   */
+  timing_confidence?: number | null;
 }
 
 export interface Transcript {
   model: WhisperModel;
   language: string;
   text: string;
+  /** The model that aligned word times to the sound; null when they are whisper's own. */
+  aligned_by?: string | null;
   words: TranscriptWord[];
 }
 
@@ -107,6 +115,10 @@ export async function transcribe(
     model: WhisperModel;
     modelsDir: string;
     language?: string;
+    /** Align word times to the sound when the language allows (default true). */
+    align?: boolean;
+    /** Media seconds, to keep word times inside. */
+    duration?: number;
     signal?: AbortSignal;
     onProgress?: (fraction: number, message: string) => void;
   },
@@ -185,11 +197,29 @@ export async function transcribe(
         confidence: Math.round(confidence * 1000) / 1000,
       });
     }
+    const language = json.result?.language ?? options.language ?? 'unknown';
+    const clamp = (t: number) =>
+      options.duration === undefined ? t : Math.min(options.duration, Math.max(0, t));
+    const align = options.align !== false && ALIGN_LANGUAGES.has(language) && words.length > 0;
+    if (align) options.onProgress?.(0.85, 'aligning words to the sound');
+    const timed = align
+      ? await alignTranscriptWords(file, words, {
+          ...(options.duration !== undefined ? { duration: options.duration } : {}),
+          ...(options.signal ? { signal: options.signal } : {}),
+          onProgress: (f) => options.onProgress?.(0.85 + 0.15 * f, 'aligning words to the sound'),
+        })
+      : words.map((w) => ({
+          ...w,
+          start: clamp(w.start),
+          end: clamp(w.end),
+          timing_confidence: null,
+        }));
     return {
       model: options.model,
-      language: json.result?.language ?? options.language ?? 'unknown',
+      language,
       text: words.map((w) => w.text).join(' '),
-      words,
+      aligned_by: align ? SPEECH_MODELS.align.name : null,
+      words: timed,
     };
   } finally {
     await rm(dir, { recursive: true, force: true });

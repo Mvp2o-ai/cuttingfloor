@@ -52,6 +52,8 @@ ${og}
   main { width: 100%; max-width: 960px; }
   .stage { background: var(--stage); border-radius: 12px; overflow: hidden; display: grid; place-items: center; }
   video, img { display: block; max-width: 100%; max-height: 80vh; }
+  /* Over checks: what is transparent shows as checks, a background baked into the file as itself. */
+  img, video { background: repeating-conic-gradient(#ccc 0 25%, #fff 0 50%) 50% / 16px 16px; }
   audio { width: 100%; margin: 24px; }
   .none { color: var(--muted); padding: 48px 16px; margin: 0; text-align: center; }
   footer { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: baseline; margin-top: 12px; }

@@ -1,0 +1,11 @@
+# The export stage's Python (tools/sounds/export-*.py), beside CPU PyTorch 2.8.0 (torchaudio
+# 2.8.0, torchvision 0.23.0) from download.pytorch.org. Only the build uses it: the image runs
+# the exported ONNX files on ONNX Runtime.
+onnx==1.23.2
+onnxruntime==1.23.0
+numpy==2.5.4
+einops==0.8.2
+PyYAML==6.0.3
+julius==0.2.8
+omegaconf==2.4.0
+dora-search==0.1.13

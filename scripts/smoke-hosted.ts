@@ -5,8 +5,8 @@
 // The maintenance key comes from CF_KEY, else the first key in deploy/hetzner/cuttingfloor.env
 // (git-ignored, the file up.sh deploys). Keys are for maintenance; clients sign in with OAuth.
 //
-// Checks that a request without a key is refused, then that create.still, create.motion and
-// code.run work in the server's sandbox (gVisor on Hetzner), media.analyze look answers on the
+// Checks that a request without a key is refused, then that create.still and create.motion
+// work in the server's sandbox (gVisor on Hetzner), media.analyze look answers on the
 // server's own TypeSafe key, an export comes back as a signed link that downloads, and that file,
 // sent back in two parts through media.upload, imports as media; the upload link opens as a drop
 // page in a browser, a data: URI imports, and the export link passed as an attached file imports.
@@ -105,17 +105,6 @@ const motion = await run('create.motion', {
 });
 const mediaId = motion.result?.media_id as string | undefined;
 expect(Boolean(mediaId), `create.motion ${JSON.stringify(motion.error ?? '')}`);
-
-step('code.run calls the tools from a script');
-const code = await run('code.run', {
-  script: `import { cf } from 'cuttingfloor';
-const { timeline_id } = await cf.timeline.create({ name: 'smoke', sequence: { width: 640, height: 360, fps: { num: 25, den: 1 } } });
-console.log(timeline_id);`,
-});
-expect(
-  /^tl_/.test(String(code.result?.stdout ?? '')),
-  `code.run ${JSON.stringify(code.error ?? '')}`,
-);
 
 if (mediaId) {
   step('media.analyze look on the server’s TypeSafe key');

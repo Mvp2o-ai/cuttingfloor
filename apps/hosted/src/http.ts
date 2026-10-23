@@ -8,9 +8,10 @@ import {
   type ServerResponse,
 } from 'node:http';
 import { Readable } from 'node:stream';
-import type { CredentialStore } from '@cuttingfloor/credentials';
+import { type CredentialStore, RequestCredentialStore } from '@cuttingfloor/credentials';
 import {
   createServer,
+  importSent,
   type OwnerLimits,
   outputMime,
   type Runtime,
@@ -37,16 +38,21 @@ export interface HttpOptions {
    */
   apiKeys?: Map<string, string>;
   /**
+   * Hosted: the keys signed-in users make on the account page for scripts (`cf_…`). A request
+   * with one acts as that account, with the same trial and plan checks as a sign-in.
+   */
+  scriptKeys?: { owner(key: string): Promise<string | undefined> };
+  /**
    * Hosted mode: MCP authorization (2026-07-28) with this server as the OAuth resource `resource`
    * (its /mcp URL) and tokens from the verifier's authorization server, alongside any API keys.
    */
   oauth?: { verifier: JwtTokenVerifier; resource: URL };
   /**
    * Hosted: whether a signed-in owner may work (trial, plan); throws a CfError when not. Applies
-   * to OAuth sign-ins only: API keys are for maintenance and are never gated.
+   * to OAuth sign-ins and script keys: maintenance API keys are never gated.
    */
   access?: (owner: string) => Promise<void>;
-  /** Hosted: a signed-in owner's plan as limits on the work they start (OAuth sign-ins only). */
+  /** Hosted: a signed-in owner's plan as limits on the work they start (not maintenance keys). */
   limits?: (owner: string) => Promise<OwnerLimits>;
   /** Told of each signed-in owner's MCP request (first-call records). */
   onCall?: (owner: string) => void;
@@ -66,12 +72,16 @@ export function createHttpServer(options: HttpOptions): Server {
   const handler = createMcpHandler(
     (ctx) => {
       const owner = ctx.authInfo?.clientId ?? 'local';
-      const signedIn = ctx.authInfo?.extra?.via === 'oauth';
+      const via = ctx.authInfo?.extra?.via;
+      const signedIn = via === 'oauth' || via === 'script';
       const gate = signedIn ? options.access : undefined;
       const limits = signedIn ? options.limits : undefined;
+      // Hosted, provider keys come with each request (X-Cuttingfloor-Key-<Provider>) and live
+      // only as long as it, or the job it starts; locally they come from env and secrets.
+      const headers = runtime.config.mode === 'hosted' ? ctx.requestInfo?.headers : undefined;
       return createServer({
         runtime,
-        credentials,
+        credentials: headers ? new RequestCredentialStore(credentials, headers) : credentials,
         owner: () => owner,
         ...(gate ? { access: () => gate(owner) } : {}),
         ...(limits ? { limits: () => limits(owner) } : {}),
@@ -131,7 +141,7 @@ export function createHttpServer(options: HttpOptions): Server {
           url.searchParams.get('sig'),
         );
         if (!file) {
-          res.writeHead(403, { 'content-type': 'text/plain' }).end('invalid or expired link');
+          res.writeHead(403, { 'content-type': 'text/plain' }).end(refusedLink(url));
           return;
         }
         const name = decodeURIComponent(url.pathname.split('/').pop() ?? '');
@@ -145,7 +155,7 @@ export function createHttpServer(options: HttpOptions): Server {
         const sig = url.searchParams.get('sig');
         const file = await runtime.verifyOutput(filePath, exp, sig);
         if (!file) {
-          res.writeHead(403, { 'content-type': 'text/plain' }).end('invalid or expired link');
+          res.writeHead(403, { 'content-type': 'text/plain' }).end(refusedLink(url));
           return;
         }
         const name = decodeURIComponent(filePath.split('/').pop() ?? '');
@@ -182,11 +192,32 @@ export function createHttpServer(options: HttpOptions): Server {
       let owner = 'local';
       let via = 'local';
       const request = await toWebRequest(req as IncomingMessage & { method: string; url: string });
-      if (hashedKeys.length || requireToken) {
+      if (hashedKeys.length || requireToken || options.scriptKeys) {
         const keyOwner = apiKeyOwner(req);
+        const bearer = /^Bearer (cf_\S+)$/i.exec(req.headers.authorization ?? '')?.[1];
+        const scriptOwner =
+          !keyOwner && bearer ? await options.scriptKeys?.owner(bearer) : undefined;
         if (keyOwner) {
           owner = keyOwner;
           via = 'key';
+        } else if (scriptOwner) {
+          owner = scriptOwner;
+          via = 'script';
+          options.onCall?.(owner);
+        } else if (bearer && options.scriptKeys) {
+          res
+            .writeHead(401, {
+              'content-type': 'application/json',
+              'www-authenticate': 'Bearer error="invalid_token"',
+            })
+            .end(
+              JSON.stringify({
+                error: 'invalid_token',
+                error_description:
+                  'This script key was revoked or has expired; make a new one on your account page',
+              }),
+            );
+          return;
         } else if (requireToken) {
           const auth = await requireToken(request);
           if (auth instanceof Response) {
@@ -229,6 +260,14 @@ export function createHttpServer(options: HttpOptions): Server {
   // Uploads run as long as the file takes; each one has its own idle timeout instead.
   server.requestTimeout = 0;
   return server;
+}
+
+/** Why a signed link was refused, and how to get one that works. */
+function refusedLink(url: URL): string {
+  const exp = Number(url.searchParams.get('exp'));
+  return exp && exp <= Date.now()
+    ? `this link expired at ${new Date(exp).toISOString()}; job.get (for an export) or media.get (for media) gives a fresh one`
+    : 'invalid or expired link';
 }
 
 const UPLOAD_CORS = {
@@ -325,13 +364,26 @@ async function handleUpload(
         ? { start: Number(range[1]), total: range[3] === '*' ? null : Number(range[3]) }
         : null,
     });
+    // An upload media.import made becomes media now; any other waits for media.import.
+    let imported: { media_id: string; job_id: string } | undefined;
+    let failed: string | undefined;
+    if (state.complete) {
+      imported = await importSent(runtime, target.owner, target.id).catch((error: Error) => {
+        failed = error.message;
+        return undefined;
+      });
+    }
     reply(
       200,
       {
         ...state,
-        next: state.complete
-          ? `media.import {source: {upload_id: "${state.upload_id}"}}`
-          : 'send the rest: PUT with Content-Range from the bytes received',
+        ...(imported ?? {}),
+        ...(failed ? { error: `the file arrived but its import did not start: ${failed}` } : {}),
+        next: imported
+          ? `importing as media ${imported.media_id}: media.get {media_id: "${imported.media_id}"} or job.get {job_id: "${imported.job_id}"}`
+          : state.complete
+            ? `media.import {source: {upload_id: "${state.upload_id}"}}`
+            : 'send the rest: PUT with Content-Range from the bytes received',
       },
       state,
     );

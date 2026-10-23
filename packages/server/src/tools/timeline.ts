@@ -196,7 +196,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.set_transform': {
     title: 'Set transform',
     description:
-      'Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). fit none shows a graphic at its own pixel size, so scale 1 is its real size; the default contain scales it to touch the frame edges. Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; eases are listed at video://catalog/eases. Omitted fields keep their value; null resets one.',
+      "Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). fit none shows a graphic at its own pixel size, so scale 1 is its real size; the default contain scales it to touch the frame edges. Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; eases are listed at video://catalog/eases. Omitted fields keep their value; null resets one. To pin an overlay to a moving subject, use media.analyze track boxes as keyframes: for each box, frame = timeline frame of the box time (where the tracked clip plays that media second) minus this clip's start, x = box x + w/2 and y = box y + h/2 (add your offset). That holds when the tracked clip fills the frame as is; if it is scaled, moved or cropped, map the box through its transform first. Skip boxes with found false.",
   },
   'clip.set_blend': {
     title: 'Set blend mode',
@@ -239,7 +239,7 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
     {
       title: 'Create timeline',
       description:
-        'Start an empty timeline. Returns its timeline_id and its tracks (ids for track_id). Timelines are immutable: every edit returns a new timeline_id, and older ids stay valid for 24 hours after last use.',
+        'Start an empty timeline. Returns its timeline_id and its tracks (ids for track_id). Timelines are immutable: every edit returns a new timeline_id, and older ids stay valid for 24 hours after last use. For work longer than a day, keep the timeline.get document on your side and restore it with timeline.load.',
       inputSchema: TimelineCreateInput,
       outputSchema: TimelineCreateResult,
       annotations: { ...annotations, title: 'Create timeline' },
@@ -259,7 +259,7 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
     {
       title: 'Get timeline',
       description:
-        'The full timeline: tracks, clips (frames, end exclusive), link groups and the media it uses. Keep this JSON to restore the timeline later with timeline.load.',
+        'The full timeline: tracks, clips (frames, end exclusive), link groups and the media it uses. The server keeps a timeline 24 hours after last use: for work longer than a day, save this document on your side (it is the edit) and restore it with timeline.load.',
       inputSchema: TimelineRef,
       outputSchema: TimelineGetResult,
       annotations: { ...readOnly, title: 'Get timeline' },
@@ -274,7 +274,7 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
     {
       title: 'Load timeline',
       description:
-        'Restore a timeline from the JSON timeline.get returned, e.g. after it expired. Its media must still be imported.',
+        'Restore a timeline from the document timeline.get returned, e.g. after it expired (24 h after last use). Its media must still be here: media expires 7 days after last use, so import saved files again with media.import and swap them in with clip.replace.',
       inputSchema: TimelineLoadInput,
       outputSchema: TimelineIdResult,
       annotations: { ...annotations, title: 'Load timeline' },

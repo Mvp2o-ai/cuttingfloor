@@ -9,12 +9,6 @@ import type { CfError } from '@cuttingfloor/schema';
 
 export const METER_TTL_MS = 400 * 24 * 3_600_000;
 
-/**
- * Jobs that are not metered: code.run waits on the jobs its script starts, which are metered
- * themselves, so its own wall clock would count them twice.
- */
-const UNMETERED = new Set(['code.run']);
-
 export interface MeterEntry {
   job_id: string;
   tool: string;
@@ -27,7 +21,7 @@ const month = (iso: string) => iso.slice(0, 7);
 
 /** Records a job's running time once it ends; jobs that never started a run record nothing. */
 export async function meterJob(ws: Workspace, job: Job): Promise<MeterEntry | undefined> {
-  if (!job.startedAt || UNMETERED.has(job.tool) || job.status === 'working') return undefined;
+  if (!job.startedAt || job.status === 'working') return undefined;
   const ms = Date.parse(job.lastUpdatedAt) - Date.parse(job.startedAt);
   if (!(ms > 0)) return undefined;
   const entry: MeterEntry = {

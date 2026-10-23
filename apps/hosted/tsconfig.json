@@ -23,6 +23,9 @@
     },
     {
       "path": "../../packages/jobs"
+    },
+    {
+      "path": "../../packages/core"
     }
   ]
 }

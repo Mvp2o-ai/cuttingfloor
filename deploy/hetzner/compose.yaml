@@ -14,7 +14,7 @@ services:
     volumes:
       - /var/lib/cuttingfloor:/data
 
-  # The sandbox, as locally, plus gVisor: agent-written code runs on a user-space kernel.
+  # The sandbox, as locally, plus gVisor: agent-written pages render on a user-space kernel.
   motion:
     image: ${CUTTINGFLOOR_IMAGE:-ghcr.io/mvp2o-ai/cuttingfloor:latest}
     container_name: cuttingfloor-motion

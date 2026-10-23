@@ -1,21 +1,24 @@
 import { createHash } from 'node:crypto';
 import { copyFile, link, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ticksPerFrame } from '@cuttingfloor/core';
+import { ticksPerFrame, toView } from '@cuttingfloor/core';
 import {
   exportTimeline,
   imageExtension,
   lengthFrames,
+  mayBeTransparent,
   qaCheck,
   renderMediaFrames,
   renderSource,
   resolvePreset,
 } from '@cuttingfloor/engine';
-import type { JobContext } from '@cuttingfloor/jobs';
+import type { Job, JobContext } from '@cuttingfloor/jobs';
 import {
   CfError,
   ExportResult,
   ExportVideoInput,
+  JobGetInput,
+  JobGetResult,
   JobListInput,
   JobListResult,
   JobRef,
@@ -31,7 +34,7 @@ import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import type * as z from 'zod/v4';
 import { admitJob } from '../meter.ts';
 import { PLAYER_TOOL_META } from '../player.ts';
-import { assertOnline, framesUri, sourcesFor, timelineImage } from '../render.ts';
+import { assertOnline, framesUri, sourceMap, sourcesFor, timelineImage } from '../render.ts';
 import { guard, jobReply, jobView, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 
@@ -52,7 +55,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Render frames',
       description:
-        'Look at a timeline (or a media file): up to 16 frames as one contact-sheet image (layout grid) or one image each (single). Media frames are numbered at the media frame rate. size full: up to 4 frames at the sequence (or media) size from the original media, for thumbnails and stills to keep. format webp (default), png or jpeg, with quality for webp and jpeg. Each image comes inline and with a signed download url.',
+        'Look at a timeline (or a media file): up to 16 frames as one contact-sheet image (layout grid) or one image each (single). Media frames are numbered at the media frame rate; a picture that can be see-through (alpha or a palette) is shown over a light checkerboard, so transparency shows as checks and a background baked into the file as itself. size full: up to 4 frames at the sequence (or media) size from the original media, for thumbnails and stills to keep. format webp (default), png or jpeg, with quality for webp and jpeg. Each image comes inline and with a signed download url.',
       inputSchema: RenderFramesInput,
       outputSchema: RenderFramesResult,
       annotations: { ...readOnly, title: 'Render frames' },
@@ -109,6 +112,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
           format: args.format,
           ...(quality ? { quality } : {}),
           layout: args.layout,
+          checker: mayBeTransparent(record.probe),
           ...(signal ? { signal } : {}),
         });
         for (const [i, data] of rendered.entries()) {
@@ -126,10 +130,11 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       title: 'Export video',
       description: [
         'Render the timeline to a file. Presets: web_1080p_h264 (MP4, fits 1920x1080), master_prores_422hq (MOV, sequence size), social_9x16_h264 (9:16 sequences, 1080x1920), web_1080p_av1 (MP4, AV1/Opus), gif (640 px, 15 fps), review_h264 (MP4, fits 854x854 with sound: small and quick, to watch a cut), audio_wav_48k, audio_mp3. overrides changes size, fps, bitrate or crf (video://catalog/presets).',
-        `Long-running: returns a task, or {job_id} for job.get. The result links the file (a resource_link to video://jobs/{job_id}/output, which reads as the file, or its signed URL when large), has a signed download URL and a page_url that plays it in any browser (the link to give a person to watch or share), both working for ${Math.round(rt.config.outputUrlTtlMs / 3_600_000)} h`,
+        `Long-running: returns a task, or {job_id} for job.get. The result links the file (a resource_link to video://jobs/{job_id}/output, which reads as the file, or its signed URL when large), has a signed download URL and a page_url that plays it in any browser (the link to give a person to watch or share), both working for ${Math.round(rt.config.outputUrlTtlMs / 3_600_000)} h (job.get gives fresh ones)`,
         rt.config.exportsDir
           ? `and the file in the exports folder (${rt.config.exportsDir}).`
           : '.',
+        'The server keeps the file 7 days: to keep it longer, save it from the url, and media.import it to use it again.',
         'qa.check measures a render (gaps, frames, loudness) before you export.',
       ].join(' '),
       inputSchema: ExportVideoInput,
@@ -182,6 +187,16 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       const job = await store.create({
         owner,
         tool: 'export.video',
+        // What it renders, so media imported from it can say where it came from.
+        meta: {
+          timeline_id: args.timeline_id,
+          preset: args.preset,
+          ...(args.range
+            ? { range_start: String(args.range.start), range_end: String(args.range.end) }
+            : {}),
+          // Kept with the job, so it outlives the timeline (24 h) for as long as the file lives.
+          sources: JSON.stringify(sourceMap(toView(args.timeline_id, doc), args.range)),
+        },
         statusMessage: 'starting',
         ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),
       });
@@ -250,7 +265,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'QA check',
       description:
-        'Measure the rendered timeline: gaps in the picture, offline media, rendered against expected frame count, integrated loudness (LUFS) and true peak (dBTP), plus black and silent stretches when you give their settings. Facts only, no verdicts. Short timelines answer at once; longer ones return a task or job.',
+        "Measure the rendered timeline: gaps in the picture, offline media, rendered against expected frame count, integrated loudness (LUFS) and true peak (dBTP), plus black and silent stretches when you give their settings. With speech {min_probability}, every cut is listed with speech facts: the speech probability of the mix just before and after it (Silero VAD), whether it lands while someone is speaking, the seconds without speech each side, and, per clip edge, the transcript word it cuts through and how much of that word is lost (from the media's transcript, when it has one). Facts only, no verdicts. Short timelines answer at once; longer ones return a task or job.",
       inputSchema: QaCheckInput,
       outputSchema: withJob(QaCheckResult),
       annotations: { ...readOnly, title: 'QA check' },
@@ -260,7 +275,27 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       const doc = await rt.timelines.get(owner, args.timeline_id);
       const run = async ({ signal, progress }: JobContext) => {
         const { sources, offline } = await sourcesFor(rt, owner, doc, 'preview');
+        // Cut facts name the transcript words clip edges cut through, from each media's own.
+        const words = new Map<
+          string,
+          Array<{ text: string; start: number; end: number; confidence: number }>
+        >();
+        if (args.speech) {
+          const ids = new Set(
+            doc.tracks.flatMap((t) =>
+              t.clips.flatMap((c) => (c.type === 'media' ? [c.media_id] : [])),
+            ),
+          );
+          for (const id of ids) {
+            const record = await rt.media.find(owner, id).catch(() => undefined);
+            const list = record?.analyses?.transcript?.words;
+            if (list?.length) words.set(id, list);
+          }
+        }
         const report = await qaCheck(doc, sources, offline, {
+          ...(args.speech
+            ? { speech: { minProbability: args.speech.min_probability, words } }
+            : {}),
           ...(args.range ? { range: args.range } : {}),
           ...(args.black
             ? {
@@ -307,25 +342,46 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get job',
       description:
-        'Status, progress and, once completed, the result of a long-running call (media.import, create.*, export.video, qa.check, code.run). Same record as tasks/get. status_message says what it is doing, or, while it waits, where it stands in the queue and what it waits for. It answers at once with where the job stands.',
-      inputSchema: JobRef,
-      outputSchema: JobView,
+        'Status, progress and, once completed, the result of long-running calls (media.import, media.analyze, create.*, export.video, qa.check). Same record as tasks/get. status_message says what it is doing, or, while it waits, where it stands in the queue and what it waits for. It answers at once with where each job stands. job_id reads one job; job_ids reads many in one call and answers {jobs, not_found}.',
+      inputSchema: JobGetInput,
+      outputSchema: JobGetResult,
       annotations: { ...readOnly, title: 'Get job' },
     },
     guard(async (args) => {
       const owner = deps.owner();
-      const job = await rt.jobs.store.get(args.job_id, owner);
-      if (!job)
-        throw new CfError('not_found', `No job ${args.job_id}`, {
-          hint: 'Finished jobs are kept 7 days',
+      if (Boolean(args.job_id) === Boolean(args.job_ids)) {
+        throw new CfError('bad_request', 'Give either job_id or job_ids', {
+          hint: 'job.get {job_id: "j_…"} for one job, or {job_ids: ["j_…", "j_…"]} for many',
         });
+      }
       // A finished job's links and media come along, as they would from tasks/result.
-      const done = job.result as
-        | { isError?: boolean; content?: CallToolResult['content'] }
-        | undefined;
-      const extra =
-        done && !done.isError ? (done.content ?? []).filter((c) => c.type !== 'text') : [];
-      return ok(jobView(job), extra);
+      const extra = (job: Job) => {
+        const done = job.result as
+          | { isError?: boolean; content?: CallToolResult['content'] }
+          | undefined;
+        return done && !done.isError ? (done.content ?? []).filter((c) => c.type !== 'text') : [];
+      };
+      if (args.job_id) {
+        // Its links signed again, so a job read days later still hands out working ones.
+        const job = await rt.freshLinks(await rt.jobs.store.get(args.job_id, owner));
+        if (!job)
+          throw new CfError('not_found', `No job ${args.job_id}`, {
+            hint: 'Finished jobs are kept 7 days',
+          });
+        return ok(jobView(job), extra(job));
+      }
+      const ids = [...new Set(args.job_ids)];
+      const found = await rt.freshLinks(
+        await Promise.all(ids.map((id) => rt.jobs.store.get(id, owner))),
+      );
+      const jobs = found.filter((j): j is Job => Boolean(j));
+      return ok(
+        {
+          jobs: jobs.map(jobView),
+          not_found: ids.filter((_, i) => !found[i]),
+        },
+        jobs.flatMap(extra),
+      );
     }),
   );
 
@@ -343,7 +399,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         ...(args.status ? { status: args.status } : {}),
         limit: args.limit,
       });
-      return ok({ jobs: jobs.map(jobView) });
+      return ok({ jobs: (await rt.freshLinks(jobs)).map(jobView) });
     }),
   );
 

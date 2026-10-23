@@ -9,6 +9,7 @@ import {
   type LOOP_ANIMATIONS,
   MASK_SHAPES,
   type MaskShape,
+  SOUND_LABELS,
   TEXT_DEFAULTS,
   type TEXT_REVEALS,
   type TransitionKind,
@@ -170,6 +171,13 @@ const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<u
     body: {
       note: 'transition.add at the cut after a clip, centred on the cut. Linked audio gets a crossfade automatically.',
       kinds: TRANSITIONS,
+    },
+  },
+  sounds: {
+    title: 'Sounds',
+    body: {
+      note: 'media.analyze {kind: "sounds", labels} names sounds from this list (AudioSet-strong, 447 sounds). For a sound described in your own words, media.listen.',
+      labels: SOUND_LABELS,
     },
   },
   eases: {

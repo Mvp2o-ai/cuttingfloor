@@ -1,7 +1,7 @@
 # Hosting cuttingfloor on Hetzner Cloud
 
 One server first. It's the same image as local, in hosted mode:
-- OAuth sign-in through WorkOS AuthKit (each user is an owner), and bearer API keys alongside
+- OAuth sign-in through WorkOS AuthKit (each user is an owner), keys users make on the account page for scripts, and maintenance API keys alongside
 - imports from a URL, or of a file sent to a signed upload URL (`media.upload`, resumable, kept a day until imported)
 - the server's own TypeSafe key for `media.analyze look`, with a daily frame cap per account
 - the sandbox under gVisor
@@ -37,12 +37,12 @@ One server first. It's the same image as local, in hosted mode:
 
 Signed links cover only the path, so links made under the old address still work after the redirect. A client that signed in at the old address signs in once more.
 
-**Check it:** `CF_KEY=<a key from CUTTINGFLOOR_API_KEYS> node scripts/smoke-hosted.ts https://<domain>`. It checks that a request without a key is refused, then the sandbox (`create.still`, `create.motion`, `code.run`), `look` on the server's TypeSafe key, an export's signed link, and that file uploaded back in two parts and imported.
+**Check it:** `CF_KEY=<a key from CUTTINGFLOOR_API_KEYS> node scripts/smoke-hosted.ts https://<domain>`. It checks that a request without a key is refused, then the sandbox (`create.still`, `create.motion`), `look` on the server's TypeSafe key, an export's signed link, and that file uploaded back in two parts and imported.
 
 **Billing and account email:**
 - `node scripts/stripe-setup.ts` makes (or updates) the prices, the billing portal and the webhook at `<CUTTINGFLOOR_PUBLIC_URL>/stripe/webhook`, and writes the webhook's secret to `cuttingfloor.env`.
 - `RESEND_API_KEY` sends account email from support@cuttingfloor.ai (the domain is verified in Resend, its records in the Hetzner DNS zone).
-- `CUTTINGFLOOR_ACCOUNT_KEY` is shared with the site, which acts for the signed-in account: its render minutes (`GET /account/usage`), its files and storage (`GET /account/media`), and starting an upload from the account page's drop zone (`POST /account/uploads`; the browser then sends the file straight to the signed upload URL).
+- `CUTTINGFLOOR_ACCOUNT_KEY` is shared with the site, which acts for the signed-in account: its render minutes (`GET /account/usage`), its files and storage (`GET /account/media`), starting an upload from the account page's drop zone (`POST /account/uploads`; the browser then sends the file straight to the signed upload URL), and the account's keys for scripts (`GET`/`POST /account/keys`, `POST /account/keys/revoke`). A script key (`cf_…`) calls `/mcp` as its account, with the same trial and plan checks as a sign-in; only its SHA-256 is stored (`keys/` under the data root), and it works for a year or until revoked.
 - Plans, their minutes and limits are `packages/plans`; the server and the site both read it.
 
 **Check accounts and billing:** `CHROME_PATH=<chrome> node scripts/smoke-account.ts https://cuttingfloor.ai`. It signs a throwaway user up on the site, checks the account and welcome pages, opens Checkout, then checks the server's rules on the real WorkOS and Stripe: trial limits, a refused unverified email, refusal when WorkOS can't be reached, trial over, subscribed, lifetime.
@@ -94,7 +94,7 @@ Treat an authorization error from WorkOS as a separate unresolved configuration 
 
 **If the image is private:** export `GHCR_USER` and `GHCR_TOKEN` (`read:packages`) before running `up.sh`. Or make the GHCR package public in the GitHub UI. Or build on the server from this checkout's HEAD: `CUTTINGFLOOR_BUILD=1 ./up.sh`.
 
-**Verified under gVisor:** `create.still`, `create.motion` and `code.run` run with the sandbox under `runsc` (systrap). The deeper escape and abuse checks in `scripts/smoke-motion.ts` still run only against the local compose file.
+**Verified under gVisor:** `create.still` and `create.motion` run with the sandbox under `runsc` (systrap). The deeper escape and abuse checks in `scripts/smoke-motion.ts` still run only against the local compose file.
 
 ## Growing it
 

@@ -4,6 +4,7 @@ import { configFromEnv, Runtime } from '@cuttingfloor/server';
 import { AccessCheck } from './access.ts';
 import { Mailer } from './email.ts';
 import { createHttpServer, parseApiKeys } from './http.ts';
+import { ScriptKeys } from './keys.ts';
 import { Lifecycle } from './lifecycle.ts';
 import { discoverAuthorizationServer, JwtTokenVerifier } from './oauth.ts';
 
@@ -76,6 +77,8 @@ const access =
   oauth && workosKey && stripeKey
     ? new AccessCheck({ workosKey, stripeKey, accountUrl, ws: runtime.ws })
     : undefined;
+// Keys users make on the account page for scripts: only where accounts are checked.
+const scriptKeys = access ? new ScriptKeys(runtime.ws) : undefined;
 const lifecycle =
   access && workosKey && stripeKey
     ? new Lifecycle({
@@ -86,6 +89,7 @@ const lifecycle =
         accountUrl,
         welcomeUrl: new URL('/welcome', accountUrl).toString(),
         serverUrl: publicUrl ?? '',
+        ...(scriptKeys ? { keys: scriptKeys } : {}),
         ...(process.env.RESEND_API_KEY ? { mailer: new Mailer(process.env.RESEND_API_KEY) } : {}),
         ...(process.env.STRIPE_WEBHOOK_SECRET
           ? { stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET }
@@ -114,6 +118,7 @@ const server = createHttpServer({
   runtime,
   credentials,
   ...(config.mode === 'hosted' ? { apiKeys } : {}),
+  ...(scriptKeys ? { scriptKeys } : {}),
   ...(oauth ? { oauth } : {}),
   ...(access
     ? {

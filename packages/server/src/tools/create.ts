@@ -1,29 +1,41 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   CUTOUT_MODELS,
   type CutoutModel,
   cutout,
+  excerptPicture,
+  excerptSound,
   KOKORO,
   type MediaRecord,
   mediaInfo,
   renderMatte,
   renderPicture,
+  renderSource,
+  SOUND_MODELS,
   speak,
+  splitStems,
+  stabilize,
   voiceWords,
 } from '@cuttingfloor/engine';
 import type { JobLane } from '@cuttingfloor/jobs';
 import {
   CfError,
   CreateCutoutInput,
+  CreateLipsyncInput,
   CreateMatteInput,
   CreateMotionInput,
+  CreateStabilizedInput,
+  CreateStemsInput,
+  CreateStemsResult,
   CreateStillInput,
   CreateVoiceoverInput,
   MediaInfo,
   MOTION_LIMITS,
   MotionRequest,
+  SOUNDS_LIMITS,
+  type Stem,
   withJob,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
@@ -31,6 +43,7 @@ import { admitJob } from '../meter.ts';
 import { renderInSandbox } from '../motion.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
+import { SYNC_URL, syncKeyRequired, syncLipsync } from '../sync.ts';
 
 // create.*: new media from a recipe. Each is a job whose result is a media_id; the same recipe
 // returns the same media while it lives. HTML runs only in the motion sandbox.
@@ -68,6 +81,8 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
     ) => Promise<MediaRecord>,
     /** sandbox: the work is the sandbox's, which queues it there. heavy: a long model run. */
     lane: JobLane = 'engine',
+    /** The media it is made from, for its origin. */
+    from: string[] = [],
   ) {
     const owner = deps.owner();
     const store = rt.jobs.store;
@@ -96,7 +111,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
     const admit = await admitJob(deps.limits);
     const record = await rt.media.create(
       owner,
-      { created: tool, recipe: hash },
+      { created: tool, recipe: hash, ...(from.length ? { from: [...new Set(from)] } : {}) },
       args.name ?? `${tool.split('.')[1]}-${hash.slice(0, 8)}`,
     );
     const job = await store.create({
@@ -106,6 +121,10 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       statusMessage: `making ${record.media_id}`,
       ...key,
     });
+    if ('created' in record.source) {
+      record.source.job_id = job.id;
+      await rt.media.save(owner, record);
+    }
     rt.jobs.start(
       job,
       async ({ signal, progress }) => {
@@ -220,6 +239,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         (dir, progress, signal) => sandbox(request, dir, progress, signal),
         undefined,
         'sandbox',
+        args.assets.map((a) => a.media_id),
       );
     }),
   );
@@ -261,6 +281,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         (dir, progress, signal) => sandbox(request, dir, progress, signal),
         undefined,
         'sandbox',
+        args.assets.map((a) => a.media_id),
       );
     }),
   );
@@ -401,6 +422,311 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         },
         undefined,
         'heavy',
+        [source.media_id],
+      );
+    }),
+  );
+
+  server.registerTool(
+    'create.stabilized',
+    {
+      title: 'Steady shaky video',
+      description:
+        'A steadied copy of shaky video, local (vid.stab): one pass measures the camera shake over the whole media, a second moves each frame against a smoothed camera path. New media, ProRes with the sound, to put on the timeline in place of the shaky clip (clip.replace keeps its place and timing). Long-running: a task, or {job_id, media_id} for job.get.',
+      inputSchema: CreateStabilizedInput,
+      outputSchema: withJob(MediaInfo),
+      annotations: annotations('Steady shaky video'),
+    },
+    guard(async (args, ctx) => {
+      const owner = deps.owner();
+      const source = await rt.media.get(owner, args.media_id);
+      const p = source.probe;
+      if (source.status !== 'ready' || !p) {
+        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`);
+      }
+      if (p.kind !== 'video' || !p.video) {
+        throw new CfError('bad_request', `Media ${args.media_id} is not a video`, {
+          hint: 'Stabilising needs moving pictures; a still has no shake',
+        });
+      }
+      const picture = renderPicture(source, 'export');
+      const recipe = {
+        engine: 'vidstab-1',
+        source: source.fingerprint ?? source.media_id,
+        shakiness: args.shakiness,
+        smoothing: args.smoothing,
+        tripod: args.tripod,
+        edges: args.edges,
+      };
+      return create(
+        ctx,
+        'create.stabilized',
+        { ...args, name: args.name ?? `${source.name} steadied` },
+        recipe,
+        async (dir, progress, signal) => {
+          const dest = join(dir, 'source.mov');
+          progress(0, 'measuring shake');
+          await stabilize(picture.path, dest, {
+            shakiness: args.shakiness,
+            smoothing: args.smoothing,
+            tripod: args.tripod,
+            edges: args.edges,
+            duration: p.duration,
+            signal,
+            onProgress: progress,
+          });
+          return dest;
+        },
+        undefined,
+        'heavy',
+      );
+    }),
+  );
+
+  server.registerTool(
+    'create.stems',
+    {
+      title: 'Separate voice and music',
+      description: [
+        'The sound of a video or audio file pulled apart into stems, each new audio media for clip.add: vocals (voices, spoken or sung), drums, bass, other (everything else: guitars, keys, effects, room noise) and no_vocals (all but the voice, in one file). Laid together at the same time, the four stems make the original sound again.',
+        'Use it to keep only the voice (lose the music under an interview: vocals), keep only the music (take the voice out of a clip: no_vocals), turn the music down under speech (vocals and no_vocals on their own tracks, with their own gain), or take a beat or a bass line on its own.',
+        `Demucs v4 (htdemucs), local, on the CPU: about a fifth of the media's length on 8 cores (a minute of sound in about 15 s). Built for music; on speech with background noise, vocals keeps the voice and other takes most of the noise. Media up to ${SOUNDS_LIMITS.stemsSeconds / 3600} hours. Each stem is a 32-bit float WAV, 44.1 kHz stereo, as long as the original; the same media and stems give the same media again while they last. Long-running: a task, or a job_id for job.get.`,
+      ].join('\n'),
+      inputSchema: CreateStemsInput,
+      outputSchema: withJob(CreateStemsResult),
+      annotations: annotations('Separate voice and music'),
+    },
+    guard(async (args, ctx) => {
+      const owner = deps.owner();
+      const store = rt.jobs.store;
+      const source = await rt.media.get(owner, args.media_id);
+      const p = source.probe;
+      if (source.status !== 'ready' || !p) {
+        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`, {
+          hint: 'Wait for its media.import job to finish',
+        });
+      }
+      if (!p.audio) {
+        throw new CfError('bad_request', `Media ${args.media_id} has no sound to separate`);
+      }
+      if ((p.duration ?? 0) > SOUNDS_LIMITS.stemsSeconds) {
+        throw new CfError(
+          'limit_exceeded',
+          `create.stems takes up to ${SOUNDS_LIMITS.stemsSeconds / 3600} hours; this media is ${Math.round(p.duration ?? 0)} s`,
+          { hint: 'Export the part you need with export.video and separate that' },
+        );
+      }
+      if (args.idempotency_key) {
+        const existing = await store.findIdempotent(owner, 'create.stems', args.idempotency_key);
+        if (existing) return jobReply(existing, ctx);
+      }
+      const stems = [...new Set(args.stems)] as Stem[];
+      const hashOf = (stem: Stem) =>
+        createHash('sha256')
+          .update(
+            JSON.stringify([
+              'create.stems',
+              RECIPE_VERSION,
+              {
+                model: SOUND_MODELS.stems,
+                source: source.fingerprint ?? source.media_id,
+                stem,
+              },
+            ]),
+          )
+          .digest('hex')
+          .slice(0, 40);
+      const known = new Map<Stem, MediaRecord>();
+      for (const stem of stems) {
+        const found = await rt.media.findByRecipe(owner, hashOf(stem));
+        if (found) known.set(stem, found);
+      }
+      const reply = (records: Map<Stem, MediaRecord>) =>
+        ok({
+          media_id: args.media_id,
+          model: SOUND_MODELS.stems,
+          stems: Object.fromEntries(
+            stems.map((s) => [s, mediaInfo(records.get(s) as MediaRecord)]),
+          ),
+        }) as never;
+      const key = args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {};
+      if (known.size === stems.length) {
+        const job = await store.create({ owner, tool: 'create.stems', meta: {}, ...key });
+        return jobReply(
+          await store.update(job, {
+            status: 'completed',
+            progress: 1,
+            statusMessage: 'made before from the same media',
+            result: reply(known),
+          }),
+          ctx,
+        );
+      }
+      const admit = await admitJob(deps.limits);
+      const missing = stems.filter((s) => !known.has(s));
+      const fresh = new Map<Stem, MediaRecord>();
+      for (const stem of missing) {
+        const name = args.name ? `${args.name} ${stem}` : `${source.name} ${stem}`;
+        fresh.set(
+          stem,
+          await rt.media.create(owner, { created: 'create.stems', recipe: hashOf(stem) }, name),
+        );
+      }
+      const job = await store.create({
+        owner,
+        tool: 'create.stems',
+        meta: Object.fromEntries([...fresh].map(([s, r]) => [`stem_${s}`, r.media_id])),
+        statusMessage: `separating ${missing.join(', ')}`,
+        ...key,
+      });
+      rt.jobs.start(
+        job,
+        async ({ signal, progress }) => {
+          const first = fresh.values().next().value as MediaRecord;
+          const outputs = Object.fromEntries(
+            [...fresh].map(([stem, r]) => [
+              stem,
+              join(rt.media.dir(owner, r.media_id), 'source.wav'),
+            ]),
+          );
+          await splitStems(renderSource(source, 'export'), outputs, {
+            workDir: rt.media.dir(owner, first.media_id),
+            signal,
+            onProgress: (f) => progress(0.9 * f, 'stems: separating'),
+          });
+          const done = new Map(known);
+          let i = 0;
+          for (const [stem, record] of fresh) {
+            record.file = outputs[stem] as string;
+            const ready = await rt.media.ingest(
+              owner,
+              record,
+              (f, m) => progress(0.9 + (0.1 * (i + f)) / fresh.size, `${stem}: ${m}`),
+              signal,
+            );
+            await rt.media.rememberRecipe(owner, hashOf(stem), ready.media_id);
+            done.set(stem, ready);
+            i += 1;
+          }
+          return reply(done);
+        },
+        { lane: 'heavy', ...admit },
+      );
+      return jobReply(job, ctx);
+    }),
+  );
+
+  /** A ready media with the stream a tool needs, and how long it runs. */
+  const ready = async (id: string, want: 'video' | 'audio', what: string) => {
+    const record = await rt.media.get(deps.owner(), id);
+    const p = record.probe;
+    if (record.status !== 'ready' || !p) {
+      throw new CfError('media_not_ready', `Media ${id} is still importing`, {
+        hint: 'Wait for its media.import job to finish',
+      });
+    }
+    if (want === 'video' ? !p.video || p.kind !== 'video' : !p.audio) {
+      throw new CfError(
+        'bad_request',
+        `Media ${id} (${p.kind}) has no ${want === 'video' ? 'moving picture' : 'sound'} for ${what}`,
+        {
+          hint:
+            want === 'video'
+              ? 'video is a video of the person speaking'
+              : 'audio is speech: audio media, or a video with sound',
+        },
+      );
+    }
+    return { record, duration: p.duration ?? 0 };
+  };
+  const inside = (
+    name: string,
+    range: { start_seconds: number; end_seconds: number } | undefined,
+    duration: number,
+  ) => {
+    if (range && duration && range.start_seconds >= duration) {
+      throw new CfError(
+        'bad_request',
+        `${name} starts at ${range.start_seconds} s, past the end (${duration} s)`,
+        {
+          hint: `Pick a start from 0 up to ${duration} s`,
+        },
+      );
+    }
+    const span = range
+      ? {
+          start: range.start_seconds,
+          end: duration ? Math.min(range.end_seconds, duration) : range.end_seconds,
+        }
+      : undefined;
+    return span;
+  };
+
+  server.registerTool(
+    'create.lipsync',
+    {
+      title: 'Lip-sync a video to new speech',
+      description: [
+        "Make a person on camera say different words: their mouth is redrawn to match the speech you give (a re-recorded line, a create.voiceover, a word taken from elsewhere in the take). Runs at the user's lip-sync provider on their own key (sync. labs), and the provider bills them for each second sent.",
+        'To replace a line or swap a word, give range, the span of the video where it is said, and audio (with audio_range) holding just the new words. The result is that span alone, re-synced and carrying the new speech, as long as the speech with sync_mode remap; place it over the original span (clip.add on a track above, or clip.replace) and mute the old words. Send only the span: it costs less and finishes sooner.',
+        'Lip sync is for when the face stays on screen while the words change. When the speaker is off screen at that moment, or a cutaway (b-roll, the screen being talked about, a reaction) can cover the splice, the cutaway hides the edit without it.',
+        "Takes minutes. Long-running: a task, or {job_id, media_id} for job.get. The same recipe returns the same media. Provider limits (plan length, credits, file size) come back as limit_exceeded with the provider's error_code.",
+      ].join(' '),
+      inputSchema: CreateLipsyncInput,
+      outputSchema: withJob(MediaInfo),
+      annotations: { ...annotations('Lip-sync a video to new speech'), openWorldHint: true },
+    },
+    guard(async (args, ctx) => {
+      const owner = deps.owner();
+      const mode = rt.config.mode;
+      // The key is looked up before any job, held in this closure while the job runs, and never
+      // written: not in the recipe, the job record or the media.
+      const key = await deps.credentials.resolve(owner, 'sync');
+      if (!key) throw syncKeyRequired('create.lipsync', mode);
+      const video = await ready(args.video, 'video', 'video');
+      const audio = await ready(args.audio, 'audio', 'audio');
+      const videoSpan = inside('range', args.range, video.duration);
+      const audioSpan = inside('audio_range', args.audio_range, audio.duration);
+      const recipe = {
+        provider: args.provider,
+        model: args.model,
+        sync_mode: args.sync_mode,
+        video: video.record.fingerprint ?? video.record.media_id,
+        audio: audio.record.fingerprint ?? audio.record.media_id,
+        range: videoSpan ?? null,
+        audio_range: audioSpan ?? null,
+      };
+      return create(
+        ctx,
+        'create.lipsync',
+        { ...args, name: args.name ?? `${video.record.name} lipsync` },
+        recipe,
+        async (dir, progress, signal) => {
+          progress(0, 'cutting out the picture and the speech');
+          const picture = join(dir, 'lipsync-video.mp4');
+          const speech = join(dir, 'lipsync-audio.wav');
+          await excerptPicture(renderSource(video.record, 'export'), picture, videoSpan, signal);
+          await excerptSound(renderSource(audio.record, 'export'), speech, audioSpan, signal);
+          const dest = join(dir, 'source.mp4');
+          await syncLipsync(
+            {
+              base: rt.config.syncUrl ?? SYNC_URL,
+              key,
+              video: picture,
+              audio: speech,
+              model: args.model,
+              syncMode: args.sync_mode,
+              dest,
+              maxBytes: rt.config.maxDownloadBytes,
+              allowPrivate: rt.config.allowPrivateUrls,
+              signal,
+              progress: (f, m) => progress(0.05 + 0.95 * f, m),
+            },
+            mode,
+          );
+          await Promise.all([rm(picture, { force: true }), rm(speech, { force: true })]);
+          return dest;
+        },
       );
     }),
   );

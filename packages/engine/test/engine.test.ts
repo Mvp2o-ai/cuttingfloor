@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { framesToTicks, newTimeline, runEdits } from '@cuttingfloor/core';
 import {
+  clipPasses,
   compileMlt,
   conformReasons,
   directDownloadUrl,
@@ -16,6 +17,7 @@ import {
   run,
   scaledSize,
   setRenderLimit,
+  sourceKey,
   standardRate,
   trackBeats,
 } from '@cuttingfloor/engine';
@@ -202,6 +204,40 @@ describe('MLT compiler', () => {
     runEdits(doc, 'tl_x', ops as never, () => media, { tool: 'x', args: null }).doc;
   const compile = (d: typeof doc, source = pic) =>
     compileMlt(d, { width: 640, height: 360, sources: new Map([[id, source]]) });
+
+  it('plays the cleaned sound of a voice_denoise clip, made before the render', () => {
+    const audio = doc.tracks[1]?.clips[0]?.id as string;
+    const cleaned = edit([
+      { tool: 'filter.add', args: { clip_id: audio, name: 'voice_denoise', params: { mix: 0.5 } } },
+    ]);
+    const clip = cleaned.tracks[1]?.clips[0];
+    if (!clip) throw new Error('no audio clip');
+    const key = sourceKey(clip);
+    expect(key).toBe(`${id}#denoise-voice-0.5`);
+    expect(clipPasses(clip)[0]?.filter).toMatch(
+      /arnndn=m=.*bd\.rnnn:mix=0\.5,atrim=start_sample=480/,
+    );
+    const xml = compileMlt(cleaned, {
+      width: 640,
+      height: 360,
+      sources: new Map([
+        [id, pic],
+        [key, { ...pic, path: '/cleaned.wav' }],
+      ]),
+    });
+    expect(xml).toContain('/cleaned.wav');
+    expect(xml).not.toContain('arnndn');
+    // The picture still plays the media; pictures alone need no cleaned sound.
+    expect(xml).toContain('<entry producer="m_aaaaaaaaaaaaaaaaaaaaaaaaaa_v"');
+    expect(() => compile(cleaned)).toThrow(/cleaned sound/);
+    expect(
+      compileMlt(cleaned, { width: 640, height: 360, sources: new Map([[id, pic]]), frames: [12] }),
+    ).toContain('producer id="m_aaaaaaaaaaaaaaaaaaaaaaaaaa_a"');
+    // It cleans a clip's own source, so a track or the timeline refuses it.
+    expect(() =>
+      edit([{ tool: 'filter.add', args: { track_id: 't2', name: 'voice_denoise' } }]),
+    ).toThrow(/media clip/);
+  });
 
   it('bakes keyframed transforms per frame and keeps only the corners of straight runs', () => {
     const xml = compile(

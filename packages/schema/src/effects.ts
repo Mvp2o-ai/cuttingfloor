@@ -23,6 +23,11 @@ export interface EffectSpec {
   kind: 'video' | 'audio';
   about: string;
   params: Record<string, ParamSpec>;
+  /**
+   * Runs over the clip's whole source file before a render (an FFmpeg filter MLT cannot run
+   * frame by frame), so it goes on media clips only.
+   */
+  sourcePass?: true;
 }
 
 const num = (min: number, max: number, def: number, about: string, animated = true): Num => ({
@@ -174,6 +179,21 @@ export const EFFECTS = {
     kind: 'audio',
     about: 'Reduce steady background noise (hiss, hum, room tone)',
     params: { amount_db: num(0, 97, 12, 'Noise reduction in dB', false) },
+  },
+  voice_denoise: {
+    kind: 'audio',
+    about:
+      "Clean background noise out of speech with a neural model (RNNoise): fans, hum, traffic, keyboards, room noise. On audio clips only, not tracks or the timeline: it cleans the clip's whole source once, on the first render that plays it, and reuses that after (roughly a minute of sound a second). For steady hiss under music, noise_reduction",
+    sourcePass: true,
+    params: {
+      keep: {
+        kind: 'choice',
+        values: ['voice', 'speech'],
+        default: 'voice',
+        about: 'voice: speech plus laughs, breaths and other human sounds; speech: words only',
+      },
+      mix: num(0, 1, 1, '1 is fully cleaned; lower blends the original back in', false),
+    },
   },
   de_esser: {
     kind: 'audio',

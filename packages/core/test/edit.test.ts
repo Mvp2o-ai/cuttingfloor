@@ -437,6 +437,236 @@ describe('remove, move, trim, split', () => {
   });
 });
 
+describe('cross-track ripple', () => {
+  const AV = 'm_aaaaaaaaaaaaaaaaaaaaaaaaav';
+  /**
+   * Linked A/V clips at 0–50, 50–100 and 100–150 on V1/A1, and titles on V2 at 20–40, 45–55,
+   * 60–80 and 120–140.
+   */
+  function cut() {
+    const base = edit(
+      start(),
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 0, out: 50 } } },
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 50, out: 100 } } },
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 100, out: 150 } } },
+      { tool: 'track.add', args: { kind: 'video' } },
+    );
+    const v2 = base.results[3]?.track_id as string;
+    const title = (at: number, frames: number): BatchOp => ({
+      tool: 'title.add',
+      args: { track_id: v2, text: `t${at}`, at_frame: at, duration_frames: frames },
+    });
+    const titled = edit(base.doc, title(20, 20), title(45, 10), title(60, 20), title(120, 20));
+    const [early, across, mid, late] = titled.results.map((r) => r.clip_id as string);
+    const v1 = titled.doc.tracks[0]?.clips.map((c) => c.id) ?? [];
+    return { doc: titled.doc, v2, v1, early, across, mid, late };
+  }
+  const spans = (doc: TimelineDoc, trackId: string) =>
+    toView('tl_x', doc)
+      .tracks.find((t) => t.id === trackId)
+      ?.clips.map((c) => [c.start, c.end]);
+  const av = (doc: TimelineDoc) => [layout(doc, 0), layout(doc, 2)];
+
+  it('names the clips on other tracks a ripple trim leaves late, or takes the same span from them', () => {
+    const { doc, v2, v1, early, across, mid, late } = cut();
+    const trim = (other_tracks?: 'stay' | 'sync') =>
+      edit(doc, {
+        tool: 'clip.trim',
+        args: {
+          clip_id: v1[0] as string,
+          edge: 'end',
+          to_frame: 40,
+          ripple: true,
+          ...(other_tracks ? { other_tracks } : {}),
+        },
+      });
+    const stay = trim();
+    expect(spans(stay.doc, v2)).toEqual([
+      [20, 40],
+      [45, 55],
+      [60, 80],
+      [120, 140],
+    ]);
+    const warning = stay.outcome.warnings.join('\n');
+    expect(warning).toContain('moved 10 frames earlier');
+    expect(warning).toContain(
+      `now play 10 frames late against it: ${across} (${v2}), ${mid} (${v2}), ${late} (${v2})`,
+    );
+    expect(warning).not.toContain(`${early} (`);
+    expect(warning).toContain("other_tracks: 'sync'");
+
+    const sync = trim('sync');
+    expect(sync.outcome.warnings).toEqual([]);
+    expect(spans(sync.doc, v2)).toEqual([
+      [20, 40],
+      [40, 45],
+      [50, 70],
+      [110, 130],
+    ]);
+    // The linked sound followed the picture as before.
+    const [v, a] = av(sync.doc);
+    expect(a).toEqual(v);
+    expect(v).toEqual([
+      [0, 40, 0],
+      [40, 90, 50],
+      [90, 140, 100],
+    ]);
+  });
+
+  it('takes the head of a ripple trim from the other tracks at the clip start', () => {
+    const { doc, v2, v1 } = cut();
+    const { doc: out } = edit(doc, {
+      tool: 'clip.trim',
+      args: {
+        clip_id: v1[1] as string,
+        edge: 'start',
+        to_frame: 60,
+        ripple: true,
+        other_tracks: 'sync',
+      },
+    });
+    expect(spans(out, v2)).toEqual([
+      [20, 40],
+      [45, 50],
+      [50, 70],
+      [110, 130],
+    ]);
+  });
+
+  it('opens the same gap on other tracks when a ripple trim lengthens a clip', () => {
+    const { doc, v2, v1, late } = cut();
+    const args = { clip_id: v1[2] as string, edge: 'start' as const, to_frame: 90, ripple: true };
+    const stay = edit(doc, { tool: 'clip.trim', args });
+    expect(stay.outcome.warnings.join('\n')).toContain(
+      `moved 10 frames later; these clips on other tracks did not, so they now play 10 frames early against it: ${late} (${v2})`,
+    );
+    const sync = edit(doc, { tool: 'clip.trim', args: { ...args, other_tracks: 'sync' } });
+    expect(spans(sync.doc, v2)?.at(-1)).toEqual([130, 150]);
+  });
+
+  it('removes with ripple and the same span out of the other tracks', () => {
+    const { doc, v2, v1, mid } = cut();
+    const { doc: out, outcome } = edit(doc, {
+      tool: 'clip.remove',
+      args: { clip_id: v1[1] as string, ripple: true, other_tracks: 'sync' },
+    });
+    expect(outcome.warnings).toEqual([]);
+    expect(spans(out, v2)).toEqual([
+      [20, 40],
+      [45, 50],
+      [70, 90],
+    ]);
+    expect(out.tracks.flatMap((t) => t.clips.map((c) => c.id))).not.toContain(mid);
+    const [v, a] = av(out);
+    expect(a).toEqual(v);
+  });
+
+  it('inserts with a gap opened on the other tracks, splitting what crosses the point', () => {
+    const { doc, v2 } = cut();
+    const add = (other_tracks: 'stay' | 'sync') =>
+      edit(doc, {
+        tool: 'clip.add',
+        args: {
+          track_id: 't1',
+          media_id: AV,
+          source: { in: 0, out: 20 },
+          at_frame: 50,
+          mode: 'insert',
+          other_tracks,
+        },
+      });
+    expect(add('stay').outcome.warnings.join('\n')).toContain('moved 20 frames later');
+    const sync = add('sync');
+    expect(sync.outcome.warnings).toEqual([]);
+    expect(spans(sync.doc, v2)).toEqual([
+      [20, 40],
+      [45, 50],
+      [70, 75],
+      [80, 100],
+      [140, 160],
+    ]);
+  });
+
+  it('freezes with the hold opened on the other tracks too', () => {
+    const { doc, v2, v1 } = cut();
+    const { doc: out } = edit(doc, {
+      tool: 'clip.freeze',
+      args: { clip_id: v1[1] as string, at_frame: 60, duration_frames: 10, other_tracks: 'sync' },
+    });
+    expect(spans(out, v2)).toEqual([
+      [20, 40],
+      [45, 55],
+      [70, 90],
+      [130, 150],
+    ]);
+  });
+
+  it('moves with ripple and insert keeping other tracks in step', () => {
+    const { doc, v2, v1 } = cut();
+    const { doc: out, outcome } = edit(doc, {
+      tool: 'clip.move',
+      args: {
+        clip_id: v1[0] as string,
+        to_frame: 100,
+        ripple: true,
+        mode: 'insert',
+        other_tracks: 'sync',
+      },
+    });
+    expect(outcome.warnings).toEqual([]);
+    // 0–50 comes out (the first title goes, the one across 45–55 keeps 50–55 at 0–5), then 100–150 opens after the
+    // last title, which stays over the clip it was over.
+    expect(spans(out, v2)).toEqual([
+      [0, 5],
+      [10, 30],
+      [70, 90],
+    ]);
+  });
+
+  it('leaves locked tracks and says so', () => {
+    const { doc, v2, v1, late } = cut();
+    const locked = edit(doc, { tool: 'track.set', args: { track_id: v2, locked: true } }).doc;
+    const { doc: out, outcome } = edit(locked, {
+      tool: 'clip.trim',
+      args: {
+        clip_id: v1[0] as string,
+        edge: 'end',
+        to_frame: 40,
+        ripple: true,
+        other_tracks: 'sync',
+      },
+    });
+    expect(spans(out, v2)?.at(-1)).toEqual([120, 140]);
+    const warning = outcome.warnings.join('\n');
+    expect(warning).toContain(`${late} (${v2})`);
+    expect(warning).toContain(`locked tracks (${v2}) never move`);
+    expect(warning).not.toContain("other_tracks: 'sync'");
+  });
+
+  it('range.extract on named tracks warns about the rest', () => {
+    const { doc, v2, late } = cut();
+    const { outcome } = edit(doc, {
+      tool: 'range.extract',
+      args: { range: { start: 90, end: 100 }, track_ids: ['t1', 't2'] },
+    });
+    const warning = outcome.warnings.join('\n');
+    expect(warning).toContain(`${late} (${v2})`);
+    expect(warning).toContain('Leave out track_ids');
+    const all = edit(doc, { tool: 'range.extract', args: { range: { start: 90, end: 100 } } });
+    expect(all.outcome.warnings).toEqual([]);
+  });
+
+  it('speed changes ripple the other tracks with sync', () => {
+    const { doc, v2, v1 } = cut();
+    const { doc: out } = edit(doc, {
+      tool: 'clip.set_speed',
+      args: { clip_id: v1[1] as string, rate: 2, other_tracks: 'sync' },
+    });
+    // 50–100 plays in 25 frames: 75–100 comes out of the titles.
+    expect(spans(out, v2)?.at(-1)).toEqual([95, 115]);
+  });
+});
+
 describe('edit.batch', () => {
   it('resolves $refs to ids made by earlier ops', () => {
     const { doc, results } = edit(

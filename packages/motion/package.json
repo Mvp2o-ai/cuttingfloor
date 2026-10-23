@@ -2,7 +2,7 @@
   "name": "@cuttingfloor/motion",
   "version": "0.0.0",
   "private": true,
-  "description": "The sandbox worker: animated HTML rendered frame by frame by Chromium, and code.run scripts. Runs only inside the motion sandbox (the motion-worker role).",
+  "description": "The sandbox worker: animated HTML rendered frame by frame by Chromium. Runs only inside the motion sandbox (the motion-worker role).",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

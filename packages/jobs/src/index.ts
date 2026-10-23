@@ -204,8 +204,8 @@ export type JobWork = (ctx: JobContext) => Promise<JobResult>;
 
 /**
  * Which queue a job waits in. engine: work this server does itself (renders, imports, analysis),
- * at most `concurrency` at once. sandbox: work the sandbox does (create.motion, create.still,
- * code.run), which queues there instead, so it never holds a slot engine work could use. heavy:
+ * at most `concurrency` at once. sandbox: work the sandbox does (create.motion, create.still),
+ * which queues there instead, so it never holds a slot engine work could use. heavy:
  * a model that holds half the CPUs for minutes (create.cutout), in its own slots so a voiceover
  * or an import never waits behind one.
  */

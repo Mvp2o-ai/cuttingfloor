@@ -3,8 +3,10 @@ import { withAuth } from '@workos-inc/authkit-nextjs';
 import { Connect } from '../connect.tsx';
 import { accountOf, type Status, type Usage, usageOf } from '../lib/billing.ts';
 import { filesOf } from '../lib/files.ts';
+import { keysOf } from '../lib/keys.ts';
 import { AccountNav } from './chrome.tsx';
 import { FilesPanel } from './files.tsx';
+import { KeysPanel } from './keys.tsx';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Account — cuttingfloor', robots: { index: false } };
@@ -23,10 +25,11 @@ export default async function Account({
   searchParams: Promise<{ subscribed?: string }>;
 }) {
   const { user } = await withAuth({ ensureSignedIn: true });
-  const [{ status }, usage, files] = await Promise.all([
+  const [{ status }, usage, files, keys] = await Promise.all([
     accountOf(user.id),
     usageOf(user.id),
     filesOf(user.id),
+    keysOf(user.id),
   ]);
   const { subscribed } = await searchParams;
   const plan = planOf(status);
@@ -68,6 +71,22 @@ export default async function Account({
           </div>
           <Connect />
         </section>
+
+        {keys ? (
+          <section className="cell">
+            <div className="head">
+              <span className="label">Keys for scripts</span>
+              <p className="lede">
+                A script that calls cuttingfloor on its own, with no browser to sign in, uses a key.
+                It acts as this account, on this plan, and works for a year or until you revoke it.
+              </p>
+            </div>
+            <KeysPanel
+              initial={keys}
+              server={process.env.CUTTINGFLOOR_SERVER_URL ?? 'https://api.cuttingfloor.ai'}
+            />
+          </section>
+        ) : null}
 
         <section className="cell">
           <p className="account-help">
