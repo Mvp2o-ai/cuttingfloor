@@ -8,7 +8,7 @@ export const DOCS_URL = 'https://github.com/mvp2o-ai/cuttingfloor';
 
 export const TITLE = 'Video Editing MCP Server for Claude, Cursor & ChatGPT | cuttingfloor';
 export const DESCRIPTION =
-  'Turn Claude, Cursor or ChatGPT into a video editing agent. One MCP server, 62 tools: cut by transcript, caption, mix and export real video. Open source.';
+  'Turn Claude, Cursor or ChatGPT into a video editing agent. One MCP server, 66 tools: cut by transcript, caption, mix and export real video. Open source.';
 
 // Questions in the words people search them with.
 export const FAQS = [
@@ -30,7 +30,7 @@ export const FAQS = [
   },
   {
     q: 'Is there a video editing API for AI agents?',
-    a: 'cuttingfloor is one: 62 tools over MCP, from clip.add and caption.add to audio.set_master and export.video. Every edit returns a new timeline and a preview, so the agent sees what it did and can step back. When an edit needs a loop, code.run runs a script that calls the same tools.',
+    a: 'cuttingfloor is one: 66 tools over MCP, from clip.add and caption.add to audio.set_master and export.video. Every edit returns a new timeline and a preview, so the agent sees what it did and can step back. When an edit needs a loop, code.run runs a script that calls the same tools.',
   },
   {
     q: 'Which agents work with it?',
@@ -58,7 +58,7 @@ export const FAQS = [
 export const ALTERNATIVES = [
   {
     name: 'cuttingfloor',
-    is: 'An MCP server of 62 editing tools. The agent imports footage, reads the transcript, cuts, captions, mixes and checks every step with a preview.',
+    is: 'An MCP server of 66 editing tools. The agent imports footage, reads the transcript, cuts, captions, mixes and checks every step with a preview.',
     when: 'the agent decides the edit, on footage it has not seen before.',
     ours: true,
   },

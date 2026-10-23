@@ -129,7 +129,7 @@ export default function Home() {
           <span className="mark-b" />
           <span className="label">05 / What it does</span>
           <h2 className="display big-stat">
-            62 tools.
+            66 tools.
             <br />
             No timeline UI.
             <small>
