@@ -30,29 +30,27 @@ export default function Home() {
             <span>the video editing agent for Claude, Cursor and ChatGPT</span>
           </h1>
           <p className="display title rise d1">
-            Video editing,
-            <br />
-            solved.
+            The control plane for AI agents that finish video.
             <Check />
           </p>
           <div className="hero-row">
             <div className="rise d2">
               <p className="lede">
-                Your agent edits video now. Connect Kazi, Claude, Cursor or ChatGPT to one MCP
-                server and say what you want cut.{' '}
+                One connection.{' '}
                 <em>
-                  It imports your footage, reads the transcript, trims, captions, mixes and hands
-                  back a finished file.
+                  Your AI assistant cuts by editing the words, adds captions, balances the sound,
+                  and hands back a file a human editor can open and finish.
                 </em>
               </p>
               <div className="actions">
                 <a className="link-big" href={SIGN_UP}>
-                  Start free for 3 days
+                  Start free — 3 days
                 </a>
                 <a className="link-big quiet" href="/demos">
                   Watch it edit
                 </a>
               </div>
+              <span className="label">Self-hosted — one container, no external AI keys.</span>
             </div>
             <div className="rise d3 works-in">
               <span className="label">Works in</span>
@@ -63,6 +61,7 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
+              <p>Any remote MCP client</p>
               <p>
                 Bring the agent you already use. Sign in, then add one server address; the setup for
                 each is <a href="#start">below</a>.
