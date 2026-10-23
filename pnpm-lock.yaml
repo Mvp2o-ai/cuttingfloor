@@ -53,6 +53,9 @@ importers:
 
   apps/hosted:
     dependencies:
+      '@cuttingfloor/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@cuttingfloor/credentials':
         specifier: workspace:*
         version: link:../../packages/credentials

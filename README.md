@@ -89,7 +89,7 @@ node scripts/smoke-motion.ts cuttingfloor:dev   # the sandbox in compose, attack
 | Path | What |
 |---|---|
 | `apps/cli` | `cuttingfloor serve` (HTTP), `cuttingfloor mcp` (stdio) and `cuttingfloor motion-worker` (the sandbox role) |
-| `apps/hosted` | The HTTP node: MCP endpoint, signed downloads, API keys |
+| `apps/hosted` | The HTTP node: MCP endpoint, signed downloads and uploads, API keys and script keys |
 | `packages/server` | MCP tools, resources and the Tasks adapter |
 | `packages/schema` | Zod schemas for every tool, the timeline document and errors |
 | `packages/core` | Timeline document, edit math, content hashing, storage with TTLs |

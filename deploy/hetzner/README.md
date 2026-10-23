@@ -1,7 +1,7 @@
 # Hosting cuttingfloor on Hetzner Cloud
 
 One server first. It's the same image as local, in hosted mode:
-- OAuth sign-in through WorkOS AuthKit (each user is an owner), and bearer API keys alongside
+- OAuth sign-in through WorkOS AuthKit (each user is an owner), keys users make on the account page for scripts, and maintenance API keys alongside
 - imports from a URL, or of a file sent to a signed upload URL (`media.upload`, resumable, kept a day until imported)
 - the server's own TypeSafe key for `media.analyze look`, with a daily frame cap per account
 - the sandbox under gVisor
@@ -42,7 +42,7 @@ Signed links cover only the path, so links made under the old address still work
 **Billing and account email:**
 - `node scripts/stripe-setup.ts` makes (or updates) the prices, the billing portal and the webhook at `<CUTTINGFLOOR_PUBLIC_URL>/stripe/webhook`, and writes the webhook's secret to `cuttingfloor.env`.
 - `RESEND_API_KEY` sends account email from support@cuttingfloor.ai (the domain is verified in Resend, its records in the Hetzner DNS zone).
-- `CUTTINGFLOOR_ACCOUNT_KEY` is shared with the site, which acts for the signed-in account: its render minutes (`GET /account/usage`), its files and storage (`GET /account/media`), and starting an upload from the account page's drop zone (`POST /account/uploads`; the browser then sends the file straight to the signed upload URL).
+- `CUTTINGFLOOR_ACCOUNT_KEY` is shared with the site, which acts for the signed-in account: its render minutes (`GET /account/usage`), its files and storage (`GET /account/media`), starting an upload from the account page's drop zone (`POST /account/uploads`; the browser then sends the file straight to the signed upload URL), and the account's keys for scripts (`GET`/`POST /account/keys`, `POST /account/keys/revoke`). A script key (`cf_…`) calls `/mcp` as its account, with the same trial and plan checks as a sign-in; only its SHA-256 is stored (`keys/` under the data root), and it works for a year or until revoked.
 - Plans, their minutes and limits are `packages/plans`; the server and the site both read it.
 
 **Check accounts and billing:** `CHROME_PATH=<chrome> node scripts/smoke-account.ts https://cuttingfloor.ai`. It signs a throwaway user up on the site, checks the account and welcome pages, opens Checkout, then checks the server's rules on the real WorkOS and Stripe: trial limits, a refused unverified email, refusal when WorkOS can't be reached, trial over, subscribed, lifetime.

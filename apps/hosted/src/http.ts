@@ -38,16 +38,21 @@ export interface HttpOptions {
    */
   apiKeys?: Map<string, string>;
   /**
+   * Hosted: the keys signed-in users make on the account page for scripts (`cf_…`). A request
+   * with one acts as that account, with the same trial and plan checks as a sign-in.
+   */
+  scriptKeys?: { owner(key: string): Promise<string | undefined> };
+  /**
    * Hosted mode: MCP authorization (2026-07-28) with this server as the OAuth resource `resource`
    * (its /mcp URL) and tokens from the verifier's authorization server, alongside any API keys.
    */
   oauth?: { verifier: JwtTokenVerifier; resource: URL };
   /**
    * Hosted: whether a signed-in owner may work (trial, plan); throws a CfError when not. Applies
-   * to OAuth sign-ins only: API keys are for maintenance and are never gated.
+   * to OAuth sign-ins and script keys: maintenance API keys are never gated.
    */
   access?: (owner: string) => Promise<void>;
-  /** Hosted: a signed-in owner's plan as limits on the work they start (OAuth sign-ins only). */
+  /** Hosted: a signed-in owner's plan as limits on the work they start (not maintenance keys). */
   limits?: (owner: string) => Promise<OwnerLimits>;
   /** Told of each signed-in owner's MCP request (first-call records). */
   onCall?: (owner: string) => void;
@@ -67,7 +72,8 @@ export function createHttpServer(options: HttpOptions): Server {
   const handler = createMcpHandler(
     (ctx) => {
       const owner = ctx.authInfo?.clientId ?? 'local';
-      const signedIn = ctx.authInfo?.extra?.via === 'oauth';
+      const via = ctx.authInfo?.extra?.via;
+      const signedIn = via === 'oauth' || via === 'script';
       const gate = signedIn ? options.access : undefined;
       const limits = signedIn ? options.limits : undefined;
       return createServer({
@@ -183,11 +189,32 @@ export function createHttpServer(options: HttpOptions): Server {
       let owner = 'local';
       let via = 'local';
       const request = await toWebRequest(req as IncomingMessage & { method: string; url: string });
-      if (hashedKeys.length || requireToken) {
+      if (hashedKeys.length || requireToken || options.scriptKeys) {
         const keyOwner = apiKeyOwner(req);
+        const bearer = /^Bearer (cf_\S+)$/i.exec(req.headers.authorization ?? '')?.[1];
+        const scriptOwner =
+          !keyOwner && bearer ? await options.scriptKeys?.owner(bearer) : undefined;
         if (keyOwner) {
           owner = keyOwner;
           via = 'key';
+        } else if (scriptOwner) {
+          owner = scriptOwner;
+          via = 'script';
+          options.onCall?.(owner);
+        } else if (bearer && options.scriptKeys) {
+          res
+            .writeHead(401, {
+              'content-type': 'application/json',
+              'www-authenticate': 'Bearer error="invalid_token"',
+            })
+            .end(
+              JSON.stringify({
+                error: 'invalid_token',
+                error_description:
+                  'This script key was revoked or has expired; make a new one on your account page',
+              }),
+            );
+          return;
         } else if (requireToken) {
           const auth = await requireToken(request);
           if (auth instanceof Response) {

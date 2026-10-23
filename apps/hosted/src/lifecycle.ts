@@ -5,6 +5,7 @@ import { CfError, MediaUploadInput } from '@cuttingfloor/schema';
 import { listHeld, type MeterEntry, type Runtime, startUpload } from '@cuttingfloor/server';
 import type { AccessCheck } from './access.ts';
 import type { Mailer } from './email.ts';
+import type { ScriptKeys } from './keys.ts';
 
 // What happens around an account as it is used, still without a database:
 // - WorkOS metadata records the first tool call and the first export (the site's welcome page
@@ -33,9 +34,12 @@ export interface LifecycleOptions {
   stripeWebhookSecret?: string;
   /**
    * Lets the site act for a signed-in account: read its usage (`GET /account/usage`) and its files
-   * (`GET /account/media`), and start an upload (`POST /account/uploads`).
+   * (`GET /account/media`), start an upload (`POST /account/uploads`), and list, make and revoke
+   * its script keys (`/account/keys`).
    */
   accountKey?: string;
+  /** The accounts' script keys, made and revoked on the account page. */
+  keys?: ScriptKeys;
 }
 
 export class Lifecycle {
@@ -124,6 +128,7 @@ export class Lifecycle {
     for (const key of await ws.owners()) {
       await ws.sweep(ws.path('owners', key, 'notices'), NOTICE_TTL_MS);
     }
+    await this.#o.keys?.sweep();
     if (!this.#o.mailer) return;
     const oldest = now - (TRIAL_DAYS + 2) * 86_400_000;
     for await (const user of this.#users(oldest)) {
@@ -227,7 +232,8 @@ export class Lifecycle {
 
   /**
    * The routes the site and Stripe call: `POST /stripe/webhook`, `GET /account/usage`,
-   * `GET /account/media` and `POST /account/uploads`. Returns false for any other path.
+   * `GET /account/media`, `POST /account/uploads`, and `GET`/`POST /account/keys` and
+   * `POST /account/keys/revoke`. Returns false for any other path.
    */
   async route(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     if (url.pathname === '/stripe/webhook' && req.method === 'POST') {
@@ -246,7 +252,45 @@ export class Lifecycle {
       await this.#uploadRoute(req, res);
       return true;
     }
+    if (url.pathname === '/account/keys' || url.pathname === '/account/keys/revoke') {
+      await this.#keysRoute(req, res, url);
+      return true;
+    }
     return false;
+  }
+
+  /**
+   * The account's script keys. GET ?user= lists them; POST {user, label} makes one and is the
+   * only answer that carries the key; POST /revoke {user, key_id} stops one at once.
+   */
+  async #keysRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
+    const keys = this.#o.keys;
+    if (!keys) return json(res, 503, { error: 'script keys are off on this server' });
+    if (req.method === 'GET' && url.pathname === '/account/keys') {
+      const owner = url.searchParams.get('user') ?? '';
+      if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+      return json(res, 200, { keys: await keys.list(owner) });
+    }
+    if (req.method !== 'POST') return json(res, 405, { error: 'GET or POST' });
+    let body: { user?: unknown; label?: unknown; key_id?: unknown };
+    try {
+      body = JSON.parse(await readBody(req, 16 * 1024));
+    } catch {
+      return json(res, 400, { error: 'body must be JSON' });
+    }
+    const owner = typeof body.user === 'string' ? body.user : '';
+    if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+    if (url.pathname === '/account/keys/revoke') {
+      const revoked = await keys.revoke(owner, typeof body.key_id === 'string' ? body.key_id : '');
+      return json(res, revoked ? 200 : 404, revoked ? { revoked: true } : { error: 'no such key' });
+    }
+    try {
+      const made = await keys.create(owner, typeof body.label === 'string' ? body.label : '');
+      return json(res, 200, made);
+    } catch (error) {
+      return json(res, 409, { error: (error as Error).message });
+    }
   }
 
   /** Whether the call comes from the site, carrying the account key. */

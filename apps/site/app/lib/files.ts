@@ -27,7 +27,7 @@ export type Files = {
 
 export type Started = { upload_id: string; url: string; expires_at: string; max_bytes: number };
 
-function server(): { key: string; base: string } | undefined {
+export function server(): { key: string; base: string } | undefined {
   const key = process.env.CUTTINGFLOOR_ACCOUNT_KEY;
   if (!key) return undefined;
   return { key, base: process.env.CUTTINGFLOOR_SERVER_URL ?? 'https://api.cuttingfloor.ai' };
