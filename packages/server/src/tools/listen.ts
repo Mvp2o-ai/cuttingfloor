@@ -3,7 +3,6 @@ import {
   listenFor,
   listenText,
   peakOf,
-  renderSource,
   SOUND_MODELS,
   scoreSeries,
   seriesStep,
@@ -23,6 +22,7 @@ import type * as z from 'zod/v4';
 import { admitJob } from '../meter.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
+import { checkSound, withSound } from '../sound.ts';
 
 // Sounds: media.analyze sounds (the 447 AudioSet-strong sounds by name) and media.listen (a
 // sound described in words), both per 40 ms frame. The cut-off is always the agent's; spans are
@@ -102,14 +102,15 @@ export function registerListenTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Find sounds by description',
       description: [
-        'Find when something can be heard in a video or audio file, from what you describe in plain words, so you go straight to it instead of listening to it all: laughter, applause, a cough, a door slamming, a phone ringing, a dog barking, music starting, someone typing, a car passing. Name each sound and say what it is; you get back the stretches of time where each one can be heard, with the moment it is clearest.',
+        'Find when something can be heard in a video or audio file, or in an edit as it plays, from what you describe in plain words, so you go straight to it instead of listening to it all: laughter, applause, a cough, a door slamming, a phone ringing, a dog barking, music starting, someone typing, a car passing. Name each sound and say what it is; you get back the stretches of time where each one can be heard, with the moment it is clearest.',
         'Use it to:',
         '- Find reactions and moments: where the crew or the audience laughs, where people clap or cheer, a gasp, a scream.',
         '- Find trouble to cut or cover: a cough, a sneeze, a phone going off, a door, a siren, wind on the microphone, a click or a bump.',
         '- Find sound to cut on: a clap, a bang, a hit, the music starting or stopping.',
         '',
         `HOW IT WORKS. FlexSED, an open-vocabulary sound detection model (local, on the CPU; about 15 to 20 times faster than real time), listens to every 40 ms of the sound and gives each description the probability that it can be heard there. Describe the sound itself, briefly, as you would caption it ("laughter", "a crowd cheering", "glass breaking"), not the scene or a judgment; it is asked as "The sound of <your words>". Short, common sound names work best; put each sound you want in its own entry, up to ${SOUNDS_LIMITS.queries} a call, all listened for at once.`,
-        'READING THE RESULT. matches gives, per sound, each run of frames at or above min_probability (default 0.5) with its start, end (media seconds), peak_seconds and, for video, frame (for render.frames). peaks gives the highest probability each sound reaches, and scores every probability (step_seconds apart), for your own cut-off. A sound whose peak stays well under your cut-off is most likely not there; one hovering near it is worth a listen or a lower cut-off.',
+        'READING THE RESULT. matches gives, per sound, each run of frames at or above min_probability (default 0.5) with its start, end, peak_seconds and frame (for render.frames; media frames for video, timeline frames for an edit). peaks gives the highest probability each sound reaches, and scores every probability (step_seconds apart), for your own cut-off. A sound whose peak stays well under your cut-off is most likely not there; one hovering near it is worth a listen or a lower cut-off.',
+        "Media or an edit: with media_id, times are the file's own seconds; with timeline_id, it listens to the edit's mix as it plays (cuts, gaps, levels and effects included), over from_seconds to until_seconds, and times are timeline seconds, so a match is where that sound now sits in the edit. A source or range with no sound fails with no_audio, naming it.",
         'For the 447 sounds with names (Laughter, Applause, Cough, Speech, Music…) as stored data, media.analyze kind sounds. Long-running: returns a task, or a job_id for job.get.',
       ].join('\n'),
       inputSchema: MediaListenInput,
@@ -148,37 +149,43 @@ export function registerListenTools(server: McpServer, deps: ServerDeps): void {
         const existing = await store.findIdempotent(owner, 'media.listen', args.idempotency_key);
         if (existing) return jobReply(existing, ctx);
       }
-      const record = await rt.media.get(owner, args.media_id);
-      if (record.status !== 'ready') {
-        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`, {
-          hint: 'Wait for its media.import job to finish',
-        });
+      const ref = {
+        ...(args.media_id ? { media_id: args.media_id } : { timeline_id: args.timeline_id }),
+        from_seconds: args.from_seconds,
+        until_seconds: args.until_seconds,
+      };
+      // Fails with no_audio, naming the source, before any job exists.
+      const { plan } = await checkSound(rt, owner, ref);
+      // peak_seconds as a frame for render.frames: a video's own frames, or the timeline's.
+      let fps: { num: number; den: number } | undefined;
+      if (plan.kind === 'timeline') fps = plan.doc.sequence.fps;
+      else if (args.media_id) {
+        const p = (await rt.media.get(owner, args.media_id)).probe;
+        if (p?.video && p.kind !== 'image') fps = p.video.fps;
       }
-      const p = record.probe;
-      if (!p?.audio) {
-        throw new CfError('bad_request', `Media ${args.media_id} has no sound to listen to`);
-      }
-      if (args.from_seconds !== undefined && p.duration && args.from_seconds >= p.duration) {
-        throw new CfError('bad_request', `from_seconds is past the end (${p.duration} s)`);
-      }
-      const fps = p.video && p.kind !== 'image' ? p.video.fps : undefined;
       const asked = Object.fromEntries(names.map((n) => [n, listenText(args.sounds[n] as string)]));
       const admit = await admitJob(deps.limits);
       const job = await store.create({
         owner,
         tool: 'media.listen',
-        meta: { media: args.media_id },
+        meta: args.media_id
+          ? { media: args.media_id }
+          : { timeline_id: args.timeline_id as string },
         statusMessage: 'listen: starting',
         ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),
       });
       rt.jobs.start(
         job,
         async ({ signal, progress }) => {
-          const scores = await listenFor(renderSource(record, 'export'), args.sounds, {
-            ...(args.from_seconds !== undefined ? { from: args.from_seconds } : {}),
-            ...(args.until_seconds !== undefined ? { until: args.until_seconds } : {}),
-            signal,
-            onProgress: (f) => progress(0.02 + 0.96 * f, 'listen: listening'),
+          if (plan.kind === 'timeline') progress(0.01, 'listen: rendering the mix');
+          const scores = await withSound(rt, owner, ref, { signal }, async (sound) => {
+            const heard = await listenFor(sound.file, args.sounds, {
+              ...(sound.from !== undefined ? { from: sound.from } : {}),
+              ...(sound.until !== undefined ? { until: sound.until } : {}),
+              signal,
+              onProgress: (f) => progress(0.02 + 0.96 * f, 'listen: listening'),
+            });
+            return { ...heard, start: Math.round((heard.start + sound.shift) * 1000) / 1000 };
           });
           const step = seriesStep(
             scores.frames,
@@ -189,7 +196,7 @@ export function registerListenTools(server: McpServer, deps: ServerDeps): void {
           const frameAt = (seconds: number) =>
             fps ? { frame: Math.floor((seconds * fps.num) / fps.den + 1e-6) } : {};
           return ok({
-            media_id: args.media_id,
+            ...(args.media_id ? { media_id: args.media_id } : { timeline_id: args.timeline_id }),
             model: SOUND_MODELS.listen,
             asked,
             matches: Object.fromEntries(

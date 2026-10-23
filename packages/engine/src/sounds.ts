@@ -32,7 +32,7 @@ export interface FrameScores {
   columns: string[];
   frames: number;
   data: Uint8Array;
-  /** Media seconds of frame 0. */
+  /** Seconds of frame 0, on the clock of what was listened to (media or timeline). */
   start: number;
 }
 
@@ -189,15 +189,33 @@ async function worker(
   }
 }
 
-/** Every AudioSet-strong sound's probability per 40 ms over the whole sound of `file`. */
+/**
+ * Every AudioSet-strong sound's probability per 40 ms, between `from` and `until` (seconds of
+ * `file`; default its whole sound).
+ */
 export async function detectSounds(
   file: string,
-  options: { signal: AbortSignal; onProgress?: (fraction: number) => void },
+  options: {
+    from?: number;
+    until?: number;
+    signal: AbortSignal;
+    onProgress?: (fraction: number) => void;
+  },
 ): Promise<FrameScores> {
   const dir = await mkdtemp(join(tmpdir(), 'cf-sounds-'));
   try {
     const raw = join(dir, 'mono.f32');
-    await decode(file, raw, { rate: 16_000, channels: 1 }, options.signal);
+    await decode(
+      file,
+      raw,
+      {
+        rate: 16_000,
+        channels: 1,
+        ...(options.from ? { from: options.from } : {}),
+        ...(options.until !== undefined ? { until: options.until } : {}),
+      },
+      options.signal,
+    );
     options.onProgress?.(0.1);
     const out = join(dir, 'scores.u8');
     await worker(
@@ -210,7 +228,7 @@ export async function detectSounds(
       columns: [...SOUND_LABELS],
       frames: Math.floor(data.length / SOUND_LABELS.length),
       data,
-      start: 0,
+      start: options.from ?? 0,
     };
   } finally {
     await rm(dir, { recursive: true, force: true });

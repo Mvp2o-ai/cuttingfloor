@@ -652,15 +652,21 @@ export const SOUNDS_LIMITS = {
 } as const;
 
 export const SoundSpan = z.object({
-  start: z.number().describe('Media seconds where the run of matching 40 ms frames starts'),
-  end: z.number().describe('Media seconds where it ends'),
+  start: z
+    .number()
+    .describe(
+      'Where the run of matching 40 ms frames starts: media seconds, or timeline seconds for a timeline',
+    ),
+  end: z.number().describe('Where it ends, on the same clock'),
   peak_seconds: z.number().describe('The middle of the most likely frame'),
   peak_probability: z.number(),
 });
 
 export const SoundScores = z
   .object({
-    start_seconds: z.number().describe('Media seconds of the first value'),
+    start_seconds: z
+      .number()
+      .describe('Where the first value starts: media seconds, or timeline seconds for a timeline'),
     step_seconds: z
       .number()
       .describe('Seconds each value covers: 0.04 (every frame) unless asked or too long'),
@@ -685,7 +691,7 @@ export const SoundsAnalysis = z.object({
 });
 
 /** media.analyze kinds that also measure a timeline's mix (timeline_id). */
-export const TIMELINE_ANALYSES = ['speech', 'loudness', 'silence'] as const;
+export const TIMELINE_ANALYSES = ['speech', 'loudness', 'silence', 'sounds'] as const;
 
 export const MediaAnalyzeInput = z
   .object({
@@ -738,7 +744,7 @@ export const MediaAnalyzeInput = z
       .min(0)
       .optional()
       .describe(
-        'look: start sampling here; speech, loudness, silence: measure from here. Default 0',
+        'look: start sampling here; speech, loudness, silence, sounds: measure from here. Default 0',
       ),
     with_previous: z
       .boolean()
@@ -781,7 +787,7 @@ export const MediaAnalyzeInput = z
       .number()
       .min(0)
       .optional()
-      .describe('track, look, speech, loudness, silence: stop here. Default: the end'),
+      .describe('track, look, speech, loudness, silence, sounds: stop here. Default: the end'),
     threshold_db: z
       .number()
       .min(-100)
@@ -1345,34 +1351,46 @@ export const MediaSeekResult = z.object({
     .describe('Every judged sample, for your own cut-off or arithmetic'),
 });
 
-export const MediaListenInput = z.object({
-  media_id: MediaId,
-  sounds: z
-    .record(JudgeName, z.string().min(1).max(200))
-    .describe(
-      `Name (yours) to the sound in plain words: what it is, as you would caption it ("laughter", "a crowd cheering", "a door slams", "a phone ringing", "a dog barking", "keyboard typing"). Up to ${SOUNDS_LIMITS.queries}, each listened for in every 40 ms frame`,
+export const MediaListenInput = z
+  .object({
+    media_id: MediaId.optional().describe('Listen to imported media (media seconds)'),
+    timeline_id: TimelineId.optional().describe(
+      'Listen to an edit as it plays (timeline seconds): its mix, with cuts, gaps, levels and effects',
     ),
-  min_probability: z
-    .number()
-    .min(0)
-    .max(1)
-    .default(0.5)
-    .describe('A frame matches a sound when its probability is at least this'),
-  from_seconds: z.number().min(0).optional().describe('Start listening here. Default 0'),
-  until_seconds: z.number().min(0).optional().describe('Stop here. Default: the end'),
-  step_seconds: z
-    .number()
-    .min(0.04)
-    .max(60)
-    .optional()
-    .describe(
-      'scores: one value per this many seconds (the highest in each). Default 0.04, every frame, coarser when that would be too many',
-    ),
-  idempotency_key: z.string().min(1).max(200).optional(),
-});
+    sounds: z
+      .record(JudgeName, z.string().min(1).max(200))
+      .describe(
+        `Name (yours) to the sound in plain words: what it is, as you would caption it ("laughter", "a crowd cheering", "a door slams", "a phone ringing", "a dog barking", "keyboard typing"). Up to ${SOUNDS_LIMITS.queries}, each listened for in every 40 ms frame`,
+      ),
+    min_probability: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.5)
+      .describe('A frame matches a sound when its probability is at least this'),
+    from_seconds: z
+      .number()
+      .min(0)
+      .optional()
+      .describe('Start listening here (media or timeline seconds). Default 0'),
+    until_seconds: z.number().min(0).optional().describe('Stop here. Default: the end'),
+    step_seconds: z
+      .number()
+      .min(0.04)
+      .max(60)
+      .optional()
+      .describe(
+        'scores: one value per this many seconds (the highest in each). Default 0.04, every frame, coarser when that would be too many',
+      ),
+    idempotency_key: z.string().min(1).max(200).optional(),
+  })
+  .refine((v) => Boolean(v.media_id) !== Boolean(v.timeline_id), {
+    message: 'Give exactly one of media_id or timeline_id',
+  });
 
 export const MediaListenResult = z.object({
-  media_id: MediaId,
+  media_id: MediaId.optional(),
+  timeline_id: TimelineId.optional(),
   model: z.string().describe('The sound model that listened'),
   asked: z.record(z.string(), z.string()).describe('Per sound: the words the model was given'),
   matches: z
@@ -1382,7 +1400,9 @@ export const MediaListenResult = z.object({
         SoundSpan.extend({
           frame: frame
             .optional()
-            .describe('peak_seconds as a media frame number, for render.frames (video only)'),
+            .describe(
+              'peak_seconds as a frame number for render.frames: a media frame (video only), or a timeline frame',
+            ),
         }),
       ),
     )

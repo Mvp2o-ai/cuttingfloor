@@ -244,6 +244,52 @@ describe.skipIf(!ready)('sounds', () => {
     expect(part.matches.laugh?.every((s) => s.start >= 4 && s.end <= 9.1)).toBe(true);
   }, 300_000);
 
+  it('finds a sound where it sits in an edit', async () => {
+    const id = await importFile(join(mediaDir, 'show.wav'));
+    const { timeline_id } = await ok<{ timeline_id: string }>('timeline.create', {
+      name: 'show',
+      sequence: { width: 320, height: 180, fps: { num: 25, den: 1 } },
+      tracks: { video: 1, audio: 1 },
+    });
+    // The show from 3 s in (the audience starts about 1 s into the clip), placed 10 s along.
+    const edit = await ok<{ timeline_id: string }>('edit.batch', {
+      timeline_id,
+      preview: 'none',
+      ops: [
+        {
+          tool: 'clip.add',
+          args: { track_id: 't2', media_id: id, at_frame: 250, source: { in: 75, out: 325 } },
+        },
+      ],
+    });
+    const tl = edit.timeline_id;
+    const heard = await job<{
+      timeline_id: string;
+      matches: Record<string, Array<Span & { frame?: number }>>;
+      scores: { start_seconds: number };
+    }>('media.listen', { timeline_id: tl, sounds: { laugh: 'people laughing' } });
+    expect(heard.timeline_id).toBe(tl);
+    const laugh = heard.matches.laugh?.[0];
+    // In the clip the laugh starts about 4 s in; on the timeline that is about 11 s.
+    expect(laugh?.start).toBeGreaterThanOrEqual(10.5);
+    expect(laugh?.start).toBeLessThan(13);
+    expect(laugh?.frame).toBe(Math.floor((laugh?.peak_seconds ?? 0) * 25 + 1e-6));
+
+    // Named sounds on the edit, over a range: timeline seconds too, and nothing kept.
+    const named = await job<{
+      timeline_id: string;
+      sounds: { spans: Record<string, Span[]>; scores: { start_seconds: number } };
+    }>('media.analyze', {
+      timeline_id: tl,
+      kind: 'sounds',
+      labels: ['Laughter'],
+      min_probability: 0.3,
+      from_seconds: 8,
+    });
+    expect(named.sounds.scores.start_seconds).toBe(8);
+    expect(named.sounds.spans.Laughter?.[0]?.start).toBeGreaterThanOrEqual(10.5);
+  }, 300_000);
+
   it('separates the voice from the music as new media', async () => {
     const id = await importFile(join(mediaDir, 'mix.wav'));
     const t = Date.now();
