@@ -34,6 +34,7 @@ export {
   type MediaConfig,
   MediaLibrary,
   type MediaRecord,
+  mayBeTransparent,
   mediaInfo,
   mediaOrigin,
   mediaRef,

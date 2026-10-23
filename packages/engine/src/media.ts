@@ -671,6 +671,14 @@ export function mediaInfo(
 }
 
 /** Which file each render reads: proxies for previews, the mezzanine or original for exports. */
+/**
+ * Whether a picture may be see-through anywhere: an alpha channel, or a palette (a PNG palette
+ * can mark colours transparent). Views of it go over a checkerboard.
+ */
+export function mayBeTransparent(p: Probe | null | undefined): boolean {
+  return Boolean(p?.video) && (hasAlpha(p as Probe) || p?.video?.pix_fmt === 'pal8');
+}
+
 /** Whether a probed picture carries an alpha channel. */
 export function hasAlpha(p: Probe): boolean {
   return /^(yuva|rgba|bgra|argb|abgr|gbrap|ya)/.test(p.video?.pix_fmt ?? '');

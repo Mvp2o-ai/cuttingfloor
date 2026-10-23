@@ -8,6 +8,7 @@ import {
   detectSilences,
   fingerprint,
   type MediaRecord,
+  mayBeTransparent,
   mediaInfo,
   mediaStills,
   renderSource,
@@ -291,7 +292,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           async (upload_id) => {
             record = await rt.media.create(
               owner,
-              { upload: upload_id },
+              { upload: upload_id, file_name: given.upload.name, via: 'media.upload' },
               args.name ?? given.upload.name,
             );
             return {
@@ -624,6 +625,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               const stills = await mediaStills(file, size, times, {
                 ...PICTURE,
                 signal,
+                checker: mayBeTransparent(record.probe),
                 onFrame: (n) =>
                   progress(0.02 + (0.28 * n) / times.length, `look: frame ${n} of ${times.length}`),
               });
