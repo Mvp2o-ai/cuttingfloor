@@ -196,7 +196,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.set_transform': {
     title: 'Set transform',
     description:
-      'Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). fit none shows a graphic at its own pixel size, so scale 1 is its real size; the default contain scales it to touch the frame edges. Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; eases are listed at video://catalog/eases. Omitted fields keep their value; null resets one.',
+      "Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). fit none shows a graphic at its own pixel size, so scale 1 is its real size; the default contain scales it to touch the frame edges. Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; eases are listed at video://catalog/eases. Omitted fields keep their value; null resets one. To pin an overlay to a moving subject, use media.analyze track boxes as keyframes: for each box, frame = timeline frame of the box time (where the tracked clip plays that media second) minus this clip's start, x = box x + w/2 and y = box y + h/2 (add your offset). That holds when the tracked clip fills the frame as is; if it is scaled, moved or cropped, map the box through its transform first. Skip boxes with found false.",
   },
   'clip.set_blend': {
     title: 'Set blend mode',
