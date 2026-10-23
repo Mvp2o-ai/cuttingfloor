@@ -6,6 +6,7 @@ import {
   exportTimeline,
   imageExtension,
   lengthFrames,
+  mayBeTransparent,
   qaCheck,
   renderMediaFrames,
   renderSource,
@@ -52,7 +53,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Render frames',
       description:
-        'Look at a timeline (or a media file): up to 16 frames as one contact-sheet image (layout grid) or one image each (single). Media frames are numbered at the media frame rate. size full: up to 4 frames at the sequence (or media) size from the original media, for thumbnails and stills to keep. format webp (default), png or jpeg, with quality for webp and jpeg. Each image comes inline and with a signed download url.',
+        'Look at a timeline (or a media file): up to 16 frames as one contact-sheet image (layout grid) or one image each (single). Media frames are numbered at the media frame rate; a picture that can be see-through (alpha or a palette) is shown over a light checkerboard, so transparency shows as checks and a background baked into the file as itself. size full: up to 4 frames at the sequence (or media) size from the original media, for thumbnails and stills to keep. format webp (default), png or jpeg, with quality for webp and jpeg. Each image comes inline and with a signed download url.',
       inputSchema: RenderFramesInput,
       outputSchema: RenderFramesResult,
       annotations: { ...readOnly, title: 'Render frames' },
@@ -109,6 +110,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
           format: args.format,
           ...(quality ? { quality } : {}),
           layout: args.layout,
+          checker: mayBeTransparent(record.probe),
           ...(signal ? { signal } : {}),
         });
         for (const [i, data] of rendered.entries()) {

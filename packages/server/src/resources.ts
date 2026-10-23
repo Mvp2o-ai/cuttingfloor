@@ -1,7 +1,13 @@
 import { open, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PROVIDER_ENV, type ProviderId } from '@cuttingfloor/credentials';
-import { engineVersions, renderLoad, renderMediaFrames, renderSource } from '@cuttingfloor/engine';
+import {
+  engineVersions,
+  mayBeTransparent,
+  renderLoad,
+  renderMediaFrames,
+  renderSource,
+} from '@cuttingfloor/engine';
 import { CfError } from '@cuttingfloor/schema';
 import {
   type McpServer,
@@ -135,6 +141,7 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
           longEdge: 640,
           format,
           layout: 'grid',
+          checker: mayBeTransparent(record.probe),
         }),
       );
       return {

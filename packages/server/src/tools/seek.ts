@@ -1,6 +1,7 @@
 import { timelineEnd } from '@cuttingfloor/core';
 import {
   lengthFrames,
+  mayBeTransparent,
   mediaStills,
   renderSource,
   renderTimelineFrames,
@@ -203,7 +204,12 @@ export function registerSeekTools(server: McpServer, deps: ServerDeps): void {
         const file = renderSource(record, 'export');
         const size = pictureSize(record);
         stillsOf = (times, signal, onFrame) =>
-          mediaStills(file, size, times, { ...PICTURE, signal, onFrame });
+          mediaStills(file, size, times, {
+            ...PICTURE,
+            signal,
+            onFrame,
+            checker: mayBeTransparent(p),
+          });
       }
 
       const { times, asked } = sampleTimes(duration, args, args.timeline_id ? 'timeline' : 'media');

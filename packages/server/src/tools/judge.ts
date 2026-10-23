@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { type MediaRecord, mediaStills, renderSource } from '@cuttingfloor/engine';
+import {
+  type MediaRecord,
+  mayBeTransparent,
+  mediaStills,
+  renderSource,
+} from '@cuttingfloor/engine';
 import {
   CfError,
   JUDGE_LIMITS,
@@ -175,7 +180,7 @@ export function registerJudgeTools(server: McpServer, deps: ServerDeps): void {
             renderSource(record, 'export'),
             pictureSize(record),
             [time],
-            { ...PICTURE, signal },
+            { ...PICTURE, signal, checker: mayBeTransparent(record.probe) },
           );
           return { name: (refs[i] as [string, unknown])[0], jpeg: jpeg as Buffer };
         }),

@@ -588,6 +588,77 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     expect(dup.media_id).toBe(media.av);
   }, 120_000);
 
+  it('names a file for what it is, gives every probed fact, and shows transparency as checks', async () => {
+    const m = env.mediaDir;
+    // Left half opaque red, right half see-through; and a logo with its black background baked in.
+    await ff([
+      '-f',
+      'lavfi',
+      '-i',
+      'color=c=red:s=64x64',
+      '-vf',
+      "format=rgba,geq=r=255:g=0:b=0:a='if(lt(X,32),255,0)'",
+      '-frames:v',
+      '1',
+      join(m, 'half.png'),
+    ]);
+    await ff([
+      '-f',
+      'lavfi',
+      '-i',
+      'color=c=black:s=64x64',
+      '-frames:v',
+      '1',
+      join(m, 'baked.png'),
+    ]);
+    // A PNG sent as .svg is kept, reported and downloaded as the PNG it is.
+    const up = await ok<{ upload_id: string; url: string }>(client, 'media.upload', {
+      name: 'logo.svg',
+    });
+    await fetch(up.url, { method: 'PUT', body: await readFile(join(m, 'half.png')) });
+    const logo = await importMedia({ upload_id: up.upload_id });
+    expect(logo).toMatchObject({ kind: 'image', extension: '.png', mime_type: 'image/png' });
+    const got = await ok<{
+      url: string;
+      page_url: string;
+      probe: { format: Record<string, unknown>; streams: Array<Record<string, unknown>> };
+    }>(client, 'media.get', { media_id: logo.media_id });
+    expect(got.probe.streams[0]).toMatchObject({ codec_name: 'png', pix_fmt: 'rgba', width: 64 });
+    expect(got.probe.format.format_name).toBeTruthy();
+    expect(got.probe.format.filename).toBeUndefined();
+    expect(new URL(got.url).pathname).toMatch(/\/logo\.png$/);
+    // Downloaded with no extension, it is still a .png.
+    await exec('cp', [join(m, 'baked.png'), join(m, 'baked')]);
+    const baked = await importMedia({ url: `${fileBase}/baked` });
+    expect(baked).toMatchObject({ extension: '.png', mime_type: 'image/png' });
+
+    const frame = async (mediaId: string) => {
+      const res = await call(client, 'render.frames', {
+        media_id: mediaId,
+        frames: [0],
+        layout: 'single',
+        format: 'png',
+        long_edge: 640,
+      });
+      const image = res.content.find((c) => c.type === 'image');
+      return Buffer.from((image?.data as string) ?? '', 'base64');
+    };
+    // The see-through half shows light checks; the opaque half is red; the baked logo is black.
+    const shown = await frame(logo.media_id);
+    expect(colour(await pixel(shown, 100, 320))).toBe('red');
+    const checks = await Promise.all([pixel(shown, 330, 4), pixel(shown, 346, 4)]);
+    for (const [r, g, b] of checks) {
+      expect(r).toBeGreaterThan(190);
+      expect(Math.abs(r - g) + Math.abs(g - b)).toBeLessThan(10);
+    }
+    expect(Math.abs((checks[0]?.[0] ?? 0) - (checks[1]?.[0] ?? 0))).toBeGreaterThan(30);
+    const [r, g, b] = await pixel(await frame(baked.media_id), 330, 4);
+    expect(r + g + b).toBeLessThan(30);
+    // The watch page shows pictures over checks too.
+    const page = await (await fetch(got.page_url)).text();
+    expect(page).toContain('repeating-conic-gradient');
+  }, 120_000);
+
   it('imports a data: URI and a file the client attached', async () => {
     const png = await readFile(join(env.mediaDir, 'card.png'));
     await ff([

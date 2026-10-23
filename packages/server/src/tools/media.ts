@@ -7,6 +7,7 @@ import {
   detectScenes,
   detectSilences,
   fingerprint,
+  mayBeTransparent,
   mediaInfo,
   mediaStills,
   renderSource,
@@ -548,6 +549,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               const stills = await mediaStills(file, size, times, {
                 ...PICTURE,
                 signal,
+                checker: mayBeTransparent(record.probe),
                 onFrame: (n) =>
                   progress(0.02 + (0.28 * n) / times.length, `look: frame ${n} of ${times.length}`),
               });
