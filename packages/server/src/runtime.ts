@@ -57,6 +57,8 @@ export interface RuntimeConfig {
   judgmentsPerDay?: number;
   /** TypeSafe's API, for judge.ask and media.analyze look. Default: api.typesafe.ai. */
   typesafeUrl?: string;
+  /** sync. labs' API, for create.lipsync. Default: api.sync.so. */
+  syncUrl?: string;
   /** Local mode: the folder on the user's machine compose mounts at /media/videos. */
   mediaHostPath?: string;
 }
@@ -96,6 +98,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     ...(env.CUTTINGFLOOR_TYPESAFE_URL
       ? { typesafeUrl: env.CUTTINGFLOOR_TYPESAFE_URL.replace(/\/$/, '') }
       : {}),
+    ...(env.CUTTINGFLOOR_SYNC_URL ? { syncUrl: env.CUTTINGFLOOR_SYNC_URL.replace(/\/$/, '') } : {}),
     ...(mode === 'local' && env.CUTTINGFLOOR_MEDIA_HOST_PATH
       ? { mediaHostPath: env.CUTTINGFLOOR_MEDIA_HOST_PATH }
       : {}),

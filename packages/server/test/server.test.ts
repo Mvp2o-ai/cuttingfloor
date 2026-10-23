@@ -18,9 +18,9 @@ const anyResult = z.object({}).passthrough();
  * 301 000 for the source map of a render and the full probe facts on media, and to 331 000
  * for the speech and sound facts (media.analyze speech and loudness, media.correlate, qa.check
  * cut facts), and to 366 000 for the sound tools (media.analyze sounds, media.listen,
- * create.stems), whose results carry every score.
+ * create.stems), whose results carry every score, and to 386 000 for create.lipsync.
  */
-const BUDGET_BYTES = 366_000;
+const BUDGET_BYTES = 386_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -101,6 +101,7 @@ describe('protocol surface', () => {
         'clip.trim',
         'clip.unlink',
         'create.cutout',
+        'create.lipsync',
         'create.matte',
         'create.motion',
         'create.stabilized',

@@ -19,6 +19,7 @@ export {
   segmentSize,
 } from './cutout.ts';
 export { detectScenes, detectSilences } from './detect.ts';
+export { excerptPicture, excerptSound, type Span } from './excerpt.ts';
 export {
   BIN,
   engineVersions,

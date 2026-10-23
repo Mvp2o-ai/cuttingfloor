@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   CUTOUT_MODELS,
   type CutoutModel,
   cutout,
+  excerptPicture,
+  excerptSound,
   KOKORO,
   type MediaRecord,
   mediaInfo,
@@ -21,6 +23,7 @@ import type { JobLane } from '@cuttingfloor/jobs';
 import {
   CfError,
   CreateCutoutInput,
+  CreateLipsyncInput,
   CreateMatteInput,
   CreateMotionInput,
   CreateStabilizedInput,
@@ -40,6 +43,7 @@ import { admitJob } from '../meter.ts';
 import { renderInSandbox } from '../motion.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
+import { SYNC_URL, syncKeyRequired, syncLipsync } from '../sync.ts';
 
 // create.*: new media from a recipe. Each is a job whose result is a media_id; the same recipe
 // returns the same media while it lives. HTML runs only in the motion sandbox.
@@ -609,6 +613,121 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         { lane: 'heavy', ...admit },
       );
       return jobReply(job, ctx);
+    }),
+  );
+
+  /** A ready media with the stream a tool needs, and how long it runs. */
+  const ready = async (id: string, want: 'video' | 'audio', what: string) => {
+    const record = await rt.media.get(deps.owner(), id);
+    const p = record.probe;
+    if (record.status !== 'ready' || !p) {
+      throw new CfError('media_not_ready', `Media ${id} is still importing`, {
+        hint: 'Wait for its media.import job to finish',
+      });
+    }
+    if (want === 'video' ? !p.video || p.kind !== 'video' : !p.audio) {
+      throw new CfError(
+        'bad_request',
+        `Media ${id} (${p.kind}) has no ${want === 'video' ? 'moving picture' : 'sound'} for ${what}`,
+        {
+          hint:
+            want === 'video'
+              ? 'video is a video of the person speaking'
+              : 'audio is speech: audio media, or a video with sound',
+        },
+      );
+    }
+    return { record, duration: p.duration ?? 0 };
+  };
+  const inside = (
+    name: string,
+    range: { start_seconds: number; end_seconds: number } | undefined,
+    duration: number,
+  ) => {
+    if (range && duration && range.start_seconds >= duration) {
+      throw new CfError(
+        'bad_request',
+        `${name} starts at ${range.start_seconds} s, past the end (${duration} s)`,
+        {
+          hint: `Pick a start from 0 up to ${duration} s`,
+        },
+      );
+    }
+    const span = range
+      ? {
+          start: range.start_seconds,
+          end: duration ? Math.min(range.end_seconds, duration) : range.end_seconds,
+        }
+      : undefined;
+    return span;
+  };
+
+  server.registerTool(
+    'create.lipsync',
+    {
+      title: 'Lip-sync a video to new speech',
+      description: [
+        "Make a person on camera say different words: their mouth is redrawn to match the speech you give (a re-recorded line, a create.voiceover, a word taken from elsewhere in the take). Runs at the user's lip-sync provider on their own key (sync. labs), and the provider bills them for each second sent.",
+        'To replace a line or swap a word, give range, the span of the video where it is said, and audio (with audio_range) holding just the new words. The result is that span alone, re-synced and carrying the new speech, as long as the speech with sync_mode remap; place it over the original span (clip.add on a track above, or clip.replace) and mute the old words. Send only the span: it costs less and finishes sooner.',
+        'Lip sync is for when the face stays on screen while the words change. When the speaker is off screen at that moment, or a cutaway (b-roll, the screen being talked about, a reaction) can cover the splice, the cutaway hides the edit without it.',
+        "Takes minutes. Long-running: a task, or {job_id, media_id} for job.get. The same recipe returns the same media. Provider limits (plan length, credits, file size) come back as limit_exceeded with the provider's error_code.",
+      ].join(' '),
+      inputSchema: CreateLipsyncInput,
+      outputSchema: withJob(MediaInfo),
+      annotations: { ...annotations('Lip-sync a video to new speech'), openWorldHint: true },
+    },
+    guard(async (args, ctx) => {
+      const owner = deps.owner();
+      const mode = rt.config.mode;
+      // The key is looked up before any job, held in this closure while the job runs, and never
+      // written: not in the recipe, the job record or the media.
+      const key = await deps.credentials.resolve(owner, 'sync');
+      if (!key) throw syncKeyRequired('create.lipsync', mode);
+      const video = await ready(args.video, 'video', 'video');
+      const audio = await ready(args.audio, 'audio', 'audio');
+      const videoSpan = inside('range', args.range, video.duration);
+      const audioSpan = inside('audio_range', args.audio_range, audio.duration);
+      const recipe = {
+        provider: args.provider,
+        model: args.model,
+        sync_mode: args.sync_mode,
+        video: video.record.fingerprint ?? video.record.media_id,
+        audio: audio.record.fingerprint ?? audio.record.media_id,
+        range: videoSpan ?? null,
+        audio_range: audioSpan ?? null,
+      };
+      return create(
+        ctx,
+        'create.lipsync',
+        { ...args, name: args.name ?? `${video.record.name} lipsync` },
+        recipe,
+        async (dir, progress, signal) => {
+          progress(0, 'cutting out the picture and the speech');
+          const picture = join(dir, 'lipsync-video.mp4');
+          const speech = join(dir, 'lipsync-audio.wav');
+          await excerptPicture(renderSource(video.record, 'export'), picture, videoSpan, signal);
+          await excerptSound(renderSource(audio.record, 'export'), speech, audioSpan, signal);
+          const dest = join(dir, 'source.mp4');
+          await syncLipsync(
+            {
+              base: rt.config.syncUrl ?? SYNC_URL,
+              key,
+              video: picture,
+              audio: speech,
+              model: args.model,
+              syncMode: args.sync_mode,
+              dest,
+              maxBytes: rt.config.maxDownloadBytes,
+              allowPrivate: rt.config.allowPrivateUrls,
+              signal,
+              progress: (f, m) => progress(0.05 + 0.95 * f, m),
+            },
+            mode,
+          );
+          await Promise.all([rm(picture, { force: true }), rm(speech, { force: true })]);
+          return dest;
+        },
+      );
     }),
   );
 }
