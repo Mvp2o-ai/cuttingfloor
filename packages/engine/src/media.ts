@@ -403,11 +403,19 @@ export class MediaLibrary {
       } else if (!record.file) {
         throw new CfError('engine_error', `Created media ${record.media_id} has no file`);
       }
-      const file = record.file;
+      let file = record.file;
       record.size = (await stat(file)).size;
       record.fingerprint = await fingerprint(file);
       progress(0.3, 'probing');
       record.probe = await probe(file, signal);
+      // A copy the server holds is named for what it is, whatever name it came with (a PNG sent
+      // as .svg, a download with no extension). The user's own file in a media root stays as is.
+      const ext = record.probe.extension;
+      if (ext && file.startsWith(dir + sep) && extname(file).toLowerCase() !== ext) {
+        const named = join(dir, `source${ext}`);
+        await rename(file, named);
+        record.file = file = named;
+      }
       record.conform = conformReasons(record.probe);
       record.status = 'processing';
       await this.save(owner, record);
@@ -600,6 +608,8 @@ export function mediaRef(record: MediaRecord): MediaRef | undefined {
 export function mediaInfo(
   record: MediaRecord,
   include: Array<'transcript' | 'beats' | 'faces' | 'look'> = [],
+  /** Everything the probe read (media.get gives it). */
+  options: { probe?: boolean } = {},
 ): MediaInfo {
   const p = record.probe;
   const a = record.analyses;
@@ -642,6 +652,8 @@ export function mediaInfo(
     status: record.status,
     kind: p?.kind ?? null,
     ...(p?.family ? { font_family: p.family } : {}),
+    ...(p?.extension ? { extension: p.extension } : {}),
+    ...(p?.mime ? { mime_type: p.mime } : {}),
     duration_seconds: p?.duration ?? null,
     fps: p?.video?.fps ?? null,
     width: p?.video ? (p.video.rotation % 180 ? p.video.height : p.video.width) : null,
@@ -652,6 +664,7 @@ export function mediaInfo(
     conform: record.conform,
     analysis: record.analysis,
     ...(analyses && Object.keys(analyses).length ? { analyses } : {}),
+    ...(options.probe && p?.raw ? { probe: p.raw } : {}),
     ...Object.fromEntries(include.flatMap((k) => (a?.[k] ? [[k, a[k]]] : []))),
     ...(record.error ? { error: record.error } : {}),
   };

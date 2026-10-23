@@ -630,7 +630,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get media',
       description:
-        'Status, where it came from (origin: the import source, the export of which timeline_id and preset, or the create.* tool and the media it was made from), a signed download url for the file (media is kept 7 days after last use: save the file from it to keep it, and media.import it again later) and a page_url that plays or shows it in any browser (to give a person), streams, duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
+        'Status, where it came from (origin: the import source, the export of which timeline_id and preset, or the create.* tool and the media it was made from), a signed download url for the file (media is kept 7 days after last use: save the file from it to keep it, and media.import it again later) and a page_url that plays or shows it in any browser (to give a person), its format (extension and mime_type, read from the file, not its name), everything the probe read (probe: the format and every stream, e.g. pix_fmt, colour space, primaries, transfer), duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
       inputSchema: MediaRefInput,
       outputSchema: MediaInfo,
       _meta: PLAYER_TOOL_META,
@@ -647,7 +647,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       const record = await rt.media.get(owner, args.media_id);
       const link = await rt.signMedia(owner, record);
       return ok({
-        ...mediaInfo(record, args.include ?? []),
+        ...mediaInfo(record, args.include ?? [], { probe: true }),
         ...(link ? { url: link.url, page_url: link.pageUrl, expires_at: link.expiresAt } : {}),
       });
     }),

@@ -12,9 +12,10 @@ const anyResult = z.object({}).passthrough();
  * declared its full output schema (about 117 000 of the total): code.run scripts chain calls
  * on those shapes, so they are the contract and are not slimmed to fit a harness. Raised to
  * 240 000 for media.seek, which finds moments from plain words. Raised to 270 000 for media
- * origin (where each media came from), declared on every tool that returns media, and media.delete.
+ * origin (where each media came from), declared on every tool that returns media, and media.delete;
+ * 285 000 for the source map of a render and the full probe facts on media.
  */
-const BUDGET_BYTES = 270_000;
+const BUDGET_BYTES = 285_000;
 let env: TestEnv;
 
 beforeAll(async () => {
