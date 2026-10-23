@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { copyFile, link, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ticksPerFrame } from '@cuttingfloor/core';
+import { ticksPerFrame, toView } from '@cuttingfloor/core';
 import {
   exportTimeline,
   imageExtension,
@@ -31,7 +31,7 @@ import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import type * as z from 'zod/v4';
 import { admitJob } from '../meter.ts';
 import { PLAYER_TOOL_META } from '../player.ts';
-import { assertOnline, framesUri, sourcesFor, timelineImage } from '../render.ts';
+import { assertOnline, framesUri, sourceMap, sourcesFor, timelineImage } from '../render.ts';
 import { guard, jobReply, jobView, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 
@@ -190,6 +190,8 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
           ...(args.range
             ? { range_start: String(args.range.start), range_end: String(args.range.end) }
             : {}),
+          // Kept with the job, so it outlives the timeline (24 h) for as long as the file lives.
+          sources: JSON.stringify(sourceMap(toView(args.timeline_id, doc), args.range)),
         },
         statusMessage: 'starting',
         ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),

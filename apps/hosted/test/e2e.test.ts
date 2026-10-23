@@ -1942,7 +1942,38 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         job_id: started.job_id,
         timeline_id: wide,
         preset: 'master_prores_422hq',
+        // Which media each stretch plays, kept after the timeline expires.
+        sources: [
+          {
+            track_id: 't1',
+            kind: 'video',
+            start: 0,
+            end: 2,
+            media_id: green,
+            source_in: 0,
+            source_out: 2,
+          },
+        ],
       });
+      // A part export: the spans start at the file's start, and the source range is cut to match.
+      const part = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: wide,
+        preset: 'review_h264',
+        range: { start: 25, end: 50 },
+      });
+      await waitJob(part.job_id);
+      const half = await importMedia({ job_id: part.job_id });
+      expect((half.origin as { sources: unknown[] }).sources).toEqual([
+        {
+          track_id: 't1',
+          kind: 'video',
+          start: 0,
+          end: 1,
+          media_id: green,
+          source_in: 1,
+          source_out: 2,
+        },
+      ]);
       const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
         name: 'tall',
         sequence: { width: 720, height: 1280, fps: { num: 25, den: 1 } },

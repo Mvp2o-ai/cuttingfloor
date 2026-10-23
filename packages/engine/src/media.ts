@@ -24,7 +24,14 @@ export interface MediaRecord {
     | { path: string }
     | { url: string; attached?: boolean }
     | { upload: string; file_name?: string; via?: 'media.upload' | 'account_page' | 'data_uri' }
-    | { job: string; timeline_id?: string; preset?: string; range?: { start: number; end: number } }
+    | {
+        job: string;
+        timeline_id?: string;
+        preset?: string;
+        range?: { start: number; end: number };
+        /** Where each stretch of the render comes from (see MediaOrigin.sources). */
+        sources?: NonNullable<MediaOrigin['sources']>;
+      }
     | { created: string; recipe: string; job_id?: string; from?: string[] };
   /** The original: the user's file in place, or the downloaded copy. */
   file: string | null;
@@ -515,6 +522,7 @@ export function mediaOrigin(record: MediaRecord): MediaOrigin {
       ...(s.timeline_id ? { timeline_id: s.timeline_id } : {}),
       ...(s.preset ? { preset: s.preset } : {}),
       ...(s.range ? { range: s.range } : {}),
+      ...(s.sources ? { sources: s.sources } : {}),
     };
   }
   return {

@@ -11,7 +11,7 @@ import {
   renderTimelineFrames,
   renderWaveform,
 } from '@cuttingfloor/engine';
-import { CfError, type MediaRef, type TimelineDoc } from '@cuttingfloor/schema';
+import { CfError, type MediaRef, type TimelineDoc, type TimelineView } from '@cuttingfloor/schema';
 import type { Runtime } from './runtime.ts';
 
 /** Resolves every media file a timeline uses, for previews (proxies) or exports. */
@@ -349,4 +349,92 @@ export async function factsResolver(
     });
   }
   return out;
+}
+
+/** The most source map entries an export keeps: a limit that protects the job record. */
+export const SOURCE_MAP_LIMIT = 2000;
+
+export interface SourceSpan {
+  track_id: string;
+  kind: 'video' | 'audio';
+  start: number;
+  end: number;
+  media_id: string;
+  source_in: number;
+  source_out: number;
+  speed?: Record<string, unknown>;
+}
+
+/**
+ * Where each stretch of an export comes from: per track and output span (seconds from the start
+ * of the file), the media and the source range (seconds into the media) it plays. Clips inside a
+ * nested timeline are listed under it as `outer/inner` tracks. Disabled clips and hidden or muted
+ * tracks are left out, since they are not in the file. A part-exported clip's source range is cut
+ * to match, in proportion; with a speed curve the clip's whole source range is given.
+ */
+export function sourceMap(
+  view: TimelineView,
+  range?: { start: number; end: number },
+): SourceSpan[] {
+  const rate = view.sequence.fps.num / view.sequence.fps.den;
+  const sec = (f: number) => Math.round((f / rate) * 1000) / 1000;
+  const from = range?.start ?? 0;
+  const to = range?.end ?? Number.POSITIVE_INFINITY;
+  const out: SourceSpan[] = [];
+  const walk = (
+    body: { tracks: TimelineView['tracks'] },
+    offset: number,
+    lo: number,
+    hi: number,
+    prefix: string,
+    depth: number,
+  ) => {
+    for (const track of body.tracks) {
+      if (track.kind === 'video' ? track.hidden : track.muted) continue;
+      for (const clip of track.clips) {
+        if (!clip.enabled) continue;
+        // The clip's frames on the output's own clock.
+        const start = Math.max(clip.start + offset, lo);
+        const end = Math.min(clip.end + offset, hi);
+        if (end <= start) continue;
+        const id = `${prefix}${track.id}`;
+        if (clip.type === 'timeline' && clip.nested_timeline && depth < 8) {
+          const inner = view.nested?.[clip.nested_timeline] as
+            | { tracks: TimelineView['tracks'] }
+            | undefined;
+          // Nested frame f plays at outer frame f - source.in + clip.start.
+          if (inner)
+            walk(inner, clip.start + offset - clip.source.in, start, end, `${id}/`, depth + 1);
+          continue;
+        }
+        if (clip.type !== 'media' || !clip.media_id) continue;
+        const speed = clip.speed as Record<string, unknown> | undefined;
+        const length = clip.end - clip.start;
+        const span = clip.source.out - clip.source.in;
+        const linear = !speed?.curve && length > 0;
+        const reverse = Boolean(speed?.reverse);
+        const at = (f: number) => {
+          const t = (f - (clip.start + offset)) / length;
+          return reverse ? clip.source.out - t * span : clip.source.in + t * span;
+        };
+        const a = linear ? at(start) : clip.source.in;
+        const b = linear ? at(end) : clip.source.out;
+        out.push({
+          track_id: id,
+          kind: clip.kind,
+          start: sec(start - from),
+          end: sec(end - from),
+          media_id: clip.media_id,
+          source_in: sec(Math.min(a, b)),
+          source_out: sec(Math.max(a, b)),
+          ...(speed ? { speed } : {}),
+        });
+        if (out.length >= SOURCE_MAP_LIMIT) return;
+      }
+    }
+  };
+  walk(view, 0, from, to, '', 0);
+  return out
+    .slice(0, SOURCE_MAP_LIMIT)
+    .sort((x, y) => x.start - y.start || x.track_id.localeCompare(y.track_id));
 }
