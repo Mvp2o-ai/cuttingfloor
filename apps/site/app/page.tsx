@@ -75,9 +75,11 @@ export default function Home() {
         <section className="cell floor" aria-label="An agent editing over MCP">
           <video src="/floor.mp4" poster="/floor.jpg" muted loop playsInline autoPlay />
           <div className="floor-cap">
-            <span className="label">01 / The floor</span>
+            <span className="label">01 / The layer after generation</span>
             <span className="label">
-              Agentic video editing: your agent, one MCP server, every edit a call
+              Generating footage is now cheap and everywhere. Somebody still has to assemble it —
+              cut it, caption it, balance it, deliver it in the right shape for each platform. No AI
+              company ships that layer.
             </span>
           </div>
         </section>
