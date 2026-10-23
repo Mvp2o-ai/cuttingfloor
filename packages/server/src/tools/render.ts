@@ -314,7 +314,8 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     },
     guard(async (args) => {
       const owner = deps.owner();
-      const job = await rt.jobs.store.get(args.job_id, owner);
+      // Its links signed again, so a job read days later still hands out working ones.
+      const job = await rt.freshLinks(await rt.jobs.store.get(args.job_id, owner));
       if (!job)
         throw new CfError('not_found', `No job ${args.job_id}`, {
           hint: 'Finished jobs are kept 7 days',
@@ -343,7 +344,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         ...(args.status ? { status: args.status } : {}),
         limit: args.limit,
       });
-      return ok({ jobs: jobs.map(jobView) });
+      return ok({ jobs: (await rt.freshLinks(jobs)).map(jobView) });
     }),
   );
 

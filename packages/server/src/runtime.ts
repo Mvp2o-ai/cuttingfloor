@@ -14,6 +14,13 @@ import { FileJobStore, type Job, JobRunner } from '@cuttingfloor/jobs';
 import { METER_TTL_MS, type MeterEntry, meterJob } from './meter.ts';
 import { Uploads } from './uploads.ts';
 
+/**
+ * A signed output link as signOutput writes it, on any origin (the public URL may have moved):
+ * /outputs/ or /watch/, owner key, id, file name, exp and sig.
+ */
+const SIGNED_LINK =
+  /https?:\/\/[^/\s"\\]+\/(outputs|watch)\/([A-Za-z0-9_-]{1,64}\/(?:j|f|m)_[0-9a-z]{26}\/[^/?\s"\\]+)\?exp=(\d+)&sig=([A-Za-z0-9_-]+)/g;
+
 export interface RuntimeConfig {
   /** Data root: timelines, media, jobs, outputs and caches, all with TTLs. */
   dataDir: string;
@@ -237,6 +244,42 @@ export class Runtime {
       pageUrl: `${this.config.publicUrl}/watch${path.slice('/outputs'.length)}${query}`,
       expiresAt: new Date(exp).toISOString(),
     };
+  }
+
+  /**
+   * The same value with every signed output link in it signed again, from now: a finished job
+   * keeps the links it was made with, and those stop working outputUrlTtlMs after the job ends
+   * while its file lives on (7 days). Reading the job hands out working links instead. Only
+   * links this server signed are renewed (the old signature must check out, expired or not), and
+   * each old expiry time in the value moves to the new one.
+   */
+  async freshLinks<T>(value: T): Promise<T> {
+    if (value === undefined || value === null) return value;
+    const text = JSON.stringify(value);
+    const found = [...text.matchAll(SIGNED_LINK)];
+    if (!found.length) return value;
+    const secret = await this.secret();
+    const exp = Date.now() + this.config.outputUrlTtlMs;
+    const renewed = new Map<string, string>();
+    const expiries = new Set<string>();
+    for (const m of found) {
+      const [link, , rest, oldExp, sig] = m as unknown as [string, string, string, string, string];
+      if (renewed.has(link)) continue;
+      const path = `/outputs/${rest}`;
+      const expected = createHmac('sha256', secret).update(`${path}\n${oldExp}`).digest();
+      const given = Buffer.from(sig, 'base64url');
+      if (given.length !== expected.length || !timingSafeEqual(given, expected)) continue;
+      const fresh = createHmac('sha256', secret).update(`${path}\n${exp}`).digest('base64url');
+      const page = m[1] === 'watch' ? '/watch' : '/outputs';
+      renewed.set(link, `${this.config.publicUrl}${page}/${rest}?exp=${exp}&sig=${fresh}`);
+      const at = new Date(Number(oldExp));
+      if (!Number.isNaN(at.getTime())) expiries.add(at.toISOString());
+    }
+    if (!renewed.size) return value;
+    const until = new Date(exp).toISOString();
+    let out = text.replace(SIGNED_LINK, (link) => renewed.get(link) ?? link);
+    for (const old of expiries) out = out.replaceAll(old, until);
+    return JSON.parse(out) as T;
   }
 
   /** A signed download URL for a media item's file; undefined while it has none. */

@@ -161,6 +161,82 @@ describe('HTTP face', () => {
     expect((await fetch(page.replace(/sig=[^&]+/, 'sig=AAAA'))).status).toBe(403);
   });
 
+  it('hands out working watch and download links when a job is read after its links expired', async () => {
+    // A finished export keeps the links it was made with; they expire long before its file does.
+    // Reading the job again (days into an edit) must give links that open.
+    const base = await listen(parseApiKeys(`alice:${KEY},bob:${KEY}-bob`));
+    (runtime.config as { publicUrl: string }).publicUrl = base;
+    const store = runtime.jobs.store;
+    const job = await store.create({ owner: 'alice', tool: 'export.video' });
+    const dir = runtime.ws.ownerDir('alice', 'outputs', job.id);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'final cut.mp4'), 'the approved cut');
+    const config = runtime.config as { outputUrlTtlMs: number };
+    const ttl = config.outputUrlTtlMs;
+    config.outputUrlTtlMs = -1000;
+    const old = await runtime.signOutput('alice', job.id, 'final cut.mp4');
+    config.outputUrlTtlMs = ttl;
+    const stored = {
+      url: old.url,
+      page_url: old.pageUrl,
+      expires_at: old.expiresAt,
+      uri: `video://jobs/${job.id}/output`,
+      bytes: 16,
+    };
+    await store.update(job, {
+      status: 'completed',
+      progress: 1,
+      result: {
+        content: [
+          { type: 'resource_link', uri: old.url, name: 'final cut.mp4' },
+          { type: 'text', text: JSON.stringify(stored) },
+        ],
+        structuredContent: stored,
+      } as never,
+    });
+    const stale = await fetch(old.pageUrl);
+    expect(stale.status).toBe(403);
+    expect(await stale.text()).toContain('expired');
+
+    const connect = async (key: string) => {
+      const client = new Client({ name: 't', version: '0' });
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+          requestInit: { headers: { authorization: `Bearer ${key}` } },
+        }),
+      );
+      return client;
+    };
+    const alice = await connect(KEY);
+    const got = (await alice.callTool({ name: 'job.get', arguments: { job_id: job.id } })) as {
+      structuredContent: { result: typeof stored };
+      content: Array<{ type: string; uri?: string; text?: string }>;
+    };
+    const fresh = got.structuredContent.result;
+    expect(Date.parse(fresh.expires_at)).toBeGreaterThan(Date.now());
+    expect(fresh.page_url).not.toBe(old.pageUrl);
+    const page = await fetch(fresh.page_url);
+    expect(page.status).toBe(200);
+    const src = /<video src="([^"]+)"/.exec(await page.text())?.[1]?.replace(/&amp;/g, '&');
+    const file = await fetch(`${base}${src}`);
+    expect(file.status).toBe(200);
+    expect(await file.text()).toBe('the approved cut');
+    expect((await fetch(fresh.url)).status).toBe(200);
+    // The link parts and the text copy carry the fresh links too.
+    const link = got.content.find((c) => c.type === 'resource_link');
+    expect((await fetch(link?.uri ?? '')).status).toBe(200);
+    expect(got.content.find((c) => c.type === 'text')?.text).toContain(fresh.expires_at);
+    await alice.close();
+
+    // Another account can't read the job to get links to it.
+    const bob = await connect(`${KEY}-bob`);
+    const denied = (await bob.callTool({ name: 'job.get', arguments: { job_id: job.id } })) as {
+      isError?: boolean;
+    };
+    expect(denied.isError).toBe(true);
+    await bob.close();
+  });
+
   it('takes signed, resumable uploads for the owner who asked', async () => {
     const base = await listen(parseApiKeys(`alice:${KEY},bob:${KEY}-bob`));
     (runtime.config as { publicUrl: string }).publicUrl = base;
