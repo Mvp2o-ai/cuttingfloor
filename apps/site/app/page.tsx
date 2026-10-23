@@ -130,7 +130,7 @@ export default function Home() {
           <h2 className="display big-stat">
             66 tools.
             <br />
-            No timeline UI.
+            No timeline.
             <small>
               A video editing API built for agents: granular primitives it composes, plus code when
               it needs a loop.
