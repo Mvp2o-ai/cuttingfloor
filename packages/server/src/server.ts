@@ -10,6 +10,7 @@ import { registerTasks } from './tasks.ts';
 import { registerCreateTools } from './tools/create.ts';
 import { registerInterchangeTools } from './tools/interchange.ts';
 import { registerJudgeTools } from './tools/judge.ts';
+import { registerListenTools } from './tools/listen.ts';
 import { registerMediaTools } from './tools/media.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { registerSeekTools } from './tools/seek.ts';
@@ -72,6 +73,7 @@ export function createServer(deps: ServerDeps): McpServer {
   registerTimelineTools(server, deps);
   registerMediaTools(server, deps);
   registerSeekTools(server, deps);
+  registerListenTools(server, deps);
   registerJudgeTools(server, deps);
   registerCreateTools(server, deps);
   registerRenderTools(server, deps);

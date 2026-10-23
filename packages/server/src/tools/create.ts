@@ -10,7 +10,10 @@ import {
   mediaInfo,
   renderMatte,
   renderPicture,
+  renderSource,
+  SOUND_MODELS,
   speak,
+  splitStems,
   stabilize,
   voiceWords,
 } from '@cuttingfloor/engine';
@@ -21,11 +24,15 @@ import {
   CreateMatteInput,
   CreateMotionInput,
   CreateStabilizedInput,
+  CreateStemsInput,
+  CreateStemsResult,
   CreateStillInput,
   CreateVoiceoverInput,
   MediaInfo,
   MOTION_LIMITS,
   MotionRequest,
+  SOUNDS_LIMITS,
+  type Stem,
   withJob,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
@@ -469,6 +476,139 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         undefined,
         'heavy',
       );
+    }),
+  );
+
+  server.registerTool(
+    'create.stems',
+    {
+      title: 'Separate voice and music',
+      description: [
+        'The sound of a video or audio file pulled apart into stems, each new audio media for clip.add: vocals (voices, spoken or sung), drums, bass, other (everything else: guitars, keys, effects, room noise) and no_vocals (all but the voice, in one file). Laid together at the same time, the four stems make the original sound again.',
+        'Use it to keep only the voice (lose the music under an interview: vocals), keep only the music (take the voice out of a clip: no_vocals), turn the music down under speech (vocals and no_vocals on their own tracks, with their own gain), or take a beat or a bass line on its own.',
+        `Demucs v4 (htdemucs), local, on the CPU: about a fifth of the media's length on 8 cores (a minute of sound in about 15 s). Built for music; on speech with background noise, vocals keeps the voice and other takes most of the noise. Media up to ${SOUNDS_LIMITS.stemsSeconds / 3600} hours. Each stem is a 32-bit float WAV, 44.1 kHz stereo, as long as the original; the same media and stems give the same media again while they last. Long-running: a task, or a job_id for job.get.`,
+      ].join('\n'),
+      inputSchema: CreateStemsInput,
+      outputSchema: withJob(CreateStemsResult),
+      annotations: annotations('Separate voice and music'),
+    },
+    guard(async (args, ctx) => {
+      const owner = deps.owner();
+      const store = rt.jobs.store;
+      const source = await rt.media.get(owner, args.media_id);
+      const p = source.probe;
+      if (source.status !== 'ready' || !p) {
+        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`, {
+          hint: 'Wait for its media.import job to finish',
+        });
+      }
+      if (!p.audio) {
+        throw new CfError('bad_request', `Media ${args.media_id} has no sound to separate`);
+      }
+      if ((p.duration ?? 0) > SOUNDS_LIMITS.stemsSeconds) {
+        throw new CfError(
+          'limit_exceeded',
+          `create.stems takes up to ${SOUNDS_LIMITS.stemsSeconds / 3600} hours; this media is ${Math.round(p.duration ?? 0)} s`,
+          { hint: 'Export the part you need with export.video and separate that' },
+        );
+      }
+      if (args.idempotency_key) {
+        const existing = await store.findIdempotent(owner, 'create.stems', args.idempotency_key);
+        if (existing) return jobReply(existing, ctx);
+      }
+      const stems = [...new Set(args.stems)] as Stem[];
+      const hashOf = (stem: Stem) =>
+        createHash('sha256')
+          .update(
+            JSON.stringify([
+              'create.stems',
+              RECIPE_VERSION,
+              {
+                model: SOUND_MODELS.stems,
+                source: source.fingerprint ?? source.media_id,
+                stem,
+              },
+            ]),
+          )
+          .digest('hex')
+          .slice(0, 40);
+      const known = new Map<Stem, MediaRecord>();
+      for (const stem of stems) {
+        const found = await rt.media.findByRecipe(owner, hashOf(stem));
+        if (found) known.set(stem, found);
+      }
+      const reply = (records: Map<Stem, MediaRecord>) =>
+        ok({
+          media_id: args.media_id,
+          model: SOUND_MODELS.stems,
+          stems: Object.fromEntries(
+            stems.map((s) => [s, mediaInfo(records.get(s) as MediaRecord)]),
+          ),
+        }) as never;
+      const key = args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {};
+      if (known.size === stems.length) {
+        const job = await store.create({ owner, tool: 'create.stems', meta: {}, ...key });
+        return jobReply(
+          await store.update(job, {
+            status: 'completed',
+            progress: 1,
+            statusMessage: 'made before from the same media',
+            result: reply(known),
+          }),
+          ctx,
+        );
+      }
+      const admit = await admitJob(deps.limits);
+      const missing = stems.filter((s) => !known.has(s));
+      const fresh = new Map<Stem, MediaRecord>();
+      for (const stem of missing) {
+        const name = args.name ? `${args.name} ${stem}` : `${source.name} ${stem}`;
+        fresh.set(
+          stem,
+          await rt.media.create(owner, { created: 'create.stems', recipe: hashOf(stem) }, name),
+        );
+      }
+      const job = await store.create({
+        owner,
+        tool: 'create.stems',
+        meta: Object.fromEntries([...fresh].map(([s, r]) => [`stem_${s}`, r.media_id])),
+        statusMessage: `separating ${missing.join(', ')}`,
+        ...key,
+      });
+      rt.jobs.start(
+        job,
+        async ({ signal, progress }) => {
+          const first = fresh.values().next().value as MediaRecord;
+          const outputs = Object.fromEntries(
+            [...fresh].map(([stem, r]) => [
+              stem,
+              join(rt.media.dir(owner, r.media_id), 'source.wav'),
+            ]),
+          );
+          await splitStems(renderSource(source, 'export'), outputs, {
+            workDir: rt.media.dir(owner, first.media_id),
+            signal,
+            onProgress: (f) => progress(0.9 * f, 'stems: separating'),
+          });
+          const done = new Map(known);
+          let i = 0;
+          for (const [stem, record] of fresh) {
+            record.file = outputs[stem] as string;
+            const ready = await rt.media.ingest(
+              owner,
+              record,
+              (f, m) => progress(0.9 + (0.1 * (i + f)) / fresh.size, `${stem}: ${m}`),
+              signal,
+            );
+            await rt.media.rememberRecipe(owner, hashOf(stem), ready.media_id);
+            done.set(stem, ready);
+            i += 1;
+          }
+          return reply(done);
+        },
+        { lane: 'heavy', ...admit },
+      );
+      return jobReply(job, ctx);
     }),
   );
 }

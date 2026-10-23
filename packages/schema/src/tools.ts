@@ -17,6 +17,7 @@ import { JobId, MediaId, TimelineId, UploadId } from './ids.ts';
 import { JUDGE_LIMITS, JudgeName, JudgeQuestion, JudgeText, NoulFields } from './judge.ts';
 import { ASSET_NAME, MOTION_LIMITS } from './motion.ts';
 import { Sequence } from './sequence.ts';
+import { STEMS } from './sounds.ts';
 import { Colour, TextStyle } from './text.ts';
 import { Change, TimelineInput, TimelineView, TrackKind } from './timeline.ts';
 
@@ -589,7 +590,7 @@ export const MediaUploadResult = z.object({
   how: z.string(),
 });
 
-export const ANALYSES = ['transcript', 'beats', 'faces', 'look', 'speech'] as const;
+export const ANALYSES = ['transcript', 'beats', 'faces', 'look', 'speech', 'sounds'] as const;
 
 export const MediaRefInput = z.object({
   media_id: MediaId,
@@ -638,6 +639,51 @@ export const LookAnalysis = z.object({
   ),
 });
 
+/** Limits that protect the server. */
+export const SOUNDS_LIMITS = {
+  /** Sounds named in one media.analyze sounds call. */
+  labels: 64,
+  /** Sounds described in one media.listen call. */
+  queries: 16,
+  /** Score values one result carries; longer media comes back at a coarser step. */
+  values: 60_000,
+  /** create.stems takes media up to this long (seconds). */
+  stemsSeconds: 3 * 60 * 60,
+} as const;
+
+export const SoundSpan = z.object({
+  start: z.number().describe('Media seconds where the run of matching 40 ms frames starts'),
+  end: z.number().describe('Media seconds where it ends'),
+  peak_seconds: z.number().describe('The middle of the most likely frame'),
+  peak_probability: z.number(),
+});
+
+export const SoundScores = z
+  .object({
+    start_seconds: z.number().describe('Media seconds of the first value'),
+    step_seconds: z
+      .number()
+      .describe('Seconds each value covers: 0.04 (every frame) unless asked or too long'),
+    values: z
+      .record(z.string(), z.array(z.number()))
+      .describe('Per sound, the highest probability in each step, 0 to 1'),
+  })
+  .describe('Every probability, for your own cut-off or arithmetic');
+
+export const SoundsAnalysis = z.object({
+  model: z.string(),
+  min_probability: z.number(),
+  spans: z
+    .record(z.string(), z.array(SoundSpan))
+    .describe(
+      'Per sound: the runs of 40 ms frames at or above min_probability, in time order; empty when it never is',
+    ),
+  peaks: z
+    .record(z.string(), z.number())
+    .describe('Per sound reported: the highest probability it reaches anywhere'),
+  scores: SoundScores.optional(),
+});
+
 /** media.analyze kinds that also measure a timeline's mix (timeline_id). */
 export const TIMELINE_ANALYSES = ['speech', 'loudness', 'silence'] as const;
 
@@ -658,9 +704,10 @@ export const MediaAnalyzeInput = z
         'scenes',
         'speech',
         'loudness',
+        'sounds',
       ])
       .describe(
-        'transcript: words with times (whisper.cpp, then aligned to the sound); beats: tempo and beat times; faces: face boxes over time; track: follow a region; look: your own questions answered on sampled frames; silence: stretches quieter than threshold_db for min_seconds; scenes: times the picture changes by more than threshold; speech: where someone is speaking (Silero VAD probability every 32 ms, spans at or above min_probability); loudness: integrated loudness, true peak, loudness range, RMS and noise floor',
+        'transcript: words with times (whisper.cpp, then aligned to the sound); beats: tempo and beat times; faces: face boxes over time; track: follow a region; look: your own questions answered on sampled frames; silence: stretches quieter than threshold_db for min_seconds; scenes: times the picture changes by more than threshold; speech: where someone is speaking (Silero VAD probability every 32 ms, spans at or above min_probability); loudness: integrated loudness, true peak, loudness range, RMS and noise floor; sounds: when each of 447 named sounds (laughter, applause, cough, music, speech, door…) can be heard, every 40 ms',
       ),
     questions: z
       .record(JudgeName, JudgeQuestion)
@@ -702,7 +749,17 @@ export const MediaAnalyzeInput = z
       .min(0)
       .max(1)
       .optional()
-      .describe('speech (required): a 32 ms frame with at least this speech probability is speech'),
+      .describe(
+        'speech (required): a 32 ms frame with at least this speech probability is speech; sounds (required): a 40 ms frame has the sound when its probability is at least this',
+      ),
+    labels: z
+      .array(z.string().min(1).max(100))
+      .min(1)
+      .max(SOUNDS_LIMITS.labels)
+      .optional()
+      .describe(
+        'sounds: the sounds to report, named as in video://catalog/sounds (e.g. ["Laughter", "Applause", "Cough"]). Default: every sound that reaches min_probability somewhere',
+      ),
     model: z
       .enum(['tiny', 'base', 'small'])
       .default('base')
@@ -977,6 +1034,10 @@ export const MediaInfo = z.object({
         .object({ runs: z.number(), frames: z.number(), questions: z.array(z.string()) })
         .optional()
         .describe('frames and questions: the latest run'),
+      sounds: z
+        .object({ model: z.string(), min_probability: z.number(), heard: z.array(z.string()) })
+        .optional()
+        .describe('heard: the sounds the latest run found at or above its min_probability'),
     })
     .optional()
     .describe(
@@ -1007,6 +1068,9 @@ export const MediaInfo = z.object({
     ),
   speech: SpeechAnalysis.optional().describe(
     'With include ["speech"]: the speech probability of every 32 ms frame',
+  ),
+  sounds: SoundsAnalysis.optional().describe(
+    'With include ["sounds"]: the latest media.analyze sounds run, every probability included',
   ),
   error: ToolError.optional(),
 });
@@ -1088,6 +1152,7 @@ export const MediaAnalyzeResult = z.object({
     'scenes',
     'speech',
     'loudness',
+    'sounds',
   ]),
   summary: z
     .record(z.string(), z.unknown())
@@ -1141,6 +1206,7 @@ export const MediaAnalyzeResult = z.object({
     from: z.number().describe('Seconds measured from'),
     until: z.number().nullable().describe('Seconds measured until; null: the end'),
   }).optional(),
+  sounds: SoundsAnalysis.optional(),
   note: z
     .string()
     .optional()
@@ -1279,6 +1345,52 @@ export const MediaSeekResult = z.object({
     .describe('Every judged sample, for your own cut-off or arithmetic'),
 });
 
+export const MediaListenInput = z.object({
+  media_id: MediaId,
+  sounds: z
+    .record(JudgeName, z.string().min(1).max(200))
+    .describe(
+      `Name (yours) to the sound in plain words: what it is, as you would caption it ("laughter", "a crowd cheering", "a door slams", "a phone ringing", "a dog barking", "keyboard typing"). Up to ${SOUNDS_LIMITS.queries}, each listened for in every 40 ms frame`,
+    ),
+  min_probability: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.5)
+    .describe('A frame matches a sound when its probability is at least this'),
+  from_seconds: z.number().min(0).optional().describe('Start listening here. Default 0'),
+  until_seconds: z.number().min(0).optional().describe('Stop here. Default: the end'),
+  step_seconds: z
+    .number()
+    .min(0.04)
+    .max(60)
+    .optional()
+    .describe(
+      'scores: one value per this many seconds (the highest in each). Default 0.04, every frame, coarser when that would be too many',
+    ),
+  idempotency_key: z.string().min(1).max(200).optional(),
+});
+
+export const MediaListenResult = z.object({
+  media_id: MediaId,
+  model: z.string().describe('The sound model that listened'),
+  asked: z.record(z.string(), z.string()).describe('Per sound: the words the model was given'),
+  matches: z
+    .record(
+      z.string(),
+      z.array(
+        SoundSpan.extend({
+          frame: frame
+            .optional()
+            .describe('peak_seconds as a media frame number, for render.frames (video only)'),
+        }),
+      ),
+    )
+    .describe('Per sound: runs of 40 ms frames that match, in time order; empty when none do'),
+  peaks: z.record(z.string(), z.number()).describe('Per sound: the highest probability anywhere'),
+  scores: SoundScores,
+});
+
 // Create: new media from a recipe. Always a job; the result is a media_id for clip.add.
 const createCommon = {
   name: z.string().min(1).max(200).optional(),
@@ -1408,6 +1520,27 @@ export const CreateStabilizedInput = z.object({
       'What fills the edges steadying moves into view. zoom: one zoom for the whole video, enough to hide them; adaptive_zoom: as little zoom as each moment needs; black: no zoom, black edges; keep: no zoom, edges filled from earlier frames',
     ),
   ...createCommon,
+});
+
+export const CreateStemsInput = z.object({
+  media_id: MediaId.describe('Video or audio with sound'),
+  stems: z
+    .array(z.enum(STEMS))
+    .min(1)
+    .max(STEMS.length)
+    .default(['vocals', 'drums', 'bass', 'other'])
+    .describe(
+      'vocals: voices, spoken or sung; drums, bass, other: the rest, by kind (other holds everything else: guitars, keys, effects, room noise); no_vocals: all but the voice in one file. Each becomes its own media',
+    ),
+  ...createCommon,
+});
+
+export const CreateStemsResult = z.object({
+  media_id: MediaId.describe('The media the stems came from'),
+  model: z.string(),
+  stems: z
+    .record(z.string(), MediaInfo)
+    .describe('Per stem asked for: the new audio media (32-bit float WAV, 44.1 kHz stereo)'),
 });
 
 export const CreateMatteInput = z

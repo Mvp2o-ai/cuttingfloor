@@ -6,6 +6,7 @@ import {
   detectFaces,
   detectScenes,
   detectSilences,
+  detectSounds,
   fingerprint,
   type MediaRecord,
   mayBeTransparent,
@@ -14,6 +15,7 @@ import {
   mediaStills,
   noAudio,
   renderSource,
+  SOUND_MODELS,
   SPEECH_MODELS,
   type SpeechProbabilities,
   soundOffset,
@@ -30,10 +32,10 @@ import {
   MEDIA_LIMITS,
   MediaAnalyzeInput,
   MediaAnalyzeResult,
-  MediaDeleteInput,
-  MediaDeleteResult,
   MediaCorrelateInput,
   MediaCorrelateResult,
+  MediaDeleteInput,
+  MediaDeleteResult,
   MediaImportInput,
   MediaInfo,
   MediaListInput,
@@ -64,6 +66,7 @@ import {
   PICTURE,
   pictureSize,
 } from './judge.ts';
+import { soundLabelIndexes, soundsReport } from './listen.ts';
 
 /** Analysis data longer than this stays with the media instead of filling the result. */
 const INLINE_CHARS = 20_000;
@@ -161,7 +164,6 @@ function paged(info: MediaInfo, w: Window): Partial<MediaInfo> {
   }
   return { ...out, pages };
 }
-
 
 /** A speech result with its probabilities only when they are short enough to return. */
 function inlineSpeech(result: Record<string, unknown>, mediaId?: string): Record<string, unknown> {
@@ -635,7 +637,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Analyze media',
       description: [
-        "Find what is in imported media, or in the sound of an edit, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). For English the word edges are then aligned to the sound (wav2vec2 forced alignment): a word starts and ends within about 0.05 s of where its letters sound, and an end on a soft consonant (s, t, k, f) or a breath can ring on up to about 0.1 s more; timing_confidence says how clearly each word was heard. Other languages keep whisper's own times, up to about a second off. Short ums and uhs are often left out of the words; kind speech still hears them. beats: tempo, beat and downbeat times. faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on, a box for each sampled time (found false where the subject was lost); to make a title, sticker, arrow or mask follow the subject, turn the boxes into clip.set_transform (or clip.set_mask) keyframes, no tracking of your own needed. look: your own typed questions about what is on screen, answered on every sampled frame (to find where something happens from plain words, media.seek). silence: stretches quieter than threshold_db for at least min_seconds. scenes: times the picture changes by more than threshold (0–100). speech: the probability that someone is speaking, every 32 ms (Silero VAD), and the spans where it is at least your min_probability; it hears speech, not noise or music, so a cough or a door is not speech. loudness: integrated loudness (LUFS), true peak (dBTP), loudness range (LU), RMS level and noise floor (dBFS) over the whole media or from_seconds to until_seconds. To line up two recordings, media.correlate.",
+        "Find what is in imported media, or in the sound of an edit, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). For English the word edges are then aligned to the sound (wav2vec2 forced alignment): a word starts and ends within about 0.05 s of where its letters sound, and an end on a soft consonant (s, t, k, f) or a breath can ring on up to about 0.1 s more; timing_confidence says how clearly each word was heard. Other languages keep whisper's own times, up to about a second off. Short ums and uhs are often left out of the words; kind speech still hears them. beats: tempo, beat and downbeat times. faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on, a box for each sampled time (found false where the subject was lost); to make a title, sticker, arrow or mask follow the subject, turn the boxes into clip.set_transform (or clip.set_mask) keyframes, no tracking of your own needed. look: your own typed questions about what is on screen, answered on every sampled frame (to find where something happens from plain words, media.seek). silence: stretches quieter than threshold_db for at least min_seconds. scenes: times the picture changes by more than threshold (0–100). speech: the probability that someone is speaking, every 32 ms (Silero VAD), and the spans where it is at least your min_probability; it hears speech, not noise or music, so a cough or a door is not speech. loudness: integrated loudness (LUFS), true peak (dBTP), loudness range (LU), RMS level and noise floor (dBFS) over the whole media or from_seconds to until_seconds. To line up two recordings, media.correlate. sounds: what can be heard and when, every 40 ms, for 447 named sounds (video://catalog/sounds: Laughter, Applause, Cough, Sneeze, Music, Speech, Door, Footsteps, Beep…): give labels for the ones you want, or none for every sound that reaches your min_probability; you get each sound's spans and its probability in every frame. To find a sound you describe in your own words, media.listen.",
         `With timeline_id instead of media_id, ${TIMELINE_ANALYSES.join(', ')} measure the edit's mix as it plays, over from_seconds to until_seconds (timeline seconds). A source or range with no sound fails with no_audio, naming it.`,
         'Times are media seconds (timeline seconds for a timeline); boxes are fractions of the picture. Results stay with the media (media.get include) except track, silence, scenes and loudness, which come back in the result; speech over the whole media is kept (media.get include speech), so asking again with another min_probability or range answers from it. A result too long to return (a long transcript) comes back as its summary and a note: read it in pieces with media.get include and a time range or page.',
         'Long-running: returns a task, or a job_id for job.get.',
@@ -666,6 +668,13 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         checkQuestions('look', args.questions, JUDGE_LIMITS.lookQuestions);
         checkFrameState('look', args.state);
         checkText(args.state ?? {});
+      }
+      const soundColumns =
+        args.kind === 'sounds' && args.labels ? soundLabelIndexes(args.labels) : undefined;
+      if (args.kind === 'sounds' && args.min_probability === undefined) {
+        throw new CfError('bad_request', 'sounds needs a min_probability (0–1)', {
+          hint: 'Say what probability counts as heard, e.g. {min_probability: 0.3}; scores give every frame for a second look',
+        });
       }
       if (args.idempotency_key) {
         const existing = await store.findIdempotent(owner, 'media.analyze', args.idempotency_key);
@@ -917,6 +926,25 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
                 media_id: mediaId,
                 kind: args.kind,
                 ...inlineSpeech(result, mediaId),
+              }) as never;
+            }
+            case 'sounds': {
+              progress(0.02, 'sounds: listening');
+              const scores = await detectSounds(file, {
+                signal,
+                onProgress: (f) => progress(0.02 + 0.93 * f, 'sounds: listening'),
+              });
+              const { stored, result } = soundsReport(scores, {
+                model: SOUND_MODELS.sounds,
+                min: args.min_probability as number,
+                ...(soundColumns ? { columns: soundColumns } : {}),
+              });
+              const latest = await rt.media.saveAnalysis(owner, mediaId, 'sounds', stored);
+              return ok({
+                media_id: mediaId,
+                kind: args.kind,
+                summary: mediaInfo(latest).analyses?.sounds,
+                sounds: result,
               }) as never;
             }
             case 'scenes': {

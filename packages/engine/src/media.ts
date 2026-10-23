@@ -52,6 +52,7 @@ export interface MediaRecord {
     faces?: NonNullable<MediaInfo['faces']>;
     look?: NonNullable<MediaInfo['look']>;
     speech?: NonNullable<MediaInfo['speech']>;
+    sounds?: NonNullable<MediaInfo['sounds']>;
   };
   error?: ToolError;
   created_at: string;
@@ -180,7 +181,9 @@ export class MediaLibrary {
       const value = await this.#ws.readJson<never>(join(dir, name));
       if (!value) continue;
       if (name.startsWith('look-')) runs.push(value);
-      else analyses[name.slice(0, -5) as 'transcript' | 'beats' | 'faces' | 'speech'] = value;
+      else
+        analyses[name.slice(0, -5) as 'transcript' | 'beats' | 'faces' | 'speech' | 'sounds'] =
+          value;
     }
     if (runs.length) analyses.look = { runs: runs.slice(-LOOK_RUNS_KEPT) };
     if (Object.keys(analyses).length) record.analyses = analyses;
@@ -210,7 +213,7 @@ export class MediaLibrary {
   async saveAnalysis(
     owner: string,
     id: string,
-    kind: 'transcript' | 'beats' | 'faces' | 'look' | 'speech',
+    kind: 'transcript' | 'beats' | 'faces' | 'look' | 'speech' | 'sounds',
     value: unknown,
   ): Promise<MediaRecord> {
     const dir = join(this.dir(owner, id), 'analyses');
@@ -608,7 +611,7 @@ export function mediaRef(record: MediaRecord): MediaRef | undefined {
 
 export function mediaInfo(
   record: MediaRecord,
-  include: Array<'transcript' | 'beats' | 'faces' | 'look' | 'speech'> = [],
+  include: Array<'transcript' | 'beats' | 'faces' | 'look' | 'speech' | 'sounds'> = [],
   /** Everything the probe read (media.get gives it). */
   options: { probe?: boolean } = {},
 ): MediaInfo {
@@ -640,6 +643,15 @@ export function mediaInfo(
                 model: a.speech.model,
                 frames: a.speech.probabilities.length,
                 frame_seconds: a.speech.frame_seconds,
+              },
+            }
+          : {}),
+        ...(a.sounds
+          ? {
+              sounds: {
+                model: a.sounds.model,
+                min_probability: a.sounds.min_probability,
+                heard: Object.keys(a.sounds.spans).filter((k) => a.sounds?.spans[k]?.length),
               },
             }
           : {}),

@@ -72,6 +72,21 @@ export {
   renderTimelineFrames,
 } from './render.ts';
 export {
+  detectSounds,
+  type FrameScores,
+  listenFor,
+  listenText,
+  peakOf,
+  SOUND_MODELS,
+  SOUND_RATE,
+  type SoundSpan,
+  scoreAt,
+  scoreSeries,
+  seriesStep,
+  soundSpans,
+  splitStems,
+} from './sounds.ts';
+export {
   clipPasses,
   DENOISE_MODELS,
   passedAudio,

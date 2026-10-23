@@ -17,9 +17,10 @@ const anyResult = z.object({}).passthrough();
  * each media came from), declared on every tool that returns media, and media.delete, to
  * 301 000 for the source map of a render and the full probe facts on media, and to 331 000
  * for the speech and sound facts (media.analyze speech and loudness, media.correlate, qa.check
- * cut facts).
+ * cut facts), and to 366 000 for the sound tools (media.analyze sounds, media.listen,
+ * create.stems), whose results carry every score.
  */
-const BUDGET_BYTES = 331_000;
+const BUDGET_BYTES = 366_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -103,6 +104,7 @@ describe('protocol surface', () => {
         'create.matte',
         'create.motion',
         'create.stabilized',
+        'create.stems',
         'create.still',
         'create.voiceover',
         'edit.batch',
@@ -121,6 +123,7 @@ describe('protocol surface', () => {
         'media.get',
         'media.import',
         'media.list',
+        'media.listen',
         'media.seek',
         'media.upload',
         'qa.check',

@@ -6,6 +6,7 @@ export * from './judge.ts';
 export * from './motion.ts';
 export * from './sequence.ts';
 export * from './skills.ts';
+export * from './sounds.ts';
 export * from './text.ts';
 export * from './timeline.ts';
 export * from './tools.ts';
