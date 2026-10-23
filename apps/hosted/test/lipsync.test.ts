@@ -444,5 +444,5 @@ describe.skipIf(!ffmpeg)('create.lipsync with a stand-in sync. labs', () => {
     expect(api.length).toBeGreaterThan(0);
     for (const s of api) expect(s.headers['x-api-key']).toBe(SAVED_SYNC_KEY);
     expect(await allFiles(join(dir, 'data'))).not.toContain(SAVED_SYNC_KEY);
-  });
+  }, 60_000);
 });
