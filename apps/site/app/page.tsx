@@ -99,7 +99,7 @@ export default function Home() {
             <div className="head">
               <span className="label">03 / In your agent</span>
               <h2 className="lede">
-                Plug cuttingfloor into the agent you already use. <em>It becomes your editor.</em>
+                Plug cuttingfloor into the agent you already use. <em>We make it finish.</em>
               </h2>
             </div>
             <AgentDemo demo={DEMOS[0]} />
