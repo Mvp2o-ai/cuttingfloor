@@ -12,10 +12,11 @@ const anyResult = z.object({}).passthrough();
  * declared its full output schema (about 117 000 of the total): clients chain calls on those
  * shapes, so they are the contract and are not slimmed to fit a harness. Raised to
  * 240 000 for media.seek, which finds moments from plain words, to 250 000 for other_tracks
- * on every rippling edit, to 256 000 for create.stabilized, and to 266 000 for paging media.get
- * (time range, offset, limit and pages per analysis).
+ * on every rippling edit, to 256 000 for create.stabilized, to 266 000 for paging media.get
+ * (time range, offset, limit and pages per analysis), and to 286 000 for media origin (where
+ * each media came from), declared on every tool that returns media, and media.delete.
  */
-const BUDGET_BYTES = 266_000;
+const BUDGET_BYTES = 286_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -112,6 +113,7 @@ describe('protocol surface', () => {
         'job.list',
         'judge.ask',
         'media.analyze',
+        'media.delete',
         'media.get',
         'media.import',
         'media.list',

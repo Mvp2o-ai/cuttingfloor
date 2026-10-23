@@ -22,6 +22,8 @@ interface UploadMeta {
   max_bytes?: number;
   /** media.import {source: {upload}}: the media it becomes once complete, and for whom. */
   import?: SentImport;
+  /** How it was sent: a media.upload link, the account page, or a data: URI. */
+  via?: UploadVia;
 }
 
 /** What a sent upload becomes: the media media.import made for it, and the job's slot limit. */
@@ -30,6 +32,8 @@ export interface SentImport {
   media_id: string;
   owner_limit?: number;
 }
+
+export type UploadVia = 'media.upload' | 'account_page' | 'data_uri';
 
 export interface UploadState {
   upload_id: string;
@@ -85,15 +89,17 @@ export class Uploads {
     name: string,
     bytes: number | undefined,
     room?: number,
+    via: UploadVia = 'media.upload',
   ): Promise<{ upload_id: string; url: string; expires_at: string; max_bytes: number }> {
-    return this.#create(owner, name, bytes, room);
+    return this.#create(owner, name, bytes, room, via);
   }
 
   async #create(
     owner: string,
     name: string,
     bytes: number | undefined,
-    room?: number,
+    room: number | undefined,
+    via: UploadVia,
     then?: (id: string) => Promise<SentImport>,
   ): Promise<{ upload_id: string; url: string; expires_at: string; max_bytes: number }> {
     if (bytes !== undefined && bytes > this.maxBytes) {
@@ -118,6 +124,7 @@ export class Uploads {
       created_at: new Date().toISOString(),
       ...(room !== undefined && room < this.maxBytes ? { max_bytes: room } : {}),
       ...(then ? { import: await then(id) } : {}),
+      via,
     };
     await this.#ws.writeJson(this.#record(ownerKey(owner), id), meta);
     const exp = Date.now() + UPLOAD_TTL_MS;
@@ -141,7 +148,7 @@ export class Uploads {
     room: number | undefined,
     then: (id: string) => Promise<SentImport>,
   ): Promise<{ upload_id: string; url: string; expires_at: string; max_bytes: number }> {
-    return this.#create(owner, name, bytes, room, then);
+    return this.#create(owner, name, bytes, room, 'media.upload', then);
   }
 
   /**
@@ -156,7 +163,7 @@ export class Uploads {
 
   /** An upload whose bytes are already here (a data: URI), complete at once. */
   async put(owner: string, name: string, bytes: Buffer): Promise<string> {
-    const { upload_id } = await this.create(owner, name, bytes.length);
+    const { upload_id } = await this.create(owner, name, bytes.length, undefined, 'data_uri');
     const key = ownerKey(owner);
     const meta = await this.#meta(key, upload_id);
     if (!meta) throw new CfError('engine_error', `Upload ${upload_id} vanished`);
@@ -266,7 +273,7 @@ export class Uploads {
   }
 
   /** A complete upload's file and name, for media.import. */
-  async take(owner: string, id: string): Promise<{ file: string; name: string }> {
+  async take(owner: string, id: string): Promise<{ file: string; name: string; via?: UploadVia }> {
     const key = ownerKey(owner);
     const meta = await this.#meta(key, id);
     if (!meta) {
@@ -291,7 +298,11 @@ export class Uploads {
         },
       );
     }
-    return { file: join(this.#dir(key, id), meta.file), name: meta.name };
+    return {
+      file: join(this.#dir(key, id), meta.file),
+      name: meta.name,
+      ...(meta.via ? { via: meta.via } : {}),
+    };
   }
 
   /** The owner's uploads not yet imported, newest first. */

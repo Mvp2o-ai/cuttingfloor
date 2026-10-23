@@ -35,6 +35,7 @@ export {
   MediaLibrary,
   type MediaRecord,
   mediaInfo,
+  mediaOrigin,
   mediaRef,
   type Progress,
   renderPicture,
