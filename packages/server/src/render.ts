@@ -23,6 +23,36 @@ export async function sourcesFor(
 ): Promise<{ sources: Map<string, MltSource>; offline: string[] }> {
   const sources = new Map<string, MltSource>();
   const offline: string[] = [];
+  for (const id of mediaIdsOf(doc)) {
+    const record = await rt.media.find(owner, id);
+    if (!record || record.status === 'failed' || record.status === 'importing') {
+      offline.push(id);
+      continue;
+    }
+    // Previews may read the original while it is conformed; exports wait for the mezzanine.
+    if (purpose === 'export' && record.status !== 'ready') {
+      throw new CfError('media_not_ready', `Media ${id} is still processing`, {
+        hint: 'Wait for its media.import job to finish, then export',
+        detail: { media_id: id },
+      });
+    }
+    sources.set(id, renderPicture(record, purpose));
+  }
+  return { sources, offline };
+}
+
+/**
+ * Refuses a timeline whose media was deleted or expired, before a cached render of it is
+ * served: a deleted take must not come back from the cache.
+ */
+async function assertStillHeld(rt: Runtime, owner: string, doc: TimelineDoc): Promise<void> {
+  const gone: string[] = [];
+  for (const id of mediaIdsOf(doc)) if (!(await rt.media.exists(owner, id))) gone.push(id);
+  assertOnline(gone);
+}
+
+/** The media a timeline uses: what enabled clips play, fonts their text is set in, LUTs. */
+function mediaIdsOf(doc: TimelineDoc): Set<string> {
   // Media the clips play, fonts their text is set in, and LUTs their effects use.
   const luts = (effects: Array<{ name: string; params: Record<string, unknown> }> | undefined) =>
     (effects ?? []).flatMap((e) =>
@@ -48,28 +78,13 @@ export async function sourcesFor(
       )
       .concat(effectMedia),
   );
-  for (const id of ids) {
-    const record = await rt.media.find(owner, id);
-    if (!record || record.status === 'failed' || record.status === 'importing') {
-      offline.push(id);
-      continue;
-    }
-    // Previews may read the original while it is conformed; exports wait for the mezzanine.
-    if (purpose === 'export' && record.status !== 'ready') {
-      throw new CfError('media_not_ready', `Media ${id} is still processing`, {
-        hint: 'Wait for its media.import job to finish, then export',
-        detail: { media_id: id },
-      });
-    }
-    sources.set(id, renderPicture(record, purpose));
-  }
-  return { sources, offline };
+  return ids;
 }
 
 export function assertOnline(offline: string[]): void {
   if (offline.length) {
     throw new CfError('media_offline', `Media not available: ${offline.join(', ')}`, {
-      hint: 'Media expires 7 days after last use. Import the file again and swap the clips with clip.add',
+      hint: 'The media was deleted, or expired 7 days after last use. Import the file again (or pick another media) and swap it into the clips with clip.replace',
       detail: { media_ids: offline },
     });
   }
@@ -230,6 +245,7 @@ export async function timelineImage(
     'frames',
     `${timelineId}-${frames.join('_')}-${longEdge}${options.full ? '-full' : ''}${options.quality ? `-q${options.quality}` : ''}.${format}`,
   );
+  await assertStillHeld(rt, owner, doc);
   try {
     return await readFile(cacheFile);
   } catch {
@@ -281,6 +297,7 @@ export async function timelineWaveform(
 ): Promise<{ image: Buffer; lufs: number | null; peak: number | null }> {
   const format = options.format ?? 'webp';
   const base = rt.ws.path('cache', 'frames', `${timelineId}-wave-${range.start}_${range.end}`);
+  await assertStillHeld(rt, owner, doc);
   try {
     const [image, meta] = await Promise.all([
       readFile(`${base}.${format}`),

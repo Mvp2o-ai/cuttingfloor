@@ -1,7 +1,13 @@
-import { copyFile, mkdir, open, realpath, rename, stat } from 'node:fs/promises';
+import { copyFile, mkdir, open, readdir, realpath, rename, stat } from 'node:fs/promises';
 import { basename, extname, join, sep } from 'node:path';
 import { randomId, secondsToTicks, type Workspace } from '@cuttingfloor/core';
-import { CfError, type MediaInfo, type MediaRef, type ToolError } from '@cuttingfloor/schema';
+import {
+  CfError,
+  type MediaInfo,
+  type MediaOrigin,
+  type MediaRef,
+  type ToolError,
+} from '@cuttingfloor/schema';
 import { createBLAKE3 } from 'hash-wasm';
 import { BIN, run } from './exec.ts';
 import { directDownloadUrl, download } from './fetch.ts';
@@ -16,10 +22,10 @@ export interface MediaRecord {
   /** Where it came from: a path, a URL, an upload, a render, or a create.* tool and its recipe. */
   source:
     | { path: string }
-    | { url: string }
-    | { upload: string }
-    | { job: string }
-    | { created: string; recipe: string };
+    | { url: string; attached?: boolean }
+    | { upload: string; file_name?: string; via?: 'media.upload' | 'account_page' | 'data_uri' }
+    | { job: string; timeline_id?: string; preset?: string; range?: { start: number; end: number } }
+    | { created: string; recipe: string; job_id?: string; from?: string[] };
   /** The original: the user's file in place, or the downloaded copy. */
   file: string | null;
   size: number | null;
@@ -120,6 +126,15 @@ export class MediaLibrary {
     if (runs.length) analyses.look = { runs: runs.slice(-LOOK_RUNS_KEPT) };
     if (Object.keys(analyses).length) record.analyses = analyses;
     return record;
+  }
+
+  /** Whether the owner still holds this media. Doesn't count as a use. */
+  async exists(owner: string, id: string): Promise<boolean> {
+    if (!/^m_[0-9a-z]{26}$/.test(id)) return false;
+    return stat(join(this.dir(owner, id), 'media.json')).then(
+      () => true,
+      () => false,
+    );
   }
 
   /** The record itself; analyses are written apart, with saveAnalysis. */
@@ -406,6 +421,34 @@ export class MediaLibrary {
     return out.sort((a, b) => b.used - a.used).map(({ used: _used, ...record }) => record);
   }
 
+  /**
+   * Deletes a media: its folder (the file it holds, mezzanine, proxy, analyses) and the index
+   * entries that find it by content or recipe. A path import's original stays where it is: only
+   * what the server made is removed. Returns the bytes freed.
+   */
+  async remove(owner: string, id: string): Promise<number> {
+    const dir = this.dir(owner, id);
+    const record = await this.#ws.readJson<MediaRecord>(join(dir, 'media.json'));
+    if (!record) {
+      throw new CfError('not_found', `No media ${id}`, {
+        hint: 'It was deleted, or expired 7 days after last use; media.list shows what is held',
+      });
+    }
+    if (record.status === 'importing' || record.status === 'processing') {
+      throw new CfError('media_not_ready', `Media ${id} is still importing`, {
+        hint: 'Wait for its job to finish, or stop it with job.cancel, then delete it',
+      });
+    }
+    const freed = await folderBytes(dir);
+    const index = this.#ws.ownerDir(owner, 'media-index');
+    for (const name of await this.#ws.list(index)) {
+      const entry = await this.#ws.readJson<{ media_id: string }>(join(index, name));
+      if (entry?.media_id === id) await this.#ws.remove(join(index, name));
+    }
+    await this.#ws.remove(dir);
+    return freed;
+  }
+
   async sweep(ttlMs = MEDIA_TTL_MS): Promise<number> {
     let n = 0;
     for (const owner of await this.#ws.owners()) {
@@ -427,6 +470,60 @@ export class MediaLibrary {
     }
     return n;
   }
+}
+
+/** Every byte under a folder. */
+async function folderBytes(dir: string): Promise<number> {
+  let total = 0;
+  const entries = await readdir(dir, { recursive: true, withFileTypes: true }).catch(() => []);
+  for (const e of entries) {
+    if (!e.isFile()) continue;
+    total += await stat(join(e.parentPath, e.name)).then(
+      (x) => x.size,
+      () => 0,
+    );
+  }
+  return total;
+}
+
+/** Where a media came from, as a result states it. A URL's query (often a signature) is left out. */
+export function mediaOrigin(record: MediaRecord): MediaOrigin {
+  const s = record.source;
+  if ('url' in s) {
+    let url = s.url;
+    try {
+      const u = new URL(s.url);
+      url = `${u.origin}${u.pathname}`;
+    } catch {
+      // stored as given
+    }
+    return { from: 'url', url, ...(s.attached ? { attached: true } : {}) };
+  }
+  if ('path' in s) return { from: 'path', path: s.path };
+  if ('upload' in s) {
+    return {
+      from: 'upload',
+      upload_id: s.upload,
+      ...(s.file_name ? { file_name: s.file_name } : {}),
+      ...(s.via ? { via: s.via } : {}),
+    };
+  }
+  if ('job' in s) {
+    return {
+      from: 'render',
+      job_id: s.job,
+      ...(s.timeline_id ? { timeline_id: s.timeline_id } : {}),
+      ...(s.preset ? { preset: s.preset } : {}),
+      ...(s.range ? { range: s.range } : {}),
+    };
+  }
+  return {
+    from: 'created',
+    tool: s.created,
+    recipe: s.recipe,
+    ...(s.job_id ? { job_id: s.job_id } : {}),
+    ...(s.from?.length ? { media_ids: s.from } : {}),
+  };
 }
 
 /** What a timeline stores about media. */
@@ -482,6 +579,8 @@ export function mediaInfo(
   return {
     media_id: record.media_id,
     name: record.name,
+    origin: mediaOrigin(record),
+    created_at: record.created_at,
     status: record.status,
     kind: p?.kind ?? null,
     ...(p?.family ? { font_family: p.family } : {}),

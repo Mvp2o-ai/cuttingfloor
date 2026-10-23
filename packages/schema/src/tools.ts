@@ -693,6 +693,53 @@ export const FacesAnalysis = z.object({
 
 export const MediaStatus = z.enum(['importing', 'processing', 'ready', 'failed']);
 
+/** Where a media came from, as recorded when it was made. */
+export const MediaOrigin = z
+  .object({
+    from: z
+      .enum(['upload', 'url', 'path', 'render', 'created'])
+      .describe(
+        'upload: a file the user sent; url: downloaded; path: a media root; render: an export.video; created: a create.* tool',
+      ),
+    url: z
+      .string()
+      .optional()
+      .describe('url: the address it was downloaded from, without its query string'),
+    attached: z
+      .boolean()
+      .optional()
+      .describe('url: the file the user attached in the chat, passed as media.import file'),
+    path: z.string().optional().describe('path: the file it was imported from'),
+    upload_id: UploadId.optional(),
+    file_name: z.string().optional().describe('upload: the name the file was sent with'),
+    via: z
+      .enum(['media.upload', 'account_page', 'data_uri'])
+      .optional()
+      .describe(
+        'upload: sent through a media.upload link, dropped on the account page, or a data: URI',
+      ),
+    job_id: JobId.optional().describe('render: the export.video job; created: the create.* job'),
+    timeline_id: TimelineId.optional().describe('render: the timeline that was exported'),
+    preset: z.string().optional().describe('render: the export preset'),
+    range: z
+      .object({ start: z.number(), end: z.number() })
+      .optional()
+      .describe('render: the frames exported, when not the whole timeline'),
+    tool: z.string().optional().describe('created: the create.* tool that made it'),
+    recipe: z
+      .string()
+      .optional()
+      .describe('created: a hash of what it was made from; the same recipe makes the same media'),
+    media_ids: z
+      .array(MediaId)
+      .optional()
+      .describe("created: the media it was made from (a cutout's source, a page's assets)"),
+  })
+  .describe(
+    'Where it came from, to tell one version from another: the import source, the export of which timeline, or the create.* tool and the media it was made from',
+  );
+export type MediaOrigin = z.infer<typeof MediaOrigin>;
+
 export const MediaInfo = z.object({
   media_id: MediaId,
   name: z.string(),
@@ -707,6 +754,8 @@ export const MediaInfo = z.object({
       'media.get: a page that plays or shows the file in any browser, with no sign-in, to give a person; works until expires_at',
     ),
   expires_at: z.string().optional().describe('When url and page_url stop working'),
+  origin: MediaOrigin.optional(),
+  created_at: z.string().optional().describe('When it was imported or made'),
   status: MediaStatus.describe(
     'importing: not probed yet; processing: usable in edits, proxy still rendering; ready; failed',
   ),
@@ -779,6 +828,7 @@ export const MediaListResult = z.object({
           .describe(
             'upload: a file the user sent; url: downloaded; path: a media root; render: an export.video; created: a create.* tool',
           ),
+        origin: MediaOrigin,
         bytes: z.number().nullable().describe('Size of the original file'),
         created_at: z.string(),
         expires_at: z.string().describe('7 days after last use; any use pushes it back'),
@@ -804,6 +854,20 @@ export const MediaListResult = z.object({
   upload_count: z.number().int(),
   storage: z.object({
     used_bytes: z.number().describe('Everything held: uploads, media with its proxies, exports'),
+    max_bytes: z.number().nullable().describe("The plan's cap; null for none"),
+  }),
+});
+
+export const MediaDeleteInput = z.object({ media_id: MediaId });
+
+export const MediaDeleteResult = z.object({
+  media_id: MediaId,
+  deleted: z.literal(true),
+  freed_bytes: z
+    .number()
+    .describe('What it held here: the file, its proxy and mezzanine, and its analyses'),
+  storage: z.object({
+    used_bytes: z.number(),
     max_bytes: z.number().nullable().describe("The plan's cap; null for none"),
   }),
 });

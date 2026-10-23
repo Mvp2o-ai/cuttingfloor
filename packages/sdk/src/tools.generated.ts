@@ -22,6 +22,8 @@ import type {
   JudgeAskResult,
   MediaAnalyzeInput,
   MediaAnalyzeResult,
+  MediaDeleteInput,
+  MediaDeleteResult,
   MediaImportInput,
   MediaInfo,
   MediaListInput,
@@ -95,6 +97,7 @@ export type ToolName =
   | 'job.list'
   | 'judge.ask'
   | 'media.analyze'
+  | 'media.delete'
   | 'media.get'
   | 'media.import'
   | 'media.list'
@@ -163,6 +166,7 @@ export interface ToolInputs {
   'job.list': z.input<typeof JobListInput>;
   'judge.ask': z.input<typeof JudgeAskInput>;
   'media.analyze': z.input<typeof MediaAnalyzeInput>;
+  'media.delete': z.input<typeof MediaDeleteInput>;
   'media.get': z.input<typeof MediaRefInput>;
   'media.import': z.input<typeof MediaImportInput>;
   'media.list': z.input<typeof MediaListInput>;
@@ -232,6 +236,7 @@ export interface ToolOutputs {
   'job.list': z.output<typeof JobListResult>;
   'judge.ask': z.output<typeof JudgeAskResult>;
   'media.analyze': z.output<typeof MediaAnalyzeResult>;
+  'media.delete': z.output<typeof MediaDeleteResult>;
   'media.get': z.output<typeof MediaInfo>;
   'media.import': z.output<typeof MediaInfo>;
   'media.list': z.output<typeof MediaListResult>;
@@ -301,6 +306,7 @@ export const TOOL_NAMES: readonly ToolName[] = [
   'job.list',
   'judge.ask',
   'media.analyze',
+  'media.delete',
   'media.get',
   'media.import',
   'media.list',

@@ -458,7 +458,8 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
 
     fileServer = createPlainServer(async (req, res) => {
       // Serve only plain file names from the fixture folder.
-      const body = await readFile(join(env.mediaDir, basename(req.url ?? '/'))).catch(() => null);
+      const name = basename(new URL(req.url ?? '/', 'http://files').pathname);
+      const body = await readFile(join(env.mediaDir, name)).catch(() => null);
       if (!body) res.writeHead(404).end();
       else res.writeHead(200, { 'content-length': body.length }).end(body);
     });
@@ -484,6 +485,8 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       conform: [],
     });
     expect((av.analysis as { loudness_lufs: number }).loudness_lufs).toBeLessThan(0);
+    expect(av.origin).toEqual({ from: 'path', path: join(env.mediaDir, 'av.mp4') });
+    expect(Date.parse(av.created_at as string)).toBeLessThanOrEqual(Date.now());
     media.av = av.media_id;
 
     const vfr = await importMedia({ path: join(env.mediaDir, 'vfr.mp4') });
@@ -513,6 +516,18 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     expect(again).toMatchObject({ media_id: media.av, status: 'ready' });
     const fromUrl = await importMedia({ url: `${fileBase}/tone.wav` });
     expect(fromUrl).toMatchObject({ status: 'ready', kind: 'audio' });
+    // Where it came from, without the query (which can carry the storage's signature).
+    await ff([
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=550:sample_rate=48000',
+      '-t',
+      '1',
+      join(env.mediaDir, 'signed.wav'),
+    ]);
+    const signed = await importMedia({ url: `${fileBase}/signed.wav?X-Amz-Signature=secret` });
+    expect(signed.origin).toEqual({ from: 'url', url: `${fileBase}/signed.wav` });
   }, 120_000);
 
   it('imports a file sent through media.upload, resumed part way', async () => {
@@ -553,6 +568,12 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
 
     const sent = await importMedia({ upload_id: up.upload_id });
     expect(sent).toMatchObject({ status: 'ready', kind: 'video', width: 640, name: 'sent.mp4' });
+    expect(sent.origin).toEqual({
+      from: 'upload',
+      upload_id: up.upload_id,
+      file_name: 'sent.mp4',
+      via: 'media.upload',
+    });
     // Imported uploads are moved into the media, so the link has nothing left.
     expect((await fetch(up.url, { method: 'HEAD' })).status).toBe(404);
 
@@ -584,6 +605,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       sha256: createHash('sha256').update(chime).digest('hex'),
     });
     expect(inline).toMatchObject({ status: 'ready', kind: 'audio', name: 'inline.wav' });
+    expect(inline.origin).toMatchObject({ from: 'upload', via: 'data_uri' });
     // The same picture as an earlier import is that media.
     const card = await ok<{ media_id: string }>(client, 'media.import', {
       source: { data: `data:image/png;base64,${png.toString('base64')}` },
@@ -599,7 +621,11 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       },
     });
     const done = await waitJob(started.job_id);
-    expect(done.result).toMatchObject({ status: 'ready', name: 'from the chat.mp4' });
+    expect(done.result).toMatchObject({
+      status: 'ready',
+      name: 'from the chat.mp4',
+      origin: { from: 'url', url: `${fileBase}/portrait.mp4`, attached: true },
+    });
   }, 120_000);
 
   let timeline = '';
@@ -1910,6 +1936,13 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       await waitJob(started.job_id);
       const imported = await importMedia({ job_id: started.job_id });
       expect(imported).toMatchObject({ width: 1280, height: 720 });
+      // The render says which timeline it is, so a later cut can be told from this one.
+      expect(imported.origin).toEqual({
+        from: 'render',
+        job_id: started.job_id,
+        timeline_id: wide,
+        preset: 'master_prores_422hq',
+      });
       const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
         name: 'tall',
         sequence: { width: 720, height: 1280, fps: { num: 25, den: 1 } },
@@ -2460,6 +2493,9 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       const gradient = { from: '#000000', to: '#ffffff', angle: 90 };
       const first = await create('create.matte', { gradient, width: 1280, height: 720 });
       expect(first).toMatchObject({ kind: 'image', width: 1280, height: 720, status: 'ready' });
+      expect(first.origin).toMatchObject({ from: 'created', tool: 'create.matte' });
+      expect((first.origin as { recipe: string }).recipe).toMatch(/^[0-9a-f]{40}$/);
+      expect((first.origin as { media_ids?: string[] }).media_ids).toBeUndefined();
       // Left to right: black at the left edge, white at the right.
       const frame = await over(first.media_id, 0);
       const [left, right] = await Promise.all([pixel(frame, 4, 360), pixel(frame, 1275, 360)]);
@@ -2478,6 +2514,94 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       const bad = await call(client, 'create.matte', { width: 320, height: 180 });
       expect(bad.isError).toBe(true);
     });
+
+    it('deletes a media for good: its room comes back and timelines using it stop rendering', async () => {
+      const spec = { color: '#ff00ff', width: 640, height: 360 };
+      const matte = await create('create.matte', spec);
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'delete',
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+        tracks: { video: 1, audio: 0 },
+      });
+      const placed = await ok<{ timeline_id: string; clip_id: string }>(client, 'clip.add', {
+        timeline_id,
+        track_id: 't1',
+        media_id: matte.media_id,
+        duration_frames: 25,
+        preview: 'none',
+      });
+      const frames = { timeline_id: placed.timeline_id, frames: [5], layout: 'single' };
+      // Rendered once, so the frame is cached.
+      expect((await call(client, 'render.frames', frames)).isError).toBe(false);
+      const listed = async () =>
+        ok<{ media: Array<{ media_id: string }>; storage: { used_bytes: number } }>(
+          client,
+          'media.list',
+          {},
+        );
+      const before = await listed();
+      expect(before.media.map((m) => m.media_id)).toContain(matte.media_id);
+
+      // Another owner can't see it, let alone delete it.
+      const other = createServer({
+        runtime: env.runtime,
+        credentials: new LocalCredentialStore({}, false),
+        owner: () => 'someone-else',
+      });
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      await other.connect(a);
+      const stranger = new Client({ name: 'other', version: '0' });
+      await stranger.connect(b);
+      const refused = await call(stranger, 'media.delete', { media_id: matte.media_id });
+      expect(refused.structured.code).toBe('not_found');
+      await stranger.close();
+
+      const gone = await ok<{
+        deleted: boolean;
+        freed_bytes: number;
+        storage: { used_bytes: number };
+      }>(client, 'media.delete', { media_id: matte.media_id });
+      expect(gone.deleted).toBe(true);
+      expect(gone.freed_bytes).toBeGreaterThan(0);
+      expect(gone.storage.used_bytes).toBeLessThanOrEqual(
+        before.storage.used_bytes - gone.freed_bytes,
+      );
+      expect((await listed()).media.map((m) => m.media_id)).not.toContain(matte.media_id);
+      expect((await call(client, 'media.get', { media_id: matte.media_id })).structured.code).toBe(
+        'not_found',
+      );
+      expect(
+        (await call(client, 'media.delete', { media_id: matte.media_id })).structured.code,
+      ).toBe('not_found');
+
+      // The timeline still exists, but neither a cached frame nor an export brings the take back.
+      const offline = await call(client, 'render.frames', frames);
+      expect(offline.structured).toMatchObject({
+        code: 'media_offline',
+        detail: { media_ids: [matte.media_id] },
+      });
+      expect(offline.structured.hint).toContain('deleted');
+      const exported = await call(client, 'export.video', {
+        timeline_id: placed.timeline_id,
+        preset: 'review_h264',
+      });
+      expect(exported.structured.code).toBe('media_offline');
+
+      // The same recipe makes a new media, and swapping it in renders again.
+      const remade = await create('create.matte', spec);
+      expect(remade.media_id).not.toBe(matte.media_id);
+      const swapped = await ok<{ timeline_id: string }>(client, 'clip.replace', {
+        timeline_id: placed.timeline_id,
+        clip_id: placed.clip_id,
+        media_id: remade.media_id,
+        preview: 'none',
+      });
+      const back = await call(client, 'render.frames', {
+        ...frames,
+        timeline_id: swapped.timeline_id,
+      });
+      expect(back.isError).toBe(false);
+    }, 120_000);
 
     it('speaks a voiceover with every word timed to the text as written', async () => {
       const text = 'Welcome to cutting floor. Every word here is timed, even 2026.';
@@ -2563,6 +2687,12 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         subject: 'people',
       });
       expect(still).toMatchObject({ kind: 'image', width: 480, height: 600 });
+      expect(still.origin).toMatchObject({
+        from: 'created',
+        tool: 'create.cutout',
+        media_ids: [picture.media_id],
+      });
+      expect((still.origin as { job_id: string }).job_id).toMatch(/^j_/);
       const png = await file(still.media_id);
       expect(await alpha(png, 295, 160)).toBeGreaterThan(200); // face
       expect(await alpha(png, 330, 330)).toBeGreaterThan(200); // suit

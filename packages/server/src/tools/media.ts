@@ -19,6 +19,8 @@ import {
   MEDIA_LIMITS,
   MediaAnalyzeInput,
   MediaAnalyzeResult,
+  MediaDeleteInput,
+  MediaDeleteResult,
   MediaImportInput,
   MediaInfo,
   MediaListInput,
@@ -35,7 +37,7 @@ import { admitJob } from '../meter.ts';
 import { PLAYER_TOOL_META } from '../player.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
-import { listHeld, startUpload, storageRoom } from '../storage.ts';
+import { listHeld, startUpload, storageOf, storageRoom } from '../storage.ts';
 import { addUsage, checkQuota } from '../usage.ts';
 import {
   checkQuestions,
@@ -106,6 +108,23 @@ function lookDigest(questions: Record<string, { type: string }>, frames: LookFra
 
 export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
   const rt = deps.runtime;
+
+  /** What an export.video job rendered, for the media's origin. */
+  const renderedFrom = async (owner: string, jobId: string) => {
+    const job = await rt.jobs.store.get(jobId, owner);
+    const meta = job?.meta ?? {};
+    const preset =
+      meta.preset ??
+      ((job?.result as { structuredContent?: { preset?: string } } | undefined)?.structuredContent
+        ?.preset as string | undefined);
+    const start = Number(meta.range_start);
+    const end = Number(meta.range_end);
+    return {
+      ...(meta.timeline_id ? { timeline_id: meta.timeline_id } : {}),
+      ...(preset ? { preset } : {}),
+      ...(meta.range_start && meta.range_end ? { range: { start, end } } : {}),
+    };
+  };
 
   /** The file a completed export.video rendered, for importing it as media. */
   const renderedFile = async (owner: string, jobId: string): Promise<string> => {
@@ -231,10 +250,16 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       const record = await rt.media.create(
         owner,
         'job_id' in source
-          ? { job: source.job_id }
+          ? { job: source.job_id, ...(await renderedFrom(owner, source.job_id)) }
           : 'upload_id' in source
-            ? { upload: source.upload_id }
-            : source,
+            ? {
+                upload: source.upload_id,
+                ...(upload?.name ? { file_name: upload.name } : {}),
+                ...(upload?.via ? { via: upload.via } : {}),
+              }
+            : 'url' in source && args.file
+              ? { url: source.url, attached: true }
+              : source,
         named ?? upload?.name ?? (local && 'job_id' in source ? basename(local) : undefined),
       );
       if (local && 'job_id' in source) {
@@ -266,7 +291,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               : {
                   maxBytes: room,
                   tooBigHint:
-                    "That is more than the account's storage has left. Files expire on their own (uploads after a day, media and exports 7 days after last use); media.list shows what is held",
+                    "That is more than the account's storage has left. Files expire on their own (uploads after a day, media and exports 7 days after last use); media.list shows what is held and media.delete frees room",
                 },
           );
           return ok(mediaInfo(done)) as never;
@@ -330,6 +355,32 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       },
     },
     guard(async () => ok(await listHeld(rt, deps.owner(), await deps.limits?.()))),
+  );
+
+  server.registerTool(
+    'media.delete',
+    {
+      title: 'Delete media',
+      description: [
+        'Delete a media for good, so an old or wrong version stops turning up: its file here, proxy, mezzanine and media.analyze results go, and its room comes back to the storage cap. A path import leaves the original in its folder; exports made from it stay.',
+        'Timelines that use it keep their ids and edits but no longer render (media_offline names it, as for expired media): replace those clips with clip.replace. Importing the same file again makes a new media_id.',
+      ].join(' '),
+      inputSchema: MediaDeleteInput,
+      outputSchema: MediaDeleteResult,
+      annotations: {
+        title: 'Delete media',
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    guard(async (args) => {
+      const owner = deps.owner();
+      const freed = await rt.media.remove(owner, args.media_id);
+      const storage = await storageOf(rt.ws, owner, await deps.limits?.());
+      return ok({ media_id: args.media_id, deleted: true as const, freed_bytes: freed, storage });
+    }),
   );
 
   server.registerTool(
@@ -571,7 +622,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get media',
       description:
-        'Status, a signed download url for the file and a page_url that plays or shows it in any browser (to give a person), streams, duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
+        'Status, where it came from (origin: the import source, the export of which timeline_id and preset, or the create.* tool and the media it was made from), a signed download url for the file (media is kept 7 days after last use: save the file from it to keep it, and media.import it again later) and a page_url that plays or shows it in any browser (to give a person), streams, duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). include returns those results in full at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times (for long media that is a lot: read it in code.run with cf.media.get and print only what you need).',
       inputSchema: MediaRefInput,
       outputSchema: MediaInfo,
       _meta: PLAYER_TOOL_META,

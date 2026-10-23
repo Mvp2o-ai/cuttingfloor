@@ -292,6 +292,7 @@ export class Lifecycle {
         file.data.name,
         file.data.bytes,
         limits,
+        'account_page',
       );
       return json(res, 200, upload);
     } catch (error) {

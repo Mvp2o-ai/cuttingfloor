@@ -183,6 +183,14 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       const job = await store.create({
         owner,
         tool: 'export.video',
+        // What it renders, so media imported from it can say where it came from.
+        meta: {
+          timeline_id: args.timeline_id,
+          preset: args.preset,
+          ...(args.range
+            ? { range_start: String(args.range.start), range_end: String(args.range.end) }
+            : {}),
+        },
         statusMessage: 'starting',
         ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),
       });

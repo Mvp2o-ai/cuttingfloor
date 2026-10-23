@@ -68,6 +68,8 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
     ) => Promise<MediaRecord>,
     /** sandbox: the work is the sandbox's, which queues it there. heavy: a long model run. */
     lane: JobLane = 'engine',
+    /** The media it is made from, for its origin. */
+    from: string[] = [],
   ) {
     const owner = deps.owner();
     const store = rt.jobs.store;
@@ -96,7 +98,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
     const admit = await admitJob(deps.limits);
     const record = await rt.media.create(
       owner,
-      { created: tool, recipe: hash },
+      { created: tool, recipe: hash, ...(from.length ? { from: [...new Set(from)] } : {}) },
       args.name ?? `${tool.split('.')[1]}-${hash.slice(0, 8)}`,
     );
     const job = await store.create({
@@ -106,6 +108,10 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       statusMessage: `making ${record.media_id}`,
       ...key,
     });
+    if ('created' in record.source) {
+      record.source.job_id = job.id;
+      await rt.media.save(owner, record);
+    }
     rt.jobs.start(
       job,
       async ({ signal, progress }) => {
@@ -220,6 +226,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         (dir, progress, signal) => sandbox(request, dir, progress, signal),
         undefined,
         'sandbox',
+        args.assets.map((a) => a.media_id),
       );
     }),
   );
@@ -261,6 +268,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         (dir, progress, signal) => sandbox(request, dir, progress, signal),
         undefined,
         'sandbox',
+        args.assets.map((a) => a.media_id),
       );
     }),
   );
@@ -401,6 +409,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         },
         undefined,
         'heavy',
+        [source.media_id],
       );
     }),
   );

@@ -11,9 +11,10 @@ const anyResult = z.object({}).passthrough();
  * in media.analyze, from 115 000 for judge.ask, and from 123 000 to 230 000 when every tool
  * declared its full output schema (about 117 000 of the total): code.run scripts chain calls
  * on those shapes, so they are the contract and are not slimmed to fit a harness. Raised to
- * 240 000 for media.seek, which finds moments from plain words.
+ * 240 000 for media.seek, which finds moments from plain words. Raised to 270 000 for media
+ * origin (where each media came from), declared on every tool that returns media, and media.delete.
  */
-const BUDGET_BYTES = 240_000;
+const BUDGET_BYTES = 270_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -91,6 +92,7 @@ describe('protocol surface', () => {
         'job.list',
         'judge.ask',
         'media.analyze',
+        'media.delete',
         'media.get',
         'media.import',
         'media.list',

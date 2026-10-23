@@ -1,10 +1,12 @@
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isMissing, type Workspace } from '@cuttingfloor/core';
+import { mediaOrigin } from '@cuttingfloor/engine';
 import { CfError, MEDIA_LIST_LIMIT, type MediaListResult } from '@cuttingfloor/schema';
 import type * as z from 'zod/v4';
 import type { OwnerLimits } from './meter.ts';
 import type { Runtime } from './runtime.ts';
+import type { UploadVia } from './uploads.ts';
 
 /** Bytes an owner keeps on the server: every file under their folder. */
 export async function storedBytes(ws: Workspace, owner: string): Promise<number> {
@@ -62,7 +64,7 @@ export async function storageRoom(
       ? `The file is ${gb(need)}; the account's storage has ${gb(room)} left of ${gb(cap)}`
       : `The account's storage is full: ${gb(used)} of ${gb(cap)}`,
     {
-      hint: `Files expire on their own: uploads a day after they were sent, media and exports 7 days after last use. Wait for older ones to go${limits?.account ? `, or move to a bigger plan at ${limits.account}` : ''}`,
+      hint: `Files expire on their own: uploads a day after they were sent, media and exports 7 days after last use. media.delete removes media you no longer need, or wait for older files to go${limits?.account ? `, or move to a bigger plan at ${limits.account}` : ''}`,
       detail: {
         used_bytes: used,
         max_bytes: cap,
@@ -79,9 +81,10 @@ export async function startUpload(
   name: string,
   bytes: number | undefined,
   limits: OwnerLimits | undefined,
+  via?: UploadVia,
 ): Promise<{ upload_id: string; url: string; expires_at: string; max_bytes: number }> {
   const room = await storageRoom(rt.ws, owner, limits, bytes);
-  return rt.uploads.create(owner, name, bytes, room);
+  return rt.uploads.create(owner, name, bytes, room, via);
 }
 
 /** What the owner holds: media, uploads not imported yet, and storage against the cap. */
@@ -102,6 +105,7 @@ export async function listHeld(
       status: r.status,
       kind: r.probe?.kind ?? null,
       duration_seconds: r.probe?.duration ?? null,
+      origin: mediaOrigin(r),
       from:
         'upload' in r.source
           ? 'upload'
