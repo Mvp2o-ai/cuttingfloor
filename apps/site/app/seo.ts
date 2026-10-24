@@ -25,7 +25,7 @@ export const FAQS = [
     a: `Add cuttingfloor to ~/.cursor/mcp.json with the address ${MCP_ADDRESS}. Cursor opens the sign-in the first time a tool runs. The same address works in Claude, VS Code, Kazi and any client that takes remote MCP servers.`,
   },
   {
-    q: 'What is agentic video editing?',
+    q: 'What is AI video editing?',
     a: 'An AI agent edits the footage itself: it reads the material, decides the cuts, makes them with real editing tools and checks the result before it hands it over. cuttingfloor gives the agent those tools; you say what you want.',
   },
   {

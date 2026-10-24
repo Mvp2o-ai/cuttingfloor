@@ -84,7 +84,7 @@ export default function Home() {
           <div className="head">
             <span className="label">02 / A session</span>
             <h2 className="lede">
-              Agentic video editing, one tool call at a time. <em>Here is one.</em>
+              AI video editing, one tool call at a time. <em>Here is one.</em>
             </h2>
           </div>
           <Session
