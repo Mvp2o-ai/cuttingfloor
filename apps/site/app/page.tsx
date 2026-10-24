@@ -205,9 +205,8 @@ export default function Home() {
             <div>
               <h2 className="display">Pay for the finished minute, not the seat.</h2>
               <p className="compare-lede">
-                About 16 cents a finished minute — cheaper than the closest competitors, and the
-                minute includes the cutting, the captions and the quality check, not just the
-                export.
+                About 16 cents a rendered minute. A ten-minute captioned, mixed video uses about 35
+                of them — around $5.70, against four to six hours of manual work.
               </p>
             </div>
           </div>
@@ -242,15 +241,7 @@ export default function Home() {
             </tbody>
           </table>
           <p className="price-foot">
-            A ten-minute captioned, mixed video uses about 35 minutes — against four to six hours of
-            manual work.
-          </p>
-          <p className="price-foot">
-            A render minute is a minute of our servers working for you: exports, imports,
-            transcripts, graphics, voiceovers, cutouts. Planning and editing the timeline cost
-            nothing. When minutes run out, work waits. You are never charged more than the plan
-            price. Yearly plans get two months free. Payments by Stripe; cancel any time.{' '}
-            <a href="/terms">Terms</a> · <a href="/refunds">Refunds</a>
+            When minutes run out, work waits. You are never charged more than the plan price.
           </p>
         </section>
 
