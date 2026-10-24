@@ -242,9 +242,9 @@ export default function Home() {
           </table>
           <p className="price-foot">
             A render minute is a minute of our servers working for you: exports, imports,
-            transcripts, graphics, voiceovers, cutouts. When minutes run out, work waits. You are
-            never charged more than the plan price. Yearly plans get two months free. Payments by
-            Stripe; cancel any time.
+            transcripts, graphics, voiceovers, cutouts. Planning and editing the timeline cost
+            nothing. When minutes run out, work waits. You are never charged more than the plan
+            price. Yearly plans get two months free. Payments by Stripe; cancel any time.
           </p>
         </section>
 
