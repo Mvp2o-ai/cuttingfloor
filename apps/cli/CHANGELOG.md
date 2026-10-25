@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.27.1
+
+### Patch Changes
+
+- b558eda: The Server Card lists 2026-07-28 among the protocol versions /mcp supports, matching `server/discover`.
+
 ## 0.27.0
 
 ### Minor Changes
