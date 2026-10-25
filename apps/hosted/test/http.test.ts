@@ -577,6 +577,33 @@ describe('HTTP face', () => {
       remotes: [{ type: 'streamable-http', url: `${runtime.config.publicUrl}/mcp` }],
     });
     expect(card).not.toHaveProperty('tools');
+    // The card agrees with the live server/discover, as the extension asks.
+    const meta = {
+      'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientCapabilities': {},
+      'io.modelcontextprotocol/clientInfo': { name: 't', version: '0' },
+    };
+    const discover = (await (
+      await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-protocol-version': '2026-07-28',
+          'mcp-method': 'server/discover',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'server/discover',
+          params: { _meta: meta },
+        }),
+      })
+    ).json()) as { result: { supportedVersions: string[] } };
+    const remotes = card.remotes as { supportedProtocolVersions: string[] }[];
+    expect(remotes[0]?.supportedProtocolVersions).toEqual(
+      expect.arrayContaining(discover.result.supportedVersions),
+    );
     expect((card.description as string).length).toBeLessThanOrEqual(100);
     const etag = res.headers.get('etag') ?? '';
     const again = await fetch(`${base}/mcp/server-card`, { headers: { 'if-none-match': etag } });

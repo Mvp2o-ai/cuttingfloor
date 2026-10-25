@@ -4,6 +4,8 @@ import { SERVER_NAME, SERVER_VERSION } from '@cuttingfloor/server';
 import { SUPPORTED_PROTOCOL_VERSIONS } from '@modelcontextprotocol/server';
 
 const SITE = 'https://cuttingfloor.ai';
+/** The stateless protocol /mcp speaks first; the SDK exports only the 2025 versions it falls back to. */
+const MODERN_PROTOCOL_VERSIONS = ['2026-07-28'];
 export const CARD_TYPE = 'application/mcp-server-card+json';
 
 /**
@@ -25,7 +27,7 @@ export function serverCard(publicUrl: string): Record<string, unknown> {
       {
         type: 'streamable-http',
         url: `${publicUrl}/mcp`,
-        supportedProtocolVersions: [...SUPPORTED_PROTOCOL_VERSIONS],
+        supportedProtocolVersions: [...MODERN_PROTOCOL_VERSIONS, ...SUPPORTED_PROTOCOL_VERSIONS],
       },
     ],
   };
