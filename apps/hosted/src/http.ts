@@ -31,6 +31,7 @@ import {
   requireBearerAuth,
 } from '@modelcontextprotocol/server';
 import type { JwtTokenVerifier } from './oauth.ts';
+import { aiCatalog, CARD_TYPE, sendDiscovery, serverCard } from './server-card.ts';
 import { uploadPage } from './upload-page.ts';
 import { watchPage } from './watch-page.ts';
 
@@ -73,6 +74,43 @@ export interface HttpOptions {
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 
 /**
+ * What a client may ask before it signs in: who the server is and what it offers. The lists are
+ * the same for every account, so a client can show them before sign-in; everything else (tool
+ * calls, reads, jobs) needs a token.
+ */
+const DISCOVERY_METHODS = new Set([
+  'initialize',
+  'notifications/initialized',
+  'server/discover',
+  'ping',
+  'tools/list',
+  'resources/list',
+  'resources/templates/list',
+  'prompts/list',
+]);
+
+/** Whether a POST body holds only discovery messages (one, or a 2025-03-26 batch). */
+async function isDiscovery(request: Request): Promise<boolean> {
+  if (request.method !== 'POST') return false;
+  let body: unknown;
+  try {
+    body = JSON.parse(await request.clone().text());
+  } catch {
+    return false;
+  }
+  const messages = Array.isArray(body) ? body : [body];
+  return (
+    messages.length > 0 &&
+    messages.every(
+      (m) =>
+        typeof m === 'object' &&
+        m !== null &&
+        DISCOVERY_METHODS.has((m as { method?: unknown }).method as string),
+    )
+  );
+}
+
+/**
  * The HTTP face: Streamable HTTP MCP at /mcp (2026-07-28, with stateless 2025 fallback),
  * signed output downloads at /outputs/… (and the page that plays one at /watch/…), signed uploads
  * at /uploads/…, and /healthz.
@@ -84,6 +122,8 @@ export function createHttpServer(options: HttpOptions): Server {
       const owner = ctx.authInfo?.clientId ?? 'local';
       const via = ctx.authInfo?.extra?.via;
       const signedIn = via === 'oauth' || via === 'script';
+      // Before sign-in only discovery reaches a server; refuse any tool all the same.
+      const anonymous = via === 'anonymous';
       const gate = signedIn ? options.access : undefined;
       const limits = signedIn ? options.limits : undefined;
       // Hosted, provider keys come with each request (X-Cuttingfloor-Key-<Provider>) and live
@@ -98,6 +138,9 @@ export function createHttpServer(options: HttpOptions): Server {
         credentials: headers ? new RequestCredentialStore(saved, headers) : saved,
         owner: () => owner,
         ...(gate ? { access: () => gate(owner) } : {}),
+        ...(anonymous
+          ? { access: () => Promise.reject(new Error('Sign in to cuttingfloor first')) }
+          : {}),
         ...(limits ? { limits: () => limits(owner) } : {}),
       });
     },
@@ -147,6 +190,15 @@ export function createHttpServer(options: HttpOptions): Server {
           await sendResponse(res, metadata);
           return;
         }
+      }
+      // The Server Card next to the MCP endpoint, and the domain's AI Catalog that lists it.
+      if (url.pathname === '/mcp/server-card') {
+        sendDiscovery(req, res, serverCard(runtime.config.publicUrl), CARD_TYPE);
+        return;
+      }
+      if (url.pathname === '/.well-known/ai-catalog.json') {
+        sendDiscovery(req, res, aiCatalog(runtime.config.publicUrl), 'application/ai-catalog+json');
+        return;
       }
       if (url.pathname.startsWith('/outputs/') && (req.method === 'GET' || req.method === 'HEAD')) {
         const file = await runtime.verifyOutput(
@@ -232,6 +284,9 @@ export function createHttpServer(options: HttpOptions): Server {
               }),
             );
           return;
+        } else if (!req.headers.authorization && (await isDiscovery(request))) {
+          owner = 'anonymous';
+          via = 'anonymous';
         } else if (requireToken) {
           const auth = await requireToken(request);
           if (auth instanceof Response) {

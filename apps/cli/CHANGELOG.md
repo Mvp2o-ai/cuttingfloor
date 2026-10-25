@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.27.0
+
+### Minor Changes
+
+- a86d897: Clients can discover cuttingfloor before signing in: a public Server Card at `/mcp/server-card` (listed in `/.well-known/ai-catalog.json`), and `initialize`, `server/discover`, `tools/list` and the resource and prompt lists answer without a token, the same for every account. Tool calls and reads still need sign-in and get the usual OAuth challenge.
+
 ## 0.26.0
 
 ### Minor Changes

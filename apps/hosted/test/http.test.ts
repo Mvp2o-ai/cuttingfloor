@@ -512,6 +512,84 @@ describe('HTTP face', () => {
       }),
     );
     expect((await keyed.listTools()).tools.length).toBeGreaterThan(0);
+
+    // Before sign-in a client can discover the server: the same tools a signed-in one sees.
+    const anonClient = new Client({ name: 't', version: '0' });
+    await anonClient.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`)));
+    expect(anonClient.getInstructions()).toBe(keyed.getInstructions());
+    expect((await anonClient.listTools()).tools).toEqual((await keyed.listTools()).tools);
+    expect((await anonClient.listResources()).resources).toEqual(
+      (await keyed.listResources()).resources,
+    );
+    await anonClient.close();
     await keyed.close();
+
+    // Anything past discovery still gets the sign-in challenge, alone or hidden in a batch.
+    const post = (body: unknown) =>
+      fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-protocol-version': '2025-06-18',
+        },
+        body: JSON.stringify(body),
+      });
+    const call = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'media.list' } };
+    const read = {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'resources/read',
+      params: { uri: 'video://server/health' },
+    };
+    const list = { jsonrpc: '2.0', id: 3, method: 'tools/list' };
+    // A 2025 client's initialize answers too.
+    const init = await post({
+      jsonrpc: '2.0',
+      id: 0,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 't', version: '0' },
+      },
+    });
+    expect(init.status).toBe(200);
+    expect(await init.text()).toContain('"serverInfo"');
+    for (const body of [call, read, [list, call]]) {
+      const refused = await post(body);
+      expect(refused.status).toBe(401);
+      expect(refused.headers.get('www-authenticate')).toContain(`resource_metadata="${prmUrl}"`);
+    }
+  });
+
+  it('publishes a Server Card and an AI Catalog that points at it', async () => {
+    const base = await listen(parseApiKeys(`ken:${KEY}`));
+    const res = await fetch(`${base}/mcp/server-card`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('application/mcp-server-card+json');
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+    expect(res.headers.get('cache-control')).toBe('public, max-age=3600');
+    const card = (await res.json()) as Record<string, unknown>;
+    expect(card).toMatchObject({
+      $schema: 'https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json',
+      name: 'ai.cuttingfloor/cuttingfloor',
+      remotes: [{ type: 'streamable-http', url: `${runtime.config.publicUrl}/mcp` }],
+    });
+    expect(card).not.toHaveProperty('tools');
+    expect((card.description as string).length).toBeLessThanOrEqual(100);
+    const etag = res.headers.get('etag') ?? '';
+    const again = await fetch(`${base}/mcp/server-card`, { headers: { 'if-none-match': etag } });
+    expect(again.status).toBe(304);
+
+    const catalog = (await (await fetch(`${base}/.well-known/ai-catalog.json`)).json()) as {
+      entries: { type: string; url: string }[];
+    };
+    expect(catalog.entries).toEqual([
+      expect.objectContaining({
+        type: 'application/mcp-server-card+json',
+        url: `${runtime.config.publicUrl}/mcp/server-card`,
+      }),
+    ]);
   });
 });
