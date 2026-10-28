@@ -128,7 +128,7 @@ export default function Home() {
           <span className="mark-b" />
           <span className="label">05 / What it does</span>
           <h2 className="display big-stat">
-            66 tools.
+            67 tools.
             <br />
             No timeline.
             <small>Granular tools an agent composes, plus code when it needs a loop.</small>
