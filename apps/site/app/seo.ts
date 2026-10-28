@@ -6,9 +6,9 @@ export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cuttingfloo
 export const MCP_ADDRESS = 'https://api.cuttingfloor.ai/mcp';
 export const DOCS_URL = 'https://github.com/mvp2o-ai/cuttingfloor';
 
-export const TITLE = 'Video Editing MCP Server for Claude, Cursor & ChatGPT | cuttingfloor';
+export const TITLE = 'cuttingfloor — the control plane for AI video agents';
 export const DESCRIPTION =
-  'Turn Claude, Cursor or ChatGPT into a video editing agent. One MCP server, 66 tools: cut by transcript, caption, mix and export real video. Open source.';
+  'Turn Claude, Cursor or ChatGPT into a video editing agent. One MCP server, 66 tools: cut by transcript, caption, mix and export real video.';
 
 // Questions in the words people search them with.
 export const FAQS = [
@@ -46,7 +46,7 @@ export const FAQS = [
   },
   {
     q: 'Can I run it myself?',
-    a: 'Yes. cuttingfloor is open source and runs in one Docker image on your own machine. The hosted version is the same image, run for you.',
+    a: 'Yes. cuttingfloor runs in one Docker image on your own machine. The hosted version is the same image, run for you.',
   },
   {
     q: 'Do I need my own AI keys?',
