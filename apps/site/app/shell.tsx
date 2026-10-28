@@ -32,6 +32,7 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
           <a href="/demos">Demos</a>
           <a href="/skills">Skills</a>
           <a href="/#pricing">Pricing</a>
+          <a href={SIGN_IN}>Sign in</a>
         </nav>
         <a className="nav-cta" href={SIGN_UP}>
           {cta}
