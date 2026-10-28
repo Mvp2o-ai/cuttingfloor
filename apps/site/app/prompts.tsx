@@ -31,15 +31,12 @@ const GROUPS = [
     ],
   },
   {
-    title: 'Build from your library',
+    title: 'Hand it off, or build from your library',
     items: [
-      'Write and voice a 20-second intro, then animate the title.',
+      'Export for YouTube and hand me an FCPXML so my editor can finish it.',
       'Take our footage library and cut a sixty-second product film.',
+      'Write and voice a 20-second intro, then animate the title.',
     ],
-  },
-  {
-    title: 'Hand it off',
-    items: ['Export for YouTube and hand me an FCPXML so my editor can finish it.'],
   },
 ] as const;
 
