@@ -72,8 +72,9 @@ export default function Privacy() {
       </Part>
       <Part title="The website">
         <P>
-          The site uses Vercel Analytics to count visits and pages, without ad trackers or
-          cross-site cookies. Signing in sets a cookie that keeps you signed in.
+          The site uses Vercel Analytics to count visits, pages, sign-ups and which links and
+          buttons are clicked, without ad trackers or cross-site cookies. Signing in sets a cookie
+          that keeps you signed in.
         </P>
       </Part>
       <Part title="Your choices">
