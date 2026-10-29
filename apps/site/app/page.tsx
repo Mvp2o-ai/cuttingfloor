@@ -203,7 +203,7 @@ export default function Home() {
           <div className="head">
             <span className="label">08 / Pricing</span>
             <div>
-              <h2 className="display">Pay for the finished minute, not the seat.</h2>
+              <h2 className="display">Pay for the minutes you use, not the seat.</h2>
               <p className="compare-lede">
                 About 16 cents a rendered minute. A ten-minute captioned, mixed video uses about 35
                 of them — around $5.70, against four to six hours of manual work.
