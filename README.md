@@ -8,7 +8,11 @@ A headless video editor for agents, as an MCP server. An agent imports footage, 
 
 > Status: Phase 3 in progress. Import, timelines, clip editing, timing (speed, ramps, reverse, freeze frames, roll/slip/slide, range extract, nested timelines), transitions, titles and captions, audio (gain, pan, fades, ducking, loudness), effects (colour, LUTs, blur, chroma key and more; EQ, compressor, denoise, pitch), analysis (transcripts, beats, faces, tracking), compositing (transforms, keyframes, masks, blend modes, animations), motion graphics and HTML stills (sandboxed), mattes, local voiceover with timed words, people cut-outs, previews, exact QA checks and H.264/ProRes export work end to end. Provider tools (ElevenLabs, OpenAI) and NLE interchange come next.
 
-## Run it
+## Use it hosted
+
+Sign up at [cuttingfloor.ai](https://cuttingfloor.ai) (three days free), then add `https://api.cuttingfloor.ai/mcp` as a remote MCP server in Claude, ChatGPT, Cursor, Kazi or any client that takes one. The client opens the sign-in itself (OAuth). Nothing to install; transcription, voiceover, cutouts and rendering run on our servers. The [official MCP Registry entry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.Mvp2o-ai%2Fcuttingfloor/versions/latest) lists the same address.
+
+## Run it yourself
 
 ```sh
 docker compose up -d          # local mode: one node on 127.0.0.1:8787, plus the motion sandbox
