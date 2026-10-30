@@ -29,6 +29,16 @@ const CAPS = [
     note: 'FCPXML, OTIO, EDL out too',
   },
   {
+    title: 'It hands off.',
+    body: 'An editable timeline in FCPXML, OTIO and EDL. Opens in Resolve or Premiere as the exact cut, ready to finish.',
+    code: [
+      ['export.timeline', '{ timeline_id: "tl_12…", format: "fcpxml" }'],
+      ['export.timeline', '{ timeline_id: "tl_12…", format: "otio" }'],
+      ['export.timeline', '{ timeline_id: "tl_12…", format: "edl" }'],
+    ],
+    note: 'FCPXML, OTIO, CMX 3600 EDL',
+  },
+  {
     title: 'Captions that keep time.',
     body: 'Captions come from the transcript and follow every speed change and cut. Karaoke, word pop, typewriter, boxes, outlines.',
     code: [

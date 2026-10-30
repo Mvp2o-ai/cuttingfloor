@@ -3,7 +3,7 @@ import { WALKTHROUGHS } from '../../content/walkthroughs.ts';
 import { Breadcrumbs, Footer, Nav } from '../shell.tsx';
 
 export const metadata: Metadata = {
-  title: 'Agentic video editing walkthroughs: real prompts, every tool call | cuttingfloor',
+  title: 'AI video editing walkthroughs: real prompts, every tool call | cuttingfloor',
   description:
     'Each walkthrough shows one editing technique end to end: the prompt typed, every tool call an agent made to the cuttingfloor MCP server, and the file that came out.',
   alternates: { canonical: '/walkthroughs' },

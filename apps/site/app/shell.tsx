@@ -28,12 +28,10 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
           cuttingfloor
         </a>
         <nav className="nav-links" aria-label="Sections">
+          <a href="/#session">How it works</a>
           <a href="/demos">Demos</a>
-          <a href="/walkthroughs">Walkthroughs</a>
           <a href="/skills">Skills</a>
-          <a href="/#how">How it works</a>
           <a href="/#pricing">Pricing</a>
-          <a href={DOCS_URL}>Open source</a>
           <a href={SIGN_IN}>Sign in</a>
         </nav>
         <a className="nav-cta" href={SIGN_UP}>

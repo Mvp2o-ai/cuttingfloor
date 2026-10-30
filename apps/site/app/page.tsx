@@ -27,32 +27,32 @@ export default function Home() {
           <h1 className="leader rise">
             <b>cuttingfloor</b>
             <span className="dots" />
-            <span>the video editing agent for Claude, Cursor and ChatGPT</span>
+            <span>the control plane for AI video agents</span>
           </h1>
           <p className="display title rise d1">
             Video editing,
             <br />
-            solved.
+            finished.
             <Check />
           </p>
           <div className="hero-row">
             <div className="rise d2">
               <p className="lede">
-                Your agent edits video now. Connect Kazi, Claude, Cursor or ChatGPT to one MCP
-                server and say what you want cut.{' '}
+                One connection.{' '}
                 <em>
-                  It imports your footage, reads the transcript, trims, captions, mixes and hands
-                  back a finished file.
+                  Your AI assistant cuts, captions and mixes — then hands back a file a human editor
+                  can finish.
                 </em>
               </p>
               <div className="actions">
                 <a className="link-big" href={SIGN_UP}>
-                  Start free for 3 days
+                  Start free — 3 days
                 </a>
                 <a className="link-big quiet" href="/demos">
                   Watch it edit
                 </a>
               </div>
+              <span>Self-hosted · no external AI keys</span>
             </div>
             <div className="rise d3 works-in">
               <span className="label">Works in</span>
@@ -63,6 +63,7 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
+              <p>Any remote MCP client</p>
               <p>
                 Bring the agent you already use. Sign in, then add one server address; the setup for
                 each is <a href="#start">below</a>.
@@ -74,10 +75,8 @@ export default function Home() {
         <section className="cell floor" aria-label="An agent editing over MCP">
           <video src="/floor.mp4" poster="/floor.jpg" muted loop playsInline autoPlay />
           <div className="floor-cap">
-            <span className="label">01 / The floor</span>
-            <span className="label">
-              Agentic video editing: your agent, one MCP server, every edit a call
-            </span>
+            <span className="label">01 / The layer after generation</span>
+            <span className="label">Generation is cheap now. Assembly is not.</span>
           </div>
         </section>
 
@@ -85,7 +84,7 @@ export default function Home() {
           <div className="head">
             <span className="label">02 / A session</span>
             <h2 className="lede">
-              Agentic video editing, one tool call at a time. <em>Here is one.</em>
+              AI video editing, one tool call at a time. <em>Here is one.</em>
             </h2>
           </div>
           <Session
@@ -100,7 +99,7 @@ export default function Home() {
             <div className="head">
               <span className="label">03 / In your agent</span>
               <h2 className="lede">
-                Plug cuttingfloor into the agent you already use. <em>It becomes your editor.</em>
+                Plug cuttingfloor into the agent you already use. <em>We make it finish.</em>
               </h2>
             </div>
             <AgentDemo demo={DEMOS[0]} />
@@ -129,13 +128,10 @@ export default function Home() {
           <span className="mark-b" />
           <span className="label">05 / What it does</span>
           <h2 className="display big-stat">
-            62 tools.
+            67 tools.
             <br />
-            No timeline UI.
-            <small>
-              A video editing API built for agents: granular primitives it composes, plus code when
-              it needs a loop.
-            </small>
+            No timeline.
+            <small>Granular tools an agent composes, plus code when it needs a loop.</small>
           </h2>
           <Capabilities />
         </section>
@@ -206,7 +202,13 @@ export default function Home() {
         <section className="cell" id="pricing">
           <div className="head">
             <span className="label">08 / Pricing</span>
-            <h2 className="display">Pay for rendering.</h2>
+            <div>
+              <h2 className="display">Pay for the minutes you use, not the seat.</h2>
+              <p className="compare-lede">
+                About 16 cents a rendered minute. A ten-minute captioned, mixed video uses about 35
+                of them — around $5.70, against four to six hours of manual work.
+              </p>
+            </div>
           </div>
           <table className="price-table">
             <thead>
@@ -241,9 +243,8 @@ export default function Home() {
           <p className="price-foot">
             A render minute is a minute of our servers working for you: exports, imports,
             transcripts, graphics, voiceovers, cutouts. Planning and editing the timeline cost
-            nothing. When a plan's minutes are used, new jobs wait until they renew or you move up;
-            you are never charged more than the price. Yearly plans get two months free. Payments by
-            Stripe; cancel any time. <a href="/terms">Terms</a> · <a href="/refunds">Refunds</a>
+            nothing. When minutes run out, work waits. You are never charged more than the plan
+            price. Yearly plans get two months free. Payments by Stripe; cancel any time.
           </p>
         </section>
 

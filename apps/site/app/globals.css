@@ -894,6 +894,17 @@ h2.lede {
   font-weight: 500;
   line-height: 1.35;
 }
+/* A group name in the same column flow, in the existing label style, not a card. */
+.prompts li.label {
+  margin: 0 0 16px;
+  padding: 0;
+  background: none;
+  border: 0;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
+  column-span: all;
+}
 .prompts .who {
   display: block;
   margin-bottom: 6px;
