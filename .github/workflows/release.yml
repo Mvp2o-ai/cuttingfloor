@@ -44,6 +44,33 @@ jobs:
           echo "released=true" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+  # The official MCP Registry lists the hosted server (server.json). Each release republishes it
+  # at the new version, signed in with this repository's GitHub OIDC token: no stored secret.
+  registry:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PUBLISHER: v1.8.6
+      PUBLISHER_SHA256: 1fbe93fc0783c2394d8012c8d6e50a59e98cb2cc2d216264cc69f405d0e21340
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: v${{ needs.release.outputs.version }}
+      - name: Publish
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          curl -fsSL -o publisher.tgz "https://github.com/modelcontextprotocol/registry/releases/download/$PUBLISHER/mcp-publisher_linux_amd64.tar.gz"
+          echo "$PUBLISHER_SHA256  publisher.tgz" | sha256sum -c -
+          tar -xzf publisher.tgz mcp-publisher
+          jq --arg v "$VERSION" '.version = $v' server.json > server.tmp && mv server.tmp server.json
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+
   image:
     needs: release
     if: needs.release.outputs.released == 'true'
