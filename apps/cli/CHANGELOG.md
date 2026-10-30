@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.27.4
+
+### Patch Changes
+
+- 753769a: Licensed under AGPL-3.0.
+
 ## 0.27.3
 
 ### Patch Changes
