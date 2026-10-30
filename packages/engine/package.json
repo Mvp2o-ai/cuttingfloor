@@ -1,6 +1,7 @@
 {
   "name": "@cuttingfloor/engine",
   "version": "0.0.0",
+  "license": "AGPL-3.0-only",
   "private": true,
   "description": "Engines as subprocesses: FFmpeg (probe, conform, proxies, analysis) and MLT melt (frames, exports, QA renders); sound models on ONNX Runtime in a worker process.",
   "type": "module",

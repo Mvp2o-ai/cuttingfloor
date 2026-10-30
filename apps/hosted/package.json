@@ -1,6 +1,7 @@
 {
   "name": "@cuttingfloor/hosted",
   "version": "0.0.0",
+  "license": "AGPL-3.0-only",
   "private": true,
   "description": "The HTTP node: Streamable HTTP MCP, signed output downloads, bearer API keys and script keys in hosted mode.",
   "type": "module",

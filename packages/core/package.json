@@ -1,6 +1,7 @@
 {
   "name": "@cuttingfloor/core",
   "version": "0.0.0",
+  "license": "AGPL-3.0-only",
   "private": true,
   "description": "Project store: the .vproj folder, op log, snapshots and crash-safe commits.",
   "type": "module",

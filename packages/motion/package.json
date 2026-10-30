@@ -1,6 +1,7 @@
 {
   "name": "@cuttingfloor/motion",
   "version": "0.0.0",
+  "license": "AGPL-3.0-only",
   "private": true,
   "description": "The sandbox worker: animated HTML rendered frame by frame by Chromium. Runs only inside the motion sandbox (the motion-worker role).",
   "type": "module",
