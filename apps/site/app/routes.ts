@@ -17,6 +17,11 @@ export const ROUTES: Route[] = [
         .at(-1) ?? '',
   },
   ...DEMOS.map((d) => ({ path: `/demos/${d.slug}`, title: d.title, updated: d.uploaded })),
+  {
+    path: '/alternatives',
+    title: 'AI video editor your agent runs: a CapCut, Descript and VEED alternative',
+    updated: '2026-10-29',
+  },
   { path: '/walkthroughs', title: 'Walkthroughs', updated: '2026-10-18' },
   ...WALKTHROUGHS.map((w) => ({
     path: `/walkthroughs/${w.slug}`,
