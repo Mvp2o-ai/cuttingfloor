@@ -18,8 +18,8 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
-    "@changesets/cli": "2.31.1",
+    "@biomejs/biome": "2.6.3",
+    "@changesets/cli": "3.0.3",
     "@modelcontextprotocol/client": "2.3.1",
     "@types/node": "24.19.2",
     "puppeteer-core": "25.14.0",
