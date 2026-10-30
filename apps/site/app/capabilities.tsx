@@ -75,17 +75,6 @@ const CAPS = [
     ],
     note: 'sandboxed Chromium, Kokoro, BiRefNet',
   },
-  {
-    title: 'Code when tools aren’t enough.',
-    body: 'For loops and arithmetic over the timeline, the agent writes one script. Inside it, every tool is a function.',
-    code: [
-      [
-        'code.run',
-        '{ language: "node", script: `\n  import { cf } from "cuttingfloor";\n  const m = await cf.media.get({ media_id, include: ["beats"] });\n  for (const b of m.beats.beats) …\n` }',
-      ],
-    ],
-    note: 'no network, its own namespaces',
-  },
 ] as const;
 
 export function Capabilities() {

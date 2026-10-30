@@ -53,6 +53,9 @@ importers:
 
   apps/hosted:
     dependencies:
+      '@cuttingfloor/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@cuttingfloor/credentials':
         specifier: workspace:*
         version: link:../../packages/credentials
@@ -151,9 +154,15 @@ importers:
       '@cuttingfloor/schema':
         specifier: workspace:*
         version: link:../schema
+      '@huggingface/transformers':
+        specifier: 4.3.1
+        version: 4.3.1(@types/node@24.19.2)
       hash-wasm:
         specifier: 4.12.0
         version: 4.12.0
+      onnxruntime-node:
+        specifier: 1.30.0
+        version: 1.30.0
 
   packages/jobs:
     dependencies:
@@ -192,31 +201,6 @@ importers:
       zod:
         specifier: 4.6.7
         version: 4.6.7
-
-  packages/sdk:
-    dependencies:
-      '@cuttingfloor/motion':
-        specifier: workspace:*
-        version: link:../motion
-      '@cuttingfloor/schema':
-        specifier: workspace:*
-        version: link:../schema
-      zod:
-        specifier: 4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@cuttingfloor/credentials':
-        specifier: workspace:*
-        version: link:../credentials
-      '@cuttingfloor/server':
-        specifier: workspace:*
-        version: link:../server
-      '@modelcontextprotocol/client':
-        specifier: 2.3.1
-        version: 2.3.1
-      '@modelcontextprotocol/server':
-        specifier: 2.3.1
-        version: 2.3.1
 
   packages/server:
     dependencies:

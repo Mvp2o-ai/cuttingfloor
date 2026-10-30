@@ -16,7 +16,16 @@ export interface ImageOptions {
   /** Contact sheet of all frames, or one image per frame. */
   layout: 'single' | 'grid';
   signal?: AbortSignal;
+  /** Lay the picture over a checkerboard, so what is transparent shows as transparent. */
+  checker?: boolean;
 }
+
+/**
+ * The picture (RGBA) over a light grey checkerboard of 16 px squares: transparency shows as the
+ * checks, and a background baked into the picture (an opaque black square) shows as itself.
+ */
+export const CHECKERBOARD =
+  "format=rgba,split[cf_fg][cf_bg];[cf_bg]geq=r='if(mod(floor(X/16)+floor(Y/16),2),255,204)':g='if(mod(floor(X/16)+floor(Y/16),2),255,204)':b='if(mod(floor(X/16)+floor(Y/16),2),255,204)':a=255[cf_ck];[cf_ck][cf_fg]overlay=format=auto,format=rgb24";
 
 const MELT_FRAME_TIMEOUT_MS = 120_000;
 
@@ -104,7 +113,7 @@ export async function renderMediaFrames(
           '-frames:v',
           '1',
           '-vf',
-          `scale='if(gte(iw,ih),${options.longEdge},-2)':'if(gte(iw,ih),-2,${options.longEdge})'`,
+          `scale='if(gte(iw,ih),${options.longEdge},-2)':'if(gte(iw,ih),-2,${options.longEdge})'${options.checker ? `,${CHECKERBOARD}` : ''}`,
           '-y',
           name,
         ],
@@ -136,6 +145,8 @@ export async function mediaStills(
     minEdge: number;
     signal?: AbortSignal;
     onFrame?: (done: number) => void;
+    /** Lay the picture over a checkerboard, so what is transparent shows as transparent. */
+    checker?: boolean;
   },
 ): Promise<Buffer[]> {
   const long = Math.max(size.width, size.height);
@@ -168,7 +179,7 @@ export async function mediaStills(
             '-frames:v',
             '1',
             '-vf',
-            `scale=${w}:${h}:flags=area,format=yuvj420p`,
+            `scale=${w}:${h}:flags=area,${options.checker ? `${CHECKERBOARD},` : ''}format=yuvj420p`,
             '-q:v',
             '3',
             '-y',

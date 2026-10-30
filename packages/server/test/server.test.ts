@@ -9,12 +9,18 @@ const anyResult = z.object({}).passthrough();
 /**
  * tools/list as JSON, in bytes (about 4 bytes per token). Raised from 110 000 for the look guide
  * in media.analyze, from 115 000 for judge.ask, and from 123 000 to 230 000 when every tool
- * declared its full output schema (about 117 000 of the total): code.run scripts chain calls
- * on those shapes, so they are the contract and are not slimmed to fit a harness. Raised to
+ * declared its full output schema (about 117 000 of the total): clients chain calls on those
+ * shapes, so they are the contract and are not slimmed to fit a harness. Raised to
  * 240 000 for media.seek, which finds moments from plain words, to 250 000 for other_tracks
- * on every rippling edit, and to 256 000 for create.stabilized.
+ * on every rippling edit, to 256 000 for create.stabilized, to 266 000 for paging media.get
+ * (time range, offset, limit and pages per analysis), to 286 000 for media origin (where
+ * each media came from), declared on every tool that returns media, and media.delete, to
+ * 301 000 for the source map of a render and the full probe facts on media, and to 331 000
+ * for the speech and sound facts (media.analyze speech and loudness, media.correlate, qa.check
+ * cut facts), and to 366 000 for the sound tools (media.analyze sounds, media.listen,
+ * create.stems), whose results carry every score, and to 386 000 for create.lipsync.
  */
-const BUDGET_BYTES = 256_000;
+const BUDGET_BYTES = 386_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -28,7 +34,7 @@ describe('protocol surface', () => {
     expect(client.getInstructions()).toMatch(/timeline_id/);
   });
 
-  it('advertises an open output schema on every tool, so code can chain calls and added fields never break cached clients', async () => {
+  it('advertises an open output schema on every tool, so clients can chain calls and added fields never break cached clients', async () => {
     const client = await connect(env.runtime);
     const { tools } = await client.listTools();
     expect(tools.filter((t) => !t.outputSchema).map((t) => t.name)).toEqual([]);
@@ -44,6 +50,25 @@ describe('protocol surface', () => {
     const got = await ok<{ status: string }>(client, 'job.get', { job_id: job.id });
     expect(got.status).toBe('working');
     expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('reads many jobs in one job.get, saying which ids it has no job for', async () => {
+    const client = await connect(env.runtime, 'many');
+    const a = await env.runtime.jobs.store.create({ owner: 'many', tool: 'export.video' });
+    const b = await env.runtime.jobs.store.create({ owner: 'many', tool: 'media.import' });
+    const theirs = await env.runtime.jobs.store.create({ owner: 'other', tool: 'export.video' });
+    const got = await ok<{
+      jobs: Array<{ job_id: string; tool: string; status: string }>;
+      not_found: string[];
+    }>(client, 'job.get', { job_ids: [b.id, theirs.id, a.id, b.id] });
+    expect(got.jobs.map((j) => [j.job_id, j.tool, j.status])).toEqual([
+      [b.id, 'media.import', 'working'],
+      [a.id, 'export.video', 'working'],
+    ]);
+    expect(got.not_found).toEqual([theirs.id]);
+    expect(
+      (await call(client, 'job.get', { job_id: a.id, job_ids: [b.id] })).structured,
+    ).toMatchObject({ code: 'bad_request' });
   });
 
   it('lists the tools, each annotated', async () => {
@@ -75,11 +100,12 @@ describe('protocol surface', () => {
         'clip.split',
         'clip.trim',
         'clip.unlink',
-        'code.run',
         'create.cutout',
+        'create.lipsync',
         'create.matte',
         'create.motion',
         'create.stabilized',
+        'create.stems',
         'create.still',
         'create.voiceover',
         'edit.batch',
@@ -93,9 +119,12 @@ describe('protocol surface', () => {
         'job.list',
         'judge.ask',
         'media.analyze',
+        'media.correlate',
+        'media.delete',
         'media.get',
         'media.import',
         'media.list',
+        'media.listen',
         'media.seek',
         'media.upload',
         'qa.check',
@@ -428,6 +457,70 @@ describe('media and jobs without engines', () => {
     const after = await env.runtime.media.get('legacy', id);
     expect(after.analyses?.look?.runs).toHaveLength(10);
     expect(after.analyses?.beats?.bpm).toBe(120);
+  });
+
+  it('reads a long transcript in pieces: by media time, then by page', async () => {
+    const client = await connect(env.runtime, 'pager');
+    const record = await env.runtime.media.create('pager', { path: '/media/talk.mp4' }, 'talk.mp4');
+    // A word every second: word i runs from i to i + 0.5.
+    const words = Array.from({ length: 50 }, (_, i) => ({
+      text: `w${i}`,
+      start: i,
+      end: i + 0.5,
+      confidence: 0.9,
+    }));
+    await env.runtime.media.saveAnalysis('pager', record.media_id, 'transcript', {
+      model: 'tiny',
+      language: 'en',
+      text: words.map((w) => w.text).join(' '),
+      words,
+    });
+    await env.runtime.media.saveAnalysis('pager', record.media_id, 'beats', {
+      bpm: 60,
+      beats: words.map((w) => w.start),
+      downbeats: words.filter((_, i) => i % 4 === 0).map((w) => w.start),
+    });
+    type Got = {
+      transcript: { text: string; words: Array<{ text: string }> };
+      beats: { beats: number[]; downbeats: number[] };
+      pages: Record<string, Record<string, unknown>>;
+    };
+    const stretch = await ok<Got>(client, 'media.get', {
+      media_id: record.media_id,
+      include: ['transcript', 'beats'],
+      from_seconds: 10.2,
+      to_seconds: 20,
+      limit: 4,
+    });
+    // w10 still runs at 10.2; w20 starts at 20, outside.
+    expect(stretch.transcript.words.map((w) => w.text)).toEqual(['w10', 'w11', 'w12', 'w13']);
+    expect(stretch.transcript.text).toBe('w10 w11 w12 w13');
+    expect(stretch.pages.transcript).toEqual({
+      list: 'transcript.words',
+      first: 10,
+      returned: 4,
+      matching: 10,
+      total: 50,
+      next_offset: 4,
+    });
+    expect(stretch.beats).toMatchObject({ beats: [11, 12, 13, 14], downbeats: [12] });
+    const last = await ok<Got>(client, 'media.get', {
+      media_id: record.media_id,
+      include: ['transcript'],
+      from_seconds: 10.2,
+      to_seconds: 20,
+      offset: 8,
+      limit: 4,
+    });
+    expect(last.transcript.words.map((w) => w.text)).toEqual(['w18', 'w19']);
+    expect(last.pages.transcript).toMatchObject({ first: 18, returned: 2, next_offset: null });
+    // Without a window, the whole list, as before.
+    const whole = await ok<Got>(client, 'media.get', {
+      media_id: record.media_id,
+      include: ['transcript'],
+    });
+    expect(whole.transcript.words).toHaveLength(50);
+    expect(whole).not.toHaveProperty('pages');
   });
 
   it('asks for a TypeSafe key and questions before a look starts a job', async () => {

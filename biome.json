@@ -12,8 +12,7 @@
       "!.claude",
       "!.models",
       "!packages/skills/vectors.json",
-      "!tools/motion/seccomp.json",
-      "!packages/sdk/src/tools.generated.ts"
+      "!tools/motion/seccomp.json"
     ]
   },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },

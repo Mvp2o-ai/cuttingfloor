@@ -63,6 +63,64 @@ RUN g++ -O2 -std=c++17 /src/segment.cpp -o /cf-segment -I/opt/onnxruntime/includ
       -Wl,-rpath,/opt/onnxruntime/lib \
  && strip /cf-segment
 
+# Sound models for media.analyze sounds, media.listen and create.stems, exported to ONNX from
+# their PyTorch checkpoints (tools/sounds/export-*.py) and checked against the originals there.
+# ONNX files are the same on every architecture, so this stage runs on the build machine's own.
+#   PretrainedSED frame_mn10 (MIT; arXiv 2409.09546): 447 AudioSet-strong sounds per 40 ms.
+#   FlexSED (MIT; arXiv 2509.18606): sounds described in words, per 40 ms.
+#   Demucs v4 htdemucs (MIT): drums, bass, other and vocals.
+# Code at pinned commits, checkpoints checked against pinned SHA-256s.
+FROM --platform=$BUILDPLATFORM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS sound-models
+ARG PRETRAINEDSED_COMMIT=1aa47e482f7e89904cba2338999345025d8b4e36
+ARG SED_MN10_SHA256=4a0fe320d5369987b772394c51881fb20a602967e6842f72f3e5c8181065ece7
+ARG FLEXSED_COMMIT=89aac3351e807de57c4fe3148d982922a3318e46
+ARG FLEXSED_REVISION=eefe52b7ad686a9bc9f1f5dd0803e2c52171e128
+ARG FLEXSED_SHA256=5ec9a9b67ae3e612810ce150de06cd517ff7c8b1c640ba39a1422aa1e9040c32
+ARG DEMUCS_VERSION=4.0.1
+ARG HTDEMUCS_SHA256=8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 python3-venv libgomp1 git curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+COPY tools/sounds/requirements.txt /src/requirements.txt
+RUN python3 -m venv /venv \
+ && /venv/bin/pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+      torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0 \
+ && /venv/bin/pip install --no-cache-dir -r /src/requirements.txt \
+ && /venv/bin/pip install --no-cache-dir --no-deps "demucs==$DEMUCS_VERSION" openunmix==1.3.0
+RUN git clone --filter=blob:none https://github.com/fschmid56/PretrainedSED /src/sed \
+ && git -C /src/sed checkout "$PRETRAINEDSED_COMMIT" \
+ && git clone --filter=blob:none https://github.com/JHU-LCAP/FlexSED /src/flexsed \
+ && git -C /src/flexsed checkout "$FLEXSED_COMMIT" \
+ && mkdir -p /ckpt /models/sounds \
+ && curl -fsSL -o /ckpt/frame_mn10.pt https://github.com/fschmid56/PretrainedSED/releases/download/v0.0.1/frame_mn10_strong_1.pt \
+ && echo "$SED_MN10_SHA256  /ckpt/frame_mn10.pt" | sha256sum -c - \
+ && curl -fsSL -o /ckpt/flexsed.pt "https://huggingface.co/Higobeatz/FlexSED/resolve/$FLEXSED_REVISION/ckpts/flexsed_as.pt" \
+ && echo "$FLEXSED_SHA256  /ckpt/flexsed.pt" | sha256sum -c - \
+ && curl -fsSL -o /ckpt/htdemucs.th https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th \
+ && echo "$HTDEMUCS_SHA256  /ckpt/htdemucs.th" | sha256sum -c -
+COPY tools/sounds/export-sed.py tools/sounds/export-flexsed.py tools/sounds/export-demucs.py /src/
+RUN cd /tmp && /venv/bin/python -I /src/export-sed.py /src/sed /ckpt/frame_mn10.pt frame_mn10 /models/sounds/sed-mn10.onnx \
+ && /venv/bin/python -I /src/export-flexsed.py /src/flexsed /ckpt/flexsed.pt /models/sounds/flexsed.onnx \
+ && /venv/bin/python -I /src/export-demucs.py /ckpt/htdemucs.th /models/sounds/htdemucs.onnx
+# The CLAP text encoder FlexSED was trained with (laion/clap-htsat-unfused, Apache-2.0) in the
+# Transformers.js layout, to turn the words of a media.listen query into its embedding.
+ARG CLAP_REVISION=c28f2883575e590e04d3146ff0713c2448d691ba
+ARG CLAP_CONFIG_SHA256=39c6d90fe29cf2cce650dd5c92c38a1e35b130d9ce0bb98585222ad687ad979b
+ARG CLAP_TOKENIZER_SHA256=dc239041d98de27ffc3975473a1a23e3db4c937b23c138c38bbc66588bd247e5
+ARG CLAP_TOKENIZER_CONFIG_SHA256=2c964a338683aec3695ea37687271e75b40905233f5d2a5bbb9be8cb40c4d0a0
+ARG CLAP_SPECIAL_TOKENS_SHA256=06e405a36dfe4b9604f484f6a1e619af1a7f7d09e34a8555eb0b77b66318067f
+ARG CLAP_TEXT_ONNX_SHA256=6df7c51f2d78e236a03f2b816e613d538c815639d13644fe7c2124f439da9648
+RUN dir=/models/Xenova/clap-htsat-unfused && mkdir -p "$dir/onnx" \
+ && fetch() { \
+      curl -fsSL -o "$dir/$1" "https://huggingface.co/Xenova/clap-htsat-unfused/resolve/$CLAP_REVISION/$1" \
+      && echo "$2  $dir/$1" | sha256sum -c -; \
+    } \
+ && fetch config.json "$CLAP_CONFIG_SHA256" \
+ && fetch tokenizer.json "$CLAP_TOKENIZER_SHA256" \
+ && fetch tokenizer_config.json "$CLAP_TOKENIZER_CONFIG_SHA256" \
+ && fetch special_tokens_map.json "$CLAP_SPECIAL_TOKENS_SHA256" \
+ && fetch onnx/text_model.onnx "$CLAP_TEXT_ONNX_SHA256"
+
 # sherpa-onnx's offline TTS for local voiceover (Kokoro voices; Apache-2.0, with espeak-ng
 # built in), the prebuilt release for each architecture, checked against pinned SHA-256s. The
 # Kokoro model downloads on first use, like the whisper models.
@@ -119,12 +177,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
       70bb6685eb0c2a1d18e2918dca3fbfbd39317010b1802eb1b6ea73a92f3fdec0 /models/rnnoise/sh.rnnn \
     | sha256sum -c -
 
+# Speech facts on the CPU, run by packages/engine/src/sound-worker.ts on ONNX Runtime: Silero
+# VAD v6.2.3 (MIT, snakers4/silero-vad) for speech probability, and wav2vec2-base-960h
+# (Apache-2.0, facebook/wav2vec2-base-960h, as the Transformers.js ONNX export) for aligning
+# transcript words to the sound. They ship in the image; each file pinned and checked.
+FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS speech-models
+ARG SILERO_COMMIT=5cd7945676eb32225748052e2e6a0580e4686a08
+ARG SILERO_SHA256=1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3
+ARG W2V_REVISION=a19f851b3d42865797e410752b4c570c871e4825
+ARG W2V_SHA256=e46614273f03ff4b87923a965e417fa72004825522cb007c9c25633b8475490d
+ARG W2V_VOCAB_SHA256=4178db26b3c7570f6a47f14ac6a1c7b32950b8c2800fb097287e53776934f1c5
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+ && mkdir -p /models/wav2vec2-base-960h \
+ && curl -fsSL -o /models/silero-vad-v6.2.3.onnx "https://raw.githubusercontent.com/snakers4/silero-vad/$SILERO_COMMIT/src/silero_vad/data/silero_vad.onnx" \
+ && echo "$SILERO_SHA256  /models/silero-vad-v6.2.3.onnx" | sha256sum -c - \
+ && curl -fsSL -o /models/wav2vec2-base-960h/model.onnx "https://huggingface.co/Xenova/wav2vec2-base-960h/resolve/$W2V_REVISION/onnx/model.onnx" \
+ && echo "$W2V_SHA256  /models/wav2vec2-base-960h/model.onnx" | sha256sum -c - \
+ && curl -fsSL -o /models/wav2vec2-base-960h/vocab.json "https://huggingface.co/Xenova/wav2vec2-base-960h/resolve/$W2V_REVISION/vocab.json" \
+ && echo "$W2V_VOCAB_SHA256  /models/wav2vec2-base-960h/vocab.json" | sha256sum -c -
+
 FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS base
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt tini fontconfig \
       fonts-dejavu-core fonts-inter fonts-montserrat fonts-open-sans fonts-lato fonts-bebas-neue \
-      fonts-lobster fonts-comic-neue fonts-firacode fonts-noto-core chromium bzip2 \
-      python3 python3-numpy python3-pil python3-opencv zip \
+      fonts-lobster fonts-comic-neue fonts-firacode fonts-noto-core chromium bzip2 zip \
  && rm -rf /var/lib/apt/lists/* \
  # Web font copies are useless to libass, and Montserrat ships twice; one TrueType set stays.
  && find /usr/share/fonts -name '*.woff*' -delete && rm -rf /usr/share/fonts/opentype/montserrat \
@@ -135,9 +211,7 @@ RUN apt-get update \
  && melt -query filters | grep -q rotoscoping \
  && ffmpeg -hide_banner -filters | grep -q vidstabtransform \
  && ffmpeg -hide_banner -filters | grep -q arnndn \
- && chromium --version \
- && python3 -c 'import numpy, PIL, cv2' \
- && unshare --version
+ && chromium --version
 COPY --from=whisper /src/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=tts /opt/sherpa-onnx /opt/sherpa-onnx
 RUN ln -s /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts /usr/local/bin/sherpa-onnx-offline-tts
@@ -148,9 +222,10 @@ COPY --from=vision /opt/onnxruntime/lib/ /opt/onnxruntime/lib/
 COPY --from=vision /cf-segment /usr/local/bin/cf-segment
 COPY --from=skills-model /models/ /usr/share/cuttingfloor/models/
 COPY --from=denoise-models /models/ /usr/share/cuttingfloor/models/
-# Chromium for the sandbox (create.motion, create.still, code.run), only ever started by the
+COPY --from=speech-models /models/ /usr/share/cuttingfloor/models/
+COPY --from=sound-models /models/ /usr/share/cuttingfloor/models/
+# Chromium for the sandbox (create.motion, create.still), only ever started by the
 # motion-worker role through this wrapper, which keeps its sandbox on and its network off.
-# Python (numpy, Pillow, OpenCV) is for code.run scripts.
 COPY tools/motion/cf-chromium /usr/local/bin/cf-chromium
 RUN cf-vision 2>&1 | grep -q usage && cf-segment 2>&1 | grep -q usage
 # MLT's Qt modules (qtblend) need a display variable to load; Qt itself renders offscreen.
@@ -179,8 +254,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
  && curl -fsSL -o /opt/models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin \
  && echo "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21  /opt/models/ggml-tiny.bin" | sha256sum -c - \
  && curl -fsSL -o /tmp/kokoro.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2 \
- && echo "c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298  /tmp/kokoro.tar.bz2" | sha256sum -c - \
- && tar -xjf /tmp/kokoro.tar.bz2 -C /opt/models --no-same-owner && rm /tmp/kokoro.tar.bz2
+ && echo "60703707bc05ccd48d60e1eb723f38b07d6e474795a0b6a588d7220400e0f7a4  /tmp/kokoro.tar.bz2" | sha256sum -c - \
+ && tar -xjf /tmp/kokoro.tar.bz2 -C /opt/models --no-same-owner && rm /tmp/kokoro.tar.bz2 \
+ # An audience laughing then clapping for the sounds tests: "approx 800 laughter and clapter" by
+ # lonemonk (freesound.org/s/72844), CC BY 3.0, from Wikimedia Commons.
+ && mkdir -p /opt/models/fixtures \
+ && curl -fsSL -A cuttingfloor-tests -o /opt/models/fixtures/laughter.wav https://upload.wikimedia.org/wikipedia/commons/e/e5/72844_lonemonk_approx-800-laughter-and-clapter-1.wav \
+ && echo "8b928e6307f7db0ce5542ae827075f24ada80f007f3a4fdb415559ec9c4e4055  /opt/models/fixtures/laughter.wav" | sha256sum -c -
 
 # Test-only: espeak-ng speaks the transcript fixtures.
 FROM build AS testenv

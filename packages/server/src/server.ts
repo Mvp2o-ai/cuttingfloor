@@ -7,10 +7,10 @@ import { registerResources } from './resources.ts';
 import { toErrorResult } from './result.ts';
 import type { Runtime } from './runtime.ts';
 import { registerTasks } from './tasks.ts';
-import { registerCodeTools } from './tools/code.ts';
 import { registerCreateTools } from './tools/create.ts';
 import { registerInterchangeTools } from './tools/interchange.ts';
 import { registerJudgeTools } from './tools/judge.ts';
+import { registerListenTools } from './tools/listen.ts';
 import { registerMediaTools } from './tools/media.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { registerSeekTools } from './tools/seek.ts';
@@ -38,7 +38,7 @@ export interface ServerDeps {
 const INSTRUCTIONS = `cuttingfloor is a headless video editor. It makes video two ways, often both at once:
 - Make new: create.motion (animated HTML), create.still, create.matte and create.voiceover build media from nothing. An image, mockup or page the user shows you is a reference for you to look at and rebuild in HTML, not a file to import.
 - Edit what the user has: media.import their footage, music or logo (a path under the media roots, a URL, a file on the user's machine sent with media.upload or dropped on its page, a file the user dropped on their account page (media.list shows those by name), or a small file as a data: URI; to try it, /samples/sample.mp4 and /samples/card.png where available).
-The tools are granular primitives that do exactly what their arguments say; you compose them. edit.batch applies a planned sequence as one change. When the composition needs logic (loops, arithmetic over timeline.get or media.analyze data, generated files), write it as one code.run script: inside, cf.domain.verb(args) calls these same tools.
+The tools are granular primitives that do exactly what their arguments say; you compose them. edit.batch applies a planned sequence as one change.
 Typical flow:
 1. Get media: create.* for new material, media.import for the user's own files (both long-running: a task, or a job_id whose status job.get reads). Use the media_id once status is processing or ready.
 2. timeline.create with a sequence ({width, height, fps:{num,den}}), then edit: clip.add, clip.trim, clip.split, clip.move, clip.remove, track.* — or edit.batch for many edits at once.
@@ -51,12 +51,11 @@ Typical flow:
    Analysis: media.analyze {kind: transcript | beats | faces | track | look | silence | scenes} turns media into data: cut by words (clip.add source {words}), caption from transcript times (caption.add in_clip), cut on beats, reframe on face boxes, pin a title to a tracked object.
    Judgment: judge.ask answers your typed questions (yes/no, choice, score, box) about text, JSON and pictures you name (a still, a video frame, a transcript passage) in one fast call; media.analyze {kind: look} asks them of frames sampled across a video. To find moments without watching, media.seek takes what you are looking for in plain words (a shot too dark, black frames, where the demo starts) and returns where it holds in a video or a rendered edit.
    Overlays and picture-in-picture: put a clip on a higher video track, then clip.set_transform, clip.set_mask, clip.set_blend and clip.set_animation. Catalogues of accepted names are resources at video://catalog/{name}.
-   Create: create.motion (any animated HTML, rendered frame-exactly with alpha in a sandbox), create.still (HTML to a PNG), create.matte (solid or gradient), create.voiceover (speech with timed words), create.cutout (a subject without its background) and create.stabilized (shaky video steadied) make new media to place with clip.add.
-   Code: code.run runs a node/python/bash script in the sandbox for anything the tools don't cover. Inside it, cf.domain.verb(args) calls these same tools on the same media and timelines, and files written to out/ come back as media or timelines, so code and tools hand work to each other.
+   Create: create.motion (any animated HTML, rendered frame-exactly with alpha in a sandbox), create.still (HTML to a PNG), create.matte (solid or gradient), create.voiceover (speech with timed words), create.cutout (a subject without its background), create.stabilized (shaky video steadied) and create.lipsync (a speaker's mouth redrawn to new words, on the user's own provider key) make new media to place with clip.add.
 4. Look at the result with preview: "inline" on an edit, or render.frames (stills). To watch it play, with motion, timing and sound, when you or your client take video in: export.video a range with preset review_h264; its result links the file (video://jobs/{job_id}/output) and gives a signed url, fps and duration.
 5. qa.check, then export.video (long-running) for a signed download URL and a page_url to give the user, which plays it in any browser: presets for web, masters, 9:16 social, AV1, GIF and audio, with size/fps/bitrate overrides (video://catalog/presets). export.timeline hands the edit to another editor (FCPXML, OTIO, EDL) or writes captions (SRT, VTT).
 Skills: step-by-step instructions for common jobs, such as cutting the pauses and ums out of a talking video. Before composing one yourself, skills.search in the user's words, then skills.get and follow its steps.
-Time is integer frames at the sequence rate; ranges are end-exclusive. Timelines expire 24 h after last use (timeline.get + timeline.load restores one); media and outputs after 7 days.`;
+Time is integer frames at the sequence rate; ranges are end-exclusive. Keeping work: the server keeps nothing for long. Timelines expire 24 h after last use; media and exports 7 days after last use. You keep what lasts: for work longer than a day, save the timeline.get document of the latest timeline on your side and timeline.load it to carry on; save the files you want to keep from their download url (media.get, export.video) and bring them back with media.import. media.delete removes a media you no longer want, so an old version stops turning up.`;
 
 /** Builds one MCP server instance over the shared runtime. Transports live in apps/. */
 export function createServer(deps: ServerDeps): McpServer {
@@ -74,9 +73,9 @@ export function createServer(deps: ServerDeps): McpServer {
   registerTimelineTools(server, deps);
   registerMediaTools(server, deps);
   registerSeekTools(server, deps);
+  registerListenTools(server, deps);
   registerJudgeTools(server, deps);
   registerCreateTools(server, deps);
-  registerCodeTools(server, deps);
   registerRenderTools(server, deps);
   registerInterchangeTools(server, deps);
   registerSkillTools(server);
@@ -158,9 +157,6 @@ function isStandard(schema: unknown): schema is StandardJson {
   return Boolean((schema as Partial<StandardJson> | undefined)?.['~standard']?.jsonSchema);
 }
 
-/** On an advertised schema, the zod schema it stands for (so the SDK generator can name it). */
-export const OPENED_FROM = Symbol.for('cuttingfloor.openedFrom');
-
 function rewriteJson<S extends StandardJson>(schema: S, fix: (json: unknown) => unknown): S {
   const std = schema['~standard'];
   const jsonSchema = {
@@ -170,11 +166,7 @@ function rewriteJson<S extends StandardJson>(schema: S, fix: (json: unknown) => 
   };
   return new Proxy(schema, {
     get: (target, key, receiver) =>
-      key === '~standard'
-        ? { ...std, jsonSchema }
-        : key === OPENED_FROM
-          ? target
-          : Reflect.get(target, key, receiver),
+      key === '~standard' ? { ...std, jsonSchema } : Reflect.get(target, key, receiver),
   });
 }
 

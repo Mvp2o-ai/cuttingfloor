@@ -1,15 +1,18 @@
 {
   "name": "@cuttingfloor/engine",
   "version": "0.0.0",
+  "license": "AGPL-3.0-only",
   "private": true,
-  "description": "Engines as subprocesses: FFmpeg (probe, conform, proxies, analysis) and MLT melt (frames, exports, QA renders).",
+  "description": "Engines as subprocesses: FFmpeg (probe, conform, proxies, analysis) and MLT melt (frames, exports, QA renders); sound models on ONNX Runtime in a worker process.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@cuttingfloor/core": "workspace:*",
     "@cuttingfloor/schema": "workspace:*",
+    "@huggingface/transformers": "4.3.1",
     "hash-wasm": "4.12.0",
-    "@cuttingfloor/core": "workspace:*"
+    "onnxruntime-node": "1.30.0"
   }
 }

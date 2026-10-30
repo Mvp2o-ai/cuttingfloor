@@ -1,6 +1,7 @@
 {
   "name": "@cuttingfloor/schema",
   "version": "0.0.0",
+  "license": "AGPL-3.0-only",
   "private": true,
   "description": "Zod schemas shared by every package: ids, the project document, tool inputs and typed errors.",
   "type": "module",

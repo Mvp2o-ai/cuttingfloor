@@ -161,6 +161,82 @@ describe('HTTP face', () => {
     expect((await fetch(page.replace(/sig=[^&]+/, 'sig=AAAA'))).status).toBe(403);
   });
 
+  it('hands out working watch and download links when a job is read after its links expired', async () => {
+    // A finished export keeps the links it was made with; they expire long before its file does.
+    // Reading the job again (days into an edit) must give links that open.
+    const base = await listen(parseApiKeys(`alice:${KEY},bob:${KEY}-bob`));
+    (runtime.config as { publicUrl: string }).publicUrl = base;
+    const store = runtime.jobs.store;
+    const job = await store.create({ owner: 'alice', tool: 'export.video' });
+    const dir = runtime.ws.ownerDir('alice', 'outputs', job.id);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'final cut.mp4'), 'the approved cut');
+    const config = runtime.config as { outputUrlTtlMs: number };
+    const ttl = config.outputUrlTtlMs;
+    config.outputUrlTtlMs = -1000;
+    const old = await runtime.signOutput('alice', job.id, 'final cut.mp4');
+    config.outputUrlTtlMs = ttl;
+    const stored = {
+      url: old.url,
+      page_url: old.pageUrl,
+      expires_at: old.expiresAt,
+      uri: `video://jobs/${job.id}/output`,
+      bytes: 16,
+    };
+    await store.update(job, {
+      status: 'completed',
+      progress: 1,
+      result: {
+        content: [
+          { type: 'resource_link', uri: old.url, name: 'final cut.mp4' },
+          { type: 'text', text: JSON.stringify(stored) },
+        ],
+        structuredContent: stored,
+      } as never,
+    });
+    const stale = await fetch(old.pageUrl);
+    expect(stale.status).toBe(403);
+    expect(await stale.text()).toContain('expired');
+
+    const connect = async (key: string) => {
+      const client = new Client({ name: 't', version: '0' });
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+          requestInit: { headers: { authorization: `Bearer ${key}` } },
+        }),
+      );
+      return client;
+    };
+    const alice = await connect(KEY);
+    const got = (await alice.callTool({ name: 'job.get', arguments: { job_id: job.id } })) as {
+      structuredContent: { result: typeof stored };
+      content: Array<{ type: string; uri?: string; text?: string }>;
+    };
+    const fresh = got.structuredContent.result;
+    expect(Date.parse(fresh.expires_at)).toBeGreaterThan(Date.now());
+    expect(fresh.page_url).not.toBe(old.pageUrl);
+    const page = await fetch(fresh.page_url);
+    expect(page.status).toBe(200);
+    const src = /<video src="([^"]+)"/.exec(await page.text())?.[1]?.replace(/&amp;/g, '&');
+    const file = await fetch(`${base}${src}`);
+    expect(file.status).toBe(200);
+    expect(await file.text()).toBe('the approved cut');
+    expect((await fetch(fresh.url)).status).toBe(200);
+    // The link parts and the text copy carry the fresh links too.
+    const link = got.content.find((c) => c.type === 'resource_link');
+    expect((await fetch(link?.uri ?? '')).status).toBe(200);
+    expect(got.content.find((c) => c.type === 'text')?.text).toContain(fresh.expires_at);
+    await alice.close();
+
+    // Another account can't read the job to get links to it.
+    const bob = await connect(`${KEY}-bob`);
+    const denied = (await bob.callTool({ name: 'job.get', arguments: { job_id: job.id } })) as {
+      isError?: boolean;
+    };
+    expect(denied.isError).toBe(true);
+    await bob.close();
+  });
+
   it('takes signed, resumable uploads for the owner who asked', async () => {
     const base = await listen(parseApiKeys(`alice:${KEY},bob:${KEY}-bob`));
     (runtime.config as { publicUrl: string }).publicUrl = base;
@@ -249,6 +325,70 @@ describe('HTTP face', () => {
     expect(refused.status).toBe(413);
     await alice.close();
     await bob.close();
+  });
+
+  it('hands back an upload URL from media.import; the PUT that completes it starts the import', async () => {
+    const base = await listen(parseApiKeys(`carol:${KEY}`));
+    (runtime.config as { publicUrl: string }).publicUrl = base;
+    const client = new Client({ name: 't', version: '0' });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { authorization: `Bearer ${KEY}` } },
+      }),
+    );
+    const tool = async (name: string, args: Record<string, unknown>) =>
+      (await client.callTool({ name, arguments: args })) as {
+        isError?: boolean;
+        structuredContent: Record<string, unknown>;
+      };
+    // Over the server's upload limit (1024 bytes here): refused before anything is made.
+    const big = await tool('media.import', {
+      source: { upload: { name: 'big.wav', bytes: 4096 } },
+    });
+    expect(big.structuredContent.code).toBe('bad_request');
+
+    const made = await tool('media.import', { source: { upload: { name: 'line.wav' } } });
+    expect(made.isError).toBeFalsy();
+    const media = made.structuredContent as {
+      media_id: string;
+      status: string;
+      name: string;
+      upload: { upload_id: string; url: string; max_bytes: number };
+    };
+    expect(media).toMatchObject({ status: 'importing', name: 'line.wav' });
+    expect(media.upload.max_bytes).toBe(1024);
+    // It is listed once, as the media it becomes, and can't be imported a second time.
+    const held = (await tool('media.list', {})).structuredContent as {
+      media: Array<{ media_id: string }>;
+      uploads: unknown[];
+    };
+    expect(held.media.map((m) => m.media_id)).toContain(media.media_id);
+    expect(held.uploads).toEqual([]);
+    expect(
+      (await tool('media.import', { source: { upload_id: media.upload.upload_id } }))
+        .structuredContent.code,
+    ).toBe('bad_request');
+
+    // Two parts: the first only says how far it got, the last starts the import.
+    const body = Buffer.alloc(400, 3);
+    const first = await fetch(media.upload.url, {
+      method: 'PUT',
+      headers: { 'content-range': 'bytes 0-199/400' },
+      body: body.subarray(0, 200),
+    });
+    expect(await first.json()).not.toHaveProperty('job_id');
+    const last = await fetch(media.upload.url, {
+      method: 'PUT',
+      headers: { 'content-range': 'bytes 200-399/400' },
+      body: body.subarray(200),
+    });
+    const done = (await last.json()) as { complete: boolean; media_id: string; job_id: string };
+    expect(done).toMatchObject({ complete: true, media_id: media.media_id });
+    const job = await tool('job.get', { job_id: done.job_id });
+    expect(job.structuredContent).toMatchObject({ job_id: done.job_id, tool: 'media.import' });
+    // The file moved into the media: the link has nothing left.
+    expect((await fetch(media.upload.url, { method: 'HEAD' })).status).toBe(404);
+    await client.close();
   });
 
   it('imports a data: URI, an attached file, and shows the upload page in a browser', async () => {
@@ -372,6 +512,111 @@ describe('HTTP face', () => {
       }),
     );
     expect((await keyed.listTools()).tools.length).toBeGreaterThan(0);
+
+    // Before sign-in a client can discover the server: the same tools a signed-in one sees.
+    const anonClient = new Client({ name: 't', version: '0' });
+    await anonClient.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`)));
+    expect(anonClient.getInstructions()).toBe(keyed.getInstructions());
+    expect((await anonClient.listTools()).tools).toEqual((await keyed.listTools()).tools);
+    expect((await anonClient.listResources()).resources).toEqual(
+      (await keyed.listResources()).resources,
+    );
+    await anonClient.close();
     await keyed.close();
+
+    // Anything past discovery still gets the sign-in challenge, alone or hidden in a batch.
+    const post = (body: unknown) =>
+      fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-protocol-version': '2025-06-18',
+        },
+        body: JSON.stringify(body),
+      });
+    const call = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'media.list' } };
+    const read = {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'resources/read',
+      params: { uri: 'video://server/health' },
+    };
+    const list = { jsonrpc: '2.0', id: 3, method: 'tools/list' };
+    // A 2025 client's initialize answers too.
+    const init = await post({
+      jsonrpc: '2.0',
+      id: 0,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 't', version: '0' },
+      },
+    });
+    expect(init.status).toBe(200);
+    expect(await init.text()).toContain('"serverInfo"');
+    for (const body of [call, read, [list, call]]) {
+      const refused = await post(body);
+      expect(refused.status).toBe(401);
+      expect(refused.headers.get('www-authenticate')).toContain(`resource_metadata="${prmUrl}"`);
+    }
+  });
+
+  it('publishes a Server Card and an AI Catalog that points at it', async () => {
+    const base = await listen(parseApiKeys(`ken:${KEY}`));
+    const res = await fetch(`${base}/mcp/server-card`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('application/mcp-server-card+json');
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+    expect(res.headers.get('cache-control')).toBe('public, max-age=3600');
+    const card = (await res.json()) as Record<string, unknown>;
+    expect(card).toMatchObject({
+      $schema: 'https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json',
+      name: 'ai.cuttingfloor/cuttingfloor',
+      remotes: [{ type: 'streamable-http', url: `${runtime.config.publicUrl}/mcp` }],
+    });
+    expect(card).not.toHaveProperty('tools');
+    // The card agrees with the live server/discover, as the extension asks.
+    const meta = {
+      'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientCapabilities': {},
+      'io.modelcontextprotocol/clientInfo': { name: 't', version: '0' },
+    };
+    const discover = (await (
+      await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-protocol-version': '2026-07-28',
+          'mcp-method': 'server/discover',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'server/discover',
+          params: { _meta: meta },
+        }),
+      })
+    ).json()) as { result: { supportedVersions: string[] } };
+    const remotes = card.remotes as { supportedProtocolVersions: string[] }[];
+    expect(remotes[0]?.supportedProtocolVersions).toEqual(
+      expect.arrayContaining(discover.result.supportedVersions),
+    );
+    expect((card.description as string).length).toBeLessThanOrEqual(100);
+    const etag = res.headers.get('etag') ?? '';
+    const again = await fetch(`${base}/mcp/server-card`, { headers: { 'if-none-match': etag } });
+    expect(again.status).toBe(304);
+
+    const catalog = (await (await fetch(`${base}/.well-known/ai-catalog.json`)).json()) as {
+      entries: { type: string; url: string }[];
+    };
+    expect(catalog.entries).toEqual([
+      expect.objectContaining({
+        type: 'application/mcp-server-card+json',
+        url: `${runtime.config.publicUrl}/mcp/server-card`,
+      }),
+    ]);
   });
 });

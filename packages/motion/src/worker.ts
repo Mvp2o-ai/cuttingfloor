@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -8,35 +8,24 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CfError,
-  type CodeDone,
-  type CodeEvent,
-  CodeRequest,
   MOTION_LIMITS,
   type MotionEvent,
   MotionRequest,
   serverBusy,
 } from '@cuttingfloor/schema';
-import { type CodeJob, deliverFile, dropCodeJob, newCodeJob, replyTo, runCode } from './code.ts';
 import { pageDocument } from './document.ts';
 import { reap } from './reap.ts';
 import type { MotionJob } from './render.ts';
 
-// cuttingfloor motion-worker: the sandbox. It renders motion graphics and HTML stills, and runs
-// code.run scripts, for the main server. It runs in its own container with no route out, no data
-// volume and no secrets (§8.1). One job at a time, each in a fresh process group (renders: a
-// fresh browser profile; scripts: their own namespaces), killed when it ends or overruns.
-// POST /render answers with NDJSON progress, then GET /jobs/<id> streams the file once and
-// deletes it. POST /run streams a script's events; the main server answers its tool calls and
-// file requests on /jobs/<id>/reply|files/<rid> and fetches out/ files, all with the job secret.
+// cuttingfloor motion-worker: the sandbox. It renders motion graphics and HTML stills for the
+// main server. It runs in its own container with no route out, no data volume and no secrets
+// (§8.1). One job at a time, each in a fresh process group with a fresh browser profile, killed
+// when it ends or overruns. POST /render answers with NDJSON progress, then GET /jobs/<id>
+// streams the file once and deletes it.
 
 const JOB = fileURLToPath(new URL('./job.ts', import.meta.url));
 const MAX_BODY = Math.ceil(MOTION_LIMITS.maxAssetBytes * 1.4) + MOTION_LIMITS.maxHtmlBytes + 65_536;
 const KEEP_MS = 10 * 60_000;
-/**
- * A finished script keeps the sandbox until the main server has fetched its out/ files and let
- * it go, or this long without a request from it (a main server that went away).
- */
-const CODE_IDLE_MS = 60_000;
 /**
  * How often an open stream hears from its job: its place while it waits, a blank line after. An
  * HTTP client drops a stream idle for its body timeout (undici's is five minutes), and a job can
@@ -68,7 +57,6 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
     string,
     { file: string; dir: string; type: string; timer: NodeJS.Timeout }
   >();
-  const codeJobs = new Map<string, CodeJob>();
   let queue: Promise<void> = Promise.resolve();
   /** What is in the sandbox now and waiting for it, in order: the first one runs. */
   const lineup: Array<{ what: string }> = [];
@@ -113,19 +101,6 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
     return `queued in the sandbox: ${ahead} ahead (${what}); it runs one at a time`;
   }
 
-  /** Nothing another owner made may be on disk while a script runs. */
-  async function purge(): Promise<void> {
-    for (const [id, entry] of outputs) {
-      clearTimeout(entry.timer);
-      outputs.delete(id);
-      await rm(entry.dir, { recursive: true, force: true });
-    }
-    for (const [id, job] of codeJobs) {
-      codeJobs.delete(id);
-      await drop(job);
-    }
-  }
-
   const server = createServer((req, res) => {
     void handle(req, res).catch((error) => {
       if (!res.headersSent)
@@ -154,12 +129,6 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
       await rm(entry.dir, { recursive: true, force: true });
       return;
     }
-    const code =
-      /^\/jobs\/([0-9a-f]{24})(?:\/(reply|files|out|upload)\/([A-Za-z0-9._-]{1,128}))?$/.exec(
-        url.pathname,
-      );
-    if (code) return codeRoute(req, res, code[1] as string, code[2], code[3]);
-    if (req.method === 'POST' && url.pathname === '/run') return run(req, res);
     if (req.method !== 'POST' || url.pathname !== '/render') {
       return json(res, 404, { error: { code: 'not_found', message: 'Not found' } });
     }
@@ -197,123 +166,6 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
       }
       res.end();
     });
-  }
-
-  async function run(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const parsed = CodeRequest.safeParse(await readBody(req, 1024 * 1024));
-    if (!parsed.success) return badRequest(res, parsed.error.issues);
-    res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
-    const send = (e: CodeEvent) => {
-      if (!res.writableEnded) res.write(`${JSON.stringify(e)}\n`);
-    };
-    const abort = new AbortController();
-    res.on('close', () => abort.abort());
-    await enqueue('code.run script', res, async () => {
-      if (abort.signal.aborted) return;
-      await purge();
-      const job = await newCodeJob(scratch);
-      codeJobs.set(job.id, job);
-      send({ job: { id: job.id, secret: job.secret } });
-      let done: CodeDone;
-      try {
-        done = await runCode(job, parsed.data, send, abort.signal);
-      } catch (error) {
-        codeJobs.delete(job.id);
-        await dropCodeJob(job);
-        send({ error: errorBody(error) });
-        res.end();
-        return;
-      }
-      // The next job purges this one's files, so this one keeps the sandbox until the main
-      // server has fetched its out/ files and deleted it (or stops asking).
-      const released = new Promise<void>((resolve) => {
-        job.release = resolve;
-      });
-      idle(job);
-      send({ done });
-      res.end();
-      await released;
-    });
-  }
-
-  /** Starts (or restarts) a finished job's idle clock; it lets the sandbox go when it runs out. */
-  function idle(job: CodeJob): void {
-    if (job.timer) clearTimeout(job.timer);
-    if (!job.release) return;
-    job.timer = setTimeout(() => void drop(job), CODE_IDLE_MS);
-    job.timer.unref();
-  }
-
-  async function drop(job: CodeJob): Promise<void> {
-    codeJobs.delete(job.id);
-    await dropCodeJob(job);
-    const release = job.release;
-    job.release = undefined;
-    release?.();
-  }
-
-  async function codeRoute(
-    req: IncomingMessage,
-    res: ServerResponse,
-    id: string,
-    what: string | undefined,
-    rid: string | undefined,
-  ): Promise<void> {
-    const job = codeJobs.get(id);
-    const given = Buffer.from(String(req.headers['x-cf-secret'] ?? ''));
-    const secret = Buffer.from(job?.secret ?? '');
-    if (!job || given.length !== secret.length || !timingSafeEqual(given, secret)) {
-      return json(res, 404, { error: { code: 'not_found', message: 'No such job' } });
-    }
-    if (req.method === 'DELETE' && !what) {
-      await drop(job);
-      return json(res, 200, { ok: true });
-    }
-    // A request in flight (a big out/ file streaming) holds the idle clock.
-    if (job.timer) clearTimeout(job.timer);
-    try {
-      await jobRoute(req, res, job, what, rid);
-    } finally {
-      idle(job);
-    }
-  }
-
-  async function jobRoute(
-    req: IncomingMessage,
-    res: ServerResponse,
-    job: CodeJob,
-    what: string | undefined,
-    rid: string | undefined,
-  ): Promise<void> {
-    if (req.method === 'POST' && what === 'reply' && rid) {
-      replyTo(job, rid, (await readBody(req, 64 * 1024 * 1024)) as never);
-      return json(res, 200, { ok: true });
-    }
-    if (req.method === 'PUT' && what === 'files' && rid) {
-      await deliverFile(job, rid, String(req.headers['x-cf-name'] ?? rid), req);
-      return json(res, 200, { ok: true });
-    }
-    if (req.method === 'GET' && what === 'out' && rid && job.outputs.has(rid)) {
-      const file = join(job.dir, 'out', rid);
-      const s = await stat(file);
-      res.writeHead(200, {
-        'content-type': 'application/octet-stream',
-        'content-length': s.size,
-      });
-      createReadStream(file).pipe(res);
-      await new Promise<void>((resolve) => res.on('close', resolve));
-      return;
-    }
-    const upload = what === 'upload' && rid ? job.uploads.get(rid) : undefined;
-    if (req.method === 'GET' && upload) {
-      job.uploads.delete(rid as string);
-      const s = await stat(upload);
-      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': s.size });
-      createReadStream(upload).pipe(res);
-      await new Promise<void>((resolve) => res.on('close', resolve));
-      return;
-    }
-    json(res, 404, { error: { code: 'not_found', message: 'Not found' } });
   }
 
   async function render(
