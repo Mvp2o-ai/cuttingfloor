@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
-import { DEMOS, type DemoVideo, finished, length, lengths } from '../../content/demos.ts';
+import { DEMOS, finished, lengths } from '../../content/demos.ts';
 import { Breadcrumbs, Footer, Nav } from '../shell.tsx';
+import { Poster } from './poster.tsx';
 
 export const metadata: Metadata = {
   title: 'AI video editing demos: Claude and ChatGPT editing real clips | cuttingfloor',
@@ -52,26 +53,5 @@ export default function Demos() {
         <Footer />
       </main>
     </>
-  );
-}
-
-function Poster({ v, tag }: { v: DemoVideo; tag: string }) {
-  return (
-    <span className="dm-poster">
-      {v.poster && (
-        // biome-ignore lint/performance/noImgElement: a fixed-size poster, no layout shift
-        <img
-          src={v.poster}
-          alt=""
-          width={v.wide ? 960 : 540}
-          height={v.wide ? 540 : 960}
-          loading="lazy"
-          className={v.wide ? 'wide' : undefined}
-        />
-      )}
-      <span className="label">
-        {tag} · {length(v)}
-      </span>
-    </span>
   );
 }

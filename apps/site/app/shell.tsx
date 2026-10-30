@@ -57,6 +57,7 @@ export function Footer({ cta = 'Start free' }: { cta?: string }) {
           <a href={SIGN_UP}>{cta}</a>
           <a href="/walkthroughs">Walkthroughs</a>
           <a href="/skills">Skills</a>
+          <a href="/alternatives">Alternatives</a>
           <a href={DOCS_URL}>GitHub</a>
           <a href={`mailto:${SUPPORT_EMAIL}`}>Support</a>
           <a href="/status">Status</a>
