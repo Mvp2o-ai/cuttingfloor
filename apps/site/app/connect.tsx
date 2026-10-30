@@ -54,6 +54,7 @@ export function Connect() {
             role="tab"
             aria-selected={i === tab}
             className={'ours' in c && c.ours ? 'ours' : undefined}
+            data-track={`Connect tab: ${c.name}`}
             onClick={() => {
               setTab(i);
               setCopied(false);
@@ -69,6 +70,7 @@ export function Connect() {
           <code>{client.line}</code>
           <button
             type="button"
+            data-track={`Copy connect: ${client.name}`}
             onClick={() => {
               navigator.clipboard.writeText(client.line).then(() => setCopied(true));
             }}

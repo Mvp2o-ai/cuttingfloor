@@ -254,7 +254,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
  && curl -fsSL -o /opt/models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin \
  && echo "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21  /opt/models/ggml-tiny.bin" | sha256sum -c - \
  && curl -fsSL -o /tmp/kokoro.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2 \
- && echo "c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298  /tmp/kokoro.tar.bz2" | sha256sum -c - \
+ && echo "60703707bc05ccd48d60e1eb723f38b07d6e474795a0b6a588d7220400e0f7a4  /tmp/kokoro.tar.bz2" | sha256sum -c - \
  && tar -xjf /tmp/kokoro.tar.bz2 -C /opt/models --no-same-owner && rm /tmp/kokoro.tar.bz2 \
  # An audience laughing then clapping for the sounds tests: "approx 800 laughter and clapter" by
  # lonemonk (freesound.org/s/72844), CC BY 3.0, from Wikimedia Commons.

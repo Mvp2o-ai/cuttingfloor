@@ -1,6 +1,7 @@
 import { Analytics } from '@vercel/analytics/next';
 import type { Metadata } from 'next';
 import { Archivo, JetBrains_Mono, VT323 } from 'next/font/google';
+import { Clicks } from './clicks.tsx';
 import { DESCRIPTION, SITE_URL, TITLE } from './seo.ts';
 import './globals.css';
 
@@ -29,8 +30,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${display.variable} ${pixel.variable} ${mono.variable}`}>
       <body>
         {children}
-        {/* Page views only: no cookies, no ad trackers (privacy page). */}
+        {/* Page views and clicks: no cookies, no ad trackers (privacy page). */}
         <Analytics />
+        <Clicks />
       </body>
     </html>
   );

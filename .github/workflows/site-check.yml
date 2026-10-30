@@ -1,0 +1,36 @@
+name: Site check
+
+# Vercel builds the site on its own, so nothing else notices when Web Analytics stops working
+# (it went unnoticed for days once: switched off in the project, the script 404s and no view
+# is counted). Daily and after every push to main, check that the live site serves the
+# analytics script; a failed run emails the repo's owners.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '41 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analytics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Analytics script
+        run: |
+          # After a push, Vercel may still be building; give it up to five minutes.
+          for i in $(seq 1 30); do
+            ok=1
+            for host in cuttingfloor.ai www.cuttingfloor.ai; do
+              code=$(curl -s -o /dev/null -w '%{http_code}' -L "https://$host/_vercel/insights/script.js" || true)
+              echo "$host: $code"
+              [ "$code" = 200 ] || ok=0
+            done
+            [ "$ok" = 1 ] && exit 0
+            sleep 10
+          done
+          echo "::error::cuttingfloor.ai does not serve /_vercel/insights/script.js: turn Web Analytics on for cuttingfloor-site in Vercel and redeploy"
+          exit 1
