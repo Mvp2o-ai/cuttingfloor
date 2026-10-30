@@ -1,6 +1,7 @@
 {
   "name": "@cuttingfloor/jobs",
   "version": "0.0.0",
+  "license": "AGPL-3.0-only",
   "private": true,
   "description": "Durable job store behind both MCP Tasks and the job.* tools. Job id = task id.",
   "type": "module",

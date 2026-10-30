@@ -1,6 +1,7 @@
 {
   "name": "@cuttingfloor/skills",
   "version": "0.0.0",
+  "license": "AGPL-3.0-only",
   "private": true,
   "description": "The skills library (skills/*.md, one-mcp's playbook format): parsed, checked, and searched by keywords and meaning with a local model.",
   "type": "module",

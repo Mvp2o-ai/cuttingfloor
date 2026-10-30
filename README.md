@@ -113,4 +113,4 @@ node scripts/smoke-motion.ts cuttingfloor:dev   # the sandbox in compose, attack
 
 ## Licence
 
-Not chosen yet. Until a licence is added, all rights are reserved.
+[AGPL-3.0](LICENSE). Use it, change it and run it yourself. If you run a changed version as a service for other people, publish your changes under the same licence. The hosted service at cuttingfloor.ai runs this code.
