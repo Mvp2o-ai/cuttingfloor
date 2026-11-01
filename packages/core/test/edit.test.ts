@@ -901,7 +901,19 @@ describe('compositing', () => {
       },
       {
         tool: 'clip.set_animation',
-        args: { clip_id: 'c3', loop: { name: 'pulse', period_frames: 25 } },
+        args: {
+          clip_id: 'c3',
+          loop: { name: 'pulse', period_frames: 25, from_frame: 5, to_frame: 30 },
+        },
+      },
+      {
+        tool: 'title.add',
+        args: {
+          track_id: 't1',
+          text: 'big news today',
+          style: { max_lines: 2 },
+          spans: [{ first_word: 1, last_word: 1, color: '#FFE000', bold: true }],
+        },
       },
       { tool: 'track.set', args: { track_id: 't1', locked: true } },
     );

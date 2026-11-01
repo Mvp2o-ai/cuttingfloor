@@ -13,6 +13,7 @@ import {
   type StoredEffect,
   type StoredSpeed,
   TEXT_DEFAULTS,
+  TextSpans,
   TextStyle,
   type TimelineDoc,
   type TimelineInput,
@@ -144,7 +145,11 @@ function sourceView(c: StoredClip, tpf: number): Partial<ClipView> {
       return { nested_timeline: c.timeline };
     // The style as it renders: the defaults for every field the clip doesn't set.
     case 'title':
-      return { text: c.text, style: { ...TEXT_DEFAULTS.title, ...c.style } };
+      return {
+        text: c.text,
+        style: { ...TEXT_DEFAULTS.title, ...c.style },
+        ...(c.spans ? { spans: c.spans } : {}),
+      };
     case 'caption':
       return {
         text: c.text,
@@ -158,6 +163,7 @@ function sourceView(c: StoredClip, tpf: number): Partial<ClipView> {
             }
           : {}),
         style: { ...TEXT_DEFAULTS.caption, ...c.style },
+        ...(c.spans ? { spans: c.spans } : {}),
       };
     case 'adjustment':
       return {};
@@ -540,7 +546,17 @@ function textClip(c: ClipView, common: ClipCommon, t: (frames: number) => number
       `Clip ${c.id}: style: ${style.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
     );
   }
-  const styled = style?.data ? { style: style.data } : {};
+  const spans = c.spans === undefined ? undefined : TextSpans.safeParse(c.spans);
+  if (spans && !spans.success) {
+    throw new CfError(
+      'bad_request',
+      `Clip ${c.id}: spans: ${spans.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+    );
+  }
+  const styled = {
+    ...(style?.data ? { style: style.data } : {}),
+    ...(spans?.data?.length ? { spans: spans.data } : {}),
+  };
   if (c.type === 'title') return { ...common, type: 'title', text: c.text, ...styled };
   const words = c.words?.map((w) => ({
     text: w.text,

@@ -10,7 +10,7 @@ import {
 } from './compositing.ts';
 import { StoredEffect } from './effects.ts';
 import { Sequence } from './sequence.ts';
-import { StoredWord, TextStyle } from './text.ts';
+import { StoredWord, TextSpan, TextStyle } from './text.ts';
 
 export const TrackKind = z.enum(['video', 'audio']);
 export type TrackKind = z.infer<typeof TrackKind>;
@@ -119,6 +119,7 @@ export const StoredClip = z.discriminatedUnion('type', [
     type: z.literal('title'),
     text: z.string(),
     style: TextStyle.optional(),
+    spans: z.array(TextSpan).optional(),
   }),
   // An adjustment clip has no picture: its effects apply to everything below it while it runs.
   z.object({ ...clipFields, type: z.literal('adjustment') }),
@@ -128,6 +129,7 @@ export const StoredClip = z.discriminatedUnion('type', [
     text: z.string(),
     words: z.array(StoredWord).optional(),
     style: TextStyle.optional(),
+    spans: z.array(TextSpan).optional(),
   }),
 ]);
 export type StoredClip = z.infer<typeof StoredClip>;
@@ -210,6 +212,10 @@ export const ClipView = z.object({
     .optional()
     .describe('Caption word timings, frames from the clip start'),
   style: settings('text.set style').optional(),
+  spans: z
+    .array(z.record(z.string(), z.unknown()))
+    .optional()
+    .describe('Styled runs, as text.set spans takes them'),
   start: frame.describe('First frame on the timeline'),
   end: frame.describe('Frame after the last one (exclusive)'),
   source: z

@@ -155,7 +155,7 @@ const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<u
   text: {
     title: 'Text styles',
     body: {
-      note: 'Sizes are fractions of the frame height (size) or of the text size (outline, shadow, box padding, letter_spacing); x, y and max_width are fractions of the frame. A style field left out takes its value from defaults (title or caption); timeline.get shows the full style of each text clip. Set any field to change it, or null to turn off an outline, shadow, box or highlight. Highlights need caption word timings.',
+      note: 'Sizes are fractions of the frame height (size) or of the text size (outline, shadow, box padding, letter_spacing); x, y and max_width are fractions of the frame. A style field left out takes its value from defaults (title or caption); timeline.get shows the full style of each text clip. Set any field to change it, or null to turn off an outline, shadow, box or highlight. Highlights need caption word timings. max_lines caps the lines shown at once: longer text shows a screenful at a time, broken into balanced lines by the widths of the font. To style part of a text (one word in another colour, bold or size), give the clip spans: {first_word, last_word, color, bold, italic, underline, size}, words counted from 0.',
       defaults: TEXT_DEFAULTS,
       highlight: HIGHLIGHT_TEXT,
       reveal: REVEAL_TEXT,

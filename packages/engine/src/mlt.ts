@@ -11,13 +11,15 @@ import {
   CfError,
   type NestedDoc,
   type StoredClip,
+  TEXT_DEFAULTS,
   TICKS_PER_SECOND,
   type TimelineDoc,
 } from '@cuttingfloor/schema';
 import { compositeFor, type RenderSpan, rotoFilters, type SourceSize } from './composite.ts';
 import { effectFilters, keysOutColour } from './effects.ts';
+import { faceKey, loadFace, type Measure } from './fontmetrics.ts';
 import { sourceKey } from './sourcepass.ts';
-import { buildAss } from './text.ts';
+import { type AssOptions, buildAss, type TextFace } from './text.ts';
 import {
   applyEffects,
   clipPlan,
@@ -56,6 +58,8 @@ export interface CompileOptions {
   files?: Map<string, string>;
   /** A folder of imported fonts for libass, when text uses them. */
   fontsDir?: string;
+  /** Character widths of the faces text that breaks its own lines (max_lines) is set in. */
+  measure?: AssOptions['measure'];
 }
 
 /**
@@ -326,6 +330,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
               length,
               at: from,
               fontFamily: (id) => options.sources.get(id)?.family,
+              ...(options.measure ? { measure: options.measure } : {}),
             }),
           );
           parts.push(
@@ -601,14 +606,73 @@ export async function writeMltProject(
       await symlink(src.path, join(fontsDir, `${id}${extname(src.path) || '.ttf'}`));
   }
   const files = new Map<string, string>();
+  const measure = options.measure ?? (await textMeasures(doc, options.sources));
   await writeFile(
     join(dir, 'timeline.mlt'),
-    compileMlt(doc, { ...options, files, ...(fontsDir ? { fontsDir } : {}) }),
+    compileMlt(doc, {
+      ...options,
+      files,
+      ...(fontsDir ? { fontsDir } : {}),
+      ...(measure ? { measure } : {}),
+    }),
   );
   for (const [name, content] of files) await writeFile(join(dir, name), content);
   // melt ignores in/out on the root tractor; the range is applied as producer arguments.
   const range = options.range ? [`in=${options.range.start}`, `out=${options.range.end - 1}`] : [];
   return ['-profile', join(dir, 'profile'), 'timeline.mlt', ...range];
+}
+
+/** The face of a text that breaks its own lines, keyed as the widths are looked up. */
+const textFaceKey = (f: TextFace) =>
+  f.mediaId
+    ? `media:${f.mediaId}|${f.bold}|${f.italic}`
+    : faceKey({ family: f.font, bold: f.bold, italic: f.italic });
+
+/**
+ * Loads the character widths of every face that text with max_lines is set in (the timeline's
+ * and its nested timelines'), so the compiler can break its lines; undefined when none has.
+ */
+async function textMeasures(
+  doc: TimelineDoc,
+  sources: Map<string, MltSource>,
+): Promise<AssOptions['measure']> {
+  const faces = new Map<string, TextFace>();
+  const docs = [doc, ...Object.values(doc.nested ?? {})];
+  for (const d of docs)
+    for (const t of d.tracks)
+      for (const c of t.clips) {
+        if (c.type !== 'title' && c.type !== 'caption') continue;
+        const style = { ...TEXT_DEFAULTS[c.type], ...c.style };
+        if (!style.max_lines) continue;
+        const mediaId = style.font_media_id;
+        const family = mediaId ? sources.get(mediaId)?.family : undefined;
+        const font = (family ?? style.font ?? 'Inter').replace(/,/g, ' ');
+        const add = (bold: boolean, italic: boolean) => {
+          const face = { font, bold, italic, ...(family ? { mediaId } : {}) };
+          faces.set(textFaceKey(face), face);
+        };
+        add(Boolean(style.bold), Boolean(style.italic));
+        for (const sp of c.spans ?? [])
+          add(sp.bold ?? Boolean(style.bold), sp.italic ?? Boolean(style.italic));
+      }
+  if (!faces.size) return undefined;
+  const loaded = new Map<string, Measure>();
+  for (const [key, f] of faces) {
+    const file = f.mediaId ? sources.get(f.mediaId)?.path : undefined;
+    try {
+      loaded.set(key, await loadFace({ family: f.font, bold: f.bold, italic: f.italic, file }));
+    } catch (e) {
+      throw new CfError(
+        'render_failed',
+        `Could not read the widths of font ${f.font} to break lines by`,
+        {
+          hint: 'Set font to one at video://catalog/fonts, or import the font file with media.import',
+          detail: { reason: e instanceof Error ? e.message : String(e) },
+        },
+      );
+    }
+  }
+  return (face) => loaded.get(textFaceKey(face));
 }
 
 /** Timeline length in frames. */

@@ -31,6 +31,7 @@ export {
   watchRenderQueue,
 } from './exec.ts';
 export { directDownloadUrl, download, isBlockedAddress } from './fetch.ts';
+export { fontMeasure, loadFace, type Measure } from './fontmetrics.ts';
 export { type ClipPlacement, clipPlacements, type PixelBox } from './geometry.ts';
 export {
   fingerprint,
