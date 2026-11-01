@@ -51,7 +51,8 @@ describe.skipIf(!engines)('picture and sound', () => {
   let mediaDir: string;
 
   async function call(name: string, args: Record<string, unknown>) {
-    return (await client.callTool({ name, arguments: args })) as {
+    // A frame of an in-between copy is answered once the copy is made: minutes on a busy runner.
+    return (await client.callTool({ name, arguments: args }, { timeout: 600_000 })) as {
       isError?: boolean;
       structuredContent?: Record<string, unknown>;
       content: Array<{ type: string; text?: string; data?: string }>;
