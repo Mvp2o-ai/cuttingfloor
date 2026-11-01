@@ -142,11 +142,13 @@ let exitHook = false;
 export function spawnEngine(
   bin: string,
   args: string[],
-  options: SpawnOptions,
+  options: Omit<SpawnOptions, 'shell'>,
 ): ChildProcessWithoutNullStreams {
-  // The streams a caller asked for as pipes are there; it reads only those.
+  // The streams a caller asked for as pipes are there; it reads only those. Never a shell: the
+  // arguments go to the engine as they are (AGENTS.md).
   const child = spawn(bin, args, {
     ...options,
+    shell: false,
     detached: process.platform !== 'win32',
   }) as ChildProcessWithoutNullStreams;
   live.add(child);
