@@ -5,6 +5,7 @@ import { basename } from 'node:path';
 import { Readable } from 'node:stream';
 import { providerHeader } from '@cuttingfloor/credentials';
 import { download } from '@cuttingfloor/engine';
+import { jobAlive } from '@cuttingfloor/jobs';
 import { CfError } from '@cuttingfloor/schema';
 
 // sync. labs (sync.so), the lip-sync provider behind create.lipsync, called with the user's own
@@ -275,6 +276,8 @@ export async function syncLipsync(
     gen = await api<Generation>(`/v2/generate/${encodeURIComponent(gen.id)}?wait=true&timeout=10`, {
       method: 'GET',
     });
+    // The provider answered: the job is alive, though the generation may sit at one status.
+    jobAlive();
     if (gen.status !== 'COMPLETED' && gen.status !== 'FAILED' && gen.status !== 'REJECTED')
       await pause(2000, req.signal);
   }

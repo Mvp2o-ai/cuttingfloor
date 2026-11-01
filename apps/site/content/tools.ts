@@ -373,6 +373,12 @@ export const TOOLS: ToolEntry[] = [
     longRunning: 'always',
   },
   {
+    name: 'create.upscaled',
+    title: 'Add resolution',
+    readOnly: false,
+    longRunning: 'always',
+  },
+  {
     name: 'create.stems',
     title: 'Separate voice and music',
     readOnly: false,
@@ -454,6 +460,10 @@ export const ANALYSES = [
   'speech',
   'loudness',
   'sounds',
+  'speakers',
+  'voice',
+  'colour',
+  'picture',
 ];
 export const EXPORT_PRESETS = [
   'web_1080p_h264',
@@ -487,6 +497,8 @@ export const VIDEO_EFFECTS = [
   'glitch',
   'denoise',
   'chroma_key',
+  'lens_correction',
+  'directional_blur',
 ];
 export const AUDIO_EFFECTS = [
   'equalizer',
@@ -501,6 +513,8 @@ export const AUDIO_EFFECTS = [
   'highpass',
   'lowpass',
   'telephone',
+  'dereverb',
+  'channels',
 ];
 export const TRANSITIONS = [
   'dissolve',
@@ -539,7 +553,16 @@ export const BLEND_MODES = [
   'difference',
   'exclusion',
 ];
-export const MASK_SHAPES = ['rectangle', 'ellipse', 'linear', 'mirror', 'heart', 'star', 'polygon'];
+export const MASK_SHAPES = [
+  'rectangle',
+  'ellipse',
+  'linear',
+  'mirror',
+  'heart',
+  'star',
+  'polygon',
+  'matte',
+];
 export const ANIMATIONS = [
   'fade',
   'zoom_in',

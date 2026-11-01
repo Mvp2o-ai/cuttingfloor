@@ -1208,6 +1208,177 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       ).toEqual(['blue', 'red']);
     }, 60_000);
 
+    it('selects with a matte, hides the selection, and moves lasso points by keyframes', async () => {
+      // The disc media as the selection: alpha 1 within 200 source px of the centre.
+      const matte = await withEdit('clip.set_mask', {
+        clip_id: 'c4',
+        mask: { shape: 'matte', media_id: ids.disc },
+      });
+      expect(
+        await look(matte, 10, [
+          [640, 360],
+          [640, 600],
+          [300, 100],
+          [100, 360],
+        ]),
+      ).toEqual(['red', 'red', 'green', 'green']);
+      const hidden = await withEdit('clip.set_mask', {
+        clip_id: 'c4',
+        mask: { shape: 'matte', media_id: ids.disc, mode: 'hide' },
+      });
+      expect(
+        await look(hidden, 10, [
+          [640, 360],
+          [300, 100],
+          [100, 360],
+        ]),
+      ).toEqual(['green', 'red', 'green']);
+      // A square that slides right over 40 frames. Points are fractions of the fitted frame
+      // (the whole 1280×720 here; the 4:3 picture fills x 160–1120 of it).
+      const square = (x: number) => [
+        [x, 0.4],
+        [x + 0.2, 0.4],
+        [x + 0.2, 0.6],
+        [x, 0.6],
+      ];
+      const lasso = await withEdit('clip.set_mask', {
+        clip_id: 'c4',
+        mask: {
+          shape: 'polygon',
+          points: {
+            keyframes: [
+              { frame: 0, points: square(0.2) },
+              { frame: 40, points: square(0.6) },
+            ],
+          },
+        },
+      });
+      // Frame 0: x 256–512; frame 20: x 512–768; frame 40: x 768–1024.
+      for (const [frame, expected] of [
+        [0, ['red', 'green', 'green']],
+        [20, ['green', 'red', 'green']],
+        [40, ['green', 'green', 'red']],
+      ] as const)
+        expect(
+          await look(lasso, frame, [
+            [384, 360],
+            [640, 360],
+            [896, 360],
+          ]),
+        ).toEqual(expected);
+      const view = await ok<{ tracks: Array<{ clips: Array<{ id: string; mask?: unknown }> }> }>(
+        client,
+        'timeline.get',
+        { timeline_id: lasso },
+      );
+      expect(view.tracks[1]?.clips[0]?.mask).toMatchObject({
+        shape: 'polygon',
+        points: { keyframes: [{ frame: 0 }, { frame: 40 }] },
+      });
+      // Keyframes need the same number of corners; a matte needs a picture.
+      const bad = await call(client, 'clip.set_mask', {
+        timeline_id: base,
+        clip_id: 'c4',
+        mask: {
+          shape: 'polygon',
+          points: {
+            keyframes: [
+              { frame: 0, points: square(0.2) },
+              { frame: 40, points: square(0.6).slice(0, 3) },
+            ],
+          },
+        },
+      });
+      expect(bad.isError).toBe(true);
+      expect(JSON.stringify(bad.structured)).toMatch(/same number of corners/);
+    }, 180_000);
+
+    it('fills a selection from its surroundings in every frame', async () => {
+      const m = env.mediaDir;
+      // Blue with a white box in the middle (x 270–370, y 190–290 of 640×480), 10 frames.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=0x1030d0:size=640x480:rate=25,drawbox=x=270:y=190:w=100:h=100:c=white:t=fill',
+        '-frames:v',
+        '10',
+        '-pix_fmt',
+        'yuv420p',
+        join(m, 'boxed.mp4'),
+      ]);
+      const boxed = (await importMedia({ path: join(m, 'boxed.mp4') })).media_id;
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'fill',
+        sequence: { width: 640, height: 480, fps: { num: 25, den: 1 } },
+        tracks: { video: 1, audio: 0 },
+      });
+      const placed = await ok<{ timeline_id: string; clip_id: string }>(client, 'clip.add', {
+        timeline_id,
+        track_id: 't1',
+        media_id: boxed,
+        av: 'video',
+        source: { in: 0, out: 10 },
+        preview: 'none',
+      });
+      const filled = await ok<{ timeline_id: string }>(client, 'clip.set_mask', {
+        timeline_id: placed.timeline_id,
+        clip_id: placed.clip_id,
+        mask: { shape: 'rectangle', width: 0.2, height: 0.25, mode: 'fill' },
+        preview: 'none',
+      });
+      // The fill is made in the background; until then renders say so.
+      const first = await call(client, 'render.frames', {
+        timeline_id: filled.timeline_id,
+        frames: [0],
+      });
+      expect(first.isError).toBe(true);
+      expect(JSON.stringify(first.structured)).toMatch(/media_not_ready/);
+      for (const frame of [0, 5, 9]) {
+        let res = first;
+        for (const until = Date.now() + 400_000; Date.now() < until; ) {
+          res = await call(client, 'render.frames', {
+            timeline_id: filled.timeline_id,
+            frames: [frame],
+            layout: 'single',
+            format: 'png',
+            long_edge: 640,
+          });
+          if (!res.isError) break;
+          expect(JSON.stringify(res.structured)).toMatch(/media_not_ready/);
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+        expect(res.isError).toBe(false);
+        const image = Buffer.from(
+          (res.content.find((c) => c.type === 'image')?.data as string) ?? '',
+          'base64',
+        );
+        // The box is gone: its middle and its edges are the blue around it.
+        for (const [x, y] of [
+          [320, 240],
+          [275, 195],
+          [365, 285],
+          [100, 100],
+        ] as const)
+          expect(colour(await pixel(image, x, y)), `frame ${frame} at ${x},${y}`).toBe('blue');
+      }
+      // A matte or a fill needs a clip of media.
+      const titled = await ok<{ timeline_id: string; clip_id: string }>(client, 'title.add', {
+        timeline_id: filled.timeline_id,
+        track_id: 't1',
+        text: 'Hi',
+        at_frame: 20,
+        duration_frames: 10,
+        preview: 'none',
+      });
+      const refused = await call(client, 'clip.set_mask', {
+        timeline_id: titled.timeline_id,
+        clip_id: titled.clip_id,
+        mask: { shape: 'ellipse', mode: 'fill' },
+      });
+      expect(refused.isError).toBe(true);
+    }, 600_000);
+
     it("keeps a picture's own transparency under a mask", async () => {
       const { timeline_id } = await ok<{ timeline_id: string }>(client, 'clip.add', {
         timeline_id: base,
@@ -2149,6 +2320,130 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(late.right).toBeGreaterThan(late.left + 10);
     }, 120_000);
 
+    it('makes a frame of an edit or of a video into a still image media', async () => {
+      const t = await onGreen([
+        {
+          tool: 'title.add',
+          args: {
+            track_id: 't2',
+            text: 'STILL',
+            at_frame: 0,
+            duration_frames: 50,
+            style: { color: '#FF0000', size: 0.3, shadow: null },
+          },
+        },
+      ]);
+      const still = (s: Record<string, unknown>) =>
+        importMedia({ still: s } as unknown as Record<string, string>);
+      const edit = await still({ timeline_id: t, frame: 10 });
+      const got = await ok<Record<string, unknown>>(client, 'media.get', {
+        media_id: edit.media_id,
+      });
+      expect(got.origin).toEqual({ from: 'still', timeline_id: t, frame: 10 });
+      expect(got).toMatchObject({ kind: 'image', extension: '.png', width: 1280, height: 720 });
+      // Placed in an edit of its own, it shows what the edit showed at that frame.
+      const placed = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'placed still',
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+        tracks: { video: 1, audio: 0 },
+      });
+      const shown = await ok<{ timeline_id: string }>(client, 'clip.add', {
+        timeline_id: placed.timeline_id,
+        preview: 'none',
+        track_id: 't1',
+        media_id: edit.media_id,
+        duration_frames: 25,
+      });
+      const image = await frame(shown.timeline_id, 5);
+      expect(colour(await pixel(image, 20, 20))).toBe('green');
+      // The red title in the middle, as the edit rendered it.
+      const middle = await regionStats(image, '600:150:340:285');
+      const corner = await regionStats(image, '200:100:0:0');
+      expect(middle.v).toBeGreaterThan(corner.v + 30);
+      // A frame of a video, at the video's own size.
+      const fromVideo = await still({ media_id: green, frame: 30 });
+      const info = await ok<Record<string, unknown>>(client, 'media.get', {
+        media_id: fromVideo.media_id,
+      });
+      expect(info.origin).toEqual({ from: 'still', media_id: green, frame: 30 });
+      expect(info).toMatchObject({ kind: 'image', width: 1280, height: 720 });
+      // Asking twice gives the same media.
+      expect((await still({ timeline_id: t, frame: 10 })).media_id).toBe(edit.media_id);
+      const past = await call(client, 'media.import', {
+        source: { still: { timeline_id: t, frame: 500 } },
+      });
+      expect(past.isError).toBe(true);
+      expect(JSON.stringify(past.structured)).toContain('past the end');
+    }, 120_000);
+
+    it('shows a caption one line at a time with max_lines, one word in its own colour', async () => {
+      const t = await onGreen([
+        {
+          tool: 'caption.add',
+          args: {
+            track_id: 't2',
+            segments: [
+              {
+                start_frame: 0,
+                end_frame: 50,
+                text: 'AAAA BBBB CCCC DDDD',
+                words: ['AAAA', 'BBBB', 'CCCC', 'DDDD'].map((text, i) => ({
+                  text,
+                  start_frame: [0, 12, 25, 37][i] as number,
+                  end_frame: [12, 25, 37, 50][i] as number,
+                })),
+                spans: [{ first_word: 1, last_word: 1, color: '#FF0000' }],
+              },
+            ],
+            // About 210 px a word at 72 px: two fit a 640 px line, three don't.
+            style: { size: 0.1, max_width: 0.5, max_lines: 1, outline: null },
+          },
+        },
+      ]);
+      /** Pixels of a region (crop w:h:x:y) that are not the green: text, by colour. */
+      const ink = async (image: Buffer, crop: string) => {
+        const file = join(env.dir, `ink-${Math.random().toString(36).slice(2)}.png`);
+        await writeFile(file, image);
+        const { stdout } = await exec(
+          'ffmpeg',
+          ['-v', 'error', '-i', file, '-vf', `crop=${crop},format=rgb24`, '-f', 'rawvideo', '-'],
+          { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 },
+        );
+        let white = 0;
+        let red = 0;
+        for (let i = 0; i + 2 < stdout.length; i += 3) {
+          const [r, g, b] = [stdout[i] ?? 0, stdout[i + 1] ?? 0, stdout[i + 2] ?? 0];
+          if (r > 200 && g > 200 && b > 200) white++;
+          else if (r > 200 && g < 60 && b < 60) red++;
+        }
+        return { white, red };
+      };
+      const LINE = '640:60:320:585';
+      const ABOVE = '640:60:320:510';
+      const early = await frame(t, 10);
+      const late = await frame(t, 40);
+      // Each page is one line, at the bottom: nothing above it.
+      expect(await ink(early, ABOVE)).toEqual({ white: 0, red: 0 });
+      expect(await ink(late, ABOVE)).toEqual({ white: 0, red: 0 });
+      // The first page has BBBB in red; the second, from frame 25, is CCCC DDDD in white.
+      const first = await ink(early, LINE);
+      const second = await ink(late, LINE);
+      expect(first.red).toBeGreaterThan(1000);
+      expect(first.white).toBeGreaterThan(1000);
+      expect(second.red).toBe(0);
+      expect(second.white).toBeGreaterThan(2000);
+      const all = await ok<{ timeline_id: string }>(client, 'text.set', {
+        timeline_id: t,
+        preview: 'none',
+        track_id: 't2',
+        style: { max_lines: null },
+      });
+      // Without max_lines it wraps to two lines at once: AAAA BBBB above CCCC DDDD.
+      const both = await frame(all.timeline_id, 40);
+      expect((await ink(both, ABOVE)).red).toBeGreaterThan(1000);
+      expect((await ink(both, LINE)).white).toBeGreaterThan(2000);
+    }, 120_000);
+
     it('reads SRT, types a title out, and sets text in an imported font', async () => {
       const srt =
         '1\n00:00:00,000 --> 00:00:01,000\nFirst\n\n2\n00:00:01,000 --> 00:00:02,000\nSecond\n';
@@ -2529,6 +2824,86 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       const lut = await importMedia({ path: join(m, 'blue.cube') });
       expect(lut).toMatchObject({ kind: 'lut', status: 'ready' });
       ids.lut = lut.media_id;
+    }, 180_000);
+
+    it('takes noise out of a noisy picture with denoise, more with more strength', async () => {
+      // Mid grey with grain that changes every frame (a spread of about 8 levels).
+      const file = join(env.mediaDir, 'noisy.mp4');
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=0x808080:size=1280x720:rate=25,noise=alls=12:allf=t',
+        '-t',
+        '2',
+        '-pix_fmt',
+        'yuv420p',
+        '-crf',
+        '4',
+        file,
+      ]);
+      const noisy = (await importMedia({ path: file })).media_id;
+      /** Spread of the brightness over the frame (its standard deviation, 0–255). */
+      const spread = async (params: Record<string, unknown> | null, f = 20) => {
+        const t = await build([
+          {
+            tool: 'clip.add',
+            args: { track_id: 't1', media_id: noisy, av: 'video', source: { in: 0, out: 50 } },
+          },
+          ...(params
+            ? [
+                {
+                  tool: 'filter.add',
+                  args: { clip_id: { $ref: 'ops[0].clip_id' }, name: 'denoise', params },
+                },
+              ]
+            : []),
+        ]);
+        const res = await call(client, 'render.frames', {
+          timeline_id: t,
+          frames: [f],
+          layout: 'single',
+          format: 'png',
+          size: 'full',
+        });
+        if (res.isError) throw new Error(JSON.stringify(res.structured));
+        const png = join(env.dir, `noise-${Math.random().toString(36).slice(2)}.png`);
+        await writeFile(png, Buffer.from((res.content[0]?.data as string) ?? '', 'base64'));
+        const { stdout } = await exec(
+          'ffmpeg',
+          [
+            '-v',
+            'error',
+            '-i',
+            png,
+            '-vf',
+            'crop=600:320:340:200,format=gray',
+            '-f',
+            'rawvideo',
+            '-',
+          ],
+          { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 },
+        );
+        let sum = 0;
+        let sq = 0;
+        for (const v of stdout) {
+          sum += v;
+          sq += v * v;
+        }
+        const mean = sum / stdout.length;
+        return Math.sqrt(sq / stdout.length - mean * mean);
+      };
+      const before = await spread(null);
+      const light = await spread({ strength: 4 });
+      const strong = await spread({ strength: 16 });
+      // Measured through MLT: 7.6 levels before, 5.8 at 4 and 3.5 at 16.
+      expect(before).toBeGreaterThan(6);
+      expect(light).toBeLessThan(before * 0.85);
+      expect(strong).toBeLessThan(light * 0.75);
+      // The same frame comes out the same as part of a longer run (no frame history).
+      expect(Math.abs((await spread({ strength: 4 }, 0)) - light)).toBeLessThan(0.5);
+      // Strength 0 leaves the picture as it is.
+      expect(Math.abs((await spread({ strength: 0 })) - before)).toBeLessThan(before * 0.05);
     }, 180_000);
 
     it('greys a clip, keys out a green screen and applies a LUT', async () => {
@@ -3034,6 +3409,87 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(await alpha(cut, 320, 260)).toBeGreaterThan(200); // the ball
       expect(await alpha(cut, 20, 20)).toBeLessThan(60); // the backdrop
       expect(await alpha(cut, 620, 460)).toBeLessThan(60);
+    }, 600_000);
+
+    it('cuts out one item from its bounds and follows it through a video', async () => {
+      const m = env.mediaDir;
+      // A red disc that moves right past a blue square that stays put, 2 s at 10 fps, 320×240.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        "color=c=0xd8d8d0:size=320x240:rate=10,format=rgb24,geq=r='if(lt(hypot(X-(60+60*T)\\,Y-120)\\,30)\\,220\\,if(between(X\\,200\\,260)*between(Y\\,90\\,150)\\,30\\,216))':g='if(lt(hypot(X-(60+60*T)\\,Y-120)\\,30)\\,30\\,if(between(X\\,200\\,260)*between(Y\\,90\\,150)\\,60\\,216))':b='if(lt(hypot(X-(60+60*T)\\,Y-120)\\,30)\\,30\\,if(between(X\\,200\\,260)*between(Y\\,90\\,150)\\,200\\,208))'",
+        '-t',
+        '2',
+        '-pix_fmt',
+        'yuv420p',
+        join(m, 'two.mp4'),
+      ]);
+      const two = await importMedia({ path: join(m, 'two.mp4') });
+      // The disc by its box at 0.5 s (centre x 90): not the main subject, not the square.
+      const disc = await create('create.cutout', {
+        media_id: two.media_id,
+        region: { at_seconds: 0.5, x: 60 / 320, y: 90 / 240, w: 60 / 320, h: 60 / 240 },
+      });
+      expect(disc).toMatchObject({ kind: 'video', width: 320, height: 240 });
+      const mov = (await env.runtime.media.get('local', disc.media_id)).file as string;
+      /** Alpha at a point of frame n. */
+      const alphaAt = async (n: number, x: number, y: number) => {
+        const { stdout } = await exec(
+          'ffmpeg',
+          [
+            '-v',
+            'error',
+            '-i',
+            mov,
+            '-vf',
+            `select=eq(n\\,${n}),crop=1:1:${x}:${y},format=rgba`,
+            '-frames:v',
+            '1',
+            '-f',
+            'rawvideo',
+            '-',
+          ],
+          { encoding: 'buffer' },
+        );
+        return stdout[3] ?? -1;
+      };
+      // Followed both ways from 0.5 s: at the start (x 60) and the end (x 174).
+      expect(await alphaAt(0, 60, 120)).toBeGreaterThan(200);
+      expect(await alphaAt(19, 174, 120)).toBeGreaterThan(200);
+      expect(await alphaAt(19, 60, 120)).toBeLessThan(60);
+      expect(await alphaAt(0, 230, 120)).toBeLessThan(60); // the square
+      expect(await alphaAt(0, 10, 10)).toBeLessThan(60); // the backdrop
+      // A point on the square picks the square instead.
+      const square = await create('create.cutout', {
+        media_id: two.media_id,
+        region: { at_seconds: 1, points: [{ x: 230 / 320, y: 0.5 }] },
+      });
+      const sq = (await env.runtime.media.get('local', square.media_id)).file as string;
+      const { stdout } = await exec(
+        'ffmpeg',
+        [
+          '-v',
+          'error',
+          '-i',
+          sq,
+          '-vf',
+          'crop=1:1:230:120,format=rgba',
+          '-frames:v',
+          '1',
+          '-f',
+          'rawvideo',
+          '-',
+        ],
+        { encoding: 'buffer' },
+      );
+      expect(stdout[3]).toBeGreaterThan(200);
+      // A box needs all four numbers.
+      const half = await call(client, 'create.cutout', {
+        media_id: two.media_id,
+        region: { at_seconds: 0, x: 0.1 },
+      });
+      expect(half.isError).toBe(true);
     }, 600_000);
 
     it.skipIf(!chromium)(
@@ -3741,6 +4197,417 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     }, 300_000);
   });
 
+  describe('measurement', () => {
+    async function measure(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+      const started = await ok<{ job_id: string }>(client, 'media.analyze', args);
+      const done = (await waitJob(started.job_id, 600_000)) as {
+        result?: Record<string, unknown>;
+        error?: unknown;
+      };
+      if (!done.result) throw new Error(`analyze failed: ${JSON.stringify(done)}`);
+      return done.result;
+    }
+
+    /** A 1280×720, 25 fps timeline with one media laid on its first video (or audio) track. */
+    async function laid(mediaId: string, at = 0, av: 'linked' | 'video' | 'audio' = 'linked') {
+      const { timeline_id, tracks } = await ok<{
+        timeline_id: string;
+        tracks: Array<{ id: string; kind: string }>;
+      }>(client, 'timeline.create', {
+        name: 'measure',
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+      });
+      const track = tracks.find((t) => t.kind === (av === 'audio' ? 'audio' : 'video'));
+      return ok<{ timeline_id: string; clip_id: string }>(client, 'clip.add', {
+        timeline_id,
+        track_id: track?.id,
+        media_id: mediaId,
+        at_frame: at,
+        av,
+        preview: 'none',
+      });
+    }
+
+    it('gives each beat its onset strength, so the accented hits stand out', async () => {
+      // A click every 0.5 s; every fourth one (from 0.25 s) at full level, the rest at a fifth.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        "aevalsrc=exprs='if(lt(mod(t-0.25\\,0.5)\\,0.02)\\,if(lt(mod(t-0.25\\,2)\\,0.02)\\,1\\,0.2)*sin(2*PI*1500*t)\\,0)':s=44100:d=12",
+        '-c:a',
+        'pcm_s16le',
+        join(env.mediaDir, 'accents.wav'),
+      ]);
+      const media = await importMedia({ path: join(env.mediaDir, 'accents.wav') });
+      const res = await measure({ media_id: media.media_id, kind: 'beats' });
+      const beats = res.beats as { beats: number[]; strengths: number[] };
+      expect(beats.strengths).toHaveLength(beats.beats.length);
+      const inside = beats.beats.map((t, i) => ({ t, s: beats.strengths[i] as number }));
+      const bar = (t: number) => {
+        const d = (((t - 0.25) % 2) + 2) % 2;
+        return Math.min(d, 2 - d);
+      };
+      const accented = inside.filter(({ t }) => t > 1 && t < 11 && bar(t) < 0.06);
+      const plain = inside.filter(({ t }) => t > 1 && t < 11 && bar(t) > 0.3);
+      expect(accented.length).toBeGreaterThan(3);
+      expect(Math.min(...accented.map((b) => b.s))).toBeGreaterThan(
+        Math.max(...plain.map((b) => b.s)),
+      );
+      // Paged from media.get, strengths stay beside their beats.
+      const page = await ok<{ beats: { beats: number[]; strengths: number[] } }>(
+        client,
+        'media.get',
+        { media_id: media.media_id, include: ['beats'], from_seconds: 4, to_seconds: 8 },
+      );
+      expect(page.beats.strengths).toEqual(
+        page.beats.beats.map((t) => beats.strengths[beats.beats.indexOf(t)]),
+      );
+    }, 300_000);
+
+    it('transcribes only the stretch asked for, in media seconds', async () => {
+      const m = env.mediaDir;
+      await exec('espeak-ng', [
+        '-s',
+        '140',
+        '-w',
+        join(m, 'one.wav'),
+        'The quick brown fox jumps.',
+      ]);
+      await exec('espeak-ng', ['-s', '140', '-w', join(m, 'two.wav'), 'Pack my box with jugs.']);
+      await ff([
+        '-i',
+        join(m, 'one.wav'),
+        '-i',
+        join(m, 'two.wav'),
+        '-filter_complex',
+        '[0]apad=pad_dur=1.5[a];[a][1]concat=n=2:v=0:a=1',
+        join(m, 'ranged.wav'),
+      ]);
+      const media = await importMedia({ path: join(m, 'ranged.wav') });
+      const first = Number((await ffprobe(join(m, 'one.wav'))).format.duration);
+      const from = first + 0.75;
+      const res = await measure({
+        media_id: media.media_id,
+        kind: 'transcript',
+        model: 'tiny',
+        language: 'en',
+        from_seconds: from,
+      });
+      const t = res.transcript as {
+        from: number;
+        until: number | null;
+        words: Array<{ text: string; start: number }>;
+      };
+      expect(t.from).toBe(from);
+      expect(t.until).toBeNull();
+      const text = t.words.map((w) => w.text.toLowerCase()).join(' ');
+      expect(text).toMatch(/box/);
+      expect(text).not.toMatch(/fox/);
+      expect(t.words.every((w) => w.start >= from - 0.05)).toBe(true);
+    }, 600_000);
+
+    it('tells two voices apart, and gives each transcript word its speaker', async () => {
+      const lines = [
+        ['am_adam', 'Hello and welcome to the show. Today we are talking about rockets.'],
+        ['af_heart', 'Thanks for having me. I have worked on rockets for twenty years.'],
+        ['am_adam', 'That is wonderful. Tell us about the hardest part of your job.'],
+        ['af_heart', 'The hardest part is waiting for the weather to clear.'],
+      ];
+      const files: string[] = [];
+      for (const [voice, text] of lines) {
+        const started = await ok<{ job_id?: string; media_id: string }>(
+          client,
+          'create.voiceover',
+          { text, voice },
+        );
+        if (started.job_id) await waitJob(started.job_id, 300_000);
+        files.push((await env.runtime.media.get('local', started.media_id)).file as string);
+      }
+      const durations = await Promise.all(
+        files.map(async (f) => Number((await ffprobe(f)).format.duration)),
+      );
+      await ff([
+        ...files.flatMap((f) => ['-i', f]),
+        '-filter_complex',
+        '[0]apad=pad_dur=0.8[p0];[1]apad=pad_dur=0.8[p1];[2]apad=pad_dur=0.8[p2];[p0][p1][p2][3]concat=n=4:v=0:a=1',
+        '-ar',
+        '16000',
+        join(env.mediaDir, 'talk.wav'),
+      ]);
+      const media = await importMedia({ path: join(env.mediaDir, 'talk.wav') });
+      const missing = await call(client, 'media.analyze', {
+        media_id: media.media_id,
+        kind: 'speakers',
+      });
+      expect(missing.structured.code).toBe('bad_request');
+      const res = await measure({ media_id: media.media_id, kind: 'speakers', speakers: 2 });
+      const speakers = res.speakers as {
+        speakers: number;
+        turns: Array<{ start: number; end: number; speaker: number }>;
+      };
+      expect(speakers.speakers).toBe(2);
+      // Turn starts: 0, then after each line and its 0.8 s pause.
+      const starts = durations.reduce<number[]>(
+        (acc, d, i) =>
+          i ? [...acc, (acc[i - 1] as number) + (durations[i - 1] as number) + 0.8] : [0],
+        [],
+      );
+      const who = (t: number) => speakers.turns.find((x) => x.start <= t && x.end >= t)?.speaker;
+      const mids = starts.map((s, i) => s + (durations[i] as number) / 2);
+      expect(mids.map(who)).toEqual([0, 1, 0, 1]);
+
+      await measure({
+        media_id: media.media_id,
+        kind: 'transcript',
+        model: 'tiny',
+        language: 'en',
+      });
+      const got = await ok<{
+        transcript: {
+          words: Array<{ text: string; start: number; end: number; speaker: number | null }>;
+        };
+      }>(client, 'media.get', { media_id: media.media_id, include: ['transcript'] });
+      const of = (re: RegExp) => got.transcript.words.find((w) => re.test(w.text))?.speaker;
+      expect(of(/welcome/i)).toBe(0);
+      expect(of(/having/i)).toBe(1);
+      expect(of(/wonderful/i)).toBe(0);
+      expect(of(/weather/i)).toBe(1);
+    }, 900_000);
+
+    it('measures pitch and level over time, on media and in an edit', async () => {
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=220:sample_rate=48000:duration=2',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=330:sample_rate=48000:duration=2',
+        '-filter_complex',
+        '[0][1]concat=n=2:v=0:a=1',
+        join(env.mediaDir, 'pitch.wav'),
+      ]);
+      const media = await importMedia({ path: join(env.mediaDir, 'pitch.wav') });
+      const res = await measure({ media_id: media.media_id, kind: 'voice' });
+      const voice = res.voice as {
+        summary: { pitch_hz: { median: number; p10: number; p90: number }; words: number | null };
+        frames: Array<{ time: number; pitch_hz: number | null }>;
+      };
+      expect(voice.summary.pitch_hz.p10).toBeCloseTo(220, -1);
+      expect(voice.summary.pitch_hz.p90).toBeCloseTo(330, -1);
+      expect(voice.summary.words).toBeNull();
+      expect(res.summary).toMatchObject({ pitch_hz: voice.summary.pitch_hz });
+      // In an edit, starting 1 s in: timeline seconds.
+      const { timeline_id } = await laid(media.media_id, 25, 'audio');
+      const tl = await measure({
+        timeline_id,
+        kind: 'voice',
+        from_seconds: 2.4,
+        until_seconds: 4.5,
+      });
+      const frames = (tl.voice as typeof voice).frames;
+      // 2.4 s is frame 60 at 25 fps; a range starts on the frame it falls in.
+      expect(frames[0]?.time).toBeCloseTo(2.4, 2);
+      const at = (t: number) => frames.find((f) => Math.abs(f.time - t) < 0.051)?.pitch_hz;
+      expect(at(2.7)).toBeCloseTo(220, -1);
+      expect(at(4.2)).toBeCloseTo(330, -1);
+    }, 300_000);
+
+    it('measures colour of frames and regions, and every frame of a picture, in media and in an edit', async () => {
+      // Left half red, right half blue for 1 s; one white frame; then the same again.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=red:size=320x180:rate=25:d=1,drawbox=x=160:y=0:w=160:h=180:color=blue:t=fill[a];color=c=white:size=320x180:rate=25:d=0.04[b];color=c=red:size=320x180:rate=25:d=1,drawbox=x=160:y=0:w=160:h=180:color=blue:t=fill[c];[a][b][c]concat=n=3:v=1:a=0[out0]',
+        '-c:v',
+        'libx264',
+        '-crf',
+        '10',
+        '-pix_fmt',
+        'yuv420p',
+        join(env.mediaDir, 'flash.mp4'),
+      ]);
+      const media = await importMedia({ path: join(env.mediaDir, 'flash.mp4') });
+      const colour = await measure({
+        media_id: media.media_id,
+        kind: 'colour',
+        at_seconds: [0.5],
+        regions: {
+          left: { x: 0, y: 0, w: 150, h: 180, units: 'pixels' },
+          right: { x: 0.55, y: 0, w: 0.45, h: 1 },
+        },
+      });
+      type Stats = { r: { mean: number }; b: { mean: number }; pixels: { w: number } };
+      const regions = (colour.colour as { frames: Array<{ regions: Record<string, Stats> }> })
+        .frames[0]?.regions as Record<string, Stats>;
+      expect(colour.picture_size).toEqual({ width: 320, height: 180 });
+      expect(regions.left?.pixels.w).toBe(150);
+      expect(regions.left?.r.mean).toBeGreaterThan(240);
+      expect(regions.left?.b.mean).toBeLessThan(15);
+      expect(regions.right?.b.mean).toBeGreaterThan(240);
+      expect(regions.frame?.r.mean).toBeGreaterThan(110);
+      expect(regions.frame?.r.mean).toBeLessThan(145);
+      const outside = await call(client, 'media.analyze', {
+        media_id: media.media_id,
+        kind: 'colour',
+        regions: { wide: { x: 200, y: 0, w: 200, h: 10, units: 'pixels' } },
+      });
+      expect(outside.structured.code).toBe('bad_request');
+
+      const series = await measure({ media_id: media.media_id, kind: 'picture' });
+      const cols = (series.picture as { columns: Record<string, number[]> }).columns;
+      const flash = cols.yavg?.indexOf(Math.max(...(cols.yavg ?? []))) as number;
+      expect(cols.time?.[flash]).toBeCloseTo(1, 2);
+      expect(cols.ydif?.[flash]).toBeGreaterThan(100);
+      expect(cols.ydif?.[flash + 2]).toBeLessThan(5);
+      const piece = await ok<{
+        picture: { columns: Record<string, number[]> };
+        pages: Record<string, { returned: number }>;
+      }>(client, 'media.get', {
+        media_id: media.media_id,
+        include: ['picture'],
+        from_seconds: 0.9,
+        to_seconds: 1.1,
+      });
+      expect(piece.picture.columns.time?.length).toBe(piece.pages.picture?.returned);
+      expect(piece.picture.columns.time?.every((t) => t > 0.9 && t < 1.1)).toBe(true);
+
+      // The same in an edit placed 2 s in, grade included: a grey effect leaves no colour.
+      const { timeline_id, clip_id } = await laid(media.media_id, 50, 'video');
+      const grey = await ok<{ timeline_id: string }>(client, 'filter.add', {
+        timeline_id,
+        clip_id,
+        name: 'saturation',
+        params: { amount: 0 },
+        preview: 'none',
+      });
+      const graded = await measure({
+        timeline_id: grey.timeline_id,
+        kind: 'colour',
+        at_seconds: [2.5],
+        regions: { left: { x: 0.05, y: 0.25, w: 0.1, h: 0.5 } },
+      });
+      const g = (
+        graded.colour as {
+          frames: Array<{ regions: Record<string, { r: { mean: number }; b: { mean: number } }> }>;
+        }
+      ).frames[0]?.regions.left;
+      expect(graded.picture_size).toEqual({ width: 1280, height: 720 });
+      expect(Math.abs((g?.r.mean ?? 0) - (g?.b.mean ?? 99))).toBeLessThan(12);
+      const tlSeries = await measure({
+        timeline_id,
+        kind: 'picture',
+        from_seconds: 2.4,
+        until_seconds: 3.5,
+      });
+      const tc = (tlSeries.picture as { columns: Record<string, number[]> }).columns;
+      const peak = tc.yavg?.indexOf(Math.max(...(tc.yavg ?? []))) as number;
+      expect(tc.time?.[0]).toBeCloseTo(2.4, 2);
+      expect(tc.time?.[peak]).toBeCloseTo(3, 2);
+    }, 600_000);
+
+    it('finds faces and cuts in an edit as it renders', async () => {
+      const m = env.mediaDir;
+      await exec('cp', [join(import.meta.dirname, 'fixtures', 'face.jpg'), join(m, 'face2.jpg')]);
+      await ff([
+        '-loop',
+        '1',
+        '-i',
+        join(m, 'face2.jpg'),
+        '-t',
+        '2',
+        '-r',
+        '25',
+        '-vf',
+        'scale=480:600',
+        '-pix_fmt',
+        'yuv420p',
+        join(m, 'face2.mp4'),
+      ]);
+      const face = await importMedia({ path: join(m, 'face2.mp4') });
+      const { timeline_id } = await laid(face.media_id, 25, 'video');
+      const found = await measure({ timeline_id, kind: 'faces' });
+      const frames = (found.faces as { frames: Array<{ time: number; faces: unknown[] }> }).frames;
+      expect(frames.filter((f) => f.time < 0.9 && f.faces.length)).toHaveLength(0);
+      expect(frames.filter((f) => f.time > 1.1 && f.faces.length).length).toBeGreaterThan(4);
+      const cuts = await measure({ timeline_id, kind: 'scenes', threshold: 10 });
+      expect((cuts.scenes as number[]).some((t) => Math.abs(t - 1) < 0.1)).toBe(true);
+      const sound = await call(client, 'media.analyze', { timeline_id, kind: 'beats' });
+      expect(sound.structured.code).toBe('bad_request');
+    }, 300_000);
+
+    it('says where a transformed clip shows, in sequence pixels', async () => {
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=red:size=640x480:rate=25:d=1',
+        '-pix_fmt',
+        'yuv420p',
+        join(env.mediaDir, 'four3.mp4'),
+      ]);
+      const media = await importMedia({ path: join(env.mediaDir, 'four3.mp4') });
+      const { timeline_id, clip_id } = await laid(media.media_id, 0, 'video');
+      const covered = await ok<{
+        placements: Array<{ clip_id: string; frames: Array<Record<string, unknown>> }>;
+      }>(client, 'clip.set_transform', { timeline_id, clip_id, fit: 'cover', preview: 'none' });
+      expect(covered.placements).toEqual([
+        {
+          clip_id,
+          complete: true,
+          frames: [
+            {
+              frame: 0,
+              picture: { x: 0, y: -120, w: 1280, h: 960 },
+              rotation: 0,
+              opacity: 1,
+              visible: { x: 0, y: 0, w: 1280, h: 720 },
+              source: { x: 0, y: 60, w: 640, h: 360 },
+            },
+          ],
+        },
+      ]);
+      const blended = await ok<Record<string, unknown>>(client, 'clip.set_blend', {
+        timeline_id,
+        clip_id,
+        mode: 'multiply',
+        preview: 'none',
+      });
+      expect(blended).not.toHaveProperty('placements');
+    }, 120_000);
+
+    it('fingerprints a render the way media.get fingerprints its import', async () => {
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=320x180:rate=25:d=2',
+        '-pix_fmt',
+        'yuv420p',
+        join(env.mediaDir, 'print.mp4'),
+      ]);
+      const source = await importMedia({ path: join(env.mediaDir, 'print.mp4') });
+      const { timeline_id } = await laid(source.media_id, 0, 'video');
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id,
+        preset: 'review_h264',
+        range: { start: 0, end: 25 },
+      });
+      const done = (await waitJob(started.job_id, 300_000)) as {
+        result: { sha256: string; fingerprint: string };
+      };
+      expect(done.result.sha256).toMatch(/^[0-9a-f]{64}$/);
+      const imported = await importMedia({ job_id: started.job_id });
+      const info = await ok<{ fingerprint: string }>(client, 'media.get', {
+        media_id: imported.media_id,
+      });
+      expect(info.fingerprint).toBe(done.result.fingerprint);
+    }, 300_000);
+  });
+
   describe('look', () => {
     const KEY = 'ts-e2e-secret-key';
     let jev: Server;
@@ -4082,6 +4949,55 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         questions: { same: { type: 'noul', instructions: 'Is `shot` dark?' } },
       });
       expect(late.structured).toMatchObject({ code: 'bad_request' });
+    }, 120_000);
+
+    it('judge.ask and look take the frames of an edit as it renders', async () => {
+      const c = await keyed(KEY);
+      const { timeline_id, tracks } = await ok<{
+        timeline_id: string;
+        tracks: Array<{ id: string; kind: string }>;
+      }>(c, 'timeline.create', {
+        name: 'judged',
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+      });
+      const added = await ok<{ timeline_id: string }>(c, 'clip.add', {
+        timeline_id,
+        track_id: tracks.find((t) => t.kind === 'video')?.id,
+        media_id: media.av,
+        av: 'video',
+        preview: 'none',
+      });
+      seen.length = 0;
+      const got = await ok<{ answers: Record<string, unknown> }>(c, 'judge.ask', {
+        state: { edit: { timeline_id: added.timeline_id, at_seconds: 2 } },
+        questions: { same: { type: 'noul', instructions: 'Is `edit` a test pattern?' } },
+      });
+      expect(got.answers.same).toEqual({ noul: 0.81 });
+      const body = seen[0]?.body as {
+        state: Record<string, string>;
+        assets: Record<string, { data_base64: string }>;
+      };
+      expect(
+        jpegSize(Buffer.from(body.assets[body.state.edit as string]?.data_base64 ?? '', 'base64')),
+      ).toEqual({ width: 512, height: 288, baseline: true });
+      const late = await call(c, 'judge.ask', {
+        state: { edit: { timeline_id: added.timeline_id, at_seconds: 60 } },
+        questions: { same: { type: 'noul', instructions: 'Is `edit` dark?' } },
+      });
+      expect(late.structured).toMatchObject({ code: 'bad_request' });
+
+      const started = await ok<{ job_id: string }>(c, 'media.analyze', {
+        timeline_id: added.timeline_id,
+        kind: 'look',
+        at_seconds: [1, 3, 5],
+        questions: { bars: { type: 'noul', instructions: 'Is `frame` a test pattern?' } },
+      });
+      const done = (await waitJob(started.job_id)) as {
+        result: { timeline_id: string; frames: number; look: { frames: Array<{ time: number }> } };
+      };
+      expect(done.result.timeline_id).toBe(added.timeline_id);
+      expect(done.result.frames).toBe(3);
+      expect(done.result.look.frames.map((f) => f.time)).toEqual([1, 3, 5]);
     }, 120_000);
 
     it('media.seek finds the stretches that match, in media and in an edit as it renders', async () => {

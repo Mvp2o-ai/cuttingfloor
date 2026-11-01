@@ -50,6 +50,9 @@ export interface Transcript {
   text: string;
   /** The model that aligned word times to the sound; null when they are whisper's own. */
   aligned_by?: string | null;
+  /** Media seconds transcribed, when only part of the media was; absent for all of it. */
+  from?: number;
+  until?: number | null;
   words: TranscriptWord[];
 }
 
@@ -119,6 +122,9 @@ export async function transcribe(
     align?: boolean;
     /** Media seconds, to keep word times inside. */
     duration?: number;
+    /** Transcribe only this stretch, in media seconds; word times stay media seconds. */
+    from?: number;
+    until?: number;
     signal?: AbortSignal;
     onProgress?: (fraction: number, message: string) => void;
   },
@@ -128,6 +134,9 @@ export async function transcribe(
     onProgress: (f) => options.onProgress?.(0.4 * f, `downloading the ${options.model} model`),
   });
   const dir = await mkdtemp(join(tmpdir(), 'cf-whisper-'));
+  // A stretch is transcribed as its own sound, then its times move back onto the media's clock.
+  const from = options.from ?? 0;
+  const ranged = options.from !== undefined || options.until !== undefined;
   try {
     options.onProgress?.(0.4, 'extracting sound');
     await run(
@@ -137,6 +146,8 @@ export async function transcribe(
         '-nostdin',
         '-protocol_whitelist',
         'file',
+        ...(from ? ['-ss', String(from)] : []),
+        ...(options.until !== undefined ? ['-to', String(options.until)] : []),
         '-i',
         `file:${file}`,
         '-vn',
@@ -166,6 +177,8 @@ export async function transcribe(
         '-of',
         'out',
         '-np',
+        // Progress lines (every 5%) on stderr, so a long transcript shows it is moving.
+        '-pp',
         '-t',
         String(Math.max(1, Math.min(8, availableParallelism()))),
       ],
@@ -173,6 +186,10 @@ export async function transcribe(
         cwd: dir,
         heavy: true,
         timeoutMs: 6 * 60 * 60_000,
+        onLine: (line) => {
+          const m = /progress\s*=\s*(\d+)\s*%/.exec(line);
+          if (m) options.onProgress?.(0.45 + 0.4 * Math.min(1, Number(m[1]) / 100), 'transcribing');
+        },
         ...(options.signal ? { signal: options.signal } : {}),
       },
     );
@@ -198,13 +215,19 @@ export async function transcribe(
       });
     }
     const language = json.result?.language ?? options.language ?? 'unknown';
-    const clamp = (t: number) =>
-      options.duration === undefined ? t : Math.min(options.duration, Math.max(0, t));
+    // Times on the stretch's own clock until the end, where they move to media seconds.
+    const span =
+      options.duration === undefined
+        ? options.until === undefined
+          ? undefined
+          : options.until - from
+        : Math.min(options.until ?? options.duration, options.duration) - from;
+    const clamp = (t: number) => (span === undefined ? t : Math.min(span, Math.max(0, t)));
     const align = options.align !== false && ALIGN_LANGUAGES.has(language) && words.length > 0;
     if (align) options.onProgress?.(0.85, 'aligning words to the sound');
     const timed = align
-      ? await alignTranscriptWords(file, words, {
-          ...(options.duration !== undefined ? { duration: options.duration } : {}),
+      ? await alignTranscriptWords(ranged ? join(dir, 'speech.wav') : file, words, {
+          ...(span !== undefined ? { duration: span } : {}),
           ...(options.signal ? { signal: options.signal } : {}),
           onProgress: (f) => options.onProgress?.(0.85 + 0.15 * f, 'aligning words to the sound'),
         })
@@ -214,12 +237,16 @@ export async function transcribe(
           end: clamp(w.end),
           timing_confidence: null,
         }));
+    const shift = (t: number) => Math.round((t + from) * 1000) / 1000;
     return {
       model: options.model,
       language,
       text: words.map((w) => w.text).join(' '),
       aligned_by: align ? SPEECH_MODELS.align.name : null,
-      words: timed,
+      ...(ranged ? { from, until: options.until ?? null } : {}),
+      words: ranged
+        ? timed.map((w) => ({ ...w, start: shift(w.start), end: shift(w.end) }))
+        : timed,
     };
   } finally {
     await rm(dir, { recursive: true, force: true });

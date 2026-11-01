@@ -1,6 +1,5 @@
-import { spawn } from 'node:child_process';
 import { CfError } from '@cuttingfloor/schema';
-import { BIN } from './exec.ts';
+import { BIN, KILL_SETTLE_MS, killTree, spawnEngine } from './exec.ts';
 
 // Faces and tracking for media.analyze: FFmpeg decodes frames at a working size and pipes them
 // into cf-vision (OpenCV's YuNet detector and CSRT tracker, tools/vision), which answers with
@@ -53,8 +52,8 @@ function pipeline(
   signal?: AbortSignal,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const ff = spawn(BIN.ffmpeg, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
-    const cv = spawn(BIN.vision, visionArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const ff = spawnEngine(BIN.ffmpeg, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const cv = spawnEngine(BIN.vision, visionArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
     ff.stdout.pipe(cv.stdin);
     cv.stdin.on('error', () => undefined);
     let errors = '';
@@ -72,11 +71,16 @@ function pipeline(
       for (const l of lines) if (l.trim()) onLine(l);
     });
     const kill = () => {
-      ff.kill('SIGKILL');
-      cv.kill('SIGKILL');
+      killTree(ff);
+      killTree(cv);
     };
     const timer = setTimeout(kill, LIMIT_MS);
-    signal?.addEventListener('abort', kill, { once: true });
+    // A cancel answers even if a pipe stays open after the kill.
+    const abort = () => {
+      kill();
+      setTimeout(() => reject(new CfError('cancelled', 'Cancelled')), KILL_SETTLE_MS).unref();
+    };
+    signal?.addEventListener('abort', abort, { once: true });
     let ffCode: number | null = null;
     ff.on('close', (code) => {
       ffCode = code;
@@ -86,7 +90,7 @@ function pipeline(
     );
     cv.on('close', (code) => {
       clearTimeout(timer);
-      signal?.removeEventListener('abort', kill);
+      signal?.removeEventListener('abort', abort);
       if (signal?.aborted) reject(new CfError('cancelled', 'Cancelled'));
       else if (code === 0 && (ffCode === 0 || ffCode === null)) resolve();
       else

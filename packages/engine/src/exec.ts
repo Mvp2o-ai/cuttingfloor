@@ -1,5 +1,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { spawn } from 'node:child_process';
+import {
+  type ChildProcess,
+  type ChildProcessWithoutNullStreams,
+  type StdioOptions,
+  spawn,
+} from 'node:child_process';
 import { availableParallelism } from 'node:os';
 import { CfError, serverBusy } from '@cuttingfloor/schema';
 
@@ -14,8 +19,10 @@ export const BIN = {
   segment: process.env.CUTTINGFLOOR_SEGMENT ?? 'cf-segment',
   zip: 'zip',
   tts: process.env.CUTTINGFLOOR_TTS ?? 'sherpa-onnx-offline-tts',
+  diarize: process.env.CUTTINGFLOOR_DIARIZE ?? 'sherpa-onnx-offline-speaker-diarization',
   tar: 'tar',
   fcList: 'fc-list',
+  fcMatch: 'fc-match',
 };
 
 export interface RunOptions {
@@ -125,6 +132,79 @@ export function watchRenderQueue<T>(
   return queueWatch.run(watch, work);
 }
 
+/** Process groups of engines running now, killed if this process exits first. */
+const live = new Set<ChildProcess>();
+let exitHook = false;
+
+/**
+ * Spawns an engine in a process group of its own, so killing it kills anything it started too
+ * (a helper process holding its pipes open would otherwise keep it "running" after a kill).
+ */
+export function spawnEngine(
+  bin: string,
+  args: string[],
+  options: { cwd?: string | undefined; env?: NodeJS.ProcessEnv | undefined; stdio: StdioOptions },
+): ChildProcessWithoutNullStreams {
+  // The streams a caller asked for as pipes are there; it reads only those. Only these options
+  // pass, so an engine never runs through a shell: its arguments reach it as they are (AGENTS.md).
+  const child = spawn(bin, args, {
+    cwd: options.cwd,
+    env: options.env,
+    stdio: options.stdio,
+    detached: process.platform !== 'win32',
+  }) as ChildProcessWithoutNullStreams;
+  live.add(child);
+  child.once('exit', () => live.delete(child));
+  child.once('error', () => live.delete(child));
+  if (!exitHook) {
+    exitHook = true;
+    process.once('exit', () => {
+      for (const c of live) killTree(c);
+    });
+  }
+  return child;
+}
+
+/** SIGKILL to a spawned engine and its whole process group. */
+export function killTree(child: ChildProcess): void {
+  if (child.pid && process.platform !== 'win32') {
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+      return;
+    } catch {
+      // The group is gone already, or it was never a group leader: kill the process itself.
+    }
+  }
+  try {
+    child.kill('SIGKILL');
+  } catch {
+    // Already gone.
+  }
+}
+
+/** After a kill, how long to wait for an engine's pipes to close before giving up on them. */
+export const KILL_SETTLE_MS = 3000;
+
+/**
+ * Waits for a render slot for heavy work that runs its own processes (a pipeline); resolves
+ * with its release, which the caller must call.
+ */
+export async function heavySlot(signal?: AbortSignal): Promise<() => void> {
+  const watch = queueWatch.getStore();
+  let waited = false;
+  const release = await renderSlot(
+    signal,
+    watch
+      ? (ahead) => {
+          waited = true;
+          watch.queued(ahead);
+        }
+      : undefined,
+  );
+  if (waited) watch?.started();
+  return release;
+}
+
 /**
  * Runs an engine binary with an argument list (never a shell). Rejects with engine_error, or
  * server_busy when the machine has no memory or processes left for it.
@@ -155,22 +235,47 @@ export async function run(
 }
 
 function spawnRun(bin: string, args: string[], options: RunOptions): Promise<RunResult> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve, rawReject) => {
     if (options.signal?.aborted) {
-      reject(new CfError('cancelled', 'Cancelled'));
+      rawReject(new CfError('cancelled', 'Cancelled'));
       return;
     }
-    const child = spawn(bin, args, {
+    let done = false;
+    const reject = (error: unknown) => {
+      if (done) return;
+      done = true;
+      rawReject(error);
+    };
+    const child = spawnEngine(bin, args, {
       cwd: options.cwd,
       // MLT's Qt modules (qtblend) refuse to load without a display variable; Qt itself renders
       // offscreen and never connects to it.
       env: { DISPLAY: ':0', ...process.env, QT_QPA_PLATFORM: 'offscreen', ...options.env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    const out = child.stdout;
+    const err = child.stderr;
     let stdout = '';
     let stderr = '';
     let pending = '';
-    const killer = () => child.kill('SIGKILL');
+    // Settles even if something still holds the pipes open after the kill.
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const killer = () => {
+      killTree(child);
+      settle ??= setTimeout(() => {
+        cleanup();
+        out.destroy();
+        err.destroy();
+        reject(
+          options.signal?.aborted
+            ? new CfError('cancelled', 'Cancelled')
+            : new CfError('engine_error', `${bin} did not stop when killed`, {
+                hint: 'The engine took too long and was stopped',
+              }),
+        );
+      }, KILL_SETTLE_MS);
+      settle.unref();
+    };
     options.signal?.addEventListener('abort', killer, { once: true });
     let timedOut = false;
     const timer = options.timeoutMs
@@ -179,10 +284,10 @@ function spawnRun(bin: string, args: string[], options: RunOptions): Promise<Run
           killer();
         }, options.timeoutMs)
       : undefined;
-    child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+    out.setEncoding('utf8').on('data', (chunk: string) => {
       stdout += chunk;
     });
-    child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+    err.setEncoding('utf8').on('data', (chunk: string) => {
       stderr += chunk;
       if (stderr.length > 1_000_000) stderr = stderr.slice(-500_000);
       if (options.onLine) {
@@ -215,6 +320,7 @@ function spawnRun(bin: string, args: string[], options: RunOptions): Promise<Run
       if (options.signal?.aborted) {
         reject(new CfError('cancelled', 'Cancelled'));
       } else if (code === 0) {
+        done = true;
         resolve({ stdout, stderr });
       } else {
         const tail = stderr.trim().split('\n').slice(-6).join('\n');
@@ -243,6 +349,7 @@ function spawnRun(bin: string, args: string[], options: RunOptions): Promise<Run
     });
     function cleanup() {
       if (timer) clearTimeout(timer);
+      if (settle) clearTimeout(settle);
       options.signal?.removeEventListener('abort', killer);
     }
   });

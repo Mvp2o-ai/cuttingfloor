@@ -4,12 +4,15 @@ import { join } from 'node:path';
 import {
   CUTOUT_MODELS,
   type CutoutModel,
+  type CutoutRegion,
   cutout,
   excerptPicture,
   excerptSound,
   KOKORO,
   type MediaRecord,
   mediaInfo,
+  notReady,
+  type Probe,
   renderMatte,
   renderPicture,
   renderSource,
@@ -17,6 +20,8 @@ import {
   speak,
   splitStems,
   stabilize,
+  UPSCALE_MODEL,
+  upscale,
   voiceWords,
 } from '@cuttingfloor/engine';
 import type { JobLane } from '@cuttingfloor/jobs';
@@ -30,15 +35,18 @@ import {
   CreateStemsInput,
   CreateStemsResult,
   CreateStillInput,
+  CreateUpscaledInput,
   CreateVoiceoverInput,
   MediaInfo,
   MOTION_LIMITS,
   MotionRequest,
   SOUNDS_LIMITS,
   type Stem,
+  UPSCALE_LIMITS,
   withJob,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
+import type * as z from 'zod/v4';
 import { admitJob } from '../meter.ts';
 import { renderInSandbox } from '../motion.ts';
 import { guard, jobReply, ok } from '../result.ts';
@@ -47,6 +55,50 @@ import { SYNC_URL, syncKeyRequired, syncLipsync } from '../sync.ts';
 
 // create.*: new media from a recipe. Each is a job whose result is a media_id; the same recipe
 // returns the same media while it lives. HTML runs only in the motion sandbox.
+
+/** create.cutout's region as the model takes it: a frame, and a box and/or points. */
+function cutoutRegion(
+  region: z.infer<typeof CreateCutoutInput>['region'],
+  p: Probe,
+): CutoutRegion | undefined {
+  if (!region) return undefined;
+  const hasBox = [region.x, region.y, region.w, region.h].filter((v) => v !== undefined).length;
+  if (hasBox && hasBox < 4) {
+    throw new CfError('bad_request', 'region: a box needs all of x, y, w and h', {
+      hint: 'Give the top-left x, y and the size w, h as fractions of the picture, or leave the box out and give points',
+    });
+  }
+  if (!hasBox && !region.points?.length) {
+    throw new CfError('bad_request', 'region needs a box (x, y, w, h) or points', {
+      hint: "Give the item's bounds, e.g. a box from judge.ask or media.analyze look, or a point on it",
+    });
+  }
+  const duration = p.duration ?? 0;
+  if (p.kind !== 'image' && duration && region.at_seconds >= duration) {
+    throw new CfError('bad_request', `region.at_seconds ${region.at_seconds} is past the end`, {
+      hint: `The media is ${duration.toFixed(2)} s long; give a time where the item is on screen`,
+    });
+  }
+  const fps = p.video?.fps;
+  const frame = fps && p.kind !== 'image' ? Math.floor((region.at_seconds * fps.num) / fps.den) : 0;
+  const round = (v: number) => Math.round(v * 10_000) / 10_000;
+  return {
+    frame,
+    ...(hasBox
+      ? {
+          box: {
+            x: round(region.x as number),
+            y: round(region.y as number),
+            w: round(Math.min(region.w as number, 1 - (region.x as number))),
+            h: round(Math.min(region.h as number, 1 - (region.y as number))),
+          },
+        }
+      : {}),
+    ...(region.points?.length
+      ? { points: region.points.map((q) => ({ x: round(q.x), y: round(q.y), keep: q.keep })) }
+      : {}),
+  };
+}
 
 /** Bumped when the output of a recipe would change, so old cached results aren't reused. */
 const RECIPE_VERSION = 'frames-2';
@@ -80,10 +132,15 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       progress: (f: number, m: string) => void,
       signal: AbortSignal,
     ) => Promise<MediaRecord>,
-    /** sandbox: the work is the sandbox's, which queues it there. heavy: a long model run. */
+    /**
+     * The resource its work holds. sandbox: the sandbox's, which queues it there. heavy: a long
+     * model run. remote: waiting on a provider.
+     */
     lane: JobLane = 'engine',
     /** The media it is made from, for its origin. */
     from: string[] = [],
+    /** Seconds of media it reads, when known (short work, and its stall limit). */
+    work?: number,
   ) {
     const owner = deps.owner();
     const store = rt.jobs.store;
@@ -118,14 +175,13 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
     const job = await store.create({
       owner,
       tool,
-      meta: { media_id: record.media_id },
+      meta: { media_id: record.media_id, ...(from.length ? { inputs: from.join(',') } : {}) },
       statusMessage: `making ${record.media_id}`,
       ...key,
     });
-    if ('created' in record.source) {
-      record.source.job_id = job.id;
-      await rt.media.save(owner, record);
-    }
+    if ('created' in record.source) record.source.job_id = job.id;
+    record.job_id = job.id;
+    await rt.media.save(owner, record);
     rt.jobs.start(
       job,
       async ({ signal, progress }) => {
@@ -144,7 +200,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         await rt.media.rememberRecipe(owner, hash, done.media_id);
         return ok(mediaInfo(done)) as never;
       },
-      { lane, ...admit },
+      { lane, ...admit, ...(work ? { work } : {}) },
     );
     return jobReply(job, ctx);
   }
@@ -160,7 +216,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       const record = await rt.media.get(owner, a.media_id);
       const kind = record.probe?.kind;
       if (record.status !== 'ready' || !record.file) {
-        throw new CfError('media_not_ready', `Media ${a.media_id} is still importing`);
+        throw notReady(record, 'a page asset');
       }
       if (kind !== 'image' && kind !== 'font') {
         throw new CfError(
@@ -219,6 +275,8 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       annotations: annotations('Create a motion graphic'),
     },
     guard(async (args, ctx) => {
+      const over = motionOverBudget(args.width, args.height, args.fps, args.duration_seconds);
+      if (over) throw over;
       const files = await assets(args.assets);
       const request: MotionRequest = {
         kind: 'motion',
@@ -382,7 +440,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Cut out a subject',
       description:
-        'A subject without its background, local: ProRes 4444 with alpha and the sound, or a PNG, to lay over a new background. subject any (BiRefNet) cuts out products, animals or objects; people (MODNet) is fast enough for long video. Long-running: a task, or {job_id, media_id} for job.get.',
+        'A subject without its background, local: ProRes 4444 with alpha and the sound, or a PNG, to lay over a new background. subject any (BiRefNet) cuts out products, animals or objects; people (MODNet) is fast enough for long video. region: one item by its bounds, followed; also a clip.set_mask matte. Long-running: a task, or {job_id, media_id} for job.get.',
       inputSchema: CreateCutoutInput,
       outputSchema: withJob(MediaInfo),
       annotations: annotations('Cut out a subject'),
@@ -392,19 +450,24 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       const source = await rt.media.get(owner, args.media_id);
       const p = source.probe;
       if (source.status !== 'ready' || !p) {
-        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`);
+        throw notReady(source, 'create.cutout');
       }
       if (!p.video || (p.kind !== 'video' && p.kind !== 'image')) {
         throw new CfError('bad_request', `Media ${args.media_id} has no picture to cut out`);
       }
       const picture = renderPicture(source, 'export');
       const image = p.kind === 'image';
-      const model: CutoutModel =
-        args.subject === 'any' || (args.subject === 'auto' && image) ? 'birefnet' : 'modnet';
+      const region = cutoutRegion(args.region, p);
+      const model: CutoutModel = region
+        ? 'edgetam'
+        : args.subject === 'any' || (args.subject === 'auto' && image)
+          ? 'birefnet'
+          : 'modnet';
       const recipe = {
         model: CUTOUT_MODELS[model],
         source: source.fingerprint ?? source.media_id,
-        smooth: image ? 0 : args.smooth,
+        smooth: image || region ? 0 : args.smooth,
+        ...(region ? { region } : {}),
       };
       return create(
         ctx,
@@ -425,13 +488,20 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
               duration: p.duration,
             },
             dest,
-            { model, smooth: args.smooth, signal, onProgress: (f) => progress(f, 'matting') },
+            {
+              model,
+              smooth: args.smooth,
+              ...(region ? { region } : {}),
+              signal,
+              onProgress: (f) => progress(f, region ? 'following the item' : 'matting'),
+            },
           );
           return dest;
         },
         undefined,
         'heavy',
         [source.media_id],
+        p.duration ?? undefined,
       );
     }),
   );
@@ -451,7 +521,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       const source = await rt.media.get(owner, args.media_id);
       const p = source.probe;
       if (source.status !== 'ready' || !p) {
-        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`);
+        throw notReady(source, 'create.stabilized');
       }
       if (p.kind !== 'video' || !p.video) {
         throw new CfError('bad_request', `Media ${args.media_id} is not a video`, {
@@ -487,7 +557,102 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
           return dest;
         },
         undefined,
+        // vid.stab is FFmpeg on the CPU, through the render slots: engine work, not a model.
+        'engine',
+        [source.media_id],
+        p.duration ?? undefined,
+      );
+    }),
+  );
+
+  server.registerTool(
+    'create.upscaled',
+    {
+      title: 'Add resolution',
+      description: `A larger copy of low-resolution video or an image with detail drawn in, local: Real-ESRGAN (realesr-general-x4v3, on the CPU) makes each frame four times the size, then it is resized to scale. Slow: on 8 cores about 1 s a frame for 320x180, 2.5 s for 640x360. Sources up to 1280x720, results up to ${UPSCALE_LIMITS.longEdge} px on the long edge. New media (ProRes with the sound, or a PNG) to put in place of the original (clip.replace keeps its place and timing). Long-running: a task, or {job_id, media_id} for job.get.`,
+      inputSchema: CreateUpscaledInput,
+      outputSchema: withJob(MediaInfo),
+      annotations: annotations('Add resolution'),
+    },
+    guard(async (args, ctx) => {
+      const owner = deps.owner();
+      const source = await rt.media.get(owner, args.media_id);
+      const p = source.probe;
+      if (source.status !== 'ready' || !p) {
+        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`);
+      }
+      if (!p.video || (p.kind !== 'video' && p.kind !== 'image')) {
+        throw new CfError('bad_request', `Media ${args.media_id} has no picture to upscale`);
+      }
+      const picture = renderPicture(source, 'export');
+      const width = picture.width ?? p.video.width;
+      const height = picture.height ?? p.video.height;
+      const image = p.kind === 'image';
+      const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+      const outWidth = even(width * args.scale);
+      const outHeight = even(height * args.scale);
+      const frames = image
+        ? 1
+        : (p.video.frames ?? Math.ceil(((p.duration ?? 0) * p.video.fps.num) / p.video.fps.den));
+      if (width * height > UPSCALE_LIMITS.sourcePixels) {
+        throw new CfError(
+          'limit_exceeded',
+          `create.upscaled takes pictures up to 1280x720; this one is ${width}x${height}`,
+          { hint: 'It is for low-resolution sources; scale a larger one with clip.set_transform' },
+        );
+      }
+      if (Math.max(outWidth, outHeight) > UPSCALE_LIMITS.longEdge) {
+        throw new CfError(
+          'limit_exceeded',
+          `scale ${args.scale} would make ${outWidth}x${outHeight}; the long edge goes up to ${UPSCALE_LIMITS.longEdge}`,
+          {
+            hint: `Use scale ${Math.floor((UPSCALE_LIMITS.longEdge / Math.max(width, height)) * 100) / 100} or less`,
+          },
+        );
+      }
+      if (width * height * frames > UPSCALE_LIMITS.work) {
+        const most = Math.floor(UPSCALE_LIMITS.work / (width * height));
+        throw new CfError(
+          'limit_exceeded',
+          `This media has ${frames} frames of ${width}x${height}; create.upscaled takes up to ${most} at that size`,
+          {
+            hint: 'Export the part you need with export.video, import it and upscale that',
+          },
+        );
+      }
+      const recipe = {
+        model: UPSCALE_MODEL,
+        source: source.fingerprint ?? source.media_id,
+        width: outWidth,
+        height: outHeight,
+        denoise: args.denoise,
+      };
+      return create(
+        ctx,
+        'create.upscaled',
+        { ...args, name: args.name ?? `${source.name} upscaled` },
+        recipe,
+        async (dir, progress, signal) => {
+          const dest = join(dir, image ? 'source.png' : 'source.mov');
+          progress(0, 'upscaling');
+          await upscale(picture.path, dest, {
+            width,
+            height,
+            outWidth,
+            outHeight,
+            denoise: args.denoise,
+            image,
+            audio: Boolean(p.audio),
+            fps: image ? null : (p.video?.fps ?? null),
+            frames,
+            signal,
+            onProgress: (f) => progress(f, 'upscaling'),
+          });
+          return dest;
+        },
+        undefined,
         'heavy',
+        [source.media_id],
       );
     }),
   );
@@ -511,9 +676,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       const source = await rt.media.get(owner, args.media_id);
       const p = source.probe;
       if (source.status !== 'ready' || !p) {
-        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`, {
-          hint: 'Wait for its media.import job to finish',
-        });
+        throw notReady(source, 'create.stems');
       }
       if (!p.audio) {
         throw new CfError('bad_request', `Media ${args.media_id} has no sound to separate`);
@@ -584,10 +747,17 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       const job = await store.create({
         owner,
         tool: 'create.stems',
-        meta: Object.fromEntries([...fresh].map(([s, r]) => [`stem_${s}`, r.media_id])),
+        meta: {
+          inputs: source.media_id,
+          ...Object.fromEntries([...fresh].map(([s, r]) => [`stem_${s}`, r.media_id])),
+        },
         statusMessage: `separating ${missing.join(', ')}`,
         ...key,
       });
+      for (const record of fresh.values()) {
+        if ('created' in record.source) record.source.job_id = job.id;
+        await rt.media.save(owner, record);
+      }
       rt.jobs.start(
         job,
         async ({ signal, progress }) => {
@@ -619,7 +789,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
           }
           return reply(done);
         },
-        { lane: 'heavy', ...admit },
+        { lane: 'heavy', ...admit, ...(p.duration ? { work: p.duration } : {}) },
       );
       return jobReply(job, ctx);
     }),
@@ -629,11 +799,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
   const ready = async (id: string, want: 'video' | 'audio', what: string) => {
     const record = await rt.media.get(deps.owner(), id);
     const p = record.probe;
-    if (record.status !== 'ready' || !p) {
-      throw new CfError('media_not_ready', `Media ${id} is still importing`, {
-        hint: 'Wait for its media.import job to finish',
-      });
-    }
+    if (record.status !== 'ready' || !p) throw notReady(record, what);
     if (want === 'video' ? !p.video || p.kind !== 'video' : !p.audio) {
       throw new CfError(
         'bad_request',
@@ -736,7 +902,42 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
           await Promise.all([rm(picture, { force: true }), rm(speech, { force: true })]);
           return dest;
         },
+        undefined,
+        // Minutes at the provider; only the excerpts are made here.
+        'remote',
+        [video.record.media_id, audio.record.media_id],
       );
     }),
+  );
+}
+
+/**
+ * A motion render over the pixel-frame budget, refused with what fits: the largest size of the
+ * same shape at that length and rate, and the longest length at that size and rate.
+ */
+function motionOverBudget(
+  width: number,
+  height: number,
+  fps: number,
+  seconds: number,
+): CfError | undefined {
+  const budget = MOTION_LIMITS.maxPixelFrames;
+  const asked = width * height * fps * seconds;
+  if (asked <= budget) return undefined;
+  const k = Math.sqrt(budget / asked);
+  const even = (n: number) => Math.max(MOTION_LIMITS.minSize, Math.floor((n * k) / 2) * 2);
+  const longest = Math.floor((budget / (width * height * fps)) * 10) / 10;
+  return new CfError(
+    'limit_exceeded',
+    `Too many pixels: ${width}x${height} at ${fps} fps for ${seconds} s is ${(asked / 1e9).toFixed(2)} billion pixel-frames, over the ${(budget / 1e9).toFixed(2)} billion budget (30 s of 1080p30)`,
+    {
+      hint: `At ${seconds} s and ${fps} fps the largest of this shape that fits is ${even(width)}x${even(height)}; at ${width}x${height} and ${fps} fps, up to ${longest} s fits. Or lower the fps, or make it in parts`,
+      detail: {
+        largest_width: even(width),
+        largest_height: even(height),
+        longest_seconds: longest,
+        max_pixel_frames: budget,
+      },
+    },
   );
 }

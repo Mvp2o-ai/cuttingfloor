@@ -131,8 +131,11 @@ export function effectFilters(e: StoredEffect, ctx: EffectContext): string {
         av('noise', { alls: Math.round(amount * 30), allf: 't+u' })
       );
     }
-    case 'denoise':
-      return av('hqdn3d', { luma_spatial: num('strength') });
+    case 'denoise': {
+      // Each frame on its own (FFT, Wiener), so a preview of one frame shows what an export does.
+      const sigma = Number(raw('strength'));
+      return sigma > 0 ? av('fftdnoiz', { sigma }) : '';
+    }
     case 'chroma_key':
       return f('chroma', {
         key: `0x${String(raw('color')).replace('#', '')}ff`,
@@ -153,10 +156,13 @@ export function effectFilters(e: StoredEffect, ctx: EffectContext): string {
         threshold: r(db(Number(raw('threshold_db'))), 6),
         ratio: Number(raw('ratio')),
         makeup: r(db(Number(raw('makeup_db'))), 4),
+        attack: Number(raw('attack_ms')),
+        release: Number(raw('release_ms')),
       });
     case 'noise_reduction':
       return av('afftdn', { nr: Number(raw('amount_db')) });
     case 'voice_denoise':
+    case 'dereverb':
       // Applied to the clip's source sound before the render (sourcepass.ts).
       return '';
     case 'de_esser':
@@ -188,6 +194,32 @@ export function effectFilters(e: StoredEffect, ctx: EffectContext): string {
       return av('lowpass', { f: Number(raw('frequency')) });
     case 'telephone':
       return av('highpass', { f: 300 }) + av('lowpass', { f: 3400 });
+    case 'lens_correction':
+      return av('lenscorrection', {
+        k1: num('k1'),
+        k2: num('k2'),
+        cx: num('center_x'),
+        cy: num('center_y'),
+        i: 'bilinear',
+      });
+    case 'directional_blur':
+      // dblur's angle is the direction the streaks run, counter-clockwise from the right.
+      return av('dblur', {
+        angle: num('angle'),
+        radius: num('radius', (v) => Math.max(0, v * ctx.width)),
+      });
+    case 'channels': {
+      // aeval: one expression per output channel over the input samples.
+      const from = (side: unknown) =>
+        side === 'right'
+          ? 'val(1)'
+          : side === 'mix'
+            ? '0.5*(val(0)+val(1))'
+            : side === 'silent'
+              ? '0'
+              : 'val(0)';
+      return av('aeval', { exprs: `${from(raw('left'))}|${from(raw('right'))}` });
+    }
     default:
       return '';
   }

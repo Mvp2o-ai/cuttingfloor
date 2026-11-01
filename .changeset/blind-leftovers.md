@@ -1,0 +1,5 @@
+---
+"cuttingfloor": minor
+---
+
+Captions and titles: style `max_lines` shows long text a screenful at a time, each from its first word, with its lines broken by the font's own widths and balanced; `spans` style part of a text (a word in another colour, bold, italic, underlined or sized) on `title.add`, `caption.add` segments and `text.set`. `clip.set_animation` loops take `from_frame` and `to_frame`, so a shake can run for part of a clip. The `compressor` effect takes `attack_ms` and `release_ms` (FFmpeg's 20 ms and 250 ms by default, as before). `media.import {source: {still: {media_id | timeline_id, frame}}}` makes one frame of a video or an edit into a full-size PNG still. `job.get {job_ids}` sums each result up (`result_summary`) unless asked for `result: "full"`; one `job_id` still answers whole. Video `denoise` now visibly takes grain out, frame by frame (FFmpeg fftdnoiz, so a preview matches the export): `strength` is the noise level in 8-bit levels, 0 to 50, default 4 (it was hqdn3d, 0 to 10, default 3, which barely changed a frame). Transcript words say that a "-" word is whisper marking a new speaker.

@@ -1,20 +1,33 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { type MediaFacts, ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
+import { inBetween, type MediaFacts, ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
 import {
+  betweenPicture,
   clipPasses,
   type ImageFormat,
   installedFonts,
   lengthFrames,
+  type MatteSource,
   type MltSource,
   mediaRef,
+  notReady,
   passedAudio,
   renderPicture,
   renderSource,
   renderTimelineFrames,
   renderWaveform,
+  selectedPicture,
+  selectedPictureNow,
+  selectionPass,
+  sourceKey,
 } from '@cuttingfloor/engine';
-import { CfError, type MediaRef, type TimelineDoc, type TimelineView } from '@cuttingfloor/schema';
+import {
+  CfError,
+  type MediaRef,
+  type StoredClip,
+  type TimelineDoc,
+  type TimelineView,
+} from '@cuttingfloor/schema';
 import type { Runtime } from './runtime.ts';
 
 /** Resolves every media file a timeline uses, for previews (proxies) or exports. */
@@ -25,6 +38,8 @@ export async function sourcesFor(
   purpose: 'preview' | 'export',
   /** false for picture-only renders, which play clips without their cleaned sound. */
   sound = true,
+  /** false to leave the copies source passes make for later (addPasses, inside a job). */
+  passes = true,
 ): Promise<{ sources: Map<string, MltSource>; offline: string[] }> {
   const sources = new Map<string, MltSource>();
   const offline: string[] = [];
@@ -35,37 +50,115 @@ export async function sourcesFor(
       continue;
     }
     // Previews may read the original while it is conformed; exports wait for the mezzanine.
-    if (purpose === 'export' && record.status !== 'ready') {
-      throw new CfError('media_not_ready', `Media ${id} is still processing`, {
-        hint: 'Wait for its media.import job to finish, then export',
-        detail: { media_id: id },
-      });
-    }
+    if (purpose === 'export' && record.status !== 'ready') throw notReady(record, 'an export');
     sources.set(id, renderPicture(record, purpose));
   }
-  // Sound effects that run over a clip's whole source (voice_denoise) play a cleaned copy, made
-  // from the best source there is and kept with the media.
-  if (sound) {
-    for (const body of [doc, ...Object.values(doc.nested ?? {})])
-      for (const t of body.tracks)
-        for (const c of t.clips) {
-          if (!c.enabled || c.type !== 'media') continue;
-          const passes = clipPasses(c);
-          const key = `${c.media_id}#${passes.map((p) => p.id).join('+')}`;
-          const plain = sources.get(c.media_id);
-          if (!passes.length || !plain || sources.has(key)) continue;
-          const record = await rt.media.find(owner, c.media_id);
-          if (!record) continue;
-          const input = record.mezzanine ?? record.file ?? renderSource(record, 'export');
-          const path = await passedAudio(
-            input,
-            join(rt.media.dir(owner, c.media_id), 'cleaned'),
-            passes,
-          );
-          sources.set(key, { ...plain, path, image: false });
-        }
-  }
+  if (passes) await addPasses(rt, owner, doc, sources, purpose, sound);
   return { sources, offline };
+}
+
+/**
+ * Adds the copies some clips play instead of their media: sound cleaned over the clip's whole
+ * source (voice_denoise), and a picture with in-between frames (clip.set_speed interpolate).
+ * Each is made from the source once and kept with the media.
+ */
+export async function addPasses(
+  rt: Runtime,
+  owner: string,
+  doc: TimelineDoc,
+  sources: Map<string, MltSource>,
+  purpose: 'preview' | 'export',
+  sound: boolean,
+  signal?: AbortSignal,
+): Promise<void> {
+  const fps = doc.sequence.fps;
+  for (const body of [doc, ...Object.values(doc.nested ?? {})])
+    for (const t of body.tracks)
+      for (const c of t.clips) {
+        if (!c.enabled || c.type !== 'media') continue;
+        const media = sources.get(c.media_id);
+        const key = sourceKey(c, doc.sequence);
+        if (!media || key === c.media_id || sources.has(key)) continue;
+        const record = await rt.media.find(owner, c.media_id);
+        if (!record) continue;
+        // A matte mask, or any selection that is filled, plays a copy of the picture through
+        // that selection; in-between frames are then made from that copy.
+        const plain = await selected(rt, owner, doc, c, media, purpose, signal);
+        const between = inBetween(c, fps);
+        if (between) {
+          const own = record.probe?.video?.fps;
+          // A source with frames enough for the slowest part plays as it is.
+          if (plain.image || !own || own.num / own.den >= between.fps) {
+            sources.set(key, plain);
+            continue;
+          }
+          const made = await betweenPicture(
+            plain.path,
+            join(rt.media.dir(owner, c.media_id), 'between'),
+            between,
+            { source: own, purpose, alpha: plain.alpha, ...(signal ? { signal } : {}) },
+          );
+          sources.set(key, { ...plain, ...made });
+          continue;
+        }
+        if (plain !== media) {
+          sources.set(key, plain);
+          continue;
+        }
+        if (!sound) continue;
+        const input = record.mezzanine ?? record.file ?? renderSource(record, 'export');
+        const path = await passedAudio(
+          input,
+          join(rt.media.dir(owner, c.media_id), 'cleaned'),
+          clipPasses(c),
+          signal,
+        );
+        sources.set(key, { ...plain, path, image: false });
+      }
+}
+
+/**
+ * A media clip's picture through its selection pass (selection.ts), or `media` itself when its
+ * mask needs none. Inside a job (`signal`) it waits for the copy; a request starts a fill and
+ * refuses until it is made, since filling takes minutes.
+ */
+async function selected(
+  rt: Runtime,
+  owner: string,
+  doc: TimelineDoc,
+  c: StoredClip & { type: 'media' },
+  media: MltSource,
+  purpose: 'preview' | 'export',
+  signal: AbortSignal | undefined,
+): Promise<MltSource> {
+  const pass = selectionPass(c, doc.sequence.width / doc.sequence.height);
+  if (!pass) return media;
+  const record = await rt.media.find(owner, c.media_id);
+  const v = record?.probe?.video;
+  if (!record || !v || !media.width || !media.height) return media;
+  let matte: MatteSource | undefined;
+  if (pass.mask.shape === 'matte' && pass.mask.media_id) {
+    const m = await rt.media.find(owner, pass.mask.media_id);
+    if (!m || m.status === 'failed' || m.status === 'importing') assertOnline([pass.mask.media_id]);
+    const pic = renderPicture(m as NonNullable<typeof m>, purpose);
+    matte = { path: pic.path, image: pic.image, alpha: pic.alpha };
+  }
+  const input = {
+    path: media.path,
+    width: media.width,
+    height: media.height,
+    image: media.image,
+    alpha: media.alpha,
+    fps: v.fps,
+    duration: record.probe?.duration ?? 0,
+  };
+  const dir = join(rt.media.dir(owner, c.media_id), 'selected');
+  const path =
+    !signal && pass.mask.mode === 'fill'
+      ? await selectedPictureNow(input, dir, pass, matte, purpose, `clip ${c.id}`)
+      : await selectedPicture(input, dir, pass, matte, purpose, signal);
+  // A fill copy has no alpha of its own; show and hide carry the selection as alpha.
+  return { ...media, path, alpha: pass.mask.mode !== 'fill' };
 }
 
 /**
@@ -96,7 +189,8 @@ function mediaIdsOf(doc: TimelineDoc): Set<string> {
         body.tracks.flatMap((t) =>
           t.clips.flatMap((c) => {
             if (!c.enabled) return [];
-            if (c.type === 'media') return [c.media_id];
+            if (c.type === 'media')
+              return c.mask?.media_id ? [c.media_id, c.mask.media_id] : [c.media_id];
             if ((c.type === 'title' || c.type === 'caption') && c.style?.font_media_id)
               return [c.style.font_media_id];
             return [];
@@ -128,11 +222,7 @@ export async function mediaResolver(
     if (!/^m_[0-9a-z]{26}$/.test(id)) continue;
     const record = await rt.media.find(owner, id);
     if (!record) continue;
-    if (record.status === 'importing') {
-      throw new CfError('media_not_ready', `Media ${id} is still being probed`, {
-        hint: 'Wait for its media.import job to report processing or ready, then try again',
-      });
-    }
+    if (record.status === 'importing') throw notReady(record, null);
     if (record.status === 'failed') {
       throw new CfError(
         'bad_request',
@@ -357,7 +447,7 @@ export async function timelineWaveform(
   return wave;
 }
 
-/** Silences and transcript words per media item, for edits that use them. */
+/** Transcript words and frame rates per media item, for edits that use them. */
 export async function factsResolver(
   rt: Runtime,
   owner: string,
@@ -374,6 +464,9 @@ export async function factsResolver(
     if (!record) continue;
     out.set(id, {
       ...(record.analyses?.transcript ? { words: record.analyses.transcript.words } : {}),
+      ...(record.probe?.video && record.probe.kind === 'video'
+        ? { fps: record.probe.video.fps }
+        : {}),
     });
   }
   return out;

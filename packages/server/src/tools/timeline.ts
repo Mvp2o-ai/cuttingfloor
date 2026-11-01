@@ -17,6 +17,7 @@ import {
   EditResult,
   type EditTool,
   editInput,
+  PlacingEditResult,
   TimelineCreateInput,
   TimelineCreateResult,
   TimelineDiffInput,
@@ -31,6 +32,7 @@ import {
   withJob,
 } from '@cuttingfloor/schema';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
+import { PLACING_TOOLS, placementsFor } from '../placements.ts';
 import {
   assertFonts,
   assertOnline,
@@ -54,7 +56,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'timeline.set_sequence': {
     title: 'Set sequence',
     description:
-      'Change resolution, frame rate or audio format. Clip times are kept in time, so they survive a rate change.',
+      'Change resolution, frame rate or audio format. Clip times are kept in time, so they survive a rate change. Each picture is refitted to the new shape by its fit (contain by default, which leaves bars where the shapes differ); the result warns how many clips no longer fill the frame, and clip.set_transform {fit: "cover"} fills it.',
   },
   'track.add': {
     title: 'Add track',
@@ -120,37 +122,37 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.replace': {
     title: 'Replace media',
     description:
-      'Swap the media in a clip, keeping its place, length, speed and look. Starts at source_in (default 0).',
+      'Swap the media in a clip, keeping its place, length, speed and look. Starts at source_in (default 0). Its linked clips swap too (linked: false for this clip only); clip_ids lists every clip swapped.',
   },
   'range.lift': {
     title: 'Lift range',
     description:
-      'Remove everything in a frame range on the given tracks (default all unlocked), leaving a gap.',
+      'Remove everything in a frame range on the given tracks (default all unlocked, so a picture range takes the sound under it too: lock a track with track.set or name track_ids to keep it), leaving a gap. changed lists each clip removed or cut, with its track; a warning says when sound went with the picture.',
   },
   'range.extract': {
     title: 'Extract range',
     description:
-      'Remove everything in a frame range on the given tracks (default all unlocked) and close the gap. For cutting out silences, filler words or mistakes across all tracks at once.',
+      'Remove everything in a frame range on the given tracks (default all unlocked, so a picture range takes the sound under it too: lock a track with track.set or name track_ids to keep it) and close the gap. For cutting out silences, filler words or mistakes across all tracks at once. changed lists each clip removed or cut, with its track; a warning says when sound went with the picture.',
   },
   'title.add': {
     title: 'Add title',
     description:
-      'Text on a video track, over the tracks below: styled with font, size, colour, outline, shadow and box, placed by x/y, revealed with a typewriter or word animation. A style field you leave out takes the published default (video://catalog/text: bold white Inter at 9% of the frame height, centred, with a soft shadow); timeline.get shows the full style. It is a clip, so transforms, masks, animations and transitions apply.',
+      'Text on a video track, over the tracks below: styled with font, size, colour, outline, shadow and box, placed by x/y, revealed with a typewriter or word animation. A style field you leave out takes the published default (video://catalog/text: bold white Inter at 9% of the frame height, centred, with a soft shadow); timeline.get shows the full style. spans style part of the text (words first_word to last_word, from 0: one word in yellow or bold). It is a clip, so transforms, masks, animations and transitions apply.',
   },
   'caption.add': {
     title: 'Add captions',
     description:
-      "Captions on a video track from segments (with optional word timings for highlights), from SRT/VTT text, or in_clip: segments timed in seconds of a clip's media, such as transcript word times, placed where they play. One clip per caption; returns their clip_ids. A style field you leave out takes the published default (video://catalog/text: bold white Inter at 6% of the frame height, near the bottom, with a black outline); timeline.get shows the full style. Burned in when exported.",
+      "Captions on a video track from segments (with optional word timings for highlights), from SRT/VTT text, or in_clip: segments timed in seconds of a clip's media, such as transcript word times, placed where they play. One clip per caption; returns their clip_ids. A style field you leave out takes the published default (video://catalog/text: bold white Inter at 6% of the frame height, near the bottom, with a black outline); timeline.get shows the full style. Lines wrap on their own at style max_width (a fraction of the frame width), balanced in length; \\n forces a break. style max_lines caps the lines on screen at once: a longer caption shows a screenful at a time, each from its first word's time. A segment's spans style part of its text (words first_word to last_word, from 0: the timed words, or the text split at spaces), e.g. the key word in yellow. Burned in when exported.",
   },
   'text.set': {
     title: 'Set text',
     description:
-      "Change a title's or caption's text, or restyle many at once (clip_ids, or every one on track_id). The style is merged; null turns an outline, shadow, box or highlight off. Highlight modes and fonts: video://catalog/text and video://catalog/fonts.",
+      "Change a title's or caption's text, or restyle many at once (clip_ids, or every one on track_id). The style is merged; null turns an outline, shadow, box or highlight off (and max_lines back to all lines). spans (one clip) restyle part of its text. Fonts: video://catalog/fonts, or an unknown font is refused with the close matches.",
   },
   'audio.set_gain': {
     title: 'Set gain',
     description:
-      "Volume of an audio clip (or a video clip's linked audio) in dB; keyframes ride it up and down. The preview is a waveform of the clip with the measured loudness.",
+      "Volume of an audio clip (or a video clip's linked audio) in dB; keyframes ride it up and down. The preview is a waveform of the clip; with preview inline it also carries the measured loudness (preview.loudness), a link preview does not.",
   },
   'audio.set_pan': {
     title: 'Set pan',
@@ -163,12 +165,12 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'audio.set_master': {
     title: 'Set master',
     description:
-      'Gain (dB) and limiter ceiling on the whole mix. The ceiling caps sample peaks (dBFS); the true peak between samples can land above it, most on dense, bright sound, and qa.check measures it (dBTP). Audio edits preview with the measured loudness.',
+      'Gain (dB) and limiter ceiling on the whole mix. The ceiling caps sample peaks (dBFS); the true peak between samples can land above it, most on dense, bright sound, and qa.check measures it (dBTP). Audio edits with preview inline carry the measured loudness (preview.loudness); a link preview does not.',
   },
   'filter.add': {
     title: 'Add effect',
     description:
-      'Apply an effect from video://catalog/effects (colour, LUT, blur, vignette, chroma key, glitch; EQ, compressor, denoise, pitch and more) to a clip, every clip on a track, or the whole timeline. Number params take keyframes. Returns its id as clip_id.',
+      "Apply an effect to a clip, every clip on a track, or the whole timeline: picture effects (colour, LUT, blur, vignette, chroma key, glitch, denoise and more) on video, sound effects (EQ, compressor, noise_reduction, voice_denoise, pitch and more) on audio. Order matters: effects run in the order added (a track's before a clip's own). Picture numbers take keyframes, except glitch, denoise and chroma_key tolerance; sound params are constants. A wrong name or param is refused with the full list, ranges, units and defaults (also at video://catalog/effects); timeline.get shows every param applied. Returns its id as clip_id.",
   },
   'filter.set': {
     title: 'Set effect',
@@ -196,7 +198,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.set_transform': {
     title: 'Set transform',
     description:
-      "Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). fit none shows a graphic at its own pixel size, so scale 1 is its real size; the default contain scales it to touch the frame edges. Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; eases are listed at video://catalog/eases. Omitted fields keep their value; null resets one. To pin an overlay to a moving subject, use media.analyze track boxes as keyframes: for each box, frame = timeline frame of the box time (where the tracked clip plays that media second) minus this clip's start, x = box x + w/2 and y = box y + h/2 (add your offset). That holds when the tracked clip fills the frame as is; if it is scaled, moved or cropped, map the box through its transform first. Skip boxes with found false.",
+      "Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). fit none shows a graphic at its own pixel size, so scale 1 is its real size; the default contain scales it to touch the frame edges. Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; a keyframe's ease shapes the move from it to the next one (sine_in_out, cubic_out, back_out, hold and more). Overlays that must follow a zoom or pan: put the clip and its overlays in a timeline of the same shape, nest it with clip.add {nested_timeline_id} and transform the nested clip, so everything moves together. Omitted fields keep their value; null resets one. To pin an overlay to a moving subject, use media.analyze track boxes as keyframes: for each box, frame = timeline frame of the box time (where the tracked clip plays that media second) minus this clip's start, x = box x + w/2 and y = box y + h/2 (add your offset). That holds when the tracked clip fills the frame as is; if it is scaled, moved or cropped, map the box through its transform first. Skip boxes with found false. The result's placements say where the clip now shows, in sequence pixels: its picture box, the part visible after crop and mask inside the frame, and the source pixels that show there.",
   },
   'clip.set_blend': {
     title: 'Set blend mode',
@@ -206,12 +208,12 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.set_mask': {
     title: 'Set mask',
     description:
-      'Show only part of a video clip: rectangle (rounded), ellipse, linear, mirror, heart, star or polygon, with feather and invert. Position, size, rotation and feather animate like transform values. null removes the mask.',
+      "Select part of a video clip, then show, hide or fill it: rectangle (rounded), ellipse, linear, mirror, heart, star, polygon or matte (a media's alpha, e.g. a create.cutout), with feather and invert. A fill takes about 1.5 s a frame, made in the background (media_not_ready until then). Position, size and rotation animate like transform values. Coordinates are fractions of the clip's fitted frame: a sequence-shaped box with the picture fitted inside (bars where the shapes differ), before the clip's scale and position. A narrower picture fills k = (its aspect / the sequence's) of the box width, centred, so a picture-fraction box maps to x = 0.5 + (x - 0.5) * k, width * k (a wider picture: the same on y and height, with k = the sequence aspect / its). null removes the mask.",
   },
   'clip.set_animation': {
     title: 'Set animation',
     description:
-      'Entrance, exit and loop presets layered over the clip transform (video://catalog/animations): e.g. in {name: "pop", duration_frames: 12}, loop {name: "float"}. null removes one.',
+      'Entrance, exit and loop presets layered over the clip transform (video://catalog/animations): e.g. in {name: "pop", duration_frames: 12}, loop {name: "float"}; a loop runs the whole clip, or only from_frame to to_frame of it (loop {name: "shake", from_frame: 30, to_frame: 45} for a jolt). null removes one.',
   },
 };
 
@@ -355,7 +357,7 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
         title: meta.title,
         description: `${meta.description} ${RETURNS}`,
         inputSchema: editInput(tool),
-        outputSchema: EditResult,
+        outputSchema: PLACING_TOOLS.has(tool) ? PlacingEditResult : EditResult,
         annotations: { ...annotations, title: meta.title },
       },
       guard(
@@ -413,9 +415,12 @@ async function applyAndReply(
   await assertFonts(fontsIn(ops));
   const media = await mediaResolver(rt, owner, mediaIdsIn(ops));
   const nestable = await timelineResolver(rt, owner, nestedIdsIn(ops));
-  // Word-range clips read the transcript media.analyze found; only those load the media records.
+  // Word-range clips read the transcript media.analyze found, and speed changes the source's
+  // frame rate; only those load the media records.
   const needsFacts = ops.some(
-    (o) => o.tool === 'clip.add' && JSON.stringify(o.args.source ?? '').includes('"words"'),
+    (o) =>
+      (o.tool === 'clip.add' && JSON.stringify(o.args.source ?? '').includes('"words"')) ||
+      o.tool === 'clip.set_speed',
   );
   const facts = needsFacts
     ? await factsResolver(rt, owner, base, mediaIdsIn(ops))
@@ -431,6 +436,14 @@ async function applyAndReply(
   );
   const id = await rt.timelines.put(owner, doc);
   const warnings = [...outcome.warnings];
+  if (ops.some((o) => o.tool === 'timeline.set_sequence')) {
+    const unfilled = await unfilledBySequence(rt, owner, base, doc);
+    if (unfilled.length) {
+      warnings.push(
+        `${unfilled.length} clip${unfilled.length === 1 ? '' : 's'} filled the old ${base.sequence.width}x${base.sequence.height} frame and no longer fill${unfilled.length === 1 ? 's' : ''} the new ${doc.sequence.width}x${doc.sequence.height} one, showing bars: ${unfilled.slice(0, 40).join(', ')}${unfilled.length > 40 ? ', …' : ''}. clip.set_transform {fit: "cover"} fills the frame, cropping`,
+      );
+    }
+  }
   const content: CallToolResult['content'] = [];
   let previewRef: {
     uri: string;
@@ -493,9 +506,63 @@ async function applyAndReply(
     ...(outcome.clip_ids ? { clip_ids: outcome.clip_ids } : {}),
     ...(outcome.track_id ? { track_id: outcome.track_id } : {}),
     preview: previewRef,
+    ...(ops.some((o) => PLACING_TOOLS.has(o.tool))
+      ? { placements: await placementsFor(rt, owner, base, doc) }
+      : {}),
     warnings,
     ...extra,
     ...(batch ? { results } : {}),
   };
   return ok(structured, content);
+}
+
+/**
+ * Video clips that filled the frame before a sequence change and leave bars after it. Only clips
+ * placed as fitted (no position, scale, crop or rotation of their own) count: a clip the agent
+ * placed by hand was not meant to fill.
+ */
+async function unfilledBySequence(
+  rt: ServerDeps['runtime'],
+  owner: string,
+  before: TimelineDoc,
+  after: TimelineDoc,
+): Promise<string[]> {
+  const a = before.sequence;
+  const b = after.sequence;
+  if (a.width === b.width && a.height === b.height) return [];
+  const sizes = new Map<string, { width: number; height: number } | null>();
+  const sizeOf = async (mediaId: string) => {
+    if (!sizes.has(mediaId)) {
+      const v = (await rt.media.find(owner, mediaId))?.probe?.video;
+      const upright = v ? v.rotation % 180 === 0 : true;
+      sizes.set(
+        mediaId,
+        v ? { width: upright ? v.width : v.height, height: upright ? v.height : v.width } : null,
+      );
+    }
+    return sizes.get(mediaId) ?? null;
+  };
+  const fills = (
+    fit: string,
+    src: { width: number; height: number },
+    seq: { width: number; height: number },
+  ) => {
+    if (fit === 'cover' || fit === 'fill') return true;
+    if (fit === 'none') return src.width >= seq.width && src.height >= seq.height;
+    // contain: the picture touches all four edges only when the shapes match (to a pixel).
+    const k = Math.min(seq.width / src.width, seq.height / src.height);
+    return src.width * k >= seq.width - 1 && src.height * k >= seq.height - 1;
+  };
+  const out: string[] = [];
+  for (const track of after.tracks) {
+    if (track.kind !== 'video') continue;
+    for (const clip of track.clips) {
+      if (clip.type !== 'media') continue;
+      const { fit = 'contain', flip: _flip, opacity: _opacity, ...placed } = clip.transform ?? {};
+      if (Object.keys(placed).length || clip.mask) continue;
+      const src = await sizeOf(clip.media_id);
+      if (src && fills(fit, src, a) && !fills(fit, src, b)) out.push(clip.id);
+    }
+  }
+  return out;
 }

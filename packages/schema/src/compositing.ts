@@ -27,14 +27,16 @@ export const Ease = z.enum(EASES);
 export type Ease = z.infer<typeof Ease>;
 
 /**
- * Ease at the tool interface: a plain string checked against EASES, so the 34 names aren't
- * repeated in every animatable field of every tool definition (video://catalog/eases).
+ * Ease at the tool interface: an enum in the JSON Schema (its bytes count once, in the shared
+ * `Animatable` definition), checked by a refinement rather than z.enum so a wrong name inside
+ * the animatable union is reported with every valid name, not as "Invalid input".
  */
-const EaseName = z
+export const EaseName = z
   .string()
   .refine((v) => (EASES as readonly string[]).includes(v), {
-    message: `Unknown ease; use one of video://catalog/eases (${EASES.slice(0, 6).join(', ')}, ...)`,
+    message: `Unknown ease; use one of ${EASES.join(', ')}`,
   })
+  .meta({ enum: [...EASES] })
   .transform((v) => v as Ease);
 
 const MAX_KEYFRAMES = 1000;
@@ -88,7 +90,9 @@ export const AnimatableValue = z
         )
         .min(1)
         .max(MAX_KEYFRAMES)
-        .describe('frame is relative to the clip start; ease from video://catalog/eases'),
+        .describe(
+          'frame is from the clip start; ease shapes the move from this keyframe to the next (default linear; hold waits, then jumps)',
+        ),
     }),
     z.null(),
   ])
@@ -112,7 +116,7 @@ export type Animatable =
 export const Fit = z
   .enum(['contain', 'cover', 'fill', 'none'])
   .describe(
-    'contain: whole picture inside the frame, scaled up or down to touch its edges (default); cover: fill the frame, cropping; fill: stretch; none: its own pixels at sequence size, unscaled (a 300 px logo stays 300 px on a 1920 px sequence), for logos and graphics made to size',
+    'contain: whole picture inside the frame, scaled up or down to touch its edges (default); cover: fill the frame, cropping what overflows equally on both sides (move x or y off 0.5 to show another part); fill: stretch; none: its own pixels at sequence size, unscaled (a 300 px logo stays 300 px on a 1920 px sequence), for logos and graphics made to size',
   );
 export const Flip = z.enum(['none', 'horizontal', 'vertical', 'both']);
 
@@ -126,7 +130,9 @@ export const Crop = z
   .refine((c) => c.left + c.right < 1 && c.top + c.bottom < 1, {
     message: 'Crop must leave part of the picture: left + right and top + bottom must be under 1',
   })
-  .describe('Fractions of the picture hidden from each edge; the rest stays where it was');
+  .describe(
+    "Hidden from each edge, in fractions of the clip's fitted frame (the sequence-shaped box with the picture fitted inside, bars included, as for masks); the rest stays where it was",
+  );
 export type Crop = z.infer<typeof Crop>;
 
 /** Transform fields and their limits. Position is the picture centre in the frame (0–1). */
@@ -191,11 +197,16 @@ export const MASK_SHAPES = [
   'heart',
   'star',
   'polygon',
+  'matte',
 ] as const;
 export const MaskShape = z.enum(MASK_SHAPES);
 export type MaskShape = z.infer<typeof MaskShape>;
 
-/** Mask fields that animate. Positions and sizes are fractions of the clip's own picture. */
+/**
+ * Mask fields that animate. Positions and sizes are fractions of the clip's fitted frame: a
+ * sequence-shaped box with the picture fitted inside it (bars where the shapes differ), before
+ * the clip's scale and position.
+ */
 export const MASK_LIMITS = {
   x: [-4, 5],
   y: [-4, 5],
@@ -214,6 +225,25 @@ export const MASK_DEFAULTS: Record<MaskNumber, number> = {
 };
 
 const Point = z.tuple([z.number().min(-4).max(5), z.number().min(-4).max(5)]);
+export const MAX_MASK_POINTS = 64;
+const Points = z.array(Point).min(3).max(MAX_MASK_POINTS);
+
+/** Polygon corners: fixed, or keyframed (every keyframe the same number of corners). */
+export const StoredPoints = z.union([
+  Points,
+  z.object({
+    keyframes: z
+      .array(z.object({ t: z.number().int(), points: Points, ease: Ease.optional() }))
+      .min(1)
+      .max(MAX_KEYFRAMES),
+  }),
+]);
+export type StoredPoints = z.infer<typeof StoredPoints>;
+
+/** What a mask does with its selection: show only it, hide it, or fill it from its surroundings. */
+export const MASK_MODES = ['show', 'hide', 'fill'] as const;
+export const MaskMode = z.enum(MASK_MODES);
+export type MaskMode = z.infer<typeof MaskMode>;
 
 export const StoredMask = z.object({
   shape: MaskShape,
@@ -225,7 +255,11 @@ export const StoredMask = z.object({
   feather: z.number().min(0).max(0.5).optional(),
   corner_radius: z.number().min(0).max(0.5).optional(),
   invert: z.boolean().optional(),
-  points: z.array(Point).min(3).max(64).optional(),
+  points: StoredPoints.optional(),
+  /** shape matte: the media whose alpha (or brightness) is the selection. */
+  media_id: z.string().optional(),
+  /** Absent means show. */
+  mode: MaskMode.optional(),
 });
 export type StoredMask = z.infer<typeof StoredMask>;
 
@@ -249,7 +283,14 @@ export const StoredAnimation = z.object({
   in: z.object({ name: InOutAnimation, duration: z.number().int().positive() }).optional(),
   out: z.object({ name: InOutAnimation, duration: z.number().int().positive() }).optional(),
   loop: z
-    .object({ name: LoopAnimation, period: z.number().int().positive(), strength: z.number() })
+    .object({
+      name: LoopAnimation,
+      period: z.number().int().positive(),
+      strength: z.number(),
+      /** Where it runs, source ticks like keyframes: [from, to). Absent: the whole clip. */
+      from: z.number().int().optional(),
+      to: z.number().int().optional(),
+    })
     .optional(),
 });
 export type StoredAnimation = z.infer<typeof StoredAnimation>;

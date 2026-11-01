@@ -6,7 +6,10 @@ import {
   MASK_NUMBERS,
   type MaskNumber,
   type StoredAnimatable,
+  type StoredAnimation,
   type StoredClip,
+  type StoredMask,
+  type StoredPoints,
   TRANSFORM_DEFAULTS,
   TRANSFORM_NUMBERS,
   type TransformNumber,
@@ -244,6 +247,22 @@ function applyLoop(name: string, i: number, period: number, k: number, s: Transf
 }
 
 /**
+ * Whether a loop runs at frame `i` of a clip: always, or while the frame shows source inside its
+ * range (source ticks, like keyframes).
+ */
+export function loopPlays(
+  loop: NonNullable<StoredAnimation['loop']> | undefined,
+  clip: StoredClip,
+  tpf: number,
+  i: number,
+): boolean {
+  if (!loop) return false;
+  if (loop.from === undefined && loop.to === undefined) return true;
+  const t = frameSource(clip, tpf, i);
+  return (loop.from === undefined || t >= loop.from) && (loop.to === undefined || t < loop.to);
+}
+
+/**
  * Transform values at frame `i` of a clip that is `n` frames long: keyframes sampled at the
  * frame's source time, then any in/out/loop animation applied on top.
  */
@@ -258,7 +277,11 @@ export function transformAt(clip: StoredClip, tpf: number, i: number, n: number)
   if (a?.in) applyInOut(a.in.name, clamp01(i / Math.max(1, a.in.duration / tpf)), 'in', s);
   if (a?.out)
     applyInOut(a.out.name, clamp01((n - 1 - i) / Math.max(1, a.out.duration / tpf)), 'out', s);
-  if (a?.loop) applyLoop(a.loop.name, i, Math.max(1, a.loop.period / tpf), a.loop.strength, s);
+  if (a?.loop && loopPlays(a.loop, clip, tpf, i)) {
+    // A ranged loop counts its phase from its own start, so it begins at rest there.
+    const from = a.loop.from !== undefined ? Math.round((a.loop.from - clip.in) / tpf) : 0;
+    applyLoop(a.loop.name, i - from, Math.max(1, a.loop.period / tpf), a.loop.strength, s);
+  }
   s.opacity = clamp01(s.opacity);
   return s;
 }
@@ -269,14 +292,45 @@ export function transformAnimates(clip: StoredClip): boolean {
 }
 
 export function maskAt(clip: StoredClip, tpf: number, i: number): MaskState {
-  const t = frameSource(clip, tpf, i);
+  return maskAtTick(clip.mask, frameSource(clip, tpf, i));
+}
+
+/** Mask values at source tick `t`. */
+export function maskAtTick(mask: StoredMask | undefined, t: number): MaskState {
   const s = {} as MaskState;
-  for (const key of MASK_NUMBERS) s[key] = sample(clip.mask?.[key], MASK_DEFAULTS[key], t);
+  for (const key of MASK_NUMBERS) s[key] = sample(mask?.[key], MASK_DEFAULTS[key], t);
   return s;
 }
 
+/** Polygon corners at source tick `t`: each corner eased between the keyframes around it. */
+export function pointsAt(points: StoredPoints | undefined, t: number): Array<[number, number]> {
+  if (!points) return [];
+  if (Array.isArray(points)) return points;
+  const ks = points.keyframes;
+  const first = ks[0];
+  if (!first) return [];
+  if (t <= first.t) return first.points;
+  for (let i = 0; i < ks.length - 1; i++) {
+    const a = ks[i];
+    const b = ks[i + 1];
+    if (!a || !b) break;
+    if (t < b.t) {
+      const p = easeFn(a.ease)((t - a.t) / (b.t - a.t));
+      return a.points.map(([x, y], j) => {
+        const [bx, by] = b.points[j] ?? [x, y];
+        return [x + (bx - x) * p, y + (by - y) * p];
+      });
+    }
+  }
+  return ks[ks.length - 1]?.points ?? [];
+}
+
 export function maskAnimates(clip: StoredClip): boolean {
-  return MASK_NUMBERS.some((k) => isAnimated(clip.mask?.[k]));
+  const pts = clip.mask?.points;
+  return (
+    MASK_NUMBERS.some((k) => isAnimated(clip.mask?.[k])) ||
+    (pts !== undefined && !Array.isArray(pts) && pts.keyframes.length > 1)
+  );
 }
 
 /** Rejects keyframe sets an engine can't use. */

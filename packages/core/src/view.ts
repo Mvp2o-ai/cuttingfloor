@@ -3,6 +3,7 @@ import {
   type Change,
   type ClipView,
   EditArgs,
+  effectParamsApplied,
   MASK_NUMBERS,
   type NestedDoc,
   NestedView,
@@ -12,6 +13,7 @@ import {
   type StoredEffect,
   type StoredSpeed,
   TEXT_DEFAULTS,
+  TextSpans,
   TextStyle,
   type TimelineDoc,
   type TimelineInput,
@@ -44,7 +46,7 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
     };
   }
   if (c.speed) {
-    const { rate, curve, reverse, preserve_pitch } = c.speed;
+    const { rate, curve, reverse, preserve_pitch, interpolate } = c.speed;
     out.speed = {
       ...(curve
         ? {
@@ -65,6 +67,7 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
       ...(rate !== undefined ? { rate } : {}),
       ...(reverse ? { reverse } : {}),
       ...(preserve_pitch === false ? { preserve_pitch } : {}),
+      ...(interpolate ? { interpolate } : {}),
     };
   }
   if (c.transform) {
@@ -83,7 +86,7 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
   }
   if (c.blend) out.blend = c.blend;
   if (c.mask) {
-    const { shape, feather, corner_radius, invert, points } = c.mask;
+    const { shape, feather, corner_radius, invert, points, media_id, mode } = c.mask;
     const m: NonNullable<ClipView['mask']> = { shape };
     for (const k of MASK_NUMBERS) {
       const v = c.mask[k];
@@ -94,7 +97,21 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
       ...(feather ? { feather } : {}),
       ...(corner_radius ? { corner_radius } : {}),
       ...(invert ? { invert } : {}),
-      ...(points ? { points } : {}),
+      ...(points
+        ? {
+            points: Array.isArray(points)
+              ? points
+              : {
+                  keyframes: points.keyframes.map((k) => ({
+                    frame: Math.round((k.t - c.in) / tpf),
+                    points: k.points,
+                    ...(k.ease ? { ease: k.ease } : {}),
+                  })),
+                },
+          }
+        : {}),
+      ...(media_id ? { media_id } : {}),
+      ...(mode ? { mode } : {}),
     };
   }
   if (c.animation) {
@@ -105,7 +122,13 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
       ...(a.out ? { out: { name: a.out.name, duration_frames: f(a.out.duration) } } : {}),
       ...(a.loop
         ? {
-            loop: { name: a.loop.name, period_frames: f(a.loop.period), strength: a.loop.strength },
+            loop: {
+              name: a.loop.name,
+              period_frames: f(a.loop.period),
+              strength: a.loop.strength,
+              ...(a.loop.from !== undefined ? { from_frame: f(a.loop.from - c.in) } : {}),
+              ...(a.loop.to !== undefined ? { to_frame: f(a.loop.to - c.in) } : {}),
+            },
           }
         : {}),
     };
@@ -122,7 +145,11 @@ function sourceView(c: StoredClip, tpf: number): Partial<ClipView> {
       return { nested_timeline: c.timeline };
     // The style as it renders: the defaults for every field the clip doesn't set.
     case 'title':
-      return { text: c.text, style: { ...TEXT_DEFAULTS.title, ...c.style } };
+      return {
+        text: c.text,
+        style: { ...TEXT_DEFAULTS.title, ...c.style },
+        ...(c.spans ? { spans: c.spans } : {}),
+      };
     case 'caption':
       return {
         text: c.text,
@@ -136,13 +163,17 @@ function sourceView(c: StoredClip, tpf: number): Partial<ClipView> {
             }
           : {}),
         style: { ...TEXT_DEFAULTS.caption, ...c.style },
+        ...(c.spans ? { spans: c.spans } : {}),
       };
     case 'adjustment':
       return {};
   }
 }
 
-/** Effects as tools show them: keyframes in frames from the clip (or timeline) start. */
+/**
+ * Effects as tools show them: every param the effect applies, defaults included, with keyframes
+ * in frames from the clip (or timeline) start.
+ */
 function effectsView(
   effects: StoredEffect[] | undefined,
   origin: Pick<StoredClip, 'in'>,
@@ -153,7 +184,7 @@ function effectsView(
     id: e.id,
     name: e.name,
     params: Object.fromEntries(
-      Object.entries(e.params).map(([k, v]) => [
+      Object.entries(effectParamsApplied(e.name, e.params)).map(([k, v]) => [
         k,
         v && typeof v === 'object' ? toViewAnim(v as StoredAnimatable, origin, tpf) : v,
       ]),
@@ -296,14 +327,14 @@ export function fromView(input: TimelineInput, media: MediaLookup): TimelineDoc 
   for (const n of Object.values(nested))
     assertTransitions({ ...n, parent: null, op: null, nested });
   for (const body of [doc, ...Object.values(nested)]) assertCaptionWords(body.tracks);
-  replayProps(doc, input.tracks);
+  replayProps(doc, input.tracks, media);
   loadEffects(doc, input.tracks, input.effects, media);
   for (const key of Object.keys(views)) {
     const n = nested[key];
     if (!n) continue;
     const view = NestedView.parse(views[key]);
     const scratch: TimelineDoc = { ...n, parent: null, op: null, nested: { ...nested } };
-    replayProps(scratch, view.tracks);
+    replayProps(scratch, view.tracks, media);
     loadEffects(scratch, view.tracks, view.effects, media);
     const { parent: _p, op: _o, nested: _n, ...replayed } = scratch;
     nested[key] = replayed;
@@ -515,7 +546,17 @@ function textClip(c: ClipView, common: ClipCommon, t: (frames: number) => number
       `Clip ${c.id}: style: ${style.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
     );
   }
-  const styled = style?.data ? { style: style.data } : {};
+  const spans = c.spans === undefined ? undefined : TextSpans.safeParse(c.spans);
+  if (spans && !spans.success) {
+    throw new CfError(
+      'bad_request',
+      `Clip ${c.id}: spans: ${spans.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+    );
+  }
+  const styled = {
+    ...(style?.data ? { style: style.data } : {}),
+    ...(spans?.data?.length ? { spans: spans.data } : {}),
+  };
   if (c.type === 'title') return { ...common, type: 'title', text: c.text, ...styled };
   const words = c.words?.map((w) => ({
     text: w.text,
@@ -535,7 +576,7 @@ function speedFromView(clipId: string, value: unknown, duration: number): Stored
       `Clip ${clipId}: speed: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
     );
   }
-  const { rate, curve, reverse, preserve_pitch } = parsed.data;
+  const { rate, curve, reverse, preserve_pitch, interpolate } = parsed.data;
   const speed: StoredSpeed = {
     ...(curve
       ? { curve: curve.map((p) => ({ t: Math.round(p.at * duration), rate: p.rate })) }
@@ -543,6 +584,7 @@ function speedFromView(clipId: string, value: unknown, duration: number): Stored
     ...(rate !== undefined && !curve ? { rate } : {}),
     ...(reverse ? { reverse } : {}),
     ...(preserve_pitch === false ? { preserve_pitch } : {}),
+    ...(interpolate && interpolate !== 'none' ? { interpolate } : {}),
   };
   return Object.keys(speed).length ? speed : undefined;
 }
@@ -551,8 +593,7 @@ function speedFromView(clipId: string, value: unknown, duration: number): Stored
  * Applies each clip's compositing settings through the same validated edits the tools use, so
  * a loaded timeline can't hold values a tool would refuse. Locks go back on afterwards.
  */
-function replayProps(doc: TimelineDoc, tracks: TimelineInput['tracks']): void {
-  const none = () => undefined;
+function replayProps(doc: TimelineDoc, tracks: TimelineInput['tracks'], media: MediaLookup): void {
   const locked = new Map(doc.tracks.map((t) => [t.id, t.locked]));
   for (const t of doc.tracks) t.locked = false;
   const run = <
@@ -568,7 +609,7 @@ function replayProps(doc: TimelineDoc, tracks: TimelineInput['tracks']): void {
         `Clip ${String(args.clip_id)}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
       );
     }
-    applyEdit(doc, tool, parsed.data as never, none);
+    applyEdit(doc, tool, parsed.data as never, media);
   };
   const tpf = ticksPerFrame(doc.sequence.fps);
   for (const track of tracks)
@@ -687,8 +728,13 @@ export function diff(a: TimelineDoc, b: TimelineDoc): Change[] {
     if (before === undefined) out.push({ id, type: 'clip', change: 'added', ...at.get(id) });
     else if (before !== c) out.push({ id, type: 'clip', change: 'modified', ...at.get(id) });
   }
+  // A removed clip names the track it was on, so a range edit says what each track lost.
+  const wasOn = new Map(a.tracks.flatMap((t) => t.clips.map((c) => [c.id, t.id] as const)));
   for (const id of clipsA.keys())
-    if (!clipsB.has(id)) out.push({ id, type: 'clip', change: 'removed' });
+    if (!clipsB.has(id)) {
+      const track_id = wasOn.get(id);
+      out.push({ id, type: 'clip', change: 'removed', ...(track_id ? { track_id } : {}) });
+    }
   return out;
 }
 

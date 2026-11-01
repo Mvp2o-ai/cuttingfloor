@@ -155,6 +155,10 @@ export const LINES: Record<string, Line> = {
     say: 'Remove the background from a person, product or object.',
   },
   'create.stabilized': { group: 'create', say: 'Steady shaky footage.' },
+  'create.upscaled': {
+    group: 'create',
+    say: 'Enlarge low-resolution footage with detail drawn in.',
+  },
   // Analyze and judge
   'media.analyze': {
     group: 'analyze',

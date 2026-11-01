@@ -10,7 +10,7 @@ import {
 } from './compositing.ts';
 import { StoredEffect } from './effects.ts';
 import { Sequence } from './sequence.ts';
-import { StoredWord, TextStyle } from './text.ts';
+import { StoredWord, TextSpan, TextStyle } from './text.ts';
 
 export const TrackKind = z.enum(['video', 'audio']);
 export type TrackKind = z.infer<typeof TrackKind>;
@@ -43,6 +43,8 @@ export const StoredSpeed = z.object({
   reverse: z.boolean().optional(),
   /** Absent means pitch is kept when the speed changes. */
   preserve_pitch: z.boolean().optional(),
+  /** How the picture makes frames between source frames; absent repeats the nearest one. */
+  interpolate: z.enum(['blend', 'motion']).optional(),
 });
 export type StoredSpeed = z.infer<typeof StoredSpeed>;
 
@@ -71,6 +73,7 @@ export const SpeedView = z.object({
     .optional(),
   reverse: z.boolean().optional(),
   preserve_pitch: z.boolean().optional(),
+  interpolate: z.enum(['none', 'blend', 'motion']).optional(),
 });
 
 const clipFields = {
@@ -116,6 +119,7 @@ export const StoredClip = z.discriminatedUnion('type', [
     type: z.literal('title'),
     text: z.string(),
     style: TextStyle.optional(),
+    spans: z.array(TextSpan).optional(),
   }),
   // An adjustment clip has no picture: its effects apply to everything below it while it runs.
   z.object({ ...clipFields, type: z.literal('adjustment') }),
@@ -125,6 +129,7 @@ export const StoredClip = z.discriminatedUnion('type', [
     text: z.string(),
     words: z.array(StoredWord).optional(),
     style: TextStyle.optional(),
+    spans: z.array(TextSpan).optional(),
   }),
 ]);
 export type StoredClip = z.infer<typeof StoredClip>;
@@ -207,6 +212,10 @@ export const ClipView = z.object({
     .optional()
     .describe('Caption word timings, frames from the clip start'),
   style: settings('text.set style').optional(),
+  spans: z
+    .array(z.record(z.string(), z.unknown()))
+    .optional()
+    .describe('Styled runs, as text.set spans takes them'),
   start: frame.describe('First frame on the timeline'),
   end: frame.describe('Frame after the last one (exclusive)'),
   source: z
@@ -312,7 +321,7 @@ export const Change = z.object({
   change: z.enum(['added', 'removed', 'modified']),
   /**
    * Where an added or modified clip or transition now sits (its frames, end exclusive), so a
-   * follow-up edit needs no timeline.get.
+   * follow-up edit needs no timeline.get. A removed clip gives the track it was on.
    */
   track_id: z.string().optional(),
   start: z.number().int().optional(),

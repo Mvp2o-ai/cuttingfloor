@@ -11,13 +11,15 @@ import {
   CfError,
   type NestedDoc,
   type StoredClip,
+  TEXT_DEFAULTS,
   TICKS_PER_SECOND,
   type TimelineDoc,
 } from '@cuttingfloor/schema';
 import { compositeFor, type RenderSpan, rotoFilters, type SourceSize } from './composite.ts';
 import { effectFilters, keysOutColour } from './effects.ts';
+import { faceKey, loadFace, type Measure } from './fontmetrics.ts';
 import { sourceKey } from './sourcepass.ts';
-import { buildAss } from './text.ts';
+import { type AssOptions, buildAss, type TextFace } from './text.ts';
 import {
   applyEffects,
   clipPlan,
@@ -37,6 +39,10 @@ export interface MltSource {
   alpha: boolean;
   /** Fonts only: the family libass knows the file by. */
   family?: string;
+  /** Source seconds the file starts at, when it is a copy of part of the media. */
+  offset?: number;
+  /** Seconds of the file a second of source lasts, when the copy is slowed (in-between frames). */
+  stretch?: number;
 }
 
 export interface CompileOptions {
@@ -52,6 +58,8 @@ export interface CompileOptions {
   files?: Map<string, string>;
   /** A folder of imported fonts for libass, when text uses them. */
   fontsDir?: string;
+  /** Character widths of the faces text that breaks its own lines (max_lines) is set in. */
+  measure?: AssOptions['measure'];
 }
 
 /**
@@ -75,71 +83,89 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
     `<profile width="${width}" height="${height}" frame_rate_num="${fps.num}" frame_rate_den="${fps.den}" progressive="1" sample_aspect_num="1" sample_aspect_den="1" display_aspect_num="${width / g}" display_aspect_den="${height / g}" colorspace="709"/>`,
   );
 
-  // One producer per media item and stream at each level of nesting. Levels don't share one:
-  // MLT keeps a producer's last scaled image, so a picture fitted one way inside a nested
-  // timeline leaked into the same media fitted another way outside it.
+  // One producer per media item and stream in each tractor. Tractors don't share one: MLT
+  // keeps a producer's last scaled image, so a picture fitted one way inside a nested timeline
+  // leaked into the same media fitted another way outside it.
   const nested = doc.nested ?? {};
   // What a media clip plays: its cleaned sound when a source pass made one. Picture-only
   // renders (frames) may go without it and play the media itself.
   const playedKey = (c: StoredClip): string => {
-    const key = sourceKey(c);
+    const key = sourceKey(c, doc.sequence);
     if (c.type !== 'media' || key === c.media_id || options.sources.has(key)) return key;
     if (options.frames) return c.media_id;
     throw new CfError('media_offline', `The cleaned sound of clip ${c.id} was not prepared`);
   };
   const producerName = (key: string) => key.replace(/[^\w-]/g, '_');
-  const bodies: NestedDoc[] = [doc, ...Object.values(nested)];
-  const level = new Map<NestedDoc, string>(bodies.map((b, i) => [b, i ? `l${i}_` : '']));
-  const used = new Map<string, { mediaId: string; kind: 'video' | 'audio' }>();
-  for (const body of bodies)
-    for (const t of body.tracks)
-      for (const c of t.clips) {
-        if (!c.enabled || c.type !== 'media') continue;
-        const key = playedKey(c);
-        used.set(`${level.get(body)}${producerName(key)}_${c.kind[0]}`, {
-          mediaId: key,
-          kind: c.kind,
-        });
-      }
-  for (const [id, { mediaId, kind }] of used) {
+  const producers: string[] = [];
+  const made = new Set<string>();
+  /** The producer that plays a media clip's stream inside the tractor with this prefix. */
+  const producerFor = (prefix: string, c: StoredClip & { type: 'media' }): string => {
+    const mediaId = playedKey(c);
+    const id = `${prefix}${producerName(mediaId)}_${c.kind[0]}`;
+    if (made.has(id)) return id;
+    made.add(id);
     const src = options.sources.get(mediaId);
     if (!src) throw new CfError('media_offline', `Media ${mediaId} is not available for rendering`);
     if (src.image) {
-      x.push(
+      producers.push(
         `<producer id="${id}" in="0" out="${15_000_000 - 1}"><property name="mlt_service">pixbuf</property><property name="resource">${esc(src.path)}</property><property name="length">15000000</property><property name="ttl">1</property></producer>`,
       );
     } else {
-      const only = kind === 'video' ? 'audio_index' : 'video_index';
-      x.push(
+      const only = c.kind === 'video' ? 'audio_index' : 'video_index';
+      producers.push(
         `<producer id="${id}"><property name="mlt_service">avformat</property><property name="resource">${esc(src.path)}</property><property name="${only}">-1</property><property name="seekable">1</property></producer>`,
       );
     }
-  }
-
-  // Nested timelines first, each after anything it nests itself.
-  const tractors = new Map<string, string>();
-  const visit = (key: string) => {
-    if (tractors.has(key)) return;
-    const body = nested[key];
-    if (!body)
-      throw new CfError('bad_request', `Nested timeline ${key} is missing from the document`);
-    for (const t of body.tracks)
-      for (const c of t.clips) if (c.type === 'timeline') visit(c.timeline);
-    const id = `n${tractors.size + 1}_main`;
-    tractors.set(key, id);
-    const length = Math.max(1, frame(timelineEnd(body)));
-    x.push(...tractor(body, `n${tractors.size}_`, id, { length, clear: true }));
+    return id;
   };
-  for (const t of doc.tracks) for (const c of t.clips) if (c.type === 'timeline') visit(c.timeline);
+
+  // Nested timelines are tractors of their own, written before the tractor that plays them.
+  // A tractor that two tracks fetch for the same frame (a nested clip's picture and its linked
+  // sound, or two overlapping uses) renders wrong in MLT 7.30: the second fetch disturbs the
+  // first's compositing. So each use gets a tractor of its own kind (picture or sound only),
+  // shared only by uses of the same kind in the same parent that never overlap in time.
+  const compiled: string[] = [];
+  const pools = new Map<string, Array<{ id: string; spans: Array<[number, number]> }>>();
+  let tractorCount = 0;
+  const nestedTractor = (
+    parent: string,
+    c: StoredClip & { type: 'timeline' },
+    from: number,
+    to: number,
+  ): string => {
+    const poolKey = `${parent}|${c.timeline}|${c.kind}`;
+    const pool = pools.get(poolKey) ?? [];
+    pools.set(poolKey, pool);
+    let instance = pool.find((i) => i.spans.every(([a, b]) => to <= a || from >= b));
+    if (!instance) {
+      const inner = nested[c.timeline];
+      if (!inner)
+        throw new CfError(
+          'bad_request',
+          `Nested timeline ${c.timeline} is missing from the document`,
+        );
+      tractorCount += 1;
+      const id = `n${tractorCount}_main`;
+      const length = Math.max(1, frame(timelineEnd(inner)));
+      compiled.push(
+        ...tractor(inner, `n${tractorCount}_`, id, { length, clear: true, kind: c.kind }),
+      );
+      instance = { id, spans: [] };
+      pool.push(instance);
+    }
+    instance.spans.push([from, to]);
+    return instance.id;
+  };
 
   const length = Math.max(1, frame(timelineEnd(doc)));
-  x.push(
+  compiled.push(
     ...tractor(doc, '', 'main', {
       length,
       clear: false,
       ...(options.range ? { range: options.range } : {}),
     }),
   );
+  x.push(...producers, ...compiled);
   if (options.frames) {
     x.push(
       `<playlist id="frames">${options.frames.map((f) => `<entry producer="main" in="${f}" out="${f}"/>`).join('')}</playlist>`,
@@ -170,7 +196,13 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
     body: NestedDoc,
     prefix: string,
     id: string,
-    o: { length: number; clear: boolean; range?: { start: number; end: number } },
+    o: {
+      length: number;
+      clear: boolean;
+      range?: { start: number; end: number };
+      /** A nested use plays only its picture or only its sound: the other tracks are left out. */
+      kind?: 'video' | 'audio';
+    },
   ): string[] {
     const parts: string[] = [];
     const { length: len } = o;
@@ -186,6 +218,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
     const out = { width, height, pixel: width / doc.sequence.width };
     let index = 0;
     body.tracks.forEach((t, ti) => {
+      if (o.kind && t.kind !== o.kind) return;
       // Adjustment clips: everything below this track becomes one sub-tractor whose output
       // their effects filter over their own ranges; this track and those above composite on it.
       const zones = t.clips.filter(
@@ -297,6 +330,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
               length,
               at: from,
               fontFamily: (id) => options.sources.get(id)?.family,
+              ...(options.measure ? { measure: options.measure } : {}),
             }),
           );
           parts.push(
@@ -307,14 +341,14 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
           // A retimed clip is its own chain: the timeremap link maps each clip frame to a
           // source time, which covers speed, ramps, reverse and freeze frames.
           const chain = `${prefix}${c.id}_${c.kind[0]}`;
-          parts.push(retimedChain(chain, c, media.path, tpf, n, span));
+          parts.push(retimedChain(chain, c, media, tpf, n, span));
           entry = `<entry producer="${chain}" in="0" out="${length - 1}">${filters}</entry>`;
         } else {
           const producer =
             c.type === 'media'
-              ? `${level.get(body) ?? ''}${producerName(playedKey(c))}_${c.kind[0]}`
+              ? producerFor(prefix, c)
               : c.type === 'timeline'
-                ? (tractors.get(c.timeline) as string)
+                ? nestedTractor(prefix, c, from, from + length)
                 : '';
           // A still has no timeline of its own: any frame of it is the picture.
           const inF = media?.image ? 0 : frame(c.in) - cp.head;
@@ -401,13 +435,20 @@ function sourceSize(
 function retimedChain(
   id: string,
   c: StoredClip,
-  path: string,
+  media: MltSource,
   tpf: number,
   n: number,
   span: RenderSpan,
 ): string {
-  const seconds = (i: number) =>
-    Math.round((frameSource(c, tpf, i) / TICKS_PER_SECOND) * 1e6) / 1e6;
+  const path = media.path;
+  // A copy of part of the source (in-between frames) starts at its own offset, slowed.
+  const offset = media.offset ?? 0;
+  const stretch = media.stretch ?? 1;
+  const seconds = (i: number) => {
+    const t = (frameSource(c, tpf, i) / TICKS_PER_SECOND - offset) * stretch;
+    const r = Math.round(t * 1e6) / 1e6;
+    return offset ? Math.max(0, r) : r;
+  };
   const points: Array<[number, number]> = [];
   for (let j = 0; j < n + span.head + span.tail; j++) points.push([j, seconds(j - span.head)]);
   // Keep only the corners of straight runs: constant speed is two points, a freeze one.
@@ -421,7 +462,7 @@ function retimedChain(
   const map = (steady ? kept.slice(0, 1) : kept).map(([i, v]) => `${i}=${v}`).join(';');
   const only = c.kind === 'video' ? 'audio_index' : 'video_index';
   const pitch = c.kind === 'audio' && c.speed?.preserve_pitch !== false ? 1 : 0;
-  return `<chain id="${id}" out="${n + span.head + span.tail - 1}">${prop('mlt_service', 'avformat')}${prop('resource', path)}${prop(only, -1)}${prop('seekable', 1)}<link>${prop('mlt_service', 'timeremap')}${prop('time_map', map)}${prop('image_mode', 'nearest')}${prop('pitch', pitch)}</link></chain>`;
+  return `<chain id="${id}" out="${n + span.head + span.tail - 1}">${prop('mlt_service', 'avformat')}${prop('resource', path)}${prop(only, -1)}${prop('seekable', 1)}<link>${prop('mlt_service', 'timeremap')}${prop('time_map', map)}${prop('image_mode', c.speed?.interpolate === 'blend' ? 'blend' : 'nearest')}${prop('pitch', pitch)}</link></chain>`;
 }
 
 /** Keyframes "key=value;..." keeping only the corners of straight runs; one value if constant. */
@@ -565,14 +606,73 @@ export async function writeMltProject(
       await symlink(src.path, join(fontsDir, `${id}${extname(src.path) || '.ttf'}`));
   }
   const files = new Map<string, string>();
+  const measure = options.measure ?? (await textMeasures(doc, options.sources));
   await writeFile(
     join(dir, 'timeline.mlt'),
-    compileMlt(doc, { ...options, files, ...(fontsDir ? { fontsDir } : {}) }),
+    compileMlt(doc, {
+      ...options,
+      files,
+      ...(fontsDir ? { fontsDir } : {}),
+      ...(measure ? { measure } : {}),
+    }),
   );
   for (const [name, content] of files) await writeFile(join(dir, name), content);
   // melt ignores in/out on the root tractor; the range is applied as producer arguments.
   const range = options.range ? [`in=${options.range.start}`, `out=${options.range.end - 1}`] : [];
   return ['-profile', join(dir, 'profile'), 'timeline.mlt', ...range];
+}
+
+/** The face of a text that breaks its own lines, keyed as the widths are looked up. */
+const textFaceKey = (f: TextFace) =>
+  f.mediaId
+    ? `media:${f.mediaId}|${f.bold}|${f.italic}`
+    : faceKey({ family: f.font, bold: f.bold, italic: f.italic });
+
+/**
+ * Loads the character widths of every face that text with max_lines is set in (the timeline's
+ * and its nested timelines'), so the compiler can break its lines; undefined when none has.
+ */
+async function textMeasures(
+  doc: TimelineDoc,
+  sources: Map<string, MltSource>,
+): Promise<AssOptions['measure']> {
+  const faces = new Map<string, TextFace>();
+  const docs = [doc, ...Object.values(doc.nested ?? {})];
+  for (const d of docs)
+    for (const t of d.tracks)
+      for (const c of t.clips) {
+        if (c.type !== 'title' && c.type !== 'caption') continue;
+        const style = { ...TEXT_DEFAULTS[c.type], ...c.style };
+        if (!style.max_lines) continue;
+        const mediaId = style.font_media_id;
+        const family = mediaId ? sources.get(mediaId)?.family : undefined;
+        const font = (family ?? style.font ?? 'Inter').replace(/,/g, ' ');
+        const add = (bold: boolean, italic: boolean) => {
+          const face = { font, bold, italic, ...(family ? { mediaId } : {}) };
+          faces.set(textFaceKey(face), face);
+        };
+        add(Boolean(style.bold), Boolean(style.italic));
+        for (const sp of c.spans ?? [])
+          add(sp.bold ?? Boolean(style.bold), sp.italic ?? Boolean(style.italic));
+      }
+  if (!faces.size) return undefined;
+  const loaded = new Map<string, Measure>();
+  for (const [key, f] of faces) {
+    const file = f.mediaId ? sources.get(f.mediaId)?.path : undefined;
+    try {
+      loaded.set(key, await loadFace({ family: f.font, bold: f.bold, italic: f.italic, file }));
+    } catch (e) {
+      throw new CfError(
+        'render_failed',
+        `Could not read the widths of font ${f.font} to break lines by`,
+        {
+          hint: 'Set font to one at video://catalog/fonts, or import the font file with media.import',
+          detail: { reason: e instanceof Error ? e.message : String(e) },
+        },
+      );
+    }
+  }
+  return (face) => loaded.get(textFaceKey(face));
 }
 
 /** Timeline length in frames. */

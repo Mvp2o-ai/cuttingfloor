@@ -4,7 +4,8 @@ import { MediaId } from './ids.ts';
 
 // The effect registry: every effect an agent can apply, with typed parameters. Tools take a
 // name and a params object checked against this at run time (so tool definitions stay
-// small); video://catalog/effects lists it. Numbers marked animatable take keyframes.
+// small); video://catalog/effects lists it, and errors list the names and params inline.
+// Numbers marked animatable take keyframes.
 
 type Num = {
   kind: 'number';
@@ -111,7 +112,14 @@ export const EFFECTS = {
   blur: {
     kind: 'video',
     about: 'Gaussian blur',
-    params: { radius: num(0, 0.2, 0.01, 'Fraction of the frame height') },
+    params: {
+      radius: num(
+        0,
+        0.2,
+        0.01,
+        'Fraction of the frame height; the Gaussian sigma is half of it (0.02 on 1080p is about 11 px)',
+      ),
+    },
   },
   sharpen: {
     kind: 'video',
@@ -145,15 +153,30 @@ export const EFFECTS = {
   },
   denoise: {
     kind: 'video',
-    about: 'Reduce video noise',
-    params: { strength: num(0, 10, 3, 'Spatial denoise strength', false) },
+    about:
+      'Reduce grain and noise in the picture, frame by frame (FFmpeg fftdnoiz), keeping edges; for sound: noise_reduction or voice_denoise',
+    params: {
+      strength: num(
+        0,
+        50,
+        4,
+        'How hard it denoises, in 8-bit levels (0 to 255) of noise: set to the spread of the grain (its standard deviation) it takes out about 40% of it, at twice that over half; higher also softens fine detail. 0 leaves the picture as it is',
+        false,
+      ),
+    },
   },
   chroma_key: {
     kind: 'video',
     about: 'Make a colour (green or blue screen) transparent',
     params: {
       color: { kind: 'colour', default: '#00FF00', about: 'The screen colour' },
-      tolerance: num(0, 1, 0.2, 'How far from the colour still keys out', false),
+      tolerance: num(
+        0,
+        1,
+        0.2,
+        'How far a pixel may be from color and still key out, compared on colour alone (brightness ignored, so shadows on the screen key too): 0 the exact colour only, 1 almost everything',
+        false,
+      ),
     },
   },
   // Audio
@@ -173,6 +196,20 @@ export const EFFECTS = {
       threshold_db: num(-60, 0, -18, 'Level above which it compresses', false),
       ratio: num(1, 20, 4, 'Compression ratio', false),
       makeup_db: num(0, 24, 0, 'Gain after compression', false),
+      attack_ms: num(
+        0.01,
+        2000,
+        20,
+        'How fast it turns the level down once the sound goes over the threshold, milliseconds',
+        false,
+      ),
+      release_ms: num(
+        0.01,
+        9000,
+        250,
+        'How fast it lets the level back up once the sound falls under the threshold, milliseconds',
+        false,
+      ),
     },
   },
   noise_reduction: {
@@ -234,10 +271,116 @@ export const EFFECTS = {
     params: { frequency: num(200, 20000, 8000, 'Hz', false) },
   },
   telephone: { kind: 'audio', about: 'Narrow-band phone voice', params: {} },
+  dereverb: {
+    kind: 'audio',
+    about:
+      "Take room echo out of speech (weighted prediction error, WPE): the echo tail each moment's recent past predicts is subtracted; the voice and the first few hundredths of a second of the room stay. One microphone: on a 0.5 s room it takes the echo between words down by about 4 dB, so it softens a room rather than removing it. On audio clips only, not tracks or the timeline: it works through the clip's whole source once, on the first render that plays it (a minute of voice in about 15 s; twice that for true stereo), and reuses that after",
+    sourcePass: true,
+    params: {
+      reach_ms: num(
+        60,
+        400,
+        250,
+        'How far back the echo is predicted from, in milliseconds: longer reaches a longer tail and costs more time',
+        false,
+      ),
+      mix: num(0, 1, 1, '1 is fully processed; lower blends the original back in', false),
+    },
+  },
+  // Lens, motion and channels
+  lens_correction: {
+    kind: 'video',
+    about:
+      'Straighten lines a lens bends (FFmpeg lenscorrection): each pixel is moved along the line from the centre by k1 r² + k2 r⁴, r its distance from the centre over half the frame diagonal. Negative k1 pulls out a barrel or fisheye bulge, positive a pincushion. Edges left with nothing to show are black (clip.set_transform scale hides them)',
+    params: {
+      k1: num(-1, 1, 0, 'Quadratic term, -1 to 1; 0 is no change'),
+      k2: num(-1, 1, 0, 'Fourth-power term, -1 to 1, for the far edges; 0 is no change'),
+      center_x: num(0, 1, 0.5, 'Lens centre across, fraction of the width', false),
+      center_y: num(0, 1, 0.5, 'Lens centre down, fraction of the height', false),
+    },
+  },
+  directional_blur: {
+    kind: 'video',
+    about:
+      'Blur along one direction, like fast camera or subject motion (FFmpeg dblur); keyframe radius up and down across a cut for a whip pan',
+    params: {
+      angle: num(0, 360, 0, 'Direction of the streaks in degrees: 0 left-right, 90 up-down'),
+      radius: num(
+        0,
+        0.5,
+        0.02,
+        'How far the streaks reach each way, fraction of the frame width (they fade to half by about there)',
+      ),
+    },
+  },
+  channels: {
+    kind: 'audio',
+    about:
+      'Route the input channels to the left and right outputs: a voice recorded on one side to both (left: left, right: left), a swap (left: right, right: left), a downmix to mono (both mix)',
+    params: {
+      left: {
+        kind: 'choice',
+        values: ['left', 'right', 'mix', 'silent'],
+        default: 'left',
+        about: 'What the left output plays: an input channel, both mixed half and half, or nothing',
+      },
+      right: {
+        kind: 'choice',
+        values: ['left', 'right', 'mix', 'silent'],
+        default: 'right',
+        about: 'What the right output plays',
+      },
+    },
+  },
 } satisfies Record<string, EffectSpec>;
 
 export type EffectName = keyof typeof EFFECTS;
 export const EFFECT_NAMES = Object.keys(EFFECTS) as EffectName[];
+
+/** Every effect name, by kind: what an error about an unknown effect lists. */
+export function effectNamesText(): string {
+  const of = (kind: 'video' | 'audio') =>
+    EFFECT_NAMES.filter((n) => (EFFECTS as Record<string, EffectSpec>)[n]?.kind === kind).join(
+      ', ',
+    );
+  return `Video effects: ${of('video')}. Audio effects: ${of('audio')}`;
+}
+
+/**
+ * One effect's params with their ranges, units, defaults and whether they take keyframes, as
+ * an error about a param lists them (so no catalogue read is needed to fix the call).
+ */
+export function effectParamsText(name: string): string {
+  const spec = (EFFECTS as Record<string, EffectSpec>)[name];
+  if (!spec) return effectNamesText();
+  const params = Object.entries(spec.params).map(([key, p]) => {
+    if (p.kind === 'number')
+      return `${key}: ${p.min} to ${p.max}, default ${p.default} (${p.about}${p.animatable ? '; takes keyframes' : ''})`;
+    if (p.kind === 'choice')
+      return `${key}: one of ${p.values.join(', ')}, default ${p.default} (${p.about})`;
+    if (p.kind === 'colour') return `${key}: #RRGGBB, default ${p.default} (${p.about})`;
+    return `${key}: a media_id, required (${p.about})`;
+  });
+  return params.length
+    ? `${name} (${spec.kind}) takes ${params.join('; ')}`
+    : `${name} (${spec.kind}) takes no params`;
+}
+
+/** An effect's params with every default filled in: what it actually applies. */
+export function effectParamsApplied(
+  name: string,
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  const spec = (EFFECTS as Record<string, EffectSpec>)[name];
+  if (!spec) return params;
+  const out: Record<string, unknown> = {};
+  for (const [key, p] of Object.entries(spec.params)) {
+    if (params[key] !== undefined) out[key] = params[key];
+    else if ('default' in p) out[key] = p.default;
+  }
+  for (const [key, v] of Object.entries(params)) if (!(key in out)) out[key] = v;
+  return out;
+}
 
 /** A stored effect: params hold constants or stored animatables (source ticks). */
 export const StoredEffect = z.object({

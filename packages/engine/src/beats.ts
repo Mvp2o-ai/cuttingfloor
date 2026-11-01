@@ -1,6 +1,5 @@
-import { spawn } from 'node:child_process';
 import { CfError } from '@cuttingfloor/schema';
-import { BIN } from './exec.ts';
+import { BIN, KILL_SETTLE_MS, killTree, spawnEngine } from './exec.ts';
 
 // Tempo and beats for media.analyze: an onset envelope from spectral flux, a tempo from its
 // autocorrelation (weighted towards 120 BPM), and beat times by dynamic programming (Ellis,
@@ -18,12 +17,14 @@ export interface Beats {
   beats: number[];
   /** Every fourth beat from the strongest phase: likely bar starts. */
   downbeats: number[];
+  /** Per beat, in order: the onset strength there, as a share of the strongest onset (0–1). */
+  strengths: number[];
 }
 
 /** Mono samples at 22.05 kHz. */
 function decode(file: string, signal?: AbortSignal): Promise<Float32Array> {
   return new Promise((resolve, reject) => {
-    const ff = spawn(
+    const ff = spawnEngine(
       BIN.ffmpeg,
       [
         '-hide_banner',
@@ -53,7 +54,10 @@ function decode(file: string, signal?: AbortSignal): Promise<Float32Array> {
     ff.stderr.on('data', (d: Buffer) => {
       err = (err + d.toString()).slice(-1000);
     });
-    const kill = () => ff.kill('SIGKILL');
+    const kill = () => {
+      killTree(ff);
+      setTimeout(() => reject(new CfError('cancelled', 'Cancelled')), KILL_SETTLE_MS).unref();
+    };
     signal?.addEventListener('abort', kill, { once: true });
     ff.on('close', (code) => {
       signal?.removeEventListener('abort', kill);
@@ -246,9 +250,19 @@ export async function analyseBeats(file: string, signal?: AbortSignal): Promise<
       phase = p;
     }
   }
+  // Each beat's onset strength (the strongest onset within two hops, about 46 ms, of the beat),
+  // on one scale for the whole sound: the strongest onset anywhere is 1.
+  let peak = 0;
+  for (const v of env) if (v > peak) peak = v;
+  const near = (f: number) => {
+    let m = 0;
+    for (let k = f - 2; k <= f + 2; k++) m = Math.max(m, env[k] ?? 0);
+    return m;
+  };
   return {
     bpm: Math.round(bpm * 10) / 10,
     beats,
     downbeats: beats.filter((_, i) => i % 4 === phase),
+    strengths: frames.map((f) => (peak ? Math.round((near(f) / peak) * 1000) / 1000 : 0)),
   };
 }

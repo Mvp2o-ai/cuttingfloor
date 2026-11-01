@@ -29,7 +29,12 @@ export const TextStyle = z
     x: z.number().min(-1).max(2).optional(),
     y: z.number().min(-1).max(2).optional(),
     anchor: z.enum(['top', 'middle', 'bottom']).optional(),
-    max_width: z.number().min(0.05).max(1).optional(),
+    max_width: z
+      .number()
+      .min(0.05)
+      .max(1)
+      .optional()
+      .describe('Of frame width: longer text wraps onto more lines, balanced in length'),
     letter_spacing: z.number().min(-0.5).max(2).optional(),
     outline: z
       .object({
@@ -55,13 +60,27 @@ export const TextStyle = z
       .optional(),
     highlight: z
       .object({
-        mode: z.enum(HIGHLIGHTS),
+        mode: z
+          .enum(HIGHLIGHTS)
+          .describe(
+            'Needs caption word timings. karaoke: each word takes color as it is spoken and keeps it; fill: likewise, sweeping across each word; word: only the word being spoken; pop: that word, growing a little',
+          ),
         color: Colour,
       })
       .nullable()
       .optional(),
     reveal: z.enum(TEXT_REVEALS).optional(),
     reveal_frames: z.number().int().min(1).max(10_000).optional(),
+    max_lines: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .nullable()
+      .optional()
+      .describe(
+        'At most this many lines at once: longer text shows in turn, a screenful at a time, each from its first word (by word timing, or by length without it). Lines are broken here, by the font, balanced in length; null shows it all at once',
+      ),
   })
   .meta({ id: 'TextStyle' });
 export type TextStyle = z.infer<typeof TextStyle>;
@@ -105,3 +124,38 @@ export const StoredWord = z.object({
   end: z.number().int(),
 });
 export type StoredWord = z.infer<typeof StoredWord>;
+
+/**
+ * A styled run inside one title or caption: its words first_word to last_word (counted from 0,
+ * the caption's timed words or the text split at spaces and line breaks) take these fields over
+ * the clip's style. A later span wins where spans overlap.
+ */
+export const TextSpan = z
+  .object({
+    first_word: z.number().int().min(0).max(10_000),
+    last_word: z.number().int().min(0).max(10_000),
+    color: Colour.optional(),
+    bold: z.boolean().optional(),
+    italic: z.boolean().optional(),
+    underline: z.boolean().optional(),
+    size: z.number().min(0.005).max(1).optional().describe('Of frame height'),
+  })
+  .meta({ id: 'TextSpan' });
+export type TextSpan = z.infer<typeof TextSpan>;
+
+export const TextSpans = z
+  .array(TextSpan)
+  .max(500)
+  .describe(
+    'Style part of the text: each span restyles words first_word to last_word (from 0: the timed words, or the text split at spaces), e.g. one word in yellow',
+  );
+
+/** The words a title or caption is counted in for spans: its timed words, or its text split. */
+export function textWords(clip: {
+  text: string;
+  words?: Array<{ text: string }> | undefined;
+}): string[] {
+  return clip.words?.length
+    ? clip.words.map((w) => w.text)
+    : clip.text.split(/\s+/).filter((w) => w.length);
+}
