@@ -2826,6 +2826,86 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       ids.lut = lut.media_id;
     }, 180_000);
 
+    it('takes noise out of a noisy picture with denoise, more with more strength', async () => {
+      // Mid grey with grain that changes every frame (a spread of about 8 levels).
+      const file = join(env.mediaDir, 'noisy.mp4');
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=0x808080:size=1280x720:rate=25,noise=alls=12:allf=t',
+        '-t',
+        '2',
+        '-pix_fmt',
+        'yuv420p',
+        '-crf',
+        '4',
+        file,
+      ]);
+      const noisy = (await importMedia({ path: file })).media_id;
+      /** Spread of the brightness over the frame (its standard deviation, 0–255). */
+      const spread = async (params: Record<string, unknown> | null, f = 20) => {
+        const t = await build([
+          {
+            tool: 'clip.add',
+            args: { track_id: 't1', media_id: noisy, av: 'video', source: { in: 0, out: 50 } },
+          },
+          ...(params
+            ? [
+                {
+                  tool: 'filter.add',
+                  args: { clip_id: { $ref: 'ops[0].clip_id' }, name: 'denoise', params },
+                },
+              ]
+            : []),
+        ]);
+        const res = await call(client, 'render.frames', {
+          timeline_id: t,
+          frames: [f],
+          layout: 'single',
+          format: 'png',
+          size: 'full',
+        });
+        if (res.isError) throw new Error(JSON.stringify(res.structured));
+        const png = join(env.dir, `noise-${Math.random().toString(36).slice(2)}.png`);
+        await writeFile(png, Buffer.from((res.content[0]?.data as string) ?? '', 'base64'));
+        const { stdout } = await exec(
+          'ffmpeg',
+          [
+            '-v',
+            'error',
+            '-i',
+            png,
+            '-vf',
+            'crop=600:320:340:200,format=gray',
+            '-f',
+            'rawvideo',
+            '-',
+          ],
+          { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 },
+        );
+        let sum = 0;
+        let sq = 0;
+        for (const v of stdout) {
+          sum += v;
+          sq += v * v;
+        }
+        const mean = sum / stdout.length;
+        return Math.sqrt(sq / stdout.length - mean * mean);
+      };
+      const before = await spread(null);
+      const light = await spread({ strength: 4 });
+      const strong = await spread({ strength: 16 });
+      // Measured through MLT: 7.6 levels before, 5.8 at 4 and 3.5 at 16.
+      expect(before).toBeGreaterThan(6);
+      expect(light).toBeLessThan(before * 0.85);
+      expect(strong).toBeLessThan(light * 0.75);
+      // The same frame comes out the same as part of a longer run (no frame history).
+      expect(Math.abs((await spread({ strength: 4 }, 0)) - light)).toBeLessThan(0.5);
+      // Strength 0 leaves the picture as it is.
+      expect(Math.abs((await spread({ strength: 0 })) - before)).toBeLessThan(before * 0.05);
+    }, 180_000);
+
     it('greys a clip, keys out a green screen and applies a LUT', async () => {
       const grey = await build([
         {
