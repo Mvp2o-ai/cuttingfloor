@@ -121,6 +121,25 @@ RUN dir=/models/Xenova/clap-htsat-unfused && mkdir -p "$dir/onnx" \
  && fetch special_tokens_map.json "$CLAP_SPECIAL_TOKENS_SHA256" \
  && fetch onnx/text_model.onnx "$CLAP_TEXT_ONNX_SHA256"
 
+# Real-ESRGAN's compact general model, realesr-general-x4v3 (BSD-3-Clause, xinntao/Real-ESRGAN
+# release v0.2.5.0), for create.upscaled: exported to ONNX with the stage above's PyTorch
+# (tools/picture/export-realesrgan.py) at three denoise strengths, each a blend of the strong
+# and weak-denoise checkpoints as Real-ESRGAN itself blends them. Checkpoints pinned by SHA-256.
+FROM sound-models AS picture-models
+ARG REALESRGAN_RELEASE=https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0
+ARG REALESR_GENERAL_SHA256=8dc7edb9ac80ccdc30c3a5dca6616509367f05fbc184ad95b731f05bece96292
+ARG REALESR_WDN_SHA256=1641f8c4464b9f097c9fdda5589273713f67cf59f3d909e0bd688f0cee269dca
+COPY tools/picture/export-realesrgan.py /src/
+RUN mkdir -p /ckpt /picture/upscale \
+ && curl -fsSL -o /ckpt/x4v3.pth "$REALESRGAN_RELEASE/realesr-general-x4v3.pth" \
+ && echo "$REALESR_GENERAL_SHA256  /ckpt/x4v3.pth" | sha256sum -c - \
+ && curl -fsSL -o /ckpt/wdn-x4v3.pth "$REALESRGAN_RELEASE/realesr-general-wdn-x4v3.pth" \
+ && echo "$REALESR_WDN_SHA256  /ckpt/wdn-x4v3.pth" | sha256sum -c - \
+ && cd /tmp \
+ && /venv/bin/python -I /src/export-realesrgan.py /ckpt/x4v3.pth /ckpt/wdn-x4v3.pth 0 /picture/upscale/realesr-general-x4v3-light.onnx \
+ && /venv/bin/python -I /src/export-realesrgan.py /ckpt/x4v3.pth /ckpt/wdn-x4v3.pth 0.5 /picture/upscale/realesr-general-x4v3-medium.onnx \
+ && /venv/bin/python -I /src/export-realesrgan.py /ckpt/x4v3.pth /ckpt/wdn-x4v3.pth 1 /picture/upscale/realesr-general-x4v3-strong.onnx
+
 # sherpa-onnx's offline TTS for local voiceover (Kokoro voices; Apache-2.0, with espeak-ng
 # built in), the prebuilt release for each architecture, checked against pinned SHA-256s. The
 # Kokoro model downloads on first use, like the whisper models.
@@ -224,6 +243,7 @@ COPY --from=skills-model /models/ /usr/share/cuttingfloor/models/
 COPY --from=denoise-models /models/ /usr/share/cuttingfloor/models/
 COPY --from=speech-models /models/ /usr/share/cuttingfloor/models/
 COPY --from=sound-models /models/ /usr/share/cuttingfloor/models/
+COPY --from=picture-models /picture/ /usr/share/cuttingfloor/models/
 # Chromium for the sandbox (create.motion, create.still), only ever started by the
 # motion-worker role through this wrapper, which keeps its sandbox on and its network off.
 COPY tools/motion/cf-chromium /usr/local/bin/cf-chromium

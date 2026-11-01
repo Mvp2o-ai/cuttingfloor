@@ -18,6 +18,8 @@ import {
   speak,
   splitStems,
   stabilize,
+  UPSCALE_MODEL,
+  upscale,
   voiceWords,
 } from '@cuttingfloor/engine';
 import type { JobLane } from '@cuttingfloor/jobs';
@@ -31,12 +33,14 @@ import {
   CreateStemsInput,
   CreateStemsResult,
   CreateStillInput,
+  CreateUpscaledInput,
   CreateVoiceoverInput,
   MediaInfo,
   MOTION_LIMITS,
   MotionRequest,
   SOUNDS_LIMITS,
   type Stem,
+  UPSCALE_LIMITS,
   withJob,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
@@ -491,6 +495,98 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         },
         undefined,
         'heavy',
+      );
+    }),
+  );
+
+  server.registerTool(
+    'create.upscaled',
+    {
+      title: 'Add resolution',
+      description: `A larger copy of low-resolution video or an image with detail drawn in, local: Real-ESRGAN (realesr-general-x4v3, on the CPU) makes each frame four times the size, then it is resized to scale. Slow: on 8 cores about 1 s a frame for 320x180, 2.5 s for 640x360. Sources up to 1280x720, results up to ${UPSCALE_LIMITS.longEdge} px on the long edge. New media (ProRes with the sound, or a PNG) to put in place of the original (clip.replace keeps its place and timing). Long-running: a task, or {job_id, media_id} for job.get.`,
+      inputSchema: CreateUpscaledInput,
+      outputSchema: withJob(MediaInfo),
+      annotations: annotations('Add resolution'),
+    },
+    guard(async (args, ctx) => {
+      const owner = deps.owner();
+      const source = await rt.media.get(owner, args.media_id);
+      const p = source.probe;
+      if (source.status !== 'ready' || !p) {
+        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`);
+      }
+      if (!p.video || (p.kind !== 'video' && p.kind !== 'image')) {
+        throw new CfError('bad_request', `Media ${args.media_id} has no picture to upscale`);
+      }
+      const picture = renderPicture(source, 'export');
+      const width = picture.width ?? p.video.width;
+      const height = picture.height ?? p.video.height;
+      const image = p.kind === 'image';
+      const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+      const outWidth = even(width * args.scale);
+      const outHeight = even(height * args.scale);
+      const frames = image
+        ? 1
+        : (p.video.frames ?? Math.ceil(((p.duration ?? 0) * p.video.fps.num) / p.video.fps.den));
+      if (width * height > UPSCALE_LIMITS.sourcePixels) {
+        throw new CfError(
+          'limit_exceeded',
+          `create.upscaled takes pictures up to 1280x720; this one is ${width}x${height}`,
+          { hint: 'It is for low-resolution sources; scale a larger one with clip.set_transform' },
+        );
+      }
+      if (Math.max(outWidth, outHeight) > UPSCALE_LIMITS.longEdge) {
+        throw new CfError(
+          'limit_exceeded',
+          `scale ${args.scale} would make ${outWidth}x${outHeight}; the long edge goes up to ${UPSCALE_LIMITS.longEdge}`,
+          {
+            hint: `Use scale ${Math.floor((UPSCALE_LIMITS.longEdge / Math.max(width, height)) * 100) / 100} or less`,
+          },
+        );
+      }
+      if (width * height * frames > UPSCALE_LIMITS.work) {
+        const most = Math.floor(UPSCALE_LIMITS.work / (width * height));
+        throw new CfError(
+          'limit_exceeded',
+          `This media has ${frames} frames of ${width}x${height}; create.upscaled takes up to ${most} at that size`,
+          {
+            hint: 'Export the part you need with export.video, import it and upscale that',
+          },
+        );
+      }
+      const recipe = {
+        model: UPSCALE_MODEL,
+        source: source.fingerprint ?? source.media_id,
+        width: outWidth,
+        height: outHeight,
+        denoise: args.denoise,
+      };
+      return create(
+        ctx,
+        'create.upscaled',
+        { ...args, name: args.name ?? `${source.name} upscaled` },
+        recipe,
+        async (dir, progress, signal) => {
+          const dest = join(dir, image ? 'source.png' : 'source.mov');
+          progress(0, 'upscaling');
+          await upscale(picture.path, dest, {
+            width,
+            height,
+            outWidth,
+            outHeight,
+            denoise: args.denoise,
+            image,
+            audio: Boolean(p.audio),
+            fps: image ? null : (p.video?.fps ?? null),
+            frames,
+            signal,
+            onProgress: (f) => progress(f, 'upscaling'),
+          });
+          return dest;
+        },
+        undefined,
+        'heavy',
+        [source.media_id],
       );
     }),
   );

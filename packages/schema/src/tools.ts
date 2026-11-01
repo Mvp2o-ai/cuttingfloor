@@ -1618,6 +1618,33 @@ export const CreateStabilizedInput = z.object({
   ...createCommon,
 });
 
+/** What protects the server from upscaling: the source size, the size made and the work. */
+export const UPSCALE_LIMITS = {
+  /** Source pixels a frame (1280x720). */
+  sourcePixels: 1280 * 720,
+  /** Long edge of the picture made. */
+  longEdge: 3840,
+  /** Source pixels over all frames: about 50 minutes of work on 8 cores. */
+  work: 250_000_000,
+} as const;
+
+export const CreateUpscaledInput = z.object({
+  media_id: MediaId.describe('Video or image to enlarge'),
+  scale: z
+    .number()
+    .min(1.25)
+    .max(4)
+    .default(2)
+    .describe('How many times wider and taller the result is'),
+  denoise: z
+    .enum(['light', 'medium', 'strong'])
+    .default('medium')
+    .describe(
+      'How much noise and compression blocking is cleaned while detail is drawn in: light keeps grain and fine texture, strong gives the smoothest picture',
+    ),
+  ...createCommon,
+});
+
 export const CreateStemsInput = z.object({
   media_id: MediaId.describe('Video or audio with sound'),
   stems: z

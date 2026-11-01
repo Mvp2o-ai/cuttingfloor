@@ -373,6 +373,12 @@ export const TOOLS: ToolEntry[] = [
     longRunning: 'always',
   },
   {
+    name: 'create.upscaled',
+    title: 'Add resolution',
+    readOnly: false,
+    longRunning: 'always',
+  },
+  {
     name: 'create.stems',
     title: 'Separate voice and music',
     readOnly: false,

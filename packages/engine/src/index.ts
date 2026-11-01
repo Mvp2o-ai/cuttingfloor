@@ -122,6 +122,13 @@ export {
   WHISPER_MODELS,
   type WhisperModel,
 } from './transcribe.ts';
+export {
+  UPSCALE_MODEL,
+  UPSCALE_MODELS,
+  type UpscaleDenoise,
+  type UpscaleOptions,
+  upscale,
+} from './upscale.ts';
 export { detectFaces, type Faces, type TrackPoint, trackRegion } from './vision.ts';
 export {
   alignWords,
