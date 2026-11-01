@@ -1183,6 +1183,19 @@ function rangeRemove(doc: TimelineDoc, a: EditArgsOf<'range.lift'>, ripple: bool
     ? a.track_ids.map((id) => getTrack(doc, id))
     : doc.tracks.filter((t) => !t.locked);
   for (const t of tracks) assertUnlocked(t);
+  // What each track had in the span, before it goes: a picture range taking the sound under it
+  // by default is easy to miss, so the result says so.
+  const hit = (t: StoredTrack) =>
+    t.clips.filter((c) => c.start < to && end(c) > from).map((c) => c.id);
+  const sound = a.track_ids
+    ? []
+    : tracks
+        .filter((t) => t.kind === 'audio')
+        .flatMap((t) => {
+          const ids = hit(t);
+          return ids.length ? [`${t.name} (${t.id}: ${ids.join(', ')})`] : [];
+        });
+  const picture = tracks.some((t) => t.kind === 'video' && hit(t).length);
   const removed = removeSpan(doc, tracks, from, to, ripple);
   // Only named tracks moved: the rest keep their place, which the result says.
   const warnings = ripple
@@ -1195,6 +1208,11 @@ function rangeRemove(doc: TimelineDoc, a: EditArgsOf<'range.lift'>, ripple: bool
         'Leave out track_ids to take the span out of every unlocked track',
       )
     : [];
+  if (picture && sound.length) {
+    warnings.push(
+      `The sound in frames ${a.range.start}–${a.range.end} went with the picture, from ${sound.join('; ')}. To keep it, use the parent timeline and lock those tracks (track.set {locked: true}) or name only the picture tracks in track_ids`,
+    );
+  }
   return ok(from, { clip_ids: removed, temporal: true, warnings });
 }
 

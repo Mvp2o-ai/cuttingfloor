@@ -729,6 +729,231 @@ describe('text fonts', () => {
   });
 });
 
+describe('what results and errors say back', () => {
+  /** A ready video record of a given size, written as an import leaves it (no engines). */
+  const fakeVideo = async (owner: string, id: string, width: number, height: number) => {
+    const dir = env.runtime.media.dir(owner, id);
+    const now = new Date().toISOString();
+    await env.runtime.ws.writeJson(`${dir}/media.json`, {
+      media_id: id,
+      name: `${id}.mp4`,
+      status: 'ready',
+      source: { path: '/media/clip.mp4' },
+      file: `${dir}/source.mp4`,
+      size: 1,
+      fingerprint: null,
+      probe: {
+        format: 'mov,mp4,m4a,3gp,3g2,mj2',
+        kind: 'video',
+        duration: 4,
+        video: {
+          codec: 'h264',
+          width,
+          height,
+          fps: { num: 25, den: 1 },
+          vfr: false,
+          rotation: 0,
+          transfer: null,
+          primaries: null,
+          pix_fmt: 'yuv420p',
+          frames: 100,
+        },
+        audio: { codec: 'aac', sample_rate: 48000, channels: 2 },
+      },
+      conform: [],
+      mezzanine: null,
+      proxy: null,
+      analysis: null,
+      created_at: now,
+      updated_at: now,
+    });
+    return id;
+  };
+
+  it("lists every effect name, and an effect's params with ranges, units and defaults", async () => {
+    const client = await connect(env.runtime, 'names');
+    const media = await fakeVideo('names', 'm_aaaaaaaaaaaaaaaaaaaaaaaana', 1280, 720);
+    const { timeline_id: t0 } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      sequence: SEQ_720P25,
+    });
+    const { timeline_id: t1, clip_id } = await ok<{ timeline_id: string; clip_id: string }>(
+      client,
+      'clip.add',
+      { timeline_id: t0, track_id: 't1', media_id: media, preview: 'none' },
+    );
+    const unknown = await call(client, 'filter.add', {
+      timeline_id: t1,
+      clip_id,
+      name: 'delogo',
+      preview: 'none',
+    });
+    expect(unknown.isError).toBe(true);
+    const said = JSON.stringify(unknown.content);
+    for (const name of ['brightness_contrast', 'chroma_key', 'pitch', 'telephone']) {
+      expect(said).toContain(name);
+    }
+    const param = await call(client, 'filter.add', {
+      timeline_id: t1,
+      clip_id,
+      name: 'chroma_key',
+      params: { tolerance: 3 },
+      preview: 'none',
+    });
+    expect(param.structured).toMatchObject({ code: 'bad_request' });
+    expect(String(param.structured.hint)).toMatch(
+      /^chroma_key \(video\) takes color: #RRGGBB, default #00FF00/,
+    );
+    expect(String(param.structured.hint)).toContain('tolerance: 0 to 1, default 0.2');
+    const ease = await call(client, 'clip.set_transform', {
+      timeline_id: t1,
+      clip_id,
+      x: { keyframes: [{ frame: 0, value: 0.4, ease: 'ease_in_out' }] },
+      preview: 'none',
+    });
+    expect(ease.isError).toBe(true);
+    expect(JSON.stringify(ease.content)).toContain('bounce_in_out');
+    // timeline.get shows what the effect applies, defaults included.
+    const { timeline_id: t2 } = await ok<{ timeline_id: string }>(client, 'filter.add', {
+      timeline_id: t1,
+      clip_id,
+      name: 'chroma_key',
+      params: { tolerance: 0.3 },
+      preview: 'none',
+    });
+    const view = await ok<{ tracks: Array<{ clips: Array<{ effects?: unknown[] }> }> }>(
+      client,
+      'timeline.get',
+      { timeline_id: t2 },
+    );
+    expect(view.tracks[0]?.clips[0]?.effects?.[0]).toMatchObject({
+      name: 'chroma_key',
+      params: { color: '#00FF00', tolerance: 0.3 },
+    });
+  });
+
+  it('says when a range takes the sound too, and which clips each track lost', async () => {
+    const client = await connect(env.runtime, 'ranges');
+    const media = await fakeVideo('ranges', 'm_aaaaaaaaaaaaaaaaaaaaaaaara', 1280, 720);
+    const { timeline_id: t0 } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      sequence: SEQ_720P25,
+    });
+    const added = await ok<{ timeline_id: string; clip_ids: string[] }>(client, 'clip.add', {
+      timeline_id: t0,
+      track_id: 't1',
+      media_id: media,
+      source: { in: 0, out: 40 },
+      preview: 'none',
+    });
+    const cut = await ok<{
+      changed: Array<{ id: string; change: string; track_id?: string }>;
+      warnings: string[];
+    }>(client, 'range.extract', {
+      timeline_id: added.timeline_id,
+      range: { start: 0, end: 40 },
+      preview: 'none',
+    });
+    expect(cut.changed.filter((c) => c.change === 'removed')).toEqual(
+      expect.arrayContaining([
+        { id: added.clip_ids[0], type: 'clip', change: 'removed', track_id: 't1' },
+        { id: added.clip_ids[1], type: 'clip', change: 'removed', track_id: 't2' },
+      ]),
+    );
+    expect(cut.warnings.join('\n')).toMatch(
+      /The sound in frames 0–40 went with the picture, from A1 \(t2: /,
+    );
+    // Naming the picture track alone leaves the sound and says nothing about it.
+    const picture = await ok<{ warnings: string[] }>(client, 'range.lift', {
+      timeline_id: added.timeline_id,
+      range: { start: 0, end: 40 },
+      track_ids: ['t1'],
+      preview: 'none',
+    });
+    expect(picture.warnings).toEqual([]);
+  });
+
+  it('warns how many clips no longer fill the frame after a sequence change', async () => {
+    const client = await connect(env.runtime, 'reshape');
+    const wide = await fakeVideo('reshape', 'm_aaaaaaaaaaaaaaaaaaaaaaaawd', 1920, 1080);
+    const { timeline_id: t0 } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      sequence: SEQ_720P25,
+    });
+    const { timeline_id: t1, clip_id } = await ok<{ timeline_id: string; clip_id: string }>(
+      client,
+      'clip.add',
+      { timeline_id: t0, track_id: 't1', media_id: wide, preview: 'none' },
+    );
+    const vertical = await ok<{ timeline_id: string; warnings: string[] }>(
+      client,
+      'timeline.set_sequence',
+      { timeline_id: t1, sequence: { ...SEQ_720P25, width: 720, height: 1280 }, preview: 'none' },
+    );
+    expect(vertical.warnings).toEqual([
+      `1 clip filled the old 1280x720 frame and no longer fills the new 720x1280 one, showing bars: ${clip_id}. clip.set_transform {fit: "cover"} fills the frame, cropping`,
+    ]);
+    const { timeline_id: covered } = await ok<{ timeline_id: string }>(
+      client,
+      'clip.set_transform',
+      { timeline_id: t1, clip_id, fit: 'cover', preview: 'none' },
+    );
+    const fine = await ok<{ warnings: string[] }>(client, 'timeline.set_sequence', {
+      timeline_id: covered,
+      sequence: { ...SEQ_720P25, width: 720, height: 1280 },
+      preview: 'none',
+    });
+    expect(fine.warnings).toEqual([]);
+  });
+
+  it('says when an included analysis was never run', async () => {
+    const client = await connect(env.runtime, 'unrun');
+    const media = await fakeVideo('unrun', 'm_aaaaaaaaaaaaaaaaaaaaaaaaun', 1280, 720);
+    const got = await ok<{ warnings?: string[]; speech?: unknown }>(client, 'media.get', {
+      media_id: media,
+      include: ['speech'],
+    });
+    expect(got.speech).toBeUndefined();
+    expect(got.warnings?.[0]).toMatch(/^include speech: none stored for this media/);
+  });
+
+  it('refuses a motion render over budget with the largest size that fits', async () => {
+    const client = await connect(env.runtime, 'budget');
+    const res = await call(client, 'create.motion', {
+      html: '<b>x</b>',
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      duration_seconds: 45,
+    });
+    expect(res.structured).toMatchObject({
+      code: 'limit_exceeded',
+      detail: { largest_width: 1566, largest_height: 880, longest_seconds: 30 },
+    });
+    expect(String(res.structured.hint)).toMatch(/largest of this shape that fits is 1566x880/);
+  });
+
+  it('warns that referenced media stays on this server and goes after a while', async () => {
+    const client = await connect(env.runtime, 'handoff');
+    const media = await fakeVideo('handoff', 'm_aaaaaaaaaaaaaaaaaaaaaaaaho', 1280, 720);
+    const { timeline_id: t0 } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      sequence: SEQ_720P25,
+    });
+    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'clip.add', {
+      timeline_id: t0,
+      track_id: 't1',
+      media_id: media,
+      preview: 'none',
+    });
+    const started = await ok<{ job_id: string }>(client, 'export.timeline', {
+      timeline_id,
+      format: 'otio',
+    });
+    const done = await settled<{ result: { warnings: string[] } }>(client, started.job_id);
+    expect(done.status).toBe('completed');
+    expect(done.result.warnings.join('\n')).toMatch(
+      /media reference: the file points at 1 media where this server keeps them .* 7 days after last use.* media: collect/,
+    );
+  });
+});
+
 describe('a busy or restarting sandbox', () => {
   it('fails create.still with a retryable server_busy, and names docker only locally', async () => {
     const down = await testRuntime({ motionUrl: 'http://127.0.0.1:9' });

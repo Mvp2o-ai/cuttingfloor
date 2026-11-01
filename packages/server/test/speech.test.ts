@@ -302,6 +302,10 @@ describe.skipIf(!ready)('speech and sound facts', () => {
     expect(res.isError).toBe(false);
     expect(res.structured.offset_seconds as number).toBeCloseTo(-0.37, 2);
     expect(res.structured.strength as number).toBeGreaterThan(0.5);
+    // The same offset as where to put b, so its sign can't be read backwards.
+    expect(String(res.structured.placement)).toMatch(
+      new RegExp(`^Place b's clip \\(${shifted}\\) 0\\.3\\d* s earlier than a's \\(${speech}\\)`),
+    );
     // A stretch of b against all of a, on b's own clock.
     const part = await job('media.correlate', {
       a: { media_id: speech },

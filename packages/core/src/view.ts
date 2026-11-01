@@ -691,8 +691,13 @@ export function diff(a: TimelineDoc, b: TimelineDoc): Change[] {
     if (before === undefined) out.push({ id, type: 'clip', change: 'added', ...at.get(id) });
     else if (before !== c) out.push({ id, type: 'clip', change: 'modified', ...at.get(id) });
   }
+  // A removed clip names the track it was on, so a range edit says what each track lost.
+  const wasOn = new Map(a.tracks.flatMap((t) => t.clips.map((c) => [c.id, t.id] as const)));
   for (const id of clipsA.keys())
-    if (!clipsB.has(id)) out.push({ id, type: 'clip', change: 'removed' });
+    if (!clipsB.has(id)) {
+      const track_id = wasOn.get(id);
+      out.push({ id, type: 'clip', change: 'removed', ...(track_id ? { track_id } : {}) });
+    }
   return out;
 }
 

@@ -312,7 +312,7 @@ export const Change = z.object({
   change: z.enum(['added', 'removed', 'modified']),
   /**
    * Where an added or modified clip or transition now sits (its frames, end exclusive), so a
-   * follow-up edit needs no timeline.get.
+   * follow-up edit needs no timeline.get. A removed clip gives the track it was on.
    */
   track_id: z.string().optional(),
   start: z.number().int().optional(),

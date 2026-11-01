@@ -1284,6 +1284,11 @@ export const MediaCorrelateResult = z.object({
     .object({ offset_seconds: z.number(), strength: z.number() })
     .nullable()
     .describe('The best offset outside the winning peak: close to strength means an unclear match'),
+  placement: z
+    .string()
+    .nullable()
+    .optional()
+    .describe('offset_seconds as where to place b on a timeline, in plain words'),
 });
 
 /** A media.seek criterion: a Jev noul, or its instructions alone as a plain statement. */

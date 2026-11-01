@@ -1061,9 +1061,11 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
             // Back to each source's own clock (a timeline's mix starts at its range).
             const shift = a.shift - b.shift;
             const r = (x: number) => Math.round(x * 1e4) / 1e4;
+            const offset = r(out.offset_seconds + shift);
             return {
               ...out,
-              offset_seconds: r(out.offset_seconds + shift),
+              offset_seconds: offset,
+              placement: placement(offset, sideName(args.a), sideName(args.b)),
               next_best: out.next_best
                 ? { ...out.next_best, offset_seconds: r(out.next_best.offset_seconds + shift) }
                 : null,
@@ -1294,4 +1296,23 @@ function extensionFor(type: string): string {
     'text/plain': '.txt',
   };
   return known[type] ?? '';
+}
+
+/** How a media.correlate side is named in its placement: its media or timeline id. */
+function sideName(ref: {
+  media_id?: string | undefined;
+  timeline_id?: string | undefined;
+}): string {
+  return ref.media_id ?? ref.timeline_id ?? 'it';
+}
+
+/** media.correlate's offset as where to put b's clip, so its sign can't be read backwards. */
+function placement(offset: number | null, a: string, b: string): string | null {
+  if (offset === null || !Number.isFinite(offset)) return null;
+  if (offset === 0) {
+    return `b (${b}) is already in sync with a (${a}): start both clips at the same frame, each from the same second of its source`;
+  }
+  const s = Math.abs(offset);
+  const way = offset > 0 ? 'later' : 'earlier';
+  return `Place b's clip (${b}) ${s} s ${way} than a's (${a}) when both start at the same second of their source; in general, b's start = a's start ${offset > 0 ? '+' : '-'} ${s} s + b's source start - a's source start (seconds)`;
 }

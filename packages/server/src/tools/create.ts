@@ -220,6 +220,8 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       annotations: annotations('Create a motion graphic'),
     },
     guard(async (args, ctx) => {
+      const over = motionOverBudget(args.width, args.height, args.fps, args.duration_seconds);
+      if (over) throw over;
       const files = await assets(args.assets);
       const request: MotionRequest = {
         kind: 'motion',
@@ -733,5 +735,36 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         },
       );
     }),
+  );
+}
+
+/**
+ * A motion render over the pixel-frame budget, refused with what fits: the largest size of the
+ * same shape at that length and rate, and the longest length at that size and rate.
+ */
+function motionOverBudget(
+  width: number,
+  height: number,
+  fps: number,
+  seconds: number,
+): CfError | undefined {
+  const budget = MOTION_LIMITS.maxPixelFrames;
+  const asked = width * height * fps * seconds;
+  if (asked <= budget) return undefined;
+  const k = Math.sqrt(budget / asked);
+  const even = (n: number) => Math.max(MOTION_LIMITS.minSize, Math.floor((n * k) / 2) * 2);
+  const longest = Math.floor((budget / (width * height * fps)) * 10) / 10;
+  return new CfError(
+    'limit_exceeded',
+    `Too many pixels: ${width}x${height} at ${fps} fps for ${seconds} s is ${(asked / 1e9).toFixed(2)} billion pixel-frames, over the ${(budget / 1e9).toFixed(2)} billion budget (30 s of 1080p30)`,
+    {
+      hint: `At ${seconds} s and ${fps} fps the largest of this shape that fits is ${even(width)}x${even(height)}; at ${width}x${height} and ${fps} fps, up to ${longest} s fits. Or lower the fps, or make it in parts`,
+      detail: {
+        largest_width: even(width),
+        largest_height: even(height),
+        longest_seconds: longest,
+        max_pixel_frames: budget,
+      },
+    },
   );
 }

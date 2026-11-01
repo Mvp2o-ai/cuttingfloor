@@ -653,7 +653,10 @@ describe('cross-track ripple', () => {
     expect(warning).toContain(`${late} (${v2})`);
     expect(warning).toContain('Leave out track_ids');
     const all = edit(doc, { tool: 'range.extract', args: { range: { start: 90, end: 100 } } });
-    expect(all.outcome.warnings).toEqual([]);
+    // Every track moved together; the only word is that the sound went with the picture.
+    expect(all.outcome.warnings).toHaveLength(1);
+    expect(all.outcome.warnings[0]).toMatch(/^The sound in frames 90–100 went with the picture/);
+    expect(all.outcome.warnings[0]).toContain('track.set {locked: true}');
   });
 
   it('speed changes ripple the other tracks with sync', () => {

@@ -2,7 +2,7 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import { INTERCHANGE_FILES, type InterchangeMedia, writeInterchange } from '@cuttingfloor/core';
-import { BIN, run } from '@cuttingfloor/engine';
+import { BIN, MEDIA_TTL_MS, run } from '@cuttingfloor/engine';
 import {
   CfError,
   ExportTimelineInput,
@@ -49,7 +49,7 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
       description: [
         'Write the edit for another editor: fcpxml (Final Cut Pro, DaVinci Resolve), otio (Premiere, Resolve, OpenTimelineIO apps), edl (CMX 3600, one video track), or srt/vtt (the captions).',
         'Best effort: warnings lists what the format could not carry (masks, blend modes, effects, animated transforms, ramps, text styling). timeline.get is the lossless copy.',
-        'media collect makes a .zip with the media files next to the timeline file.',
+        'media reference (default) points at the media where this server keeps it, which another machine cannot open and which goes 7 days after last use (the result warns); media collect makes a .zip with the media files next to the timeline file, to hand the edit on.',
         'Long-running: a task, or {job_id} for job.get; the result has a signed download URL.',
       ].join(' '),
       inputSchema: ExportTimelineInput,
@@ -100,6 +100,8 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
           const media = new Map<string, InterchangeMedia>();
           const files = new Map<string, string>();
           const used = new Set<string>();
+          // Referenced files this server keeps for a while (its own copies), named in one warning.
+          const kept: string[] = [];
           for (const r of records) {
             const original = r.file ?? ('path' in r.source ? r.source.path : undefined);
             if (!original) {
@@ -119,10 +121,11 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
               used.add(file.toLowerCase());
               files.set(file, original);
               path = `media/${file}`;
-            } else if (path === original && rt.config.mode === 'hosted') {
-              warnings.push(
-                `${r.name} is referred to by its server path; use media: collect to take the files along`,
-              );
+            } else if (
+              rt.config.mode === 'hosted' ||
+              original.startsWith(`${rt.config.dataDir.replace(/\/$/, '')}/`)
+            ) {
+              kept.push(r.name);
             }
             const p = r.probe;
             media.set(r.media_id, {
@@ -137,6 +140,11 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
           }
           const written = writeInterchange(args.format, doc, (id) => media.get(id));
           warnings.push(...written.warnings);
+          if (kept.length) {
+            warnings.push(
+              `media reference: the file points at ${kept.length} media where this server keeps them (${kept.slice(0, 20).join(', ')}${kept.length > 20 ? ', …' : ''}): an editor on another machine can't open those paths, and the server removes media ${MEDIA_TTL_MS / 86_400_000} days after last use, after which the clips open offline. To hand the edit on, export again with media: collect, a .zip with the files beside the timeline file`,
+            );
+          }
           const outDir = rt.ws.ownerDir(owner, 'outputs', job.id);
           await mkdir(outDir, { recursive: true });
           const out = join(outDir, name);

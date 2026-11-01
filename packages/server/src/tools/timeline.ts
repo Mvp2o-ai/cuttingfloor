@@ -54,7 +54,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'timeline.set_sequence': {
     title: 'Set sequence',
     description:
-      'Change resolution, frame rate or audio format. Clip times are kept in time, so they survive a rate change.',
+      'Change resolution, frame rate or audio format. Clip times are kept in time, so they survive a rate change. Each picture is refitted to the new shape by its fit (contain by default, which leaves bars where the shapes differ); the result warns how many clips no longer fill the frame, and clip.set_transform {fit: "cover"} fills it.',
   },
   'track.add': {
     title: 'Add track',
@@ -125,12 +125,12 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'range.lift': {
     title: 'Lift range',
     description:
-      'Remove everything in a frame range on the given tracks (default all unlocked), leaving a gap.',
+      'Remove everything in a frame range on the given tracks (default all unlocked, so a picture range takes the sound under it too: lock a track with track.set or name track_ids to keep it), leaving a gap. changed lists each clip removed or cut, with its track; a warning says when sound went with the picture.',
   },
   'range.extract': {
     title: 'Extract range',
     description:
-      'Remove everything in a frame range on the given tracks (default all unlocked) and close the gap. For cutting out silences, filler words or mistakes across all tracks at once.',
+      'Remove everything in a frame range on the given tracks (default all unlocked, so a picture range takes the sound under it too: lock a track with track.set or name track_ids to keep it) and close the gap. For cutting out silences, filler words or mistakes across all tracks at once. changed lists each clip removed or cut, with its track; a warning says when sound went with the picture.',
   },
   'title.add': {
     title: 'Add title',
@@ -431,6 +431,14 @@ async function applyAndReply(
   );
   const id = await rt.timelines.put(owner, doc);
   const warnings = [...outcome.warnings];
+  if (ops.some((o) => o.tool === 'timeline.set_sequence')) {
+    const unfilled = await unfilledBySequence(rt, owner, base, doc);
+    if (unfilled.length) {
+      warnings.push(
+        `${unfilled.length} clip${unfilled.length === 1 ? '' : 's'} filled the old ${base.sequence.width}x${base.sequence.height} frame and no longer fill${unfilled.length === 1 ? 's' : ''} the new ${doc.sequence.width}x${doc.sequence.height} one, showing bars: ${unfilled.slice(0, 40).join(', ')}${unfilled.length > 40 ? ', …' : ''}. clip.set_transform {fit: "cover"} fills the frame, cropping`,
+      );
+    }
+  }
   const content: CallToolResult['content'] = [];
   let previewRef: {
     uri: string;
@@ -498,4 +506,55 @@ async function applyAndReply(
     ...(batch ? { results } : {}),
   };
   return ok(structured, content);
+}
+
+/**
+ * Video clips that filled the frame before a sequence change and leave bars after it. Only clips
+ * placed as fitted (no position, scale, crop or rotation of their own) count: a clip the agent
+ * placed by hand was not meant to fill.
+ */
+async function unfilledBySequence(
+  rt: ServerDeps['runtime'],
+  owner: string,
+  before: TimelineDoc,
+  after: TimelineDoc,
+): Promise<string[]> {
+  const a = before.sequence;
+  const b = after.sequence;
+  if (a.width === b.width && a.height === b.height) return [];
+  const sizes = new Map<string, { width: number; height: number } | null>();
+  const sizeOf = async (mediaId: string) => {
+    if (!sizes.has(mediaId)) {
+      const v = (await rt.media.find(owner, mediaId))?.probe?.video;
+      const upright = v ? v.rotation % 180 === 0 : true;
+      sizes.set(
+        mediaId,
+        v ? { width: upright ? v.width : v.height, height: upright ? v.height : v.width } : null,
+      );
+    }
+    return sizes.get(mediaId) ?? null;
+  };
+  const fills = (
+    fit: string,
+    src: { width: number; height: number },
+    seq: { width: number; height: number },
+  ) => {
+    if (fit === 'cover' || fit === 'fill') return true;
+    if (fit === 'none') return src.width >= seq.width && src.height >= seq.height;
+    // contain: the picture touches all four edges only when the shapes match (to a pixel).
+    const k = Math.min(seq.width / src.width, seq.height / src.height);
+    return src.width * k >= seq.width - 1 && src.height * k >= seq.height - 1;
+  };
+  const out: string[] = [];
+  for (const track of after.tracks) {
+    if (track.kind !== 'video') continue;
+    for (const clip of track.clips) {
+      if (clip.type !== 'media') continue;
+      const { fit = 'contain', flip: _flip, opacity: _opacity, ...placed } = clip.transform ?? {};
+      if (Object.keys(placed).length || clip.mask) continue;
+      const src = await sizeOf(clip.media_id);
+      if (src && fills(fit, src, a) && !fills(fit, src, b)) out.push(clip.id);
+    }
+  }
+  return out;
 }
