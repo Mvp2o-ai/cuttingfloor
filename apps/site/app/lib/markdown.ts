@@ -40,8 +40,15 @@ export function markdownResponse(path: string, text: string): Response {
   });
 }
 
-/** A cell's text with the characters that would break a table row escaped. */
-const cell = (s: string) => s.replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
+/**
+ * A cell's text with the characters that would break a table row escaped: backslashes first, so
+ * an escaped pipe can't be undone, then pipes, then line breaks folded into one line.
+ */
+export const cell = (s: string) =>
+  s
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/\s*\n\s*/g, ' ');
 
 export function table(head: string[], rows: string[][]): string {
   return [

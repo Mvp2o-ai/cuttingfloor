@@ -7,6 +7,7 @@ import {
   REPO_URL,
   SELF_HOST_STEPS,
 } from '../../content/facts.ts';
+import { cell } from '../lib/markdown.ts';
 import {
   AGPL,
   COMPARE,
@@ -23,8 +24,6 @@ import {
 import { SITE_URL } from '../seo.ts';
 
 // /self-host in plain Markdown, built from the same data as the page.
-
-const cell = (s: string) => s.replace(/\|/g, '\\|');
 
 export function markdown(): string {
   const body = [

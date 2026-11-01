@@ -9,11 +9,11 @@ import {
   SERVER_COLUMNS,
   SERVERS,
 } from '../../content/compare.ts';
+import { cell } from '../lib/markdown.ts';
 import { SITE_URL } from '../seo.ts';
 
 // /compare as Markdown, for agents deciding between tools: the same data as the page.
 
-const cell = (s: string) => s.replace(/\|/g, '\\|').replace(/\n/g, ' ');
 const row = (cells: string[]) => `| ${cells.map(cell).join(' | ')} |`;
 const table = (head: string[], rows: string[][]) => [
   row(head),

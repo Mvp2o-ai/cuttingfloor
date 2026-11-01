@@ -8,12 +8,11 @@ import {
   REPO_URL,
   SELF_HOST_STEPS,
 } from '../../content/facts.ts';
+import { cell } from '../lib/markdown.ts';
 import { KEPT, markWord, OPTIONS, PRICING_FAQS, RENDER_MINUTE, ROWS } from '../pricing.ts';
 import { SITE_URL } from '../seo.ts';
 
 // /pricing as Markdown, for agents and AI search, built from the same data as the page.
-
-const cell = (s: string) => s.replace(/\|/g, '\\|');
 
 export function markdown(): string {
   const body = [

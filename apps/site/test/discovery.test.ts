@@ -2,6 +2,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NextRequest } from 'next/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { cell } from '../app/lib/markdown.ts';
 import {
   markdownRoute,
   prefersMarkdown,
@@ -12,6 +13,14 @@ import {
 // The agent-facing layer: which requests get Markdown, that every public page has a twin that
 // builds, and the discovery files. The site reads skills/ relative to its own folder, as next does.
 const SITE = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+describe('Markdown table cells', () => {
+  it('escapes backslashes before pipes, so a cell can never end a row early', () => {
+    expect(cell('a|b')).toBe('a\\|b');
+    expect(cell('a\\|b')).toBe('a\\\\\\|b');
+    expect(cell('one\n  two')).toBe('one two');
+  });
+});
 
 describe('Accept negotiation', () => {
   it('chooses Markdown only when it is named and liked at least as much as HTML', () => {

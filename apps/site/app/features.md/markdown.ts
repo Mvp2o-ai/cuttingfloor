@@ -9,12 +9,12 @@ import {
   TOOL_ROWS,
   UPDATED,
 } from '../features/content.ts';
+import { cell } from '../lib/markdown.ts';
 import { SITE_URL } from '../seo.ts';
 
 // /features as Markdown, for agents: the same data as the page.
 
 const code = (tools: string[]) => tools.map((t) => `\`${t}\``).join(', ');
-const cell = (s: string) => s.replace(/\|/g, '\\|');
 
 export function markdown(): string {
   const body = [
