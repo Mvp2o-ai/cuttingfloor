@@ -1295,14 +1295,15 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
 
     it('fills a selection of several shapes as a job of its own, in every frame', async () => {
       const m = env.mediaDir;
-      // Blue with two white boxes (x 80–180 and 460–560, y 190–290 of 640×480), 10 frames.
+      // Blue with two white boxes (x 40–90 and 230–280, y 95–145 of 320×240), 5 frames: small,
+      // since the fill is slow and the suite shares the machine.
       await ff([
         '-f',
         'lavfi',
         '-i',
-        'color=c=0x1030d0:size=640x480:rate=25,drawbox=x=80:y=190:w=100:h=100:c=white:t=fill,drawbox=x=460:y=190:w=100:h=100:c=white:t=fill',
+        'color=c=0x1030d0:size=320x240:rate=25,drawbox=x=40:y=95:w=50:h=50:c=white:t=fill,drawbox=x=230:y=95:w=50:h=50:c=white:t=fill',
         '-frames:v',
-        '10',
+        '5',
         '-pix_fmt',
         'yuv420p',
         join(m, 'boxed.mp4'),
@@ -1310,21 +1311,21 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       const boxed = (await importMedia({ path: join(m, 'boxed.mp4') })).media_id;
       const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
         name: 'fill',
-        sequence: { width: 640, height: 480, fps: { num: 25, den: 1 } },
+        sequence: { width: 320, height: 240, fps: { num: 25, den: 1 } },
         tracks: { video: 1, audio: 0 },
       });
-      // The boxed clip twice: frames 0–9 filled, frames 10–19 as they are.
+      // The boxed clip twice: frames 0–4 filled, frames 5–9 as they are.
       const placed = await ok<{ timeline_id: string; clip_ids: string[] }>(client, 'edit.batch', {
         timeline_id,
         preview: 'none',
         ops: [
           {
             tool: 'clip.add',
-            args: { track_id: 't1', media_id: boxed, av: 'video', source: { in: 0, out: 10 } },
+            args: { track_id: 't1', media_id: boxed, av: 'video', source: { in: 0, out: 5 } },
           },
           {
             tool: 'clip.add',
-            args: { track_id: 't1', media_id: boxed, av: 'video', source: { in: 0, out: 10 } },
+            args: { track_id: 't1', media_id: boxed, av: 'video', source: { in: 0, out: 5 } },
           },
         ],
       });
@@ -1339,11 +1340,11 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         clip_id: first,
         mask: {
           shape: 'rectangle',
-          x: 130 / 640,
+          x: 65 / 320,
           width: 0.2,
           height: 0.25,
           mode: 'fill',
-          add: [{ shape: 'rectangle', x: 510 / 640, width: 0.2, height: 0.25 }],
+          add: [{ shape: 'rectangle', x: 255 / 320, width: 0.2, height: 0.25 }],
         },
         preview: 'none',
       });
@@ -1353,7 +1354,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
           frames: [frame],
           layout: 'single',
           format: 'png',
-          long_edge: 640,
+          long_edge: 320,
         });
       // The fill is a job of its own; a render that needs it says which.
       const waiting = await render(0);
@@ -1372,7 +1373,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         media_id: boxed,
       });
       // A frame of the other clip needs no fill, and renders now.
-      const other = await render(15);
+      const other = await render(7);
       expect(other.isError).toBe(false);
       // An export started meanwhile waits for the fill, saying so, and then finishes.
       const exported = await ok<{ job_id: string }>(client, 'export.video', {
@@ -1383,7 +1384,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       const done = await waitJob(jobId, 400_000);
       expect(done.status).toBe('completed');
       expect((await waitJob(exported.job_id, 400_000)).status).toBe('completed');
-      for (const frame of [0, 5, 9]) {
+      for (const frame of [0, 2, 4]) {
         const res = await render(frame);
         expect(res.isError).toBe(false);
         const image = Buffer.from(
@@ -1392,12 +1393,12 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         );
         // Both boxes are gone: their middles and edges are the blue around them.
         for (const [x, y] of [
-          [130, 240],
-          [85, 195],
-          [175, 285],
-          [510, 240],
-          [555, 285],
-          [320, 100],
+          [65, 120],
+          [43, 98],
+          [87, 142],
+          [255, 120],
+          [277, 142],
+          [160, 50],
         ] as const)
           expect(colour(await pixel(image, x, y)), `frame ${frame} at ${x},${y}`).toBe('blue');
       }
@@ -1406,7 +1407,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         timeline_id: filled.timeline_id,
         track_id: 't1',
         text: 'Hi',
-        at_frame: 20,
+        at_frame: 10,
         duration_frames: 10,
         preview: 'none',
       });
