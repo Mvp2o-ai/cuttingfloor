@@ -1,9 +1,10 @@
 // Bugs blind tests found (MVP-254), each pinned through the SDK client with real engines. Skips
 // on hosts without FFmpeg and MLT; the Docker test target runs it.
 import { execFile } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { BIN } from '@cuttingfloor/engine';
 import type { Client } from '@modelcontextprotocol/client';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { call, connect, ok, settled, type TestEnv, testRuntime } from './helpers.ts';
@@ -308,5 +309,61 @@ describe.skipIf(!engines)('blind-test regressions', () => {
       frames: [last + 1],
     });
     expect(past.isError).toBe(true);
+  }, 120_000);
+
+  it('renders an inline preview again when melt ends without its frame, and says why when it never comes', async () => {
+    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      name: 'preview',
+      sequence: { width: 640, height: 360, fps: { num: 24, den: 1 } },
+    });
+    // A melt that ends cleanly having written nothing, as it did on a loaded server: once, then
+    // always.
+    const real = BIN.melt;
+    const count = join(env.dir, 'melt-runs');
+    const fake = join(env.dir, 'melt-drop');
+    await writeFile(
+      fake,
+      `#!/bin/sh\nn=$(cat ${count} 2>/dev/null || echo 0)\necho $((n + 1)) > ${count}\nif [ "$n" -lt "$DROPS" ]; then echo "[producer avformat] Failed to open decoder" >&2; exit 0; fi\nexec ${real} "$@"\n`,
+    );
+    await chmod(fake, 0o755);
+    BIN.melt = fake;
+    try {
+      process.env.DROPS = '1';
+      const once = await ok<{ preview: { status: string }; warnings: string[] }>(
+        client,
+        'clip.add',
+        {
+          timeline_id,
+          track_id: 't1',
+          media_id: ids.blue,
+          av: 'video',
+          source: { in: 0, out: 24 },
+          preview: 'inline',
+        },
+      );
+      expect(once.warnings).toEqual([]);
+      expect(once.preview.status).toBe('ready');
+      await writeFile(count, '0');
+      process.env.DROPS = '99';
+      const never = await ok<{ preview: { status: string }; warnings: string[] }>(
+        client,
+        'clip.add',
+        {
+          timeline_id,
+          track_id: 't1',
+          media_id: ids.game,
+          av: 'video',
+          source: { in: 0, out: 24 },
+          preview: 'inline',
+        },
+      );
+      expect(never.preview.status).toBe('pending');
+      expect(never.warnings.join(' ')).toMatch(
+        /melt rendered 0 of 1 frames: .*Failed to open decoder/,
+      );
+    } finally {
+      BIN.melt = real;
+      delete process.env.DROPS;
+    }
   }, 120_000);
 });

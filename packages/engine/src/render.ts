@@ -52,38 +52,66 @@ export async function renderTimelineFrames(
   const dir = await mkdtemp(join(tmpdir(), 'cf-frames-'));
   try {
     const project = await writeMltProject(dir, doc, { ...size, sources, frames });
-    await run(
-      BIN.melt,
-      [
-        '-silent',
-        ...project,
-        '-consumer',
-        'avformat:f_%04d.png',
-        'vcodec=png',
-        'real_time=0',
-        'progressive=1',
-        'audio_off=1',
-        `width=${size.width}`,
-        `height=${size.height}`,
-      ],
-      {
-        cwd: dir,
-        heavy: true,
-        timeoutMs: MELT_FRAME_TIMEOUT_MS,
-        ...(options.signal ? { signal: options.signal } : {}),
-      },
-    );
-    const rendered = (await readdir(dir)).filter((f) => /^f_\d{4}\.png$/.test(f)).sort();
+    const melt = () =>
+      run(
+        BIN.melt,
+        [
+          '-silent',
+          ...project,
+          '-consumer',
+          'avformat:f_%04d.png',
+          'vcodec=png',
+          'real_time=0',
+          'progressive=1',
+          'audio_off=1',
+          `width=${size.width}`,
+          `height=${size.height}`,
+        ],
+        {
+          cwd: dir,
+          heavy: true,
+          timeoutMs: MELT_FRAME_TIMEOUT_MS,
+          ...(options.signal ? { signal: options.signal } : {}),
+        },
+      );
+    const written = async () => (await readdir(dir)).filter((f) => /^f_\d{4}\.png$/.test(f)).sort();
+    let { stderr } = await melt();
+    let rendered = await written();
+    // melt can end cleanly with frames missing when the machine is short of memory or threads
+    // (a decoder or Qt fails to start, and the frame is dropped). That passes, so try once more.
     if (rendered.length < frames.length) {
+      for (const f of rendered) await rm(join(dir, f), { force: true });
+      ({ stderr } = await melt());
+      rendered = await written();
+    }
+    if (rendered.length < frames.length) {
+      const said = meltSaid(stderr);
       throw new CfError(
         'render_failed',
-        `melt rendered ${rendered.length} of ${frames.length} frames`,
+        `melt rendered ${rendered.length} of ${frames.length} frames${said ? `: ${said}` : ' and gave no reason'}`,
+        {
+          hint: said
+            ? 'Check the media and effects it names; render.frames of the same frames tries again'
+            : 'melt can drop frames when the server is short of memory or threads under load; render.frames of the same frames tries again',
+          detail: { stderr: stderr.trim().split('\n').slice(-6).join('\n') },
+        },
       );
     }
     return await encodeImages(dir, rendered.slice(0, frames.length), options);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+/** The last lines melt logged that say what went wrong, if any. */
+function meltSaid(stderr: string): string {
+  return stderr
+    .split(/\r|\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && /fail|error|unable|cannot|could not|invalid|no such/i.test(l))
+    .slice(-2)
+    .join('; ')
+    .slice(0, 300);
 }
 
 /** Renders frames of one media file (at its own rate) with FFmpeg. */
