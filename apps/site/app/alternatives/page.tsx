@@ -68,7 +68,7 @@ const SHOWN = [
 const FAQS = [
   {
     q: 'Is there an AI that edits videos for you?',
-    a: 'Yes. Connect cuttingfloor to Claude, ChatGPT, Cursor or Kazi and describe the video you want. Your agent does the editing and sends back a finished MP4.',
+    a: 'Yes. Connect cuttingfloor to Claude, ChatGPT, Codex, Cursor or Kazi and describe the video you want. Your agent does the editing and sends back a finished MP4.',
   },
   {
     q: 'Do I need to know how to edit?',
@@ -76,7 +76,7 @@ const FAQS = [
   },
   {
     q: 'Do I still need CapCut or Descript?',
-    a: 'Not to finish a video. You get a normal MP4. If you like doing a last pass by hand, open it in any editor you already use.',
+    a: 'Not to finish a video. You get a normal MP4. If you like doing a last pass by hand, take the edit itself into Final Cut Pro, Premiere or Resolve as FCPXML, OTIO or EDL, or open the MP4 in any editor you already use.',
   },
   {
     q: 'Is it like Opus Clip?',
@@ -85,6 +85,10 @@ const FAQS = [
   {
     q: 'How do I change something I do not like?',
     a: 'Say so, the way you would to an editor. "Tighter in the middle." "Lose the second joke." Earlier versions stay, so going back is one sentence too.',
+  },
+  {
+    q: 'Descript and Kapwing have MCP servers now. How is this different?',
+    a: "Descript's MCP sends your request to Underlord, its own AI, with no call to cut, trim or caption. Kapwing's covers subtitles, translation and dubbing. cuttingfloor gives your agent the editing itself and a preview after every edit. The compare page has the full table.",
   },
   {
     q: 'What does it cost?',
@@ -214,15 +218,15 @@ export default function Alternatives() {
               <span className="n">02</span>
               <h3>It checks its own work.</h3>
               <p>
-                Every edit comes back with a picture of the frame and the sound measured, so your
-                agent sees what it made before you do.
+                Every edit comes back with a preview: the picture, or for sound a waveform with the
+                loudness measured. Your agent sees what it made before you do.
               </p>
             </li>
             <li>
               <span className="n">03</span>
               <h3>It lives where you already work.</h3>
               <p>
-                Claude, ChatGPT, Cursor or Kazi. The same chat you have open now becomes your
+                Claude, ChatGPT, Codex, Cursor or Kazi. The same chat you have open now becomes your
                 editing room.
               </p>
             </li>
@@ -238,6 +242,14 @@ export default function Alternatives() {
                 clips around by hand. If you want to move every clip yourself, traditional editing
                 software is still the better tool. If you want the video made, hand it to your
                 agent.
+              </p>
+            </section>
+            <section>
+              <h2>Compared cell by cell</h2>
+              <p>
+                Captions, reframing, voice cleanup, lip-sync and more, across CapCut, Descript,
+                VEED, Kapwing, OpusClip and other apps, plus every video MCP server your agent could
+                use instead. <a href="/compare">See the full comparison</a>.
               </p>
             </section>
           </div>
