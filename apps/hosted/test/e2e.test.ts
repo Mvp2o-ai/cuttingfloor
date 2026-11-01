@@ -1208,6 +1208,172 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       ).toEqual(['blue', 'red']);
     }, 60_000);
 
+    it('selects with a matte, hides the selection, and moves lasso points by keyframes', async () => {
+      // The disc media as the selection: alpha 1 within 200 source px of the centre.
+      const matte = await withEdit('clip.set_mask', {
+        clip_id: 'c4',
+        mask: { shape: 'matte', media_id: ids.disc },
+      });
+      expect(
+        await look(matte, 10, [
+          [640, 360],
+          [640, 600],
+          [300, 100],
+          [100, 360],
+        ]),
+      ).toEqual(['red', 'red', 'green', 'green']);
+      const hidden = await withEdit('clip.set_mask', {
+        clip_id: 'c4',
+        mask: { shape: 'matte', media_id: ids.disc, mode: 'hide' },
+      });
+      expect(
+        await look(hidden, 10, [
+          [640, 360],
+          [300, 100],
+          [100, 360],
+        ]),
+      ).toEqual(['green', 'red', 'green']);
+      // A square that slides from the picture's left edge to its right edge over 40 frames.
+      const square = (x: number) => [
+        [x, 0.4],
+        [x + 0.2, 0.4],
+        [x + 0.2, 0.6],
+        [x, 0.6],
+      ];
+      const lasso = await withEdit('clip.set_mask', {
+        clip_id: 'c4',
+        mask: {
+          shape: 'polygon',
+          points: {
+            keyframes: [
+              { frame: 0, points: square(0) },
+              { frame: 40, points: square(0.8) },
+            ],
+          },
+        },
+      });
+      // The picture spans x 160–1120: x 0.1 is 256 px, x 0.5 is 640, x 0.9 is 1024.
+      expect(
+        await look(lasso, 0, [
+          [256, 360],
+          [640, 360],
+          [1024, 360],
+        ]),
+      ).toEqual(['red', 'green', 'green']);
+      expect(
+        await look(lasso, 20, [
+          [256, 360],
+          [640, 360],
+          [1024, 360],
+        ]),
+      ).toEqual(['green', 'red', 'green']);
+      expect(
+        await look(lasso, 40, [
+          [256, 360],
+          [640, 360],
+          [1024, 360],
+        ]),
+      ).toEqual(['green', 'green', 'red']);
+      const view = await ok<{ tracks: Array<{ clips: Array<{ id: string; mask?: unknown }> }> }>(
+        client,
+        'timeline.get',
+        { timeline_id: lasso },
+      );
+      expect(view.tracks[1]?.clips[0]?.mask).toMatchObject({
+        shape: 'polygon',
+        points: { keyframes: [{ frame: 0 }, { frame: 40 }] },
+      });
+      // Keyframes need the same number of corners; a matte needs a picture.
+      const bad = await call(client, 'clip.set_mask', {
+        timeline_id: base,
+        clip_id: 'c4',
+        mask: {
+          shape: 'polygon',
+          points: {
+            keyframes: [
+              { frame: 0, points: square(0) },
+              { frame: 40, points: square(0.8).slice(0, 3) },
+            ],
+          },
+        },
+      });
+      expect(bad.isError).toBe(true);
+      expect(JSON.stringify(bad.structured)).toMatch(/same number of corners/);
+    }, 180_000);
+
+    it('fills a selection from its surroundings in every frame', async () => {
+      const m = env.mediaDir;
+      // Blue with a white box in the middle (x 270–370, y 190–290 of 640×480), 10 frames.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=0x1030d0:size=640x480:rate=25,drawbox=x=270:y=190:w=100:h=100:c=white:t=fill',
+        '-frames:v',
+        '10',
+        '-pix_fmt',
+        'yuv420p',
+        join(m, 'boxed.mp4'),
+      ]);
+      const boxed = (await importMedia({ path: join(m, 'boxed.mp4') })).media_id;
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'fill',
+        sequence: { width: 640, height: 480, fps: { num: 25, den: 1 } },
+        tracks: { video: 1, audio: 0 },
+      });
+      const placed = await ok<{ timeline_id: string; clip_id: string }>(client, 'clip.add', {
+        timeline_id,
+        track_id: 't1',
+        media_id: boxed,
+        av: 'video',
+        source: { in: 0, out: 10 },
+        preview: 'none',
+      });
+      const filled = await ok<{ timeline_id: string }>(client, 'clip.set_mask', {
+        timeline_id: placed.timeline_id,
+        clip_id: placed.clip_id,
+        mask: { shape: 'rectangle', width: 0.2, height: 0.25, mode: 'fill' },
+        preview: 'none',
+      });
+      for (const frame of [0, 5, 9]) {
+        const res = await call(client, 'render.frames', {
+          timeline_id: filled.timeline_id,
+          frames: [frame],
+          layout: 'single',
+          format: 'png',
+          long_edge: 640,
+        });
+        expect(res.isError).toBe(false);
+        const image = Buffer.from(
+          (res.content.find((c) => c.type === 'image')?.data as string) ?? '',
+          'base64',
+        );
+        // The box is gone: its middle and its edges are the blue around it.
+        for (const [x, y] of [
+          [320, 240],
+          [275, 195],
+          [365, 285],
+          [100, 100],
+        ] as const)
+          expect(colour(await pixel(image, x, y)), `frame ${frame} at ${x},${y}`).toBe('blue');
+      }
+      // A matte or a fill needs a clip of media.
+      const titled = await ok<{ timeline_id: string; clip_id: string }>(client, 'title.add', {
+        timeline_id: filled.timeline_id,
+        track_id: 't1',
+        text: 'Hi',
+        at_frame: 20,
+        duration_frames: 10,
+        preview: 'none',
+      });
+      const refused = await call(client, 'clip.set_mask', {
+        timeline_id: titled.timeline_id,
+        clip_id: titled.clip_id,
+        mask: { shape: 'ellipse', mode: 'fill' },
+      });
+      expect(refused.isError).toBe(true);
+    }, 600_000);
+
     it("keeps a picture's own transparency under a mask", async () => {
       const { timeline_id } = await ok<{ timeline_id: string }>(client, 'clip.add', {
         timeline_id: base,
@@ -3034,6 +3200,87 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(await alpha(cut, 320, 260)).toBeGreaterThan(200); // the ball
       expect(await alpha(cut, 20, 20)).toBeLessThan(60); // the backdrop
       expect(await alpha(cut, 620, 460)).toBeLessThan(60);
+    }, 600_000);
+
+    it('cuts out one item from its bounds and follows it through a video', async () => {
+      const m = env.mediaDir;
+      // A red disc that moves right past a blue square that stays put, 2 s at 10 fps, 320×240.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        "color=c=0xd8d8d0:size=320x240:rate=10,format=rgb24,geq=r='if(lt(hypot(X-(60+60*T)\\,Y-120)\\,30)\\,220\\,if(between(X\\,200\\,260)*between(Y\\,90\\,150)\\,30\\,216))':g='if(lt(hypot(X-(60+60*T)\\,Y-120)\\,30)\\,30\\,if(between(X\\,200\\,260)*between(Y\\,90\\,150)\\,60\\,216))':b='if(lt(hypot(X-(60+60*T)\\,Y-120)\\,30)\\,30\\,if(between(X\\,200\\,260)*between(Y\\,90\\,150)\\,200\\,208))'",
+        '-t',
+        '2',
+        '-pix_fmt',
+        'yuv420p',
+        join(m, 'two.mp4'),
+      ]);
+      const two = await importMedia({ path: join(m, 'two.mp4') });
+      // The disc by its box at 0.5 s (centre x 90): not the main subject, not the square.
+      const disc = await create('create.cutout', {
+        media_id: two.media_id,
+        region: { at_seconds: 0.5, x: 60 / 320, y: 90 / 240, w: 60 / 320, h: 60 / 240 },
+      });
+      expect(disc).toMatchObject({ kind: 'video', width: 320, height: 240 });
+      const mov = (await env.runtime.media.get('local', disc.media_id)).file as string;
+      /** Alpha at a point of frame n. */
+      const alphaAt = async (n: number, x: number, y: number) => {
+        const { stdout } = await exec(
+          'ffmpeg',
+          [
+            '-v',
+            'error',
+            '-i',
+            mov,
+            '-vf',
+            `select=eq(n\\,${n}),crop=1:1:${x}:${y},format=rgba`,
+            '-frames:v',
+            '1',
+            '-f',
+            'rawvideo',
+            '-',
+          ],
+          { encoding: 'buffer' },
+        );
+        return stdout[3] ?? -1;
+      };
+      // Followed both ways from 0.5 s: at the start (x 60) and the end (x 174).
+      expect(await alphaAt(0, 60, 120)).toBeGreaterThan(200);
+      expect(await alphaAt(19, 174, 120)).toBeGreaterThan(200);
+      expect(await alphaAt(19, 60, 120)).toBeLessThan(60);
+      expect(await alphaAt(0, 230, 120)).toBeLessThan(60); // the square
+      expect(await alphaAt(0, 10, 10)).toBeLessThan(60); // the backdrop
+      // A point on the square picks the square instead.
+      const square = await create('create.cutout', {
+        media_id: two.media_id,
+        region: { at_seconds: 1, points: [{ x: 230 / 320, y: 0.5 }] },
+      });
+      const sq = (await env.runtime.media.get('local', square.media_id)).file as string;
+      const { stdout } = await exec(
+        'ffmpeg',
+        [
+          '-v',
+          'error',
+          '-i',
+          sq,
+          '-vf',
+          'crop=1:1:230:120,format=rgba',
+          '-frames:v',
+          '1',
+          '-f',
+          'rawvideo',
+          '-',
+        ],
+        { encoding: 'buffer' },
+      );
+      expect(stdout[3]).toBeGreaterThan(200);
+      // A box needs all four numbers.
+      const half = await call(client, 'create.cutout', {
+        media_id: two.media_id,
+        region: { at_seconds: 0, x: 0.1 },
+      });
+      expect(half.isError).toBe(true);
     }, 600_000);
 
     it.skipIf(!chromium)(
