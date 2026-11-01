@@ -553,7 +553,16 @@ export const BLEND_MODES = [
   'difference',
   'exclusion',
 ];
-export const MASK_SHAPES = ['rectangle', 'ellipse', 'linear', 'mirror', 'heart', 'star', 'polygon'];
+export const MASK_SHAPES = [
+  'rectangle',
+  'ellipse',
+  'linear',
+  'mirror',
+  'heart',
+  'star',
+  'polygon',
+  'matte',
+];
 export const ANIMATIONS = [
   'fade',
   'zoom_in',

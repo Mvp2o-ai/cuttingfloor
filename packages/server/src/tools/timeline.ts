@@ -208,7 +208,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.set_mask': {
     title: 'Set mask',
     description:
-      "Show only part of a video clip: rectangle (rounded), ellipse, linear, mirror, heart, star or polygon, with feather and invert. Position, size and rotation animate like transform values. Coordinates are fractions of the clip's fitted frame: a sequence-shaped box with the picture fitted inside (bars where the shapes differ), before the clip's scale and position. A narrower picture fills k = (its aspect / the sequence's) of the box width, centred, so a picture-fraction box maps to x = 0.5 + (x - 0.5) * k, width * k (a wider picture: the same on y and height, with k = the sequence aspect / its). null removes the mask. The result's placements give the visible part in sequence pixels.",
+      "Select part of a video clip, then show, hide or fill it: rectangle (rounded), ellipse, linear, mirror, heart, star, polygon or matte (a media's alpha, e.g. a create.cutout), with feather and invert. A fill takes about 1.5 s a frame, made in the background (media_not_ready until then). Position, size and rotation animate like transform values. Coordinates are fractions of the clip's fitted frame: a sequence-shaped box with the picture fitted inside (bars where the shapes differ), before the clip's scale and position. A narrower picture fills k = (its aspect / the sequence's) of the box width, centred, so a picture-fraction box maps to x = 0.5 + (x - 0.5) * k, width * k (a wider picture: the same on y and height, with k = the sequence aspect / its). null removes the mask. The result's placements give the visible part in sequence pixels.",
   },
   'clip.set_animation': {
     title: 'Set animation',
