@@ -8,6 +8,7 @@ import {
   detectSilences,
   detectSounds,
   fingerprint,
+  lengthFrames,
   type MediaRecord,
   makingJob,
   mayBeTransparent,
@@ -18,6 +19,7 @@ import {
   noAudio,
   notReady,
   pictureSeries,
+  renderMediaFrames,
   renderSource,
   SOUND_MODELS,
   SPEECH_MODELS,
@@ -59,7 +61,7 @@ import { askFrames, checkFrameState, type JudgedFrame, sampleTimes } from '../fr
 import { JEV_MODEL, JEV_URL } from '../jev.ts';
 import { admitJob } from '../meter.ts';
 import { PLAYER_TOOL_META } from '../player.ts';
-import type { SourceSpan } from '../render.ts';
+import { type SourceSpan, timelineImage } from '../render.ts';
 import { guard, jobReply, jobView, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 import { checkSound, type Sound, withSound } from '../sound.ts';
@@ -480,6 +482,48 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     return join(dir, name);
   };
 
+  /** One frame of a video or an edit as a PNG at full size, for a still media. */
+  const stillImage = async (
+    owner: string,
+    s: { media_id?: string | undefined; timeline_id?: string | undefined; frame: number },
+    signal: AbortSignal | undefined,
+  ): Promise<Buffer> => {
+    if (Boolean(s.media_id) === Boolean(s.timeline_id)) {
+      throw new CfError('bad_request', 'A still takes media_id or timeline_id, not both', {
+        hint: 'media.import {source: {still: {timeline_id, frame}}} for a frame of an edit',
+      });
+    }
+    if (s.timeline_id) {
+      const doc = await rt.timelines.get(owner, s.timeline_id);
+      const length = lengthFrames(doc);
+      if (s.frame >= length) {
+        throw new CfError(
+          'bad_request',
+          `Frame ${s.frame} is past the end of timeline ${s.timeline_id} (${length} frames, 0 to ${length - 1})`,
+        );
+      }
+      return timelineImage(rt, owner, s.timeline_id, doc, [s.frame], {
+        full: true,
+        format: 'png',
+        ...(signal ? { signal } : {}),
+      });
+    }
+    const record = await rt.media.get(owner, s.media_id as string);
+    if (record.status === 'importing' || record.status === 'failed') throw notReady(record, null);
+    const v = record.probe?.video;
+    const fps = v?.fps;
+    if (!v || !fps) throw new CfError('bad_request', `Media ${s.media_id} has no picture`);
+    const [image] = await renderMediaFrames(renderSource(record, 'export'), fps, [s.frame], {
+      longEdge: Math.max(v.width ?? 0, v.height ?? 0) || 1920,
+      format: 'png',
+      layout: 'single',
+      checker: false,
+      ...(signal ? { signal } : {}),
+    });
+    if (!image) throw new CfError('render_failed', 'No image was rendered');
+    return image;
+  };
+
   server.registerTool(
     'media.import',
     {
@@ -487,7 +531,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       description: [
         "Import the user's own video, audio, image or font to edit with or place as is: probe, fingerprint, conform if needed (VFR, rotation, HDR → BT.709), 540p proxy and integrated loudness. A reference image to recreate needs no import: rebuild it with create.motion or create.still.",
         'Long-running: returns a task, or {job_id, media_id} for job.get. The media_id is usable in edits as soon as the job reports processing, so with many files, start every import first and edit while they finish.',
-        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL (Dropbox and Google Drive share links work as they are), {upload: {name, bytes}} for a file you send yourself (the answer is the new media with upload.url: PUT the file there, curl --fail -T file '<url>', and it imports once the last byte arrives, with no base64 in a message; a broken PUT resumes as media.upload says), the upload_id of a file sent through media.upload, a small file as a data: URI (up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB, with its sha256 so a garbled copy is refused), or the job_id of a completed export.video (its render becomes media). A URL is fetched once, when the import starts: it only has to work until then (a short-lived signed link from the user's own storage is enough), and the copy stays here 7 days after last use. A file the user attached in the chat comes as file, when the client passes it.`,
+        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL (Dropbox and Google Drive share links work as they are), {upload: {name, bytes}} for a file you send yourself (the answer is the new media with upload.url: PUT the file there, curl --fail -T file '<url>', and it imports once the last byte arrives, with no base64 in a message; a broken PUT resumes as media.upload says), the upload_id of a file sent through media.upload, a small file as a data: URI (up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB, with its sha256 so a garbled copy is refused), the job_id of a completed export.video (its render becomes media), or still: one frame of a video (media_id) or of an edit (timeline_id) as a PNG still at full size, to place as a picture, cut out or reuse. A URL is fetched once, when the import starts: it only has to work until then (a short-lived signed link from the user's own storage is enough), and the copy stays here 7 days after last use. A file the user attached in the chat comes as file, when the client passes it.`,
         'Importing the same file again returns the same media_id.',
       ].join(' '),
       inputSchema: MediaImportInput,
@@ -544,6 +588,16 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         );
         return ok({ ...mediaInfo(record as MediaRecord), upload });
       }
+      // A frame made into a still is, like a data: URI, an upload that is already in.
+      const still =
+        'still' in given
+          ? {
+              still: given.still.frame,
+              ...(given.still.media_id ? { media_id: given.still.media_id } : {}),
+              ...(given.still.timeline_id ? { timeline_id: given.still.timeline_id } : {}),
+            }
+          : undefined;
+      const signal = (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal;
       const source =
         'data' in given
           ? {
@@ -553,7 +607,16 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
                 decodeDataUri(given.data, given.sha256),
               ),
             }
-          : given;
+          : 'still' in given
+            ? {
+                upload_id: await rt.uploads.put(
+                  owner,
+                  args.name ??
+                    `${given.still.timeline_id ?? given.still.media_id}-frame-${given.still.frame}.png`,
+                  await stillImage(owner, given.still, signal),
+                ),
+              }
+            : given;
       const named = args.name ?? (args.file?.file_name || undefined);
       // Path, upload and render imports fail fast (outside the roots, missing, unfinished) and
       // dedupe by fingerprint.
@@ -597,17 +660,19 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       const admit = await admitJob(deps.limits);
       const record = await rt.media.create(
         owner,
-        'job_id' in source
-          ? { job: source.job_id, ...(await renderedFrom(owner, source.job_id)) }
-          : 'upload_id' in source
-            ? {
-                upload: source.upload_id,
-                ...(upload?.name ? { file_name: upload.name } : {}),
-                ...(upload?.via ? { via: upload.via } : {}),
-              }
-            : 'url' in source && args.file
-              ? { url: source.url, attached: true }
-              : source,
+        still
+          ? still
+          : 'job_id' in source
+            ? { job: source.job_id, ...(await renderedFrom(owner, source.job_id)) }
+            : 'upload_id' in source
+              ? {
+                  upload: source.upload_id,
+                  ...(upload?.name ? { file_name: upload.name } : {}),
+                  ...(upload?.via ? { via: upload.via } : {}),
+                }
+              : 'url' in source && args.file
+                ? { url: source.url, attached: true }
+                : source,
         named ?? upload?.name ?? (local && 'job_id' in source ? basename(local) : undefined),
       );
       if (local && 'job_id' in source) {

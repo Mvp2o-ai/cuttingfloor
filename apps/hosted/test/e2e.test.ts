@@ -2320,6 +2320,62 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(late.right).toBeGreaterThan(late.left + 10);
     }, 120_000);
 
+    it('makes a frame of an edit or of a video into a still image media', async () => {
+      const t = await onGreen([
+        {
+          tool: 'title.add',
+          args: {
+            track_id: 't2',
+            text: 'STILL',
+            at_frame: 0,
+            duration_frames: 50,
+            style: { color: '#FF0000', size: 0.3, shadow: null },
+          },
+        },
+      ]);
+      const still = (s: Record<string, unknown>) =>
+        importMedia({ still: s } as unknown as Record<string, string>);
+      const edit = await still({ timeline_id: t, frame: 10 });
+      const got = await ok<Record<string, unknown>>(client, 'media.get', {
+        media_id: edit.media_id,
+      });
+      expect(got.origin).toEqual({ from: 'still', timeline_id: t, frame: 10 });
+      expect(got).toMatchObject({ kind: 'image', extension: '.png', width: 1280, height: 720 });
+      // Placed in an edit of its own, it shows what the edit showed at that frame.
+      const placed = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'placed still',
+        sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } },
+        tracks: { video: 1, audio: 0 },
+      });
+      const shown = await ok<{ timeline_id: string }>(client, 'clip.add', {
+        timeline_id: placed.timeline_id,
+        preview: 'none',
+        track_id: 't1',
+        media_id: edit.media_id,
+        duration_frames: 25,
+      });
+      const image = await frame(shown.timeline_id, 5);
+      expect(colour(await pixel(image, 20, 20))).toBe('green');
+      // The red title in the middle, as the edit rendered it.
+      const middle = await regionStats(image, '600:150:340:285');
+      const corner = await regionStats(image, '200:100:0:0');
+      expect(middle.v).toBeGreaterThan(corner.v + 30);
+      // A frame of a video, at the video's own size.
+      const fromVideo = await still({ media_id: green, frame: 30 });
+      const info = await ok<Record<string, unknown>>(client, 'media.get', {
+        media_id: fromVideo.media_id,
+      });
+      expect(info.origin).toEqual({ from: 'still', media_id: green, frame: 30 });
+      expect(info).toMatchObject({ kind: 'image', width: 1280, height: 720 });
+      // Asking twice gives the same media.
+      expect((await still({ timeline_id: t, frame: 10 })).media_id).toBe(edit.media_id);
+      const past = await call(client, 'media.import', {
+        source: { still: { timeline_id: t, frame: 500 } },
+      });
+      expect(past.isError).toBe(true);
+      expect(JSON.stringify(past.structured)).toContain('past the end');
+    }, 120_000);
+
     it('shows a caption one line at a time with max_lines, one word in its own colour', async () => {
       const t = await onGreen([
         {

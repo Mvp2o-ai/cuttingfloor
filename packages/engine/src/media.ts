@@ -41,7 +41,8 @@ export interface MediaRecord {
         /** Where each stretch of the render comes from (see MediaOrigin.sources). */
         sources?: NonNullable<MediaOrigin['sources']>;
       }
-    | { created: string; recipe: string; job_id?: string; from?: string[] };
+    | { created: string; recipe: string; job_id?: string; from?: string[] }
+    | { still: number; media_id?: string; timeline_id?: string };
   /** The original: the user's file in place, or the downloaded copy. */
   file: string | null;
   size: number | null;
@@ -356,7 +357,9 @@ export class MediaLibrary {
               ? source.job
               : 'upload' in source
                 ? source.upload
-                : source.created),
+                : 'still' in source
+                  ? `${source.timeline_id ?? source.media_id}-frame-${source.still}.png`
+                  : source.created),
       status: 'importing',
       source,
       file: null,
@@ -606,6 +609,14 @@ export function mediaOrigin(record: MediaRecord): MediaOrigin {
       ...(s.preset ? { preset: s.preset } : {}),
       ...(s.range ? { range: s.range } : {}),
       ...(s.sources ? { sources: s.sources } : {}),
+    };
+  }
+  if ('still' in s) {
+    return {
+      from: 'still',
+      frame: s.still,
+      ...(s.media_id ? { media_id: s.media_id } : {}),
+      ...(s.timeline_id ? { timeline_id: s.timeline_id } : {}),
     };
   }
   return {
