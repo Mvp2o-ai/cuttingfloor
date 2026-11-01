@@ -1,5 +1,13 @@
 # cuttingfloor
 
+## 0.27.6
+
+### Patch Changes
+
+- f2db653: create.motion and create.still no longer refuse a page because a URL or `fetch(` appears in its script text (a bundled library's warning strings, code that never runs). The early check now refuses only what the browser would load from the network: element attributes such as src, href, srcset and poster, CSS url() and @import, and a meta refresh, with the URL and where it is in the error. Scripts that reach for the network at run time are still blocked by the sandbox, WebSockets to loopback included.
+- 9c13a4b: create.motion and create.still say what went wrong in a page: the result's `warnings` (kept with the media, so media.get and a repeated recipe show them too) list uncaught errors and syntax errors with where they happened, console errors, files that were blocked or not found, fonts that failed to load, and tags never closed or CSS showing as text. Each problem is listed once with how often it happened, up to 20. The page still renders.
+- 3bf9c93: create.motion and create.still seed `crypto.getRandomValues` (and `crypto.randomUUID` where the page has it) from the same seed as `Math.random`, so a page that draws its randomness from crypto renders the same every time.
+
 ## 0.27.5
 
 ### Patch Changes
