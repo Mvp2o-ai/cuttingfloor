@@ -131,8 +131,11 @@ export function effectFilters(e: StoredEffect, ctx: EffectContext): string {
         av('noise', { alls: Math.round(amount * 30), allf: 't+u' })
       );
     }
-    case 'denoise':
-      return av('hqdn3d', { luma_spatial: num('strength') });
+    case 'denoise': {
+      // Each frame on its own (FFT, Wiener), so a preview of one frame shows what an export does.
+      const sigma = Number(raw('strength'));
+      return sigma > 0 ? av('fftdnoiz', { sigma }) : '';
+    }
     case 'chroma_key':
       return f('chroma', {
         key: `0x${String(raw('color')).replace('#', '')}ff`,

@@ -153,8 +153,17 @@ export const EFFECTS = {
   },
   denoise: {
     kind: 'video',
-    about: 'Reduce grain and noise in the picture (for sound: noise_reduction or voice_denoise)',
-    params: { strength: num(0, 10, 3, 'Spatial denoise strength', false) },
+    about:
+      'Reduce grain and noise in the picture, frame by frame (FFmpeg fftdnoiz), keeping edges; for sound: noise_reduction or voice_denoise',
+    params: {
+      strength: num(
+        0,
+        50,
+        4,
+        'How hard it denoises, in 8-bit levels (0 to 255) of noise: set to the spread of the grain (its standard deviation) it takes out about 40% of it, at twice that over half; higher also softens fine detail. 0 leaves the picture as it is',
+        false,
+      ),
+    },
   },
   chroma_key: {
     kind: 'video',
