@@ -54,14 +54,19 @@ export const CLIENTS: Client[] = [
     ours: true,
     where: 'Web, phone, text and meetings',
     steps: [
-      `Ask Kazi to connect the cuttingfloor MCP server at ${MCP_URL}.`,
-      'Sign in when it opens the page.',
+      'In Kazi (app.apifunnel.ai), open Servers and add your own server.',
+      'Paste the address and choose Connect.',
+      'Sign in when the cuttingfloor page opens.',
+      'Or skip the menus: ask Kazi to connect the cuttingfloor MCP server at the address.',
     ],
-    snippets: [{ label: 'Say to Kazi', code: `Connect the cuttingfloor MCP server at ${MCP_URL}` }],
+    snippets: [
+      { label: 'Server address', code: MCP_URL },
+      { label: 'Or say to Kazi', code: `Connect the cuttingfloor MCP server at ${MCP_URL}` },
+    ],
     docs: 'https://kazi.apifunnel.ai',
     docsLabel: 'Meet Kazi at kazi.apifunnel.ai',
     home: {
-      how: 'Ask Kazi to connect the cuttingfloor MCP server at this address, and sign in when it opens the page.',
+      how: 'In Kazi (app.apifunnel.ai), open Servers and add your own server. Paste the address, Connect, then sign in.',
       line: MCP_URL,
     },
   },

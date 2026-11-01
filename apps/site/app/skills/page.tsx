@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: 'Skills: step-by-step video editing instructions for your AI agent | cuttingfloor',
   description:
     'Each skill is a set of steps your agent follows to do one job with cuttingfloor, like cutting the pauses and ums out of a talking video. Copy one into Kazi, Claude or ChatGPT.',
-  alternates: { canonical: '/skills' },
+  alternates: { canonical: '/skills', types: { 'text/markdown': '/skills.md' } },
 };
 
 export default function Skills() {

@@ -1,4 +1,9 @@
+import { markdown as compare } from '../compare.md/markdown.ts';
+import { markdown as connect } from '../connect.md/markdown.ts';
+import { markdown as features } from '../features.md/markdown.ts';
 import { markdown as home } from '../index.md/markdown.ts';
+import { markdown as pricing } from '../pricing.md/markdown.ts';
+import { markdown as selfHost } from '../self-host.md/markdown.ts';
 import { markdown as skills } from '../skills.md/markdown.ts';
 
 // llms-full.txt: the key pages' Markdown twins, whole, in one file, for an agent that wants
@@ -7,11 +12,7 @@ import { markdown as skills } from '../skills.md/markdown.ts';
 export const dynamic = 'force-static';
 
 /** In reading order: what it is, every tool, the price, connecting, self-hosting, compared, skills. */
-const PAGES: (() => string)[] = [
-  home,
-  // features, pricing, connect, self-host, compare: added with their pages.
-  skills,
-];
+const PAGES: (() => string)[] = [home, features, pricing, connect, selfHost, compare, skills];
 
 export function GET() {
   return new Response(PAGES.map((page) => page()).join('\n---\n\n'), {

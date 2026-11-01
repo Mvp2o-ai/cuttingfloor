@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { DEMOS } from '../content/demos.ts';
 import { LICENCE } from '../content/facts.ts';
 import { HOME_SESSION } from '../content/home-session.ts';
@@ -10,6 +11,11 @@ import { Prompts } from './prompts.tsx';
 import { ALTERNATIVES, FAQS, structuredData } from './seo.ts';
 import { Session } from './session/session.tsx';
 import { Check, Footer, JsonLd, Nav, SIGN_UP } from './shell.tsx';
+
+// The home page's Markdown version is /index.md; layout.tsx has the rest of its metadata.
+export const metadata: Metadata = {
+  alternates: { canonical: '/', types: { 'text/markdown': '/index.md' } },
+};
 
 // Linking here plays the session from the top.
 const SESSION_ID = 'session';
