@@ -7,6 +7,7 @@ import {
   type ImageFormat,
   installedFonts,
   lengthFrames,
+  type MatteSource,
   type MltSource,
   mediaRef,
   notReady,
@@ -15,9 +16,17 @@ import {
   renderSource,
   renderTimelineFrames,
   renderWaveform,
+  selectedPicture,
+  selectionPass,
   sourceKey,
 } from '@cuttingfloor/engine';
-import { CfError, type MediaRef, type TimelineDoc, type TimelineView } from '@cuttingfloor/schema';
+import {
+  CfError,
+  type MediaRef,
+  type StoredClip,
+  type TimelineDoc,
+  type TimelineView,
+} from '@cuttingfloor/schema';
 import type { Runtime } from './runtime.ts';
 
 /** Resolves every media file a timeline uses, for previews (proxies) or exports. */
@@ -66,11 +75,14 @@ export async function addPasses(
     for (const t of body.tracks)
       for (const c of t.clips) {
         if (!c.enabled || c.type !== 'media') continue;
-        const plain = sources.get(c.media_id);
-        const key = sourceKey(c, fps);
-        if (!plain || key === c.media_id || sources.has(key)) continue;
+        const media = sources.get(c.media_id);
+        const key = sourceKey(c, doc.sequence);
+        if (!media || key === c.media_id || sources.has(key)) continue;
         const record = await rt.media.find(owner, c.media_id);
         if (!record) continue;
+        // A matte mask, or any selection that is filled, plays a copy of the picture through
+        // that selection; in-between frames are then made from that copy.
+        const plain = await selected(rt, owner, doc, c, media, purpose, signal);
         const between = inBetween(c, fps);
         if (between) {
           const own = record.probe?.video?.fps;
@@ -88,6 +100,10 @@ export async function addPasses(
           sources.set(key, { ...plain, ...made });
           continue;
         }
+        if (plain !== media) {
+          sources.set(key, plain);
+          continue;
+        }
         if (!sound) continue;
         const input = record.mezzanine ?? record.file ?? renderSource(record, 'export');
         const path = await passedAudio(
@@ -98,6 +114,47 @@ export async function addPasses(
         );
         sources.set(key, { ...plain, path, image: false });
       }
+}
+
+/**
+ * A media clip's picture through its selection pass (selection.ts), or `media` itself when its
+ * mask needs none. Inside a job (`signal`) it waits for the copy; a request starts a fill and
+ * refuses until it is made, since filling takes minutes.
+ */
+async function selected(
+  rt: Runtime,
+  owner: string,
+  doc: TimelineDoc,
+  c: StoredClip & { type: 'media' },
+  media: MltSource,
+  purpose: 'preview' | 'export',
+  signal: AbortSignal | undefined,
+): Promise<MltSource> {
+  const pass = selectionPass(c, doc.sequence.width / doc.sequence.height);
+  if (!pass) return media;
+  const record = await rt.media.find(owner, c.media_id);
+  const v = record?.probe?.video;
+  if (!record || !v || !media.width || !media.height) return media;
+  let matte: MatteSource | undefined;
+  if (pass.mask.shape === 'matte' && pass.mask.media_id) {
+    const m = await rt.media.find(owner, pass.mask.media_id);
+    if (!m || m.status === 'failed' || m.status === 'importing') assertOnline([pass.mask.media_id]);
+    const pic = renderPicture(m as NonNullable<typeof m>, purpose);
+    matte = { path: pic.path, image: pic.image, alpha: pic.alpha };
+  }
+  const input = {
+    path: media.path,
+    width: media.width,
+    height: media.height,
+    image: media.image,
+    alpha: media.alpha,
+    fps: v.fps,
+    duration: record.probe?.duration ?? 0,
+  };
+  const dir = join(rt.media.dir(owner, c.media_id), 'selected');
+  const path = await selectedPicture(input, dir, pass, matte, purpose, signal);
+  // A fill copy has no alpha of its own; show and hide carry the selection as alpha.
+  return { ...media, path, alpha: pass.mask.mode !== 'fill' };
 }
 
 /**
@@ -128,7 +185,8 @@ function mediaIdsOf(doc: TimelineDoc): Set<string> {
         body.tracks.flatMap((t) =>
           t.clips.flatMap((c) => {
             if (!c.enabled) return [];
-            if (c.type === 'media') return [c.media_id];
+            if (c.type === 'media')
+              return c.mask?.media_id ? [c.media_id, c.mask.media_id] : [c.media_id];
             if ((c.type === 'title' || c.type === 'caption') && c.style?.font_media_id)
               return [c.style.font_media_id];
             return [];

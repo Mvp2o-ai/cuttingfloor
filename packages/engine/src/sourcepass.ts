@@ -5,6 +5,7 @@ import { type InBetween, inBetween } from '@cuttingfloor/core';
 import type { FrameRate, StoredClip, StoredEffect } from '@cuttingfloor/schema';
 import { tapsFor } from './dereverb.ts';
 import { BIN, run } from './exec.ts';
+import { selectionPass } from './selection.ts';
 
 const DEREVERB_WORKER = fileURLToPath(new URL('./dereverb-worker.ts', import.meta.url));
 
@@ -63,12 +64,21 @@ export function clipPasses(c: StoredClip): SourcePass[] {
 
 /**
  * The key a clip's source is found under in a render's sources: its media, a cleaned copy of its
- * sound, or its picture with in-between frames made at the sequence rate `fps`.
+ * sound, its picture with in-between frames made at the sequence rate, and/or that picture
+ * through a selection pass (selection.ts; mask coordinates follow the sequence's shape).
  */
-export function sourceKey(c: StoredClip, fps?: FrameRate): string {
+export function sourceKey(
+  c: StoredClip,
+  sequence?: { fps: FrameRate; width: number; height: number },
+): string {
   if (c.type !== 'media') return '';
-  const between = fps ? inBetween(c, fps) : undefined;
-  if (between) return `${c.media_id}#${betweenId(between)}`;
+  const between = sequence ? inBetween(c, sequence.fps) : undefined;
+  const selection = sequence ? selectionPass(c, sequence.width / sequence.height) : undefined;
+  if (between || selection) {
+    // The selection is made on the source first; in-between frames are made from that.
+    const parts = [...(selection ? [selection.id] : []), ...(between ? [betweenId(between)] : [])];
+    return [c.media_id, ...parts].join('#');
+  }
   const passes = clipPasses(c);
   return passes.length ? `${c.media_id}#${passes.map((p) => p.id).join('+')}` : c.media_id;
 }
