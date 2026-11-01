@@ -385,7 +385,9 @@ export const EditArgs = {
   }),
   'audio.set_gain': z.object({
     clip_id: z.string().describe('An audio clip, or a video clip whose linked audio to change'),
-    gain_db: AnimatableValue.describe('dB, -60 to 24; 0 leaves it as it is; keyframes for rides'),
+    gain_db: AnimatableValue.describe(
+      'dB, -60 to 24; 0 leaves it as it is. Keyframes make a ride: the first key holds backward to the clip start, so a ride that begins part-way down must also key its starting level at frame 0 or the frames before it are changed too. A key past the clip end is stored as given, with no clamp and no warning. Two keys on one frame are refused',
+    ),
   }),
   'audio.set_pan': z.object({
     clip_id: z.string(),
@@ -1532,7 +1534,9 @@ export const MediaCorrelateResult = z.object({
     .string()
     .nullable()
     .optional()
-    .describe('offset_seconds as where to place b on a timeline, in plain words'),
+    .describe(
+      'offset_seconds as where to place b on a timeline, in plain words. Trust it only once strength and next_best agree: two unrelated files still come back with a placement',
+    ),
 });
 
 /** A media.seek criterion: a Jev noul, or its instructions alone as a plain statement. */
@@ -2214,7 +2218,7 @@ export const QaCheckInput = z.object({
     })
     .optional()
     .describe(
-      'List every cut with speech facts (Silero VAD on the mix, and the transcript word each clip edge cuts through); left out, cuts are not listed',
+      'List every cut with speech facts (Silero VAD on the mix, and the transcript word each clip edge cuts through); left out, cuts are not listed. Only junctions between two clips are listed, so a lone clip reports none and its own head and tail are never examined. A null word means the edge falls between words: that is a clean cut, not a missing reading',
     ),
 });
 
