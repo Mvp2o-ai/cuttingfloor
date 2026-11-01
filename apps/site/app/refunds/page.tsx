@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: 'Refunds — cuttingfloor',
   description:
     'When cuttingfloor refunds a payment: yearly plans within 14 days, billing mistakes always. Cancel any time from your account.',
-  alternates: { canonical: '/refunds' },
+  alternates: { canonical: '/refunds', types: { 'text/markdown': '/refunds.md' } },
 };
 
 const mail = <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>;

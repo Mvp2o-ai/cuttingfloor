@@ -57,7 +57,8 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
       annotations: {
         title: 'Export timeline',
         readOnlyHint: false,
-        destructiveHint: false,
+        // overwrite: true replaces a file in the exports folder, when there is one.
+        destructiveHint: Boolean(rt.config.exportsDir),
         idempotentHint: true,
         openWorldHint: false,
       },

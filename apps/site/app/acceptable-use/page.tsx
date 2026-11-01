@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: 'Acceptable use — cuttingfloor',
   description:
     'What you and your agent may not do with cuttingfloor: illegal or abusive content, other people’s footage without rights, and attacks on the service.',
-  alternates: { canonical: '/acceptable-use' },
+  alternates: { canonical: '/acceptable-use', types: { 'text/markdown': '/acceptable-use.md' } },
 };
 
 const mail = <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>;

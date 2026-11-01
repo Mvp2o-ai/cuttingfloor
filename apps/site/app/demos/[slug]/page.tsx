@@ -36,7 +36,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: metaTitle(d),
     description: d.description,
-    alternates: { canonical: path },
+    alternates: { canonical: path, types: { 'text/markdown': `${path}.md` } },
     openGraph: {
       type: 'video.other',
       url: path,

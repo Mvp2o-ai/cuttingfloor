@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: 'Terms — cuttingfloor',
   description:
     'The terms for using cuttingfloor, the hosted video editing server for AI agents: the trial, plans and render minutes, cancelling, your content and ours.',
-  alternates: { canonical: '/terms' },
+  alternates: { canonical: '/terms', types: { 'text/markdown': '/terms.md' } },
 };
 
 const mail = <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>;

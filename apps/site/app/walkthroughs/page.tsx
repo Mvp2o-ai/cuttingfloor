@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: 'Agentic video editing walkthroughs: real prompts, every tool call | cuttingfloor',
   description:
     'Each walkthrough shows one editing technique end to end: the prompt typed, every tool call an agent made to the cuttingfloor MCP server, and the file that came out.',
-  alternates: { canonical: '/walkthroughs' },
+  alternates: { canonical: '/walkthroughs', types: { 'text/markdown': '/walkthroughs.md' } },
 };
 
 export default function Walkthroughs() {
