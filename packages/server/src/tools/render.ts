@@ -7,6 +7,7 @@ import {
   imageExtension,
   lengthFrames,
   mayBeTransparent,
+  notReady,
   qaCheck,
   renderMediaFrames,
   renderSource,
@@ -101,6 +102,9 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         }
       } else if (args.media_id) {
         const record = await rt.media.get(owner, args.media_id);
+        // Not probed yet: whether it has a picture isn't known until its job says processing.
+        if (record.status === 'importing' || record.status === 'failed')
+          throw notReady(record, null);
         const fps = record.probe?.video?.fps;
         if (!record.probe?.video || !fps)
           throw new CfError('bad_request', `Media ${args.media_id} has no picture`);

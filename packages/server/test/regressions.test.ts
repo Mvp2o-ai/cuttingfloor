@@ -528,7 +528,7 @@ describe.skipIf(!engines)('blind-test regressions', () => {
 });
 
 describe('media not ready yet', () => {
-  it('names the job making the media', async () => {
+  it('names the job making the media, and says render.frames waits for an import', async () => {
     const plain = await testRuntime();
     const c = await connect(plain.runtime, 'waiter');
     const media = plain.runtime.media;
@@ -558,6 +558,14 @@ describe('media not ready yet', () => {
     expect(String(edit.structured.message)).toMatch(/still being made \(create\.motion job j_a+\)/);
     expect(String(edit.structured.hint)).toMatch(/job\.get \{job_id: "j_a+"\}/);
     expect(String(edit.structured.hint)).not.toMatch(/media\.import/);
+
+    const frames = await call(c, 'render.frames', { media_id: imported.media_id, frames: [0] });
+    expect(frames.structured).toMatchObject({
+      code: 'media_not_ready',
+      detail: { tool: 'media.import', job_id: 'j_bbbbbbbbbbbbbbbbbbbbbbbbbb' },
+    });
+    expect(String(frames.structured.message)).toMatch(/still importing/);
+    expect(String(frames.structured.message)).not.toMatch(/no picture/);
 
     const analyze = await call(c, 'media.analyze', {
       media_id: made.media_id,
