@@ -45,7 +45,7 @@ import {
   sourcesFor,
   timelineImage,
 } from '../render.ts';
-import { guard, jobReply, jobView, ok } from '../result.ts';
+import { guard, jobFor, jobReply, jobView, ok, waitForChange } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 
 /** QA on a timeline this short answers inline; longer ones become a job. */
@@ -375,20 +375,31 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get job',
       description:
-        'Status, progress and, once completed, the result of long-running calls (media.import, media.analyze, create.*, export.video, qa.check). Same record as tasks/get. status_message says what it is doing, or, while it waits, where it stands in the queue and what it waits for. It answers at once with where each job stands. job_id reads one job; job_ids reads many in one call and answers {jobs, not_found}.',
+        'Status, progress and, once completed, the result of long-running calls (media.import, media.analyze, create.*, export.video, qa.check). Same record as tasks/get. status_message says what it is doing, or where it stands in the queue; for names the media or timeline. wait_seconds (up to 50) answers as soon as any job asked for changes, so one call waits instead of many polls. seconds_left and starts_in_seconds come only when progress so far allows. job_ids reads many and answers {jobs, not_found}; result summary cuts long lists. A job whose progress stops for minutes ends with a stalled error, freeing its slot.',
       inputSchema: JobGetInput,
       outputSchema: JobGetResult,
       annotations: { ...readOnly, title: 'Get job' },
     },
-    guard(async (args) => {
+    guard(async (args, ctx) => {
       const owner = deps.owner();
       if (Boolean(args.job_id) === Boolean(args.job_ids)) {
         throw new CfError('bad_request', 'Give either job_id or job_ids', {
           hint: 'job.get {job_id: "j_…"} for one job, or {job_ids: ["j_…", "j_…"]} for many',
         });
       }
+      const ids = args.job_id ? [args.job_id] : [...new Set(args.job_ids)];
+      await waitForChange(
+        rt.jobs.store,
+        owner,
+        ids,
+        args.wait_seconds,
+        (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal,
+      );
+      const view = (job: Job) =>
+        jobView(job, { result: args.result, estimate: rt.jobs.estimate(job.id) });
       // A finished job's links and media come along, as they would from tasks/result.
       const extra = (job: Job) => {
+        if (args.result !== 'full') return [];
         const done = job.result as
           | { isError?: boolean; content?: CallToolResult['content'] }
           | undefined;
@@ -401,16 +412,15 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
           throw new CfError('not_found', `No job ${args.job_id}`, {
             hint: 'Finished jobs are kept 7 days',
           });
-        return ok(jobView(job), extra(job));
+        return ok(view(job), extra(job));
       }
-      const ids = [...new Set(args.job_ids)];
       const found = await rt.freshLinks(
         await Promise.all(ids.map((id) => rt.jobs.store.get(id, owner))),
       );
       const jobs = found.filter((j): j is Job => Boolean(j));
       return ok(
         {
-          jobs: jobs.map(jobView),
+          jobs: jobs.map(view),
           not_found: ids.filter((_, i) => !found[i]),
         },
         jobs.flatMap(extra),
@@ -422,17 +432,37 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     'job.list',
     {
       title: 'List jobs',
-      description: 'Your recent jobs, newest first.',
+      description:
+        'Your recent jobs, newest first, each with its status, progress and for (the media or timeline it is for), filtered by status, tool or media_id. Results are left out unless you ask (result summary or full); job.get reads one.',
       inputSchema: JobListInput,
       outputSchema: JobListResult,
       annotations: { ...readOnly, title: 'List jobs' },
     },
     guard(async (args) => {
+      const media = args.media_id;
       const jobs = await rt.jobs.store.list(deps.owner(), {
         ...(args.status ? { status: args.status } : {}),
         limit: args.limit,
+        ...(args.tool || media
+          ? {
+              where: (job: Job) => {
+                if (args.tool && job.tool !== args.tool) return false;
+                if (!media) return true;
+                const f = jobFor(job);
+                return Boolean(
+                  f &&
+                    (f.media_id === media ||
+                      f.media_ids?.includes(media) ||
+                      f.inputs?.includes(media)),
+                );
+              },
+            }
+          : {}),
       });
-      return ok({ jobs: (await rt.freshLinks(jobs)).map(jobView) });
+      const views = (args.result === 'none' ? jobs : await rt.freshLinks(jobs)).map((job) =>
+        jobView(job, { result: args.result, estimate: rt.jobs.estimate(job.id) }),
+      );
+      return ok({ jobs: views });
     }),
   );
 

@@ -90,6 +90,7 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
       const job = await store.create({
         owner,
         tool: 'export.timeline',
+        meta: { timeline_id: args.timeline_id },
         statusMessage: 'writing',
         ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),
       });
