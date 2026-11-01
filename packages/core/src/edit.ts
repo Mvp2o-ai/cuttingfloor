@@ -34,7 +34,7 @@ import {
   TRANSFORM_NUMBERS,
   type TrackKind,
 } from '@cuttingfloor/schema';
-import { checkKeyframes, sample, toStoredAnim, toViewAnim } from './animate.ts';
+import { checkKeyframes, loopPlays, sample, toStoredAnim, toViewAnim } from './animate.ts';
 import { extended, frameSource, inBetween, meanRate, ratePoints, span, subclip } from './speed.ts';
 import { parseSubtitles } from './subtitles.ts';
 import { framesToTicks, ticksPerFrame } from './time.ts';
@@ -2355,10 +2355,19 @@ function clipSetAnimation(doc: TimelineDoc, a: EditArgsOf<'clip.set_animation'>)
   if (a.loop === null) delete anim.loop;
   else if (a.loop) {
     const period = a.loop.period_frames ?? Math.max(1, Math.round(fps.num / fps.den));
+    const { from_frame: from, to_frame: to } = a.loop;
+    if (from !== undefined && to !== undefined && to <= from) {
+      throw new CfError('bad_request', `loop to_frame ${to} is not after from_frame ${from}`, {
+        hint: 'to_frame is the clip frame the loop stops before',
+      });
+    }
     anim.loop = {
       name: a.loop.name,
       period: framesToTicks(period, fps),
       strength: a.loop.strength,
+      // On the source, as keyframes are, so trims and splits keep it on the same moment.
+      ...(from !== undefined ? { from: clip.in + framesToTicks(from, fps) } : {}),
+      ...(to !== undefined ? { to: clip.in + framesToTicks(to, fps) } : {}),
     };
   }
   const warnings: string[] = [];
@@ -2366,6 +2375,18 @@ function clipSetAnimation(doc: TimelineDoc, a: EditArgsOf<'clip.set_animation'>)
     warnings.push(
       `The entrance and exit together are longer than clip ${clip.id}, so they overlap`,
     );
+  }
+  if (a.loop && anim.loop && (anim.loop.from !== undefined || anim.loop.to !== undefined)) {
+    const tpf = ticksPerFrame(fps);
+    const n = Math.round(clip.duration / tpf);
+    const plays = Array.from({ length: n }, (_, i) => loopPlays(anim.loop, clip, tpf, i)).some(
+      Boolean,
+    );
+    if (!plays) {
+      warnings.push(
+        `The loop's from_frame to to_frame range misses every frame clip ${clip.id} plays (0 to ${n - 1}), so it never shows`,
+      );
+    }
   }
   if (Object.keys(anim).length) clip.animation = anim;
   else delete clip.animation;

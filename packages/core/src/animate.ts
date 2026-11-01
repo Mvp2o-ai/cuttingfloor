@@ -6,6 +6,7 @@ import {
   MASK_NUMBERS,
   type MaskNumber,
   type StoredAnimatable,
+  type StoredAnimation,
   type StoredClip,
   type StoredMask,
   type StoredPoints,
@@ -246,6 +247,22 @@ function applyLoop(name: string, i: number, period: number, k: number, s: Transf
 }
 
 /**
+ * Whether a loop runs at frame `i` of a clip: always, or while the frame shows source inside its
+ * range (source ticks, like keyframes).
+ */
+export function loopPlays(
+  loop: NonNullable<StoredAnimation['loop']> | undefined,
+  clip: StoredClip,
+  tpf: number,
+  i: number,
+): boolean {
+  if (!loop) return false;
+  if (loop.from === undefined && loop.to === undefined) return true;
+  const t = frameSource(clip, tpf, i);
+  return (loop.from === undefined || t >= loop.from) && (loop.to === undefined || t < loop.to);
+}
+
+/**
  * Transform values at frame `i` of a clip that is `n` frames long: keyframes sampled at the
  * frame's source time, then any in/out/loop animation applied on top.
  */
@@ -260,7 +277,11 @@ export function transformAt(clip: StoredClip, tpf: number, i: number, n: number)
   if (a?.in) applyInOut(a.in.name, clamp01(i / Math.max(1, a.in.duration / tpf)), 'in', s);
   if (a?.out)
     applyInOut(a.out.name, clamp01((n - 1 - i) / Math.max(1, a.out.duration / tpf)), 'out', s);
-  if (a?.loop) applyLoop(a.loop.name, i, Math.max(1, a.loop.period / tpf), a.loop.strength, s);
+  if (a?.loop && loopPlays(a.loop, clip, tpf, i)) {
+    // A ranged loop counts its phase from its own start, so it begins at rest there.
+    const from = a.loop.from !== undefined ? Math.round((a.loop.from - clip.in) / tpf) : 0;
+    applyLoop(a.loop.name, i - from, Math.max(1, a.loop.period / tpf), a.loop.strength, s);
+  }
   s.opacity = clamp01(s.opacity);
   return s;
 }

@@ -444,10 +444,28 @@ export const EditArgs = {
         name: LoopAnimation,
         period_frames: z.number().int().positive().max(100_000).optional(),
         strength: z.number().min(0).max(5).default(1),
+        from_frame: z
+          .number()
+          .int()
+          .min(-10_000_000)
+          .max(10_000_000)
+          .optional()
+          .describe(
+            'Frame from the clip start where it begins, its first repeat starting there; like keyframes it stays on that moment of the source through trims and splits. Default the clip start',
+          ),
+        to_frame: z
+          .number()
+          .int()
+          .min(-10_000_000)
+          .max(10_000_000)
+          .optional()
+          .describe(
+            'Frame from the clip start it stops before, back at rest. Default the clip end',
+          ),
       })
       .nullable()
       .optional()
-      .describe('Repeats for the whole clip'),
+      .describe('Repeats over the clip, or over from_frame to to_frame of it'),
   }),
 } as const;
 export type EditTool = keyof typeof EditArgs;

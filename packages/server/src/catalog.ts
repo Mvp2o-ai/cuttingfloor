@@ -203,7 +203,7 @@ const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<u
   animations: {
     title: 'Animation presets',
     body: {
-      note: 'Presets layer over the clip transform: in runs from the clip start, out ends at the clip end, loop repeats every period_frames (default 1 s) at strength (default 1).',
+      note: 'Presets layer over the clip transform: in runs from the clip start, out ends at the clip end, loop repeats every period_frames (default 1 s) at strength (default 1), over the whole clip or from from_frame to to_frame of it (clip frames).',
       in_out: IN_OUT,
       loop: LOOPS,
     },

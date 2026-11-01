@@ -121,7 +121,13 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
       ...(a.out ? { out: { name: a.out.name, duration_frames: f(a.out.duration) } } : {}),
       ...(a.loop
         ? {
-            loop: { name: a.loop.name, period_frames: f(a.loop.period), strength: a.loop.strength },
+            loop: {
+              name: a.loop.name,
+              period_frames: f(a.loop.period),
+              strength: a.loop.strength,
+              ...(a.loop.from !== undefined ? { from_frame: f(a.loop.from - c.in) } : {}),
+              ...(a.loop.to !== undefined ? { to_frame: f(a.loop.to - c.in) } : {}),
+            },
           }
         : {}),
     };

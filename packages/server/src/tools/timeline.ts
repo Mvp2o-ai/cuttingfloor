@@ -213,7 +213,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.set_animation': {
     title: 'Set animation',
     description:
-      'Entrance, exit and loop presets layered over the clip transform (video://catalog/animations): e.g. in {name: "pop", duration_frames: 12}, loop {name: "float"}. null removes one.',
+      'Entrance, exit and loop presets layered over the clip transform (video://catalog/animations): e.g. in {name: "pop", duration_frames: 12}, loop {name: "float"}; a loop runs the whole clip, or only from_frame to to_frame of it (loop {name: "shake", from_frame: 30, to_frame: 45} for a jolt). null removes one.',
   },
 };
 
