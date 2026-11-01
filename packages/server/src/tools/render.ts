@@ -375,7 +375,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get job',
       description:
-        'Status, progress and, once completed, the result of long-running calls (media.import, media.analyze, create.*, export.video, qa.check). Same record as tasks/get. status_message says what it is doing, or where it stands in the queue; for names the media or timeline. wait_seconds (up to 50) answers as soon as any job asked for changes, so one call waits instead of many polls. seconds_left and starts_in_seconds come only when progress so far allows. job_ids reads many and answers {jobs, not_found}; result summary cuts long lists. A job whose progress stops for minutes ends with a stalled error, freeing its slot.',
+        'Status, progress and, once completed, the result of long-running calls (media.import, media.analyze, create.*, export.video, qa.check). Same record as tasks/get. status_message says what it is doing, or where it stands in the queue; for names the media or timeline. wait_seconds (up to 50) answers as soon as any job asked for changes, so one call waits instead of many polls. seconds_left and starts_in_seconds come only when progress so far allows. job_ids reads many and answers {jobs, not_found}, each result in brief (result_summary: lists cut to their first items, with what was cut) unless result is full; result summary does the same for one job. A job whose progress stops for minutes ends with a stalled error, freeing its slot.',
       inputSchema: JobGetInput,
       outputSchema: JobGetResult,
       annotations: { ...readOnly, title: 'Get job' },
@@ -395,11 +395,12 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         args.wait_seconds,
         (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal,
       );
-      const view = (job: Job) =>
-        jobView(job, { result: args.result, estimate: rt.jobs.estimate(job.id) });
+      // One job is read for its result; many at once are a status check, kept small.
+      const mode = args.result ?? (args.job_id ? 'full' : 'summary');
+      const view = (job: Job) => jobView(job, { result: mode, estimate: rt.jobs.estimate(job.id) });
       // A finished job's links and media come along, as they would from tasks/result.
       const extra = (job: Job) => {
-        if (args.result !== 'full') return [];
+        if (mode !== 'full') return [];
         const done = job.result as
           | { isError?: boolean; content?: CallToolResult['content'] }
           | undefined;

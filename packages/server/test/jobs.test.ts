@@ -230,5 +230,15 @@ describe('jobs that stall or will not stop', () => {
     expect((full.result as { speech: { probabilities: number[] } }).speech.probabilities).toEqual(
       probabilities,
     );
+    // A check on many jobs at once sums each result up, unless asked for all of it.
+    const many = await ok<{ jobs: View[] }>(client, 'job.get', { job_ids: [job.id] });
+    expect(many.jobs[0]?.result).toBeUndefined();
+    expect(many.jobs[0]?.result_summary?.cut).toEqual({ 'speech.probabilities': 2800 });
+    const whole = await ok<{ jobs: View[] }>(client, 'job.get', {
+      job_ids: [job.id],
+      result: 'full',
+    });
+    const kept = whole.jobs[0]?.result as { speech?: { probabilities: number[] } } | undefined;
+    expect(kept?.speech?.probabilities).toHaveLength(2800);
   });
 });

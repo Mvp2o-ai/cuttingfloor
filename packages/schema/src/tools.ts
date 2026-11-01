@@ -1978,7 +1978,9 @@ export const JobGetInput = z.object({
     .describe(
       `Wait up to this long (at most ${JOB_WAIT_LIMIT_SECONDS} s) for any job asked for to change status, progress or status message; 0 answers at once`,
     ),
-  result: ResultMode.default('full'),
+  result: ResultMode.optional().describe(
+    'Default full for one job_id; summary for job_ids, so a check on many stays small (full gives them whole)',
+  ),
 });
 export const JobGetManyResult = z.object({
   jobs: z.array(JobView).describe('The jobs found, in the order asked'),
