@@ -4124,7 +4124,17 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     }, 120_000);
 
     it('fingerprints a render the way media.get fingerprints its import', async () => {
-      const { timeline_id } = await laid(media.av as string, 0);
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=320x180:rate=25:d=2',
+        '-pix_fmt',
+        'yuv420p',
+        join(env.mediaDir, 'print.mp4'),
+      ]);
+      const source = await importMedia({ path: join(env.mediaDir, 'print.mp4') });
+      const { timeline_id } = await laid(source.media_id, 0, 'video');
       const started = await ok<{ job_id: string }>(client, 'export.video', {
         timeline_id,
         preset: 'review_h264',
