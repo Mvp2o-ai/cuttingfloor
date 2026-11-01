@@ -490,6 +490,31 @@ describe('MLT compiler', () => {
     );
   });
 
+  it('gives the compressor its attack and release, defaulting to FFmpeg’s own', () => {
+    const set = compile(
+      edit([
+        { tool: 'track.set', args: { track_id: 't2', muted: false } },
+        {
+          tool: 'filter.add',
+          args: {
+            clip_id: 'c5',
+            name: 'compressor',
+            params: { ratio: 6, attack_ms: 5, release_ms: 800 },
+          },
+        },
+      ]),
+    );
+    expect(set).toMatch(
+      /avfilter\.acompressor<\/property><property name="av\.threshold">0\.125893<\/property><property name="av\.ratio">6<\/property><property name="av\.makeup">1<\/property><property name="av\.attack">5<\/property><property name="av\.release">800<\/property>/,
+    );
+    const plain = compile(
+      edit([{ tool: 'filter.add', args: { clip_id: 'c5', name: 'compressor' } }]),
+    );
+    expect(plain).toMatch(
+      /<property name="av\.attack">20<\/property><property name="av\.release">250</,
+    );
+  });
+
   it('compiles effects on clips, under masks, in adjustment zones and on the timeline', () => {
     const fx = runEdits(
       newTimeline('t', seq, { video: 2, audio: 0 }),
