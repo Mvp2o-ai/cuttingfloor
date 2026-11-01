@@ -2571,3 +2571,105 @@ button.link {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---------- /pricing (apps/site/app/pricing) ---------- */
+
+.price-table .amount .pr-year {
+  display: block;
+  margin-top: 6px;
+}
+.pr-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.pr-grid {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.pr-caption {
+  caption-side: bottom;
+  text-align: left;
+  padding-top: 12px;
+  color: var(--mute);
+  font-size: 14px;
+}
+table.pr-grid th,
+table.pr-grid td {
+  text-align: left;
+  padding: 14px 14px 14px 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+.pr-grid thead th {
+  font-family: var(--font-pixel), monospace;
+  font-weight: 400;
+  font-size: 20px;
+  text-transform: uppercase;
+  color: var(--mute);
+  border-bottom-color: var(--mute);
+}
+.pr-grid thead th.pick {
+  color: var(--key);
+}
+.pr-grid tbody th {
+  font-weight: 700;
+  max-width: 22ch;
+}
+.pr-mark {
+  display: block;
+  font-family: var(--font-pixel), monospace;
+  font-size: 16px;
+  text-transform: uppercase;
+  color: var(--key);
+}
+.pr-grid td[data-mark="not"] .pr-mark {
+  color: var(--mute);
+}
+.pr-grid td[data-mark="not"] {
+  color: var(--mute);
+}
+.pr-grid td[data-mark="key"] .pr-mark {
+  color: var(--ink);
+}
+.ledger .pr-ledger-p {
+  grid-column: 2 / -1;
+  color: var(--ink);
+}
+.compare-table code,
+.pr-steps code,
+.paper .wt-prose code {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.9em;
+}
+.pr-sub {
+  margin: clamp(32px, 4vw, 48px) 0 0;
+  font-size: clamp(24px, 2.4vw, 34px);
+  font-weight: 800;
+  font-variation-settings: "wdth" 70;
+}
+.pr-list {
+  margin: 16px 0 0;
+  padding-left: 20px;
+  columns: 2 320px;
+  column-gap: 32px;
+}
+.pr-item {
+  margin: 0 0 8px;
+  break-inside: avoid;
+}
+.pr-steps {
+  margin: 20px 0;
+  padding: 16px;
+  overflow-x: auto;
+  background: var(--paper-ink);
+  color: var(--paper);
+  font-size: 15px;
+}
+.paper .wt-prose p + p {
+  margin-top: 12px;
+}
+.paper .wt-prose a {
+  color: inherit;
+}
