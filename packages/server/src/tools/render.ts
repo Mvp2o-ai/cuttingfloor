@@ -143,7 +143,8 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       annotations: {
         title: 'Export video',
         readOnlyHint: false,
-        destructiveHint: false,
+        // overwrite: true replaces a file in the exports folder, when there is one.
+        destructiveHint: Boolean(rt.config.exportsDir),
         idempotentHint: true,
         openWorldHint: false,
       },
@@ -413,7 +414,8 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       annotations: {
         title: 'Cancel job',
         readOnlyHint: false,
-        destructiveHint: false,
+        // A stopped job's work is lost; it cannot be resumed.
+        destructiveHint: true,
         idempotentHint: true,
         openWorldHint: false,
       },

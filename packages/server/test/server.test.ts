@@ -150,9 +150,54 @@ describe('protocol surface', () => {
       ].sort(),
     );
     for (const tool of tools) {
-      expect(tool.annotations?.title, tool.name).toBeTruthy();
-      expect(typeof tool.annotations?.readOnlyHint, tool.name).toBe('boolean');
-      expect(typeof tool.annotations?.openWorldHint, tool.name).toBe('boolean');
+      const a = tool.annotations ?? {};
+      expect(a.title, tool.name).toBeTruthy();
+      for (const hint of ['readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint']) {
+        expect(typeof a[hint as keyof typeof a], `${tool.name} ${hint}`).toBe('boolean');
+      }
+    }
+  });
+
+  it('marks exactly the tools that change nothing read-only, so clients run them without asking', async () => {
+    // Claude Cowork and ChatGPT ask the user before every tool not marked read-only. Edits write
+    // a new timeline and create.* writes new media, so they are not read-only; a tool that only
+    // reads or measures is, even when it runs as a job or keeps a cached render. A new tool
+    // lands in one of these lists deliberately.
+    const client = await connect(env.runtime);
+    const { tools } = await client.listTools();
+    const where = (hint: 'readOnlyHint' | 'destructiveHint' | 'openWorldHint') =>
+      tools
+        .filter((t) => t.annotations?.[hint])
+        .map((t) => t.name)
+        .sort();
+    expect(where('readOnlyHint')).toEqual(
+      [
+        'job.get',
+        'job.list',
+        'judge.ask',
+        'media.correlate',
+        'media.get',
+        'media.list',
+        'media.listen',
+        'media.seek',
+        'qa.check',
+        'render.frames',
+        'skills.get',
+        'skills.search',
+        'timeline.diff',
+        'timeline.get',
+        'timeline.history',
+      ].sort(),
+    );
+    // The test runtime has an exports folder, where overwrite: true replaces a file.
+    expect(where('destructiveHint')).toEqual(
+      ['export.timeline', 'export.video', 'job.cancel', 'media.delete'].sort(),
+    );
+    expect(where('openWorldHint')).toEqual(
+      ['create.lipsync', 'judge.ask', 'media.analyze', 'media.import', 'media.seek'].sort(),
+    );
+    for (const t of tools) {
+      if (t.annotations?.readOnlyHint) expect(t.annotations.destructiveHint, t.name).toBe(false);
     }
   });
 
