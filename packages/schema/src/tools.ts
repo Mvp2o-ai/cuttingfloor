@@ -816,7 +816,7 @@ export const MediaAnalyzeInput = z
       .max(100)
       .optional()
       .describe(
-        "scenes (required): how much the picture must change to count as a cut, 0–100 (FFmpeg scdet's score). A hard cut between similar shots can score well under 30: start at FFmpeg's own default, 10, and raise it if you get too many",
+        "scenes (required): how much the picture must change to count as a cut, 0–100 (FFmpeg scdet's score): the change from the frame before, in percent of full range, less the change just before it (so steady motion stays low). Hard cuts between ordinary shots score about 10 to 30, a cut between opposite pictures up to 100: start at FFmpeg's own default, 10, and raise it if you get too many",
       ),
     idempotency_key: z.string().min(1).max(200).optional(),
   })
@@ -1217,6 +1217,10 @@ export const MediaAnalyzeResult = z.object({
     .optional()
     .describe('silence: media seconds'),
   scenes: z.array(z.number()).optional().describe('scenes: cut times, media seconds'),
+  scene_scores: z
+    .array(z.number())
+    .optional()
+    .describe('scenes: how much the picture changed at each cut, on the threshold scale'),
   speech: z
     .object({
       model: z.string(),

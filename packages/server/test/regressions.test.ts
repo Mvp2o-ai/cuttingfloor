@@ -388,4 +388,54 @@ describe.skipIf(!engines)('blind-test regressions', () => {
     expect(preview.loudness?.lufs).toBeTypeOf('number');
     expect(res.content.some((c) => c.type === 'image')).toBe(true);
   }, 120_000);
+
+  it('finds hard cuts at the scale the threshold describes, with each cut scored', async () => {
+    // Three hard cuts between moving pictures, at 2, 4 and 6 s.
+    const file = join(env.mediaDir, 'cuts.mp4');
+    await ff([
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc2=size=640x360:rate=25:d=2',
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc2=size=640x360:rate=25:d=2,hue=h=120,hflip',
+      '-f',
+      'lavfi',
+      '-i',
+      'mandelbrot=size=640x360:rate=25,trim=duration=2',
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc2=size=640x360:rate=25:d=2,negate',
+      '-filter_complex',
+      '[0][1][2][3]concat=n=4:v=1,format=yuv420p',
+      '-c:v',
+      'libx264',
+      file,
+    ]);
+    const { media_id } = await importMedia(file);
+    const scenes = async (threshold: number) => {
+      const started = await ok<{ job_id: string }>(client, 'media.analyze', {
+        media_id,
+        kind: 'scenes',
+        threshold,
+      });
+      const done = await settled<{ result: { scenes: number[]; scene_scores: number[] } }>(
+        client,
+        started.job_id,
+        60_000,
+      );
+      return done.result;
+    };
+    const at10 = await scenes(10);
+    expect(at10.scenes.map(Math.round)).toEqual([2, 4, 6]);
+    // Hard cuts between ordinary pictures score in the tens, which the description says.
+    for (const score of at10.scene_scores) expect(score).toBeGreaterThan(10);
+    for (const score of at10.scene_scores) expect(score).toBeLessThan(50);
+    const { tools } = await client.listTools();
+    const analyze = JSON.stringify(tools.find((t) => t.name === 'media.analyze'));
+    expect(analyze).toMatch(/Hard cuts between ordinary shots score about 10 to 30/);
+  }, 120_000);
 });

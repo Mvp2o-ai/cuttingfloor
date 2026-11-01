@@ -39,11 +39,15 @@ export async function detectSilences(
   return silences;
 }
 
-/** Times where the picture changes by more than `threshold` (FFmpeg scdet, 0–100). */
+/**
+ * Times where the picture changes by more than `threshold`, with each one's score (FFmpeg
+ * scdet: the mean absolute difference from the frame before, in percent of full range, less
+ * the difference just before it). Hard cuts between ordinary shots score about 10–30.
+ */
 export async function detectScenes(
   file: string,
   options: { threshold: number; signal: AbortSignal },
-): Promise<number[]> {
+): Promise<Array<{ time: number; score: number }>> {
   const { stderr } = await run(
     BIN.ffmpeg,
     [
@@ -52,12 +56,16 @@ export async function detectScenes(
       `file:${file}`,
       '-an',
       '-vf',
-      `scdet=threshold=${options.threshold},metadata=print:key=lavfi.scd.time`,
+      `scdet=threshold=${options.threshold}`,
       '-f',
       'null',
       '-',
     ],
     { signal: options.signal },
   );
-  return [...stderr.matchAll(/lavfi\.scd\.time=([\d.]+)/g)].map((m) => Number(m[1]));
+  // scdet logs each cut as "lavfi.scd.score: 22.793, lavfi.scd.time: 4".
+  const cuts = [...stderr.matchAll(/lavfi\.scd\.score: ([\d.]+), lavfi\.scd\.time: ([\d.]+)/g)].map(
+    (m) => ({ time: Number(m[2]), score: Math.round(Number(m[1]) * 100) / 100 }),
+  );
+  return cuts;
 }
