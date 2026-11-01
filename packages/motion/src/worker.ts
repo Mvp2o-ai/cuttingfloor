@@ -13,7 +13,7 @@ import {
   MotionRequest,
   serverBusy,
 } from '@cuttingfloor/schema';
-import { pageDocument } from './document.ts';
+import { checkPage, pageDocument } from './document.ts';
 import { reap } from './reap.ts';
 import type { MotionJob } from './render.ts';
 
@@ -188,6 +188,8 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
       for (const a of request.assets) {
         await writeFile(join(dir, 'assets', a.name), Buffer.from(a.data, 'base64'));
       }
+      // A network reference refuses the page here, before any browser starts.
+      checkPage(request.html);
       await writeFile(join(dir, 'index.html'), pageDocument(request.html, job.width, job.height));
       await writeFile(join(dir, 'job.json'), JSON.stringify(job));
       const file = await runJob(dir, options.timeoutMs ?? motionTimeout(job), send, signal);

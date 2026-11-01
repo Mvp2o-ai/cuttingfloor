@@ -1,21 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { clockScript } from '../src/clock.ts';
-import { assertOffline, LIBRARIES, libraryPath, pageDocument } from '../src/index.ts';
+import { assertOffline, checkPage, LIBRARIES, libraryPath, pageDocument } from '../src/index.ts';
 
 describe('pages', () => {
-  it('refuses anything that reaches for the network or the disk', () => {
+  it('refuses anything the browser would load from the network or the disk', () => {
     for (const html of [
       '<img src="https://example.com/a.png">',
+      '<img srcset="assets/a.png 1x, https://x.test/b.png 2x">',
       '<div style="background:url(\'http://x.test/b.png\')"></div>',
+      '<style>.a { background: url( https://x.test/b.png ) }</style>',
       '<style>@import "https://fonts.googleapis.com/css2?family=Inter";</style>',
       '<link href="//cdn.test/x.css" rel="stylesheet">',
       '<iframe src="file:///data/secret.key"></iframe>',
       '<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>',
-      '<script type="module">import * as THREE from "https://unpkg.com/three";</script>',
-      '<script type="module">const m = await import("https://x.test/m.js");</script>',
-      '<script>fetch("/x")</script>',
-      '<script>new WebSocket("ws://cuttingfloor:8787")</script>',
-      '<script>navigator.sendBeacon("/x")</script>',
+      '<video poster=https://x.test/p.jpg></video>',
+      '<svg><image href="https://x.test/i.png"/></svg>',
+      '<object data="https://x.test/o.svg"></object>',
+      '<base href="https://x.test/">',
+      '<meta http-equiv="refresh" content="0; url=https://x.test/">',
     ]) {
       expect(() => assertOffline(html), html).toThrow(/network/);
     }
@@ -25,9 +27,56 @@ describe('pages', () => {
       '<script src="lib/anime.umd.min.js"></script>',
       '<script type="module">import * as THREE from "./lib/three.module.js";</script>',
       '<p>Go fetch the ball</p>',
+      // Script text loads nothing until it runs, and then the sandbox blocks it.
+      '<script>console.warn("See https://example.com/docs"); function f() { return fetch("https://x.test") }</script>',
+      '<script>const s = "<img src=\'https://x.test/a.png\'>"; new WebSocket("ws://x.test")</script>',
+      '<a href="https://example.com">a link nobody follows</a>',
+      '<style>/* from https://x.test/theme */ .a { color: red }</style>',
+      '<p>https://example.com and url(https://x.test)</p>',
     ]) {
       expect(() => assertOffline(html), html).not.toThrow();
     }
+  });
+
+  it('says how to fix a network reference', () => {
+    try {
+      checkPage('<p>x</p><style>.a{background:url("https://x.test/b.png")}</style>');
+      expect.unreachable();
+    } catch (e) {
+      expect(e).toMatchObject({
+        code: 'bad_request',
+        message: 'The HTML loads https://x.test/b.png from the network (<style>)',
+        hint: expect.stringMatching(/assets\/<name>.*lib\//),
+        detail: { url: 'https://x.test/b.png', where: '<style>' },
+      });
+    }
+  });
+
+  it('reports what looks broken in how a page parses, without refusing it', () => {
+    expect(checkPage('<div><p>fine<br><img src="assets/a.png"></div><svg><rect/></svg>')).toEqual(
+      [],
+    );
+    expect(checkPage('<div><span>open')).toEqual([
+      'Tags never closed by the end of the page: <div>, <span>',
+    ]);
+    expect(checkPage('<div>.a { color: red } /* title */</div>')[0]).toMatch(
+      /^"\/\*" is in the page's visible text/,
+    );
+    expect(checkPage('@keyframes x { to { opacity: 0 } }</style><p>hi</p>')).toEqual([
+      expect.stringMatching(/"@keyframes" is in the page's visible text/),
+      expect.stringMatching(/^<\/style> closes a <style> that was never opened/),
+    ]);
+    expect(checkPage('<p>a</p><script>let x = 1;')).toEqual([
+      expect.stringMatching(/^<script> never closes/),
+    ]);
+    expect(checkPage('<p>a</p><!-- note <p>b</p>')).toEqual([
+      expect.stringMatching(/^A comment never ends/),
+    ]);
+    expect(checkPage('<p class="a>b</p>')).toEqual([
+      expect.stringMatching(/^A quote never closes/),
+    ]);
+    // CSS and code inside their own tags are not text.
+    expect(checkPage('<style>/* a */ @keyframes x {}</style><script>/* b */</script>')).toEqual([]);
   });
 
   it('lays a page out at its size on a transparent background', () => {
@@ -41,9 +90,17 @@ describe('pages', () => {
   });
 
   it('handles hostile input in linear time', () => {
-    const started = performance.now();
-    pageDocument(`${'<head'.repeat(50_000)}${'<script src=x'.repeat(20_000)}`, 10, 10);
-    expect(performance.now() - started).toBeLessThan(1000);
+    for (const html of [
+      `${'<head'.repeat(50_000)}${'<script src=x'.repeat(20_000)}`,
+      `<span>${'<div>'.repeat(100_000)}</span>${'</b>'.repeat(100_000)}`,
+      `<div>${'<p a=b c="d" e>'.repeat(50_000)}${'/'.repeat(100_000)}`,
+      `<style>${'url( '.repeat(100_000)}</style>${'x '.repeat(100_000)}`,
+    ]) {
+      const started = performance.now();
+      checkPage(html);
+      pageDocument(html, 10, 10);
+      expect(performance.now() - started, html.slice(0, 20)).toBeLessThan(1000);
+    }
   });
 
   it('bundles open-source libraries that resolve', async () => {

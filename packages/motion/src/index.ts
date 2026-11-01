@@ -1,4 +1,4 @@
-export { assertOffline, LIBRARIES, libraryPath, pageDocument } from './document.ts';
+export { assertOffline, checkPage, LIBRARIES, libraryPath, pageDocument } from './document.ts';
 export {
   CHROMIUM,
   type MotionJob,
