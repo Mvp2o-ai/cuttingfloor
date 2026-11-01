@@ -13,6 +13,7 @@ import { createBLAKE3 } from 'hash-wasm';
 import { BIN, run } from './exec.ts';
 import { directDownloadUrl, download } from './fetch.ts';
 import { conformReasons, type Probe, probe } from './probe.ts';
+import { unwrapWebFont } from './webfont.ts';
 
 export const MEDIA_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -415,6 +416,9 @@ export class MediaLibrary {
       let file = record.file;
       record.size = (await stat(file)).size;
       record.fingerprint = await fingerprint(file);
+      // A web font (WOFF, WOFF2) is used as the TrueType or OpenType font it packs.
+      const unpacked = await unwrapWebFont(file, dir);
+      if (unpacked) record.file = file = unpacked;
       progress(0.3, 'probing');
       record.probe = await probe(file, signal);
       // A copy the server holds is named for what it is, whatever name it came with (a PNG sent

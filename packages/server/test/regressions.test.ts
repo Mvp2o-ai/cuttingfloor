@@ -1,9 +1,12 @@
 // Bugs blind tests found (MVP-254), each pinned through the SDK client with real engines. Skips
 // on hosts without FFmpeg and MLT; the Docker test target runs it.
 import { execFile } from 'node:child_process';
-import { chmod, writeFile } from 'node:fs/promises';
+import { chmod, readFile, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { deflateSync } from 'node:zlib';
 import { BIN } from '@cuttingfloor/engine';
 import type { Client } from '@modelcontextprotocol/client';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -85,6 +88,44 @@ async function look(
 }
 
 const ids: Record<string, string> = {};
+
+/** A TrueType font packed as WOFF 1.0: its tables, each deflated, under a WOFF directory. */
+function woff(sfnt: Buffer): Buffer {
+  const count = sfnt.readUInt16BE(4);
+  const tables = Array.from({ length: count }, (_, i) => {
+    const at = 12 + i * 16;
+    const offset = sfnt.readUInt32BE(at + 8);
+    const length = sfnt.readUInt32BE(at + 12);
+    const data = sfnt.subarray(offset, offset + length);
+    const packed = deflateSync(data);
+    return {
+      tag: sfnt.readUInt32BE(at),
+      checksum: sfnt.readUInt32BE(at + 4),
+      length,
+      body: packed.length < length ? packed : data,
+    };
+  });
+  const pad = (n: number) => (n + 3) & ~3;
+  const header = 44 + 20 * count;
+  const out = Buffer.alloc(header + tables.reduce((n, t) => n + pad(t.body.length), 0));
+  out.write('wOFF', 0, 'latin1');
+  out.writeUInt32BE(sfnt.readUInt32BE(0), 4);
+  out.writeUInt32BE(out.length, 8);
+  out.writeUInt16BE(count, 12);
+  out.writeUInt32BE(sfnt.length, 16);
+  let offset = header;
+  tables.forEach((t, i) => {
+    const at = 44 + i * 20;
+    out.writeUInt32BE(t.tag, at);
+    out.writeUInt32BE(offset, at + 4);
+    out.writeUInt32BE(t.body.length, at + 8);
+    out.writeUInt32BE(t.length, at + 12);
+    out.writeUInt32BE(t.checksum, at + 16);
+    t.body.copy(out, offset);
+    offset += pad(t.body.length);
+  });
+  return out;
+}
 
 describe.skipIf(!engines)('blind-test regressions', () => {
   beforeAll(async () => {
@@ -603,6 +644,44 @@ describe.skipIf(!engines)('blind-test regressions', () => {
     expect(done.result.silences).toHaveLength(1);
     expect(done.result.silences[0]?.start).toBeCloseTo(3, 1);
     expect(done.result.silences[0]?.end).toBeCloseTo(6, 1);
+  }, 120_000);
+
+  it('imports .woff and .woff2 fonts as the font they pack, and sets text in them', async () => {
+    const ttf = await readFile('/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf');
+    // WOFF2 from Google's encoder (wawoff2, the engine's own dependency); WOFF packed here.
+    const engineRequire = createRequire(fileURLToPath(import.meta.resolve('@cuttingfloor/engine')));
+    const { compress } = engineRequire('wawoff2') as {
+      compress: (b: Uint8Array) => Promise<Uint8Array>;
+    };
+    await writeFile(join(env.mediaDir, 'serif.woff2'), await compress(ttf));
+    await writeFile(join(env.mediaDir, 'serif.woff'), woff(ttf));
+    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      name: 'fonts',
+      sequence: { width: 640, height: 360, fps: { num: 24, den: 1 } },
+    });
+    for (const name of ['serif.woff2', 'serif.woff']) {
+      const font = await importMedia(join(env.mediaDir, name));
+      expect(font, name).toMatchObject({
+        kind: 'font',
+        font_family: 'DejaVu Serif',
+        extension: '.ttf',
+        status: 'ready',
+      });
+      const titled = await ok<{ timeline_id: string }>(client, 'title.add', {
+        timeline_id,
+        track_id: 't1',
+        text: 'Serif',
+        at_frame: 0,
+        duration_frames: 24,
+        style: { font_media_id: font.media_id },
+        preview: 'none',
+      });
+      const shown = await call(client, 'render.frames', {
+        timeline_id: titled.timeline_id,
+        frames: [12],
+      });
+      expect(shown.isError, JSON.stringify(shown.structured)).toBe(false);
+    }
   }, 120_000);
 });
 
