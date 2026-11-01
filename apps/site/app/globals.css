@@ -2673,3 +2673,197 @@ table.pr-grid td {
 .paper .wt-prose a {
   color: inherit;
 }
+/* ---------- connect and self-host pages (app/connect, app/self-host) ---------- */
+
+.connect-body p.connect-more {
+  margin: 12px 0 0;
+  font-size: 14px;
+}
+.connect-more a {
+  color: var(--ink);
+}
+
+/* An app's mark: a wordmark until its owner approves a logo, then the SVG at the same height. */
+.logo-slot {
+  display: inline-flex;
+  align-items: center;
+  height: 1em;
+  color: inherit;
+}
+.logo-slot img {
+  height: 100%;
+  width: auto;
+  display: block;
+}
+.logo-word {
+  font-weight: 800;
+  font-variation-settings: "wdth" 70;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  white-space: nowrap;
+}
+.logo-slot.ours {
+  color: var(--key);
+}
+
+.cl-address {
+  max-width: 640px;
+  margin-top: 28px;
+}
+.cl-address .label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.cl-index {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  border-top: 1px solid var(--rule);
+  border-left: 1px solid var(--rule);
+}
+.cl-index li {
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.cl-index a {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 24px;
+  height: 100%;
+}
+.cl-index a:hover {
+  background: var(--bg-2);
+}
+.cl-index .logo-word {
+  white-space: normal;
+}
+.cl-where {
+  font-size: 14px;
+  color: var(--mute);
+}
+
+.cl-name {
+  margin: 0;
+  font-size: clamp(36px, 5vw, 72px);
+}
+.cl-name .logo-word {
+  white-space: normal;
+}
+
+.cl-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: clamp(24px, 4vw, 56px);
+  align-items: start;
+}
+.cl-snippets {
+  display: grid;
+  gap: 20px;
+}
+.cl-snippets .wt-prompt pre {
+  font-size: 14px;
+  line-height: 1.55;
+  padding: 18px 20px;
+}
+.cl-snippets .wt-prompt figcaption {
+  padding: 10px 20px;
+}
+.cl-steps {
+  margin: 0;
+  padding-left: 1.6em;
+  font-size: clamp(17px, 1.4vw, 19px);
+  line-height: 1.55;
+}
+.cl-steps li + li {
+  margin-top: 10px;
+}
+.cl-steps li::marker {
+  font-family: var(--font-pixel), monospace;
+  color: var(--key);
+}
+.cl-steps code,
+.cl-notes code {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+}
+.cl-notes {
+  margin: 20px 0 0;
+  padding-left: 1.2em;
+  color: var(--mute);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.cl-body > .cl-notes {
+  margin-top: 0;
+}
+.cl-notes li + li {
+  margin-top: 8px;
+}
+.cl-sub {
+  margin: 32px 0 0;
+  font-family: var(--font-pixel), monospace;
+  font-size: 20px;
+  font-weight: 400;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.wt-links code {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.86em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+#compare .compare-table .tier,
+#keys .compare-table .tier {
+  white-space: normal;
+  font-size: clamp(18px, 1.8vw, 24px);
+  min-width: 12ch;
+}
+#compare .compare-table td,
+#keys .compare-table td {
+  min-width: 22ch;
+}
+
+.cl-agpl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  border-top: 1px solid var(--paper-rule);
+}
+.cl-agpl > div {
+  padding: 22px 24px 22px 0;
+  border-bottom: 1px solid var(--paper-rule);
+}
+.cl-agpl dt {
+  font-size: clamp(22px, 2.2vw, 30px);
+  font-weight: 800;
+  font-variation-settings: "wdth" 70;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.cl-agpl dd {
+  margin: 10px 0 0;
+  font-size: clamp(16px, 1.3vw, 18px);
+  line-height: 1.55;
+}
+.paper .wt-links,
+.paper .wt-links a {
+  color: var(--paper-ink);
+}
+
+@media (max-width: 900px) {
+  .cl-body,
+  .cl-agpl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* ---------- end connect and self-host pages ---------- */
