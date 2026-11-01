@@ -493,6 +493,8 @@ export const VIDEO_EFFECTS = [
   'glitch',
   'denoise',
   'chroma_key',
+  'lens_correction',
+  'directional_blur',
 ];
 export const AUDIO_EFFECTS = [
   'equalizer',
@@ -507,6 +509,8 @@ export const AUDIO_EFFECTS = [
   'highpass',
   'lowpass',
   'telephone',
+  'dereverb',
+  'channels',
 ];
 export const TRANSITIONS = [
   'dissolve',

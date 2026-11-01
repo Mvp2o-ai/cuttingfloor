@@ -20,9 +20,11 @@ const anyResult = z.object({}).passthrough();
  * cut facts), and to 366 000 for the sound tools (media.analyze sounds, media.listen,
  * create.stems), whose results carry every score, to 386 000 for create.lipsync, and to
  * 392 000 for effect names and eases as enums plus the units, coordinate spaces and defaults
- * descriptions now state, since many clients can't read the catalogue resources.
+ * descriptions now state, since many clients can't read the catalogue resources, and to
+ * 414 000 for create.upscaled (its full media result is most of it), each channel's levels on
+ * every tool that returns media, and clip.set_speed's in-between frames.
  */
-const BUDGET_BYTES = 392_000;
+const BUDGET_BYTES = 414_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -109,6 +111,7 @@ describe('protocol surface', () => {
         'create.stabilized',
         'create.stems',
         'create.still',
+        'create.upscaled',
         'create.voiceover',
         'edit.batch',
         'export.timeline',
