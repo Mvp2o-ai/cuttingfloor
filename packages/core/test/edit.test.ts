@@ -1752,7 +1752,7 @@ describe('effects', () => {
     expect(toView('tl_x', fromView(view, withLut))).toEqual({ ...view, parent: null });
     expect(() =>
       run(base(), { tool: 'filter.add', args: { clip_id: 'c5', name: 'nope' } }),
-    ).toThrow(/No effect named/);
+    ).toThrow(/expected one of "brightness_contrast".*"telephone"/);
     expect(() =>
       run(base(), { tool: 'filter.add', args: { clip_id: 'c6', name: 'blur' } }),
     ).toThrow(/video effect/);
@@ -1762,6 +1762,19 @@ describe('effects', () => {
         args: { clip_id: 'c5', name: 'saturation', params: { amount: 9 } },
       }),
     ).toThrow(/amount/);
+    // A wrong param is refused with the effect's params, ranges, units and defaults.
+    try {
+      run(base(), {
+        tool: 'filter.add',
+        args: { clip_id: 'c5', name: 'blur', params: { bogus: 1 } },
+      });
+      expect.unreachable();
+    } catch (error) {
+      expect((error as CfError).message).toMatch(/Unrecognized key: "bogus"/);
+      expect((error as CfError).hint).toBe(
+        'blur (video) takes radius: 0 to 0.2, default 0.01 (Fraction of the frame height; the Gaussian sigma is half of it (0.02 on 1080p is about 11 px); takes keyframes)',
+      );
+    }
     expect(() =>
       run(base(), {
         tool: 'filter.add',

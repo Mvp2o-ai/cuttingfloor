@@ -5,7 +5,9 @@ import {
   type EditTool,
   EFFECTS,
   type EffectSpec,
+  effectNamesText,
   effectParamsSchema,
+  effectParamsText,
   MASK_DEFAULTS,
   MASK_LIMITS,
   MASK_NUMBERS,
@@ -1321,13 +1323,15 @@ export function storeEffectParams(
   const schema = effectParamsSchema(name);
   if (!spec || !schema) {
     throw new CfError('bad_request', `No effect named ${name}`, {
-      hint: 'The effects are listed at video://catalog/effects',
+      hint: effectNamesText(),
     });
   }
   const kind =
     home.scope === 'clip' ? home.clip.kind : home.scope === 'track' ? home.track.kind : spec.kind;
   if (spec.kind !== kind) {
-    throw new CfError('bad_request', `${name} is a ${spec.kind} effect; this is ${kind}`);
+    throw new CfError('bad_request', `${name} is a ${spec.kind} effect; this is ${kind}`, {
+      hint: effectNamesText(),
+    });
   }
   if (spec.sourcePass && (home.scope !== 'clip' || home.clip.type !== 'media')) {
     throw new CfError(
@@ -1341,7 +1345,7 @@ export function storeEffectParams(
     throw new CfError(
       'bad_request',
       `${name}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'params'}: ${i.message}`).join('; ')}`,
-      { hint: 'See video://catalog/effects for its params and ranges' },
+      { hint: effectParamsText(name) },
     );
   }
   const tpf = ticksPerFrame(doc.sequence.fps);

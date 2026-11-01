@@ -18,9 +18,11 @@ const anyResult = z.object({}).passthrough();
  * 301 000 for the source map of a render and the full probe facts on media, and to 331 000
  * for the speech and sound facts (media.analyze speech and loudness, media.correlate, qa.check
  * cut facts), and to 366 000 for the sound tools (media.analyze sounds, media.listen,
- * create.stems), whose results carry every score, and to 386 000 for create.lipsync.
+ * create.stems), whose results carry every score, to 386 000 for create.lipsync, and to
+ * 392 000 for effect names and eases as enums plus the units, coordinate spaces and defaults
+ * descriptions now state, since many clients can't read the catalogue resources.
  */
-const BUDGET_BYTES = 386_000;
+const BUDGET_BYTES = 392_000;
 let env: TestEnv;
 
 beforeAll(async () => {

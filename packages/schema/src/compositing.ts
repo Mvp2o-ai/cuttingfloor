@@ -27,14 +27,16 @@ export const Ease = z.enum(EASES);
 export type Ease = z.infer<typeof Ease>;
 
 /**
- * Ease at the tool interface: a plain string checked against EASES, so the 34 names aren't
- * repeated in every animatable field of every tool definition (video://catalog/eases).
+ * Ease at the tool interface: an enum in the JSON Schema (its bytes count once, in the shared
+ * `Animatable` definition), checked by a refinement rather than z.enum so a wrong name inside
+ * the animatable union is reported with every valid name, not as "Invalid input".
  */
 const EaseName = z
   .string()
   .refine((v) => (EASES as readonly string[]).includes(v), {
-    message: `Unknown ease; use one of video://catalog/eases (${EASES.slice(0, 6).join(', ')}, ...)`,
+    message: `Unknown ease; use one of ${EASES.join(', ')}`,
   })
+  .meta({ enum: [...EASES] })
   .transform((v) => v as Ease);
 
 const MAX_KEYFRAMES = 1000;
@@ -88,7 +90,9 @@ export const AnimatableValue = z
         )
         .min(1)
         .max(MAX_KEYFRAMES)
-        .describe('frame is relative to the clip start; ease from video://catalog/eases'),
+        .describe(
+          'frame is from the clip start; ease shapes the move from this keyframe to the next (default linear; hold waits, then jumps)',
+        ),
     }),
     z.null(),
   ])

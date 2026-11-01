@@ -44,12 +44,14 @@ export function soundLabelIndexes(labels: string[]): number[] {
         .map((w) => w.slice(0, 5));
       const near = SOUND_LABELS.filter((l) => words.some((w) => l.toLowerCase().includes(w)));
       throw new CfError('bad_request', `No sound named "${label}"`, {
-        hint: near.length
-          ? `Names from video://catalog/sounds, e.g. ${near
-              .slice(0, 8)
-              .map((n) => `"${n}"`)
-              .join(', ')}; or media.listen for a sound in your own words`
-          : 'Use names from video://catalog/sounds, or media.listen for a sound in your own words',
+        hint: `${
+          near.length
+            ? `Close names: ${near
+                .slice(0, 8)
+                .map((n) => `"${n}"`)
+                .join(', ')}. `
+            : ''
+        }Or media.listen for a sound in your own words. Every name: ${SOUND_LABELS.join(', ')}`,
       });
     }
     if (!out.includes(at)) out.push(at);

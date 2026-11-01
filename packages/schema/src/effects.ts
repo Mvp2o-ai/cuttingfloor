@@ -4,7 +4,8 @@ import { MediaId } from './ids.ts';
 
 // The effect registry: every effect an agent can apply, with typed parameters. Tools take a
 // name and a params object checked against this at run time (so tool definitions stay
-// small); video://catalog/effects lists it. Numbers marked animatable take keyframes.
+// small); video://catalog/effects lists it, and errors list the names and params inline.
+// Numbers marked animatable take keyframes.
 
 type Num = {
   kind: 'number';
@@ -111,7 +112,14 @@ export const EFFECTS = {
   blur: {
     kind: 'video',
     about: 'Gaussian blur',
-    params: { radius: num(0, 0.2, 0.01, 'Fraction of the frame height') },
+    params: {
+      radius: num(
+        0,
+        0.2,
+        0.01,
+        'Fraction of the frame height; the Gaussian sigma is half of it (0.02 on 1080p is about 11 px)',
+      ),
+    },
   },
   sharpen: {
     kind: 'video',
@@ -238,6 +246,51 @@ export const EFFECTS = {
 
 export type EffectName = keyof typeof EFFECTS;
 export const EFFECT_NAMES = Object.keys(EFFECTS) as EffectName[];
+
+/** Every effect name, by kind: what an error about an unknown effect lists. */
+export function effectNamesText(): string {
+  const of = (kind: 'video' | 'audio') =>
+    EFFECT_NAMES.filter((n) => (EFFECTS as Record<string, EffectSpec>)[n]?.kind === kind).join(
+      ', ',
+    );
+  return `Video effects: ${of('video')}. Audio effects: ${of('audio')}`;
+}
+
+/**
+ * One effect's params with their ranges, units, defaults and whether they take keyframes, as
+ * an error about a param lists them (so no catalogue read is needed to fix the call).
+ */
+export function effectParamsText(name: string): string {
+  const spec = (EFFECTS as Record<string, EffectSpec>)[name];
+  if (!spec) return effectNamesText();
+  const params = Object.entries(spec.params).map(([key, p]) => {
+    if (p.kind === 'number')
+      return `${key}: ${p.min} to ${p.max}, default ${p.default} (${p.about}${p.animatable ? '; takes keyframes' : ''})`;
+    if (p.kind === 'choice')
+      return `${key}: one of ${p.values.join(', ')}, default ${p.default} (${p.about})`;
+    if (p.kind === 'colour') return `${key}: #RRGGBB, default ${p.default} (${p.about})`;
+    return `${key}: a media_id, required (${p.about})`;
+  });
+  return params.length
+    ? `${name} (${spec.kind}) takes ${params.join('; ')}`
+    : `${name} (${spec.kind}) takes no params`;
+}
+
+/** An effect's params with every default filled in: what it actually applies. */
+export function effectParamsApplied(
+  name: string,
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  const spec = (EFFECTS as Record<string, EffectSpec>)[name];
+  if (!spec) return params;
+  const out: Record<string, unknown> = {};
+  for (const [key, p] of Object.entries(spec.params)) {
+    if (params[key] !== undefined) out[key] = params[key];
+    else if ('default' in p) out[key] = p.default;
+  }
+  for (const [key, v] of Object.entries(params)) if (!(key in out)) out[key] = v;
+  return out;
+}
 
 /** A stored effect: params hold constants or stored animatables (source ticks). */
 export const StoredEffect = z.object({

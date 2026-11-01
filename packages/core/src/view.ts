@@ -3,6 +3,7 @@ import {
   type Change,
   type ClipView,
   EditArgs,
+  effectParamsApplied,
   MASK_NUMBERS,
   type NestedDoc,
   NestedView,
@@ -142,7 +143,10 @@ function sourceView(c: StoredClip, tpf: number): Partial<ClipView> {
   }
 }
 
-/** Effects as tools show them: keyframes in frames from the clip (or timeline) start. */
+/**
+ * Effects as tools show them: every param the effect applies, defaults included, with keyframes
+ * in frames from the clip (or timeline) start.
+ */
 function effectsView(
   effects: StoredEffect[] | undefined,
   origin: Pick<StoredClip, 'in'>,
@@ -153,7 +157,7 @@ function effectsView(
     id: e.id,
     name: e.name,
     params: Object.fromEntries(
-      Object.entries(e.params).map(([k, v]) => [
+      Object.entries(effectParamsApplied(e.name, e.params)).map(([k, v]) => [
         k,
         v && typeof v === 'object' ? toViewAnim(v as StoredAnimatable, origin, tpf) : v,
       ]),

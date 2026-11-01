@@ -12,6 +12,7 @@ import {
   TRANSFORM_LIMITS,
   TransitionKind,
 } from './compositing.ts';
+import { EFFECT_NAMES, type EffectName } from './effects.ts';
 import { ToolError } from './errors.ts';
 import { JobId, MediaId, TimelineId, UploadId } from './ids.ts';
 import { JUDGE_LIMITS, JudgeName, JudgeQuestion, JudgeText, NoulFields } from './judge.ts';
@@ -335,8 +336,13 @@ export const EditArgs = {
     clip_id: z.string().optional().describe('Apply to one clip (or an adjustment clip)'),
     track_id: z.string().optional().describe('Or to every clip on a track'),
     timeline: z.boolean().optional().describe('Or true for the whole picture or mix'),
-    name: z.string().min(1).max(60).describe('An effect from video://catalog/effects'),
-    params: z.record(z.string(), z.unknown()).default({}).describe('As the catalogue lists them'),
+    name: z.enum(EFFECT_NAMES as [EffectName, ...EffectName[]]),
+    params: z
+      .record(z.string(), z.unknown())
+      .default({})
+      .describe(
+        "The effect's own params; any left out take their defaults. A wrong one is refused with the effect's params, ranges, units and defaults",
+      ),
   }),
   'filter.set': z.object({
     filter_id: z.string(),
