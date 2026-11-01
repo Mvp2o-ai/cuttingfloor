@@ -1,6 +1,6 @@
 // Things to say to it, in the words people use. Fixes first: rescuing footage is most of editing.
 // Each one is within the tools: transcript cuts, gain and loudness, transforms, captions, qa.check.
-const PROMPTS = [
+export const PROMPTS = [
   'Music is drowning out my voice. Fix the mix.',
   'Hide my jump cuts with punch-in zooms.',
   'There’s a black flash somewhere around 2:14. Find it and get rid of it.',

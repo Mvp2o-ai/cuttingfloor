@@ -1,71 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-
-// What an agent can do, each with the call that does it. The calls are real tool arguments.
-const CAPS = [
-  {
-    title: 'Cut by what was said.',
-    body: 'Transcribe once, then cut on words instead of timecodes. The agent reads the transcript and lifts the lines it wants.',
-    code: [
-      ['media.analyze', '{ media_id: "m_7f2c…", kind: "transcript" }'],
-      [
-        'clip.add',
-        '{ timeline_id: "tl_01…", track_id: "V1",\n  media_id: "m_7f2c…", source: { words: [812, 861] } }',
-      ],
-    ],
-    note: 'whisper.cpp, on our servers',
-  },
-  {
-    title: 'It looks before it ships.',
-    body: 'Stills and filmstrips after every edit, a review render it can watch, exact checks for gaps, black frames, clipping and sync, and a search for any shot that looks wrong, described in plain words. Other video agents apply an edit and hope; this one sees what it made and fixes it first.',
-    feature: true,
-    code: [
-      ['render.frames', '{ timeline_id: "tl_12…", frames: [0, 120, 240] }'],
-      ['qa.check', '{ timeline_id: "tl_12…" }'],
-      ['media.seek', '{ timeline_id: "tl_12…",\n  criteria: { dark: "faces too dark to see" } }'],
-      ['export.video', '{ timeline_id: "tl_12…", preset: "web_1080p_h264" }'],
-    ],
-    note: 'FCPXML, OTIO, EDL out too',
-  },
-  {
-    title: 'Captions that keep time.',
-    body: 'Captions come from the transcript and follow every speed change and cut. Karaoke, word pop, typewriter, boxes, outlines.',
-    code: [
-      [
-        'caption.add',
-        '{ timeline_id: "tl_05…", track_id: "V2",\n  in_clip: { clip_id: "c_1", segments: [ … ] } }',
-      ],
-      [
-        'text.set',
-        '{ timeline_id: "tl_06…", track_id: "V2",\n  style: { highlight: { mode: "karaoke", color: "#00b140" } } }',
-      ],
-    ],
-    note: 'rendered by libass, frame-exact',
-  },
-  {
-    title: 'Mix like an engineer.',
-    body: 'Ride gain with keyframes, crossfade at the cut, and set the gain and limiter on the whole mix, with the loudness measured after every change.',
-    code: [
-      ['audio.set_gain', '{ clip_id: "c7", gain_db: { keyframes: [ … ] } }'],
-      ['audio.set_master', '{ timeline_id: "tl_08…", gain_db: 6, limit_db: -1 }'],
-    ],
-    note: 'measured on every preview',
-  },
-  {
-    title: 'Make what you don’t have.',
-    body: 'Animated titles and graphics from HTML, stills, mattes, a voiceover with timed words, a subject without its background.',
-    code: [
-      [
-        'create.motion',
-        '{ html: "<div class=title>Q3</div>…",\n  duration_seconds: 4, width: 1920, height: 1080 }',
-      ],
-      ['create.voiceover', '{ text: "Here is what changed.", voice: "af_heart" }'],
-      ['create.cutout', '{ media_id: "m_9a01…", subject: "any" }'],
-    ],
-    note: 'sandboxed Chromium, Kokoro, BiRefNet',
-  },
-] as const;
+import { CAPS } from '../content/capabilities.ts';
 
 export function Capabilities() {
   const [active, setActive] = useState(0);
