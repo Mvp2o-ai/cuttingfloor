@@ -525,6 +525,42 @@ describe.skipIf(!engines)('blind-test regressions', () => {
     expect(done.result.peaks.drum).toBeLessThan(0.05);
     expect(done.result.note).toMatch(/not instruments, drums or single hits/);
   }, 240_000);
+
+  it('does not call a linked clip out of sync when an overlap transition leaves it in place', async () => {
+    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      name: 'dissolve',
+      sequence: { width: 640, height: 360, fps: { num: 24, den: 1 } },
+    });
+    const built = await ok<{ timeline_id: string; results: Array<{ clip_ids?: string[] }> }>(
+      client,
+      'edit.batch',
+      {
+        timeline_id,
+        preview: 'none',
+        ops: [
+          {
+            tool: 'clip.add',
+            args: { track_id: 't1', media_id: ids.game, source: { in: 0, out: 48 } },
+          },
+          {
+            tool: 'clip.add',
+            args: { track_id: 't1', media_id: ids.blue, av: 'video', source: { in: 0, out: 48 } },
+          },
+        ],
+      },
+    );
+    const [video, audio] = (built.results[0]?.clip_ids ?? []) as [string, string];
+    const res = await ok<{ warnings: string[] }>(client, 'transition.add', {
+      timeline_id: built.timeline_id,
+      clip_id: video,
+      kind: 'dissolve',
+      duration_frames: 12,
+      preview: 'none',
+    });
+    const said = res.warnings.join(' ');
+    expect(said).not.toMatch(new RegExp(`play .* later against it: [^.]*${audio}`));
+    expect(said).toMatch(new RegExp(`${audio} \\(linked to ${video}\\) stay in sync`));
+  }, 60_000);
 });
 
 describe('media not ready yet', () => {

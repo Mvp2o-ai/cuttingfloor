@@ -2042,9 +2042,23 @@ function transitionAdd(doc: TimelineDoc, a: EditArgsOf<'transition.add'>): OpOut
         true,
       );
     } else {
+      // Clips linked to the one before the cut keep their place with it: they are in sync, only
+      // longer than its shortened end. Everything else past the cut now plays late.
+      const partner = (c: StoredClip) =>
+        Boolean(ref.clip.link) && c.link === ref.clip.link && c.start < cutAt;
       const late = others.flatMap((t) =>
-        t.clips.filter((c) => end(c) > cutAt - after).map((c) => `${c.id} (${t.id})`),
+        t.clips
+          .filter((c) => end(c) > cutAt - after && !partner(c))
+          .map((c) => `${c.id} (${t.id})`),
       );
+      const longer = others.flatMap((t) =>
+        t.clips.filter((c) => partner(c) && end(c) > cutAt - after).map((c) => c.id),
+      );
+      if (longer.length && after > 0) {
+        warnings.push(
+          `${longer.join(', ')} (linked to ${ref.clip.id}) stay in sync with it but keep their length, so they run ${Math.round(after / tpf)} frames past its new end; clip.trim them to match if they should end with it`,
+        );
+      }
       if (late.length) {
         warnings.push(
           `Everything after the cut on ${ref.track.id} moved ${Math.round((before + after) / tpf)} frames earlier; clips on other tracks did not, so these now play ${Math.round((before + after) / tpf)} frames later against it: ${late.join(', ')}. other_tracks: 'extract' takes the same span out of the other tracks to keep them in sync`,
