@@ -177,6 +177,8 @@ export async function transcribe(
         '-of',
         'out',
         '-np',
+        // Progress lines (every 5%) on stderr, so a long transcript shows it is moving.
+        '-pp',
         '-t',
         String(Math.max(1, Math.min(8, availableParallelism()))),
       ],
@@ -184,6 +186,10 @@ export async function transcribe(
         cwd: dir,
         heavy: true,
         timeoutMs: 6 * 60 * 60_000,
+        onLine: (line) => {
+          const m = /progress\s*=\s*(\d+)\s*%/.exec(line);
+          if (m) options.onProgress?.(0.45 + 0.4 * Math.min(1, Number(m[1]) / 100), 'transcribing');
+        },
         ...(options.signal ? { signal: options.signal } : {}),
       },
     );

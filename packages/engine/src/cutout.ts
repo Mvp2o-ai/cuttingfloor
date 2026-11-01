@@ -1,7 +1,6 @@
-import { spawn } from 'node:child_process';
 import { availableParallelism, setPriority } from 'node:os';
 import { CfError } from '@cuttingfloor/schema';
-import { BIN } from './exec.ts';
+import { BIN, KILL_SETTLE_MS, killTree, spawnEngine } from './exec.ts';
 
 // create.cutout: a subject cut out of its background. FFmpeg decodes frames at the matting size,
 // a matting model writes an 8-bit matte per frame, and a second FFmpeg scales the mattes back up
@@ -112,10 +111,10 @@ export function cutout(
     dest,
   ];
   return new Promise((resolve, reject) => {
-    const ff = spawn(BIN.ffmpeg, decode, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const ff = spawnEngine(BIN.ffmpeg, decode, { stdio: ['ignore', 'pipe', 'pipe'] });
     const cv =
       model === 'birefnet'
-        ? spawn(
+        ? spawnEngine(
             BIN.segment,
             [
               `${MODELS}/birefnet-lite.onnx`,
@@ -126,7 +125,7 @@ export function cutout(
             ],
             { stdio: ['pipe', 'pipe', 'pipe'] },
           )
-        : spawn(
+        : spawnEngine(
             BIN.vision,
             [
               'matte',
@@ -137,7 +136,7 @@ export function cutout(
             ],
             { stdio: ['pipe', 'pipe', 'pipe'] },
           );
-    const out = spawn(BIN.ffmpeg, merge, { stdio: ['pipe', 'ignore', 'pipe'] });
+    const out = spawnEngine(BIN.ffmpeg, merge, { stdio: ['pipe', 'ignore', 'pipe'] });
     // Minutes of model work: anything quicker on this server goes first. The model's threads
     // start after it loads, so they take this priority too.
     for (const p of [ff, cv, out]) {
@@ -163,10 +162,15 @@ export function cutout(
       if (!/^\w+=/m.test(text)) keep(d);
     });
     const kill = () => {
-      for (const p of [ff, cv, out]) p.kill('SIGKILL');
+      for (const p of [ff, cv, out]) killTree(p);
     };
     const timer = setTimeout(kill, 4 * 60 * 60_000);
-    options.signal?.addEventListener('abort', kill, { once: true });
+    // A cancel answers even if a pipe stays open after the kill.
+    const abort = () => {
+      kill();
+      setTimeout(() => reject(new CfError('cancelled', 'Cancelled')), KILL_SETTLE_MS).unref();
+    };
+    options.signal?.addEventListener('abort', abort, { once: true });
     const codes: Array<number | null> = [];
     let killed = false;
     let closed = 0;
@@ -181,7 +185,7 @@ export function cutout(
         closed += 1;
         if (closed < 3) return;
         clearTimeout(timer);
-        options.signal?.removeEventListener('abort', kill);
+        options.signal?.removeEventListener('abort', abort);
         if (options.signal?.aborted) return reject(new CfError('cancelled', 'Cancelled'));
         if (codes.every((c) => c === 0)) return resolve();
         if (killed) {
