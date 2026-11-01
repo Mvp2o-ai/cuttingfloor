@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import {
+  lengthFrames,
   type MediaRecord,
   mayBeTransparent,
   mediaStills,
   notReady,
   renderSource,
+  renderTimelineFrames,
 } from '@cuttingfloor/engine';
 import {
   CfError,
@@ -13,9 +15,11 @@ import {
   JudgeAskResult,
   JudgePicture,
   type JudgeQuestion,
+  JudgeTimelinePicture,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { askJev, JEV_URL, type JevImage } from '../jev.ts';
+import { assertOnline, sourcesFor } from '../render.ts';
 import { guard, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 import { addUsage, checkQuota } from '../usage.ts';
@@ -113,13 +117,48 @@ export function registerJudgeTools(server: McpServer, deps: ServerDeps): void {
     return { record, time: ref.at_seconds };
   };
 
+  /** An edit's frame at a time as it renders, sized like every other picture Jev is sent. */
+  const timelineFrame = async (
+    owner: string,
+    name: string,
+    ref: { timeline_id: string; at_seconds: number },
+    signal: AbortSignal,
+  ): Promise<JevImage> => {
+    const doc = await rt.timelines.get(owner, ref.timeline_id);
+    const length = lengthFrames(doc);
+    const { fps, width, height } = doc.sequence;
+    const n = Math.floor((ref.at_seconds * fps.num) / fps.den + 1e-6);
+    const duration = (length * fps.den) / fps.num;
+    if (n >= length) {
+      throw new CfError(
+        'bad_request',
+        `${name}: ${ref.at_seconds} s is past the end of the timeline (${duration} s)`,
+        { hint: length ? `Pick a time from 0 up to ${duration} s` : 'Add a clip first' },
+      );
+    }
+    const { sources, offline } = await sourcesFor(rt, owner, doc, 'preview', false);
+    assertOnline(offline);
+    const longEdge = Math.max(
+      PICTURE.longEdge,
+      Math.ceil((PICTURE.minEdge * Math.max(width, height)) / Math.min(width, height) / 2) * 2,
+    );
+    const [jpeg] = await renderTimelineFrames(doc, [n], sources, {
+      longEdge,
+      format: 'jpeg',
+      quality: 90,
+      layout: 'single',
+      signal,
+    });
+    return { name, jpeg: jpeg as Buffer };
+  };
+
   server.registerTool(
     'judge.ask',
     {
       title: 'Ask Jev',
       description: [
         'Ask TypeSafe Jev, a fast judgment model (preview), your questions about a state you give, and get typed answers back in about a second.',
-        'Jev sees exactly the state: each entry under its name, and your questions refer to entries by name in backticks ("in `passage`"). An entry is text (a string, or a JSON object or array of related facts) or a picture: {media_id} for an imported image, {media_id, at_seconds} for the frame of a video at that time. Mix them freely. Each call stands alone, so put everything a judgment needs into its state.',
+        'Jev sees exactly the state: each entry under its name, and your questions refer to entries by name in backticks ("in `passage`"). An entry is text (a string, or a JSON object or array of related facts) or a picture: {media_id} for an imported image, {media_id, at_seconds} for the frame of a video at that time, {timeline_id, at_seconds} for a frame of an edit as it renders (to judge a grade or a layout you made). Mix them freely. Each call stands alone, so put everything a judgment needs into its state.',
         'Choose the type by the answer you need. noul: yes or no, answered as noul, the probability of yes from 0 to 1 (0.5 or more reads as yes). choice: one of options you name, answered as choice plus probabilities and confidence. score: a degree on levels you order, answered as score (0 is the first level) plus confidence. box: where one thing is in a picture, answered as box {x, y, w, h} in fractions of that picture plus confidence.',
         'Write each question as one thing, worded so yes means it is there. Open with what the state is ("`passage` is a transcript of someone speaking off the cuff"), and give a noul criteria {true, false} with an example of each: Jev answers most accurately from examples. To locate, name the one thing so only it fits ("the yellow headline \'Get started\' at the top of `shot`") and ask a noul whether it is there; trust a box with high confidence.',
         'One call answers many questions about one state at once, so judge many items together: put the shared text in state once, and give each item its own question carrying its own marked copy. Filler words: state {passage: "So basically the way this works is"}, and per word a noul "`passage` is a transcript of someone speaking off the cuff. With one word marked: "So [[basically]] the way this works is". Is the marked word filler, so the sentence says the same without it?" with criteria {true: "the [[the]] report is late", false: "the report is [[late]]"}. A shot: state {shot: {media_id, at_seconds: 12.5}}, choice "What fills `shot`?" with options {speaker: "A person talking to camera", screen: "A screen recording", none: "Anything else"}. Both: state {line: "Click Get started", screen: {media_id, at_seconds: 4}}, noul "Does `screen` show the button `line` talks about?".',
@@ -142,20 +181,23 @@ export function registerJudgeTools(server: McpServer, deps: ServerDeps): void {
       checkQuestions('judge.ask', args.questions);
       const text: Record<string, unknown> = {};
       const refs: Array<[string, { media_id: string; at_seconds?: number | undefined }]> = [];
+      const frames: Array<[string, { timeline_id: string; at_seconds: number }]> = [];
       for (const [name, entry] of Object.entries(args.state)) {
         const pic = JudgePicture.safeParse(entry);
+        const edit = JudgeTimelinePicture.safeParse(entry);
         if (pic.success) refs.push([name, pic.data]);
+        else if (edit.success) frames.push([name, edit.data]);
         else text[name] = entry;
       }
-      if (refs.length > JUDGE_LIMITS.images) {
+      if (refs.length + frames.length > JUDGE_LIMITS.images) {
         throw new CfError(
           'limit_exceeded',
-          `state holds ${refs.length} pictures; a call takes up to ${JUDGE_LIMITS.images}`,
+          `state holds ${refs.length + frames.length} pictures; a call takes up to ${JUDGE_LIMITS.images}`,
           { hint: 'Split the pictures across calls, asking the same questions of each' },
         );
       }
       checkText(text);
-      const units = judgeUnits(Object.keys(args.questions).length, refs.length);
+      const units = judgeUnits(Object.keys(args.questions).length, refs.length + frames.length);
       await checkQuota(
         rt.ws,
         owner,
@@ -182,6 +224,7 @@ export function registerJudgeTools(server: McpServer, deps: ServerDeps): void {
           return { name: (refs[i] as [string, unknown])[0], jpeg: jpeg as Buffer };
         }),
       );
+      for (const [name, ref] of frames) images.push(await timelineFrame(owner, name, ref, signal));
       const reply = await askJev({
         base: rt.config.typesafeUrl ?? JEV_URL,
         key,

@@ -460,6 +460,10 @@ export const ANALYSES = [
   'speech',
   'loudness',
   'sounds',
+  'speakers',
+  'voice',
+  'colour',
+  'picture',
 ];
 export const EXPORT_PRESETS = [
   'web_1080p_h264',

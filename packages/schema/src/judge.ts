@@ -1,5 +1,5 @@
 import * as z from 'zod/v4';
-import { MediaId } from './ids.ts';
+import { MediaId, TimelineId } from './ids.ts';
 
 // Questions for TypeSafe Jev, a judgment model, and its typed answers. judge.ask asks them about
 // any state you give (text, JSON, pictures); media.analyze look asks them of sampled frames, and
@@ -91,12 +91,20 @@ export const JudgePicture = z
   })
   .strict();
 
+/** A picture in the state: the frame of an edit as it renders, at a time. */
+export const JudgeTimelinePicture = z
+  .object({
+    timeline_id: TimelineId,
+    at_seconds: z.number().min(0).describe('Timeline seconds'),
+  })
+  .strict();
+
 export const JudgeAskInput = z.object({
   state: z
-    .record(JudgeName, z.union([JudgePicture, JudgeText]))
+    .record(JudgeName, z.union([JudgePicture, JudgeTimelinePicture, JudgeText]))
     .refine((s) => Object.keys(s).length > 0, 'state needs at least one entry')
     .describe(
-      'What Jev sees, entry by entry: name to a string, a JSON object or array, or a picture {media_id} (an image) or {media_id, at_seconds} (a video frame). Questions refer to entries by name in backticks',
+      'What Jev sees, entry by entry: name to a string, a JSON object or array, or a picture: {media_id} (an image), {media_id, at_seconds} (a video frame) or {timeline_id, at_seconds} (a frame of an edit as it renders). Questions refer to entries by name in backticks',
     ),
   questions: z
     .record(JudgeName, JudgeQuestion)

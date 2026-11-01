@@ -12,9 +12,11 @@ import {
   mayBeTransparent,
   measureLoudness,
   mediaInfo,
+  mediaRgbFrames,
   mediaStills,
   noAudio,
   notReady,
+  pictureSeries,
   renderSource,
   SOUND_MODELS,
   SPEECH_MODELS,
@@ -37,6 +39,7 @@ import {
   MediaCorrelateResult,
   MediaDeleteInput,
   MediaDeleteResult,
+  MediaGetResult,
   MediaImportInput,
   MediaInfo,
   MediaListInput,
@@ -46,6 +49,8 @@ import {
   MediaUploadInput,
   MediaUploadResult,
   TIMELINE_ANALYSES,
+  TIMELINE_PICTURE_ANALYSES,
+  TIMELINE_SOUND_ANALYSES,
   withJob,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
@@ -68,6 +73,14 @@ import {
   pictureSize,
 } from './judge.ts';
 import { soundLabelIndexes, soundsReport } from './listen.ts';
+import {
+  analyzeTimelinePicture,
+  boxFraction,
+  checkMeasureArgs,
+  colourFrames,
+  inlineOr,
+  measureVoices,
+} from './measure.ts';
 
 /** Analysis data longer than this stays with the media instead of filling the result. */
 const INLINE_CHARS = 20_000;
@@ -139,22 +152,30 @@ function cut<T>(items: T[], span: (item: T) => [number, number], w: Window) {
 }
 
 /** The included analyses cut to the window, with where each piece sits in its whole list. */
-function paged(info: MediaInfo, w: Window): Partial<MediaInfo> {
-  const out: Partial<MediaInfo> = {};
-  const pages: NonNullable<MediaInfo['pages']> = {};
+function paged(info: MediaGetResult, w: Window): Partial<MediaGetResult> {
+  const out: Partial<MediaGetResult> = {};
+  const pages: NonNullable<MediaGetResult['pages']> = {};
   if (info.transcript) {
     const { kept, page } = cut(info.transcript.words, (x) => [x.start, x.end], w);
     out.transcript = { ...info.transcript, text: kept.map((x) => x.text).join(' '), words: kept };
     pages.transcript = page('transcript.words');
   }
   if (info.beats) {
-    const { kept, page } = cut(info.beats.beats, (t) => [t, t], w);
+    const all = info.beats.beats;
+    const { kept: at, page } = cut(
+      all.map((_, i) => i),
+      (i) => [all[i] as number, all[i] as number],
+      w,
+    );
+    const kept = at.map((i) => all[i] as number);
     const lo = kept[0] ?? Number.POSITIVE_INFINITY;
     const hi = kept.at(-1) ?? Number.NEGATIVE_INFINITY;
+    const strengths = info.beats.strengths;
     out.beats = {
       ...info.beats,
       beats: kept,
       downbeats: info.beats.downbeats.filter((t) => t >= lo && t <= hi),
+      ...(strengths ? { strengths: at.map((i) => strengths[i] ?? 0) } : {}),
     };
     pages.beats = page('beats.beats');
   }
@@ -174,6 +195,37 @@ function paged(info: MediaInfo, w: Window): Partial<MediaInfo> {
       probabilities: kept.map((i) => info.speech?.probabilities[i] ?? 0),
     };
     pages.speech = page('speech.probabilities');
+  }
+  if (info.speakers) {
+    const { kept, page } = cut(info.speakers.turns, (t) => [t.start, t.end], w);
+    out.speakers = { ...info.speakers, turns: kept };
+    pages.speakers = page('speakers.turns');
+  }
+  if (info.voice) {
+    const step = info.voice.frame_seconds;
+    const { kept, page } = cut(info.voice.frames, (f) => [f.time, f.time + step], w);
+    out.voice = { ...info.voice, frames: kept };
+    pages.voice = page('voice.frames');
+  }
+  if (info.colour) {
+    const { kept, page } = cut(info.colour.frames, (f) => [f.time, f.time], w);
+    out.colour = { ...info.colour, frames: kept };
+    pages.colour = page('colour.frames');
+  }
+  if (info.picture) {
+    const times = info.picture.columns.time ?? [];
+    const { kept, page } = cut(
+      times.map((_, i) => i),
+      (i) => [times[i] as number, times[i] as number],
+      w,
+    );
+    out.picture = {
+      ...info.picture,
+      columns: Object.fromEntries(
+        Object.entries(info.picture.columns).map(([k, col]) => [k, kept.map((i) => col[i] ?? 0)]),
+      ),
+    };
+    pages.picture = page('picture.columns');
   }
   if (info.look) {
     const runs = info.look.runs.map((r) => ({
@@ -660,9 +712,9 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Analyze media',
       description: [
-        "Find what is in imported media, or in the sound of an edit, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). For English the word edges are then aligned to the sound (wav2vec2 forced alignment): a word starts and ends within about 0.05 s of where its letters sound, and an end on a soft consonant (s, t, k, f) or a breath can ring on up to about 0.1 s more; timing_confidence says how clearly each word was heard. Other languages keep whisper's own times, up to about a second off. Short ums and uhs are often left out of the words; kind speech still hears them. beats: tempo, beat and downbeat times. faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on, a box for each sampled time (found false where the subject was lost); to make a title, sticker, arrow or mask follow the subject, turn the boxes into clip.set_transform (or clip.set_mask) keyframes, no tracking of your own needed. look: your own typed questions about what is on screen, answered on every sampled frame (to find where something happens from plain words, media.seek). silence: stretches quieter than threshold_db for at least min_seconds. scenes: times the picture changes by more than threshold (0–100; hard cuts between ordinary shots score about 10 to 30, see threshold), with each cut's score. speech: the probability that someone is speaking, every 32 ms (Silero VAD), and the spans where it is at least your min_probability; it hears speech, not noise or music, so a cough or a door is not speech. loudness: integrated loudness (LUFS), true peak (dBTP), loudness range (LU), RMS level and noise floor (dBFS) over the whole media or from_seconds to until_seconds. To line up two recordings, media.correlate. sounds: what can be heard and when, every 40 ms, for 447 named sounds (video://catalog/sounds: Laughter, Applause, Cough, Sneeze, Music, Speech, Door, Footsteps, Beep…): give labels for the ones you want, or none for every sound that reaches your min_probability; you get each sound's spans and its probability in every frame (a run over the whole media is kept with it; one over from_seconds to until_seconds comes back only). To find a sound you describe in your own words, media.listen.",
-        `With timeline_id instead of media_id, ${TIMELINE_ANALYSES.join(', ')} measure the edit's mix as it plays, over from_seconds to until_seconds (timeline seconds). A source or range with no sound fails with no_audio, naming it.`,
-        'Times are media seconds (timeline seconds for a timeline); boxes are fractions of the picture. Results stay with the media (media.get include) except track, silence, scenes and loudness, which come back in the result; speech over the whole media is kept (media.get include speech), so asking again with another min_probability or range answers from it. A result too long to return (a long transcript) comes back as its summary and a note: read it in pieces with media.get include and a time range or page.',
+        "Find what is in imported media, or in the sound of an edit, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). For English the word edges are then aligned to the sound (wav2vec2 forced alignment): a word starts and ends within about 0.05 s of where its letters sound, and an end on a soft consonant (s, t, k, f) or a breath can ring on up to about 0.1 s more; timing_confidence says how clearly each word was heard. Other languages keep whisper's own times, up to about a second off. Short ums and uhs are often left out of the words; kind speech still hears them. from_seconds and until_seconds transcribe just that stretch (times stay media seconds). beats: tempo, beat and downbeat times, and strengths: the onset strength at each beat, 0–1 of the strongest in the sound (the hardest hits, the drop). faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on, a box for each sampled time (found false where the subject was lost); to make a title, sticker, arrow or mask follow the subject, turn the boxes into clip.set_transform (or clip.set_mask) keyframes, no tracking of your own needed. look: your own typed questions about what is on screen, answered on every sampled frame (to find where something happens from plain words, media.seek). silence: stretches quieter than threshold_db for at least min_seconds. scenes: times the picture changes by more than threshold (0–100; hard cuts between ordinary shots score about 10 to 30, see threshold), with each cut's score. speech: the probability that someone is speaking, every 32 ms (Silero VAD), and the spans where it is at least your min_probability; it hears speech, not noise or music, so a cough or a door is not speech. loudness: integrated loudness (LUFS), true peak (dBTP), loudness range (LU), RMS level and noise floor (dBFS) over the whole media or from_seconds to until_seconds. To line up two recordings, media.correlate. sounds: what can be heard and when, every 40 ms, for 447 named sounds (video://catalog/sounds: Laughter, Applause, Cough, Sneeze, Music, Speech, Door, Footsteps, Beep…): give labels for the ones you want, or none for every sound that reaches your min_probability; you get each sound's spans and its probability in every frame (a run over the whole media is kept with it; one over from_seconds to until_seconds comes back only). To find a sound you describe in your own words, media.listen. speakers: who speaks when (sherpa-onnx: pyannote segmentation 3.0 and an ERes2Net voice model, on the CPU, a minute of sound in about 10 to 20 s): turns of each voice, numbered in the order first heard; give speakers (how many) when you know, else cluster_threshold. Afterwards each transcript word carries its speaker (media.get include transcript). voice: how a voice sounds over time: pitch (YIN, Hz) and level (RMS dBFS) every 0.1 s, and a summary of the stretch (pitch median and range, level, voiced seconds, words per second from the transcript), to compare takes or to give judge.ask as state. colour: per-channel mean and percentiles, luma, a white point estimate and clipping (8-bit RGB, 0–255) of the whole frame and of regions you name, at the times you sample. picture: FFmpeg signalstats for every frame over a stretch: luma (min, 10th percentile, mean, 90th, max), chroma, saturation, hue, and ydif, how much it changed from the frame before (a flash or a frozen frame shows there).",
+        `With timeline_id instead of media_id, ${TIMELINE_SOUND_ANALYSES.join(', ')} measure the edit's mix and ${TIMELINE_PICTURE_ANALYSES.join(', ')} its picture as it renders (titles, effects and grades included), over from_seconds to until_seconds (timeline seconds); they come back in the result. A source or range with no sound fails with no_audio, naming it.`,
+        'Times are media seconds (timeline seconds for a timeline); boxes are fractions of the picture, and a box you give takes units "pixels" too (picture_size gives the size). Results stay with the media (media.get include; the latest run of each kind) except track, silence, scenes and loudness, which come back in the result; speech over the whole media is kept (media.get include speech), so asking again with another min_probability or range answers from it. A result too long to return (a long transcript) comes back as its summary and a note: read it in pieces with media.get include and a time range or page.',
         'Long-running: returns a task, or a job_id for job.get.',
         '',
         'HOW LOOK WORKS. TypeSafe Jev, a fast judgment model (preview), answers your questions about frames sampled from the media. Each sampled frame is its own request: Jev sees that one picture, named `frame`, and with with_previous also the frame sampled just before it, named `previous`, plus any state you give: text or JSON entries by name, the same on every frame (the script, what a term means). Every question is answered on every frame, independently and in parallel (about 0.15 s a frame), as typed data you then combine in your own code.',
@@ -699,6 +751,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           hint: 'Say what probability counts as heard, e.g. {min_probability: 0.3}; scores give every frame for a second look',
         });
       }
+      checkMeasureArgs(args);
       if (args.idempotency_key) {
         const existing = await store.findIdempotent(owner, 'media.analyze', args.idempotency_key);
         if (existing) return jobReply(existing, ctx);
@@ -711,6 +764,9 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
             `${args.kind} reads imported media; on a timeline: ${TIMELINE_ANALYSES.join(', ')}`,
             { hint: 'Give the media_id of a clip instead (timeline.get lists them)' },
           );
+        }
+        if ((TIMELINE_PICTURE_ANALYSES as readonly string[]).includes(args.kind)) {
+          return analyzeTimelinePicture(deps, args, ctx, lookDigest as never);
         }
         checkSoundArgs(args);
         await checkSound(rt, owner, {
@@ -739,8 +795,19 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
                 until_seconds: args.until_seconds,
               },
               { signal },
-              async (sound) =>
-                args.kind === 'sounds'
+              async (sound) => {
+                if (args.kind === 'speakers' || args.kind === 'voice') {
+                  const data = await measureVoices(sound, args, signal, progress);
+                  return {
+                    result: {
+                      ...(args.kind === 'voice'
+                        ? { summary: (data as { summary: unknown }).summary }
+                        : {}),
+                      ...inlineOr(args.kind, data, undefined),
+                    },
+                  };
+                }
+                return args.kind === 'sounds'
                   ? {
                       result: {
                         sounds: (
@@ -754,7 +821,8 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
                         ).result,
                       },
                     }
-                  : measureSound(sound, args, signal, progress),
+                  : measureSound(sound, args, signal, progress);
+              },
             );
             return ok({
               timeline_id: timelineId,
@@ -773,10 +841,13 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       }
       const p = record.probe;
       checkSoundArgs(args);
-      if (!p?.audio && !['look', 'faces', 'track', 'scenes'].includes(args.kind)) {
+      const pictureKind = ['look', 'faces', 'track', 'scenes', 'colour', 'picture'].includes(
+        args.kind,
+      );
+      if (!p?.audio && !pictureKind) {
         throw noAudio({ label: `media ${mediaId}` }, 'it has no audio stream');
       }
-      if (['speech', 'loudness', 'silence', 'sounds'].includes(args.kind)) {
+      if ((TIMELINE_SOUND_ANALYSES as readonly string[]).includes(args.kind)) {
         await checkSound(rt, owner, {
           media_id: mediaId,
           from_seconds: args.from_seconds,
@@ -784,16 +855,11 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         });
       }
       const needsPicture = args.kind === 'faces' || args.kind === 'track' || args.kind === 'scenes';
-      if (
-        args.kind === 'look'
-          ? !p?.video
-          : needsPicture
-            ? !p?.video || p.kind === 'image'
-            : !p?.audio
-      ) {
+      const stillsKind = args.kind === 'look' || args.kind === 'colour' || args.kind === 'picture';
+      if (stillsKind ? !p?.video : needsPicture ? !p?.video || p.kind === 'image' : !p?.audio) {
         throw new CfError(
           'bad_request',
-          `Media ${args.media_id} has no ${args.kind === 'look' ? 'picture' : needsPicture ? 'moving picture' : 'sound'} to analyze`,
+          `Media ${args.media_id} has no ${stillsKind ? 'picture' : needsPicture ? 'moving picture' : 'sound'} to analyze`,
         );
       }
       // look: the sample times, checked before any job exists.
@@ -814,9 +880,15 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           },
         );
       }
+      if (args.kind === 'colour') {
+        times = sampleTimes(p?.kind === 'image' ? 0 : (p?.duration ?? 0), args).times;
+        for (const [n, b] of Object.entries(args.regions ?? {}))
+          boxFraction(`regions.${n}`, b, pictureSize(record));
+      }
       if (args.kind === 'track' && !args.region) {
         throw new CfError('bad_request', 'track needs a region: {at_seconds, x, y, w, h}');
       }
+      const trackBox = args.region ? boxFraction('region', args.region, pictureSize(record)) : null;
       if (args.kind === 'scenes' && args.threshold === undefined) {
         throw new CfError('bad_request', 'scenes needs a threshold (0–100)', {
           hint: 'Lower finds subtler cuts, e.g. {threshold: 10}',
@@ -836,8 +908,18 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           const file = renderSource(record, 'export');
           const v = p?.video;
           const size = pictureSize(record);
-          const keep = (kind: 'transcript' | 'beats' | 'faces' | 'speech', value: unknown) =>
-            rt.media.saveAnalysis(owner, mediaId, kind, value);
+          const keep = (
+            kind:
+              | 'transcript'
+              | 'beats'
+              | 'faces'
+              | 'speech'
+              | 'speakers'
+              | 'voice'
+              | 'colour'
+              | 'picture',
+            value: unknown,
+          ) => rt.media.saveAnalysis(owner, mediaId, kind, value);
           switch (args.kind) {
             case 'transcript': {
               const transcript = await transcribe(file, {
@@ -845,6 +927,8 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
                 modelsDir: rt.modelsDir,
                 language: args.language,
                 ...(p?.duration ? { duration: p.duration } : {}),
+                ...(args.from_seconds !== undefined ? { from: args.from_seconds } : {}),
+                ...(args.until_seconds !== undefined ? { until: args.until_seconds } : {}),
                 signal,
                 onProgress: (f, m) => progress(f, `transcript: ${m}`),
               });
@@ -875,6 +959,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
                 media_id: mediaId,
                 kind: args.kind,
                 summary: mediaInfo(latest).analyses?.faces,
+                picture_size: size,
                 ...inline(mediaId, 'faces', faces),
               }) as never;
             }
@@ -927,7 +1012,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               const fps = v?.fps ? Math.min(30, v.fps.num / v.fps.den) : 25;
               const points = await trackRegion(file, size, {
                 start: region.at_seconds,
-                box: { x: region.x, y: region.y, w: region.w, h: region.h },
+                box: trackBox as NonNullable<typeof trackBox>,
                 ...(args.until_seconds !== undefined ? { until: args.until_seconds } : {}),
                 rate: fps,
                 signal,
@@ -935,7 +1020,65 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               return ok({
                 media_id: mediaId,
                 kind: args.kind,
+                picture_size: size,
                 track: { rate: fps, points },
+              }) as never;
+            }
+            case 'speakers':
+            case 'voice': {
+              const words = record.analyses?.transcript?.words;
+              const data = await withSound(
+                rt,
+                owner,
+                {
+                  media_id: mediaId,
+                  from_seconds: args.from_seconds,
+                  until_seconds: args.until_seconds,
+                },
+                { signal },
+                (sound) => measureVoices(sound, args, signal, progress, words),
+              );
+              const latest = await keep(args.kind, data);
+              return ok({
+                media_id: mediaId,
+                kind: args.kind,
+                summary: mediaInfo(latest).analyses?.[args.kind],
+                ...inline(mediaId, args.kind, data),
+              }) as never;
+            }
+            case 'colour': {
+              const colour = colourFrames(
+                await mediaRgbFrames(file, size, times, {
+                  signal,
+                  onFrame: (n) =>
+                    progress((0.9 * n) / times.length, `colour: frame ${n} of ${times.length}`),
+                }),
+                times,
+                args.regions ?? {},
+                args.percentiles,
+              );
+              const latest = await keep('colour', colour);
+              return ok({
+                media_id: mediaId,
+                kind: args.kind,
+                picture_size: size,
+                summary: mediaInfo(latest).analyses?.colour,
+                ...inline(mediaId, 'colour', colour),
+              }) as never;
+            }
+            case 'picture': {
+              progress(0.05, 'picture: measuring every frame');
+              const picture = await pictureSeries(file, {
+                ...(args.from_seconds !== undefined ? { from: args.from_seconds } : {}),
+                ...(args.until_seconds !== undefined ? { until: args.until_seconds } : {}),
+                signal,
+              });
+              const latest = await keep('picture', picture);
+              return ok({
+                media_id: mediaId,
+                kind: args.kind,
+                summary: mediaInfo(latest).analyses?.picture,
+                ...inline(mediaId, 'picture', picture),
               }) as never;
             }
             case 'speech':
@@ -1107,7 +1250,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         'include returns those results at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times. For long media, read them in pieces: from_seconds and to_seconds keep what overlaps that stretch of the media, offset and limit page through what is left, and pages says, per analysis, the index of the first item returned in the whole list (for transcript words, the index clip.add source {words} takes), how many matched and next_offset for the next page (null at the end).',
       ].join(' '),
       inputSchema: MediaRefInput,
-      outputSchema: MediaInfo,
+      outputSchema: MediaGetResult,
       _meta: PLAYER_TOOL_META,
       annotations: {
         title: 'Get media',

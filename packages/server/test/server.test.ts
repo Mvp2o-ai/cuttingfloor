@@ -22,9 +22,11 @@ const anyResult = z.object({}).passthrough();
  * 392 000 for effect names and eases as enums plus the units, coordinate spaces and defaults
  * descriptions now state, since many clients can't read the catalogue resources, and to
  * 414 000 for create.upscaled (its full media result is most of it), each channel's levels on
- * every tool that returns media, and clip.set_speed's in-between frames.
+ * every tool that returns media, and clip.set_speed's in-between frames, and to
+ * 460 000 for the measured facts (media.analyze speakers, voice, colour and picture, picture
+ * kinds on a timeline, beat strengths, placements after a transform, file fingerprints).
  */
-const BUDGET_BYTES = 414_000;
+const BUDGET_BYTES = 460_000;
 let env: TestEnv;
 
 beforeAll(async () => {

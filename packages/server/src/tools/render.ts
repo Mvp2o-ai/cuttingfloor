@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { copyFile, link, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ticksPerFrame, toView } from '@cuttingfloor/core';
 import {
   exportTimeline,
+  fingerprint,
   imageExtension,
   lengthFrames,
   mayBeTransparent,
@@ -146,7 +148,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
           ? `and the file in the exports folder (${rt.config.exportsDir}).`
           : '.',
         'The server keeps the file 7 days: to keep it longer, save it from the url, and media.import it to use it again.',
-        'qa.check measures a render (gaps, frames, loudness) before you export.',
+        'qa.check measures a render (gaps, frames, loudness) before you export. sha256 and fingerprint tell two renders apart without downloading them (fingerprint matches media.get of the file once imported).',
       ].join(' '),
       inputSchema: ExportVideoInput,
       outputSchema: withJob(ExportResult),
@@ -237,8 +239,18 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
           });
           const rate = doc.sequence.fps.num / doc.sequence.fps.den;
           const span = args.range ? args.range.end - args.range.start : lengthFrames(doc);
+          // The file's identity: its SHA-256, and the fingerprint media.import gives it.
+          const sha256 = await new Promise<string>((resolve, reject) => {
+            const hash = createHash('sha256');
+            createReadStream(out)
+              .on('data', (d) => hash.update(d))
+              .on('error', reject)
+              .on('end', () => resolve(hash.digest('hex')));
+          });
           const result = {
             ...(await publish(rt, owner, job.id, out, name, { page: true })),
+            sha256,
+            fingerprint: await fingerprint(out),
             frames,
             width,
             height,

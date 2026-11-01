@@ -16,6 +16,14 @@ import { EFFECT_NAMES, type EffectName } from './effects.ts';
 import { ToolError } from './errors.ts';
 import { JobId, MediaId, TimelineId, UploadId } from './ids.ts';
 import { JUDGE_LIMITS, JudgeName, JudgeQuestion, JudgeText, NoulFields } from './judge.ts';
+import {
+  ClipPlacementSchema,
+  ColourAnalysis,
+  PictureAnalysis,
+  RegionBox,
+  SpeakersAnalysis,
+  VoiceAnalysis,
+} from './measure.ts';
 import { ASSET_NAME, MOTION_LIMITS } from './motion.ts';
 import { Sequence } from './sequence.ts';
 import { STEMS } from './sounds.ts';
@@ -448,6 +456,14 @@ export const EditResult = z.object({
 });
 export type EditResult = z.infer<typeof EditResult>;
 
+/** clip.set_transform, set_mask and set_animation (and edit.batch): with where clips now show. */
+export const PlacingEditResult = EditResult.extend({
+  placements: z
+    .array(ClipPlacementSchema)
+    .optional()
+    .describe('Where each clip the edit moved, cropped, masked or animated shows, sequence pixels'),
+});
+
 export const BatchInput = z.object({
   timeline_id: TimelineId,
   preview: Preview,
@@ -465,7 +481,7 @@ export const BatchInput = z.object({
     ),
 });
 
-export const BatchResult = EditResult.extend({
+export const BatchResult = PlacingEditResult.extend({
   results: z.array(
     z.object({
       tool: z.string(),
@@ -613,7 +629,18 @@ export const MediaUploadResult = z.object({
   how: z.string(),
 });
 
-export const ANALYSES = ['transcript', 'beats', 'faces', 'look', 'speech', 'sounds'] as const;
+export const ANALYSES = [
+  'transcript',
+  'beats',
+  'faces',
+  'look',
+  'speech',
+  'sounds',
+  'speakers',
+  'voice',
+  'colour',
+  'picture',
+] as const;
 
 export const MediaRefInput = z.object({
   media_id: MediaId,
@@ -628,7 +655,7 @@ export const MediaRefInput = z.object({
     .min(0)
     .optional()
     .describe(
-      'Only what ends after this media time: transcript words, beats, face and look frames',
+      'Only what ends after this media time: transcript words, beats, speaker turns, frames',
     ),
   to_seconds: z.number().positive().optional().describe('Only what starts before this media time'),
   offset: z
@@ -713,30 +740,60 @@ export const SoundsAnalysis = z.object({
   scores: SoundScores.optional(),
 });
 
-/** media.analyze kinds that also measure a timeline's mix (timeline_id). */
-export const TIMELINE_ANALYSES = ['speech', 'loudness', 'silence', 'sounds'] as const;
+export const ANALYZE_KINDS = [
+  'transcript',
+  'beats',
+  'faces',
+  'track',
+  'look',
+  'silence',
+  'scenes',
+  'speech',
+  'loudness',
+  'sounds',
+  'speakers',
+  'voice',
+  'colour',
+  'picture',
+] as const;
+
+/** media.analyze kinds that read a timeline's mix (timeline_id). */
+export const TIMELINE_SOUND_ANALYSES = [
+  'speech',
+  'loudness',
+  'silence',
+  'sounds',
+  'speakers',
+  'voice',
+] as const;
+/** media.analyze kinds that read a timeline's picture as it renders (timeline_id). */
+export const TIMELINE_PICTURE_ANALYSES = [
+  'faces',
+  'track',
+  'look',
+  'scenes',
+  'colour',
+  'picture',
+] as const;
+/** media.analyze kinds that also measure a timeline (timeline_id). */
+export const TIMELINE_ANALYSES = [
+  ...TIMELINE_SOUND_ANALYSES,
+  ...TIMELINE_PICTURE_ANALYSES,
+] as const;
+
+/** Limits that protect the server: regions and percentiles one colour call measures. */
+export const COLOUR_LIMITS = { regions: 16, percentiles: 20 } as const;
 
 export const MediaAnalyzeInput = z
   .object({
     media_id: MediaId.optional().describe('Analyze imported media (media seconds)'),
     timeline_id: TimelineId.optional().describe(
-      `Analyze an edit's mix as it plays (timeline seconds): ${TIMELINE_ANALYSES.join(', ')}`,
+      `Analyze an edit as it plays (timeline seconds): its mix (${TIMELINE_SOUND_ANALYSES.join(', ')}) or its picture (${TIMELINE_PICTURE_ANALYSES.join(', ')})`,
     ),
     kind: z
-      .enum([
-        'transcript',
-        'beats',
-        'faces',
-        'track',
-        'look',
-        'silence',
-        'scenes',
-        'speech',
-        'loudness',
-        'sounds',
-      ])
+      .enum(ANALYZE_KINDS)
       .describe(
-        'transcript: words with times (whisper.cpp, then aligned to the sound); beats: tempo and beat times; faces: face boxes over time; track: follow a region; look: your own questions answered on sampled frames; silence: stretches quieter than threshold_db for min_seconds; scenes: times the picture changes by more than threshold; speech: where someone is speaking (Silero VAD probability every 32 ms, spans at or above min_probability); loudness: integrated loudness, true peak, loudness range, RMS and noise floor; sounds: when each of 447 named sounds (laughter, applause, cough, music, speech, door…) can be heard, every 40 ms',
+        "transcript: words with times (whisper.cpp, then aligned to the sound); beats: tempo, beat times and the onset strength at each; faces: face boxes over time; track: follow a region; look: your own questions answered on sampled frames; silence: stretches quieter than threshold_db for min_seconds; scenes: times the picture changes by more than threshold; speech: where someone is speaking (Silero VAD probability every 32 ms, spans at or above min_probability); loudness: integrated loudness, true peak, loudness range, RMS and noise floor; sounds: when each of 447 named sounds (laughter, applause, cough, music, speech, door…) can be heard, every 40 ms; speakers: who speaks when; voice: pitch, level and pace over time; colour: colour statistics of frames and regions; picture: every frame's brightness, colour and change from the frame before",
       ),
     questions: z
       .record(JudgeName, JudgeQuestion)
@@ -755,19 +812,19 @@ export const MediaAnalyzeInput = z
       .min(0.04)
       .max(3600)
       .optional()
-      .describe('look: sample a frame this often. Default 1'),
+      .describe('look, colour: sample a frame this often. Default 1'),
     at_seconds: z
       .array(z.number().min(0))
       .min(1)
       .max(600)
       .optional()
-      .describe('look: sample exactly these times instead'),
+      .describe('look, colour: sample exactly these times instead'),
     from_seconds: z
       .number()
       .min(0)
       .optional()
       .describe(
-        'look: start sampling here; speech, loudness, silence, sounds: measure from here. Default 0',
+        'Start sampling or measuring here (any kind but beats, and faces and scenes on media). Default 0',
       ),
     with_previous: z
       .boolean()
@@ -796,23 +853,40 @@ export const MediaAnalyzeInput = z
         'transcript: whisper size, on the server CPU. Bigger is more accurate and slower: small takes about 3 times as long as base, tiny about half',
       ),
     language: z.string().min(2).max(8).default('auto').describe("transcript: e.g. 'en', or 'auto'"),
-    region: z
-      .object({
-        at_seconds: z.number().min(0),
-        x: z.number().min(0).max(1),
-        y: z.number().min(0).max(1),
-        w: z.number().min(0.005).max(1),
-        h: z.number().min(0.005).max(1),
-      })
+    region: RegionBox.extend({ at_seconds: z.number().min(0) })
+      .optional()
+      .describe('track: the box to follow (top-left x, y and size) and when'),
+    regions: z
+      .record(JudgeName, RegionBox)
       .optional()
       .describe(
-        'track: the box to follow (top-left x, y and size, fractions of the picture) and when',
+        `colour: named boxes to measure besides the whole frame (frame), up to ${COLOUR_LIMITS.regions}`,
+      ),
+    percentiles: z
+      .array(z.number().min(0).max(100))
+      .min(1)
+      .max(COLOUR_LIMITS.percentiles)
+      .default([5, 50, 95])
+      .describe('colour: the percentiles to give of each channel'),
+    speakers: z
+      .int()
+      .min(1)
+      .max(20)
+      .optional()
+      .describe('speakers: how many people speak, when you know (or give cluster_threshold)'),
+    cluster_threshold: z
+      .number()
+      .positive()
+      .max(10)
+      .optional()
+      .describe(
+        'speakers: when the count is unknown, how different two voices must be to count as two people; lower finds more speakers (try 0.5 to 0.9)',
       ),
     until_seconds: z
       .number()
       .min(0)
       .optional()
-      .describe('track, look, speech, loudness, silence, sounds: stop here. Default: the end'),
+      .describe('Stop sampling or measuring here. Default: the end'),
     threshold_db: z
       .number()
       .min(-100)
@@ -880,6 +954,8 @@ export const Transcript = z.object({
     .describe(
       "The model that moved word edges to where the letters sound (English); null: the times are whisper's own, up to about a second off",
     ),
+  from: z.number().optional().describe('The stretch transcribed, if not all'),
+  until: z.number().nullable().optional(),
   words: z
     .array(
       z.object({
@@ -894,6 +970,11 @@ export const Transcript = z.object({
           .describe(
             '0–1: how clearly the letters were heard between start and end; null: not aligned (digits, symbols, other languages), times fitted between neighbours',
           ),
+        speaker: z
+          .number()
+          .nullable()
+          .optional()
+          .describe('Who says it, from the latest speakers run'),
       }),
     )
     .describe(
@@ -904,6 +985,10 @@ export const BeatsAnalysis = z.object({
   bpm: z.number(),
   beats: z.array(z.number()),
   downbeats: z.array(z.number()),
+  strengths: z
+    .array(z.number())
+    .optional()
+    .describe('Per beat: its onset strength, 0–1 of the strongest in the sound'),
 });
 export const FacesAnalysis = z.object({
   rate: z.number(),
@@ -928,7 +1013,7 @@ export const MediaPage = z.object({
   list: z
     .string()
     .describe(
-      "The list paged: transcript.words, beats.beats, faces.frames, speech.probabilities (one per frame_seconds from `from`), or look runs[].frames (each run is cut the same way; first and the counts are the latest run's)",
+      "The list paged: transcript.words, beats.beats, faces.frames, speech.probabilities (one per frame_seconds from `from`), speakers.turns, voice.frames, colour.frames, picture.columns (every column alike), or look runs[].frames (each run is cut the same way; first and the counts are the latest run's)",
     ),
   first: z
     .int()
@@ -1027,6 +1112,13 @@ export const MediaInfo = z.object({
   expires_at: z.string().optional().describe('When url and page_url stop working'),
   origin: MediaOrigin.optional(),
   created_at: z.string().optional().describe('When it was imported or made'),
+  fingerprint: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      'Identity of the file (BLAKE3 of its size and first, middle and last 4 MB), as export.video gives',
+    ),
   status: MediaStatus.describe(
     'importing: not probed yet; processing: usable in edits, proxy still rendering; ready; failed',
   ),
@@ -1093,6 +1185,13 @@ export const MediaInfo = z.object({
         .object({ model: z.string(), min_probability: z.number(), heard: z.array(z.string()) })
         .optional()
         .describe('heard: the sounds the latest run found at or above its min_probability'),
+      speakers: z.object({ model: z.string(), speakers: z.number(), turns: z.number() }).optional(),
+      voice: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe('frames, and the summary media.analyze voice gives'),
+      colour: z.object({ frames: z.number(), regions: z.array(z.string()) }).optional(),
+      picture: z.object({ frames: z.number(), from: z.number() }).optional(),
     })
     .optional()
     .describe(
@@ -1136,6 +1235,15 @@ export const MediaInfo = z.object({
   error: ToolError.optional(),
 });
 export type MediaInfo = z.infer<typeof MediaInfo>;
+
+/** media.get: the media, with the measured analyses include asks for in full. */
+export const MediaGetResult = MediaInfo.extend({
+  speakers: SpeakersAnalysis.optional(),
+  voice: VoiceAnalysis.optional(),
+  colour: ColourAnalysis.optional(),
+  picture: PictureAnalysis.optional(),
+});
+export type MediaGetResult = z.infer<typeof MediaGetResult>;
 
 /** Limits that protect the server: the most of each list one media.list returns. */
 export const MEDIA_LIST_LIMIT = 200;
@@ -1203,18 +1311,7 @@ export const MediaDeleteResult = z.object({
 export const MediaAnalyzeResult = z.object({
   media_id: MediaId.optional(),
   timeline_id: TimelineId.optional(),
-  kind: z.enum([
-    'transcript',
-    'beats',
-    'faces',
-    'track',
-    'look',
-    'silence',
-    'scenes',
-    'speech',
-    'loudness',
-    'sounds',
-  ]),
+  kind: z.enum(ANALYZE_KINDS),
   summary: z
     .record(z.string(), z.unknown())
     .optional()
@@ -1280,6 +1377,14 @@ export const MediaAnalyzeResult = z.object({
     until: z.number().nullable().describe('Seconds measured until; null: the end'),
   }).optional(),
   sounds: SoundsAnalysis.optional(),
+  speakers: SpeakersAnalysis.optional(),
+  voice: VoiceAnalysis.optional(),
+  colour: ColourAnalysis.optional(),
+  picture: PictureAnalysis.optional(),
+  picture_size: z
+    .object({ width: z.number(), height: z.number() })
+    .optional()
+    .describe('faces, track, colour: the picture measured, in pixels (a box times it is pixels)'),
   note: z
     .string()
     .optional()
@@ -1893,6 +1998,11 @@ export const ExportResult = z.object({
   height: z.number().nullable().optional(),
   preset: ExportPreset,
   mime_type: z.string(),
+  sha256: z.string().optional().describe('SHA-256 of the whole file: equal only for equal bytes'),
+  fingerprint: z
+    .string()
+    .optional()
+    .describe('The fingerprint media.get gives the file once imported'),
 });
 
 export const QaCheckInput = z.object({

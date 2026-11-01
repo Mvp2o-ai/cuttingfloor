@@ -17,6 +17,7 @@ import {
   EditResult,
   type EditTool,
   editInput,
+  PlacingEditResult,
   TimelineCreateInput,
   TimelineCreateResult,
   TimelineDiffInput,
@@ -31,6 +32,7 @@ import {
   withJob,
 } from '@cuttingfloor/schema';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
+import { PLACING_TOOLS, placementsFor } from '../placements.ts';
 import {
   assertFonts,
   assertOnline,
@@ -196,7 +198,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.set_transform': {
     title: 'Set transform',
     description:
-      "Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). fit none shows a graphic at its own pixel size, so scale 1 is its real size; the default contain scales it to touch the frame edges. Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; a keyframe's ease shapes the move from it to the next one (sine_in_out, cubic_out, back_out, hold and more). Overlays that must follow a zoom or pan: put the clip and its overlays in a timeline of the same shape, nest it with clip.add {nested_timeline_id} and transform the nested clip, so everything moves together. Omitted fields keep their value; null resets one. To pin an overlay to a moving subject, use media.analyze track boxes as keyframes: for each box, frame = timeline frame of the box time (where the tracked clip plays that media second) minus this clip's start, x = box x + w/2 and y = box y + h/2 (add your offset). That holds when the tracked clip fills the frame as is; if it is scaled, moved or cropped, map the box through its transform first. Skip boxes with found false.",
+      "Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). fit none shows a graphic at its own pixel size, so scale 1 is its real size; the default contain scales it to touch the frame edges. Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; a keyframe's ease shapes the move from it to the next one (sine_in_out, cubic_out, back_out, hold and more). Overlays that must follow a zoom or pan: put the clip and its overlays in a timeline of the same shape, nest it with clip.add {nested_timeline_id} and transform the nested clip, so everything moves together. Omitted fields keep their value; null resets one. To pin an overlay to a moving subject, use media.analyze track boxes as keyframes: for each box, frame = timeline frame of the box time (where the tracked clip plays that media second) minus this clip's start, x = box x + w/2 and y = box y + h/2 (add your offset). That holds when the tracked clip fills the frame as is; if it is scaled, moved or cropped, map the box through its transform first. Skip boxes with found false. The result's placements say where the clip now shows, in sequence pixels: its picture box, the part visible after crop and mask inside the frame, and the source pixels that show there.",
   },
   'clip.set_blend': {
     title: 'Set blend mode',
@@ -206,7 +208,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.set_mask': {
     title: 'Set mask',
     description:
-      "Show only part of a video clip: rectangle (rounded), ellipse, linear, mirror, heart, star or polygon, with feather and invert. Position, size and rotation animate like transform values. Coordinates are fractions of the clip's fitted frame: a sequence-shaped box with the picture fitted inside (bars where the shapes differ), before the clip's scale and position. A narrower picture fills k = (its aspect / the sequence's) of the box width, centred, so a picture-fraction box maps to x = 0.5 + (x - 0.5) * k, width * k (a wider picture: the same on y and height, with k = the sequence aspect / its). null removes the mask.",
+      "Show only part of a video clip: rectangle (rounded), ellipse, linear, mirror, heart, star or polygon, with feather and invert. Position, size and rotation animate like transform values. Coordinates are fractions of the clip's fitted frame: a sequence-shaped box with the picture fitted inside (bars where the shapes differ), before the clip's scale and position. A narrower picture fills k = (its aspect / the sequence's) of the box width, centred, so a picture-fraction box maps to x = 0.5 + (x - 0.5) * k, width * k (a wider picture: the same on y and height, with k = the sequence aspect / its). null removes the mask. The result's placements give the visible part in sequence pixels.",
   },
   'clip.set_animation': {
     title: 'Set animation',
@@ -355,7 +357,7 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
         title: meta.title,
         description: `${meta.description} ${RETURNS}`,
         inputSchema: editInput(tool),
-        outputSchema: EditResult,
+        outputSchema: PLACING_TOOLS.has(tool) ? PlacingEditResult : EditResult,
         annotations: { ...annotations, title: meta.title },
       },
       guard(
@@ -504,6 +506,9 @@ async function applyAndReply(
     ...(outcome.clip_ids ? { clip_ids: outcome.clip_ids } : {}),
     ...(outcome.track_id ? { track_id: outcome.track_id } : {}),
     preview: previewRef,
+    ...(ops.some((o) => PLACING_TOOLS.has(o.tool))
+      ? { placements: await placementsFor(rt, owner, base, doc) }
+      : {}),
     warnings,
     ...extra,
     ...(batch ? { results } : {}),
