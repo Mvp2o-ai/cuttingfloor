@@ -34,6 +34,7 @@ import {
   MediaInfo,
   MOTION_LIMITS,
   MotionRequest,
+  mediaNotReady,
   SOUNDS_LIMITS,
   type Stem,
   withJob,
@@ -160,7 +161,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       const record = await rt.media.get(owner, a.media_id);
       const kind = record.probe?.kind;
       if (record.status !== 'ready' || !record.file) {
-        throw new CfError('media_not_ready', `Media ${a.media_id} is still importing`);
+        throw mediaNotReady(a.media_id, record.status, 'a page asset');
       }
       if (kind !== 'image' && kind !== 'font') {
         throw new CfError(
@@ -392,7 +393,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       const source = await rt.media.get(owner, args.media_id);
       const p = source.probe;
       if (source.status !== 'ready' || !p) {
-        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`);
+        throw mediaNotReady(args.media_id, source.status, 'create.cutout');
       }
       if (!p.video || (p.kind !== 'video' && p.kind !== 'image')) {
         throw new CfError('bad_request', `Media ${args.media_id} has no picture to cut out`);
@@ -451,7 +452,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       const source = await rt.media.get(owner, args.media_id);
       const p = source.probe;
       if (source.status !== 'ready' || !p) {
-        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`);
+        throw mediaNotReady(args.media_id, source.status, 'create.stabilized');
       }
       if (p.kind !== 'video' || !p.video) {
         throw new CfError('bad_request', `Media ${args.media_id} is not a video`, {
@@ -511,9 +512,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       const source = await rt.media.get(owner, args.media_id);
       const p = source.probe;
       if (source.status !== 'ready' || !p) {
-        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`, {
-          hint: 'Wait for its media.import job to finish',
-        });
+        throw mediaNotReady(args.media_id, source.status, 'create.stems');
       }
       if (!p.audio) {
         throw new CfError('bad_request', `Media ${args.media_id} has no sound to separate`);
@@ -629,11 +628,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
   const ready = async (id: string, want: 'video' | 'audio', what: string) => {
     const record = await rt.media.get(deps.owner(), id);
     const p = record.probe;
-    if (record.status !== 'ready' || !p) {
-      throw new CfError('media_not_ready', `Media ${id} is still importing`, {
-        hint: 'Wait for its media.import job to finish',
-      });
-    }
+    if (record.status !== 'ready' || !p) throw mediaNotReady(id, record.status, what);
     if (want === 'video' ? !p.video || p.kind !== 'video' : !p.audio) {
       throw new CfError(
         'bad_request',

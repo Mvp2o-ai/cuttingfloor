@@ -73,3 +73,24 @@ export function serverBusy(message: string, local?: string): CfError {
     detail: { retry: true, retry_after_seconds: 60 },
   });
 }
+
+/**
+ * A media a tool needs ready is not: still importing or processing (edits and render.frames
+ * take it already), or failed. `needs` names the tool that reads the finished file.
+ */
+export function mediaNotReady(id: string, status: string, needs: string): CfError {
+  if (status === 'failed') {
+    return new CfError('bad_request', `Media ${id} failed to import`, {
+      hint: 'media.get shows why; import the file again',
+      detail: { media_id: id, status },
+    });
+  }
+  return new CfError(
+    'media_not_ready',
+    `Media ${id} is still ${status === 'importing' ? 'importing' : 'processing'}; ${needs} needs it ready`,
+    {
+      hint: 'Edits and render.frames take it already. Call again once media.get says ready (when the media.import or create.* job making it completes)',
+      detail: { media_id: id, status },
+    },
+  );
+}

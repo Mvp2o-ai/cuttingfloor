@@ -140,17 +140,17 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'caption.add': {
     title: 'Add captions',
     description:
-      "Captions on a video track from segments (with optional word timings for highlights), from SRT/VTT text, or in_clip: segments timed in seconds of a clip's media, such as transcript word times, placed where they play. One clip per caption; returns their clip_ids. A style field you leave out takes the published default (video://catalog/text: bold white Inter at 6% of the frame height, near the bottom, with a black outline); timeline.get shows the full style. Burned in when exported.",
+      "Captions on a video track from segments (with optional word timings for highlights), from SRT/VTT text, or in_clip: segments timed in seconds of a clip's media, such as transcript word times, placed where they play. One clip per caption; returns their clip_ids. A style field you leave out takes the published default (video://catalog/text: bold white Inter at 6% of the frame height, near the bottom, with a black outline); timeline.get shows the full style. Lines wrap on their own at style max_width (a fraction of the frame width), balanced in length; \\n forces a break. Burned in when exported.",
   },
   'text.set': {
     title: 'Set text',
     description:
-      "Change a title's or caption's text, or restyle many at once (clip_ids, or every one on track_id). The style is merged; null turns an outline, shadow, box or highlight off. Highlight modes and fonts: video://catalog/text and video://catalog/fonts.",
+      "Change a title's or caption's text, or restyle many at once (clip_ids, or every one on track_id). The style is merged; null turns an outline, shadow, box or highlight off. Fonts: video://catalog/fonts, or an unknown font is refused with the close matches.",
   },
   'audio.set_gain': {
     title: 'Set gain',
     description:
-      "Volume of an audio clip (or a video clip's linked audio) in dB; keyframes ride it up and down. The preview is a waveform of the clip with the measured loudness.",
+      "Volume of an audio clip (or a video clip's linked audio) in dB; keyframes ride it up and down. The preview is a waveform of the clip; with preview inline it also carries the measured loudness (preview.loudness), a link preview does not.",
   },
   'audio.set_pan': {
     title: 'Set pan',
@@ -163,12 +163,12 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'audio.set_master': {
     title: 'Set master',
     description:
-      'Gain (dB) and limiter ceiling on the whole mix. The ceiling caps sample peaks (dBFS); the true peak between samples can land above it, most on dense, bright sound, and qa.check measures it (dBTP). Audio edits preview with the measured loudness.',
+      'Gain (dB) and limiter ceiling on the whole mix. The ceiling caps sample peaks (dBFS); the true peak between samples can land above it, most on dense, bright sound, and qa.check measures it (dBTP). Audio edits with preview inline carry the measured loudness (preview.loudness); a link preview does not.',
   },
   'filter.add': {
     title: 'Add effect',
     description:
-      'Apply an effect from video://catalog/effects (colour, LUT, blur, vignette, chroma key, glitch; EQ, compressor, denoise, pitch and more) to a clip, every clip on a track, or the whole timeline. Number params take keyframes. Returns its id as clip_id.',
+      "Apply an effect to a clip, every clip on a track, or the whole timeline: picture effects (colour, LUT, blur, vignette, chroma key, glitch, denoise and more) on video, sound effects (EQ, compressor, noise_reduction, voice_denoise, pitch and more) on audio. Order matters: effects run in the order added (a track's before a clip's own). Picture numbers take keyframes, except glitch, denoise and chroma_key tolerance; sound params are constants. A wrong name or param is refused with the full list, ranges, units and defaults (also at video://catalog/effects); timeline.get shows every param applied. Returns its id as clip_id.",
   },
   'filter.set': {
     title: 'Set effect',
@@ -196,7 +196,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.set_transform': {
     title: 'Set transform',
     description:
-      "Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). fit none shows a graphic at its own pixel size, so scale 1 is its real size; the default contain scales it to touch the frame edges. Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; eases are listed at video://catalog/eases. Omitted fields keep their value; null resets one. To pin an overlay to a moving subject, use media.analyze track boxes as keyframes: for each box, frame = timeline frame of the box time (where the tracked clip plays that media second) minus this clip's start, x = box x + w/2 and y = box y + h/2 (add your offset). That holds when the tracked clip fills the frame as is; if it is scaled, moved or cropped, map the box through its transform first. Skip boxes with found false.",
+      "Position, scale, rotate, fade, flip, crop or fit a video clip over the tracks below (picture-in-picture, overlays, punch-ins). fit none shows a graphic at its own pixel size, so scale 1 is its real size; the default contain scales it to touch the frame edges. Any number takes a constant or {keyframes: [{frame, value, ease}]} with frames from the clip start; a keyframe's ease shapes the move from it to the next one (sine_in_out, cubic_out, back_out, hold and more). Overlays that must follow a zoom or pan: put the clip and its overlays in a timeline of the same shape, nest it with clip.add {nested_timeline_id} and transform the nested clip, so everything moves together. Omitted fields keep their value; null resets one. To pin an overlay to a moving subject, use media.analyze track boxes as keyframes: for each box, frame = timeline frame of the box time (where the tracked clip plays that media second) minus this clip's start, x = box x + w/2 and y = box y + h/2 (add your offset). That holds when the tracked clip fills the frame as is; if it is scaled, moved or cropped, map the box through its transform first. Skip boxes with found false.",
   },
   'clip.set_blend': {
     title: 'Set blend mode',
@@ -206,7 +206,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.set_mask': {
     title: 'Set mask',
     description:
-      'Show only part of a video clip: rectangle (rounded), ellipse, linear, mirror, heart, star or polygon, with feather and invert. Position, size, rotation and feather animate like transform values. null removes the mask.',
+      "Show only part of a video clip: rectangle (rounded), ellipse, linear, mirror, heart, star or polygon, with feather and invert. Position, size and rotation animate like transform values. Coordinates are fractions of the clip's fitted frame: a sequence-shaped box with the picture fitted inside (bars where the shapes differ), before the clip's scale and position. A narrower picture fills k = (its aspect / the sequence's) of the box width, centred, so a picture-fraction box maps to x = 0.5 + (x - 0.5) * k, width * k (a wider picture: the same on y and height, with k = the sequence aspect / its). null removes the mask.",
   },
   'clip.set_animation': {
     title: 'Set animation',

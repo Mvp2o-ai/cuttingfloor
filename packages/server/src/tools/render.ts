@@ -265,8 +265,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     'qa.check',
     {
       title: 'QA check',
-      description:
-        "Measure the rendered timeline: gaps in the picture, offline media, rendered against expected frame count, integrated loudness (LUFS) and true peak (dBTP), plus black and silent stretches when you give their settings. With speech {min_probability}, every cut is listed with speech facts: the speech probability of the mix just before and after it (Silero VAD), whether it lands while someone is speaking, the seconds without speech each side, and, per clip edge, the transcript word it cuts through and how much of that word is lost (from the media's transcript, when it has one). Facts only, no verdicts. Short timelines answer at once; longer ones return a task or job.",
+      description: `Measure the rendered timeline: gaps in the picture, offline media, rendered against expected frame count, integrated loudness (LUFS) and true peak (dBTP), plus black and silent stretches when you give their settings. With speech {min_probability}, every cut is listed with speech facts: the speech probability of the mix just before and after it (Silero VAD), whether it lands while someone is speaking, the seconds without speech each side, and, per clip edge, the transcript word it cuts through and how much of that word is lost (from the media's transcript, when it has one). Facts only, no verdicts. A timeline up to ${QA_INLINE_SECONDS} s is checked within the call (which waits its turn for a render when the server is busy); longer ones return a task or job.`,
       inputSchema: QaCheckInput,
       outputSchema: withJob(QaCheckResult),
       annotations: { ...readOnly, title: 'QA check' },

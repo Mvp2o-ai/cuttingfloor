@@ -44,6 +44,7 @@ import {
   MediaRefInput,
   MediaUploadInput,
   MediaUploadResult,
+  mediaNotReady,
   TIMELINE_ANALYSES,
   withJob,
 } from '@cuttingfloor/schema';
@@ -767,9 +768,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       const mediaId = args.media_id as string;
       const record = await rt.media.get(owner, mediaId);
       if (record.status !== 'ready') {
-        throw new CfError('media_not_ready', `Media ${args.media_id} is still importing`, {
-          hint: 'Wait for its media.import job to finish',
-        });
+        throw mediaNotReady(mediaId, record.status, `media.analyze ${args.kind}`);
       }
       const p = record.probe;
       checkSoundArgs(args);
@@ -1122,6 +1121,19 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       const record = await rt.media.get(owner, args.media_id);
       const link = await rt.signMedia(owner, record);
       const info = mediaInfo(record, args.include ?? [], { probe: true });
+      // An analysis asked for but never run would otherwise just be missing.
+      const missing = (args.include ?? []).filter((k) =>
+        k === 'look' ? !record.analyses?.look?.runs.length : !record.analyses?.[k],
+      );
+      if (missing.length) {
+        info.warnings = [
+          ...(info.warnings ?? []),
+          ...missing.map(
+            (k) =>
+              `include ${k}: none stored for this media, so nothing came back. media.analyze {media_id: '${record.media_id}', kind: '${k}'}${k === 'speech' || k === 'sounds' ? ' over the whole media (no from_seconds or until_seconds)' : ''} makes it`,
+          ),
+        ];
+      }
       const windowed =
         args.from_seconds !== undefined ||
         args.to_seconds !== undefined ||

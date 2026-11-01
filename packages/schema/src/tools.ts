@@ -59,12 +59,12 @@ export const TransformArgs = z.object({
 
 export const MaskArgs = z.object({
   shape: MaskShape,
-  x: anim(MASK_LIMITS.x, 'Mask centre x in the clip picture, 0–1 (default 0.5)'),
-  y: anim(MASK_LIMITS.y, 'Mask centre y in the clip picture, 0–1 (default 0.5)'),
-  width: anim(MASK_LIMITS.width, 'Fraction of the picture width (default 0.5)'),
+  x: anim(MASK_LIMITS.x, 'Mask centre x in the fitted frame, 0–1 (default 0.5)'),
+  y: anim(MASK_LIMITS.y, 'Mask centre y in the fitted frame, 0–1 (default 0.5)'),
+  width: anim(MASK_LIMITS.width, 'Fraction of the fitted frame width (default 0.5)'),
   height: anim(
     MASK_LIMITS.height,
-    'Fraction of the picture height (default 0.5); band thickness for mirror',
+    'Fraction of the fitted frame height (default 0.5); band thickness for mirror',
   ),
   rotation: anim(MASK_LIMITS.rotation, 'Degrees clockwise; for linear, the edge angle'),
   feather: z
@@ -85,7 +85,7 @@ export const MaskArgs = z.object({
     .min(3)
     .max(64)
     .optional()
-    .describe('polygon: [x, y] corners in the clip picture, 0–1'),
+    .describe('polygon: [x, y] corners in the fitted frame, 0–1'),
 });
 
 const FrameRange = z
@@ -137,7 +137,9 @@ export const EditArgs = {
         z.object({ in: frame, out: frame }),
         z
           .object({ words: z.tuple([z.number().int().min(0), z.number().int().min(0)]) })
-          .describe('Transcript words i to j (inclusive), from media.get include transcript'),
+          .describe(
+            "Transcript words i to j (inclusive), from media.get include transcript: from the frame word i starts in to the frame after word j ends, with no padding (clip.trim adds room for a breath or a word's tail)",
+          ),
       ])
       .optional()
       .describe('Source range in sequence frames, out exclusive. Default: the whole media'),
@@ -604,7 +606,7 @@ export const MediaRefInput = z.object({
     .array(z.enum(ANALYSES))
     .optional()
     .describe(
-      'Also return these analyses (otherwise only their summaries): in full, or the piece from_seconds, to_seconds, offset and limit choose',
+      'Also return these analyses (otherwise only their summaries): in full, or the piece from_seconds, to_seconds, offset and limit choose. One never run on this media is absent, and warnings says so',
     ),
   from_seconds: z
     .number()
@@ -775,7 +777,9 @@ export const MediaAnalyzeInput = z
     model: z
       .enum(['tiny', 'base', 'small'])
       .default('base')
-      .describe('transcript: speed vs accuracy'),
+      .describe(
+        'transcript: whisper size, on the server CPU. Bigger is more accurate and slower: small takes about 3 times as long as base, tiny about half',
+      ),
     language: z.string().min(2).max(8).default('auto').describe("transcript: e.g. 'en', or 'auto'"),
     region: z
       .object({
@@ -811,7 +815,9 @@ export const MediaAnalyzeInput = z
       .min(0)
       .max(100)
       .optional()
-      .describe('scenes (required): how much the picture must change to count as a cut, 0–100'),
+      .describe(
+        "scenes (required): how much the picture must change to count as a cut, 0–100 (FFmpeg scdet's score). A hard cut between similar shots can score well under 30: start at FFmpeg's own default, 10, and raise it if you get too many",
+      ),
     idempotency_key: z.string().min(1).max(200).optional(),
   })
   .refine((v) => Boolean(v.media_id) !== Boolean(v.timeline_id), {
@@ -879,7 +885,11 @@ export const FacesAnalysis = z.object({
     z.object({
       time: z.number(),
       faces: z.array(
-        z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number(), score: z.number() }),
+        z
+          .object({ x: z.number(), y: z.number(), w: z.number(), h: z.number(), score: z.number() })
+          .describe(
+            'Top-left corner x, y and size w, h, fractions of the picture (centre: x + w/2, y + h/2); score 0–1',
+          ),
       ),
     }),
   ),

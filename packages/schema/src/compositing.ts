@@ -116,7 +116,7 @@ export type Animatable =
 export const Fit = z
   .enum(['contain', 'cover', 'fill', 'none'])
   .describe(
-    'contain: whole picture inside the frame, scaled up or down to touch its edges (default); cover: fill the frame, cropping; fill: stretch; none: its own pixels at sequence size, unscaled (a 300 px logo stays 300 px on a 1920 px sequence), for logos and graphics made to size',
+    'contain: whole picture inside the frame, scaled up or down to touch its edges (default); cover: fill the frame, cropping what overflows equally on both sides (move x or y off 0.5 to show another part); fill: stretch; none: its own pixels at sequence size, unscaled (a 300 px logo stays 300 px on a 1920 px sequence), for logos and graphics made to size',
   );
 export const Flip = z.enum(['none', 'horizontal', 'vertical', 'both']);
 
@@ -199,7 +199,11 @@ export const MASK_SHAPES = [
 export const MaskShape = z.enum(MASK_SHAPES);
 export type MaskShape = z.infer<typeof MaskShape>;
 
-/** Mask fields that animate. Positions and sizes are fractions of the clip's own picture. */
+/**
+ * Mask fields that animate. Positions and sizes are fractions of the clip's fitted frame: a
+ * sequence-shaped box with the picture fitted inside it (bars where the shapes differ), before
+ * the clip's scale and position.
+ */
 export const MASK_LIMITS = {
   x: [-4, 5],
   y: [-4, 5],

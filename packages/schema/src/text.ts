@@ -29,7 +29,12 @@ export const TextStyle = z
     x: z.number().min(-1).max(2).optional(),
     y: z.number().min(-1).max(2).optional(),
     anchor: z.enum(['top', 'middle', 'bottom']).optional(),
-    max_width: z.number().min(0.05).max(1).optional(),
+    max_width: z
+      .number()
+      .min(0.05)
+      .max(1)
+      .optional()
+      .describe('Of frame width: longer text wraps onto more lines, balanced in length'),
     letter_spacing: z.number().min(-0.5).max(2).optional(),
     outline: z
       .object({
@@ -55,7 +60,11 @@ export const TextStyle = z
       .optional(),
     highlight: z
       .object({
-        mode: z.enum(HIGHLIGHTS),
+        mode: z
+          .enum(HIGHLIGHTS)
+          .describe(
+            'Needs caption word timings. karaoke: each word takes color as it is spoken and keeps it; fill: likewise, sweeping across each word; word: only the word being spoken; pop: that word, growing a little',
+          ),
         color: Colour,
       })
       .nullable()

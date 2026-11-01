@@ -153,7 +153,7 @@ export const EFFECTS = {
   },
   denoise: {
     kind: 'video',
-    about: 'Reduce video noise',
+    about: 'Reduce grain and noise in the picture (for sound: noise_reduction or voice_denoise)',
     params: { strength: num(0, 10, 3, 'Spatial denoise strength', false) },
   },
   chroma_key: {
@@ -161,7 +161,13 @@ export const EFFECTS = {
     about: 'Make a colour (green or blue screen) transparent',
     params: {
       color: { kind: 'colour', default: '#00FF00', about: 'The screen colour' },
-      tolerance: num(0, 1, 0.2, 'How far from the colour still keys out', false),
+      tolerance: num(
+        0,
+        1,
+        0.2,
+        'How far a pixel may be from color and still key out, compared on colour alone (brightness ignored, so shadows on the screen key too): 0 the exact colour only, 1 almost everything',
+        false,
+      ),
     },
   },
   // Audio
