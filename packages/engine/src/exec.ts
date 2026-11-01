@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   type ChildProcess,
   type ChildProcessWithoutNullStreams,
-  type SpawnOptions,
+  type StdioOptions,
   spawn,
 } from 'node:child_process';
 import { availableParallelism } from 'node:os';
@@ -142,13 +142,14 @@ let exitHook = false;
 export function spawnEngine(
   bin: string,
   args: string[],
-  options: Omit<SpawnOptions, 'shell'>,
+  options: { cwd?: string | undefined; env?: NodeJS.ProcessEnv | undefined; stdio: StdioOptions },
 ): ChildProcessWithoutNullStreams {
-  // The streams a caller asked for as pipes are there; it reads only those. Never a shell: the
-  // arguments go to the engine as they are (AGENTS.md).
+  // The streams a caller asked for as pipes are there; it reads only those. Only these options
+  // pass, so an engine never runs through a shell: its arguments reach it as they are (AGENTS.md).
   const child = spawn(bin, args, {
-    ...options,
-    shell: false,
+    cwd: options.cwd,
+    env: options.env,
+    stdio: options.stdio,
     detached: process.platform !== 'win32',
   }) as ChildProcessWithoutNullStreams;
   live.add(child);
