@@ -266,4 +266,47 @@ describe.skipIf(!engines)('blind-test regressions', () => {
     }
     expect(await look(outer.timeline_id, 60, 1920, points)).toEqual(alone);
   }, 240_000);
+
+  it('conforms a file whose rates drift apart to a constant rate, so every frame number is true', async () => {
+    // Like a game recorder's file: nominally 20 fps, but a few frames come early, so the average
+    // rate (about 20.13) and the frame times drift from the nominal grid.
+    const file = join(env.mediaDir, 'drift.mp4');
+    await ff([
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc=size=320x200:rate=20',
+      '-frames:v',
+      '300',
+      '-vf',
+      "setpts='(N/20-floor(N/100)*0.025)/TB'",
+      '-fps_mode',
+      'passthrough',
+      '-video_track_timescale',
+      '60000',
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      file,
+    ]);
+    const drift = await importMedia(file);
+    expect(drift.conform).toContain('vfr');
+    expect(drift.fps).toEqual({ num: 20, den: 1 });
+    const seconds = drift.duration_seconds as number;
+    const last = Math.round(seconds * 20) - 1;
+    const res = await call(client, 'render.frames', {
+      media_id: drift.media_id,
+      frames: [0, last],
+      layout: 'single',
+      format: 'png',
+      long_edge: 320,
+    });
+    expect(res.isError, JSON.stringify(res.structured)).toBe(false);
+    const past = await call(client, 'render.frames', {
+      media_id: drift.media_id,
+      frames: [last + 1],
+    });
+    expect(past.isError).toBe(true);
+  }, 120_000);
 });

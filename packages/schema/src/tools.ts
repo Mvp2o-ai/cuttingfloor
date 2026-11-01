@@ -1032,7 +1032,9 @@ export const MediaInfo = z.object({
   codecs: z.object({ video: z.string().nullable(), audio: z.string().nullable() }),
   conform: z
     .array(z.string())
-    .describe('Why a mezzanine was made (vfr, rotation, hdr, codec); empty when not needed'),
+    .describe(
+      'Why a mezzanine was made (vfr: frames not evenly spaced at a standard rate, retimed to a constant fps; rotation, hdr, codec); empty when not needed. fps and frame numbers are those of the mezzanine',
+    ),
   analysis: z
     .object({ loudness_lufs: z.number().nullable().describe('Integrated loudness at import') })
     .nullable(),

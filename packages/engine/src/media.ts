@@ -445,6 +445,7 @@ export class MediaLibrary {
           if (p.duration !== null && conformed.duration !== null) {
             p.duration = Math.min(p.duration, conformed.duration);
           }
+          if (p.video && conformed.video) p.video.frames = conformed.video.frames;
           await this.save(owner, record);
         }
         progress(0.7, 'making proxy');

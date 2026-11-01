@@ -237,13 +237,24 @@ export async function probe(path: string, signal?: AbortSignal): Promise<Probe> 
     }
     const r = rational(v.r_frame_rate);
     const avg = rational(v.avg_frame_rate);
-    const vfr = Boolean(
-      r && avg && Math.abs(r.num / r.den - avg.num / avg.den) / (avg.num / avg.den) > 0.01,
-    );
+    // Variable frame rate: the nominal and average rates disagree (screen and game recorders
+    // drift by a fraction of a percent), or the frame count doesn't fit the length at the
+    // average rate. Either way frame n isn't at n / fps, so the file is conformed.
+    const off = (a: { num: number; den: number }, b: { num: number; den: number }) =>
+      Math.abs(a.num / a.den - b.num / b.den) / (b.num / b.den);
+    const frames = v.nb_frames ? Number(v.nb_frames) : null;
+    const length = Number(v.duration ?? json.format?.duration ?? Number.NaN);
+    const counted =
+      avg && avg.num > 0 && frames && length > 0
+        ? Math.abs(frames - (length * avg.num) / avg.den) > Math.max(2, frames * 0.02)
+        : false;
+    const vfr = Boolean(r && avg && avg.num > 0 && off(r, avg) > 0.002) || counted;
     // VFR media is conformed to its nominal rate (phones record "30 fps" with gaps): the finer
     // grid keeps every frame on time. Otherwise the average rate is the true one.
     const nominal = r && r.num / r.den <= 120 ? r : null;
-    const fps = vfr && nominal ? nominal : avg && avg.num > 0 ? avg : (r ?? { num: 25, den: 1 });
+    const measured =
+      vfr && nominal ? nominal : avg && avg.num > 0 ? avg : (r ?? { num: 25, den: 1 });
+    const fps = standardRate(measured);
     const rotation = Number(
       v.side_data_list?.find((s) => s.rotation !== undefined)?.rotation ?? v.tags?.rotate ?? 0,
     );
@@ -251,13 +262,15 @@ export async function probe(path: string, signal?: AbortSignal): Promise<Probe> 
       codec: v.codec_name ?? 'unknown',
       width,
       height,
-      fps: standardRate(fps),
-      vfr,
+      fps,
+      // A rate that isn't a standard one (20.36) plays at the whole rate it is snapped to, so
+      // its frames are retimed onto that grid like any variable rate.
+      vfr: vfr || off(fps, measured) > 0.002,
       rotation: ((Math.round(rotation) % 360) + 360) % 360,
       transfer: v.color_transfer ?? null,
       primaries: v.color_primaries ?? null,
       pix_fmt: v.pix_fmt ?? null,
-      frames: v.nb_frames ? Number(v.nb_frames) : null,
+      frames,
     };
   }
   const audio = a
