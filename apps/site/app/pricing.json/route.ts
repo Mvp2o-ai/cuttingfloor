@@ -54,11 +54,16 @@ export function GET() {
       sold: p.sold === 'contact' ? `contact ${SUPPORT_EMAIL}` : 'self-serve',
       ...(p.id === 'trial' ? { trial_days: TRIAL_DAYS, card_required: false } : {}),
       period: p.id === 'trial' ? 'trial' : 'month',
-      render_minutes: p.limits.renderMinutes,
-      jobs: p.limits.jobs,
-      short_side_px: p.limits.shortSide,
-      storage_gb: p.limits.storageGb,
-      judgments_per_day: p.limits.judgmentsPerDay,
+      // Enterprise limits are agreed on a call, so it publishes none.
+      ...(p.sold === 'contact'
+        ? { limits: 'agreed with us' }
+        : {
+            render_minutes: p.limits.renderMinutes,
+            jobs: p.limits.jobs,
+            short_side_px: p.limits.shortSide,
+            storage_gb: p.limits.storageGb,
+            judgments_per_day: p.limits.judgmentsPerDay,
+          }),
       note: p.note,
     })),
     keys: KEYS.map((k) => ({

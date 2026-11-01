@@ -50,8 +50,8 @@ export const PLANS: Plan[] = PRICED.map((p) => {
       ...common,
       price: 'Talk to us',
       per: '',
-      included: `From ${l.renderMinutes?.toLocaleString('en-US')} min a seat`,
-      limits: 'Priority, more jobs at once, 4K',
+      included: 'Minutes and limits agreed on a call',
+      limits: 'Start on any plan now; move up when we have talked',
       href: `mailto:${SUPPORT_EMAIL}?subject=cuttingfloor%20Enterprise`,
     };
   return {
@@ -157,6 +157,11 @@ function hosted(cell: (l: (typeof PRICED)[number]['limits'], id: PlanId) => Cell
   >;
 }
 
+/** A limit row: Enterprise limits are agreed on a call, so the table shows no number for them. */
+function limit(cell: (l: (typeof PRICED)[number]['limits'], id: PlanId) => Cell) {
+  return hosted((l, id) => (id === 'enterprise' ? val('Agreed with us') : cell(l, id)));
+}
+
 const lipsync = KEYS.find((k) => k.tools.includes('create.lipsync'));
 const judgment = KEYS.find((k) => k.tools.includes('judge.ask'));
 /** The judgment tools, as the key table names them, for the daily-limit row. */
@@ -179,12 +184,8 @@ export const ROWS: Row[] = [
     label: 'Render minutes included',
     cells: {
       'self-hosted': val('No limit: it runs on your machine'),
-      ...hosted((l, id) =>
-        l.renderMinutes === null
-          ? val('No limit')
-          : id === 'enterprise'
-            ? val(`From ${num(l.renderMinutes)} a month, per seat`)
-            : val(`${num(l.renderMinutes)} ${per(id)}`),
+      ...limit((l, id) =>
+        l.renderMinutes === null ? val('No limit') : val(`${num(l.renderMinutes)} ${per(id)}`),
       ),
     },
   },
@@ -192,7 +193,7 @@ export const ROWS: Row[] = [
     label: 'Jobs at once',
     cells: {
       'self-hosted': val('As many as your machine runs (you set it)'),
-      ...hosted((l) =>
+      ...limit((l) =>
         val(l.jobs === null ? 'No limit' : l.jobs === 1 ? '1 at a time' : `${l.jobs} at once`),
       ),
     },
@@ -201,7 +202,7 @@ export const ROWS: Row[] = [
     label: 'Largest export',
     cells: {
       'self-hosted': yes('Any size, including 4K'),
-      ...hosted((l) =>
+      ...limit((l) =>
         l.shortSide === null
           ? yes('Any size')
           : l.shortSide >= 2160
@@ -214,7 +215,7 @@ export const ROWS: Row[] = [
     label: 'Storage held at once',
     cells: {
       'self-hosted': val('Your own disk'),
-      ...hosted((l) =>
+      ...limit((l) =>
         val(
           l.storageGb === null
             ? 'No limit'
@@ -229,7 +230,7 @@ export const ROWS: Row[] = [
     label: `Visual judgments a day (${JUDGMENT_TOOLS.join(', ')})`,
     cells: {
       'self-hosted': key(judgment?.selfHosted ?? ''),
-      ...hosted((l) =>
+      ...limit((l) =>
         yes(
           l.judgmentsPerDay === null ? 'No daily limit' : `${num(l.judgmentsPerDay)} a day, no key`,
         ),
