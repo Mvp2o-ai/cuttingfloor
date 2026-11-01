@@ -7,7 +7,7 @@ import { WALKTHROUGHS } from '../content/walkthroughs.ts';
 export type Route = { path: string; title: string; updated: string };
 
 export const ROUTES: Route[] = [
-  { path: '/', title: 'cuttingfloor: the video editing MCP server', updated: '2026-10-18' },
+  { path: '/', title: 'cuttingfloor: the video editing MCP server', updated: '2026-11-01' },
   {
     path: '/demos',
     title: 'Demos',
@@ -21,6 +21,22 @@ export const ROUTES: Route[] = [
     path: '/alternatives',
     title: 'AI video editor your agent runs: a CapCut, Descript and VEED alternative',
     updated: '2026-10-29',
+  },
+  { path: '/pricing', title: 'Pricing', updated: '2026-11-01' },
+  {
+    path: '/connect',
+    title: 'Connect cuttingfloor to Claude, ChatGPT, Codex, Cursor and more',
+    updated: '2026-11-01',
+  },
+  {
+    path: '/self-host',
+    title: 'Run cuttingfloor yourself: free and open source',
+    updated: '2026-11-01',
+  },
+  {
+    path: '/compare',
+    title: 'Compare AI video editing: MCP servers, APIs and editing apps',
+    updated: '2026-11-01',
   },
   { path: '/walkthroughs', title: 'Walkthroughs', updated: '2026-10-18' },
   ...WALKTHROUGHS.map((w) => ({

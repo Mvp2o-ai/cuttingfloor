@@ -31,9 +31,9 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
           <a href="/demos">Demos</a>
           <a href="/walkthroughs">Walkthroughs</a>
           <a href="/skills">Skills</a>
-          <a href="/#how">How it works</a>
-          <a href="/#pricing">Pricing</a>
-          <a href={DOCS_URL}>Open source</a>
+          <a href="/connect">Connect</a>
+          <a href="/pricing">Pricing</a>
+          <a href="/self-host">Run it yourself</a>
           <a href={SIGN_IN}>Sign in</a>
         </nav>
         <a className="nav-cta" href={SIGN_UP}>
@@ -57,6 +57,10 @@ export function Footer({ cta = 'Start free' }: { cta?: string }) {
           <a href={SIGN_UP}>{cta}</a>
           <a href="/walkthroughs">Walkthroughs</a>
           <a href="/skills">Skills</a>
+          <a href="/pricing">Pricing</a>
+          <a href="/connect">Connect</a>
+          <a href="/self-host">Self-host</a>
+          <a href="/compare">Compare</a>
           <a href="/alternatives">Alternatives</a>
           <a href={DOCS_URL}>GitHub</a>
           <a href={`mailto:${SUPPORT_EMAIL}`}>Support</a>
