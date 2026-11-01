@@ -77,8 +77,9 @@ export async function renderTimelineFrames(
     const written = async () => (await readdir(dir)).filter((f) => /^f_\d{4}\.png$/.test(f)).sort();
     let { stderr } = await melt();
     let rendered = await written();
-    // melt can end cleanly with frames missing when the machine is short of memory or threads
-    // (a decoder or Qt fails to start, and the frame is dropped). That passes, so try once more.
+    // melt ending cleanly with frames missing was MLT's avformat consumer starting its thread
+    // before marking itself running (fixed in the image: tools/mlt/consumer-start-race.patch).
+    // Should anything else drop a frame that way, one more run costs little.
     if (rendered.length < frames.length) {
       for (const f of rendered) await rm(join(dir, f), { force: true });
       ({ stderr } = await melt());
@@ -92,7 +93,7 @@ export async function renderTimelineFrames(
         {
           hint: said
             ? 'Check the media and effects it names; render.frames of the same frames tries again'
-            : 'melt can drop frames when the server is short of memory or threads under load; render.frames of the same frames tries again',
+            : 'render.frames of the same frames tries again',
           detail: { stderr: stderr.trim().split('\n').slice(-6).join('\n') },
         },
       );

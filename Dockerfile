@@ -231,6 +231,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
  && curl -fsSL -o /models/wav2vec2-base-960h/vocab.json "https://huggingface.co/Xenova/wav2vec2-base-960h/resolve/$W2V_REVISION/vocab.json" \
  && echo "$W2V_VOCAB_SHA256  /models/wav2vec2-base-960h/vocab.json" | sha256sum -c -
 
+# MLT 7.30's avformat module, rebuilt from the same upstream release Debian ships with one fix
+# (tools/mlt/consumer-start-race.patch): its consumer started its thread before marking itself
+# running, so on a busy machine the thread could look first, end, and melt rendered no frames
+# (or never ended). Only libmltavformat.so is built and replaces Debian's; the rest of MLT stays
+# Debian's. The release tarball is pinned by SHA-256. Also the test-only thread-delay shim
+# (tools/mlt/thread-delay.c) that makes the race happen on demand.
+FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS mlt-avformat
+ARG MLT_VERSION=7.30.0
+ARG MLT_SHA256=c802a5fdc16324f6c69273d0bb9718d30c2f635422e171ee01c0e7745e0e793c
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential cmake pkg-config patch curl ca-certificates \
+      libavformat-dev libavcodec-dev libavfilter-dev libavdevice-dev libswscale-dev \
+      libswresample-dev libavutil-dev \
+ && curl -fsSL -o /mlt.tar.gz "https://github.com/mltframework/mlt/releases/download/v$MLT_VERSION/mlt-$MLT_VERSION.tar.gz" \
+ && echo "$MLT_SHA256  /mlt.tar.gz" | sha256sum -c - \
+ && mkdir /src && tar -xzf /mlt.tar.gz -C /src --strip-components=1
+COPY tools/mlt/consumer-start-race.patch tools/mlt/thread-delay.c /patches/
+RUN cd /src && patch -p1 < /patches/consumer-start-race.patch \
+ && off=$(grep -o '^option(MOD_[A-Z0-9_]*' CMakeLists.txt | sed 's/option(//; s/$/=OFF/; s/^/-D/' | tr '\n' ' ') \
+ && cmake -S /src -B /build -DCMAKE_BUILD_TYPE=Release -DCLANG_FORMAT=OFF -DBUILD_TESTING=OFF $off -DMOD_AVFORMAT=ON \
+ && cmake --build /build -j"$(nproc)" --target mltavformat \
+ && mkdir /out && cp "$(find /build -name libmltavformat.so)" /out/ \
+ && strip /out/libmltavformat.so \
+ && gcc -O2 -shared -fPIC -o /out/thread-delay.so /patches/thread-delay.c -ldl
+
 FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS base
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt tini fontconfig \
@@ -261,6 +286,10 @@ COPY --from=denoise-models /models/ /usr/share/cuttingfloor/models/
 COPY --from=speech-models /models/ /usr/share/cuttingfloor/models/
 COPY --from=sound-models /models/ /usr/share/cuttingfloor/models/
 COPY --from=picture-models /picture/ /usr/share/cuttingfloor/models/
+COPY --from=mlt-avformat /out/libmltavformat.so /tmp/libmltavformat.so
+RUN dest="$(dirname "$(find /usr/lib -path '*/mlt-7/libmltavformat.so' | head -1)")" \
+ && test -n "$dest" && mv /tmp/libmltavformat.so "$dest/libmltavformat.so" \
+ && melt -query consumers | grep -q avformat && melt -query producers | grep -q avformat
 # Chromium for the sandbox (create.motion, create.still), only ever started by the
 # motion-worker role through this wrapper, which keeps its sandbox on and its network off.
 COPY tools/motion/cf-chromium /usr/local/bin/cf-chromium
@@ -305,6 +334,7 @@ USER root
 RUN apt-get update && apt-get install -y --no-install-recommends espeak-ng \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=testmodels /opt/models /opt/models
+COPY --from=mlt-avformat /out/thread-delay.so /opt/models/thread-delay.so
 ENV CUTTINGFLOOR_MODELS=/opt/models
 
 # `docker build --target test .` runs lint, typecheck and every test, engine tests included.
