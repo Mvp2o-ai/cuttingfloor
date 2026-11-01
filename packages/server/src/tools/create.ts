@@ -68,11 +68,12 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
     tool: string,
     args: { name?: string | undefined; idempotency_key?: string | undefined },
     recipe: unknown,
+    /** The file, or the file and what went wrong making it (a page's problems). */
     make: (
       dir: string,
       progress: (f: number, m: string) => void,
       signal: AbortSignal,
-    ) => Promise<string>,
+    ) => Promise<string | { file: string; warnings: string[] }>,
     /** After import: anything else kept with the media (e.g. a voiceover's word timings). */
     finish?: (
       record: MediaRecord,
@@ -130,11 +131,13 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       async ({ signal, progress }) => {
         const say = (f: number, m: string) => progress(f, `${record.media_id}: ${m}`);
         const share = finish ? 0.6 : 0.85;
-        record.file = await make(
+        const made = await make(
           rt.media.dir(owner, record.media_id),
           (f, m) => say(share * f, m),
           signal,
         );
+        record.file = typeof made === 'string' ? made : made.file;
+        if (typeof made !== 'string' && made.warnings.length) record.warnings = made.warnings;
         let done = await rt.media.ingest(owner, record, (f, m) => say(share + 0.1 * f, m), signal);
         if (finish)
           done = await finish(done, (f, m) => say(share + 0.1 + (0.9 - share) * f, m), signal);
@@ -187,12 +190,18 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       dir,
       request.kind === 'still' ? 'source.png' : request.transparent ? 'source.mov' : 'source.mp4',
     );
-    await renderInSandbox(rt.config.motionUrl, request, dest, progress, signal);
-    return dest;
+    const { warnings } = await renderInSandbox(
+      rt.config.motionUrl,
+      request,
+      dest,
+      progress,
+      signal,
+    );
+    return { file: dest, warnings };
   };
 
   const sandboxNote = rt.config.motionUrl
-    ? "Runs in the sandbox: no network (inline everything, load libraries from lib/; assets are for imported files the page must show as they are, like the user's logo or a font), fixed memory and time limits. To match a reference you were shown, rebuild it in HTML/SVG; it does not need importing."
+    ? "Runs in the sandbox: no network (inline everything, load libraries from lib/; assets are for imported files the page must show as they are, like the user's logo or a font), fixed memory and time limits. To match a reference you were shown, rebuild it in HTML/SVG; it does not need importing. The result's warnings list what went wrong in the page: uncaught errors, console errors, files blocked or not found."
     : 'Needs the motion sandbox, which is not running on this server.';
 
   server.registerTool(

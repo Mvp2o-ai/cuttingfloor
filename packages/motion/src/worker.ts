@@ -160,7 +160,14 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
         }, KEEP_MS);
         timer.unref();
         outputs.set(id, { ...done, timer });
-        send({ done: { id, type: done.type, bytes: (await stat(done.file)).size } });
+        send({
+          done: {
+            id,
+            type: done.type,
+            bytes: (await stat(done.file)).size,
+            ...(done.warnings.length ? { warnings: done.warnings } : {}),
+          },
+        });
       } catch (error) {
         send({ error: errorBody(error) });
       }
@@ -172,7 +179,7 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
     request: MotionRequest,
     send: (e: MotionEvent) => void,
     signal: AbortSignal,
-  ): Promise<{ file: string; dir: string; type: string }> {
+  ): Promise<{ file: string; dir: string; type: string; warnings: string[] }> {
     const dir = await mkdtemp(join(scratch, 'cfm'));
     let keep = false;
     try {
@@ -188,15 +195,21 @@ export function startMotionWorker(options: MotionWorkerOptions): Promise<Server>
       for (const a of request.assets) {
         await writeFile(join(dir, 'assets', a.name), Buffer.from(a.data, 'base64'));
       }
-      // A network reference refuses the page here, before any browser starts.
-      checkPage(request.html);
+      // How the HTML parses comes first; a network reference refuses it here.
+      const parsed = checkPage(request.html);
       await writeFile(join(dir, 'index.html'), pageDocument(request.html, job.width, job.height));
       await writeFile(join(dir, 'job.json'), JSON.stringify(job));
-      const file = await runJob(dir, options.timeoutMs ?? motionTimeout(job), send, signal);
+      const { file, warnings } = await runJob(
+        dir,
+        options.timeoutMs ?? motionTimeout(job),
+        send,
+        signal,
+      );
       keep = true;
       return {
         file,
         dir,
+        warnings: [...parsed, ...warnings],
         type: file.endsWith('.png')
           ? 'image/png'
           : file.endsWith('.mov')
@@ -224,7 +237,7 @@ function runJob(
   timeoutMs: number,
   send: (e: MotionEvent) => void,
   signal: AbortSignal,
-): Promise<string> {
+): Promise<{ file: string; warnings: string[] }> {
   const marker = `CUTTINGFLOOR_MOTION_JOB=${randomBytes(8).toString('hex')}`;
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [JOB, dir], {
@@ -240,7 +253,7 @@ function runJob(
         [marker.split('=')[0] as string]: marker.split('=')[1],
       },
     });
-    let outcome: { done?: string; failed?: string; console?: string[] } = {};
+    let outcome: { done?: string; warnings?: string[]; failed?: string; console?: string[] } = {};
     let stderr = '';
     let pending = '';
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
@@ -306,7 +319,8 @@ function runJob(
         );
       }
       if (why === 'cancelled') return reject(new CfError('cancelled', 'Cancelled'));
-      if (code === 0 && outcome.done) return resolve(outcome.done);
+      if (code === 0 && outcome.done)
+        return resolve({ file: outcome.done, warnings: outcome.warnings ?? [] });
       // The sandbox, not the page, ran out: it could not start the browser or the encoder.
       if (
         /\b(ENOMEM|EAGAIN)\b|Cannot allocate memory|Resource temporarily unavailable/.test(

@@ -54,6 +54,8 @@ export interface MediaRecord {
     speech?: NonNullable<MediaInfo['speech']>;
     sounds?: NonNullable<MediaInfo['sounds']>;
   };
+  /** create.motion and create.still: what went wrong in the page as it rendered. */
+  warnings?: string[];
   error?: ToolError;
   created_at: string;
   updated_at: string;
@@ -688,6 +690,7 @@ export function mediaInfo(
     ...(analyses && Object.keys(analyses).length ? { analyses } : {}),
     ...(options.probe && p?.raw ? { probe: p.raw } : {}),
     ...Object.fromEntries(include.flatMap((k) => (a?.[k] ? [[k, a[k]]] : []))),
+    ...(record.warnings?.length ? { warnings: record.warnings } : {}),
     ...(record.error ? { error: record.error } : {}),
   };
 }

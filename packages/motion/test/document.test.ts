@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { clockScript } from '../src/clock.ts';
 import { assertOffline, checkPage, LIBRARIES, libraryPath, pageDocument } from '../src/index.ts';
+import { PageProblems } from '../src/render.ts';
 
 describe('pages', () => {
   it('refuses anything the browser would load from the network or the disk', () => {
@@ -101,6 +102,18 @@ describe('pages', () => {
       pageDocument(html, 10, 10);
       expect(performance.now() - started, html.slice(0, 20)).toBeLessThan(1000);
     }
+  });
+
+  it('lists each page problem once, with how often, up to a limit', () => {
+    const problems = new PageProblems();
+    for (let i = 0; i < 3; i++) problems.add('Uncaught Error: boom (index.html:5:15)');
+    for (let i = 0; i < 30; i++) problems.add(`Could not load assets/${i}.png: not found`);
+    problems.add('Could not load assets/0.png: not found');
+    const list = problems.list();
+    expect(list[0]).toBe('Uncaught Error: boom (index.html:5:15) (3 times)');
+    expect(list[1]).toBe('Could not load assets/0.png: not found (2 times)');
+    expect(list).toHaveLength(21);
+    expect(list.at(-1)).toBe('…and 11 more page problems not listed');
   });
 
   it('bundles open-source libraries that resolve', async () => {

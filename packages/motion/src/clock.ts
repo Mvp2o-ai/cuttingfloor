@@ -69,7 +69,9 @@ export function clockScript(seed: number): string {
       if (typeof fn === 'function') fn(...args);
       else (0, eval)(String(fn));
     } catch (e) {
-      console.error(e);
+      // Reported as uncaught, as the browser's own timers would, so the render lists it.
+      if (typeof window.reportError === 'function') window.reportError(e);
+      else console.error(e);
     }
   };
   const schedule = (fn, delay, args, repeat) => {

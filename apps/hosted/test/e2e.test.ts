@@ -3194,22 +3194,80 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     it.skipIf(!chromium)(
       'refuses network references and reports broken pages',
       async () => {
-        const remote = await call(client, 'create.motion', {
-          html: '<img src="https://example.com/logo.png">',
-          duration_seconds: 1,
-        });
-        // Checked in the worker, so it surfaces as the job's error.
-        const job = remote.isError
-          ? { error: remote.structured }
-          : await waitJob((remote.structured as { job_id: string }).job_id);
-        expect((job.error as { code: string }).code).toBe('bad_request');
+        for (const html of [
+          '<img src="https://example.com/logo.png">',
+          '<div style="width:10px;height:10px"></div><style>div { background: url(https://example.com/bg.png) }</style>',
+        ]) {
+          const remote = await call(client, 'create.motion', { html, duration_seconds: 1 });
+          // Checked in the worker, so it surfaces as the job's error.
+          const job = remote.isError
+            ? { error: remote.structured }
+            : await waitJob((remote.structured as { job_id: string }).job_id);
+          expect(job.error, html).toMatchObject({
+            code: 'bad_request',
+            message: expect.stringMatching(
+              /^The HTML loads https:\/\/example\.com\/.* from the network/,
+            ),
+            hint: expect.stringContaining('assets/<name>'),
+          });
+        }
 
+        // A URL in script text and a fetch() that never runs load nothing: it renders, cleanly.
+        const bundled = await made('create.still', {
+          html: `<p style="color:#fff">bundled</p><script>
+  console.warn('Docs: https://example.com/docs');
+  function load() { return fetch('https://example.com/data.json'); }
+</script>`,
+          width: 320,
+          height: 180,
+        });
+        expect(bundled.done.status).toBe('completed');
+        expect(bundled.done.result?.warnings).toBeUndefined();
+
+        // A page with problems still renders, and its warnings say what went wrong.
         const broken = await made('create.still', {
-          html: '<script>throw new Error("boom")</script><p>still renders</p>',
+          html: `<script>throw new Error("boom")</script><p>still renders
+<img src="assets/missing.png"><script>console.error("drawn wrong"); fetch("https://example.com/x").catch(() => {});</script>
+<script>let x = ;</script><div>`,
           width: 320,
           height: 180,
         });
         expect(broken.done.status).toBe('completed');
+        expect(broken.done.result?.warnings).toEqual(
+          expect.arrayContaining([
+            'Tags never closed by the end of the page: <div>',
+            expect.stringMatching(/^Uncaught Error: boom \(index\.html:1:/),
+            expect.stringMatching(/^Uncaught SyntaxError: /),
+            'Could not load assets/missing.png: not found',
+            expect.stringMatching(/^console\.error: drawn wrong/),
+            'Could not load https://example.com/x: blocked, the page has no network',
+          ]),
+        );
+        // The same recipe answers with the same warnings, kept with the media.
+        const media = await ok<{ warnings?: string[] }>(client, 'media.get', {
+          media_id: broken.done.result?.media_id,
+        });
+        expect(media.warnings).toEqual(broken.done.result?.warnings);
+
+        // A motion graphic reports errors thrown while it plays, each once with how often.
+        const motion = await create('create.motion', {
+          html: `<script>
+  let frames = 0;
+  requestAnimationFrame(function draw() {
+    frames += 1;
+    requestAnimationFrame(draw);
+    if (frames > 5) throw new Error('frame ' + (frames > 8 ? 'late' : 'early'));
+  });
+</script>`,
+          duration_seconds: 1,
+          width: 320,
+          height: 180,
+          fps: 10,
+        });
+        expect(motion.warnings).toEqual([
+          expect.stringMatching(/^Uncaught Error: frame early \(index\.html:6:.*\) \(3 times\)$/),
+          expect.stringMatching(/^Uncaught Error: frame late \(index\.html:6:.*\) \(\d+ times\)$/),
+        ]);
 
         const video = await call(client, 'create.still', {
           html: '<img src="assets/v.mp4">',
