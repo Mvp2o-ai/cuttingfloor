@@ -1,6 +1,7 @@
 import { createWriteStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { jobAlive } from '@cuttingfloor/jobs';
 import { CfError, type MotionEvent, type MotionRequest, serverBusy } from '@cuttingfloor/schema';
 
 // The main server's side of the motion sandbox: send a render to the worker, follow its progress,
@@ -47,6 +48,8 @@ export async function renderInSandbox(
   const decoder = new TextDecoder();
   try {
     for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+      // The sandbox writes a line at least every few seconds, queued or rendering: it is alive.
+      jobAlive();
       pending += decoder.decode(chunk, { stream: true });
       const lines = pending.split('\n');
       pending = lines.pop() ?? '';

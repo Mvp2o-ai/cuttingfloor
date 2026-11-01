@@ -34,6 +34,15 @@ export interface RuntimeConfig {
   /** Cut-outs at once, apart from maxJobs. */
   heavyJobs?: number;
   /**
+   * The least time a running job may go without any progress before it is ended as stalled and
+   * its slot freed; jobs over long media get more. Default 300.
+   */
+  stallSeconds?: number;
+  /** Job slots, beyond maxJobs, that only short jobs take. Default 1. */
+  shortJobs?: number;
+  /** Jobs reading at most this many seconds of media count as short. Default 60. */
+  shortJobSeconds?: number;
+  /**
    * Renders (melt, encodes, transcription) that may run at once, jobs and inline previews
    * together; the rest wait their turn. Default: half the CPUs, at least 2.
    */
@@ -88,6 +97,13 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
       env.CUTTINGFLOOR_MAX_JOBS ?? Math.max(1, Math.floor(availableParallelism() / 4)),
     ),
     ...(env.CUTTINGFLOOR_HEAVY_JOBS ? { heavyJobs: Number(env.CUTTINGFLOOR_HEAVY_JOBS) } : {}),
+    ...(env.CUTTINGFLOOR_STALL_SECONDS
+      ? { stallSeconds: Number(env.CUTTINGFLOOR_STALL_SECONDS) }
+      : {}),
+    ...(env.CUTTINGFLOOR_SHORT_JOBS ? { shortJobs: Number(env.CUTTINGFLOOR_SHORT_JOBS) } : {}),
+    ...(env.CUTTINGFLOOR_SHORT_JOB_SECONDS
+      ? { shortJobSeconds: Number(env.CUTTINGFLOOR_SHORT_JOB_SECONDS) }
+      : {}),
     ...(env.CUTTINGFLOOR_MAX_RENDERS ? { maxRenders: Number(env.CUTTINGFLOOR_MAX_RENDERS) } : {}),
     outputUrlTtlMs: Number(env.CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS ?? 24) * 3_600_000,
     maxDownloadBytes: Number(env.CUTTINGFLOOR_MAX_DOWNLOAD_BYTES ?? 10 * 1024 ** 3),
@@ -143,6 +159,9 @@ export class Runtime {
     this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs, {
       ...(config.node ? { node: config.node } : {}),
       ...(config.heavyJobs ? { heavy: config.heavyJobs } : {}),
+      ...(config.stallSeconds ? { stallMs: config.stallSeconds * 1000 } : {}),
+      ...(config.shortJobs !== undefined ? { shortSlots: config.shortJobs } : {}),
+      ...(config.shortJobSeconds !== undefined ? { shortSeconds: config.shortJobSeconds } : {}),
       onEnd: (job) =>
         void meterJob(this.ws, job).then(
           (entry) => {
@@ -154,11 +173,17 @@ export class Runtime {
       around: (ctx, work) =>
         watchRenderQueue(
           {
-            queued: (ahead) =>
+            // Waiting for a render slot is not a stall.
+            queued: (ahead) => {
+              ctx.waiting(true);
               ctx.status(
                 `waiting for a render slot: ${ahead === 0 ? 'next in line' : `${ahead} ahead`} (${renderLoad().limit} renders run at once on this server)`,
-              ),
-            started: () => ctx.status('rendering'),
+              );
+            },
+            started: () => {
+              ctx.waiting(false);
+              ctx.status('rendering');
+            },
           },
           work,
         ),

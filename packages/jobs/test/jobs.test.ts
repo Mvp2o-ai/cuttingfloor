@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { Workspace } from '@cuttingfloor/core';
 import { FileJobStore, JobRunner } from '@cuttingfloor/jobs';
 import { CfError } from '@cuttingfloor/schema';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 async function setup(concurrency = 1) {
   const store = new FileJobStore(new Workspace(await mkdtemp(join(tmpdir(), 'cf-jobs-'))));
@@ -228,6 +228,138 @@ describe('JobRunner', () => {
     await new JobRunner(store, 1, { node: 'other' }).cancel(job.id, 'o');
     await runner.settled(job.id);
     expect((await store.get(job.id, 'o'))?.status).toBe('cancelled');
+  });
+
+  it('ends a stalled job with a typed error and gives its slot to the next', async () => {
+    const { store } = await setup();
+    const runner = new JobRunner(store, 1, { stallMs: 150, shortSlots: 0, cancelGraceMs: 100 });
+    const stuck = await store.create({ owner: 'o', tool: 'create.cutout' });
+    // Work that reports once, then neither moves nor listens to its signal.
+    runner.start(stuck, ({ progress }) => {
+      progress(0.004, 'matting');
+      return new Promise<never>(() => undefined);
+    });
+    const next = await store.create({ owner: 'o', tool: 't' });
+    runner.start(next, async () => ({ content: [], structuredContent: { ok: true } }));
+    for (let i = 0; i < 300 && (await store.get(next.id, 'o'))?.status === 'working'; i++)
+      await new Promise((r) => setTimeout(r, 20));
+    expect(await store.get(next.id, 'o')).toMatchObject({ status: 'completed' });
+    const ended = await store.get(stuck.id, 'o');
+    expect(ended?.statusMessage).toMatch(
+      /^stalled: no progress for .* \(stuck at 0\.4%, matting\)/,
+    );
+    expect(ended?.result).toMatchObject({
+      isError: true,
+      structuredContent: {
+        code: 'stalled',
+        detail: { progress: 0.004, status_message: 'matting', retry: true },
+      },
+    });
+  });
+
+  it('keeps a job that reports heartbeats or waits for a render slot', async () => {
+    const { store } = await setup();
+    const runner = new JobRunner(store, 1, { stallMs: 100 });
+    const job = await store.create({ owner: 'o', tool: 't' });
+    runner.start(job, async ({ alive, waiting }) => {
+      for (let i = 0; i < 6; i++) {
+        await new Promise((r) => setTimeout(r, 40));
+        alive();
+      }
+      waiting(true);
+      await new Promise((r) => setTimeout(r, 300));
+      waiting(false);
+      return { content: [], structuredContent: { ok: true } };
+    });
+    await runner.settled(job.id);
+    expect(await store.get(job.id, 'o')).toMatchObject({ status: 'completed' });
+  });
+
+  it('cancels within seconds even when the work ignores its signal', async () => {
+    const { store } = await setup();
+    const runner = new JobRunner(store, 1, { cancelGraceMs: 100 });
+    const job = await store.create({ owner: 'o', tool: 't' });
+    runner.start(job, () => new Promise<never>(() => undefined));
+    await new Promise((r) => setTimeout(r, 50));
+    const at = Date.now();
+    expect((await runner.cancel(job.id, 'o'))?.status).toBe('cancelled');
+    expect(Date.now() - at).toBeLessThan(2000);
+    // Its slot is free.
+    const next = await store.create({ owner: 'o', tool: 't' });
+    runner.start(next, async () => ({ content: [] }));
+    await runner.settled(next.id);
+    expect((await store.get(next.id, 'o'))?.status).toBe('completed');
+  });
+
+  it('keeps a slot for short jobs, so they never wait behind long running ones', async () => {
+    const { store } = await setup();
+    const runner = new JobRunner(store, 1, { shortSlots: 1, shortSeconds: 60 });
+    const long = await store.create({ owner: 'o', tool: 'media.analyze' });
+    runner.start(long, forever, { work: 3600 });
+    const longer = await store.create({ owner: 'o', tool: 'media.analyze' });
+    runner.start(longer, forever, { work: 1200 });
+    // A short transcript runs at once in the kept slot; the long one behind still waits.
+    const short = await store.create({ owner: 'o', tool: 'media.analyze' });
+    runner.start(short, async () => ({ content: [], structuredContent: { ok: true } }), {
+      work: 8,
+    });
+    await runner.settled(short.id);
+    expect((await store.get(short.id, 'o'))?.status).toBe('completed');
+    expect(runner.queuePosition(longer.id)).toMatchObject({ ahead: 0 });
+    // The kept slot takes only short jobs: with it busy, the next short one waits its turn.
+    const busy = await store.create({ owner: 'o', tool: 't' });
+    runner.start(busy, forever, { work: 5 });
+    const waiting = await store.create({ owner: 'o', tool: 't' });
+    runner.start(waiting, forever, { work: 5 });
+    expect(await messageOf(store, waiting.id, /kept for short jobs/)).toMatch(
+      /^queued: 1 ahead, waiting for a free job slot \(1 run at once on this server, plus 1 kept for short jobs like this one; running now: /,
+    );
+    for (const j of [waiting, busy, longer, long]) await runner.cancel(j.id, 'o');
+  });
+
+  it('estimates only from progress that has moved steadily', async () => {
+    const { store } = await setup();
+    const runner = new JobRunner(store, 1, { shortSlots: 0 });
+    const job = await store.create({ owner: 'o', tool: 'export.video' });
+    let report: (f: number) => void = () => undefined;
+    runner.start(job, ({ progress, signal }) => {
+      report = (f) => progress(f, `rendering ${Math.round(f * 100)}%`);
+      return new Promise((_, reject) =>
+        signal.addEventListener('abort', () => reject(new Error())),
+      );
+    });
+    const queued = await store.create({ owner: 'o', tool: 't' });
+    runner.start(queued, forever);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(runner.estimate(job.id)).toBeUndefined();
+    expect(runner.estimate(queued.id)).toBeUndefined();
+    // 10% every 5 s, seen over 10 s (the clock moved by hand).
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now');
+    for (const [s, f] of [
+      [0, 0.1],
+      [5, 0.2],
+      [10, 0.3],
+    ] as const) {
+      clock.mockReturnValue(now + s * 1000);
+      report(f);
+    }
+    expect(runner.estimate(job.id)).toEqual({ secondsLeft: 35 });
+    expect(runner.estimate(queued.id)).toEqual({ startsIn: 35 });
+    clock.mockRestore();
+    await runner.cancel(queued.id, 'o');
+    await runner.cancel(job.id, 'o');
+  });
+
+  it('runs work waiting on another service apart from engine work', async () => {
+    const { store, runner } = await setup(1);
+    const lipsync = await store.create({ owner: 'o', tool: 'create.lipsync' });
+    runner.start(lipsync, forever, { lane: 'remote' });
+    const exp = await store.create({ owner: 'o', tool: 'export.video' });
+    runner.start(exp, async () => ({ content: [], structuredContent: { ok: true } }));
+    await runner.settled(exp.id);
+    expect(await store.get(exp.id, 'o')).toMatchObject({ status: 'completed' });
+    await runner.cancel(lipsync.id, 'o');
   });
 
   it('writes one file from many writers at once without losing a write', async () => {

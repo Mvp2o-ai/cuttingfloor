@@ -27,7 +27,7 @@ import {
   trackRegion,
   transcribe,
 } from '@cuttingfloor/engine';
-import type { Job, JobContext } from '@cuttingfloor/jobs';
+import { inlineJobContext, type Job, type JobContext } from '@cuttingfloor/jobs';
 import {
   CfError,
   CORRELATE_LIMITS,
@@ -894,6 +894,12 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           hint: 'Lower finds subtler cuts, e.g. {threshold: 10}',
         });
       }
+      // The media it reads: the range asked for, or all of it.
+      const whole = p?.kind === 'image' ? 0 : (p?.duration ?? undefined);
+      const span =
+        whole === undefined
+          ? undefined
+          : Math.max(0, Math.min(args.until_seconds ?? whole, whole) - (args.from_seconds ?? 0));
       const admit = await admitJob(deps.limits);
       const job = await store.create({
         owner,
@@ -1147,7 +1153,12 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
             }
           }
         },
-        admit,
+        {
+          ...admit,
+          // look waits on judgment calls, not this server's CPU (its frames take render slots).
+          ...(args.kind === 'look' ? { lane: 'remote' as const } : {}),
+          ...(span !== undefined ? { work: span } : {}),
+        },
       );
       return jobReply(job, ctx);
     }),
@@ -1227,16 +1238,22 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         const signal =
           (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal ??
           new AbortController().signal;
-        return work({ signal, progress: () => undefined, status: () => undefined });
+        return work(inlineJobContext(signal));
       }
       const admit = await admitJob(deps.limits);
       const job = await store.create({
         owner,
         tool: 'media.correlate',
+        meta: {
+          ...(args.a.timeline_id || args.b.timeline_id
+            ? { timeline_id: (args.a.timeline_id ?? args.b.timeline_id) as string }
+            : {}),
+          inputs: [args.a.media_id, args.b.media_id].filter(Boolean).join(','),
+        },
         statusMessage: 'starting',
         ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),
       });
-      rt.jobs.start(job, work as never, admit);
+      rt.jobs.start(job, work as never, { ...admit, work: longest });
       return jobReply(job, ctx);
     }),
   );

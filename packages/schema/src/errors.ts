@@ -11,6 +11,7 @@ export const ErrorCode = z.enum([
   'engine_error',
   'render_failed',
   'interrupted',
+  'stalled',
   'cancelled',
   'credential_required',
   'credential_invalid',

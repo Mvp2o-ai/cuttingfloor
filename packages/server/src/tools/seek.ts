@@ -280,7 +280,8 @@ export function registerSeekTools(server: McpServer, deps: ServerDeps): void {
             })),
           }) as never;
         },
-        admit,
+        // Judgment calls do the waiting; its frames take render slots like any render.
+        { ...admit, lane: 'remote', work: duration },
       );
       return jobReply(job, ctx);
     }),

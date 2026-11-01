@@ -15,7 +15,7 @@ import {
   renderSource,
   resolvePreset,
 } from '@cuttingfloor/engine';
-import type { Job, JobContext } from '@cuttingfloor/jobs';
+import { inlineJobContext, type Job, type JobContext } from '@cuttingfloor/jobs';
 import {
   CfError,
   ExportResult,
@@ -281,7 +281,13 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
             },
           ]) as never;
         },
-        admit,
+        {
+          ...admit,
+          work:
+            ((args.range ? args.range.end - args.range.start : lengthFrames(doc)) *
+              doc.sequence.fps.den) /
+            doc.sequence.fps.num,
+        },
       );
       return jobReply(job, ctx);
     }),
@@ -350,15 +356,16 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         const signal =
           (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal ??
           new AbortController().signal;
-        return run({ signal, progress: () => undefined, status: () => undefined });
+        return run(inlineJobContext(signal));
       }
       const admit = await admitJob(deps.limits);
       const job = await rt.jobs.store.create({
         owner,
         tool: 'qa.check',
+        meta: { timeline_id: args.timeline_id },
         statusMessage: 'starting',
       });
-      rt.jobs.start(job, run as never, admit);
+      rt.jobs.start(job, run as never, { ...admit, work: seconds });
       return jobReply(job, ctx);
     }),
   );
@@ -433,7 +440,8 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     'job.cancel',
     {
       title: 'Cancel job',
-      description: 'Stop a running job. Finished jobs are left as they are.',
+      description:
+        'Stop a job, queued or running, within seconds: its engines are killed and its slot goes to the next job. Finished jobs are left as they are.',
       inputSchema: JobRef,
       outputSchema: JobView,
       annotations: {
