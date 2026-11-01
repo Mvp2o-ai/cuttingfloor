@@ -93,6 +93,48 @@ describe('the virtual clock', () => {
     expect(win.Date.now()).toBe(1767225600000 + 700);
   });
 
+  it('seeds crypto.getRandomValues and randomUUID like Math.random', () => {
+    const draw = (seed: number) => {
+      const win: Record<string, unknown> = {
+        setTimeout,
+        crypto: {
+          getRandomValues: (a: Uint8Array) => globalThis.crypto.getRandomValues(a),
+          randomUUID: () => globalThis.crypto.randomUUID(),
+        },
+        document: { getAnimations: () => [], querySelectorAll: () => [] },
+      };
+      new Function('window', 'performance', 'document', 'Date', clockScript(seed))(
+        win,
+        { now: () => 0 },
+        win.document,
+        Date,
+      );
+      const crypto = win.crypto as typeof globalThis.crypto;
+      return {
+        bytes: [...crypto.getRandomValues(new Uint8Array(7))],
+        words: [...crypto.getRandomValues(new Uint32Array(2))],
+        uuid: crypto.randomUUID(),
+      };
+    };
+    const once = draw(7);
+    expect(draw(7)).toEqual(once);
+    expect(draw(8)).not.toEqual(once);
+    expect(once.uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    // The real checks still apply: 64 KB at most.
+    const win = {
+      crypto: { getRandomValues: (a: Uint8Array) => globalThis.crypto.getRandomValues(a) },
+    };
+    new Function('window', 'performance', 'document', 'Date', clockScript(1))(
+      { ...win, setTimeout },
+      { now: () => 0 },
+      {},
+      Date,
+    );
+    expect(() => win.crypto.getRandomValues(new Uint8Array(70_000))).toThrow();
+  });
+
   it('seeks Web Animations to their age on the clock', async () => {
     const anim = {
       playState: 'running',

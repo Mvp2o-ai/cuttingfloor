@@ -49,7 +49,7 @@ import { SYNC_URL, syncKeyRequired, syncLipsync } from '../sync.ts';
 // returns the same media while it lives. HTML runs only in the motion sandbox.
 
 /** Bumped when the output of a recipe would change, so old cached results aren't reused. */
-const RECIPE_VERSION = 'frames-1';
+const RECIPE_VERSION = 'frames-2';
 
 const annotations = (title: string) => ({
   title,
