@@ -1,6 +1,8 @@
 import {
   type Animatable,
   CfError,
+  EASES,
+  type Ease,
   type EditArgsOf,
   type EditTool,
   EFFECTS,
@@ -2318,6 +2320,12 @@ function storedPoints(p: NonNullable<ToolPoints>, clip: StoredClip, tpf: number)
       hint: 'Give each keyframe its own frame',
     });
   }
+  const unknown = p.keyframes.find((k) => k.ease && !(EASES as readonly string[]).includes(k.ease));
+  if (unknown) {
+    throw new CfError('bad_request', `points: unknown ease ${unknown.ease}`, {
+      hint: `Use one of ${EASES.join(', ')}`,
+    });
+  }
   const count = p.keyframes[0]?.points.length ?? 0;
   if (p.keyframes.some((k) => k.points.length !== count)) {
     throw new CfError('bad_request', 'points: every keyframe needs the same number of corners', {
@@ -2330,7 +2338,7 @@ function storedPoints(p: NonNullable<ToolPoints>, clip: StoredClip, tpf: number)
     keyframes: sorted.map((k) => ({
       t: clip.in + k.frame * tpf,
       points: k.points,
-      ...(k.ease && k.ease !== 'linear' ? { ease: k.ease } : {}),
+      ...(k.ease && k.ease !== 'linear' ? { ease: k.ease as Ease } : {}),
     })),
   };
 }
