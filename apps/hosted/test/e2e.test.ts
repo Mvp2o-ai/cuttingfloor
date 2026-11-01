@@ -3948,11 +3948,12 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       const tl = await measure({
         timeline_id,
         kind: 'voice',
-        from_seconds: 2.5,
+        from_seconds: 2.4,
         until_seconds: 4.5,
       });
       const frames = (tl.voice as typeof voice).frames;
-      expect(frames[0]?.time).toBeCloseTo(2.5, 2);
+      // 2.4 s is frame 60 at 25 fps; a range starts on the frame it falls in.
+      expect(frames[0]?.time).toBeCloseTo(2.4, 2);
       const at = (t: number) => frames.find((f) => Math.abs(f.time - t) < 0.051)?.pitch_hz;
       expect(at(2.7)).toBeCloseTo(220, -1);
       expect(at(4.2)).toBeCloseTo(330, -1);
@@ -4043,12 +4044,12 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       const tlSeries = await measure({
         timeline_id,
         kind: 'picture',
-        from_seconds: 2.5,
+        from_seconds: 2.4,
         until_seconds: 3.5,
       });
       const tc = (tlSeries.picture as { columns: Record<string, number[]> }).columns;
       const peak = tc.yavg?.indexOf(Math.max(...(tc.yavg ?? []))) as number;
-      expect(tc.time?.[0]).toBeCloseTo(2.5, 2);
+      expect(tc.time?.[0]).toBeCloseTo(2.4, 2);
       expect(tc.time?.[peak]).toBeCloseTo(3, 2);
     }, 600_000);
 

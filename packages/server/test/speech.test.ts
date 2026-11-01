@@ -404,8 +404,9 @@ describe.skipIf(!ready)('speech and sound facts', () => {
     });
     expect(past.structured.code).toBe('no_audio');
     expect(String(past.structured.message)).toContain(`timeline ${tl}`);
-    const picture = await call(client, 'media.analyze', { timeline_id: tl, kind: 'faces' });
-    expect(picture.structured.code).toBe('bad_request');
+    // Words read imported media only; an edit's picture and mix take the other kinds.
+    const words = await call(client, 'media.analyze', { timeline_id: tl, kind: 'transcript' });
+    expect(words.structured.code).toBe('bad_request');
 
     const qa = await job('qa.check', { timeline_id: tl, speech: { min_probability: 0.5 } });
     expect(qa.isError).toBe(false);
