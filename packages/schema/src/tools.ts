@@ -639,6 +639,17 @@ export const MediaSource = z.union([
       'A completed export.video: its rendered file becomes media, e.g. to re-edit a finished cut or place it in a sequence of another shape',
     ),
   }),
+  z.object({
+    still: z
+      .object({
+        media_id: MediaId.optional().describe('A video, frame numbered at its own rate'),
+        timeline_id: TimelineId.optional().describe('An edit, timeline frame, as it renders'),
+        frame,
+      })
+      .describe(
+        'One frame of a video or of an edit as a still image (PNG at full size: the media size, or the sequence size; see-through parts of the media stay so): to place, cut out or reuse',
+      ),
+  }),
 ]);
 
 /** A file the client attached (ChatGPT passes these for fields named in openai/fileParams). */
@@ -1085,9 +1096,9 @@ export type MediaPage = z.infer<typeof MediaPage>;
 export const MediaOrigin = z
   .object({
     from: z
-      .enum(['upload', 'url', 'path', 'render', 'created'])
+      .enum(['upload', 'url', 'path', 'render', 'created', 'still'])
       .describe(
-        'upload: a file the user sent; url: downloaded; path: a media root; render: an export.video; created: a create.* tool',
+        'upload: a file the user sent; url: downloaded; path: a media root; render: an export.video; created: a create.* tool; still: a frame of a video or an edit',
       ),
     url: z
       .string()
@@ -1107,7 +1118,11 @@ export const MediaOrigin = z
         'upload: sent through a media.upload link, dropped on the account page, or a data: URI',
       ),
     job_id: JobId.optional().describe('render: the export.video job; created: the create.* job'),
-    timeline_id: TimelineId.optional().describe('render: the timeline that was exported'),
+    timeline_id: TimelineId.optional().describe(
+      'render: the timeline that was exported; still: the edit the frame is from',
+    ),
+    media_id: MediaId.optional().describe('still: the video the frame is from'),
+    frame: z.number().optional().describe('still: the frame'),
     preset: z.string().optional().describe('render: the export preset'),
     range: z
       .object({ start: z.number(), end: z.number() })
