@@ -162,7 +162,7 @@ export function registerListenTools(server: McpServer, deps: ServerDeps): void {
         until_seconds: args.until_seconds,
       };
       // Fails with no_audio, naming the source, before any job exists.
-      const { plan } = await checkSound(rt, owner, ref);
+      const { plan, seconds } = await checkSound(rt, owner, ref);
       // peak_seconds as a frame for render.frames: a video's own frames, or the timeline's.
       let fps: { num: number; den: number } | undefined;
       if (plan.kind === 'timeline') fps = plan.doc.sequence.fps;
@@ -226,7 +226,7 @@ export function registerListenTools(server: McpServer, deps: ServerDeps): void {
             note: LISTEN_NOTE,
           }) as never;
         },
-        admit,
+        { ...admit, work: seconds },
       );
       return jobReply(job, ctx);
     }),

@@ -85,10 +85,15 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       progress: (f: number, m: string) => void,
       signal: AbortSignal,
     ) => Promise<MediaRecord>,
-    /** sandbox: the work is the sandbox's, which queues it there. heavy: a long model run. */
+    /**
+     * The resource its work holds. sandbox: the sandbox's, which queues it there. heavy: a long
+     * model run. remote: waiting on a provider.
+     */
     lane: JobLane = 'engine',
     /** The media it is made from, for its origin. */
     from: string[] = [],
+    /** Seconds of media it reads, when known (short work, and its stall limit). */
+    work?: number,
   ) {
     const owner = deps.owner();
     const store = rt.jobs.store;
@@ -149,7 +154,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         await rt.media.rememberRecipe(owner, hash, done.media_id);
         return ok(mediaInfo(done)) as never;
       },
-      { lane, ...admit },
+      { lane, ...admit, ...(work ? { work } : {}) },
     );
     return jobReply(job, ctx);
   }
@@ -439,6 +444,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         undefined,
         'heavy',
         [source.media_id],
+        p.duration ?? undefined,
       );
     }),
   );
@@ -494,7 +500,10 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
           return dest;
         },
         undefined,
-        'heavy',
+        // vid.stab is FFmpeg on the CPU, through the render slots: engine work, not a model.
+        'engine',
+        [source.media_id],
+        p.duration ?? undefined,
       );
     }),
   );
@@ -720,7 +729,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
           }
           return reply(done);
         },
-        { lane: 'heavy', ...admit },
+        { lane: 'heavy', ...admit, ...(p.duration ? { work: p.duration } : {}) },
       );
       return jobReply(job, ctx);
     }),
@@ -833,6 +842,10 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
           await Promise.all([rm(picture, { force: true }), rm(speech, { force: true })]);
           return dest;
         },
+        undefined,
+        // Minutes at the provider; only the excerpts are made here.
+        'remote',
+        [video.record.media_id, audio.record.media_id],
       );
     }),
   );

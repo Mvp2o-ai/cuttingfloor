@@ -80,7 +80,10 @@ Provider keys hosted come from the client, never from the server's environment: 
 |---|---|---|
 | `CUTTINGFLOOR_DATA` | `/data` | Data root |
 | `CUTTINGFLOOR_MAX_JOBS` | cores ÷ 4 | Concurrent imports, exports and QA runs (sandbox jobs queue in the sandbox instead) |
-| `CUTTINGFLOOR_HEAVY_JOBS` | 1 | Concurrent `create.cutout` runs, in their own slots apart from the jobs above |
+| `CUTTINGFLOOR_HEAVY_JOBS` | 1 | Concurrent `create.cutout` and `create.stems` runs, in their own slots apart from the jobs above |
+| `CUTTINGFLOOR_SHORT_JOBS` | 1 | Extra job slots only short jobs take (an analysis, check or export of at most `CUTTINGFLOOR_SHORT_JOB_SECONDS` of media), so they never wait behind long running ones |
+| `CUTTINGFLOOR_SHORT_JOB_SECONDS` | 60 | How much media a job may read and still count as short |
+| `CUTTINGFLOOR_STALL_SECONDS` | 300 | A running job whose progress hasn't moved for this long (or a quarter of a second per second of media it reads, if longer) is ended with a `stalled` error and its slot freed |
 | `CUTTINGFLOOR_MAX_RENDERS` | cores ÷ 2, at least 2 | Renders (melt, encodes, transcription) at once, jobs and inline previews together; the rest wait their turn |
 | `CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS` | `24` | Signed download link lifetime |
 | `CUTTINGFLOOR_MAX_DOWNLOAD_BYTES` | 10 GiB | Size cap for URL imports and uploads |
