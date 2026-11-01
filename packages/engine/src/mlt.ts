@@ -75,9 +75,9 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
     `<profile width="${width}" height="${height}" frame_rate_num="${fps.num}" frame_rate_den="${fps.den}" progressive="1" sample_aspect_num="1" sample_aspect_den="1" display_aspect_num="${width / g}" display_aspect_den="${height / g}" colorspace="709"/>`,
   );
 
-  // One producer per media item and stream at each level of nesting. Levels don't share one:
-  // MLT keeps a producer's last scaled image, so a picture fitted one way inside a nested
-  // timeline leaked into the same media fitted another way outside it.
+  // One producer per media item and stream in each tractor. Tractors don't share one: MLT
+  // keeps a producer's last scaled image, so a picture fitted one way inside a nested timeline
+  // leaked into the same media fitted another way outside it.
   const nested = doc.nested ?? {};
   // What a media clip plays: its cleaned sound when a source pass made one. Picture-only
   // renders (frames) may go without it and play the media itself.
@@ -88,58 +88,76 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
     throw new CfError('media_offline', `The cleaned sound of clip ${c.id} was not prepared`);
   };
   const producerName = (key: string) => key.replace(/[^\w-]/g, '_');
-  const bodies: NestedDoc[] = [doc, ...Object.values(nested)];
-  const level = new Map<NestedDoc, string>(bodies.map((b, i) => [b, i ? `l${i}_` : '']));
-  const used = new Map<string, { mediaId: string; kind: 'video' | 'audio' }>();
-  for (const body of bodies)
-    for (const t of body.tracks)
-      for (const c of t.clips) {
-        if (!c.enabled || c.type !== 'media') continue;
-        const key = playedKey(c);
-        used.set(`${level.get(body)}${producerName(key)}_${c.kind[0]}`, {
-          mediaId: key,
-          kind: c.kind,
-        });
-      }
-  for (const [id, { mediaId, kind }] of used) {
+  const producers: string[] = [];
+  const made = new Set<string>();
+  /** The producer that plays a media clip's stream inside the tractor with this prefix. */
+  const producerFor = (prefix: string, c: StoredClip & { type: 'media' }): string => {
+    const mediaId = playedKey(c);
+    const id = `${prefix}${producerName(mediaId)}_${c.kind[0]}`;
+    if (made.has(id)) return id;
+    made.add(id);
     const src = options.sources.get(mediaId);
     if (!src) throw new CfError('media_offline', `Media ${mediaId} is not available for rendering`);
     if (src.image) {
-      x.push(
+      producers.push(
         `<producer id="${id}" in="0" out="${15_000_000 - 1}"><property name="mlt_service">pixbuf</property><property name="resource">${esc(src.path)}</property><property name="length">15000000</property><property name="ttl">1</property></producer>`,
       );
     } else {
-      const only = kind === 'video' ? 'audio_index' : 'video_index';
-      x.push(
+      const only = c.kind === 'video' ? 'audio_index' : 'video_index';
+      producers.push(
         `<producer id="${id}"><property name="mlt_service">avformat</property><property name="resource">${esc(src.path)}</property><property name="${only}">-1</property><property name="seekable">1</property></producer>`,
       );
     }
-  }
-
-  // Nested timelines first, each after anything it nests itself.
-  const tractors = new Map<string, string>();
-  const visit = (key: string) => {
-    if (tractors.has(key)) return;
-    const body = nested[key];
-    if (!body)
-      throw new CfError('bad_request', `Nested timeline ${key} is missing from the document`);
-    for (const t of body.tracks)
-      for (const c of t.clips) if (c.type === 'timeline') visit(c.timeline);
-    const id = `n${tractors.size + 1}_main`;
-    tractors.set(key, id);
-    const length = Math.max(1, frame(timelineEnd(body)));
-    x.push(...tractor(body, `n${tractors.size}_`, id, { length, clear: true }));
+    return id;
   };
-  for (const t of doc.tracks) for (const c of t.clips) if (c.type === 'timeline') visit(c.timeline);
+
+  // Nested timelines are tractors of their own, written before the tractor that plays them.
+  // A tractor that two tracks fetch for the same frame (a nested clip's picture and its linked
+  // sound, or two overlapping uses) renders wrong in MLT 7.30: the second fetch disturbs the
+  // first's compositing. So each use gets a tractor of its own kind (picture or sound only),
+  // shared only by uses of the same kind in the same parent that never overlap in time.
+  const compiled: string[] = [];
+  const pools = new Map<string, Array<{ id: string; spans: Array<[number, number]> }>>();
+  let tractorCount = 0;
+  const nestedTractor = (
+    parent: string,
+    c: StoredClip & { type: 'timeline' },
+    from: number,
+    to: number,
+  ): string => {
+    const poolKey = `${parent}|${c.timeline}|${c.kind}`;
+    const pool = pools.get(poolKey) ?? [];
+    pools.set(poolKey, pool);
+    let instance = pool.find((i) => i.spans.every(([a, b]) => to <= a || from >= b));
+    if (!instance) {
+      const inner = nested[c.timeline];
+      if (!inner)
+        throw new CfError(
+          'bad_request',
+          `Nested timeline ${c.timeline} is missing from the document`,
+        );
+      tractorCount += 1;
+      const id = `n${tractorCount}_main`;
+      const length = Math.max(1, frame(timelineEnd(inner)));
+      compiled.push(
+        ...tractor(inner, `n${tractorCount}_`, id, { length, clear: true, kind: c.kind }),
+      );
+      instance = { id, spans: [] };
+      pool.push(instance);
+    }
+    instance.spans.push([from, to]);
+    return instance.id;
+  };
 
   const length = Math.max(1, frame(timelineEnd(doc)));
-  x.push(
+  compiled.push(
     ...tractor(doc, '', 'main', {
       length,
       clear: false,
       ...(options.range ? { range: options.range } : {}),
     }),
   );
+  x.push(...producers, ...compiled);
   if (options.frames) {
     x.push(
       `<playlist id="frames">${options.frames.map((f) => `<entry producer="main" in="${f}" out="${f}"/>`).join('')}</playlist>`,
@@ -170,7 +188,13 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
     body: NestedDoc,
     prefix: string,
     id: string,
-    o: { length: number; clear: boolean; range?: { start: number; end: number } },
+    o: {
+      length: number;
+      clear: boolean;
+      range?: { start: number; end: number };
+      /** A nested use plays only its picture or only its sound: the other tracks are left out. */
+      kind?: 'video' | 'audio';
+    },
   ): string[] {
     const parts: string[] = [];
     const { length: len } = o;
@@ -186,6 +210,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
     const out = { width, height, pixel: width / doc.sequence.width };
     let index = 0;
     body.tracks.forEach((t, ti) => {
+      if (o.kind && t.kind !== o.kind) return;
       // Adjustment clips: everything below this track becomes one sub-tractor whose output
       // their effects filter over their own ranges; this track and those above composite on it.
       const zones = t.clips.filter(
@@ -312,9 +337,9 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
         } else {
           const producer =
             c.type === 'media'
-              ? `${level.get(body) ?? ''}${producerName(playedKey(c))}_${c.kind[0]}`
+              ? producerFor(prefix, c)
               : c.type === 'timeline'
-                ? (tractors.get(c.timeline) as string)
+                ? nestedTractor(prefix, c, from, from + length)
                 : '';
           // A still has no timeline of its own: any frame of it is the picture.
           const inF = media?.image ? 0 : frame(c.in) - cp.head;

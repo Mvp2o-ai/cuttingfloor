@@ -361,7 +361,7 @@ describe('MLT compiler', () => {
     expect(held).toContain('<property name="time_map">0=0.6</property>');
   });
 
-  it('compiles a nested timeline once, as a tractor over transparency', () => {
+  it('compiles a nested timeline as a tractor over transparency, one per kind of use', () => {
     const outer = runEdits(
       newTimeline('outer', seq, { video: 1, audio: 1 }),
       'tl_y',
@@ -380,15 +380,20 @@ describe('MLT compiler', () => {
       () => doc,
     ).doc;
     const xml = compile(outer);
-    expect(xml.match(/<tractor id="n1_main"/g)).toHaveLength(1);
+    // Two uses one after the other share the picture's tractor; the sound has its own, so no
+    // tractor is fetched twice for one frame.
+    expect(xml.match(/<tractor id="n\d+_main"/g)).toHaveLength(2);
     expect(xml).toContain(
       '<producer id="n1_base" in="0" out="34"><property name="mlt_service">color</property><property name="resource">0x00000000</property>',
     );
     expect(xml).toMatch(/<entry producer="n1_main" in="0" out="34">/);
     expect(xml.indexOf('id="n1_main"')).toBeLessThan(xml.indexOf('<tractor id="main"'));
-    // The nested level decodes its media with producers of its own, never the parent's.
-    expect(xml).toMatch(/<producer id="l1_m_[0-9a-z]+_v">/);
-    expect(xml).toMatch(/<entry producer="l1_m_[0-9a-z]+_v"/);
+    expect(xml).toMatch(/<entry producer="n2_main" in="0" out="34">/);
+    // Each nested tractor decodes its media with producers of its own, never the parent's.
+    expect(xml).toMatch(/<producer id="n1_m_[0-9a-z]+_v">/);
+    expect(xml).toMatch(/<entry producer="n1_m_[0-9a-z]+_v"/);
+    expect(xml).toMatch(/<producer id="n2_m_[0-9a-z]+_a">/);
+    expect(xml).not.toMatch(/<producer id="n1_m_[0-9a-z]+_a">/);
   });
 
   it('plays both clips of a transition on separate sub-tracks', () => {
