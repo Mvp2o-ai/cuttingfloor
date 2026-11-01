@@ -1,0 +1,82 @@
+import { SUPPORT_EMAIL } from '@cuttingfloor/plans';
+import {
+  IMAGE,
+  KEYS,
+  LICENCE,
+  LOCAL_ADDRESS,
+  NO_KEY,
+  REPO_URL,
+  SELF_HOST_STEPS,
+} from '../../content/facts.ts';
+import { KEPT, markWord, OPTIONS, PRICING_FAQS, RENDER_MINUTE, ROWS } from '../pricing.ts';
+import { SITE_URL } from '../seo.ts';
+
+// /pricing as Markdown, for agents and AI search, built from the same data as the page.
+export const dynamic = 'force-static';
+
+const cell = (s: string) => s.replace(/\|/g, '\\|');
+
+export function GET() {
+  const body = [
+    '# cuttingfloor pricing',
+    '',
+    `> Free to self-host: open source under ${LICENCE}, the same Docker image the hosted service runs, on your own machine with no render-minute limits. Hosted plans charge for render minutes; editing and previews are free. Prices in US dollars.`,
+    '',
+    `Page: ${SITE_URL}/pricing · JSON: ${SITE_URL}/pricing.json`,
+    '',
+    '## Plans',
+    '',
+    ...OPTIONS.map(
+      (o) =>
+        `- **${o.name}**: ${[o.price, o.per].filter(Boolean).join(' ')}${o.yearly ? ` (or $${o.yearly} a year)` : ''}. ${o.note} ${new URL(o.href, SITE_URL).toString()}`,
+    ),
+    '',
+    '## Included and not included',
+    '',
+    `| | ${OPTIONS.map((o) => o.name).join(' | ')} |`,
+    `|---|${OPTIONS.map(() => '---').join('|')}|`,
+    ...ROWS.map(
+      (r) =>
+        `| ${cell(r.label)} | ${OPTIONS.map((o) => {
+          const c = r.cells[o.id];
+          return cell(c.mark === 'value' ? c.text : `${markWord(c.mark)}: ${c.text}`);
+        }).join(' | ')} |`,
+    ),
+    '',
+    KEPT,
+    '',
+    '## What a render minute is',
+    '',
+    ...RENDER_MINUTE.map((l) => `- ${l}`),
+    '',
+    '## What needs your own key',
+    '',
+    '| Feature | Tools | Hosted | Self-hosted |',
+    '|---|---|---|---|',
+    ...KEYS.map(
+      (k) =>
+        `| ${cell(k.feature)} | ${k.tools.map((t) => `\`${t}\``).join(', ')} | ${cell(k.hosted)} | ${cell(k.selfHosted)} |`,
+    ),
+    '',
+    'No key needed, hosted or self-hosted (built into the image and run on the server):',
+    '',
+    ...NO_KEY.map((n) => `- ${n}`),
+    '',
+    '## Self-hosted · Free',
+    '',
+    `Open source under ${LICENCE}. One Docker image (${IMAGE}), the same image the hosted service runs. You run it on your own machine, with no render-minute limits, and bring your own keys for lip-sync and visual judgment.`,
+    '',
+    '```sh',
+    ...SELF_HOST_STEPS,
+    '```',
+    '',
+    `Your agent then connects to ${LOCAL_ADDRESS}. Setup: ${SITE_URL}/self-host · Source: ${REPO_URL}`,
+    '',
+    '## FAQ',
+    '',
+    ...PRICING_FAQS.flatMap((f) => [`### ${f.q}`, '', f.a, '']),
+    `Questions: ${SUPPORT_EMAIL}`,
+    '',
+  ].join('\n');
+  return new Response(body, { headers: { 'content-type': 'text/markdown; charset=utf-8' } });
+}
