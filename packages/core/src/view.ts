@@ -11,6 +11,7 @@ import {
   type StoredAnimatable,
   type StoredClip,
   type StoredEffect,
+  type StoredMaskShape,
   type StoredSpeed,
   TEXT_DEFAULTS,
   TextSpans,
@@ -31,6 +32,34 @@ import {
 } from './edit.ts';
 import { frameSource, span } from './speed.ts';
 import { framesToTicks, ticksPerFrame, ticksToFrames } from './time.ts';
+
+/** One shape of a mask in tool form. */
+function shapeView(m: StoredMaskShape, c: StoredClip, tpf: number): Record<string, unknown> {
+  const { shape, corner_radius, points, media_id } = m;
+  const v: Record<string, unknown> = { shape };
+  for (const k of MASK_NUMBERS) {
+    const value = m[k];
+    if (value !== undefined) v[k] = toViewAnim(value, c, tpf);
+  }
+  return {
+    ...v,
+    ...(corner_radius ? { corner_radius } : {}),
+    ...(points
+      ? {
+          points: Array.isArray(points)
+            ? points
+            : {
+                keyframes: points.keyframes.map((k) => ({
+                  frame: Math.round((k.t - c.in) / tpf),
+                  points: k.points,
+                  ...(k.ease ? { ease: k.ease } : {}),
+                })),
+              },
+        }
+      : {}),
+    ...(media_id ? { media_id } : {}),
+  };
+}
 
 /** A clip's speed, audio and compositing settings in tool form (frames from the clip start). */
 function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
@@ -86,32 +115,13 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
   }
   if (c.blend) out.blend = c.blend;
   if (c.mask) {
-    const { shape, feather, corner_radius, invert, points, media_id, mode } = c.mask;
-    const m: NonNullable<ClipView['mask']> = { shape };
-    for (const k of MASK_NUMBERS) {
-      const v = c.mask[k];
-      if (v !== undefined) m[k] = toViewAnim(v, c, tpf);
-    }
+    const { feather, invert, mode, add } = c.mask;
     out.mask = {
-      ...m,
+      ...shapeView(c.mask, c, tpf),
       ...(feather ? { feather } : {}),
-      ...(corner_radius ? { corner_radius } : {}),
       ...(invert ? { invert } : {}),
-      ...(points
-        ? {
-            points: Array.isArray(points)
-              ? points
-              : {
-                  keyframes: points.keyframes.map((k) => ({
-                    frame: Math.round((k.t - c.in) / tpf),
-                    points: k.points,
-                    ...(k.ease ? { ease: k.ease } : {}),
-                  })),
-                },
-          }
-        : {}),
-      ...(media_id ? { media_id } : {}),
       ...(mode ? { mode } : {}),
+      ...(add ? { add: add.map((x) => shapeView(x, c, tpf)) } : {}),
     };
   }
   if (c.animation) {

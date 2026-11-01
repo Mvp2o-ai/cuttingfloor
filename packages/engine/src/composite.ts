@@ -388,9 +388,9 @@ export function rotoFilters(
     filters.push({ spline: JSON.stringify(pts), invert: false, feather: 0, operation: op() });
   }
   const mask = clip.mask;
-  // A matte, and any selection that is filled, is applied to the source before the render
+  // A matte, a selection of several shapes, and any that is filled, is applied to the source before the render
   // (sourcepass.ts); the clip then plays that copy whole.
-  if (mask && mask.shape !== 'matte' && mask.mode !== 'fill') {
+  if (mask && mask.shape !== 'matte' && mask.mode !== 'fill' && !mask.add) {
     // Feather is a fraction of the picture's short side as it appears in the frame.
     const short =
       Math.min(out.width / src.width, out.height / src.height) * Math.min(src.width, src.height);
