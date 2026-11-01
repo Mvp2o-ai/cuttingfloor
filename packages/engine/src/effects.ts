@@ -188,6 +188,32 @@ export function effectFilters(e: StoredEffect, ctx: EffectContext): string {
       return av('lowpass', { f: Number(raw('frequency')) });
     case 'telephone':
       return av('highpass', { f: 300 }) + av('lowpass', { f: 3400 });
+    case 'lens_correction':
+      return av('lenscorrection', {
+        k1: num('k1'),
+        k2: num('k2'),
+        cx: num('center_x'),
+        cy: num('center_y'),
+        i: 'bilinear',
+      });
+    case 'directional_blur':
+      // dblur's angle is the direction the streaks run, counter-clockwise from the right.
+      return av('dblur', {
+        angle: num('angle'),
+        radius: num('radius', (v) => Math.max(0, v * ctx.width)),
+      });
+    case 'channels': {
+      // aeval: one expression per output channel over the input samples.
+      const from = (side: unknown) =>
+        side === 'right'
+          ? 'val(1)'
+          : side === 'mix'
+            ? '0.5*(val(0)+val(1))'
+            : side === 'silent'
+              ? '0'
+              : 'val(0)';
+      return av('aeval', { exprs: `${from(raw('left'))}|${from(raw('right'))}` });
+    }
     default:
       return '';
   }

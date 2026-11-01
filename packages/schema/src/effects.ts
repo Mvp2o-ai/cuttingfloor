@@ -248,6 +248,51 @@ export const EFFECTS = {
     params: { frequency: num(200, 20000, 8000, 'Hz', false) },
   },
   telephone: { kind: 'audio', about: 'Narrow-band phone voice', params: {} },
+  // Lens, motion and channels
+  lens_correction: {
+    kind: 'video',
+    about:
+      'Straighten lines a lens bends (FFmpeg lenscorrection): each pixel is moved along the line from the centre by k1 r² + k2 r⁴, r its distance from the centre over half the frame diagonal. Negative k1 pulls out a barrel or fisheye bulge, positive a pincushion. Edges left with nothing to show are black (clip.set_transform scale hides them)',
+    params: {
+      k1: num(-1, 1, 0, 'Quadratic term, -1 to 1; 0 is no change'),
+      k2: num(-1, 1, 0, 'Fourth-power term, -1 to 1, for the far edges; 0 is no change'),
+      center_x: num(0, 1, 0.5, 'Lens centre across, fraction of the width', false),
+      center_y: num(0, 1, 0.5, 'Lens centre down, fraction of the height', false),
+    },
+  },
+  directional_blur: {
+    kind: 'video',
+    about:
+      'Blur along one direction, like fast camera or subject motion (FFmpeg dblur); keyframe radius up and down across a cut for a whip pan',
+    params: {
+      angle: num(0, 360, 0, 'Direction of the streaks in degrees: 0 left-right, 90 up-down'),
+      radius: num(
+        0,
+        0.5,
+        0.02,
+        'How far the streaks reach each way, fraction of the frame width (they fade to half by about there)',
+      ),
+    },
+  },
+  channels: {
+    kind: 'audio',
+    about:
+      'Route the input channels to the left and right outputs: a voice recorded on one side to both (left: left, right: left), a swap (left: right, right: left), a downmix to mono (both mix)',
+    params: {
+      left: {
+        kind: 'choice',
+        values: ['left', 'right', 'mix', 'silent'],
+        default: 'left',
+        about: 'What the left output plays: an input channel, both mixed half and half, or nothing',
+      },
+      right: {
+        kind: 'choice',
+        values: ['left', 'right', 'mix', 'silent'],
+        default: 'right',
+        about: 'What the right output plays',
+      },
+    },
+  },
 } satisfies Record<string, EffectSpec>;
 
 export type EffectName = keyof typeof EFFECTS;
