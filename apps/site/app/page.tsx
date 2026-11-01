@@ -257,8 +257,8 @@ export default function Home() {
               <h3>Connect your agent.</h3>
               <p>
                 Add <code>https://api.cuttingfloor.ai/mcp</code> as an MCP server in Kazi, Claude,
-                ChatGPT, Codex or Cursor. Your client opens a sign-in page; Google, GitHub,
-                Microsoft, Apple or email. Or <a href="/self-host">run it yourself</a>.
+                ChatGPT, Codex or Cursor. Your client opens a sign-in page the first time. Or{' '}
+                <a href="/self-host">run it yourself</a>.
               </p>
             </li>
             <li>
