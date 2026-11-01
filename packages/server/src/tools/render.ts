@@ -35,7 +35,14 @@ import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import type * as z from 'zod/v4';
 import { admitJob } from '../meter.ts';
 import { PLAYER_TOOL_META } from '../player.ts';
-import { assertOnline, framesUri, sourceMap, sourcesFor, timelineImage } from '../render.ts';
+import {
+  addPasses,
+  assertOnline,
+  framesUri,
+  sourceMap,
+  sourcesFor,
+  timelineImage,
+} from '../render.ts';
 import { guard, jobReply, jobView, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 
@@ -165,7 +172,8 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         throw new CfError('bad_request', 'The timeline is empty', {
           hint: 'Add clips with clip.add first',
         });
-      const { sources, offline } = await sourcesFor(rt, owner, doc, 'export');
+      // Copies some clips play (cleaned sound, in-between frames) are made inside the job.
+      const { sources, offline } = await sourcesFor(rt, owner, doc, 'export', true, false);
       assertOnline(offline);
       // Checks the preset fits the sequence and the overrides fit the preset, before any job.
       const { spec, width, height } = resolvePreset(args.preset, doc.sequence, args.overrides);
@@ -211,6 +219,8 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
           const outDir = rt.ws.ownerDir(owner, 'outputs', job.id);
           await mkdir(outDir, { recursive: true });
           const out = join(outDir, name);
+          progress(0, 'preparing sources');
+          await addPasses(rt, owner, doc, sources, 'export', true, signal);
           const started = Date.now();
           const { frames, width, height } = await exportTimeline(doc, args.preset, sources, out, {
             ...(args.range ? { range: args.range } : {}),

@@ -42,7 +42,16 @@ export {
   writeInterchange,
   xmlEscape,
 } from './interchange/index.ts';
-export { frameSource, meanRate, played, ratePoints, span, subclip } from './speed.ts';
+export {
+  frameSource,
+  type InBetween,
+  inBetween,
+  meanRate,
+  played,
+  ratePoints,
+  span,
+  subclip,
+} from './speed.ts';
 export { type Cue, parseSubtitles } from './subtitles.ts';
 export {
   framesToTicks,

@@ -32,7 +32,7 @@ import {
   type TrackKind,
 } from '@cuttingfloor/schema';
 import { checkKeyframes, sample, toStoredAnim, toViewAnim } from './animate.ts';
-import { extended, frameSource, meanRate, span, subclip } from './speed.ts';
+import { extended, frameSource, inBetween, meanRate, ratePoints, span, subclip } from './speed.ts';
 import { parseSubtitles } from './subtitles.ts';
 import { framesToTicks, ticksPerFrame } from './time.ts';
 
@@ -46,6 +46,8 @@ export type TimelineResolver = (timelineId: string) => TimelineDoc | undefined;
 export interface MediaFacts {
   /** Transcript words (source seconds), from media.analyze. */
   words?: Array<{ text: string; start: number; end: number }>;
+  /** The picture's frame rate, for media with one. */
+  fps?: { num: number; den: number };
 }
 
 /** What is known about a media item beyond its streams; undefined when nothing is. */
@@ -926,7 +928,13 @@ function assertRetimable(clip: StoredClip, what: string): void {
   }
 }
 
-function clipSetSpeed(doc: TimelineDoc, a: EditArgsOf<'clip.set_speed'>): OpOutcome {
+function clipSetSpeed(
+  doc: TimelineDoc,
+  a: EditArgsOf<'clip.set_speed'>,
+  _m: MediaResolver,
+  _t: TimelineResolver,
+  facts: FactsResolver,
+): OpOutcome {
   if (a.rate !== undefined && a.curve) {
     throw new CfError('bad_request', 'Give rate or curve, not both');
   }
@@ -958,6 +966,7 @@ function clipSetSpeed(doc: TimelineDoc, a: EditArgsOf<'clip.set_speed'>): OpOutc
     const old = clip.speed;
     const reverse = a.reverse ?? old?.reverse;
     const pitch = a.preserve_pitch ?? old?.preserve_pitch;
+    const between = a.interpolate ?? old?.interpolate ?? 'none';
     let duration = clip.duration;
     let speed: StoredSpeed = {};
     if (a.rate !== undefined || a.curve) {
@@ -972,10 +981,12 @@ function clipSetSpeed(doc: TimelineDoc, a: EditArgsOf<'clip.set_speed'>): OpOutc
     else if (old?.rate !== undefined) speed = { rate: old.rate };
     if (reverse) speed.reverse = true;
     if (pitch === false) speed.preserve_pitch = false;
+    if (between !== 'none' && clip.kind === 'video') speed.interpolate = between;
     clip.duration = duration;
     if (Object.keys(speed).length) clip.speed = speed;
     else delete clip.speed;
     checkSourceRange(doc, clip);
+    inBetween(clip, doc.sequence.fps);
     const delta = end(clip) - oldEnd;
     if (a.ripple) shiftFrom(track, oldEnd, delta, clip);
     else if (delta > 0 && end(clip) > neighbours(track, clip).nextStart) {
@@ -999,12 +1010,37 @@ function clipSetSpeed(doc: TimelineDoc, a: EditArgsOf<'clip.set_speed'>): OpOutc
         a.other_tracks,
       )
     : [];
+  for (const { clip } of members) {
+    const repeat = repeatedFrames(doc, clip, facts);
+    if (repeat) warnings.push(repeat);
+  }
   return ok(ref.clip.start, {
     clip_id: ref.clip.id,
     clip_ids: members.map((m) => m.clip.id),
     temporal: true,
     warnings,
   });
+}
+
+/**
+ * Says when a video clip shows each source frame more than once (slowed down, or a source with
+ * fewer frames a second than the sequence) and nothing makes the frames in between.
+ */
+function repeatedFrames(doc: TimelineDoc, clip: StoredClip, facts: FactsResolver): string | null {
+  if (clip.kind !== 'video' || clip.type !== 'media' || clip.speed?.interpolate) return null;
+  const fps = facts(clip.media_id)?.fps;
+  if (!fps) return null;
+  const rates = ratePoints(clip)
+    .map((p) => p.rate)
+    .filter((r) => r > 0);
+  if (!rates.length) return null;
+  const source = fps.num / fps.den;
+  const sequence = doc.sequence.fps.num / doc.sequence.fps.den;
+  const slowest = Math.min(...rates);
+  const shown = source * slowest;
+  if (shown >= sequence * 0.999) return null;
+  const r = (n: number) => Math.round(n * 100) / 100;
+  return `Clip ${clip.id} plays its ${r(source)} fps source at ${r(slowest)}x: ${r(shown)} new frames a second against the sequence's ${r(sequence)}, so each frame shows about ${r(sequence / shown)} times. clip.set_speed interpolate blend or motion makes the frames in between`;
 }
 
 function clipFreeze(doc: TimelineDoc, a: EditArgsOf<'clip.freeze'>): OpOutcome {

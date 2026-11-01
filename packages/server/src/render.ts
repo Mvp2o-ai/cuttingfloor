@@ -1,7 +1,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { type MediaFacts, ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
+import { inBetween, type MediaFacts, ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
 import {
+  betweenPicture,
   clipPasses,
   type ImageFormat,
   installedFonts,
@@ -14,6 +15,7 @@ import {
   renderSource,
   renderTimelineFrames,
   renderWaveform,
+  sourceKey,
 } from '@cuttingfloor/engine';
 import { CfError, type MediaRef, type TimelineDoc, type TimelineView } from '@cuttingfloor/schema';
 import type { Runtime } from './runtime.ts';
@@ -26,6 +28,8 @@ export async function sourcesFor(
   purpose: 'preview' | 'export',
   /** false for picture-only renders, which play clips without their cleaned sound. */
   sound = true,
+  /** false to leave the copies source passes make for later (addPasses, inside a job). */
+  passes = true,
 ): Promise<{ sources: Map<string, MltSource>; offline: string[] }> {
   const sources = new Map<string, MltSource>();
   const offline: string[] = [];
@@ -39,29 +43,61 @@ export async function sourcesFor(
     if (purpose === 'export' && record.status !== 'ready') throw notReady(record, 'an export');
     sources.set(id, renderPicture(record, purpose));
   }
-  // Sound effects that run over a clip's whole source (voice_denoise) play a cleaned copy, made
-  // from the best source there is and kept with the media.
-  if (sound) {
-    for (const body of [doc, ...Object.values(doc.nested ?? {})])
-      for (const t of body.tracks)
-        for (const c of t.clips) {
-          if (!c.enabled || c.type !== 'media') continue;
-          const passes = clipPasses(c);
-          const key = `${c.media_id}#${passes.map((p) => p.id).join('+')}`;
-          const plain = sources.get(c.media_id);
-          if (!passes.length || !plain || sources.has(key)) continue;
-          const record = await rt.media.find(owner, c.media_id);
-          if (!record) continue;
-          const input = record.mezzanine ?? record.file ?? renderSource(record, 'export');
-          const path = await passedAudio(
-            input,
-            join(rt.media.dir(owner, c.media_id), 'cleaned'),
-            passes,
-          );
-          sources.set(key, { ...plain, path, image: false });
-        }
-  }
+  if (passes) await addPasses(rt, owner, doc, sources, purpose, sound);
   return { sources, offline };
+}
+
+/**
+ * Adds the copies some clips play instead of their media: sound cleaned over the clip's whole
+ * source (voice_denoise), and a picture with in-between frames (clip.set_speed interpolate).
+ * Each is made from the source once and kept with the media.
+ */
+export async function addPasses(
+  rt: Runtime,
+  owner: string,
+  doc: TimelineDoc,
+  sources: Map<string, MltSource>,
+  purpose: 'preview' | 'export',
+  sound: boolean,
+  signal?: AbortSignal,
+): Promise<void> {
+  const fps = doc.sequence.fps;
+  for (const body of [doc, ...Object.values(doc.nested ?? {})])
+    for (const t of body.tracks)
+      for (const c of t.clips) {
+        if (!c.enabled || c.type !== 'media') continue;
+        const plain = sources.get(c.media_id);
+        const key = sourceKey(c, fps);
+        if (!plain || key === c.media_id || sources.has(key)) continue;
+        const record = await rt.media.find(owner, c.media_id);
+        if (!record) continue;
+        const between = inBetween(c, fps);
+        if (between) {
+          const own = record.probe?.video?.fps;
+          // A source with frames enough for the slowest part plays as it is.
+          if (plain.image || !own || own.num / own.den >= between.fps) {
+            sources.set(key, plain);
+            continue;
+          }
+          const made = await betweenPicture(
+            plain.path,
+            join(rt.media.dir(owner, c.media_id), 'between'),
+            between,
+            { source: own, purpose, alpha: plain.alpha, ...(signal ? { signal } : {}) },
+          );
+          sources.set(key, { ...plain, ...made });
+          continue;
+        }
+        if (!sound) continue;
+        const input = record.mezzanine ?? record.file ?? renderSource(record, 'export');
+        const path = await passedAudio(
+          input,
+          join(rt.media.dir(owner, c.media_id), 'cleaned'),
+          clipPasses(c),
+          signal,
+        );
+        sources.set(key, { ...plain, path, image: false });
+      }
 }
 
 /**
@@ -349,7 +385,7 @@ export async function timelineWaveform(
   return wave;
 }
 
-/** Silences and transcript words per media item, for edits that use them. */
+/** Transcript words and frame rates per media item, for edits that use them. */
 export async function factsResolver(
   rt: Runtime,
   owner: string,
@@ -366,6 +402,9 @@ export async function factsResolver(
     if (!record) continue;
     out.set(id, {
       ...(record.analyses?.transcript ? { words: record.analyses.transcript.words } : {}),
+      ...(record.probe?.video && record.probe.kind === 'video'
+        ? { fps: record.probe.video.fps }
+        : {}),
     });
   }
   return out;

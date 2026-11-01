@@ -1,4 +1,11 @@
-import type { StoredClip, StoredSpeed } from '@cuttingfloor/schema';
+import {
+  CfError,
+  type FrameRate,
+  INTERPOLATE_LIMITS,
+  type StoredClip,
+  type StoredSpeed,
+  TICKS_PER_SECOND,
+} from '@cuttingfloor/schema';
 
 // Clip speed: a playback rate that is constant or piecewise-linear over the clip (a speed
 // ramp), optionally reversed. Rate 0 is a freeze frame. `in` is always the lowest source
@@ -84,6 +91,7 @@ function normalised(points: RatePoint[], base: StoredSpeed | undefined): StoredS
     ...(flat ? (rate === 1 ? {} : { rate }) : { curve: points }),
     ...(base?.reverse ? { reverse: true } : {}),
     ...(base?.preserve_pitch === false ? { preserve_pitch: false } : {}),
+    ...(base?.interpolate ? { interpolate: base.interpolate } : {}),
   };
   return Object.keys(out).length ? out : undefined;
 }
@@ -158,4 +166,49 @@ export function meanRate(curve: Array<{ at: number; rate: number }>): number {
     area += ((a.rate + b.rate) / 2) * (b.at - a.at);
   }
   return area;
+}
+
+/** In-between frames a video clip plays: made at `fps` over source seconds [from, to). */
+export interface InBetween {
+  mode: 'blend' | 'motion';
+  /** Frames a second the copy is made at: enough for the slowest part of the clip. */
+  fps: number;
+  /** The sequence rate, which the copy plays its frames at (MLT reads a file at that rate). */
+  sequence: number;
+  /** Whole source seconds covered, a second past each end for transitions and small trims. */
+  from: number;
+  to: number;
+}
+
+/**
+ * The in-between frames a clip's speed asks for at the sequence rate, or undefined when it asks
+ * for none. Fails when they would be more than the server makes for one clip.
+ */
+export function inBetween(
+  clip: Pick<StoredClip, 'id' | 'kind' | 'in' | 'duration' | 'speed'>,
+  sequence: FrameRate,
+): InBetween | undefined {
+  const mode = clip.speed?.interpolate;
+  if (!mode || clip.kind !== 'video') return undefined;
+  const rates = ratePoints(clip)
+    .map((p) => p.rate)
+    .filter((r) => r > 0);
+  const slowest = rates.length ? Math.min(...rates) : 1;
+  const fps = Math.min(
+    INTERPOLATE_LIMITS.fps,
+    Math.round((sequence.num / sequence.den / slowest) * 1000) / 1000,
+  );
+  const from = Math.max(0, Math.floor(clip.in / TICKS_PER_SECOND) - 1);
+  const to = Math.ceil((clip.in + span(clip)) / TICKS_PER_SECOND) + 1;
+  const frames = Math.ceil((to - from) * fps);
+  if (frames > INTERPOLATE_LIMITS.frames) {
+    throw new CfError(
+      'limit_exceeded',
+      `Clip ${clip.id} would need ${frames} in-between frames (${to - from} s of source at ${fps} fps); the most for one clip is ${INTERPOLATE_LIMITS.frames}`,
+      {
+        hint: 'Split the clip and interpolate only the slowed part, or use a shorter source span',
+      },
+    );
+  }
+  return { mode, fps, sequence: sequence.num / sequence.den, from, to };
 }

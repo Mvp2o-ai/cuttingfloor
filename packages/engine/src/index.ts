@@ -90,6 +90,8 @@ export {
   splitStems,
 } from './sounds.ts';
 export {
+  betweenPicture,
+  betweenStart,
   clipPasses,
   DENOISE_MODELS,
   passedAudio,

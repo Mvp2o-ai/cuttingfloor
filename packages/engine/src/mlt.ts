@@ -37,6 +37,10 @@ export interface MltSource {
   alpha: boolean;
   /** Fonts only: the family libass knows the file by. */
   family?: string;
+  /** Source seconds the file starts at, when it is a copy of part of the media. */
+  offset?: number;
+  /** Seconds of the file a second of source lasts, when the copy is slowed (in-between frames). */
+  stretch?: number;
 }
 
 export interface CompileOptions {
@@ -82,7 +86,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
   // What a media clip plays: its cleaned sound when a source pass made one. Picture-only
   // renders (frames) may go without it and play the media itself.
   const playedKey = (c: StoredClip): string => {
-    const key = sourceKey(c);
+    const key = sourceKey(c, fps);
     if (c.type !== 'media' || key === c.media_id || options.sources.has(key)) return key;
     if (options.frames) return c.media_id;
     throw new CfError('media_offline', `The cleaned sound of clip ${c.id} was not prepared`);
@@ -332,7 +336,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
           // A retimed clip is its own chain: the timeremap link maps each clip frame to a
           // source time, which covers speed, ramps, reverse and freeze frames.
           const chain = `${prefix}${c.id}_${c.kind[0]}`;
-          parts.push(retimedChain(chain, c, media.path, tpf, n, span));
+          parts.push(retimedChain(chain, c, media, tpf, n, span));
           entry = `<entry producer="${chain}" in="0" out="${length - 1}">${filters}</entry>`;
         } else {
           const producer =
@@ -426,13 +430,20 @@ function sourceSize(
 function retimedChain(
   id: string,
   c: StoredClip,
-  path: string,
+  media: MltSource,
   tpf: number,
   n: number,
   span: RenderSpan,
 ): string {
-  const seconds = (i: number) =>
-    Math.round((frameSource(c, tpf, i) / TICKS_PER_SECOND) * 1e6) / 1e6;
+  const path = media.path;
+  // A copy of part of the source (in-between frames) starts at its own offset, slowed.
+  const offset = media.offset ?? 0;
+  const stretch = media.stretch ?? 1;
+  const seconds = (i: number) => {
+    const t = (frameSource(c, tpf, i) / TICKS_PER_SECOND - offset) * stretch;
+    const r = Math.round(t * 1e6) / 1e6;
+    return offset ? Math.max(0, r) : r;
+  };
   const points: Array<[number, number]> = [];
   for (let j = 0; j < n + span.head + span.tail; j++) points.push([j, seconds(j - span.head)]);
   // Keep only the corners of straight runs: constant speed is two points, a freeze one.
@@ -446,7 +457,7 @@ function retimedChain(
   const map = (steady ? kept.slice(0, 1) : kept).map(([i, v]) => `${i}=${v}`).join(';');
   const only = c.kind === 'video' ? 'audio_index' : 'video_index';
   const pitch = c.kind === 'audio' && c.speed?.preserve_pitch !== false ? 1 : 0;
-  return `<chain id="${id}" out="${n + span.head + span.tail - 1}">${prop('mlt_service', 'avformat')}${prop('resource', path)}${prop(only, -1)}${prop('seekable', 1)}<link>${prop('mlt_service', 'timeremap')}${prop('time_map', map)}${prop('image_mode', 'nearest')}${prop('pitch', pitch)}</link></chain>`;
+  return `<chain id="${id}" out="${n + span.head + span.tail - 1}">${prop('mlt_service', 'avformat')}${prop('resource', path)}${prop(only, -1)}${prop('seekable', 1)}<link>${prop('mlt_service', 'timeremap')}${prop('time_map', map)}${prop('image_mode', c.speed?.interpolate === 'blend' ? 'blend' : 'nearest')}${prop('pitch', pitch)}</link></chain>`;
 }
 
 /** Keyframes "key=value;..." keeping only the corners of straight runs; one value if constant. */

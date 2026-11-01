@@ -45,7 +45,7 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
     };
   }
   if (c.speed) {
-    const { rate, curve, reverse, preserve_pitch } = c.speed;
+    const { rate, curve, reverse, preserve_pitch, interpolate } = c.speed;
     out.speed = {
       ...(curve
         ? {
@@ -66,6 +66,7 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
       ...(rate !== undefined ? { rate } : {}),
       ...(reverse ? { reverse } : {}),
       ...(preserve_pitch === false ? { preserve_pitch } : {}),
+      ...(interpolate ? { interpolate } : {}),
     };
   }
   if (c.transform) {
@@ -539,7 +540,7 @@ function speedFromView(clipId: string, value: unknown, duration: number): Stored
       `Clip ${clipId}: speed: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
     );
   }
-  const { rate, curve, reverse, preserve_pitch } = parsed.data;
+  const { rate, curve, reverse, preserve_pitch, interpolate } = parsed.data;
   const speed: StoredSpeed = {
     ...(curve
       ? { curve: curve.map((p) => ({ t: Math.round(p.at * duration), rate: p.rate })) }
@@ -547,6 +548,7 @@ function speedFromView(clipId: string, value: unknown, duration: number): Stored
     ...(rate !== undefined && !curve ? { rate } : {}),
     ...(reverse ? { reverse } : {}),
     ...(preserve_pitch === false ? { preserve_pitch } : {}),
+    ...(interpolate && interpolate !== 'none' ? { interpolate } : {}),
   };
   return Object.keys(speed).length ? speed : undefined;
 }

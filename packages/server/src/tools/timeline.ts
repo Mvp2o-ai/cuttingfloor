@@ -413,9 +413,12 @@ async function applyAndReply(
   await assertFonts(fontsIn(ops));
   const media = await mediaResolver(rt, owner, mediaIdsIn(ops));
   const nestable = await timelineResolver(rt, owner, nestedIdsIn(ops));
-  // Word-range clips read the transcript media.analyze found; only those load the media records.
+  // Word-range clips read the transcript media.analyze found, and speed changes the source's
+  // frame rate; only those load the media records.
   const needsFacts = ops.some(
-    (o) => o.tool === 'clip.add' && JSON.stringify(o.args.source ?? '').includes('"words"'),
+    (o) =>
+      (o.tool === 'clip.add' && JSON.stringify(o.args.source ?? '').includes('"words"')) ||
+      o.tool === 'clip.set_speed',
   );
   const facts = needsFacts
     ? await factsResolver(rt, owner, base, mediaIdsIn(ops))

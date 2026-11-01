@@ -43,6 +43,8 @@ export const StoredSpeed = z.object({
   reverse: z.boolean().optional(),
   /** Absent means pitch is kept when the speed changes. */
   preserve_pitch: z.boolean().optional(),
+  /** How the picture makes frames between source frames; absent repeats the nearest one. */
+  interpolate: z.enum(['blend', 'motion']).optional(),
 });
 export type StoredSpeed = z.infer<typeof StoredSpeed>;
 
@@ -71,6 +73,7 @@ export const SpeedView = z.object({
     .optional(),
   reverse: z.boolean().optional(),
   preserve_pitch: z.boolean().optional(),
+  interpolate: z.enum(['none', 'blend', 'motion']).optional(),
 });
 
 const clipFields = {

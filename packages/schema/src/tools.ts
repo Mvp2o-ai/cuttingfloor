@@ -24,6 +24,9 @@ import { Change, TimelineInput, TimelineView, TrackKind } from './timeline.ts';
 
 const frame = z.number().int().nonnegative();
 
+/** What protects the server from in-between frames: the most made a clip, and their rate. */
+export const INTERPOLATE_LIMITS = { fps: 480, frames: 6000 } as const;
+
 export const Preview = z
   .enum(['inline', 'link', 'none'])
   .default('link')
@@ -204,6 +207,12 @@ export const EditArgs = {
       ),
     reverse: z.boolean().optional(),
     preserve_pitch: z.boolean().optional().describe('Keep voices at their pitch (default true)'),
+    interpolate: z
+      .enum(['none', 'blend', 'motion'])
+      .optional()
+      .describe(
+        `Video, when it shows fewer new frames a second than the sequence (slowed, or a lower frame rate; rate 1 smooths that): none repeats frames; blend crossfades neighbours; motion makes new frames from the movement (minterpolate, slow, on first render). Up to ${INTERPOLATE_LIMITS.frames} frames a clip`,
+      ),
     ripple: z
       .boolean()
       .default(true)
