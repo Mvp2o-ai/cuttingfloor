@@ -3,6 +3,7 @@ import {
   type MediaRecord,
   mayBeTransparent,
   mediaStills,
+  notReady,
   renderSource,
 } from '@cuttingfloor/engine';
 import {
@@ -12,7 +13,6 @@ import {
   JudgeAskResult,
   JudgePicture,
   type JudgeQuestion,
-  mediaNotReady,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { askJev, JEV_URL, type JevImage } from '../jev.ts';
@@ -89,7 +89,7 @@ export function registerJudgeTools(server: McpServer, deps: ServerDeps): void {
     ref: { media_id: string; at_seconds?: number | undefined },
   ): Promise<{ record: MediaRecord; time: number }> => {
     const record = await rt.media.get(owner, ref.media_id);
-    if (record.status !== 'ready') throw mediaNotReady(ref.media_id, record.status, 'judge.ask');
+    if (record.status !== 'ready') throw notReady(record, 'judge.ask');
     const p = record.probe;
     if (!p?.video) {
       throw new CfError('bad_request', `${name}: media ${ref.media_id} has no picture`, {

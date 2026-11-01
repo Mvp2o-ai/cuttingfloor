@@ -14,6 +14,7 @@ import {
   mediaInfo,
   mediaStills,
   noAudio,
+  notReady,
   renderSource,
   SOUND_MODELS,
   SPEECH_MODELS,
@@ -44,7 +45,6 @@ import {
   MediaRefInput,
   MediaUploadInput,
   MediaUploadResult,
-  mediaNotReady,
   TIMELINE_ANALYSES,
   withJob,
 } from '@cuttingfloor/schema';
@@ -768,7 +768,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       const mediaId = args.media_id as string;
       const record = await rt.media.get(owner, mediaId);
       if (record.status !== 'ready') {
-        throw mediaNotReady(mediaId, record.status, `media.analyze ${args.kind}`);
+        throw notReady(record, `media.analyze ${args.kind}`);
       }
       const p = record.probe;
       checkSoundArgs(args);
@@ -1178,6 +1178,9 @@ async function startIngest(
     statusMessage: `importing ${record.media_id}`,
     ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
   });
+  // Named in media_not_ready errors, so a caller knows which job to wait on.
+  record.job_id = job.id;
+  await rt.media.save(owner, record);
   rt.jobs.start(
     job,
     async ({ signal, progress }) => {

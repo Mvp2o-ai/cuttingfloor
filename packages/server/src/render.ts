@@ -8,6 +8,7 @@ import {
   lengthFrames,
   type MltSource,
   mediaRef,
+  notReady,
   passedAudio,
   renderPicture,
   renderSource,
@@ -35,12 +36,7 @@ export async function sourcesFor(
       continue;
     }
     // Previews may read the original while it is conformed; exports wait for the mezzanine.
-    if (purpose === 'export' && record.status !== 'ready') {
-      throw new CfError('media_not_ready', `Media ${id} is still processing`, {
-        hint: 'Wait for its media.import job to finish, then export',
-        detail: { media_id: id },
-      });
-    }
+    if (purpose === 'export' && record.status !== 'ready') throw notReady(record, 'an export');
     sources.set(id, renderPicture(record, purpose));
   }
   // Sound effects that run over a clip's whole source (voice_denoise) play a cleaned copy, made
@@ -128,11 +124,7 @@ export async function mediaResolver(
     if (!/^m_[0-9a-z]{26}$/.test(id)) continue;
     const record = await rt.media.find(owner, id);
     if (!record) continue;
-    if (record.status === 'importing') {
-      throw new CfError('media_not_ready', `Media ${id} is still being probed`, {
-        hint: 'Wait for its media.import job to report processing or ready, then try again',
-      });
-    }
+    if (record.status === 'importing') throw notReady(record, null);
     if (record.status === 'failed') {
       throw new CfError(
         'bad_request',

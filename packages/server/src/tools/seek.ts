@@ -3,6 +3,7 @@ import {
   lengthFrames,
   mayBeTransparent,
   mediaStills,
+  notReady,
   renderSource,
   renderTimelineFrames,
 } from '@cuttingfloor/engine';
@@ -11,7 +12,6 @@ import {
   JUDGE_LIMITS,
   MediaSeekInput,
   MediaSeekResult,
-  mediaNotReady,
   withJob,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
@@ -193,7 +193,7 @@ export function registerSeekTools(server: McpServer, deps: ServerDeps): void {
       } else {
         const mediaId = args.media_id as string;
         const record = await rt.media.get(owner, mediaId);
-        if (record.status !== 'ready') throw mediaNotReady(mediaId, record.status, 'media.seek');
+        if (record.status !== 'ready') throw notReady(record, 'media.seek');
         const p = record.probe;
         if (!p?.video) throw new CfError('bad_request', `Media ${mediaId} has no picture to seek`);
         fps = p.video.fps ?? null;

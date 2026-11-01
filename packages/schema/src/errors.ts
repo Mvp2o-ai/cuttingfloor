@@ -75,22 +75,46 @@ export function serverBusy(message: string, local?: string): CfError {
 }
 
 /**
- * A media a tool needs ready is not: still importing or processing (edits and render.frames
- * take it already), or failed. `needs` names the tool that reads the finished file.
+ * A media a tool needs is not there yet: still importing or processing (edits and render.frames
+ * take it once it is processing), or failed. `needs` names what reads it; `job` is the
+ * media.import or create.* job making it, which the hint names so the caller can wait on it.
+ * With `needs` null, the caller only needs it probed (status processing).
  */
-export function mediaNotReady(id: string, status: string, needs: string): CfError {
+export function mediaNotReady(
+  id: string,
+  status: string,
+  needs: string | null,
+  job?: { tool: string; job_id?: string | undefined },
+): CfError {
   if (status === 'failed') {
     return new CfError('bad_request', `Media ${id} failed to import`, {
       hint: 'media.get shows why; import the file again',
       detail: { media_id: id, status },
     });
   }
+  const importing = status === 'importing';
+  const maker = job
+    ? job.job_id
+      ? `${job.tool} job ${job.job_id}`
+      : `its ${job.tool} job`
+    : 'the media.import or create.* job making it';
+  const state = importing
+    ? job && job.tool !== 'media.import'
+      ? 'is still being made'
+      : 'is still importing'
+    : 'is still processing';
+  const wait = needs === null ? 'reports processing or ready' : 'completes';
   return new CfError(
     'media_not_ready',
-    `Media ${id} is still ${status === 'importing' ? 'importing' : 'processing'}; ${needs} needs it ready`,
+    `Media ${id} ${state} (${maker})${needs === null ? '' : `; ${needs} needs it ready`}`,
     {
-      hint: 'Edits and render.frames take it already. Call again once media.get says ready (when the media.import or create.* job making it completes)',
-      detail: { media_id: id, status },
+      hint: `${importing ? 'Edits and render.frames take it once it is processing' : 'Edits and render.frames take it already'}. Wait until ${maker} ${wait}${job?.job_id ? ` (job.get {job_id: "${job.job_id}"})` : ' (media.get says its status)'}, then call again`,
+      detail: {
+        media_id: id,
+        status,
+        ...(job ? { tool: job.tool } : {}),
+        ...(job?.job_id ? { job_id: job.job_id } : {}),
+      },
     },
   );
 }

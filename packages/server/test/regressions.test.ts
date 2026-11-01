@@ -526,3 +526,58 @@ describe.skipIf(!engines)('blind-test regressions', () => {
     expect(done.result.note).toMatch(/not instruments, drums or single hits/);
   }, 240_000);
 });
+
+describe('media not ready yet', () => {
+  it('names the job making the media', async () => {
+    const plain = await testRuntime();
+    const c = await connect(plain.runtime, 'waiter');
+    const media = plain.runtime.media;
+    // A page create.motion is still making, and a file media.import is still probing.
+    const made = await media.create(
+      'waiter',
+      { created: 'create.motion', recipe: 'r', job_id: 'j_aaaaaaaaaaaaaaaaaaaaaaaaaa' },
+      'page',
+    );
+    const imported = await media.create('waiter', { path: join(plain.mediaDir, 'x.mp4') }, 'x');
+    imported.job_id = 'j_bbbbbbbbbbbbbbbbbbbbbbbbbb';
+    await media.save('waiter', imported);
+    const { timeline_id } = await ok<{ timeline_id: string }>(c, 'timeline.create', {
+      name: 'wait',
+      sequence: { width: 640, height: 360, fps: { num: 24, den: 1 } },
+    });
+    const edit = await call(c, 'clip.add', {
+      timeline_id,
+      track_id: 't1',
+      media_id: made.media_id,
+      preview: 'none',
+    });
+    expect(edit.structured).toMatchObject({
+      code: 'media_not_ready',
+      detail: { tool: 'create.motion', job_id: 'j_aaaaaaaaaaaaaaaaaaaaaaaaaa' },
+    });
+    expect(String(edit.structured.message)).toMatch(/still being made \(create\.motion job j_a+\)/);
+    expect(String(edit.structured.hint)).toMatch(/job\.get \{job_id: "j_a+"\}/);
+    expect(String(edit.structured.hint)).not.toMatch(/media\.import/);
+
+    const analyze = await call(c, 'media.analyze', {
+      media_id: made.media_id,
+      kind: 'scenes',
+      threshold: 10,
+    });
+    expect(analyze.structured).toMatchObject({
+      code: 'media_not_ready',
+      detail: { job_id: 'j_aaaaaaaaaaaaaaaaaaaaaaaaaa' },
+    });
+  });
+
+  it('records the import job on the media it imports', async () => {
+    const plain = await testRuntime();
+    const c = await connect(plain.runtime, 'importer');
+    await writeFile(join(plain.mediaDir, 'y.wav'), Buffer.alloc(64));
+    const started = await ok<{ job_id: string; media_id: string }>(c, 'media.import', {
+      source: { path: join(plain.mediaDir, 'y.wav') },
+    });
+    const record = await plain.runtime.media.get('importer', started.media_id);
+    expect(record.job_id).toBe(started.job_id);
+  });
+});

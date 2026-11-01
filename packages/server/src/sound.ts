@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { lengthFrames, noAudio, renderMix, renderSource } from '@cuttingfloor/engine';
+import { lengthFrames, noAudio, notReady, renderMix, renderSource } from '@cuttingfloor/engine';
 import { CfError } from '@cuttingfloor/schema';
 import { assertOnline, sourcesFor } from './render.ts';
 import type { Runtime } from './runtime.ts';
@@ -69,11 +69,7 @@ export async function checkSound(
   if (ref.media_id) {
     const label = `${named}media ${ref.media_id}${close}`;
     const record = await rt.media.get(owner, ref.media_id);
-    if (record.status !== 'ready' && record.status !== 'processing') {
-      throw new CfError('media_not_ready', `Media ${ref.media_id} is still importing`, {
-        hint: 'Wait for its media.import job to finish',
-      });
-    }
+    if (record.status !== 'ready' && record.status !== 'processing') throw notReady(record, null);
     const p = record.probe;
     if (!p?.audio) throw noAudio({ ...range, label }, 'it has no audio stream');
     const duration = p.duration ?? null;

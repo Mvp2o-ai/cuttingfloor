@@ -10,6 +10,7 @@ import {
   KOKORO,
   type MediaRecord,
   mediaInfo,
+  notReady,
   renderMatte,
   renderPicture,
   renderSource,
@@ -34,7 +35,6 @@ import {
   MediaInfo,
   MOTION_LIMITS,
   MotionRequest,
-  mediaNotReady,
   SOUNDS_LIMITS,
   type Stem,
   withJob,
@@ -161,7 +161,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       const record = await rt.media.get(owner, a.media_id);
       const kind = record.probe?.kind;
       if (record.status !== 'ready' || !record.file) {
-        throw mediaNotReady(a.media_id, record.status, 'a page asset');
+        throw notReady(record, 'a page asset');
       }
       if (kind !== 'image' && kind !== 'font') {
         throw new CfError(
@@ -395,7 +395,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       const source = await rt.media.get(owner, args.media_id);
       const p = source.probe;
       if (source.status !== 'ready' || !p) {
-        throw mediaNotReady(args.media_id, source.status, 'create.cutout');
+        throw notReady(source, 'create.cutout');
       }
       if (!p.video || (p.kind !== 'video' && p.kind !== 'image')) {
         throw new CfError('bad_request', `Media ${args.media_id} has no picture to cut out`);
@@ -454,7 +454,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       const source = await rt.media.get(owner, args.media_id);
       const p = source.probe;
       if (source.status !== 'ready' || !p) {
-        throw mediaNotReady(args.media_id, source.status, 'create.stabilized');
+        throw notReady(source, 'create.stabilized');
       }
       if (p.kind !== 'video' || !p.video) {
         throw new CfError('bad_request', `Media ${args.media_id} is not a video`, {
@@ -514,7 +514,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       const source = await rt.media.get(owner, args.media_id);
       const p = source.probe;
       if (source.status !== 'ready' || !p) {
-        throw mediaNotReady(args.media_id, source.status, 'create.stems');
+        throw notReady(source, 'create.stems');
       }
       if (!p.audio) {
         throw new CfError('bad_request', `Media ${args.media_id} has no sound to separate`);
@@ -589,6 +589,10 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         statusMessage: `separating ${missing.join(', ')}`,
         ...key,
       });
+      for (const record of fresh.values()) {
+        if ('created' in record.source) record.source.job_id = job.id;
+        await rt.media.save(owner, record);
+      }
       rt.jobs.start(
         job,
         async ({ signal, progress }) => {
@@ -630,7 +634,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
   const ready = async (id: string, want: 'video' | 'audio', what: string) => {
     const record = await rt.media.get(deps.owner(), id);
     const p = record.probe;
-    if (record.status !== 'ready' || !p) throw mediaNotReady(id, record.status, what);
+    if (record.status !== 'ready' || !p) throw notReady(record, what);
     if (want === 'video' ? !p.video || p.kind !== 'video' : !p.audio) {
       throw new CfError(
         'bad_request',

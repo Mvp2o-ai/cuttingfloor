@@ -6,6 +6,7 @@ import {
   type MediaInfo,
   type MediaOrigin,
   type MediaRef,
+  mediaNotReady,
   type ToolError,
 } from '@cuttingfloor/schema';
 import { createBLAKE3 } from 'hash-wasm';
@@ -54,6 +55,8 @@ export interface MediaRecord {
     speech?: NonNullable<MediaInfo['speech']>;
     sounds?: NonNullable<MediaInfo['sounds']>;
   };
+  /** The media.import job that ingests it (a create.* job is in source). */
+  job_id?: string;
   /** create.motion and create.still: what went wrong in the page as it rendered. */
   warnings?: string[];
   error?: ToolError;
@@ -504,8 +507,10 @@ export class MediaLibrary {
     const record = await this.#ws.readJson<MediaRecord>(join(dir, 'media.json'));
     if (!record) throw await this.missing(owner, id);
     if (record.status === 'importing' || record.status === 'processing') {
-      throw new CfError('media_not_ready', `Media ${id} is still importing`, {
-        hint: 'Wait for its job to finish, or stop it with job.cancel, then delete it',
+      const busy = notReady(record, 'media.delete');
+      throw new CfError('media_not_ready', busy.message, {
+        hint: `${busy.hint}; or stop that job with job.cancel, then delete it`,
+        ...(busy.detail ? { detail: busy.detail } : {}),
       });
     }
     const freed = await folderBytes(dir);
@@ -735,12 +740,31 @@ export function renderPicture(
   };
 }
 
+/** The job that makes a media: the create.* job that made it, or its media.import. */
+export function makingJob(record: MediaRecord): { tool: string; job_id?: string } {
+  if ('created' in record.source) {
+    return {
+      tool: record.source.created,
+      ...(record.source.job_id ? { job_id: record.source.job_id } : {}),
+    };
+  }
+  return { tool: 'media.import', ...(record.job_id ? { job_id: record.job_id } : {}) };
+}
+
+/**
+ * media_not_ready (or failed) for a media that `needs` must have ready, naming the job making
+ * it; `needs` null when only a probe is needed (status processing).
+ */
+export function notReady(record: MediaRecord, needs: string | null): CfError {
+  return mediaNotReady(record.media_id, record.status, needs, makingJob(record));
+}
+
 export function renderSource(record: MediaRecord, purpose: 'preview' | 'export'): string {
   const file =
     purpose === 'preview'
       ? (record.proxy ?? record.mezzanine ?? record.file)
       : (record.mezzanine ?? record.file);
-  if (!file) throw new CfError('media_not_ready', `Media ${record.media_id} is still importing`);
+  if (!file) throw notReady(record, null);
   return file;
 }
 
