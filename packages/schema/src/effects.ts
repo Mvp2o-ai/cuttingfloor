@@ -187,6 +187,20 @@ export const EFFECTS = {
       threshold_db: num(-60, 0, -18, 'Level above which it compresses', false),
       ratio: num(1, 20, 4, 'Compression ratio', false),
       makeup_db: num(0, 24, 0, 'Gain after compression', false),
+      attack_ms: num(
+        0.01,
+        2000,
+        20,
+        'How fast it turns the level down once the sound goes over the threshold, milliseconds',
+        false,
+      ),
+      release_ms: num(
+        0.01,
+        9000,
+        250,
+        'How fast it lets the level back up once the sound falls under the threshold, milliseconds',
+        false,
+      ),
     },
   },
   noise_reduction: {

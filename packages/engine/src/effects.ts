@@ -153,6 +153,8 @@ export function effectFilters(e: StoredEffect, ctx: EffectContext): string {
         threshold: r(db(Number(raw('threshold_db'))), 6),
         ratio: Number(raw('ratio')),
         makeup: r(db(Number(raw('makeup_db'))), 4),
+        attack: Number(raw('attack_ms')),
+        release: Number(raw('release_ms')),
       });
     case 'noise_reduction':
       return av('afftdn', { nr: Number(raw('amount_db')) });
