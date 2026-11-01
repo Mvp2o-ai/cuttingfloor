@@ -1041,7 +1041,7 @@ export const Transcript = z.object({
       }),
     )
     .describe(
-      'Media seconds. Aligned words start and end within about 0.05 s of where their letters sound; an end on a soft consonant (s, t, k, f) or a breath can ring on up to about 0.1 s more. Short ums are often missing from the words; kind speech finds them as speech',
+      'Media seconds. Aligned words start and end within about 0.05 s of where their letters sound; an end on a soft consonant (s, t, k, f) or a breath can ring on up to about 0.1 s more. Short ums are often missing from the words; kind speech finds them as speech. A word "-" (or one starting with it) is whisper marking a new speaker, as subtitles do: a hint only; kind speakers measures who speaks when',
     ),
 });
 export const BeatsAnalysis = z.object({
