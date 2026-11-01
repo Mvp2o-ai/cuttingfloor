@@ -717,7 +717,14 @@ function clipAdd(
   const warnings =
     a.mode === 'insert' ? rippleOthers(doc, targets.values(), start, duration, a.other_tracks) : [];
   const main = made.find((c) => c.kind === primary.kind) ?? made[0];
-  return ok(start, { clip_id: main?.id ?? '', clip_ids: made.map((c) => c.id), warnings });
+  // A clip that is only sound has no picture to show: it previews as its waveform and loudness.
+  const sound = made.every((c) => c.kind === 'audio');
+  return ok(start, {
+    clip_id: main?.id ?? '',
+    clip_ids: made.map((c) => c.id),
+    warnings,
+    ...(sound ? { audio: { start, end: start + duration } } : {}),
+  });
 }
 
 function clipRemove(doc: TimelineDoc, a: EditArgsOf<'clip.remove'>): OpOutcome {

@@ -366,4 +366,26 @@ describe.skipIf(!engines)('blind-test regressions', () => {
       delete process.env.DROPS;
     }
   }, 120_000);
+
+  it('previews a clip that is only sound as its waveform with loudness', async () => {
+    const tone = join(env.mediaDir, 'tone.wav');
+    await ff(['-f', 'lavfi', '-i', 'sine=frequency=330:sample_rate=48000', '-t', '4', tone]);
+    const { media_id } = await importMedia(tone);
+    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      name: 'music',
+      sequence: { width: 640, height: 360, fps: { num: 24, den: 1 } },
+    });
+    const res = await call(client, 'clip.add', {
+      timeline_id,
+      track_id: 't2',
+      media_id,
+      source: { in: 0, out: 48 },
+      preview: 'inline',
+    });
+    expect(res.isError).toBe(false);
+    const preview = res.structured.preview as { uri: string; loudness?: { lufs: number | null } };
+    expect(preview.uri).toMatch(/waveform/);
+    expect(preview.loudness?.lufs).toBeTypeOf('number');
+    expect(res.content.some((c) => c.type === 'image')).toBe(true);
+  }, 120_000);
 });
