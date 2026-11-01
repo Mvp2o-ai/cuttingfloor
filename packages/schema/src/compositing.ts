@@ -130,7 +130,9 @@ export const Crop = z
   .refine((c) => c.left + c.right < 1 && c.top + c.bottom < 1, {
     message: 'Crop must leave part of the picture: left + right and top + bottom must be under 1',
   })
-  .describe('Fractions of the picture hidden from each edge; the rest stays where it was');
+  .describe(
+    "Hidden from each edge, in fractions of the clip's fitted frame (the sequence-shaped box with the picture fitted inside, bars included, as for masks); the rest stays where it was",
+  );
 export type Crop = z.infer<typeof Crop>;
 
 /** Transform fields and their limits. Position is the picture centre in the frame (0–1). */

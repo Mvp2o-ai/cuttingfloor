@@ -15,9 +15,9 @@ import { createBLAKE3 } from 'hash-wasm';
 import { BIN, run } from './exec.ts';
 import { directDownloadUrl, download } from './fetch.ts';
 import { conformReasons, type Probe, probe } from './probe.ts';
+import { wordSpeakers } from './speakers.ts';
 import { LOUDNESS_STATS, parseChannelLevels } from './speech.ts';
 import { unwrapWebFont } from './webfont.ts';
-import { wordSpeakers } from './speakers.ts';
 
 export const MEDIA_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
