@@ -128,14 +128,13 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
     const job = await store.create({
       owner,
       tool,
-      meta: { media_id: record.media_id },
+      meta: { media_id: record.media_id, ...(from.length ? { inputs: from.join(',') } : {}) },
       statusMessage: `making ${record.media_id}`,
       ...key,
     });
-    if ('created' in record.source) {
-      record.source.job_id = job.id;
-      await rt.media.save(owner, record);
-    }
+    if ('created' in record.source) record.source.job_id = job.id;
+    record.job_id = job.id;
+    await rt.media.save(owner, record);
     rt.jobs.start(
       job,
       async ({ signal, progress }) => {
@@ -690,7 +689,10 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       const job = await store.create({
         owner,
         tool: 'create.stems',
-        meta: Object.fromEntries([...fresh].map(([s, r]) => [`stem_${s}`, r.media_id])),
+        meta: {
+          inputs: source.media_id,
+          ...Object.fromEntries([...fresh].map(([s, r]) => [`stem_${s}`, r.media_id])),
+        },
         statusMessage: `separating ${missing.join(', ')}`,
         ...key,
       });
