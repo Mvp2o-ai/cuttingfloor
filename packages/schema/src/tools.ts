@@ -1813,6 +1813,22 @@ export const JobStarted = z.object({
   hint: z.string(),
 });
 
+/** Limits that protect the server: the longest one job.get waits for a change. */
+export const JOB_WAIT_LIMIT_SECONDS = 50;
+/** In a result summary, lists longer than this keep only their first items. */
+export const RESULT_SUMMARY_ITEMS = 5;
+
+export const JobFor = z
+  .object({
+    media_id: MediaId.optional().describe('The media it imports, makes or reads'),
+    media_ids: z.array(MediaId).optional().describe('Stems it makes'),
+    inputs: z.array(MediaId).optional().describe('Media it is made from'),
+    timeline_id: TimelineId.optional(),
+    kind: z.string().optional(),
+    preset: z.string().optional(),
+  })
+  .describe('What it is for, known from the start');
+
 export const JobView = z.object({
   job_id: JobId,
   tool: z.string(),
@@ -1824,14 +1840,39 @@ export const JobView = z.object({
       'What it is doing; while it waits, its place in the queue and what it waits for (a job slot, a render slot or the sandbox)',
     ),
   progress: z.number().min(0).max(1).optional(),
+  for: JobFor.optional(),
+  seconds_left: z
+    .number()
+    .optional()
+    .describe(
+      'Running: seconds left at its recent rate of progress, once it has moved steadily (later steps may differ)',
+    ),
+  starts_in_seconds: z
+    .number()
+    .optional()
+    .describe(
+      'Queued next in line: seconds until a slot should free, when every job holding one has seconds_left',
+    ),
   created_at: z.string(),
   updated_at: z.string(),
   result: z.unknown().optional().describe("The tool's structured result once completed"),
+  result_summary: z
+    .object({
+      value: z.unknown().describe(`Lists cut to ${RESULT_SUMMARY_ITEMS} items, long text cut`),
+      cut: z.record(z.string(), z.number()).describe('Path of each cut (a.b.0.c): its full length'),
+    })
+    .optional()
+    .describe('result "summary": the result in brief; result "full" has all of it'),
   error: ToolError.optional(),
 });
 export const JobRef = z.object({ job_id: JobId });
 /** Limits that protect the server: the most jobs one job.get reads. */
 export const JOB_GET_LIMIT = 100;
+const ResultMode = z
+  .enum(['full', 'summary', 'none'])
+  .describe(
+    'full: the whole result; summary: lists cut to their first items (result_summary); none: status only',
+  );
 export const JobGetInput = z.object({
   job_id: JobId.optional().describe('One job: the answer is that job'),
   job_ids: z
@@ -1840,6 +1881,15 @@ export const JobGetInput = z.object({
     .max(JOB_GET_LIMIT)
     .optional()
     .describe(`Many jobs at once (up to ${JOB_GET_LIMIT}): the answer is {jobs, not_found}`),
+  wait_seconds: z
+    .number()
+    .min(0)
+    .max(JOB_WAIT_LIMIT_SECONDS)
+    .default(0)
+    .describe(
+      `Wait up to this long (at most ${JOB_WAIT_LIMIT_SECONDS} s) for any job asked for to change status, progress or status message; 0 answers at once`,
+    ),
+  result: ResultMode.default('full'),
 });
 export const JobGetManyResult = z.object({
   jobs: z.array(JobView).describe('The jobs found, in the order asked'),
@@ -1850,7 +1900,14 @@ export const JobGetManyResult = z.object({
 export const JobGetResult = z.union([JobView, JobGetManyResult]);
 export const JobListInput = z.object({
   status: JobStatus.optional(),
+  tool: z.string().optional().describe('Only jobs of this tool, e.g. media.import'),
+  media_id: MediaId.optional().describe(
+    'Only jobs for this media (importing, making or reading it)',
+  ),
   limit: z.number().int().min(1).max(200).default(50),
+  result: ResultMode.default('none').describe(
+    'none (default): each job without its result, to find one; summary: lists cut short; full: every result whole',
+  ),
 });
 export const JobListResult = z.object({ jobs: z.array(JobView) });
 

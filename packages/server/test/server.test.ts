@@ -25,10 +25,10 @@ const anyResult = z.object({}).passthrough();
  * every tool that returns media, and clip.set_speed's in-between frames, and to
  * 449 000 for the measured facts (media.analyze speakers, voice, colour and picture, picture
  * kinds on a timeline, beat strengths, placements after a transform, file fingerprints), and
- * to 460 000 for the stalled error code (in every declared error), the job a media is waiting
+ * to 462 000 for the stalled error code (in every declared error), the job a media is waiting
  * on (media.get job) and job.get's wait, estimates, for and result summaries.
  */
-const BUDGET_BYTES = 460_000;
+const BUDGET_BYTES = 462_000;
 let env: TestEnv;
 
 beforeAll(async () => {
