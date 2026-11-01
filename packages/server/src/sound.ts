@@ -2,7 +2,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { lengthFrames, noAudio, notReady, renderMix, renderSource } from '@cuttingfloor/engine';
-import { CfError } from '@cuttingfloor/schema';
 import { assertOnline, sourcesFor } from './render.ts';
 import type { Runtime } from './runtime.ts';
 
