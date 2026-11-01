@@ -44,7 +44,7 @@ function placementAt(
 ): ClipPlacement {
   const s = transformAt(clip, tpf, i, n);
   const [rx = 0, ry = 0, rw = 0, rh = 0] = rectFor(clip, s, src, frame);
-  // The window of the picture left by crop and mask, in fractions of the (flipped) picture.
+  // The window left by crop and mask, in fractions of the fitted frame (then of the picture).
   const crop = clip.transform?.crop;
   let fx0 = crop?.left ?? 0;
   let fy0 = crop?.top ?? 0;
@@ -60,6 +60,20 @@ function placementAt(
       fx1 = Math.min(fx1, Math.max(...xs));
       fy1 = Math.min(fy1, Math.max(...ys));
     }
+  }
+  // Crop and mask are fractions of the clip's fitted frame: a box the sequence's shape with the
+  // picture fitted inside it (bars where the shapes differ), centred on the picture. Measured:
+  // a 0.5 x 0.5 mask on a 9:16 picture in a 16:9 frame keeps the picture's whole width.
+  const aspect = frame.width / frame.height;
+  const fw = rw / rh < aspect ? rh * aspect : rw;
+  const fh = rw / rh < aspect ? rh : rw / aspect;
+  const toPicX = (f: number) => Math.min(1, Math.max(0, (rx + rw / 2 - fw / 2 + f * fw - rx) / rw));
+  const toPicY = (f: number) => Math.min(1, Math.max(0, (ry + rh / 2 - fh / 2 + f * fh - ry) / rh));
+  if (rw > 0 && rh > 0) {
+    fx0 = toPicX(fx0);
+    fx1 = toPicX(fx1);
+    fy0 = toPicY(fy0);
+    fy1 = toPicY(fy1);
   }
   const empty = fx1 <= fx0 || fy1 <= fy0;
   // Corners in sequence pixels, rotated about the picture's centre (qtblend rotate_center).
