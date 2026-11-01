@@ -624,13 +624,15 @@ describe.skipIf(!engines)('blind-test regressions', () => {
       file,
     ]);
     const media = await importMedia(file);
-    const info = await ok<{ stream_seconds: { video: number; audio: number } }>(
+    const info = await ok<{ duration_seconds: number; sound_seconds: number }>(
       client,
       'media.get',
-      { media_id: media.media_id },
+      {
+        media_id: media.media_id,
+      },
     );
-    expect(info.stream_seconds.video).toBeCloseTo(6, 1);
-    expect(info.stream_seconds.audio).toBeCloseTo(3, 1);
+    expect(info.duration_seconds).toBeCloseTo(6, 1);
+    expect(info.sound_seconds).toBeCloseTo(3, 1);
     const started = await ok<{ job_id: string }>(client, 'media.analyze', {
       media_id: media.media_id,
       kind: 'silence',

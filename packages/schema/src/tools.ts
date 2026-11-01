@@ -1036,17 +1036,13 @@ export const MediaInfo = z.object({
   has_video: z.boolean(),
   has_audio: z.boolean(),
   codecs: z.object({ video: z.string().nullable(), audio: z.string().nullable() }),
-  stream_seconds: z
-    .object({ video: z.number().nullable(), audio: z.number().nullable() })
+  sound_seconds: z
+    .number()
     .optional()
-    .describe(
-      'How long the picture and the sound each run, from the file: sound shorter than picture means the end of the media has no sound at all (silence analysis reports that stretch as silent)',
-    ),
+    .describe('How long the sound runs; under duration_seconds, the end is soundless'),
   conform: z
     .array(z.string())
-    .describe(
-      'Why a mezzanine was made (vfr: frames not evenly spaced at a standard rate, retimed to a constant fps; rotation, hdr, codec); empty when not needed. fps and frame numbers are those of the mezzanine',
-    ),
+    .describe('Why a mezzanine was made (vfr, rotation, hdr, codec); empty when not needed'),
   analysis: z
     .object({ loudness_lufs: z.number().nullable().describe('Integrated loudness at import') })
     .nullable(),
