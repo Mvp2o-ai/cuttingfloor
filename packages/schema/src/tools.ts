@@ -1078,6 +1078,12 @@ export const MediaInfo = z.object({
   sounds: SoundsAnalysis.optional().describe(
     'With include ["sounds"]: the latest media.analyze sounds run, every probability included',
   ),
+  warnings: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'create.motion and create.still: what went wrong in the page as it rendered (uncaught errors, console errors, files blocked or not found, tags never closed). It rendered anyway',
+    ),
   error: ToolError.optional(),
 });
 export type MediaInfo = z.infer<typeof MediaInfo>;

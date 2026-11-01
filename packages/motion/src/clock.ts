@@ -1,22 +1,51 @@
 // Virtual time for frame-exact capture. This script runs in the page before any of its own code
 // and replaces every clock a page can animate by (requestAnimationFrame, timers, Date,
-// performance.now, Math.random's seed) with one the renderer steps a frame at a time. Each step
+// performance.now, the seed of Math.random and crypto's random values) with one the renderer steps a frame at a time. Each step
 // also pauses and seeks the page's CSS animations, transitions and Web Animations, SVG (SMIL)
 // animations and <video>/<audio> elements, then calls window.__seek(seconds) if the page defines
 // it (canvas, WebGL or anything drawn by hand). So any animated page renders as written, with no
 // special contract: if it animates in a browser, it renders.
 
-/** The page-side clock. `seed` makes Math.random repeatable, so the same recipe renders the same. */
+/**
+ * The page-side clock. `seed` makes Math.random, crypto.getRandomValues and crypto.randomUUID
+ * repeatable, so the same recipe renders the same.
+ */
 export function clockScript(seed: number): string {
   return `(() => {
   if (window.__cf) return;
   let seed = ${seed >>> 0};
-  Math.random = () => {
+  const next = () => {
     seed = (seed + 0x6d2b79f5) | 0;
     let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    return (t ^ (t >>> 14)) >>> 0;
   };
+  Math.random = () => next() / 4294967296;
+  const crypto = window.crypto;
+  if (crypto && typeof crypto.getRandomValues === 'function') {
+    const real = crypto.getRandomValues.bind(crypto);
+    const fill = (array) => {
+      // The real call first, for its checks (integer arrays only, 64 KB at most).
+      real(array);
+      const bytes = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+      for (let i = 0; i < bytes.length; i += 4) {
+        const n = next();
+        for (let b = 0; b < 4 && i + b < bytes.length; b++) bytes[i + b] = (n >>> (8 * b)) & 255;
+      }
+      return array;
+    };
+    Object.defineProperty(crypto, 'getRandomValues', { value: fill, configurable: true });
+    if (typeof crypto.randomUUID === 'function') {
+      const uuid = () => {
+        const b = fill(new Uint8Array(16));
+        b[6] = (b[6] & 15) | 64;
+        b[8] = (b[8] & 63) | 128;
+        const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+        return [h.slice(0, 8), h.slice(8, 12), h.slice(12, 16), h.slice(16, 20), h.slice(20)].join('-');
+      };
+      Object.defineProperty(crypto, 'randomUUID', { value: uuid, configurable: true });
+    }
+  }
   const EPOCH = 1767225600000;
   let now = 0;
   const RealDate = Date;
@@ -40,7 +69,9 @@ export function clockScript(seed: number): string {
       if (typeof fn === 'function') fn(...args);
       else (0, eval)(String(fn));
     } catch (e) {
-      console.error(e);
+      // Reported as uncaught, as the browser's own timers would, so the render lists it.
+      if (typeof window.reportError === 'function') window.reportError(e);
+      else console.error(e);
     }
   };
   const schedule = (fn, delay, args, repeat) => {
