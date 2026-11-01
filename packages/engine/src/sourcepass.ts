@@ -83,8 +83,9 @@ export function sourceKey(
   return passes.length ? `${c.media_id}#${passes.map((p) => p.id).join('+')}` : c.media_id;
 }
 
+// v2: copies made before it stopped a fraction of the way through their source.
 const betweenId = (b: InBetween) =>
-  `${b.mode}-${b.fps}-at${Math.round(b.sequence * 1000) / 1000}-${b.from}-${b.to}`;
+  `v2-${b.mode}-${b.fps}-at${Math.round(b.sequence * 1000) / 1000}-${b.from}-${b.to}`;
 
 const making = new Map<string, Promise<string>>();
 const LONG = { heavy: true, timeoutMs: 60 * 60_000 } as const;
@@ -295,10 +296,11 @@ export function betweenPicture(
           '-nostdin',
           '-ss',
           String(Math.max(0, offset - 0.001)),
-          '-i',
-          input,
+          // Read this much source; as an output limit it would cut the slowed copy short.
           '-t',
           String(between.to - offset),
+          '-i',
+          input,
           '-map',
           '0:v:0',
           '-an',
