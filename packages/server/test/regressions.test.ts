@@ -499,4 +499,30 @@ describe.skipIf(!engines)('blind-test regressions', () => {
     });
     expect(silent.warnings.join(' ')).toMatch(new RegExp(`${audio} .*still plays the old audio`));
   }, 120_000);
+
+  it('says media.listen hears music as a whole, not the drums in it', async () => {
+    // A kick every half second with a snare between: to the model this is music, not drum hits.
+    const file = join(env.mediaDir, 'kick.wav');
+    await ff([
+      '-f',
+      'lavfi',
+      '-i',
+      "aevalsrc='if(lt(mod(t,0.5),0.12),sin(2*PI*(50+120*exp(-30*mod(t,0.5)))*mod(t,0.5))*exp(-20*mod(t,0.5)),0)+if(lt(mod(t-0.25,0.5),0.08),0.4*(random(0)-0.5)*exp(-40*mod(t-0.25,0.5)),0)':s=48000:d=8",
+      file,
+    ]);
+    const { media_id } = await importMedia(file);
+    const started = await ok<{ job_id: string }>(client, 'media.listen', {
+      media_id,
+      sounds: { kick: 'a kick drum hit', drum: 'drum', music: 'music' },
+    });
+    const done = await settled<{ result: { peaks: Record<string, number>; note?: string } }>(
+      client,
+      started.job_id,
+      240_000,
+    );
+    expect(done.result.peaks.music).toBeGreaterThan(0.8);
+    expect(done.result.peaks.kick).toBeLessThan(0.05);
+    expect(done.result.peaks.drum).toBeLessThan(0.05);
+    expect(done.result.note).toMatch(/not instruments, drums or single hits/);
+  }, 240_000);
 });

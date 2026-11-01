@@ -1448,6 +1448,10 @@ export const MediaListenResult = z.object({
     .describe('Per sound: runs of 40 ms frames that match, in time order; empty when none do'),
   peaks: z.record(z.string(), z.number()).describe('Per sound: the highest probability anywhere'),
   scores: SoundScores,
+  note: z
+    .string()
+    .optional()
+    .describe('What the model can and cannot hear, to read a peak near 0 by'),
 });
 
 // Create: new media from a recipe. Always a job; the result is a media_id for clip.add.
