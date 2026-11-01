@@ -131,6 +131,39 @@ describe.skipIf(!engines)('melt under load', () => {
     120_000,
   );
 
+  it.skipIf(!shim)(
+    'reads the loudness of a mix when melt starts its encoder thread on a busy machine',
+    async () => {
+      // The mix a loudness read renders goes through the same avformat consumer (to a WAV, no
+      // picture). Before the fix this hung at "loudness: rendering the mix" until the job stalled.
+      const real = BIN.melt;
+      const slow = join(env.dir, 'melt-busy-mix');
+      await writeFile(
+        slow,
+        `#!/bin/sh\nLD_PRELOAD=${SHIM} CF_THREAD_DELAY_US=50000 exec ${real} "$@"\n`,
+      );
+      await chmod(slow, 0o755);
+      BIN.melt = slow;
+      try {
+        for (const t of timelines.slice(0, 2)) {
+          const started = await ok<{ job_id: string }>(client, 'media.analyze', {
+            timeline_id: t,
+            kind: 'loudness',
+          });
+          const done = await settled<{
+            result?: { loudness?: { integrated_lufs?: number | null } };
+            error?: unknown;
+          }>(client, started.job_id, 60_000);
+          expect(done.status, JSON.stringify(done.error)).toBe('completed');
+          expect(done.result?.loudness?.integrated_lufs).toBeLessThan(0);
+        }
+      } finally {
+        BIN.melt = real;
+      }
+    },
+    150_000,
+  );
+
   it('answers every one of many frame renders asked for at once', async () => {
     for (let round = 0; round < 3; round++) {
       const asks = timelines.flatMap((t, i) =>
