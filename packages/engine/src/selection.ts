@@ -193,6 +193,39 @@ export function selectedPicture(
   return job;
 }
 
+/**
+ * The made copy when it exists. Otherwise starts making it in the background (fill takes about
+ * a second and a half a frame, too long for a request to wait) and refuses with when to look
+ * again.
+ */
+export async function selectedPictureNow(
+  src: SelectionSource,
+  dir: string,
+  pass: SelectionPass,
+  matte: MatteSource | undefined,
+  purpose: 'preview' | 'export',
+  label: string,
+): Promise<string> {
+  const dest = join(dir, `${purpose}-${pass.id}.${src.image ? 'png' : 'mov'}`);
+  const made = await stat(dest).then(
+    (s) => s.size > 0,
+    () => false,
+  );
+  if (made) return dest;
+  const started = !making.has(dest);
+  selectedPicture(src, dir, pass, matte, purpose).catch(() => undefined);
+  const seconds = pass.range ? pass.range.until - pass.range.from : src.duration;
+  const frames = src.image ? 1 : Math.ceil(seconds * (src.fps.num / src.fps.den));
+  throw new CfError(
+    'media_not_ready',
+    `The filled selection of ${label} is ${started ? 'now' : 'still'} being made`,
+    {
+      hint: `Filling takes about 1.5 s a frame on this server's CPU (${frames} frames here, so about ${Math.max(1, Math.ceil((frames * 1.5) / 60))} min). Render again then; an export waits for it`,
+      detail: { frames },
+    },
+  );
+}
+
 async function makeSelected(
   src: SelectionSource,
   pass: SelectionPass,

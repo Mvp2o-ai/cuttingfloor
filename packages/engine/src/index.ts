@@ -103,6 +103,7 @@ export {
   type SelectionPass,
   type SelectionSource,
   selectedPicture,
+  selectedPictureNow,
   selectionPass,
 } from './selection.ts';
 export {

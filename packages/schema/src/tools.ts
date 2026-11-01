@@ -123,7 +123,7 @@ export const MaskArgs = z.object({
     'matte: the media whose alpha (or brightness) is the selection, frame by frame',
   ),
   mode: MaskMode.optional().describe(
-    'show (default): only the selection shows; hide: it is hidden; fill: it is painted over from its surroundings',
+    'show (default): only the selection shows; hide: it is hidden; fill: it is painted in from its surroundings',
   ),
 });
 
