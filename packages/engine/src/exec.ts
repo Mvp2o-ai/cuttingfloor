@@ -14,6 +14,7 @@ export const BIN = {
   segment: process.env.CUTTINGFLOOR_SEGMENT ?? 'cf-segment',
   zip: 'zip',
   tts: process.env.CUTTINGFLOOR_TTS ?? 'sherpa-onnx-offline-tts',
+  diarize: process.env.CUTTINGFLOOR_DIARIZE ?? 'sherpa-onnx-offline-speaker-diarization',
   tar: 'tar',
   fcList: 'fc-list',
 };

@@ -30,6 +30,7 @@ export {
   watchRenderQueue,
 } from './exec.ts';
 export { directDownloadUrl, download, isBlockedAddress } from './fetch.ts';
+export { type ClipPlacement, clipPlacements, type PixelBox } from './geometry.ts';
 export {
   fingerprint,
   hasAlpha,
@@ -49,6 +50,19 @@ export {
 } from './media.ts';
 export { compileMlt, lengthFrames, type MltSource, scaledSize } from './mlt.ts';
 export {
+  type Box,
+  type ChannelStats,
+  type ColourStats,
+  colourStats,
+  mediaRgbFrames,
+  type PictureSeries,
+  parseSignalstats,
+  pictureSeries,
+  pngsToRgb,
+  type RgbFrame,
+  renderPictureFile,
+} from './picture.ts';
+export {
   fitBox,
   type Overrides,
   PRESET_NAMES,
@@ -58,6 +72,15 @@ export {
   resolvePreset,
 } from './presets.ts';
 export { conformReasons, type Probe, probe, standardRate } from './probe.ts';
+export {
+  measureVoice,
+  VOICE_FRAME_SECONDS,
+  VOICE_METHOD,
+  type VoiceFrame,
+  type VoiceSeries,
+  type VoiceSummary,
+  voiceSeries,
+} from './prosody.ts';
 export {
   type CutFact,
   type CutWord,
@@ -98,6 +121,15 @@ export {
   type SourcePass,
   sourceKey,
 } from './sourcepass.ts';
+export {
+  diarize,
+  numberSpeakers,
+  parseTurns,
+  SPEAKER_MODELS,
+  type Speakers,
+  type SpeakerTurn,
+  wordSpeakers,
+} from './speakers.ts';
 export {
   ALIGN_LANGUAGES,
   type AlignedWord,

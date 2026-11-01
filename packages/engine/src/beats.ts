@@ -18,6 +18,8 @@ export interface Beats {
   beats: number[];
   /** Every fourth beat from the strongest phase: likely bar starts. */
   downbeats: number[];
+  /** Per beat, in order: the onset strength there, as a share of the strongest onset (0–1). */
+  strengths: number[];
 }
 
 /** Mono samples at 22.05 kHz. */
@@ -246,9 +248,19 @@ export async function analyseBeats(file: string, signal?: AbortSignal): Promise<
       phase = p;
     }
   }
+  // Each beat's onset strength (the strongest onset within two hops, about 46 ms, of the beat),
+  // on one scale for the whole sound: the strongest onset anywhere is 1.
+  let peak = 0;
+  for (const v of env) if (v > peak) peak = v;
+  const near = (f: number) => {
+    let m = 0;
+    for (let k = f - 2; k <= f + 2; k++) m = Math.max(m, env[k] ?? 0);
+    return m;
+  };
   return {
     bpm: Math.round(bpm * 10) / 10,
     beats,
     downbeats: beats.filter((_, i) => i % 4 === phase),
+    strengths: frames.map((f) => (peak ? Math.round((near(f) / peak) * 1000) / 1000 : 0)),
   };
 }

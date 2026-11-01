@@ -55,7 +55,12 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 const r4 = (n: number) => Math.round(n * 10_000) / 10_000;
 
 /** qtblend rect "x y w h opacity" for one frame's transform: exactly the picture's box. */
-function rectFor(clip: StoredClip, s: TransformState, src: SourceSize, out: Frame): number[] {
+export function rectFor(
+  clip: StoredClip,
+  s: TransformState,
+  src: SourceSize,
+  out: Frame,
+): number[] {
   const W = out.width;
   const H = out.height;
   // Size of the picture fitted with `contain`, then the fit mode, then scale.
@@ -329,7 +334,7 @@ function placer(src: SourceSize) {
   return (p: Pt): Pt => [r4(p[0] / src.width), r4(p[1] / src.height)];
 }
 
-function maskSpline(mask: StoredMask, m: MaskState, src: SourceSize): BPoint[] {
+export function maskSpline(mask: StoredMask, m: MaskState, src: SourceSize): BPoint[] {
   const place = placer(src);
   if (mask.shape === 'polygon') {
     return (mask.points ?? []).map(([x, y]) => corner(place([x * src.width, y * src.height])));

@@ -2,7 +2,9 @@ import { copyFile, mkdir, open, readdir, realpath, rename, stat } from 'node:fs/
 import { basename, extname, join, sep } from 'node:path';
 import { ownerKey, randomId, secondsToTicks, type Workspace } from '@cuttingfloor/core';
 import {
+  type ANALYSES,
   CfError,
+  type MediaGetResult,
   type MediaInfo,
   type MediaOrigin,
   type MediaRef,
@@ -15,6 +17,7 @@ import { directDownloadUrl, download } from './fetch.ts';
 import { conformReasons, type Probe, probe } from './probe.ts';
 import { LOUDNESS_STATS, parseChannelLevels } from './speech.ts';
 import { unwrapWebFont } from './webfont.ts';
+import { wordSpeakers } from './speakers.ts';
 
 export const MEDIA_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -56,6 +59,10 @@ export interface MediaRecord {
     look?: NonNullable<MediaInfo['look']>;
     speech?: NonNullable<MediaInfo['speech']>;
     sounds?: NonNullable<MediaInfo['sounds']>;
+    speakers?: NonNullable<MediaGetResult['speakers']>;
+    voice?: NonNullable<MediaGetResult['voice']>;
+    colour?: NonNullable<MediaGetResult['colour']>;
+    picture?: NonNullable<MediaGetResult['picture']>;
   };
   /** The media.import job that ingests it (a create.* job is in source). */
   job_id?: string;
@@ -67,6 +74,9 @@ export interface MediaRecord {
 }
 
 type LookRun = NonNullable<MediaInfo['look']>['runs'][number];
+
+/** The analyses kept with a media, one file each (look: one per run). */
+export type StoredAnalysis = (typeof ANALYSES)[number];
 
 /** Look runs kept with each media. */
 export const LOOK_RUNS_KEPT = 10;
@@ -188,9 +198,7 @@ export class MediaLibrary {
       const value = await this.#ws.readJson<never>(join(dir, name));
       if (!value) continue;
       if (name.startsWith('look-')) runs.push(value);
-      else
-        analyses[name.slice(0, -5) as 'transcript' | 'beats' | 'faces' | 'speech' | 'sounds'] =
-          value;
+      else analyses[name.slice(0, -5) as Exclude<StoredAnalysis, 'look'>] = value;
     }
     if (runs.length) analyses.look = { runs: runs.slice(-LOOK_RUNS_KEPT) };
     if (Object.keys(analyses).length) record.analyses = analyses;
@@ -220,7 +228,7 @@ export class MediaLibrary {
   async saveAnalysis(
     owner: string,
     id: string,
-    kind: 'transcript' | 'beats' | 'faces' | 'look' | 'speech' | 'sounds',
+    kind: StoredAnalysis,
     value: unknown,
   ): Promise<MediaRecord> {
     const dir = join(this.dir(owner, id), 'analyses');
@@ -624,10 +632,10 @@ export function mediaRef(record: MediaRecord): MediaRef | undefined {
 
 export function mediaInfo(
   record: MediaRecord,
-  include: Array<'transcript' | 'beats' | 'faces' | 'look' | 'speech' | 'sounds'> = [],
+  include: StoredAnalysis[] = [],
   /** Everything the probe read (media.get gives it). */
   options: { probe?: boolean } = {},
-): MediaInfo {
+): MediaGetResult {
   const p = record.probe;
   const a = record.analyses;
   const analyses = a
@@ -668,6 +676,32 @@ export function mediaInfo(
               },
             }
           : {}),
+        ...(a.speakers
+          ? {
+              speakers: {
+                model: a.speakers.model,
+                speakers: a.speakers.speakers,
+                turns: a.speakers.turns.length,
+              },
+            }
+          : {}),
+        ...(a.voice ? { voice: { ...a.voice.summary, frames: a.voice.frames.length } } : {}),
+        ...(a.colour
+          ? {
+              colour: {
+                frames: a.colour.frames.length,
+                regions: Object.keys(a.colour.frames[0]?.regions ?? {}),
+              },
+            }
+          : {}),
+        ...(a.picture
+          ? {
+              picture: {
+                frames: a.picture.columns.time?.length ?? 0,
+                from: a.picture.from,
+              },
+            }
+          : {}),
         ...(a.look?.runs.length
           ? {
               look: {
@@ -684,6 +718,7 @@ export function mediaInfo(
     name: record.name,
     origin: mediaOrigin(record),
     created_at: record.created_at,
+    fingerprint: record.fingerprint,
     status: record.status,
     kind: p?.kind ?? null,
     ...(p?.family ? { font_family: p.family } : {}),
@@ -702,6 +737,10 @@ export function mediaInfo(
     ...(analyses && Object.keys(analyses).length ? { analyses } : {}),
     ...(options.probe && p?.raw ? { probe: p.raw } : {}),
     ...Object.fromEntries(include.flatMap((k) => (a?.[k] ? [[k, a[k]]] : []))),
+    // Each transcript word carries the speaker the latest speakers run heard saying it.
+    ...(include.includes('transcript') && a?.transcript && a.speakers
+      ? { transcript: withSpeakers(a.transcript, a.speakers) }
+      : {}),
     ...(record.warnings?.length ? { warnings: record.warnings } : {}),
     ...(record.error ? { error: record.error } : {}),
   };
@@ -722,6 +761,18 @@ function soundSeconds(p: Probe): number | null {
     return Number.isFinite(seconds) ? Math.round(seconds * 1000) / 1000 : null;
   };
   return of('audio');
+}
+
+/** A transcript whose words carry the speaker whose turns overlap each most. */
+function withSpeakers(
+  transcript: NonNullable<MediaInfo['transcript']>,
+  speakers: NonNullable<MediaGetResult['speakers']>,
+): NonNullable<MediaInfo['transcript']> {
+  const who = wordSpeakers(transcript.words, speakers.turns);
+  return {
+    ...transcript,
+    words: transcript.words.map((w, i) => ({ ...w, speaker: who[i] ?? null })),
+  };
 }
 
 /** Which file each render reads: proxies for previews, the mezzanine or original for exports. */

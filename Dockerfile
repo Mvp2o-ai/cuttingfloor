@@ -141,8 +141,9 @@ RUN mkdir -p /ckpt /picture/upscale \
  && /venv/bin/python -I /src/export-realesrgan.py /ckpt/x4v3.pth /ckpt/wdn-x4v3.pth 1 /picture/upscale/realesr-general-x4v3-strong.onnx
 
 # sherpa-onnx's offline TTS for local voiceover (Kokoro voices; Apache-2.0, with espeak-ng
-# built in), the prebuilt release for each architecture, checked against pinned SHA-256s. The
-# Kokoro model downloads on first use, like the whisper models.
+# built in) and its offline speaker diarisation for media.analyze speakers, the prebuilt release
+# for each architecture, checked against pinned SHA-256s. The Kokoro model downloads on first
+# use, like the whisper models; the diarisation models ship in the image (speech-models below).
 FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS tts
 ARG TARGETARCH
 ARG SHERPA_VERSION=v1.13.8
@@ -158,9 +159,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
  && echo "$sum  /sherpa.tar.bz2" | sha256sum -c - \
  && mkdir -p /src /opt/sherpa-onnx/bin /opt/sherpa-onnx/lib \
  && tar -xjf /sherpa.tar.bz2 -C /src --strip-components=1 \
- && cp /src/bin/sherpa-onnx-offline-tts /opt/sherpa-onnx/bin/ \
+ && cp /src/bin/sherpa-onnx-offline-tts /src/bin/sherpa-onnx-offline-speaker-diarization /opt/sherpa-onnx/bin/ \
  && cp -L /src/lib/libonnxruntime.so* /opt/sherpa-onnx/lib/ \
- && /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts --help >/dev/null 2>&1 || /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts 2>&1 | grep -qi usage
+ && (/opt/sherpa-onnx/bin/sherpa-onnx-offline-tts --help >/dev/null 2>&1 || /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts 2>&1 | grep -qi usage) \
+ && /opt/sherpa-onnx/bin/sherpa-onnx-offline-speaker-diarization --help 2>&1 | grep -qi diarization
 
 # all-MiniLM-L6-v2 (Apache-2.0) for skills.search: sentence embeddings on the CPU, int8 (about
 # 23 MB), in the Transformers.js layout. It ships in the image; nothing downloads at run time, and
@@ -199,14 +201,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 # Speech facts on the CPU, run by packages/engine/src/sound-worker.ts on ONNX Runtime: Silero
 # VAD v6.2.3 (MIT, snakers4/silero-vad) for speech probability, and wav2vec2-base-960h
 # (Apache-2.0, facebook/wav2vec2-base-960h, as the Transformers.js ONNX export) for aligning
-# transcript words to the sound. They ship in the image; each file pinned and checked.
+# transcript words to the sound. For who speaks when (sherpa-onnx speaker diarisation):
+# pyannote/segmentation-3.0 (MIT, CNRS) and 3D-Speaker ERes2Net trained on VoxCeleb (Apache-2.0,
+# Alibaba), both as sherpa-onnx's own ONNX exports from its GitHub releases. They ship in the
+# image; each file pinned and checked.
 FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS speech-models
 ARG SILERO_COMMIT=5cd7945676eb32225748052e2e6a0580e4686a08
 ARG SILERO_SHA256=1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3
 ARG W2V_REVISION=a19f851b3d42865797e410752b4c570c871e4825
 ARG W2V_SHA256=e46614273f03ff4b87923a965e417fa72004825522cb007c9c25633b8475490d
 ARG W2V_VOCAB_SHA256=4178db26b3c7570f6a47f14ac6a1c7b32950b8c2800fb097287e53776934f1c5
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+ARG SHERPA_MODELS=https://github.com/k2-fsa/sherpa-onnx/releases/download
+ARG PYANNOTE_TAR_SHA256=24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488
+ARG PYANNOTE_SHA256=220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079
+ARG ERES2NET_SHA256=c59158379255ad66e161679cca6af8d52d51e389e3224ab7d7a7baae295c2db5
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates bzip2 \
+ && curl -fsSL -o /pyannote.tar.bz2 "$SHERPA_MODELS/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2" \
+ && echo "$PYANNOTE_TAR_SHA256  /pyannote.tar.bz2" | sha256sum -c - \
+ && mkdir -p /models /pyannote && tar -xjf /pyannote.tar.bz2 -C /pyannote --strip-components=1 \
+ && cp /pyannote/model.onnx /models/pyannote-segmentation-3.0.onnx \
+ && echo "$PYANNOTE_SHA256  /models/pyannote-segmentation-3.0.onnx" | sha256sum -c - \
+ && curl -fsSL -o /models/3dspeaker-eres2net-sv-en-voxceleb-16k.onnx "$SHERPA_MODELS/speaker-recongition-models/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx" \
+ && echo "$ERES2NET_SHA256  /models/3dspeaker-eres2net-sv-en-voxceleb-16k.onnx" | sha256sum -c - \
  && mkdir -p /models/wav2vec2-base-960h \
  && curl -fsSL -o /models/silero-vad-v6.2.3.onnx "https://raw.githubusercontent.com/snakers4/silero-vad/$SILERO_COMMIT/src/silero_vad/data/silero_vad.onnx" \
  && echo "$SILERO_SHA256  /models/silero-vad-v6.2.3.onnx" | sha256sum -c - \
@@ -233,7 +249,8 @@ RUN apt-get update \
  && chromium --version
 COPY --from=whisper /src/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=tts /opt/sherpa-onnx /opt/sherpa-onnx
-RUN ln -s /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts /usr/local/bin/sherpa-onnx-offline-tts
+RUN ln -s /opt/sherpa-onnx/bin/sherpa-onnx-offline-tts /usr/local/bin/sherpa-onnx-offline-tts \
+ && ln -s /opt/sherpa-onnx/bin/sherpa-onnx-offline-speaker-diarization /usr/local/bin/sherpa-onnx-offline-speaker-diarization
 COPY --from=vision /cf-vision /usr/local/bin/cf-vision
 COPY --from=vision /yunet.onnx /usr/share/cuttingfloor/models/face_detection_yunet_2023mar.onnx
 COPY --from=vision /models/ /usr/share/cuttingfloor/models/
