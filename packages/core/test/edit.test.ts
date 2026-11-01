@@ -823,6 +823,43 @@ describe('compositing', () => {
     expect(Object.keys(right?.animation ?? {})).toEqual(['out']);
   });
 
+  it('runs a loop over part of the clip, kept on its source moment through a split', () => {
+    let doc = edit(base(), {
+      tool: 'clip.set_animation',
+      args: { clip_id: 'c3', loop: { name: 'shake', from_frame: 10, to_frame: 20, strength: 2 } },
+    }).doc;
+    const moved = (d: TimelineDoc, id: string, i: number) => {
+      const s = transformAt(clip(d, id), tpf, i, 40);
+      return s.x !== 0.5 || s.y !== 0.5;
+    };
+    expect([0, 9, 20, 39].map((i) => moved(doc, 'c3', i))).toEqual([false, false, false, false]);
+    expect(Array.from({ length: 10 }, (_, i) => moved(doc, 'c3', 10 + i)).some(Boolean)).toBe(true);
+    expect(toView('tl_x', doc).tracks[0]?.clips[0]?.animation?.loop).toMatchObject({
+      from_frame: 10,
+      to_frame: 20,
+    });
+    // Split at timeline frame 15 (clip frame 15): the right half shakes for its first 5 frames.
+    const start = Math.round(clip(doc, 'c3').start / tpf);
+    doc = edit(doc, { tool: 'clip.split', args: { clip_id: 'c3', at_frame: start + 15 } }).doc;
+    const right = doc.tracks[0]?.clips[1];
+    expect(toView('tl_x', doc).tracks[0]?.clips[1]?.animation?.loop).toMatchObject({
+      from_frame: -5,
+      to_frame: 5,
+    });
+    expect(moved(doc, right?.id ?? '', 6)).toBe(false);
+    expect(() =>
+      edit(base(), {
+        tool: 'clip.set_animation',
+        args: { clip_id: 'c3', loop: { name: 'shake', from_frame: 20, to_frame: 10 } },
+      }),
+    ).toThrow(/not after from_frame/);
+    const missed = edit(base(), {
+      tool: 'clip.set_animation',
+      args: { clip_id: 'c3', loop: { name: 'shake', from_frame: 500 } },
+    });
+    expect(missed.outcome.warnings.join(' ')).toMatch(/never shows/);
+  });
+
   it('refuses compositing on audio clips and names the linked video clip', () => {
     const { doc } = edit(start(), {
       tool: 'clip.add',

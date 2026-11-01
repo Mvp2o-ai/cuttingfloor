@@ -283,7 +283,14 @@ export const StoredAnimation = z.object({
   in: z.object({ name: InOutAnimation, duration: z.number().int().positive() }).optional(),
   out: z.object({ name: InOutAnimation, duration: z.number().int().positive() }).optional(),
   loop: z
-    .object({ name: LoopAnimation, period: z.number().int().positive(), strength: z.number() })
+    .object({
+      name: LoopAnimation,
+      period: z.number().int().positive(),
+      strength: z.number(),
+      /** Where it runs, source ticks like keyframes: [from, to). Absent: the whole clip. */
+      from: z.number().int().optional(),
+      to: z.number().int().optional(),
+    })
     .optional(),
 });
 export type StoredAnimation = z.infer<typeof StoredAnimation>;
