@@ -1233,7 +1233,8 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
           [100, 360],
         ]),
       ).toEqual(['green', 'red', 'green']);
-      // A square that slides from the picture's left edge to its right edge over 40 frames.
+      // A square that slides right over 40 frames. Points are fractions of the fitted frame
+      // (the whole 1280×720 here; the 4:3 picture fills x 160–1120 of it).
       const square = (x: number) => [
         [x, 0.4],
         [x + 0.2, 0.4],
@@ -1246,34 +1247,25 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
           shape: 'polygon',
           points: {
             keyframes: [
-              { frame: 0, points: square(0) },
-              { frame: 40, points: square(0.8) },
+              { frame: 0, points: square(0.2) },
+              { frame: 40, points: square(0.6) },
             ],
           },
         },
       });
-      // The picture spans x 160–1120: x 0.1 is 256 px, x 0.5 is 640, x 0.9 is 1024.
-      expect(
-        await look(lasso, 0, [
-          [256, 360],
-          [640, 360],
-          [1024, 360],
-        ]),
-      ).toEqual(['red', 'green', 'green']);
-      expect(
-        await look(lasso, 20, [
-          [256, 360],
-          [640, 360],
-          [1024, 360],
-        ]),
-      ).toEqual(['green', 'red', 'green']);
-      expect(
-        await look(lasso, 40, [
-          [256, 360],
-          [640, 360],
-          [1024, 360],
-        ]),
-      ).toEqual(['green', 'green', 'red']);
+      // Frame 0: x 256–512; frame 20: x 512–768; frame 40: x 768–1024.
+      for (const [frame, expected] of [
+        [0, ['red', 'green', 'green']],
+        [20, ['green', 'red', 'green']],
+        [40, ['green', 'green', 'red']],
+      ] as const)
+        expect(
+          await look(lasso, frame, [
+            [384, 360],
+            [640, 360],
+            [896, 360],
+          ]),
+        ).toEqual(expected);
       const view = await ok<{ tracks: Array<{ clips: Array<{ id: string; mask?: unknown }> }> }>(
         client,
         'timeline.get',
@@ -1291,8 +1283,8 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
           shape: 'polygon',
           points: {
             keyframes: [
-              { frame: 0, points: square(0) },
-              { frame: 40, points: square(0.8).slice(0, 3) },
+              { frame: 0, points: square(0.2) },
+              { frame: 40, points: square(0.6).slice(0, 3) },
             ],
           },
         },

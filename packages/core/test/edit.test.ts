@@ -874,6 +874,78 @@ describe('compositing', () => {
     expect(back.tracks[0]?.locked).toBe(true);
   });
 
+  it('keys lasso points over time, selects with a matte, and keeps the mode through a load', () => {
+    const sq = (x: number) => [
+      [x, 0.4],
+      [x + 0.2, 0.4],
+      [x + 0.2, 0.6],
+      [x, 0.6],
+    ];
+    const { doc } = edit(base(), {
+      tool: 'clip.set_mask',
+      args: {
+        clip_id: 'c3',
+        mask: {
+          shape: 'polygon',
+          mode: 'fill',
+          points: {
+            keyframes: [
+              { frame: 10, points: sq(0.6), ease: 'smooth' },
+              { frame: 0, points: sq(0) },
+            ],
+          },
+        },
+      },
+    });
+    const view = toView('tl_x', doc);
+    expect(view.tracks.flatMap((t) => t.clips).find((c) => c.id === 'c3')?.mask).toEqual({
+      shape: 'polygon',
+      mode: 'fill',
+      points: {
+        keyframes: [
+          { frame: 0, points: sq(0) },
+          { frame: 10, points: sq(0.6), ease: 'smooth' },
+        ],
+      },
+    });
+    expect(toView('tl_x', fromView(view, resolve))).toEqual({ ...view, parent: null });
+    expect(() =>
+      edit(base(), {
+        tool: 'clip.set_mask',
+        args: {
+          clip_id: 'c3',
+          mask: {
+            shape: 'polygon',
+            points: {
+              keyframes: [
+                { frame: 0, points: sq(0) },
+                { frame: 9, points: sq(0).slice(0, 3) },
+              ],
+            },
+          },
+        },
+      }),
+    ).toThrow(/same number of corners/);
+    expect(() =>
+      edit(base(), { tool: 'clip.set_mask', args: { clip_id: 'c3', mask: { shape: 'matte' } } }),
+    ).toThrow(/needs media_id/);
+    expect(() =>
+      edit(base(), {
+        tool: 'clip.set_mask',
+        args: { clip_id: 'c3', mask: { shape: 'matte', media_id: 'm_zzzzzzzzzzzzzzzzzzzzzzzzzz' } },
+      }),
+    ).toThrow(/No media/);
+    expect(() =>
+      edit(base(), {
+        tool: 'clip.set_mask',
+        args: {
+          clip_id: 'c3',
+          mask: { shape: 'ellipse', media_id: 'm_aaaaaaaaaaaaaaaaaaaaaaaaav' },
+        },
+      }),
+    ).toThrow(/only to matte/);
+  });
+
   it("refuses values outside each field's range", () => {
     expect(() =>
       edit(base(), { tool: 'clip.set_transform', args: { clip_id: 'c3', opacity: 2 } }),

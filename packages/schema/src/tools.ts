@@ -120,10 +120,10 @@ export const MaskArgs = z.object({
       'polygon: [x, y] corners in the fitted frame, 0–1, or {keyframes: [{frame, points, ease}]} with the same number of corners in each',
     ),
   media_id: MediaId.optional().describe(
-    'matte: the media whose alpha (brightness, if it has none) is the selection, frame by frame, e.g. a create.cutout result',
+    'matte: the media whose alpha (or brightness) is the selection, frame by frame',
   ),
   mode: MaskMode.optional().describe(
-    'What happens to the selection. show (default): only it shows; hide: it is hidden (as show with invert); fill: the whole picture shows, with the selection painted over from its surroundings, every frame',
+    'show (default): only the selection shows; hide: it is hidden; fill: it is painted over from its surroundings',
   ),
 });
 
@@ -1751,7 +1751,7 @@ export const CreateCutoutInput = z.object({
     })
     .optional()
     .describe(
-      'Cut out one item instead of the main subject: the item inside this box (top-left x, y and size w, h, fractions of the picture) and/or under these points, at at_seconds, followed through the whole video to its exact outline (EdgeTAM, about 0.5 s a frame). Use it for anything: one person of several, a pet, a product, a logo',
+      'One item instead of the main subject: the one in this box (top-left x, y, size w, h, fractions of the picture) and/or under these points at at_seconds, followed through the video to its exact outline (EdgeTAM, about 0.5 s a frame)',
     ),
   ...createCommon,
 });
