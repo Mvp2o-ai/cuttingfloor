@@ -1,5 +1,0 @@
----
-'cuttingfloor': minor
----
-
-New measured facts, no verdicts. media.analyze speakers says who speaks when (sherpa-onnx: pyannote segmentation 3.0 and 3D-Speaker ERes2Net, on the CPU), and each transcript word then carries its speaker. voice gives pitch, level and pace over a stretch, with a summary to hand judge.ask. colour gives per-channel means and percentiles, luma, a white point estimate and clipping for whole frames and named regions; picture gives every frame's signalstats, ydif (change from the frame before) included. beats now carry each beat's onset strength, and transcript takes from_seconds and until_seconds. The picture kinds (faces, track, look, scenes, colour, picture) take a timeline_id and read the edit as it renders; judge.ask takes {timeline_id, at_seconds} pictures. Boxes you give can be in pixels (units: "pixels"). clip.set_transform, set_mask and set_animation (and edit.batch) return placements: where each clip now shows in sequence pixels and which source pixels show there. media.get gives the import fingerprint; export.video gives the render's SHA-256 and the same fingerprint.

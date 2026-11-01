@@ -1,5 +1,0 @@
----
-'cuttingfloor': patch
----
-
-Tool descriptions say what the tools actually do: mask coordinates are fractions of the clip's fitted frame (a sequence-shaped box with the picture fitted inside), not of the picture itself; face boxes are top-left corner plus size; a keyframe's ease shapes the move from it to the next; chroma_key tolerance compares colour alone; fit cover crops equally on both sides around x, y; effects run in order; denoise is a picture effect; only some effect numbers take keyframes; clip.add {words} adds no padding; only inline previews carry loudness; captions wrap at max_width and each highlight mode is described; scenes threshold and transcript model cost have guidance; qa.check no longer promises an instant answer under load; nesting a timeline makes overlays follow a zoom. The server instructions now say edits take media while it is processing but media.analyze, media.seek, judge.ask and create.* need it ready, and those refusals say the media's status instead of "still importing". media.get warns when it is asked to include an analysis that was never run.
