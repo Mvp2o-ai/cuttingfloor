@@ -424,11 +424,13 @@ describe.skipIf(!engines)('picture and sound', () => {
           for (const size of ['preview', 'full'] as const) {
             for (const [i, f] of frames.entries()) {
               const b = box(await grey(smooth.timeline_id, f, size));
-              // Within a source frame (1 px) of the plain clip: the same moment, made smooth.
+              // Within two source frames (2 px) of the plain clip, which shows the frame before a
+              // moment where blend and motion show the moment itself; a copy off its time is
+              // tens of frames out, or empty.
               expect(
                 Math.abs(b.x - (reference[i]?.x ?? 0)),
                 `${JSON.stringify(speed)} ${mode} ${size} frame ${f}`,
-              ).toBeLessThan(1.6);
+              ).toBeLessThan(2.2);
               expect(b.peak).toBeGreaterThan(100);
             }
           }
