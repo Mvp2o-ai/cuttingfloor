@@ -214,7 +214,7 @@ describe('MLT compiler', () => {
     if (!clip) throw new Error('no audio clip');
     const key = sourceKey(clip);
     expect(key).toBe(`${id}#denoise-voice-0.5`);
-    expect(clipPasses(clip)[0]?.filter).toMatch(
+    expect((clipPasses(clip)[0] as { filter?: string } | undefined)?.filter).toMatch(
       /arnndn=m=.*bd\.rnnn:mix=0\.5,atrim=start_sample=480/,
     );
     const xml = compileMlt(cleaned, {

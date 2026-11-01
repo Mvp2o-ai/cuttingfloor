@@ -248,6 +248,22 @@ export const EFFECTS = {
     params: { frequency: num(200, 20000, 8000, 'Hz', false) },
   },
   telephone: { kind: 'audio', about: 'Narrow-band phone voice', params: {} },
+  dereverb: {
+    kind: 'audio',
+    about:
+      "Take room echo out of speech (weighted prediction error, WPE): the echo tail each moment's recent past predicts is subtracted; the voice and the first few hundredths of a second of the room stay. One microphone: on a 0.5 s room it takes the echo between words down by about 4 dB, so it softens a room rather than removing it. On audio clips only, not tracks or the timeline: it works through the clip's whole source once, on the first render that plays it (a minute of voice in about 15 s; twice that for true stereo), and reuses that after",
+    sourcePass: true,
+    params: {
+      reach_ms: num(
+        60,
+        400,
+        250,
+        'How far back the echo is predicted from, in milliseconds: longer reaches a longer tail and costs more time',
+        false,
+      ),
+      mix: num(0, 1, 1, '1 is fully processed; lower blends the original back in', false),
+    },
+  },
   // Lens, motion and channels
   lens_correction: {
     kind: 'video',
