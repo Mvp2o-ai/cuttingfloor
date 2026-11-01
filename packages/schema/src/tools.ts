@@ -234,6 +234,12 @@ export const EditArgs = {
     clip_id: z.string(),
     media_id: MediaId,
     source_in: frame.optional().describe('Source frame the clip starts at. Default 0'),
+    linked: z
+      .boolean()
+      .default(true)
+      .describe(
+        'Also swap its linked clips (its sound, or its picture) onto the new media, keeping their offset, where the new media has that kind; false swaps this clip only',
+      ),
   }),
   'range.lift': z.object({ range: FrameRange, track_ids: TrackIds }),
   'range.extract': z.object({ range: FrameRange, track_ids: TrackIds }),

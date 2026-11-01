@@ -120,7 +120,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.replace': {
     title: 'Replace media',
     description:
-      'Swap the media in a clip, keeping its place, length, speed and look. Starts at source_in (default 0).',
+      'Swap the media in a clip, keeping its place, length, speed and look. Starts at source_in (default 0). Its linked clips swap too (linked: false for this clip only); clip_ids lists every clip swapped.',
   },
   'range.lift': {
     title: 'Lift range',

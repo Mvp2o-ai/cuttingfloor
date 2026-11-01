@@ -1168,18 +1168,40 @@ function clipReplace(
     );
   }
   doc.media[a.media_id] = media;
+  const newIn = framesToTicks(a.source_in ?? 0, doc.sequence.fps);
   // The clip keeps its place and look; a nested timeline swapped for media becomes a media clip.
-  const { timeline: _t, media_id: _m, ...look } = { timeline: '', media_id: '', ...found };
-  const clip: StoredClip = {
-    ...look,
-    type: 'media',
-    media_id: a.media_id,
-    in: framesToTicks(a.source_in ?? 0, doc.sequence.fps),
+  const swap = (from: StoredClip, at: number): StoredClip => {
+    const { timeline: _t, media_id: _m, ...look } = { timeline: '', media_id: '', ...from };
+    const clip: StoredClip = { ...look, type: 'media', media_id: a.media_id, in: at };
+    if (media.duration === null) delete clip.speed;
+    return clip;
   };
-  track.clips = track.clips.map((c) => (c === found ? clip : c));
-  if (media.duration === null) delete clip.speed;
-  checkSourceRange(doc, clip);
-  return ok(clip.start, { clip_id: clip.id });
+  const clip = swap(found, newIn);
+  const replaced = new Map<StoredClip, StoredClip>([[found, clip]]);
+  const warnings: string[] = [];
+  // Its linked clips (the sound of a picture, the picture of a sound) follow onto the new media,
+  // keeping their offset from it, where the new media has that kind.
+  if (a.linked && found.link) {
+    for (const m of group(doc, found.id)) {
+      if (m.clip === found) continue;
+      const has = m.clip.kind === 'video' ? media.video : media.audio;
+      if (!has) {
+        warnings.push(
+          `${m.clip.id} (linked ${m.clip.kind}) still plays the old ${m.clip.kind}: media ${a.media_id} has no ${m.clip.kind}. Remove it or clip.replace it on its own`,
+        );
+        continue;
+      }
+      assertUnlocked(m.track);
+      replaced.set(m.clip, swap(m.clip, newIn + (m.clip.in - found.in)));
+    }
+  }
+  for (const t of doc.tracks) t.clips = t.clips.map((c) => replaced.get(c) ?? c);
+  for (const c of replaced.values()) checkSourceRange(doc, c);
+  return ok(clip.start, {
+    clip_id: clip.id,
+    clip_ids: [...replaced.values()].map((c) => c.id),
+    warnings,
+  });
 }
 
 function rangeRemove(doc: TimelineDoc, a: EditArgsOf<'range.lift'>, ripple: boolean): OpOutcome {

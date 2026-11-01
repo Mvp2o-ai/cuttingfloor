@@ -438,4 +438,65 @@ describe.skipIf(!engines)('blind-test regressions', () => {
     const analyze = JSON.stringify(tools.find((t) => t.name === 'media.analyze'));
     expect(analyze).toMatch(/Hard cuts between ordinary shots score about 10 to 30/);
   }, 120_000);
+
+  it('swaps a clip and its linked sound onto the new media together', async () => {
+    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      name: 'swap',
+      sequence: { width: 640, height: 360, fps: { num: 24, den: 1 } },
+    });
+    const added = await ok<{ timeline_id: string; clip_ids: string[] }>(client, 'clip.add', {
+      timeline_id,
+      track_id: 't1',
+      media_id: ids.game,
+      source: { in: 24, out: 72 },
+      preview: 'none',
+    });
+    const [video, audio] = added.clip_ids as [string, string];
+    const lcut = added;
+    const before = await ok<{ tracks: Array<{ clips: Array<Record<string, unknown>> }> }>(
+      client,
+      'timeline.get',
+      { timeline_id: lcut.timeline_id },
+    );
+    const clipOf = (doc: typeof before, id: string) =>
+      doc.tracks.flatMap((t) => t.clips).find((c) => c.id === id) as {
+        media_id: string;
+        source: { in: number; out: number };
+      };
+    const offset = clipOf(before, audio).source.in - clipOf(before, video).source.in;
+    const swapped = await ok<{ timeline_id: string; clip_ids: string[] }>(client, 'clip.replace', {
+      timeline_id: lcut.timeline_id,
+      clip_id: video,
+      media_id: ids.face,
+      source_in: 48,
+      preview: 'none',
+    });
+    expect(swapped.clip_ids.sort()).toEqual([video, audio].sort());
+    const after = await ok<typeof before>(client, 'timeline.get', {
+      timeline_id: swapped.timeline_id,
+    });
+    expect(clipOf(after, video)).toMatchObject({ media_id: ids.face, source: { in: 48 } });
+    expect(clipOf(after, audio)).toMatchObject({ media_id: ids.face, source: { in: 48 + offset } });
+
+    const only = await ok<{ timeline_id: string }>(client, 'clip.replace', {
+      timeline_id: lcut.timeline_id,
+      clip_id: video,
+      media_id: ids.face,
+      linked: false,
+      preview: 'none',
+    });
+    const alone = await ok<typeof before>(client, 'timeline.get', {
+      timeline_id: only.timeline_id,
+    });
+    expect(clipOf(alone, audio).media_id).toBe(ids.game);
+
+    // New media without sound: the picture swaps and the result says the sound did not.
+    const silent = await ok<{ warnings: string[] }>(client, 'clip.replace', {
+      timeline_id: lcut.timeline_id,
+      clip_id: video,
+      media_id: ids.blue,
+      preview: 'none',
+    });
+    expect(silent.warnings.join(' ')).toMatch(new RegExp(`${audio} .*still plays the old audio`));
+  }, 120_000);
 });
