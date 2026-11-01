@@ -28,9 +28,12 @@ const anyResult = z.object({}).passthrough();
  * 462 000 for the stalled error code (in every declared error), the job a media is waiting
  * on (media.get job) and job.get's wait, estimates, for and result summaries, and to
  * 463 000 for selections (create.cutout region; clip.set_mask matte, mode and keyframed
- * points; 461 267 measured with everything above).
+ * points; 461 267 measured with everything above), and to 474 000 for text spans and
+ * max_lines, a loop over part of a clip, compressor attack and release, and stills from a
+ * frame (media.import still and its origin, on every tool that returns media; 471 505
+ * measured with everything above).
  */
-const BUDGET_BYTES = 463_000;
+const BUDGET_BYTES = 474_000;
 let env: TestEnv;
 
 beforeAll(async () => {
