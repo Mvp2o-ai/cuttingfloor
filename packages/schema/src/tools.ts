@@ -8,6 +8,7 @@ import {
   InOutAnimation,
   LoopAnimation,
   MASK_LIMITS,
+  MAX_MASK_ADD,
   MAX_MASK_POINTS,
   MaskMode,
   MaskShape,
@@ -76,7 +77,7 @@ const MaskPoints = z
   .max(MAX_MASK_POINTS)
   .meta({ id: 'MaskPoints' });
 
-export const MaskArgs = z.object({
+const MaskShapeFields = {
   shape: MaskShape,
   x: anim(MASK_LIMITS.x, 'Mask centre x in the fitted frame, 0–1 (default 0.5)'),
   y: anim(MASK_LIMITS.y, 'Mask centre y in the fitted frame, 0–1 (default 0.5)'),
@@ -86,19 +87,12 @@ export const MaskArgs = z.object({
     'Fraction of the fitted frame height (default 0.5); band thickness for mirror',
   ),
   rotation: anim(MASK_LIMITS.rotation, 'Degrees clockwise; for linear, the edge angle'),
-  feather: z
-    .number()
-    .min(0)
-    .max(0.5)
-    .optional()
-    .describe('Soft edge as a fraction of the picture short side'),
   corner_radius: z
     .number()
     .min(0)
     .max(0.5)
     .optional()
     .describe('rectangle: corner radius as a fraction of its short side'),
-  invert: z.boolean().optional().describe('Select the outside instead'),
   points: z
     .union([
       MaskPoints,
@@ -120,9 +114,30 @@ export const MaskArgs = z.object({
       'polygon: [x, y] corners in the fitted frame, 0–1, or {keyframes: [{frame, points, ease}]}',
     ),
   media_id: MediaId.optional().describe('matte: media whose alpha (or brightness) selects'),
+};
+
+const MaskShapeArgs = z.object(MaskShapeFields).meta({ id: 'MaskShape' });
+
+export const MaskArgs = z.object({
+  ...MaskShapeFields,
+  feather: z
+    .number()
+    .min(0)
+    .max(0.5)
+    .optional()
+    .describe('Soft edge as a fraction of the picture short side'),
+  invert: z.boolean().optional().describe('Select the outside instead'),
   mode: MaskMode.optional().describe(
-    'show (default) only the selection, hide it, or fill it from its surroundings',
+    'show (default) only the selection, hide it, or fill it: painted in from its surroundings',
   ),
+  add: z
+    .array(MaskShapeArgs)
+    .min(1)
+    .max(MAX_MASK_ADD)
+    .optional()
+    .describe(
+      'More shapes in the same selection, e.g. two panels; feather, invert and mode apply to all',
+    ),
 });
 
 const FrameRange = z

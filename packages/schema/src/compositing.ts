@@ -245,21 +245,31 @@ export const MASK_MODES = ['show', 'hide', 'fill'] as const;
 export const MaskMode = z.enum(MASK_MODES);
 export type MaskMode = z.infer<typeof MaskMode>;
 
-export const StoredMask = z.object({
+/** One shape of a selection. */
+export const StoredMaskShape = z.object({
   shape: MaskShape,
   x: StoredAnimatable.optional(),
   y: StoredAnimatable.optional(),
   width: StoredAnimatable.optional(),
   height: StoredAnimatable.optional(),
   rotation: StoredAnimatable.optional(),
-  feather: z.number().min(0).max(0.5).optional(),
   corner_radius: z.number().min(0).max(0.5).optional(),
-  invert: z.boolean().optional(),
   points: StoredPoints.optional(),
   /** shape matte: the media whose alpha (or brightness) is the selection. */
   media_id: z.string().optional(),
+});
+export type StoredMaskShape = z.infer<typeof StoredMaskShape>;
+
+/** Most shapes one selection takes besides its first. */
+export const MAX_MASK_ADD = 8;
+
+export const StoredMask = StoredMaskShape.extend({
+  feather: z.number().min(0).max(0.5).optional(),
+  invert: z.boolean().optional(),
   /** Absent means show. */
   mode: MaskMode.optional(),
+  /** More shapes in the same selection (their union with the first). */
+  add: z.array(StoredMaskShape).min(1).max(MAX_MASK_ADD).optional(),
 });
 export type StoredMask = z.infer<typeof StoredMask>;
 
