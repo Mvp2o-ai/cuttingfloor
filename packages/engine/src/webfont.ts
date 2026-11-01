@@ -1,4 +1,4 @@
-import { open, readFile, rm, writeFile } from 'node:fs/promises';
+import { open, rm, writeFile } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import { CfError } from '@cuttingfloor/schema';
@@ -19,21 +19,23 @@ const OTTO = 0x4f54544f; // CFF outlines: .otf
  * any other file.
  */
 export async function unwrapWebFont(path: string, dir: string): Promise<string | undefined> {
+  // One open file for the check and the read, so the bytes read are the bytes checked.
   const handle = await open(path, 'r');
   let magic: number;
-  let size: number;
+  let packed: Buffer;
   try {
     const head = Buffer.alloc(4);
     const { bytesRead } = await handle.read(head, 0, 4, 0);
     if (bytesRead < 4) return undefined;
     magic = head.readUInt32BE(0);
-    size = (await handle.stat()).size;
+    if (magic !== WOFF && magic !== WOFF2) return undefined;
+    if ((await handle.stat()).size > MAX_FONT_BYTES) {
+      throw new CfError('limit_exceeded', 'Font files are limited to 64 MB');
+    }
+    packed = await handle.readFile();
   } finally {
     await handle.close();
   }
-  if (magic !== WOFF && magic !== WOFF2) return undefined;
-  if (size > MAX_FONT_BYTES) throw new CfError('limit_exceeded', 'Font files are limited to 64 MB');
-  const packed = await readFile(path);
   let font: Buffer;
   try {
     font = magic === WOFF ? unwoff(packed) : Buffer.from(await woff2Decompress(packed));
