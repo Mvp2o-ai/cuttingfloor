@@ -19,6 +19,7 @@ import {
   type StoredClip,
   type StoredEffect,
   type StoredMask,
+  type StoredPoints,
   type StoredSpeed,
   type StoredTrack,
   type StoredTransform,
@@ -2228,13 +2229,59 @@ function clipSetBlend(doc: TimelineDoc, a: EditArgsOf<'clip.set_blend'>): OpOutc
   return ok(clip.start, { clip_id: clip.id });
 }
 
-function clipSetMask(doc: TimelineDoc, a: EditArgsOf<'clip.set_mask'>): OpOutcome {
+function clipSetMask(
+  doc: TimelineDoc,
+  a: EditArgsOf<'clip.set_mask'>,
+  resolve: MediaResolver,
+): OpOutcome {
   const { clip } = videoClip(doc, a.clip_id, 'clip.set_mask');
   if (!a.mask) {
     delete clip.mask;
     return ok(clip.start, { clip_id: clip.id });
   }
   const m = a.mask;
+  if (m.shape === 'matte' && !m.media_id) {
+    throw new CfError('bad_request', 'A matte mask needs media_id', {
+      hint: 'Give media_id: a picture or video whose alpha (or brightness) marks the selection, e.g. a create.cutout result',
+    });
+  }
+  if (m.shape !== 'matte' && m.media_id) {
+    throw new CfError('bad_request', `media_id applies only to matte masks, not ${m.shape}`);
+  }
+  if ((m.shape === 'matte' || m.mode === 'fill') && clip.type !== 'media') {
+    throw new CfError(
+      'bad_request',
+      `${m.shape === 'matte' ? 'A matte mask' : 'mode fill'} works on a clip of imported or created media, not a ${clip.type} clip`,
+      {
+        hint: 'Bake it first: export.video the part, media.import {source: {job_id}}, and mask that clip',
+      },
+    );
+  }
+  if (m.shape === 'matte' && m.media_id) {
+    const matte = resolve(m.media_id);
+    if (!matte?.video) {
+      throw new CfError(
+        matte ? 'bad_request' : 'not_found',
+        matte ? `Media ${m.media_id} has no picture to select with` : `No media ${m.media_id}`,
+        {
+          hint: 'Give a picture or video whose alpha (or brightness) marks the selection, e.g. a create.cutout result',
+        },
+      );
+    }
+    if (clip.type === 'media' && clip.media_id === m.media_id) {
+      throw new CfError('bad_request', 'A clip cannot be its own matte', {
+        hint: 'Make a matte of it first, e.g. create.cutout with a region, and give that media_id',
+      });
+    }
+  }
+  if (m.shape === 'matte') {
+    const fixed = MASK_NUMBERS.filter((k) => m[k] !== undefined && m[k] !== null);
+    if (fixed.length) {
+      throw new CfError('bad_request', `${fixed.join(', ')} do not apply to a matte mask`, {
+        hint: 'A matte selects by its own pixels; to move or scale it, change the matte media',
+      });
+    }
+  }
   if (m.shape === 'polygon' && !m.points) {
     throw new CfError('bad_request', 'A polygon mask needs points', {
       hint: 'Give points: [[x, y], ...] with at least 3 corners in the clip picture (0–1)',
@@ -2253,9 +2300,39 @@ function clipSetMask(doc: TimelineDoc, a: EditArgsOf<'clip.set_mask'>): OpOutcom
   if (m.feather) mask.feather = m.feather;
   if (m.corner_radius) mask.corner_radius = m.corner_radius;
   if (m.invert) mask.invert = true;
-  if (m.points) mask.points = m.points;
+  if (m.points) mask.points = storedPoints(m.points, clip, tpf);
+  if (m.media_id) mask.media_id = m.media_id;
+  if (m.mode && m.mode !== 'show') mask.mode = m.mode;
   clip.mask = mask;
   return ok(clip.start, { clip_id: clip.id });
+}
+
+type ToolPoints = NonNullable<EditArgsOf<'clip.set_mask'>['mask']>['points'];
+
+/** Polygon corners in stored form: keyframe frames become source ticks, as other keyframes do. */
+function storedPoints(p: NonNullable<ToolPoints>, clip: StoredClip, tpf: number): StoredPoints {
+  if (Array.isArray(p)) return p;
+  const frames = p.keyframes.map((k) => k.frame);
+  if (new Set(frames).size !== frames.length) {
+    throw new CfError('bad_request', 'points: two keyframes share a frame', {
+      hint: 'Give each keyframe its own frame',
+    });
+  }
+  const count = p.keyframes[0]?.points.length ?? 0;
+  if (p.keyframes.some((k) => k.points.length !== count)) {
+    throw new CfError('bad_request', 'points: every keyframe needs the same number of corners', {
+      hint: `The first keyframe has ${count}; each corner moves to the same-numbered corner of the next keyframe`,
+    });
+  }
+  const sorted = [...p.keyframes].sort((a, b) => a.frame - b.frame);
+  if (sorted.length === 1 && sorted[0]) return sorted[0].points;
+  return {
+    keyframes: sorted.map((k) => ({
+      t: clip.in + k.frame * tpf,
+      points: k.points,
+      ...(k.ease && k.ease !== 'linear' ? { ease: k.ease } : {}),
+    })),
+  };
 }
 
 function clipSetAnimation(doc: TimelineDoc, a: EditArgsOf<'clip.set_animation'>): OpOutcome {

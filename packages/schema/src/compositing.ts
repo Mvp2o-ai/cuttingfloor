@@ -31,7 +31,7 @@ export type Ease = z.infer<typeof Ease>;
  * `Animatable` definition), checked by a refinement rather than z.enum so a wrong name inside
  * the animatable union is reported with every valid name, not as "Invalid input".
  */
-const EaseName = z
+export const EaseName = z
   .string()
   .refine((v) => (EASES as readonly string[]).includes(v), {
     message: `Unknown ease; use one of ${EASES.join(', ')}`,
@@ -197,6 +197,7 @@ export const MASK_SHAPES = [
   'heart',
   'star',
   'polygon',
+  'matte',
 ] as const;
 export const MaskShape = z.enum(MASK_SHAPES);
 export type MaskShape = z.infer<typeof MaskShape>;
@@ -224,6 +225,25 @@ export const MASK_DEFAULTS: Record<MaskNumber, number> = {
 };
 
 const Point = z.tuple([z.number().min(-4).max(5), z.number().min(-4).max(5)]);
+export const MAX_MASK_POINTS = 64;
+const Points = z.array(Point).min(3).max(MAX_MASK_POINTS);
+
+/** Polygon corners: fixed, or keyframed (every keyframe the same number of corners). */
+export const StoredPoints = z.union([
+  Points,
+  z.object({
+    keyframes: z
+      .array(z.object({ t: z.number().int(), points: Points, ease: Ease.optional() }))
+      .min(1)
+      .max(MAX_KEYFRAMES),
+  }),
+]);
+export type StoredPoints = z.infer<typeof StoredPoints>;
+
+/** What a mask does with its selection: show only it, hide it, or fill it from its surroundings. */
+export const MASK_MODES = ['show', 'hide', 'fill'] as const;
+export const MaskMode = z.enum(MASK_MODES);
+export type MaskMode = z.infer<typeof MaskMode>;
 
 export const StoredMask = z.object({
   shape: MaskShape,
@@ -235,7 +255,11 @@ export const StoredMask = z.object({
   feather: z.number().min(0).max(0.5).optional(),
   corner_radius: z.number().min(0).max(0.5).optional(),
   invert: z.boolean().optional(),
-  points: z.array(Point).min(3).max(64).optional(),
+  points: StoredPoints.optional(),
+  /** shape matte: the media whose alpha (or brightness) is the selection. */
+  media_id: z.string().optional(),
+  /** Absent means show. */
+  mode: MaskMode.optional(),
 });
 export type StoredMask = z.infer<typeof StoredMask>;
 

@@ -4,6 +4,8 @@ export {
   type MaskState,
   maskAnimates,
   maskAt,
+  maskAtTick,
+  pointsAt,
   sample,
   type TransformState,
   transformAnimates,

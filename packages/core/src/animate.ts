@@ -7,6 +7,8 @@ import {
   type MaskNumber,
   type StoredAnimatable,
   type StoredClip,
+  type StoredMask,
+  type StoredPoints,
   TRANSFORM_DEFAULTS,
   TRANSFORM_NUMBERS,
   type TransformNumber,
@@ -269,14 +271,45 @@ export function transformAnimates(clip: StoredClip): boolean {
 }
 
 export function maskAt(clip: StoredClip, tpf: number, i: number): MaskState {
-  const t = frameSource(clip, tpf, i);
+  return maskAtTick(clip.mask, frameSource(clip, tpf, i));
+}
+
+/** Mask values at source tick `t`. */
+export function maskAtTick(mask: StoredMask | undefined, t: number): MaskState {
   const s = {} as MaskState;
-  for (const key of MASK_NUMBERS) s[key] = sample(clip.mask?.[key], MASK_DEFAULTS[key], t);
+  for (const key of MASK_NUMBERS) s[key] = sample(mask?.[key], MASK_DEFAULTS[key], t);
   return s;
 }
 
+/** Polygon corners at source tick `t`: each corner eased between the keyframes around it. */
+export function pointsAt(points: StoredPoints | undefined, t: number): Array<[number, number]> {
+  if (!points) return [];
+  if (Array.isArray(points)) return points;
+  const ks = points.keyframes;
+  const first = ks[0];
+  if (!first) return [];
+  if (t <= first.t) return first.points;
+  for (let i = 0; i < ks.length - 1; i++) {
+    const a = ks[i];
+    const b = ks[i + 1];
+    if (!a || !b) break;
+    if (t < b.t) {
+      const p = easeFn(a.ease)((t - a.t) / (b.t - a.t));
+      return a.points.map(([x, y], j) => {
+        const [bx, by] = b.points[j] ?? [x, y];
+        return [x + (bx - x) * p, y + (by - y) * p];
+      });
+    }
+  }
+  return ks[ks.length - 1]?.points ?? [];
+}
+
 export function maskAnimates(clip: StoredClip): boolean {
-  return MASK_NUMBERS.some((k) => isAnimated(clip.mask?.[k]));
+  const pts = clip.mask?.points;
+  return (
+    MASK_NUMBERS.some((k) => isAnimated(clip.mask?.[k])) ||
+    (pts !== undefined && !Array.isArray(pts) && pts.keyframes.length > 1)
+  );
 }
 
 /** Rejects keyframe sets an engine can't use. */
