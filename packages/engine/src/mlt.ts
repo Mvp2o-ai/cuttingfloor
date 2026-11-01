@@ -86,7 +86,7 @@ export function compileMlt(doc: TimelineDoc, options: CompileOptions): string {
   // What a media clip plays: its cleaned sound when a source pass made one. Picture-only
   // renders (frames) may go without it and play the media itself.
   const playedKey = (c: StoredClip): string => {
-    const key = sourceKey(c, fps);
+    const key = sourceKey(c, doc.sequence);
     if (c.type !== 'media' || key === c.media_id || options.sources.has(key)) return key;
     if (options.frames) return c.media_id;
     throw new CfError('media_offline', `The cleaned sound of clip ${c.id} was not prepared`);

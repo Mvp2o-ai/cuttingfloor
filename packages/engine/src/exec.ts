@@ -182,6 +182,26 @@ export function killTree(child: ChildProcess): void {
 export const KILL_SETTLE_MS = 3000;
 
 /**
+ * Waits for a render slot for heavy work that runs its own processes (a pipeline); resolves
+ * with its release, which the caller must call.
+ */
+export async function heavySlot(signal?: AbortSignal): Promise<() => void> {
+  const watch = queueWatch.getStore();
+  let waited = false;
+  const release = await renderSlot(
+    signal,
+    watch
+      ? (ahead) => {
+          waited = true;
+          watch.queued(ahead);
+        }
+      : undefined,
+  );
+  if (waited) watch?.started();
+  return release;
+}
+
+/**
  * Runs an engine binary with an argument list (never a shell). Rejects with engine_error, or
  * server_busy when the machine has no memory or processes left for it.
  */

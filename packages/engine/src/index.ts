@@ -13,6 +13,7 @@ export { alignGroups, forcedAlign, logSoftmax, W2V_LABELS, wordTokens } from './
 export {
   CUTOUT_MODELS,
   type CutoutModel,
+  type CutoutRegion,
   type CutoutSource,
   cutout,
   matteSize,
@@ -97,6 +98,13 @@ export {
   renderMediaFrames,
   renderTimelineFrames,
 } from './render.ts';
+export {
+  type MatteSource,
+  type SelectionPass,
+  type SelectionSource,
+  selectedPicture,
+  selectionPass,
+} from './selection.ts';
 export {
   detectSounds,
   type FrameScores,

@@ -3,11 +3,14 @@ import {
   AnimatableValue,
   BlendMode,
   Crop,
+  EaseName,
   Fit,
   Flip,
   InOutAnimation,
   LoopAnimation,
   MASK_LIMITS,
+  MAX_MASK_POINTS,
+  MaskMode,
   MaskShape,
   TRANSFORM_LIMITS,
   TransitionKind,
@@ -68,6 +71,11 @@ export const TransformArgs = z.object({
   crop: Crop.nullable().optional(),
 });
 
+const MaskPoints = z
+  .array(z.tuple([z.number().min(-4).max(5), z.number().min(-4).max(5)]))
+  .min(3)
+  .max(MAX_MASK_POINTS);
+
 export const MaskArgs = z.object({
   shape: MaskShape,
   x: anim(MASK_LIMITS.x, 'Mask centre x in the fitted frame, 0–1 (default 0.5)'),
@@ -90,13 +98,33 @@ export const MaskArgs = z.object({
     .max(0.5)
     .optional()
     .describe('rectangle: corner radius as a fraction of its short side'),
-  invert: z.boolean().optional().describe('Keep the outside instead'),
+  invert: z.boolean().optional().describe('Select the outside instead'),
   points: z
-    .array(z.tuple([z.number().min(-4).max(5), z.number().min(-4).max(5)]))
-    .min(3)
-    .max(64)
+    .union([
+      MaskPoints,
+      z.object({
+        keyframes: z
+          .array(
+            z.object({
+              frame: z.number().int().min(-1_000_000).max(100_000_000),
+              points: MaskPoints,
+              ease: EaseName.optional(),
+            }),
+          )
+          .min(1)
+          .max(1000),
+      }),
+    ])
     .optional()
-    .describe('polygon: [x, y] corners in the fitted frame, 0–1'),
+    .describe(
+      'polygon: [x, y] corners in the fitted frame, 0–1, or {keyframes: [{frame, points, ease}]} with the same number of corners in each',
+    ),
+  media_id: MediaId.optional().describe(
+    'matte: the media whose alpha (brightness, if it has none) is the selection, frame by frame, e.g. a create.cutout result',
+  ),
+  mode: MaskMode.optional().describe(
+    'What happens to the selection. show (default): only it shows; hide: it is hidden (as show with invert); fill: the whole picture shows, with the selection painted over from its surroundings, every frame',
+  ),
 });
 
 const FrameRange = z
@@ -1703,6 +1731,28 @@ export const CreateCutoutInput = z.object({
       'people: MODNet, fast, for video of people; any: BiRefNet, any subject (products, animals, objects), about 1 s a frame and 3 GB of memory; auto: any for pictures, people for video',
     ),
   smooth: z.number().min(0).max(0.9).default(0.3).describe('Video: steadies the edge'),
+  region: z
+    .object({
+      at_seconds: z.number().min(0).default(0),
+      x: z.number().min(0).max(1).optional(),
+      y: z.number().min(0).max(1).optional(),
+      w: z.number().min(0.005).max(1).optional(),
+      h: z.number().min(0.005).max(1).optional(),
+      points: z
+        .array(
+          z.object({
+            x: z.number().min(0).max(1),
+            y: z.number().min(0).max(1),
+            keep: z.boolean().default(true).describe('false: this point is not part of it'),
+          }),
+        )
+        .max(16)
+        .optional(),
+    })
+    .optional()
+    .describe(
+      'Cut out one item instead of the main subject: the item inside this box (top-left x, y and size w, h, fractions of the picture) and/or under these points, at at_seconds, followed through the whole video to its exact outline (EdgeTAM, about 0.5 s a frame). Use it for anything: one person of several, a pet, a product, a logo',
+    ),
   ...createCommon,
 });
 

@@ -256,6 +256,44 @@ RUN cd /src && patch -p1 < /patches/consumer-start-race.patch \
  && strip /out/libmltavformat.so \
  && gcc -O2 -shared -fPIC -o /out/thread-delay.so /patches/thread-delay.c -ldl
 
+# Picture models for selections, run on ONNX Runtime by packages/engine/src/select-worker.ts,
+# each file pinned and checked:
+#   EdgeTAM (Apache-2.0, facebook/EdgeTAM) for create.cutout with a region: an item from its
+#   bounds, followed through a video. The video graphs (encoder, decoder, memory encoder and
+#   memory attention) are jax-image-tools/edgetam-video-onnx (Apache-2.0); the two tensors those
+#   graphs leave to the caller (temporal positions, no-memory embedding) are read from the
+#   checkpoint they were exported from, yonigozlan/EdgeTAM-hf (Apache-2.0).
+#   LaMa big-lama (Apache-2.0, advimman/lama) as Carve/LaMa-ONNX (Apache-2.0), 512 x 512, for
+#   clip.set_mask mode fill.
+FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS select-models
+ARG EDGETAM_ONNX_REVISION=8ca3d3e4169938e65b552cdf14542fde25e8badb
+ARG EDGETAM_ENCODER_SHA256=57fe1a2b3d500813fe4987c4209b856920f187ab0b7723d81586b607ea2cffc1
+ARG EDGETAM_DECODER_SHA256=ee24ee1cae6ecc71889912c1893e08b09f645bb63875108ccd180f7218a3647d
+ARG EDGETAM_MEMENC_SHA256=035b30f8fb1f7c99211ada6eb9d72f0819de819ef94310b14e8147dc97f120ec
+ARG EDGETAM_MEMATT_SHA256=6477d775639905945949508c08a2c652d01e5933c0eb00a02225ae5f6aa1602c
+ARG EDGETAM_HF_REVISION=c266ce53b3fc00f0f495b583f6a116c4e57f53bb
+ARG EDGETAM_HF_SHA256=8858f8e4757b0b96dab8763f296ecffd845efbbbf698f64163cfa20a63d5fff4
+ARG LAMA_REVISION=c3c0c9e468934d62e79c329e35d82dd09ff8c444
+ARG LAMA_SHA256=1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates python3 \
+ && rm -rf /var/lib/apt/lists/*
+COPY tools/vision/edgetam-constants.py /src/edgetam-constants.py
+RUN dir=/models/edgetam && mkdir -p "$dir" \
+ && fetch() { \
+      curl -fsSL -o "$dir/$1.onnx" "https://huggingface.co/jax-image-tools/edgetam-video-onnx/resolve/$EDGETAM_ONNX_REVISION/$1.onnx" \
+      && echo "$2  $dir/$1.onnx" | sha256sum -c -; \
+    } \
+ && fetch vision_encoder "$EDGETAM_ENCODER_SHA256" \
+ && fetch mask_decoder "$EDGETAM_DECODER_SHA256" \
+ && fetch memory_encoder "$EDGETAM_MEMENC_SHA256" \
+ && fetch memory_attention "$EDGETAM_MEMATT_SHA256" \
+ && curl -fsSL -o /edgetam.safetensors "https://huggingface.co/yonigozlan/EdgeTAM-hf/resolve/$EDGETAM_HF_REVISION/model.safetensors" \
+ && echo "$EDGETAM_HF_SHA256  /edgetam.safetensors" | sha256sum -c - \
+ && python3 -I /src/edgetam-constants.py /edgetam.safetensors "$dir/weights.json" \
+ && rm /edgetam.safetensors \
+ && curl -fsSL -o /models/lama-512.onnx "https://huggingface.co/Carve/LaMa-ONNX/resolve/$LAMA_REVISION/lama_fp32.onnx" \
+ && echo "$LAMA_SHA256  /models/lama-512.onnx" | sha256sum -c -
+
 FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS base
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt tini fontconfig \
@@ -290,6 +328,7 @@ COPY --from=mlt-avformat /out/libmltavformat.so /tmp/libmltavformat.so
 RUN dest="$(dirname "$(find /usr/lib -path '*/mlt-7/libmltavformat.so' | head -1)")" \
  && test -n "$dest" && mv /tmp/libmltavformat.so "$dest/libmltavformat.so" \
  && melt -query consumers | grep -q avformat && melt -query producers | grep -q avformat
+COPY --from=select-models /models/ /usr/share/cuttingfloor/models/
 # Chromium for the sandbox (create.motion, create.still), only ever started by the
 # motion-worker role through this wrapper, which keeps its sandbox on and its network off.
 COPY tools/motion/cf-chromium /usr/local/bin/cf-chromium
