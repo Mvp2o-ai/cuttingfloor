@@ -3058,3 +3058,141 @@ table.pr-grid td {
 }
 
 /* ---------- end /compare ---------- */
+
+/* ---------- features page (/features): capability lists, keys and the full tool table ---------- */
+
+.ft-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: clamp(24px, 3vw, 36px);
+  font-family: var(--font-pixel), monospace;
+  font-size: 18px;
+  text-transform: uppercase;
+}
+.ft-jump a {
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--rule);
+}
+.ft-jump a:hover {
+  border-color: var(--key);
+}
+.ft-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+.ft-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 8px 32px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--rule);
+  align-items: baseline;
+}
+.ft-list p {
+  margin: 0;
+  font-size: clamp(17px, 1.4vw, 19px);
+  line-height: 1.5;
+}
+.paper .ft-list,
+.paper .ft-list li {
+  border-color: var(--paper-rule);
+}
+.ft-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.ft-tools code,
+.ft-name code {
+  font-family: var(--font-mono), monospace;
+  font-size: 14px;
+  color: var(--key);
+}
+.paper .ft-tools code {
+  color: var(--key-ink);
+}
+.paper .compare-lede {
+  color: var(--paper-mute);
+}
+.ft-keys strong {
+  display: block;
+  margin-bottom: 6px;
+}
+.ft-sub {
+  margin: clamp(28px, 4vw, 44px) 0 12px;
+  font-size: clamp(22px, 2.2vw, 30px);
+  font-weight: 800;
+  font-variation-settings: "wdth" 70;
+  letter-spacing: -0.02em;
+}
+.ft-nokey {
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--mute);
+  columns: 2;
+  column-gap: 40px;
+}
+.ft-nokey li {
+  margin: 0 0 8px;
+  break-inside: avoid;
+}
+.ft-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+  margin-bottom: clamp(28px, 4vw, 44px);
+}
+.ft-table th,
+.ft-table td {
+  text-align: left;
+  padding: 12px 16px 12px 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+.ft-table thead th {
+  font-family: var(--font-pixel), monospace;
+  font-weight: 400;
+  font-size: 18px;
+  text-transform: uppercase;
+  color: var(--mute);
+  border-bottom-color: var(--mute);
+}
+.ft-table .ft-name {
+  white-space: nowrap;
+}
+.ft-table .ft-meta {
+  color: var(--mute);
+}
+@media (max-width: 900px) {
+  .ft-list li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ft-nokey {
+    columns: 1;
+  }
+  .ft-table thead {
+    display: none;
+  }
+  .ft-table tr {
+    display: grid;
+    gap: 4px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .ft-table td {
+    border: 0;
+    padding: 0;
+  }
+  .ft-table .ft-meta {
+    font-size: 13px;
+  }
+  .ft-table td[data-label]::before {
+    content: attr(data-label) ": ";
+    color: var(--mute);
+  }
+}
+/* ---------- end features page ---------- */
