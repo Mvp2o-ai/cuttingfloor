@@ -1,5 +1,12 @@
 # cuttingfloor
 
+## 0.27.5
+
+### Patch Changes
+
+- b789535: The site speaks to agents: every page has a Markdown version at its address plus `.md` (and for `Accept: text/markdown`), llms.txt is rewritten for agents with llms-full.txt beside it, `/.well-known/ai-catalog.json` points to the MCP server card, and robots.txt names the AI crawlers it welcomes.
+- 253c15b: Tool hints are now pinned by a test, so agents in Claude Cowork and ChatGPT keep running the read-only tools (looking at a timeline, frames, media, jobs, skills) without asking for approval. Cancelling a job, and exporting where an export may replace a file in your exports folder, are now marked as destructive, so clients can ask before them.
+
 ## 0.27.4
 
 ### Patch Changes
