@@ -1,4 +1,10 @@
-import { maskAnimates, maskAt, transformAnimates, transformAt } from '@cuttingfloor/core';
+import {
+  frameSource,
+  maskAnimates,
+  maskAt,
+  transformAnimates,
+  transformAt,
+} from '@cuttingfloor/core';
 import type { StoredClip } from '@cuttingfloor/schema';
 import { maskSpline, rectFor, type SourceSize } from './composite.ts';
 
@@ -50,8 +56,11 @@ function placementAt(
   let fy0 = crop?.top ?? 0;
   let fx1 = 1 - (crop?.right ?? 0);
   let fy1 = 1 - (crop?.bottom ?? 0);
-  if (clip.mask && !clip.mask.invert) {
-    const pts = maskSpline(clip.mask, maskAt(clip, tpf, i), src).flat();
+  // Only a mask that shows its selection narrows what shows: hide (or invert) leaves its
+  // outside, fill and a matte keep the whole picture box. Measured at frame i of the clip.
+  const m = clip.mask;
+  if (m && m.mode !== 'fill' && Boolean(m.invert) === (m.mode === 'hide')) {
+    const pts = maskSpline(m, maskAt(clip, tpf, i), src, frameSource(clip, tpf, i)).flat();
     const xs = pts.map((p) => p[0]);
     const ys = pts.map((p) => p[1]);
     if (xs.length) {

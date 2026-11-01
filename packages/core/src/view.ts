@@ -85,7 +85,7 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
   }
   if (c.blend) out.blend = c.blend;
   if (c.mask) {
-    const { shape, feather, corner_radius, invert, points } = c.mask;
+    const { shape, feather, corner_radius, invert, points, media_id, mode } = c.mask;
     const m: NonNullable<ClipView['mask']> = { shape };
     for (const k of MASK_NUMBERS) {
       const v = c.mask[k];
@@ -96,7 +96,21 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
       ...(feather ? { feather } : {}),
       ...(corner_radius ? { corner_radius } : {}),
       ...(invert ? { invert } : {}),
-      ...(points ? { points } : {}),
+      ...(points
+        ? {
+            points: Array.isArray(points)
+              ? points
+              : {
+                  keyframes: points.keyframes.map((k) => ({
+                    frame: Math.round((k.t - c.in) / tpf),
+                    points: k.points,
+                    ...(k.ease ? { ease: k.ease } : {}),
+                  })),
+                },
+          }
+        : {}),
+      ...(media_id ? { media_id } : {}),
+      ...(mode ? { mode } : {}),
     };
   }
   if (c.animation) {
@@ -301,14 +315,14 @@ export function fromView(input: TimelineInput, media: MediaLookup): TimelineDoc 
   for (const n of Object.values(nested))
     assertTransitions({ ...n, parent: null, op: null, nested });
   for (const body of [doc, ...Object.values(nested)]) assertCaptionWords(body.tracks);
-  replayProps(doc, input.tracks);
+  replayProps(doc, input.tracks, media);
   loadEffects(doc, input.tracks, input.effects, media);
   for (const key of Object.keys(views)) {
     const n = nested[key];
     if (!n) continue;
     const view = NestedView.parse(views[key]);
     const scratch: TimelineDoc = { ...n, parent: null, op: null, nested: { ...nested } };
-    replayProps(scratch, view.tracks);
+    replayProps(scratch, view.tracks, media);
     loadEffects(scratch, view.tracks, view.effects, media);
     const { parent: _p, op: _o, nested: _n, ...replayed } = scratch;
     nested[key] = replayed;
@@ -557,8 +571,7 @@ function speedFromView(clipId: string, value: unknown, duration: number): Stored
  * Applies each clip's compositing settings through the same validated edits the tools use, so
  * a loaded timeline can't hold values a tool would refuse. Locks go back on afterwards.
  */
-function replayProps(doc: TimelineDoc, tracks: TimelineInput['tracks']): void {
-  const none = () => undefined;
+function replayProps(doc: TimelineDoc, tracks: TimelineInput['tracks'], media: MediaLookup): void {
   const locked = new Map(doc.tracks.map((t) => [t.id, t.locked]));
   for (const t of doc.tracks) t.locked = false;
   const run = <
@@ -574,7 +587,7 @@ function replayProps(doc: TimelineDoc, tracks: TimelineInput['tracks']): void {
         `Clip ${String(args.clip_id)}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
       );
     }
-    applyEdit(doc, tool, parsed.data as never, none);
+    applyEdit(doc, tool, parsed.data as never, media);
   };
   const tpf = ticksPerFrame(doc.sequence.fps);
   for (const track of tracks)

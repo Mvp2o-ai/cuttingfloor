@@ -47,7 +47,9 @@ const MASKS: Record<MaskShape, string> = {
   mirror: 'Keeps a band of thickness height through x, y; rotation turns it',
   heart: 'x, y, width, height, rotation',
   star: 'Five points; x, y, width, height, rotation',
-  polygon: 'points: [[x, y], ...] corners in the fitted frame',
+  polygon: 'points: [[x, y], ...] corners in the fitted frame, or {keyframes: [{frame, points}]}',
+  matte:
+    'media_id: a picture or video whose alpha (or brightness) is the selection, frame by frame, e.g. a create.cutout result',
 };
 
 const IN_OUT: Record<(typeof IN_OUT_ANIMATIONS)[number], string> = {
