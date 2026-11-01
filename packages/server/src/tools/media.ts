@@ -927,8 +927,6 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
                 modelsDir: rt.modelsDir,
                 language: args.language,
                 ...(p?.duration ? { duration: p.duration } : {}),
-                ...(args.from_seconds !== undefined ? { from: args.from_seconds } : {}),
-                ...(args.until_seconds !== undefined ? { until: args.until_seconds } : {}),
                 signal,
                 onProgress: (f, m) => progress(f, `transcript: ${m}`),
               });
