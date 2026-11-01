@@ -1,7 +1,7 @@
 import {
   frameSource,
   maskAnimates,
-  maskAt,
+  maskAtTick,
   transformAnimates,
   transformAt,
 } from '@cuttingfloor/core';
@@ -59,8 +59,16 @@ function placementAt(
   // Only a mask that shows its selection narrows what shows: hide (or invert) leaves its
   // outside, fill and a matte keep the whole picture box. Measured at frame i of the clip.
   const m = clip.mask;
-  if (m && m.mode !== 'fill' && Boolean(m.invert) === (m.mode === 'hide')) {
-    const pts = maskSpline(m, maskAt(clip, tpf, i), src, frameSource(clip, tpf, i)).flat();
+  const shapes = m ? [m, ...(m.add ?? [])] : [];
+  if (
+    m &&
+    m.mode !== 'fill' &&
+    Boolean(m.invert) === (m.mode === 'hide') &&
+    !shapes.some((x) => x.shape === 'matte')
+  ) {
+    // The box around every shape of the selection.
+    const t = frameSource(clip, tpf, i);
+    const pts = shapes.flatMap((x) => maskSpline(x, maskAtTick(x, t), src, t).flat());
     const xs = pts.map((p) => p[0]);
     const ys = pts.map((p) => p[1]);
     if (xs.length) {

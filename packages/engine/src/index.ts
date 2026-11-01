@@ -100,11 +100,13 @@ export {
   renderTimelineFrames,
 } from './render.ts';
 export {
+  isMade,
   type MatteSource,
+  passFrames,
   type SelectionPass,
   type SelectionSource,
+  selectedFile,
   selectedPicture,
-  selectedPictureNow,
   selectionPass,
 } from './selection.ts';
 export {

@@ -5,7 +5,13 @@ import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { canonicalJson, maskAtTick, span } from '@cuttingfloor/core';
-import { CfError, type StoredClip, type StoredMask, TICKS_PER_SECOND } from '@cuttingfloor/schema';
+import {
+  CfError,
+  type StoredClip,
+  type StoredMask,
+  type StoredMaskShape,
+  TICKS_PER_SECOND,
+} from '@cuttingfloor/schema';
 import { maskSpline } from './composite.ts';
 import { BIN, heavySlot } from './exec.ts';
 import { probe } from './probe.ts';
@@ -20,6 +26,8 @@ const MODELS = process.env.CUTTINGFLOOR_MATTE_MODELS ?? '/usr/share/cuttingfloor
 const WORKER = fileURLToPath(new URL('./select-worker.ts', import.meta.url));
 /** The fill model, named in each pass id so a model change makes a new copy. */
 const FILL_MODEL = 'lama-c3c0c9e4';
+/** How a fill treats the selection's edge; named in the pass id so a change makes a new copy. */
+const FILL_EDGE = 'whole-dilated-1';
 
 export interface SelectionPass {
   /** Stable name of what the pass does, for the cached file. */
@@ -38,7 +46,9 @@ export interface SelectionPass {
 export function selectionPass(c: StoredClip, frameAspect: number): SelectionPass | undefined {
   if (c.type !== 'media' || c.kind !== 'video' || !c.mask) return undefined;
   const mask = c.mask;
-  if (mask.shape !== 'matte' && mask.mode !== 'fill') return undefined;
+  const shapes = [mask, ...(mask.add ?? [])];
+  const matte = shapes.some((x) => x.shape === 'matte');
+  if (!matte && mask.mode !== 'fill' && !mask.add) return undefined;
   const range =
     mask.mode === 'fill'
       ? { from: c.in / TICKS_PER_SECOND, until: (c.in + span(c)) / TICKS_PER_SECOND }
@@ -48,8 +58,11 @@ export function selectionPass(c: StoredClip, frameAspect: number): SelectionPass
       canonicalJson({
         mask,
         range,
-        aspect: mask.shape === 'matte' ? undefined : Math.round(frameAspect * 10_000),
+        aspect: shapes.every((x) => x.shape === 'matte')
+          ? undefined
+          : Math.round(frameAspect * 10_000),
         model: mask.mode === 'fill' ? FILL_MODEL : undefined,
+        edge: mask.mode === 'fill' ? FILL_EDGE : undefined,
       }),
     )
     .digest('hex')
@@ -82,7 +95,7 @@ const INPUT = ['-hide_banner', '-nostdin', '-v', 'error', '-protocol_whitelist',
  * mapped from the fitted frame to the picture inside it.
  */
 function outlinePixels(
-  mask: StoredMask,
+  mask: StoredMaskShape,
   t: number,
   w: number,
   h: number,
@@ -109,9 +122,8 @@ function outlinePixels(
   return pts;
 }
 
-/** Fills a polygon (even-odd, pixel centres) into an 8-bit frame. */
+/** Adds a polygon (even-odd, pixel centres) to an 8-bit frame. */
 function rasterize(poly: Array<[number, number]>, w: number, h: number, out: Uint8Array): void {
-  out.fill(0);
   const xs: number[] = [];
   for (let y = 0; y < h; y++) {
     const cy = y + 0.5;
@@ -136,7 +148,16 @@ function shapeFilters(pass: SelectionPass, src: SelectionSource): string[] {
   const f: string[] = [];
   if (Boolean(m.invert) !== (m.mode === 'hide')) f.push('negate');
   // Feather is a fraction of the short side; rotoscoping blurs that far, a gaussian about half.
-  const sigma = (m.feather ?? 0) * Math.min(src.width, src.height) * 0.5;
+  const short = Math.min(src.width, src.height);
+  const sigma = (m.feather ?? 0) * short * 0.5;
+  if (m.mode === 'fill') {
+    // A fill paints over the whole selection: any part of a pixel selected (a matte's soft or
+    // unsure edge) counts as all of it, and the selection grows past the item's edge (and past
+    // the feather), so no trace of what is filled shows through. The feather then softens
+    // the join outside the item.
+    const grow = Math.min(40, Math.max(2, Math.round(short * 0.004)) + Math.ceil(2 * sigma));
+    f.push("lut=c0='if(gt(val\\,8)\\,255\\,0)'", ...Array(grow).fill('dilation'));
+  }
   if (sigma >= 0.5) f.push(`gblur=sigma=${sigma.toFixed(2)}`);
   if (pass.range) {
     const { from, until } = pass.range;
@@ -158,11 +179,12 @@ export function selectedPicture(
   src: SelectionSource,
   dir: string,
   pass: SelectionPass,
-  matte: MatteSource | undefined,
+  mattes: Map<string, MatteSource>,
   purpose: 'preview' | 'export',
-  signal?: AbortSignal,
+  options: { signal?: AbortSignal; onProgress?: (fraction: number) => void } = {},
 ): Promise<string> {
-  const dest = join(dir, `${purpose}-${pass.id}.${src.image ? 'png' : 'mov'}`);
+  const { signal } = options;
+  const dest = selectedFile(src, dir, pass, purpose);
   const going = making.get(dest);
   if (going) return going;
   const job = (async () => {
@@ -181,7 +203,7 @@ export function selectedPicture(
       const sized = v
         ? { ...src, width: upright ? v.width : v.height, height: upright ? v.height : v.width }
         : src;
-      await makeSelected(sized, pass, matte, tmp, signal);
+      await makeSelected(sized, pass, mattes, tmp, signal, options.onProgress);
       await rename(tmp, dest);
     } finally {
       release();
@@ -193,87 +215,110 @@ export function selectedPicture(
   return job;
 }
 
-/**
- * The made copy when it exists. Otherwise starts making it in the background (fill takes about
- * a second and a half a frame, too long for a request to wait) and refuses with when to look
- * again.
- */
-export async function selectedPictureNow(
-  src: SelectionSource,
+/** Where the copy a pass makes is kept. */
+export function selectedFile(
+  src: Pick<SelectionSource, 'image'>,
   dir: string,
   pass: SelectionPass,
-  matte: MatteSource | undefined,
   purpose: 'preview' | 'export',
-  label: string,
-): Promise<string> {
-  const dest = join(dir, `${purpose}-${pass.id}.${src.image ? 'png' : 'mov'}`);
-  const made = await stat(dest).then(
-    (s) => s.size > 0,
+): string {
+  return join(dir, `${purpose}-${pass.id}.${src.image ? 'png' : 'mov'}`);
+}
+
+/** Whether the copy at `dest` is made. */
+export function isMade(dest: string): Promise<boolean> {
+  return stat(dest).then(
+    (st) => st.size > 0,
     () => false,
   );
-  if (made) return dest;
-  const started = !making.has(dest);
-  selectedPicture(src, dir, pass, matte, purpose).catch(() => undefined);
-  const seconds = pass.range ? pass.range.until - pass.range.from : src.duration;
-  const frames = src.image ? 1 : Math.ceil(seconds * (src.fps.num / src.fps.den));
-  throw new CfError(
-    'media_not_ready',
-    `The filled selection of ${label} is ${started ? 'now' : 'still'} being made`,
-    {
-      hint: `Filling takes about 1.5 s a frame on this server's CPU (${frames} frames here, so about ${Math.max(1, Math.ceil((frames * 1.5) / 60))} min). Render again then; an export waits for it`,
-      detail: { frames },
-    },
-  );
+}
+
+/** Frames a pass works through (fill: the whole media; only its span is painted). */
+export function passFrames(src: Pick<SelectionSource, 'image' | 'duration' | 'fps'>): number {
+  return src.image ? 1 : Math.max(1, Math.ceil(src.duration * (src.fps.num / src.fps.den)));
 }
 
 async function makeSelected(
   src: SelectionSource,
   pass: SelectionPass,
-  matte: MatteSource | undefined,
+  mattes: Map<string, MatteSource>,
   dest: string,
   signal?: AbortSignal,
+  onProgress?: (fraction: number) => void,
 ): Promise<void> {
   const { width: w, height: h } = src;
   const rate = `${src.fps.num}/${src.fps.den}`;
   const fill = pass.mask.mode === 'fill';
-  const isMatte = pass.mask.shape === 'matte';
-  if (isMatte && !matte) throw new CfError('media_offline', 'The matte media is not available');
-  // Input 1 is the selection: the matte media, or the shape drawn here frame by frame.
-  const selection = isMatte
-    ? [
-        ...((matte as MatteSource).image ? ['-loop', '1'] : []),
-        '-i',
-        `file:${(matte as MatteSource).path}`,
-      ]
-    : ['-f', 'rawvideo', '-pix_fmt', 'gray', '-s', `${w}x${h}`, '-framerate', rate, '-i', 'pipe:0'];
-  const raw = isMatte
-    ? [
-        ...((matte as MatteSource).image ? [] : [`fps=${rate}`]),
-        `scale=${w}:${h}:flags=bicubic`,
-        ...((matte as MatteSource).alpha ? ['format=rgba', 'alphaextract'] : ['format=gray']),
-        // A matte shorter than the clip's media holds its last frame.
-        ...((matte as MatteSource).image ? [] : ['tpad=stop=-1:stop_mode=clone']),
-      ]
-    : ['format=gray'];
-  const sel = [...raw, ...shapeFilters(pass, src)].join(',');
+  const shapes: StoredMaskShape[] = [pass.mask, ...(pass.mask.add ?? [])];
+  const drawn = shapes.filter((x) => x.shape !== 'matte');
+  const matteShapes = shapes.filter((x) => x.shape === 'matte');
+  // Inputs after the source: the drawn shapes (frame by frame, from here), then each matte.
+  const inputs: string[] = [];
+  const parts: string[] = [];
+  let at = 1;
+  if (drawn.length) {
+    inputs.push(
+      '-f',
+      'rawvideo',
+      '-pix_fmt',
+      'gray',
+      '-s',
+      `${w}x${h}`,
+      '-framerate',
+      rate,
+      '-i',
+      'pipe:0',
+    );
+    parts.push(`[${at}:v]format=gray[g${at}]`);
+    at += 1;
+  }
+  for (const x of matteShapes) {
+    const matte = x.media_id ? mattes.get(x.media_id) : undefined;
+    if (!matte)
+      throw new CfError('media_offline', `The matte media ${x.media_id} is not available`);
+    inputs.push(...(matte.image ? ['-loop', '1'] : []), '-i', `file:${matte.path}`);
+    const chain = [
+      ...(matte.image ? [] : [`fps=${rate}`]),
+      `scale=${w}:${h}:flags=bicubic`,
+      ...(matte.alpha ? ['format=rgba', 'alphaextract'] : ['format=gray']),
+      // A matte shorter than the clip's media holds its last frame.
+      ...(matte.image ? [] : ['tpad=stop=-1:stop_mode=clone']),
+    ];
+    parts.push(`[${at}:v]${chain.join(',')}[g${at}]`);
+    at += 1;
+  }
+  // The selection is the union of its shapes (the lighter of each pixel).
+  let union = 'g1';
+  for (let i = 2; i < at; i++) {
+    parts.push(`[${union}][g${i}]blend=all_mode=lighten[u${i}]`);
+    union = `u${i}`;
+  }
+  const after = shapeFilters(pass, src);
+  parts.push(`[${union}]${after.length ? after.join(',') : 'null'}[s]`);
+  const sel = parts.join(';');
   // A source with its own transparency keeps it: the selection multiplies it.
   const merge = src.alpha
-    ? `[1:v]${sel}[s];[0:v]format=rgba,split[c][a];[a]alphaextract[sa];[sa][s]blend=all_mode=multiply:shortest=1[m];[c][m]alphamerge=shortest=1,format=rgba[v]`
-    : `[1:v]${sel}[s];[0:v]format=rgb24[c];[c][s]alphamerge=shortest=1,format=rgba[v]`;
+    ? `${sel};[0:v]format=rgba,split[c][a];[a]alphaextract[sa];[sa][s]blend=all_mode=multiply:shortest=1[m];[c][m]alphamerge=shortest=1,format=rgba[v]`
+    : `${sel};[0:v]format=rgb24[c];[c][s]alphamerge=shortest=1,format=rgba[v]`;
   const first = [
     ...INPUT,
     ...(src.image ? ['-loop', '1'] : []),
     '-i',
     `file:${src.path}`,
-    ...selection,
+    ...inputs,
     '-filter_complex',
     merge,
     '-map',
     '[v]',
     ...(src.image ? ['-frames:v', '1'] : ['-fps_mode', 'passthrough']),
   ];
-  const encode = (alpha: boolean) =>
-    src.image
+  // The last step counts the frames it writes, for progress.
+  const encode = (alpha: boolean) => [
+    '-progress',
+    'pipe:2',
+    '-stats_period',
+    '1',
+    ...(src.image
       ? ['-frames:v', '1', '-c:v', 'png', '-f', 'image2']
       : [
           '-c:v',
@@ -285,7 +330,8 @@ async function makeSelected(
           '-an',
           '-f',
           'mov',
-        ];
+        ]),
+  ];
   const steps: Array<{ bin: string; args: string[] }> = fill
     ? [
         { bin: BIN.ffmpeg, args: [...first, '-f', 'rawvideo', '-'] },
@@ -314,16 +360,18 @@ async function makeSelected(
         },
       ]
     : [{ bin: BIN.ffmpeg, args: [...first, ...encode(true), '-y', `file:${dest}`] }];
-  const frames = src.image ? 1 : Math.ceil(src.duration * (src.fps.num / src.fps.den)) + 2;
+  const total = passFrames(src);
   await runPiped(
     steps,
-    isMatte ? undefined : (write) => drawShape(pass, src, frames, write),
+    drawn.length ? (write) => drawShapes(drawn, pass, src, total + 2, write) : undefined,
     signal,
+    (frame) => onProgress?.(Math.min(1, frame / total)),
   );
 }
 
-/** Writes the shape's selection for every source frame (fill: only inside its span). */
-async function drawShape(
+/** Writes the drawn shapes' union for every source frame. */
+async function drawShapes(
+  shapes: StoredMaskShape[],
   pass: SelectionPass,
   src: SelectionSource,
   frames: number,
@@ -331,19 +379,20 @@ async function drawShape(
 ): Promise<void> {
   const { width: w, height: h } = src;
   const frame = new Uint8Array(w * h);
-  const animated = isAnimatedMask(pass.mask);
+  const animated = shapes.some(isAnimatedShape);
   let drawn = false;
   for (let i = 0; i < frames; i++) {
     const t = Math.round((i * TICKS_PER_SECOND * src.fps.den) / src.fps.num);
     if (animated || !drawn) {
-      rasterize(outlinePixels(pass.mask, t, w, h, pass.frameAspect), w, h, frame);
+      frame.fill(0);
+      for (const x of shapes) rasterize(outlinePixels(x, t, w, h, pass.frameAspect), w, h, frame);
       drawn = true;
     }
     if (!(await write(frame))) return;
   }
 }
 
-function isAnimatedMask(m: StoredMask): boolean {
+function isAnimatedShape(m: StoredMaskShape): boolean {
   const keyed = (v: unknown) =>
     typeof v === 'object' &&
     v !== null &&
@@ -364,6 +413,7 @@ function runPiped(
   steps: Array<{ bin: string; args: string[] }>,
   feed: ((write: (frame: Uint8Array) => Promise<boolean>) => Promise<void>) | undefined,
   signal?: AbortSignal,
+  onFrame?: (frame: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const procs = steps.map((s) =>
@@ -382,8 +432,12 @@ function runPiped(
     for (const p of procs)
       p.stderr.on('data', (d: Buffer) => {
         const text = d.toString();
-        if (/^frames \d+\s*$/m.test(text)) return;
-        errors = (errors + text).slice(-3000);
+        const lines = text.split(/\r?\n/).filter((l) => {
+          const f = /^frame=(\d+)/.exec(l);
+          if (f) onFrame?.(Number(f[1]));
+          return l && !/^(frames \d+|\w+=\S*)\s*$/.test(l);
+        });
+        if (lines.length) errors = `${errors}\n${lines.join('\n')}`.slice(-3000);
       });
     const head = procs[0];
     if (head) {
