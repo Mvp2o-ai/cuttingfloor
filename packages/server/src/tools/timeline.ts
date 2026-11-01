@@ -137,17 +137,17 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'title.add': {
     title: 'Add title',
     description:
-      'Text on a video track, over the tracks below: styled with font, size, colour, outline, shadow and box, placed by x/y, revealed with a typewriter or word animation. A style field you leave out takes the published default (video://catalog/text: bold white Inter at 9% of the frame height, centred, with a soft shadow); timeline.get shows the full style. It is a clip, so transforms, masks, animations and transitions apply.',
+      'Text on a video track, over the tracks below: styled with font, size, colour, outline, shadow and box, placed by x/y, revealed with a typewriter or word animation. A style field you leave out takes the published default (video://catalog/text: bold white Inter at 9% of the frame height, centred, with a soft shadow); timeline.get shows the full style. spans style part of the text (words first_word to last_word, from 0: one word in yellow or bold). It is a clip, so transforms, masks, animations and transitions apply.',
   },
   'caption.add': {
     title: 'Add captions',
     description:
-      "Captions on a video track from segments (with optional word timings for highlights), from SRT/VTT text, or in_clip: segments timed in seconds of a clip's media, such as transcript word times, placed where they play. One clip per caption; returns their clip_ids. A style field you leave out takes the published default (video://catalog/text: bold white Inter at 6% of the frame height, near the bottom, with a black outline); timeline.get shows the full style. Lines wrap on their own at style max_width (a fraction of the frame width), balanced in length; \\n forces a break. Burned in when exported.",
+      "Captions on a video track from segments (with optional word timings for highlights), from SRT/VTT text, or in_clip: segments timed in seconds of a clip's media, such as transcript word times, placed where they play. One clip per caption; returns their clip_ids. A style field you leave out takes the published default (video://catalog/text: bold white Inter at 6% of the frame height, near the bottom, with a black outline); timeline.get shows the full style. Lines wrap on their own at style max_width (a fraction of the frame width), balanced in length; \\n forces a break. style max_lines caps the lines on screen at once: a longer caption shows a screenful at a time, each from its first word's time. A segment's spans style part of its text (words first_word to last_word, from 0: the timed words, or the text split at spaces), e.g. the key word in yellow. Burned in when exported.",
   },
   'text.set': {
     title: 'Set text',
     description:
-      "Change a title's or caption's text, or restyle many at once (clip_ids, or every one on track_id). The style is merged; null turns an outline, shadow, box or highlight off. Fonts: video://catalog/fonts, or an unknown font is refused with the close matches.",
+      "Change a title's or caption's text, or restyle many at once (clip_ids, or every one on track_id). The style is merged; null turns an outline, shadow, box or highlight off (and max_lines back to all lines). spans (one clip) restyle part of its text. Fonts: video://catalog/fonts, or an unknown font is refused with the close matches.",
   },
   'audio.set_gain': {
     title: 'Set gain',

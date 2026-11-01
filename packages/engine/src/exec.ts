@@ -22,6 +22,7 @@ export const BIN = {
   diarize: process.env.CUTTINGFLOOR_DIARIZE ?? 'sherpa-onnx-offline-speaker-diarization',
   tar: 'tar',
   fcList: 'fc-list',
+  fcMatch: 'fc-match',
 };
 
 export interface RunOptions {

@@ -2320,6 +2320,74 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(late.right).toBeGreaterThan(late.left + 10);
     }, 120_000);
 
+    it('shows a caption one line at a time with max_lines, one word in its own colour', async () => {
+      const t = await onGreen([
+        {
+          tool: 'caption.add',
+          args: {
+            track_id: 't2',
+            segments: [
+              {
+                start_frame: 0,
+                end_frame: 50,
+                text: 'AAAA BBBB CCCC DDDD',
+                words: ['AAAA', 'BBBB', 'CCCC', 'DDDD'].map((text, i) => ({
+                  text,
+                  start_frame: [0, 12, 25, 37][i] as number,
+                  end_frame: [12, 25, 37, 50][i] as number,
+                })),
+                spans: [{ first_word: 1, last_word: 1, color: '#FF0000' }],
+              },
+            ],
+            // About 210 px a word at 72 px: two fit a 640 px line, three don't.
+            style: { size: 0.1, max_width: 0.5, max_lines: 1, outline: null },
+          },
+        },
+      ]);
+      /** Pixels of a region (crop w:h:x:y) that are not the green: text, by colour. */
+      const ink = async (image: Buffer, crop: string) => {
+        const file = join(env.dir, `ink-${Math.random().toString(36).slice(2)}.png`);
+        await writeFile(file, image);
+        const { stdout } = await exec(
+          'ffmpeg',
+          ['-v', 'error', '-i', file, '-vf', `crop=${crop},format=rgb24`, '-f', 'rawvideo', '-'],
+          { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 },
+        );
+        let white = 0;
+        let red = 0;
+        for (let i = 0; i + 2 < stdout.length; i += 3) {
+          const [r, g, b] = [stdout[i] ?? 0, stdout[i + 1] ?? 0, stdout[i + 2] ?? 0];
+          if (r > 200 && g > 200 && b > 200) white++;
+          else if (r > 200 && g < 60 && b < 60) red++;
+        }
+        return { white, red };
+      };
+      const LINE = '640:60:320:585';
+      const ABOVE = '640:60:320:510';
+      const early = await frame(t, 10);
+      const late = await frame(t, 40);
+      // Each page is one line, at the bottom: nothing above it.
+      expect(await ink(early, ABOVE)).toEqual({ white: 0, red: 0 });
+      expect(await ink(late, ABOVE)).toEqual({ white: 0, red: 0 });
+      // The first page has BBBB in red; the second, from frame 25, is CCCC DDDD in white.
+      const first = await ink(early, LINE);
+      const second = await ink(late, LINE);
+      expect(first.red).toBeGreaterThan(1000);
+      expect(first.white).toBeGreaterThan(1000);
+      expect(second.red).toBe(0);
+      expect(second.white).toBeGreaterThan(2000);
+      const all = await ok<{ timeline_id: string }>(client, 'text.set', {
+        timeline_id: t,
+        preview: 'none',
+        track_id: 't2',
+        style: { max_lines: null },
+      });
+      // Without max_lines it wraps to two lines at once: AAAA BBBB above CCCC DDDD.
+      const both = await frame(all.timeline_id, 40);
+      expect((await ink(both, ABOVE)).red).toBeGreaterThan(1000);
+      expect((await ink(both, LINE)).white).toBeGreaterThan(2000);
+    }, 120_000);
+
     it('reads SRT, types a title out, and sets text in an imported font', async () => {
       const srt =
         '1\n00:00:00,000 --> 00:00:01,000\nFirst\n\n2\n00:00:01,000 --> 00:00:02,000\nSecond\n';

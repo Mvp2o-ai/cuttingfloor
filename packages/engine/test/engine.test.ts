@@ -11,6 +11,7 @@ import {
   download,
   estimateTempo,
   isBlockedAddress,
+  loadFace,
   onsetEnvelope,
   type Probe,
   renderLoad,
@@ -422,6 +423,100 @@ describe('MLT compiler', () => {
     expect(xml).toContain('<property name="level">12=-100;');
   });
 
+  it('styles spans of words and shows max_lines a screenful at a time', () => {
+    const titled = runEdits(
+      newTimeline('t', seq, { video: 1, audio: 0 }),
+      'tl_z',
+      [
+        {
+          tool: 'caption.add',
+          args: {
+            track_id: 't1',
+            segments: [
+              {
+                start_frame: 0,
+                end_frame: 100,
+                text: 'one two three four five six',
+                words: ['one', 'two', 'three', 'four', 'five', 'six'].map((text, i) => ({
+                  text,
+                  start_frame: i * 15,
+                  end_frame: i * 15 + 10,
+                })),
+                spans: [{ first_word: 1, last_word: 1, color: '#FFE000', bold: false }],
+              },
+            ],
+            style: { max_lines: 1, max_width: 0.4, shadow: null },
+          },
+        },
+      ],
+      () => media,
+      { tool: 'x', args: null },
+    ).doc;
+    const files = new Map<string, string>();
+    // Every letter and space half an em, 10.8 px at 21.6 px, in a 256 px line.
+    const faces: unknown[] = [];
+    compileMlt(titled, {
+      width: 640,
+      height: 360,
+      sources: new Map(),
+      files,
+      measure: (face) => {
+        faces.push(face);
+        return (text) => [...text].length * 0.5;
+      },
+    });
+    const ass = files.get('c2_text.ass') ?? '';
+    const events = ass.split('\n').filter((l) => l.startsWith('Dialogue:'));
+    // 256 px fits "one two three four five" (23 with spaces, 248.4 px) but not " six": two pages,
+    // the second from "six" at frame 75 (3 s).
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatch(
+      /^Dialogue: 1,0:00:00\.00,0:00:03\.00,Text,,0,0,0,,\{\\pos\(320,324\)\\q2\}/,
+    );
+    expect(events[0]).toContain('{\\b0\\1c&H00E0FF&}two');
+    expect(events[0]).toContain('{\\b1\\1c&HFFFFFF&}one');
+    expect(events[1]).toMatch(
+      /^Dialogue: 1,0:00:03\.00,0:00:04\.00,Text,.*\{\\b1\\1c&HFFFFFF&\}six$/,
+    );
+    expect(faces).toContainEqual({ font: 'Inter', bold: true, italic: false });
+    // Two lines a page: one page, the lines balanced (three words each), not five and one.
+    const two = runEdits(
+      titled,
+      'tl_z',
+      [{ tool: 'text.set', args: { clip_ids: ['c2'], style: { max_lines: 2 } } }],
+      () => media,
+      { tool: 'x', args: null },
+    ).doc;
+    files.clear();
+    compileMlt(two, {
+      width: 640,
+      height: 360,
+      sources: new Map(),
+      files,
+      measure: () => (text) => [...text].length * 0.5,
+    });
+    const balanced = (files.get('c2_text.ass') ?? '')
+      .split('\n')
+      .filter((l) => l.startsWith('Dialogue:'));
+    expect(balanced).toHaveLength(1);
+    expect(balanced[0]).toMatch(/three\\N\{[^}]*\}four/);
+    // A span past the last word is refused with the words it can use.
+    expect(() =>
+      runEdits(
+        titled,
+        'tl_z',
+        [
+          {
+            tool: 'text.set',
+            args: { clip_ids: ['c2'], spans: [{ first_word: 4, last_word: 6 }] },
+          },
+        ],
+        () => media,
+        { tool: 'x', args: null },
+      ),
+    ).toThrow(/has words 0 to 5/);
+  });
+
   it('writes text as an ASS script over a transparent layer', () => {
     const titled = runEdits(
       newTimeline('t', seq, { video: 1, audio: 0 }),
@@ -651,5 +746,27 @@ describe('media helpers', () => {
         video: { ...v, vfr: true, rotation: 90, transfer: 'arib-std-b67', codec: 'theora' },
       }),
     ).toEqual(['vfr', 'rotation', 'hdr', 'codec']);
+  });
+});
+
+describe('font widths', () => {
+  it('reads character widths from an installed font', async () => {
+    let measure: Awaited<ReturnType<typeof loadFace>>;
+    try {
+      measure = await loadFace({ family: 'DejaVu Sans', bold: false, italic: false });
+    } catch {
+      // No fontconfig on this host.
+      if (process.env.CUTTINGFLOOR_REQUIRE_ENGINES) throw new Error('fc-match is missing');
+      return;
+    }
+    expect(measure('')).toBe(0);
+    const i = measure('i');
+    const m = measure('M');
+    expect(i).toBeGreaterThan(0.1);
+    expect(m).toBeGreaterThan(i * 2);
+    expect(m).toBeLessThan(1.2);
+    expect(measure('iM iM')).toBeCloseTo(2 * (i + m) + measure(' '), 6);
+    const bold = await loadFace({ family: 'DejaVu Sans', bold: true, italic: false });
+    expect(bold('Mmm')).toBeGreaterThan(measure('Mmm'));
   });
 });

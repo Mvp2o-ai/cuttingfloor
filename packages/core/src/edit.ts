@@ -26,6 +26,7 @@ import {
   type StoredTrack,
   type StoredTransform,
   type StoredTransition,
+  type TextSpan,
   type TextStyle,
   TICKS_PER_SECOND,
   type TimelineDoc,
@@ -33,6 +34,7 @@ import {
   TRANSFORM_LIMITS,
   TRANSFORM_NUMBERS,
   type TrackKind,
+  textWords,
 } from '@cuttingfloor/schema';
 import { checkKeyframes, loopPlays, sample, toStoredAnim, toViewAnim } from './animate.ts';
 import { extended, frameSource, inBetween, meanRate, ratePoints, span, subclip } from './speed.ts';
@@ -1677,6 +1679,32 @@ function mergeStyle(
   return Object.keys(out).length ? (out as TextStyle) : undefined;
 }
 
+/** Spans checked against the words they style; undefined when there are none. */
+const withSpans = (spans: TextSpan[] | undefined) => (spans ? { spans } : {});
+
+function checkSpans(
+  clip: { text: string; words?: Array<{ text: string }> | undefined },
+  spans: TextSpan[] | null | undefined,
+): TextSpan[] | undefined {
+  if (!spans?.length) return undefined;
+  const words = textWords(clip);
+  for (const sp of spans) {
+    if (sp.last_word < sp.first_word || sp.last_word >= words.length) {
+      throw new CfError(
+        'bad_request',
+        `A span covers words ${sp.first_word} to ${sp.last_word}, but "${clip.text.slice(0, 60)}" has words 0 to ${words.length - 1}`,
+        {
+          hint: `Words count from 0 (${words
+            .slice(0, 12)
+            .map((w, i) => `${i} ${w}`)
+            .join(', ')}${words.length > 12 ? ', …' : ''}); last_word is included`,
+        },
+      );
+    }
+  }
+  return spans;
+}
+
 function titleAdd(doc: TimelineDoc, a: EditArgsOf<'title.add'>): OpOutcome {
   const track = textTrack(doc, a.track_id);
   const fps = doc.sequence.fps;
@@ -1689,6 +1717,7 @@ function titleAdd(doc: TimelineDoc, a: EditArgsOf<'title.add'>): OpOutcome {
     kind: 'video',
     text: a.text,
     ...(style ? { style } : {}),
+    ...withSpans(checkSpans({ text: a.text }, a.spans)),
     start,
     in: 0,
     duration,
@@ -1746,7 +1775,12 @@ function inClipSegments(
       const wat = place(w.start, w.end);
       return wat ? [{ text: w.text, ...wat }] : [];
     });
-    out.push({ ...at, text: seg.text, ...(words?.length ? { words } : {}) });
+    out.push({
+      ...at,
+      text: seg.text,
+      ...(words?.length ? { words } : {}),
+      ...(seg.spans?.length ? { spans: seg.spans } : {}),
+    });
   }
   return out;
 }
@@ -1812,6 +1846,12 @@ function captionAdd(doc: TimelineDoc, a: EditArgsOf<'caption.add'>): OpOutcome {
       text: seg.text,
       ...(words?.length ? { words } : {}),
       ...(style ? { style } : {}),
+      ...withSpans(
+        checkSpans(
+          { text: seg.text, ...(words?.length ? { words } : {}) },
+          'spans' in seg ? seg.spans : undefined,
+        ),
+      ),
       start,
       in: 0,
       duration: (seg.end_frame - seg.start_frame) * tpf,
@@ -1843,8 +1883,8 @@ function textSet(doc: TimelineDoc, a: EditArgsOf<'text.set'>): OpOutcome {
     : (a.clip_ids ?? []).map((id) => locate(doc, id));
   if (!targets.length)
     throw new CfError('bad_request', `Track ${a.track_id} has no titles or captions`);
-  if (a.text !== undefined && targets.length !== 1) {
-    throw new CfError('bad_request', 'text changes one clip at a time', {
+  if ((a.text !== undefined || a.spans !== undefined) && targets.length !== 1) {
+    throw new CfError('bad_request', 'text and spans change one clip at a time', {
       hint: 'Give a single clip id',
     });
   }
@@ -1855,8 +1895,14 @@ function textSet(doc: TimelineDoc, a: EditArgsOf<'text.set'>): OpOutcome {
     assertUnlocked(track);
     if (a.text !== undefined) {
       clip.text = a.text;
-      // New text no longer matches the old word timings.
+      // New text no longer matches the old word timings, nor spans counted in its words.
       if (clip.type === 'caption') delete clip.words;
+      if (a.spans === undefined) delete clip.spans;
+    }
+    if (a.spans !== undefined) {
+      const spans = checkSpans(clip, a.spans);
+      if (spans) clip.spans = spans;
+      else delete clip.spans;
     }
     const style = mergeStyle(clip.style, a.style);
     if (style) clip.style = style;

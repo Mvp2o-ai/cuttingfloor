@@ -29,7 +29,7 @@ import {
 import { ASSET_NAME, MOTION_LIMITS } from './motion.ts';
 import { Sequence } from './sequence.ts';
 import { STEMS } from './sounds.ts';
-import { Colour, TextStyle } from './text.ts';
+import { Colour, TextSpans, TextStyle } from './text.ts';
 import { Change, TimelineInput, TimelineView, TrackKind } from './timeline.ts';
 
 const frame = z.number().int().nonnegative();
@@ -292,6 +292,7 @@ export const EditArgs = {
     at_frame: frame.optional().describe('Default: after the last clip on the track'),
     duration_frames: z.number().int().positive().max(1_000_000).optional().describe('Default 3 s'),
     style: TextStyle.optional(),
+    spans: TextSpans.optional(),
   }),
   'caption.add': z.object({
     track_id: z.string().describe('A video track for the captions, usually the top one'),
@@ -308,6 +309,7 @@ export const EditArgs = {
             .max(500)
             .optional()
             .describe('Word timings for highlights, timeline frames'),
+          spans: TextSpans.optional(),
         }),
       )
       .max(5000)
@@ -331,6 +333,7 @@ export const EditArgs = {
                 )
                 .max(500)
                 .optional(),
+              spans: TextSpans.optional(),
             }),
           )
           .min(1)
@@ -359,6 +362,11 @@ export const EditArgs = {
       .describe('Instead of clip_ids: every title and caption on a track'),
     text: z.string().min(1).max(2000).optional().describe('Only with a single clip'),
     style: TextStyle.optional().describe("Merged into each clip's style; null fields reset"),
+    spans: TextSpans.nullable()
+      .optional()
+      .describe(
+        "Only with a single clip: replaces its spans (null removes them). New text drops spans it doesn't give",
+      ),
   }),
   'audio.set_gain': z.object({
     clip_id: z.string().describe('An audio clip, or a video clip whose linked audio to change'),
