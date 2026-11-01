@@ -1,0 +1,18 @@
+--- a/src/modules/avformat/consumer_avformat.c
++++ b/src/modules/avformat/consumer_avformat.c
+@@ -569,12 +569,12 @@
+ 
+         // Assign the thread to properties
+         mlt_properties_set_data(properties, "thread", thread, sizeof(pthread_t), free, NULL);
++
++        // Set the running state before the thread starts: it ends at once if it looks first.
++        mlt_properties_set_int(properties, "running", 1);
+ 
+         // Create the thread
+         pthread_create(thread, NULL, consumer_thread, consumer);
+-
+-        // Set the running state
+-        mlt_properties_set_int(properties, "running", 1);
+     }
+     return error;
+ }
