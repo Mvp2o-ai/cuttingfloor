@@ -1327,14 +1327,27 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         mask: { shape: 'rectangle', width: 0.2, height: 0.25, mode: 'fill' },
         preview: 'none',
       });
+      // The fill is made in the background; until then renders say so.
+      const first = await call(client, 'render.frames', {
+        timeline_id: filled.timeline_id,
+        frames: [0],
+      });
+      expect(first.isError).toBe(true);
+      expect(JSON.stringify(first.structured)).toMatch(/media_not_ready/);
       for (const frame of [0, 5, 9]) {
-        const res = await call(client, 'render.frames', {
-          timeline_id: filled.timeline_id,
-          frames: [frame],
-          layout: 'single',
-          format: 'png',
-          long_edge: 640,
-        });
+        let res = first;
+        for (const until = Date.now() + 400_000; Date.now() < until; ) {
+          res = await call(client, 'render.frames', {
+            timeline_id: filled.timeline_id,
+            frames: [frame],
+            layout: 'single',
+            format: 'png',
+            long_edge: 640,
+          });
+          if (!res.isError) break;
+          expect(JSON.stringify(res.structured)).toMatch(/media_not_ready/);
+          await new Promise((r) => setTimeout(r, 2000));
+        }
         expect(res.isError).toBe(false);
         const image = Buffer.from(
           (res.content.find((c) => c.type === 'image')?.data as string) ?? '',

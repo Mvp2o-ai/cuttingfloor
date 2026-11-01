@@ -17,6 +17,7 @@ import {
   renderTimelineFrames,
   renderWaveform,
   selectedPicture,
+  selectedPictureNow,
   selectionPass,
   sourceKey,
 } from '@cuttingfloor/engine';
@@ -152,7 +153,10 @@ async function selected(
     duration: record.probe?.duration ?? 0,
   };
   const dir = join(rt.media.dir(owner, c.media_id), 'selected');
-  const path = await selectedPicture(input, dir, pass, matte, purpose, signal);
+  const path =
+    !signal && pass.mask.mode === 'fill'
+      ? await selectedPictureNow(input, dir, pass, matte, purpose, `clip ${c.id}`)
+      : await selectedPicture(input, dir, pass, matte, purpose, signal);
   // A fill copy has no alpha of its own; show and hide carry the selection as alpha.
   return { ...media, path, alpha: pass.mask.mode !== 'fill' };
 }
