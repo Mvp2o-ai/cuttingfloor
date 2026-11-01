@@ -561,6 +561,49 @@ describe.skipIf(!engines)('blind-test regressions', () => {
     expect(said).not.toMatch(new RegExp(`play .* later against it: [^.]*${audio}`));
     expect(said).toMatch(new RegExp(`${audio} \\(linked to ${video}\\) stay in sync`));
   }, 60_000);
+
+  it('flags sound that stops before the picture, and counts the soundless end as silence', async () => {
+    // 6 s of picture with 3 s of loud sound, like a film whose audio track ends early.
+    const file = join(env.mediaDir, 'short-sound.mp4');
+    await ff([
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc=size=320x180:rate=24:d=6',
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=440:sample_rate=48000:d=3',
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      file,
+    ]);
+    const media = await importMedia(file);
+    const info = await ok<{ stream_seconds: { video: number; audio: number } }>(
+      client,
+      'media.get',
+      { media_id: media.media_id },
+    );
+    expect(info.stream_seconds.video).toBeCloseTo(6, 1);
+    expect(info.stream_seconds.audio).toBeCloseTo(3, 1);
+    const started = await ok<{ job_id: string }>(client, 'media.analyze', {
+      media_id: media.media_id,
+      kind: 'silence',
+      threshold_db: -60,
+      min_seconds: 0.5,
+    });
+    const done = await settled<{
+      result: { silences: Array<{ start: number; end: number }>; sound_ends?: number };
+    }>(client, started.job_id, 60_000);
+    expect(done.result.sound_ends).toBeCloseTo(3, 1);
+    expect(done.result.silences).toHaveLength(1);
+    expect(done.result.silences[0]?.start).toBeCloseTo(3, 1);
+    expect(done.result.silences[0]?.end).toBeCloseTo(6, 1);
+  }, 120_000);
 });
 
 describe('media not ready yet', () => {

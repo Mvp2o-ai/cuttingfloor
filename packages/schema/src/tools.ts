@@ -1036,6 +1036,12 @@ export const MediaInfo = z.object({
   has_video: z.boolean(),
   has_audio: z.boolean(),
   codecs: z.object({ video: z.string().nullable(), audio: z.string().nullable() }),
+  stream_seconds: z
+    .object({ video: z.number().nullable(), audio: z.number().nullable() })
+    .optional()
+    .describe(
+      'How long the picture and the sound each run, from the file: sound shorter than picture means the end of the media has no sound at all (silence analysis reports that stretch as silent)',
+    ),
   conform: z
     .array(z.string())
     .describe(
@@ -1221,7 +1227,15 @@ export const MediaAnalyzeResult = z.object({
   silences: z
     .array(z.object({ start: z.number(), end: z.number() }))
     .optional()
-    .describe('silence: media seconds'),
+    .describe(
+      'silence: media seconds; a stretch after the sound stops (see sound_ends) counts as silent',
+    ),
+  sound_ends: z
+    .number()
+    .optional()
+    .describe(
+      'silence: where the sound stream stops, when it stops before the media ends: past it there is no sound at all',
+    ),
   scenes: z.array(z.number()).optional().describe('scenes: cut times, media seconds'),
   scene_scores: z
     .array(z.number())

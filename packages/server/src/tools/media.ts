@@ -309,18 +309,19 @@ async function measureSound(
   progress(0.1, 'silence: listening');
   const lo = args.from_seconds ?? 0;
   const hi = args.until_seconds ?? Number.POSITIVE_INFINITY;
-  const silences = (
-    await detectSilences(sound.file, {
-      thresholdDb: args.threshold_db as number,
-      minSeconds: args.min_seconds as number,
-      ...(sound.duration !== null ? { duration: sound.duration - sound.shift } : {}),
-      signal,
-    })
-  )
+  const heard = await detectSilences(sound.file, {
+    thresholdDb: args.threshold_db as number,
+    minSeconds: args.min_seconds as number,
+    ...(sound.duration !== null ? { duration: sound.duration - sound.shift } : {}),
+    signal,
+  });
+  const silences = heard.silences
     .map((x) => ({ start: shift(x.start), end: shift(x.end) }))
     .filter((x) => x.end > lo && x.start < hi)
     .map((x) => ({ start: Math.max(lo, x.start), end: Math.min(hi, x.end) }));
-  return { result: { silences } };
+  return {
+    result: { silences, ...(heard.ends !== null ? { sound_ends: shift(heard.ends) } : {}) },
+  };
 }
 
 /** Per question, where its answers sit: yes spans, choice spans, score range. */

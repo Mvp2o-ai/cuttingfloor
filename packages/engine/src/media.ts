@@ -691,6 +691,7 @@ export function mediaInfo(
     has_video: Boolean(p?.video),
     has_audio: Boolean(p?.audio),
     codecs: { video: p?.video?.codec ?? null, audio: p?.audio?.codec ?? null },
+    ...(p && p.kind !== 'image' ? { stream_seconds: streamSeconds(p) } : {}),
     conform: record.conform,
     analysis: record.analysis,
     ...(analyses && Object.keys(analyses).length ? { analyses } : {}),
@@ -699,6 +700,25 @@ export function mediaInfo(
     ...(record.warnings?.length ? { warnings: record.warnings } : {}),
     ...(record.error ? { error: record.error } : {}),
   };
+}
+
+/** How long the first picture and sound streams each run, from the probe; null when unknown. */
+function streamSeconds(p: Probe): { video: number | null; audio: number | null } {
+  const of = (type: string) => {
+    const s = p.raw?.streams.find(
+      (x) => x.codec_type === type && !(x.disposition as { attached_pic?: number })?.attached_pic,
+    );
+    if (!s) return null;
+    const tagged = (s.tags as { DURATION?: string } | undefined)?.DURATION;
+    const hms = tagged ? /^(\d+):(\d+):([\d.]+)$/.exec(tagged) : null;
+    const seconds = s.duration
+      ? Number(s.duration)
+      : hms
+        ? Number(hms[1]) * 3600 + Number(hms[2]) * 60 + Number(hms[3])
+        : Number.NaN;
+    return Number.isFinite(seconds) ? Math.round(seconds * 1000) / 1000 : null;
+  };
+  return { video: p.video ? of('video') : null, audio: p.audio ? of('audio') : null };
 }
 
 /** Which file each render reads: proxies for previews, the mezzanine or original for exports. */
