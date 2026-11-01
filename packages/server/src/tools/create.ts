@@ -440,7 +440,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Cut out a subject',
       description:
-        'A subject without its background, local: ProRes 4444 with alpha and the sound, or a PNG, to lay over a new background. subject any (BiRefNet) cuts out products, animals or objects; people (MODNet) is fast enough for long video. region picks one item by its bounds (from judge.ask, look, track or faces) and follows its outline through the clip; the result is also a selection for clip.set_mask {shape: "matte"}. Long-running: a task, or {job_id, media_id} for job.get.',
+        'A subject without its background, local: ProRes 4444 with alpha and the sound, or a PNG, to lay over a new background. subject any (BiRefNet) cuts out products, animals or objects; people (MODNet) is fast enough for long video. region: one item by its bounds, followed; also a clip.set_mask matte. Long-running: a task, or {job_id, media_id} for job.get.',
       inputSchema: CreateCutoutInput,
       outputSchema: withJob(MediaInfo),
       annotations: annotations('Cut out a subject'),

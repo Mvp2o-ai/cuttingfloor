@@ -3,7 +3,6 @@ import {
   AnimatableValue,
   BlendMode,
   Crop,
-  EaseName,
   Fit,
   Flip,
   InOutAnimation,
@@ -74,7 +73,8 @@ export const TransformArgs = z.object({
 const MaskPoints = z
   .array(z.tuple([z.number().min(-4).max(5), z.number().min(-4).max(5)]))
   .min(3)
-  .max(MAX_MASK_POINTS);
+  .max(MAX_MASK_POINTS)
+  .meta({ id: 'MaskPoints' });
 
 export const MaskArgs = z.object({
   shape: MaskShape,
@@ -108,7 +108,7 @@ export const MaskArgs = z.object({
             z.object({
               frame: z.number().int().min(-1_000_000).max(100_000_000),
               points: MaskPoints,
-              ease: EaseName.optional(),
+              ease: z.string().optional(),
             }),
           )
           .min(1)
@@ -117,13 +117,11 @@ export const MaskArgs = z.object({
     ])
     .optional()
     .describe(
-      'polygon: [x, y] corners in the fitted frame, 0–1, or {keyframes: [{frame, points, ease}]} with the same number of corners in each',
+      'polygon: [x, y] corners in the fitted frame, 0–1, or {keyframes: [{frame, points, ease}]}',
     ),
-  media_id: MediaId.optional().describe(
-    'matte: the media whose alpha (or brightness) is the selection, frame by frame',
-  ),
+  media_id: MediaId.optional().describe('matte: media whose alpha (or brightness) selects'),
   mode: MaskMode.optional().describe(
-    'show (default): only the selection shows; hide: it is hidden; fill: it is painted in from its surroundings',
+    'show (default) only the selection, hide it, or fill it from its surroundings',
   ),
 });
 
@@ -1743,7 +1741,7 @@ export const CreateCutoutInput = z.object({
           z.object({
             x: z.number().min(0).max(1),
             y: z.number().min(0).max(1),
-            keep: z.boolean().default(true).describe('false: this point is not part of it'),
+            keep: z.boolean().default(true),
           }),
         )
         .max(16)
@@ -1751,7 +1749,7 @@ export const CreateCutoutInput = z.object({
     })
     .optional()
     .describe(
-      'One item instead of the main subject: the one in this box (top-left x, y, size w, h, fractions of the picture) and/or under these points at at_seconds, followed through the video to its exact outline (EdgeTAM, about 0.5 s a frame)',
+      'The item in this box (top-left x, y, size w, h; fractions) and/or at these points (keep false: not it) at at_seconds, outlined through the video (EdgeTAM, ~0.5 s a frame)',
     ),
   ...createCommon,
 });
