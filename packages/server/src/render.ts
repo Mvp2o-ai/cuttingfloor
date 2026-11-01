@@ -17,7 +17,6 @@ import {
   renderTimelineFrames,
   renderWaveform,
   selectedPicture,
-  selectedPictureNow,
   selectionPass,
   sourceKey,
 } from '@cuttingfloor/engine';
@@ -28,6 +27,7 @@ import {
   type TimelineDoc,
   type TimelineView,
 } from '@cuttingfloor/schema';
+import { awaitFill, fillCopy, fillNotReady } from './fills.ts';
 import type { Runtime } from './runtime.ts';
 
 /** Resolves every media file a timeline uses, for previews (proxies) or exports. */
@@ -40,6 +40,7 @@ export async function sourcesFor(
   sound = true,
   /** false to leave the copies source passes make for later (addPasses, inside a job). */
   passes = true,
+  fills: FillOptions = {},
 ): Promise<{ sources: Map<string, MltSource>; offline: string[] }> {
   const sources = new Map<string, MltSource>();
   const offline: string[] = [];
@@ -53,7 +54,7 @@ export async function sourcesFor(
     if (purpose === 'export' && record.status !== 'ready') throw notReady(record, 'an export');
     sources.set(id, renderPicture(record, purpose));
   }
-  if (passes) await addPasses(rt, owner, doc, sources, purpose, sound);
+  if (passes) await addPasses(rt, owner, doc, sources, purpose, sound, undefined, fills);
   return { sources, offline };
 }
 
@@ -70,8 +71,16 @@ export async function addPasses(
   purpose: 'preview' | 'export',
   sound: boolean,
   signal?: AbortSignal,
+  fills: FillOptions = {},
 ): Promise<void> {
   const fps = doc.sequence.fps;
+  const tpf = ticksPerFrame(fps);
+  // A frames render needs only the fills of clips at its frames; the others play as they are
+  // (unseen there) and their fills keep going.
+  const shown = (c: StoredClip, top: boolean) =>
+    !fills.frames ||
+    !top ||
+    fills.frames.some((f) => f * tpf >= c.start && f * tpf < c.start + c.duration);
   for (const body of [doc, ...Object.values(doc.nested ?? {})])
     for (const t of body.tracks)
       for (const c of t.clips) {
@@ -81,9 +90,13 @@ export async function addPasses(
         if (!media || key === c.media_id || sources.has(key)) continue;
         const record = await rt.media.find(owner, c.media_id);
         if (!record) continue;
-        // A matte mask, or any selection that is filled, plays a copy of the picture through
-        // that selection; in-between frames are then made from that copy.
-        const plain = await selected(rt, owner, doc, c, media, purpose, signal);
+        // A matte mask, a selection of several shapes, or any selection that is filled plays a
+        // copy of the picture through that selection; in-between frames are made from that.
+        const plain = await selected(rt, owner, doc, c, media, purpose, signal, {
+          ...fills,
+          needed: shown(c, body === doc),
+        });
+        if (!plain) continue;
         const between = inBetween(c, fps);
         if (between) {
           const own = record.probe?.video?.fps;
@@ -117,10 +130,21 @@ export async function addPasses(
       }
 }
 
+/** How renders treat fills (selection.ts mode fill), which take minutes to make. */
+export interface FillOptions {
+  /** The timeline, for the fill job's record. */
+  timelineId?: string;
+  /** A frames render: the timeline frames it shows. */
+  frames?: number[];
+  /** Inside a job that waits for a fill: what it is waiting for, heard each frame. */
+  waiting?: (on: boolean, message: string) => void;
+}
+
 /**
  * A media clip's picture through its selection pass (selection.ts), or `media` itself when its
- * mask needs none. Inside a job (`signal`) it waits for the copy; a request starts a fill and
- * refuses until it is made, since filling takes minutes.
+ * mask needs none. A fill is a job of its own (fills.ts): a job waits for it (`signal`); a
+ * request refuses, naming the fill's job, unless the clip is not at the frames it renders
+ * (then undefined: the clip plays as it is there).
  */
 async function selected(
   rt: Runtime,
@@ -130,18 +154,20 @@ async function selected(
   media: MltSource,
   purpose: 'preview' | 'export',
   signal: AbortSignal | undefined,
-): Promise<MltSource> {
+  fills: FillOptions & { needed: boolean },
+): Promise<MltSource | undefined> {
   const pass = selectionPass(c, doc.sequence.width / doc.sequence.height);
   if (!pass) return media;
   const record = await rt.media.find(owner, c.media_id);
   const v = record?.probe?.video;
   if (!record || !v || !media.width || !media.height) return media;
-  let matte: MatteSource | undefined;
-  if (pass.mask.shape === 'matte' && pass.mask.media_id) {
-    const m = await rt.media.find(owner, pass.mask.media_id);
-    if (!m || m.status === 'failed' || m.status === 'importing') assertOnline([pass.mask.media_id]);
+  const mattes = new Map<string, MatteSource>();
+  for (const x of [pass.mask, ...(pass.mask.add ?? [])]) {
+    if (x.shape !== 'matte' || !x.media_id || mattes.has(x.media_id)) continue;
+    const m = await rt.media.find(owner, x.media_id);
+    if (!m || m.status === 'failed' || m.status === 'importing') assertOnline([x.media_id]);
     const pic = renderPicture(m as NonNullable<typeof m>, purpose);
-    matte = { path: pic.path, image: pic.image, alpha: pic.alpha };
+    mattes.set(x.media_id, { path: pic.path, image: pic.image, alpha: pic.alpha });
   }
   const input = {
     path: media.path,
@@ -153,10 +179,37 @@ async function selected(
     duration: record.probe?.duration ?? 0,
   };
   const dir = join(rt.media.dir(owner, c.media_id), 'selected');
-  const path =
-    !signal && pass.mask.mode === 'fill'
-      ? await selectedPictureNow(input, dir, pass, matte, purpose, `clip ${c.id}`)
-      : await selectedPicture(input, dir, pass, matte, purpose, signal);
+  let path: string;
+  if (pass.mask.mode === 'fill') {
+    const made = await fillCopy(
+      rt,
+      { owner, mediaId: c.media_id, timelineId: fills.timelineId, clipId: c.id },
+      input,
+      dir,
+      pass,
+      mattes,
+      purpose,
+    );
+    if ('path' in made) path = made.path;
+    else if (signal) {
+      // Inside a job: wait, with the stall clock stopped (the fill job has its own), saying
+      // how far the fill is.
+      const say = (f: number) =>
+        fills.waiting?.(
+          true,
+          `waiting for the fill of clip ${c.id} (job ${made.run.jobId}, ${Math.round(f * 100)}%)`,
+        );
+      say(made.run.fraction);
+      try {
+        path = await awaitFill(made.run, say);
+      } finally {
+        fills.waiting?.(false, 'preparing sources');
+      }
+    } else if (!fills.needed) return undefined;
+    else throw fillNotReady(made.run, c.id, made.run.fraction === 0);
+  } else {
+    path = await selectedPicture(input, dir, pass, mattes, purpose, signal ? { signal } : {});
+  }
   // A fill copy has no alpha of its own; show and hide carry the selection as alpha.
   return { ...media, path, alpha: pass.mask.mode !== 'fill' };
 }
@@ -190,7 +243,12 @@ function mediaIdsOf(doc: TimelineDoc): Set<string> {
           t.clips.flatMap((c) => {
             if (!c.enabled) return [];
             if (c.type === 'media')
-              return c.mask?.media_id ? [c.media_id, c.mask.media_id] : [c.media_id];
+              return [
+                c.media_id,
+                ...[c.mask, ...(c.mask?.add ?? [])].flatMap((x) =>
+                  x?.media_id ? [x.media_id] : [],
+                ),
+              ];
             if ((c.type === 'title' || c.type === 'caption') && c.style?.font_media_id)
               return [c.style.font_media_id];
             return [];
@@ -378,6 +436,8 @@ export async function timelineImage(
     doc,
     options.full ? 'export' : 'preview',
     false,
+    true,
+    { timelineId, frames },
   );
   assertOnline(offline);
   const [image] = await renderTimelineFrames(doc, frames, sources, {

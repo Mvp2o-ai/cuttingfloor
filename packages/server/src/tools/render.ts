@@ -217,12 +217,20 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       });
       rt.jobs.start(
         job,
-        async ({ signal, progress }: JobContext) => {
+        async ({ signal, progress, status, waiting }: JobContext) => {
           const outDir = rt.ws.ownerDir(owner, 'outputs', job.id);
           await mkdir(outDir, { recursive: true });
           const out = join(outDir, name);
           progress(0, 'preparing sources');
-          await addPasses(rt, owner, doc, sources, 'export', true, signal);
+          await addPasses(rt, owner, doc, sources, 'export', true, signal, {
+            timelineId: args.timeline_id,
+            // While a fill (a job of its own) is made, this job waits for it: its stall clock
+            // stops, and its status says how far the fill is.
+            waiting: (on, message) => {
+              waiting(on);
+              status(message);
+            },
+          });
           const started = Date.now();
           const { frames, width, height } = await exportTimeline(doc, args.preset, sources, out, {
             ...(args.range ? { range: args.range } : {}),
