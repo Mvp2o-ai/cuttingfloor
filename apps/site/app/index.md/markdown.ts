@@ -40,7 +40,7 @@ It is not an editor with an AI inside. Other AI editors put their own assistant 
 
 ## Connect your agent
 
-Hosted MCP server: \`${MCP_ADDRESS}\` (Streamable HTTP, OAuth sign-in with Google, GitHub, Microsoft, Apple or email).
+Hosted MCP server: \`${MCP_ADDRESS}\` (Streamable HTTP, OAuth sign-in).
 
 ${connectMarkdown()}
 
