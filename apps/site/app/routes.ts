@@ -22,6 +22,7 @@ export const ROUTES: Route[] = [
     title: 'AI video editor your agent runs: a CapCut, Descript and VEED alternative',
     updated: '2026-10-29',
   },
+  { path: '/features', title: 'Features', updated: '2026-11-01' },
   { path: '/pricing', title: 'Pricing', updated: '2026-11-01' },
   {
     path: '/connect',

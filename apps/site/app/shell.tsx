@@ -29,7 +29,7 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
         </a>
         <nav className="nav-links" aria-label="Sections">
           <a href="/demos">Demos</a>
-          <a href="/walkthroughs">Walkthroughs</a>
+          <a href="/features">Features</a>
           <a href="/skills">Skills</a>
           <a href="/connect">Connect</a>
           <a href="/pricing">Pricing</a>
@@ -57,6 +57,7 @@ export function Footer({ cta = 'Start free' }: { cta?: string }) {
           <a href={SIGN_UP}>{cta}</a>
           <a href="/walkthroughs">Walkthroughs</a>
           <a href="/skills">Skills</a>
+          <a href="/features">Features</a>
           <a href="/pricing">Pricing</a>
           <a href="/connect">Connect</a>
           <a href="/self-host">Self-host</a>
