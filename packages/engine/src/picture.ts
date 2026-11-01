@@ -91,12 +91,13 @@ export function colourStats(
   const pct = (h: Float64Array, scale: number) => {
     const out: Record<string, number> = {};
     for (const p of percentiles) {
-      const target = (p / 100) * (n - 1);
+      // Nearest rank: the smallest value at least p% of the pixels are at or below.
+      const rank = Math.max(1, Math.ceil((p / 100) * n));
       let acc = 0;
       let v = 0;
       for (; v < h.length; v++) {
         acc += h[v] as number;
-        if (acc > target) break;
+        if (acc >= rank) break;
       }
       out[String(p)] = r2(Math.min(v, h.length - 1) / scale);
     }
