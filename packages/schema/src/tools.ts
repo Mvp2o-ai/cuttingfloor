@@ -1232,6 +1232,18 @@ export const MediaInfo = z.object({
     .describe(
       'create.motion and create.still: what went wrong in the page as it rendered (uncaught errors, console errors, files blocked or not found, tags never closed). It rendered anyway',
     ),
+  job: z
+    .object({
+      job_id: JobId,
+      tool: z.string(),
+      // JobStatus, declared further down.
+      status: z.enum(['working', 'completed', 'failed', 'cancelled']),
+      progress: z.number().optional(),
+      status_message: z.string().optional(),
+      seconds_left: z.number().optional(),
+    })
+    .optional()
+    .describe('media.get, while importing or being made: the job doing it'),
   error: ToolError.optional(),
 });
 export type MediaInfo = z.infer<typeof MediaInfo>;
