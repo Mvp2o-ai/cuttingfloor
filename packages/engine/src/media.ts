@@ -13,6 +13,7 @@ import { createBLAKE3 } from 'hash-wasm';
 import { BIN, run } from './exec.ts';
 import { directDownloadUrl, download } from './fetch.ts';
 import { conformReasons, type Probe, probe } from './probe.ts';
+import { LOUDNESS_STATS, parseChannelLevels } from './speech.ts';
 import { unwrapWebFont } from './webfont.ts';
 
 export const MEDIA_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -944,12 +945,25 @@ async function analyse(
   if (!p.audio) return { loudness_lufs: null };
   const { stderr } = await run(
     BIN.ffmpeg,
-    [...INPUT, '-i', `file:${file}`, '-vn', '-af', 'ebur128=framelog=quiet', '-f', 'null', '-'],
+    [
+      ...INPUT,
+      '-i',
+      `file:${file}`,
+      '-vn',
+      '-af',
+      `ebur128=framelog=quiet,astats=${LOUDNESS_STATS}`,
+      '-f',
+      'null',
+      '-',
+    ],
     { signal },
   );
   const i = /I:\s+(-?[\d.]+) LUFS/.exec(stderr.slice(stderr.lastIndexOf('Summary')));
   const loudness = i ? Number(i[1]) : null;
-  return { loudness_lufs: loudness !== null && loudness >= -70 ? loudness : null };
+  return {
+    loudness_lufs: loudness !== null && loudness >= -70 ? loudness : null,
+    channels: parseChannelLevels(stderr),
+  };
 }
 
 /** The name a URL import starts with: the last part of its path. */

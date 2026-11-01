@@ -838,6 +838,14 @@ export const SpeechAnalysis = z.object({
   probabilities: z.array(z.number()).describe('Speech probability 0–1, one per frame, in order'),
 });
 
+/** One channel's levels (FFmpeg astats); null where it is silent. */
+export const ChannelLevels = z.object({
+  channel: z.number().int().positive(),
+  rms_dbfs: z.number().nullable(),
+  peak_dbfs: z.number().nullable(),
+  noise_floor_dbfs: z.number().nullable(),
+});
+
 export const LoudnessFacts = z.object({
   integrated_lufs: z.number().nullable().describe('EBU R128; null below its -70 LUFS gate'),
   true_peak_dbtp: z.number().nullable(),
@@ -847,6 +855,9 @@ export const LoudnessFacts = z.object({
     .number()
     .nullable()
     .describe('Level of the quietest moments (FFmpeg astats noise floor): room tone or hiss'),
+  channels: z
+    .array(ChannelLevels)
+    .describe('Each channel on its own, in stream order (1 is left in stereo)'),
 });
 
 export const Transcript = z.object({
@@ -1044,7 +1055,10 @@ export const MediaInfo = z.object({
     .array(z.string())
     .describe('Why a mezzanine was made (vfr, rotation, hdr, codec); empty when not needed'),
   analysis: z
-    .object({ loudness_lufs: z.number().nullable().describe('Integrated loudness at import') })
+    .object({
+      loudness_lufs: z.number().nullable().describe('Integrated loudness at import'),
+      channels: z.array(ChannelLevels).optional().describe('Each channel at import'),
+    })
     .nullable(),
   analyses: z
     .object({

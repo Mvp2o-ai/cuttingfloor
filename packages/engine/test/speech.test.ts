@@ -144,6 +144,14 @@ describe('loudness facts', () => {
 
   True peak:
     Peak:       -3.1 dBFS
+[Parsed_astats_1 @ 0x2] Channel: 1
+[Parsed_astats_1 @ 0x2] Peak level dB: -3.500000
+[Parsed_astats_1 @ 0x2] RMS level dB: -22.300000
+[Parsed_astats_1 @ 0x2] Noise floor dB: -58.100000
+[Parsed_astats_1 @ 0x2] Channel: 2
+[Parsed_astats_1 @ 0x2] Peak level dB: -inf
+[Parsed_astats_1 @ 0x2] RMS level dB: -inf
+[Parsed_astats_1 @ 0x2] Noise floor dB: -inf
 [Parsed_astats_1 @ 0x2] Overall
 [Parsed_astats_1 @ 0x2] RMS level dB: -25.300000
 [Parsed_astats_1 @ 0x2] Noise floor dB: -61.200000
@@ -154,6 +162,10 @@ describe('loudness facts', () => {
       loudness_range_lu: 5.2,
       rms_dbfs: -25.3,
       noise_floor_dbfs: -61.2,
+      channels: [
+        { channel: 1, rms_dbfs: -22.3, peak_dbfs: -3.5, noise_floor_dbfs: -58.1 },
+        { channel: 2, rms_dbfs: null, peak_dbfs: null, noise_floor_dbfs: null },
+      ],
     });
   });
 });
