@@ -483,24 +483,61 @@ function shiftSince(
   return best;
 }
 
+/**
+ * How much to add to each channel of a part's fill so it sits at the level of the picture
+ * around it this frame: the mean of the unselected band just outside the selection less the
+ * mean of the fill just inside it. Parts of the fill taken from earlier frames (and LaMa's
+ * own drift) then follow a change of the whole picture's brightness, such as a flash.
+ */
+function levelShift(
+  rgba: Buffer,
+  w: number,
+  box: { left: number; top: number; cw: number; ch: number },
+  fillsAt: Uint8Array,
+  values: Float32Array,
+): [number, number, number] {
+  const { left, top, cw, ch } = box;
+  const band = Math.max(2, Math.round(Math.min(cw, ch) * 0.02));
+  const outside = new Uint8Array(cw * ch);
+  for (let i = 0; i < cw * ch; i++) outside[i] = fillsAt[i] ? 0 : 1;
+  const nearFill = reach(fillsAt, cw, ch, band);
+  const nearOutside = reach(outside, cw, ch, band);
+  const ring = [0, 0, 0];
+  const inner = [0, 0, 0];
+  let nr = 0;
+  let ni = 0;
+  for (let y = 0; y < ch; y++)
+    for (let x = 0; x < cw; x++) {
+      const i = y * cw + x;
+      const at = (top + y) * w + left + x;
+      if (!fillsAt[i] && nearFill[i] && !(rgba[at * 4 + 3] as number)) {
+        for (let c = 0; c < 3; c++) ring[c] = (ring[c] as number) + (rgba[at * 4 + c] as number);
+        nr += 1;
+      } else if (fillsAt[i] && nearOutside[i]) {
+        for (let c = 0; c < 3; c++) inner[c] = (inner[c] as number) + (values[i * 3 + c] as number);
+        ni += 1;
+      }
+    }
+  if (nr < 16 || ni < 16) return [0, 0, 0];
+  return [0, 1, 2].map((c) => (ring[c] as number) / nr - (inner[c] as number) / ni) as [
+    number,
+    number,
+    number,
+  ];
+}
+
 /** Frames a remembered pixel is used for after it was last seen. */
 const MEMORY_FRAMES = 120;
 
-/** Which pixels of a part are selected or within `r` pixels of the selection (a square reach). */
-function nearSelection(rgba: Buffer, w: number, a: Area, r: number): Uint8Array {
-  const bw = a.x1 - a.x0 + 1;
-  const bh = a.y1 - a.y0 + 1;
-  const sel = new Uint8Array(bw * bh);
-  for (let y = 0; y < bh; y++)
-    for (let x = 0; x < bw; x++)
-      sel[y * bw + x] = (rgba[((a.y0 + y) * w + a.x0 + x) * 4 + 3] as number) > 0 ? 1 : 0;
-  // A running count along each row, then each column: any selected pixel within r.
+/** Which pixels are set or within `r` pixels of a set one (a square reach), in a bw × bh grid. */
+function reach(set: Uint8Array, bw: number, bh: number, r: number): Uint8Array {
+  // A running count along each row, then each column: any set pixel within r.
   const rows = new Uint8Array(bw * bh);
   for (let y = 0; y < bh; y++) {
     let count = 0;
     for (let x = -r; x < bw; x++) {
-      if (x + r < bw) count += sel[y * bw + x + r] as number;
-      if (x - r - 1 >= 0) count -= sel[y * bw + x - r - 1] as number;
+      if (x + r < bw) count += set[y * bw + x + r] as number;
+      if (x - r - 1 >= 0) count -= set[y * bw + x - r - 1] as number;
       if (x >= 0) rows[y * bw + x] = count > 0 ? 1 : 0;
     }
   }
@@ -514,6 +551,17 @@ function nearSelection(rgba: Buffer, w: number, a: Area, r: number): Uint8Array 
     }
   }
   return out;
+}
+
+/** Which pixels of a part are selected or within `r` pixels of the selection. */
+function nearSelection(rgba: Buffer, w: number, a: Area, r: number): Uint8Array {
+  const bw = a.x1 - a.x0 + 1;
+  const bh = a.y1 - a.y0 + 1;
+  const sel = new Uint8Array(bw * bh);
+  for (let y = 0; y < bh; y++)
+    for (let x = 0; x < bw; x++)
+      sel[y * bw + x] = (rgba[((a.y0 + y) * w + a.x0 + x) * 4 + 3] as number) > 0 ? 1 : 0;
+  return reach(sel, bw, bh, r);
 }
 
 /** Moves the remembered picture within a part by the picture's shift since the last frame. */
@@ -631,6 +679,9 @@ async function fill(model: string, w: number, h: number) {
       const [dx, dy] = prev ? shiftSince(prev, rgba, w, h, { left, top, cw, ch }) : [0, 0];
       if (!prev) seen.fill(0);
       else if (dx || dy) moveMemory(memory, seen, w, h, a, dx, dy);
+      // Each pixel's fill first, then the fill's level matched to the picture around it.
+      const values = new Float32Array(cw * ch * 3);
+      const fillsAt = new Uint8Array(cw * ch);
       for (let y = 0; y < ch; y++)
         for (let x = 0; x < cw; x++) {
           const gx = left + x;
@@ -638,18 +689,29 @@ async function fill(model: string, w: number, h: number) {
           // Each part writes only its own pixels; a neighbour's crop may reach into it.
           if (gx < a.x0 || gx > a.x1 || gy < a.y0 || gy > a.y1) continue;
           const at = gy * w + gx;
-          const alpha = (rgba[at * 4 + 3] as number) / 255;
-          if (!alpha) continue;
+          if (!(rgba[at * 4 + 3] as number)) continue;
+          fillsAt[y * cw + x] = 1;
           const px = gx - dx;
           const py = gy - dy;
           const inside = prev && px >= 0 && py >= 0 && px < w && py < h;
           const held = inside && prevFilled?.[py * w + px] ? (py * w + px) * 3 : -1;
-          if (alpha >= 0.98) painted01[at] = 1;
           const real = seen[at] ? at * 3 : -1;
           for (let c = 0; c < 3; c++) {
             let v = filled[(y * cw + x) * 3 + c] as number;
             if (real >= 0) v = memory[real + c] as number;
             else if (held >= 0) v = 0.5 * v + 0.5 * ((prev as Buffer)[held + c] as number);
+            values[(y * cw + x) * 3 + c] = v;
+          }
+        }
+      const level = levelShift(rgba, w, { left, top, cw, ch }, fillsAt, values);
+      for (let y = 0; y < ch; y++)
+        for (let x = 0; x < cw; x++) {
+          if (!fillsAt[y * cw + x]) continue;
+          const at = (top + y) * w + left + x;
+          const alpha = (rgba[at * 4 + 3] as number) / 255;
+          if (alpha >= 0.98) painted01[at] = 1;
+          for (let c = 0; c < 3; c++) {
+            const v = (values[(y * cw + x) * 3 + c] as number) + (level[c] as number);
             const o = rgba[at * 4 + c] as number;
             out[at * 3 + c] = Math.max(0, Math.min(255, Math.round(o + (v - o) * alpha)));
           }
