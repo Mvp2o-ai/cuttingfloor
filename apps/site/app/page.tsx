@@ -3,6 +3,7 @@ import { DEMOS } from '../content/demos.ts';
 import { LICENCE } from '../content/facts.ts';
 import { HOME_SESSION } from '../content/home-session.ts';
 import { AGENT_PAINS, EDITING_PAINS, type Pain } from '../content/pains.ts';
+import { TOOL_COUNT } from '../content/tools.ts';
 import { Capabilities } from './capabilities.tsx';
 import { Connect } from './connect.tsx';
 import { AgentDemo } from './demos/demo.tsx';
@@ -237,7 +238,7 @@ export default function Home() {
           <span className="mark-b" />
           <span className="label">07 / What it does</span>
           <h2 className="display big-stat">
-            72 tools.
+            {TOOL_COUNT} tools.
             <br />
             No timeline.
             <small>
