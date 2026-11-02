@@ -272,7 +272,8 @@ describe('protocol surface', () => {
         ui: { csp, permissions: { clipboardWrite: {} }, prefersBorder: false },
       });
       // The inline script parses.
-      const script = /<script>([\s\S]*)<\/script>/.exec(page.text ?? '')?.[1] ?? '';
+      const text = page.text ?? '';
+      const script = text.slice(text.indexOf('<script>') + 8, text.lastIndexOf('</script>'));
       expect(script.length).toBeGreaterThan(1000);
       expect(() => new Function(script)).not.toThrow();
     }
