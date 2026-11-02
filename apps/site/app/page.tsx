@@ -78,7 +78,7 @@ export default function Home() {
           <p className="display title rise d1">
             Video editing,
             <br />
-            finished.
+            solved.
             <Check />
           </p>
           <div className="hero-row">
