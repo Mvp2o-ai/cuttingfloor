@@ -107,9 +107,12 @@ describe('jobs that stall or will not stop', () => {
       filename: 'second',
     });
     // The second waits for the only slot, and names what it is for.
+    // A wait answers only when a status changes, so the queue message is read as it is.
     let queued = await ok<View>(client, 'job.get', { job_id: second.job_id });
-    if (!/^queued/.test(queued.status_message ?? ''))
-      queued = await ok<View>(client, 'job.get', { job_id: second.job_id, wait_seconds: 5 });
+    for (let i = 0; i < 50 && !/^queued/.test(queued.status_message ?? ''); i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      queued = await ok<View>(client, 'job.get', { job_id: second.job_id });
+    }
     expect(queued.status_message).toMatch(/^queued: next in line/);
     expect(queued.for).toMatchObject({ timeline_id: timeline, preset: 'review_h264' });
     await until(async () => (await enginePids()).length >= 2);
@@ -143,7 +146,7 @@ describe('jobs that stall or will not stop', () => {
     });
     await until(async () => (await enginePids()).length >= before + 2);
     const [engine, helper] = (await enginePids()).slice(before);
-    // A wait in flight hears the cancel: it answers on each change, so a status written first
+    // A wait in flight hears the cancel: it answers when the status changes, so a status written first
     // can come before it.
     const started = Date.now();
     const waiting = (async () => {
@@ -241,4 +244,58 @@ describe('jobs that stall or will not stop', () => {
     const kept = whole.jobs[0]?.result as { speech?: { probabilities: number[] } } | undefined;
     expect(kept?.speech?.probabilities).toHaveLength(2800);
   });
+});
+
+describe('waiting on jobs', () => {
+  type View = { status: string; progress?: number; status_message?: string };
+  const text = (t: string) => ({
+    content: [{ type: 'text' as const, text: t }],
+    structuredContent: { t },
+  });
+
+  it('job.get wait_seconds answers when a job ends, not at each step of progress', async () => {
+    const quiet = await testRuntime({ maxJobs: 1, stallSeconds: 600 });
+    const client = await connect(quiet.runtime);
+    const job = await quiet.runtime.jobs.store.create({ owner: 'local', tool: 'test.steps' });
+    quiet.runtime.jobs.start(job, async ({ progress }) => {
+      for (let i = 1; i <= 10; i++) {
+        await new Promise((r) => setTimeout(r, 120));
+        progress(i / 10, `step ${i}`);
+      }
+      return text('done');
+    });
+    const started = Date.now();
+    const view = await ok<View>(client, 'job.get', { job_id: job.id, wait_seconds: 20 });
+    expect(view.status).toBe('completed');
+    expect(Date.now() - started).toBeGreaterThan(1000);
+  }, 30_000);
+
+  it('a job waiting on other work gives its slot up meanwhile, then goes on', async () => {
+    const quiet = await testRuntime({ maxJobs: 1, shortJobs: 0, stallSeconds: 600 });
+    const client = await connect(quiet.runtime);
+    const { store } = quiet.runtime.jobs;
+    let release: () => void = () => undefined;
+    const prerequisite = new Promise<void>((r) => {
+      release = r;
+    });
+    const waiter = await store.create({ owner: 'local', tool: 'test.waiter' });
+    const order: string[] = [];
+    quiet.runtime.jobs.start(waiter, async ({ aside }) => {
+      await aside(prerequisite);
+      order.push('waiter');
+      return text('waited');
+    });
+    const other = await store.create({ owner: 'local', tool: 'test.other' });
+    quiet.runtime.jobs.start(other, async () => {
+      order.push('other');
+      return text('ran');
+    });
+    // The other job runs in the one slot while the first waits.
+    const ran = await ok<View>(client, 'job.get', { job_id: other.id, wait_seconds: 10 });
+    expect(ran.status).toBe('completed');
+    release();
+    const waited = await ok<View>(client, 'job.get', { job_id: waiter.id, wait_seconds: 10 });
+    expect(waited.status).toBe('completed');
+    expect(order).toEqual(['other', 'waiter']);
+  }, 30_000);
 });
