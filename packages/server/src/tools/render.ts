@@ -217,7 +217,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       });
       rt.jobs.start(
         job,
-        async ({ signal, progress, status, waiting }: JobContext) => {
+        async ({ signal, progress, status, waiting, aside }: JobContext) => {
           const outDir = rt.ws.ownerDir(owner, 'outputs', job.id);
           await mkdir(outDir, { recursive: true });
           const out = join(outDir, name);
@@ -230,6 +230,8 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
               waiting(on);
               status(message);
             },
+            // ...and gives its job slot to other work meanwhile.
+            aside,
           });
           const started = Date.now();
           const { frames, width, height } = await exportTimeline(doc, args.preset, sources, out, {
@@ -384,7 +386,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get job',
       description:
-        'Status, progress and, once completed, the result of long-running calls (media.import, media.analyze, create.*, export.video, qa.check). Same record as tasks/get. status_message says what it is doing, or where it stands in the queue; for names the media or timeline. wait_seconds (up to 50) answers as soon as any job asked for changes, so one call waits instead of many polls. seconds_left and starts_in_seconds come only when progress so far allows. job_ids reads many and answers {jobs, not_found}, each result in brief (result_summary: lists cut to their first items, with what was cut) unless result is full; result summary does the same for one job. A job whose progress stops for minutes ends with a stalled error, freeing its slot.',
+        'Status, progress and, once completed, the result of long-running calls (media.import, media.analyze, create.*, export.video, qa.check). Same record as tasks/get. status_message says what it is doing, or where it stands in the queue; for names the media or timeline. wait_seconds (up to 50) answers when any job asked for finishes, fails or is cancelled, or when the wait runs out (then with its progress), so one call waits instead of many polls. seconds_left and starts_in_seconds come only when progress so far allows. job_ids reads many and answers {jobs, not_found}, each result in brief (result_summary: lists cut to their first items, with what was cut) unless result is full; result summary does the same for one job. A job whose progress stops for minutes ends with a stalled error, freeing its slot.',
       inputSchema: JobGetInput,
       outputSchema: JobGetResult,
       annotations: { ...readOnly, title: 'Get job' },
