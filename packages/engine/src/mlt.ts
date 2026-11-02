@@ -43,6 +43,8 @@ export interface MltSource {
   offset?: number;
   /** Seconds of the file a second of source lasts, when the copy is slowed (in-between frames). */
   stretch?: number;
+  /** Seconds into the file of its last frame, when it is a copy: times past it show that frame. */
+  last?: number;
 }
 
 export interface CompileOptions {
@@ -450,7 +452,9 @@ function retimedChain(
   // frame the clip shows, so it is read frame for frame (nearest), never blended again.
   const bias = media.stretch !== undefined ? (0.25 * tpf) / TICKS_PER_SECOND : 0;
   const seconds = (i: number) => {
-    const t = (frameSource(c, tpf, i) / TICKS_PER_SECOND - offset) * stretch + bias;
+    const raw = (frameSource(c, tpf, i) / TICKS_PER_SECOND - offset) * stretch + bias;
+    // Past a copy's last frame MLT has no picture and shows whatever it read before.
+    const t = media.last !== undefined ? Math.min(raw, media.last + bias) : raw;
     const r = Math.round(t * 1e6) / 1e6;
     return offset ? Math.max(0, r) : r;
   };

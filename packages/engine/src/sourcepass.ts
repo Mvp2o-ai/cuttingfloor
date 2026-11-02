@@ -258,8 +258,9 @@ export function betweenFile(
 }
 
 /** Frames an in-between copy holds. */
-export function betweenFrames(between: InBetween, source: FrameRate): number {
-  return Math.max(1, Math.ceil((between.to - betweenStart(between, source)) * between.fps));
+export function betweenFrames(between: InBetween, source: FrameRate, duration?: number): number {
+  const end = Math.min(between.to, duration ?? between.to);
+  return Math.max(1, Math.ceil((end - betweenStart(between, source)) * between.fps));
 }
 
 /**
@@ -280,6 +281,8 @@ export function betweenPicture(
     signal?: AbortSignal;
     /** Called with the share of its frames made (0–1). */
     onProgress?: (fraction: number) => void;
+    /** The media's length in seconds: a copy ends there even when its span reaches past. */
+    duration?: number;
   },
 ): Promise<{ path: string; offset: number; stretch: number }> {
   const offset = betweenStart(between, options.source);
@@ -287,7 +290,7 @@ export function betweenPicture(
   // sequence rate: a second of source lasts `stretch` seconds in it.
   const stretch = between.fps / between.sequence;
   const dest = betweenFile(dir, between, options.purpose);
-  const total = betweenFrames(between, options.source);
+  const total = betweenFrames(between, options.source, options.duration);
   const going = making.get(dest);
   if (going) return going.then((path) => ({ path, offset, stretch }));
   const job = (async () => {
