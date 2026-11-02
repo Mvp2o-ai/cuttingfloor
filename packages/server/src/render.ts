@@ -2,7 +2,10 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { inBetween, type MediaFacts, ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
 import {
+  betweenFile,
+  betweenFrames,
   betweenPicture,
+  betweenStart,
   clipPasses,
   type ImageFormat,
   installedFonts,
@@ -12,10 +15,12 @@ import {
   mediaRef,
   notReady,
   passedAudio,
+  passFrames,
   renderPicture,
   renderSource,
   renderTimelineFrames,
   renderWaveform,
+  selectedFile,
   selectedPicture,
   selectionPass,
   sourceKey,
@@ -27,7 +32,7 @@ import {
   type TimelineDoc,
   type TimelineView,
 } from '@cuttingfloor/schema';
-import { awaitFill, fillCopy, fillNotReady } from './fills.ts';
+import { copyFor, copyJob } from './copy-jobs.ts';
 import type { Runtime } from './runtime.ts';
 
 /** Resolves every media file a timeline uses, for previews (proxies) or exports. */
@@ -105,13 +110,40 @@ export async function addPasses(
             sources.set(key, plain);
             continue;
           }
-          const made = await betweenPicture(
-            plain.path,
-            join(rt.media.dir(owner, c.media_id), 'between'),
-            between,
-            { source: own, purpose, alpha: plain.alpha, ...(signal ? { signal } : {}) },
+          // Made once per clip and speed, from the full picture (or the clip's selection
+          // copy, itself made at full size), whatever size it is shown at: a job of its own.
+          const input = plain === media ? renderSource(record, 'export') : plain.path;
+          const dir = join(rt.media.dir(owner, c.media_id), 'between');
+          const options = { source: own, purpose: 'export' as const, alpha: plain.alpha };
+          const made = await copyJob(
+            rt,
+            {
+              owner,
+              mediaId: c.media_id,
+              timelineId: fills.timelineId,
+              clipId: c.id,
+              kind: 'in-between',
+            },
+            betweenFile(dir, between, 'export'),
+            betweenFrames(between, own),
+            between.to - between.from,
+            ({ signal: own2, onProgress }) =>
+              betweenPicture(input, dir, between, { ...options, signal: own2, onProgress }).then(
+                (b) => b.path,
+              ),
           );
-          sources.set(key, { ...plain, ...made });
+          const path = await copyFor(rt, made, c.id, {
+            signal,
+            needed: shown(c, body === doc),
+            waiting: fills.waiting,
+          });
+          if (!path) continue;
+          sources.set(key, {
+            ...plain,
+            path,
+            offset: betweenStart(between, own),
+            stretch: between.fps / between.sequence,
+          });
           continue;
         }
         if (plain !== media) {
@@ -142,7 +174,7 @@ export interface FillOptions {
 
 /**
  * A media clip's picture through its selection pass (selection.ts), or `media` itself when its
- * mask needs none. A fill is a job of its own (fills.ts): a job waits for it (`signal`); a
+ * mask needs none. A fill is a job of its own (copy-jobs.ts): a job waits for it (`signal`); a
  * request refuses, naming the fill's job, unless the clip is not at the frames it renders
  * (then undefined: the clip plays as it is there).
  */
@@ -161,16 +193,18 @@ async function selected(
   const record = await rt.media.find(owner, c.media_id);
   const v = record?.probe?.video;
   if (!record || !v || !media.width || !media.height) return media;
+  const fill = pass.mask.mode === 'fill';
   const mattes = new Map<string, MatteSource>();
   for (const x of [pass.mask, ...(pass.mask.add ?? [])]) {
     if (x.shape !== 'matte' || !x.media_id || mattes.has(x.media_id)) continue;
     const m = await rt.media.find(owner, x.media_id);
     if (!m || m.status === 'failed' || m.status === 'importing') assertOnline([x.media_id]);
-    const pic = renderPicture(m as NonNullable<typeof m>, purpose);
+    // A fill is made once, at full size; show and hide follow the render's own size.
+    const pic = renderPicture(m as NonNullable<typeof m>, fill ? 'export' : purpose);
     mattes.set(x.media_id, { path: pic.path, image: pic.image, alpha: pic.alpha });
   }
   const input = {
-    path: media.path,
+    path: fill ? renderSource(record, 'export') : media.path,
     width: media.width,
     height: media.height,
     image: media.image,
@@ -180,33 +214,23 @@ async function selected(
   };
   const dir = join(rt.media.dir(owner, c.media_id), 'selected');
   let path: string;
-  if (pass.mask.mode === 'fill') {
-    const made = await fillCopy(
+  if (fill) {
+    const made = await copyJob(
       rt,
-      { owner, mediaId: c.media_id, timelineId: fills.timelineId, clipId: c.id },
-      input,
-      dir,
-      pass,
-      mattes,
-      purpose,
+      { owner, mediaId: c.media_id, timelineId: fills.timelineId, clipId: c.id, kind: 'fill' },
+      selectedFile(input, dir, pass, 'export'),
+      passFrames(input),
+      input.image ? 1 : input.duration,
+      ({ signal: own, onProgress }) =>
+        selectedPicture(input, dir, pass, mattes, 'export', { signal: own, onProgress }),
     );
-    if ('path' in made) path = made.path;
-    else if (signal) {
-      // Inside a job: wait, with the stall clock stopped (the fill job has its own), saying
-      // how far the fill is.
-      const say = (f: number) =>
-        fills.waiting?.(
-          true,
-          `waiting for the fill of clip ${c.id} (job ${made.run.jobId}, ${Math.round(f * 100)}%)`,
-        );
-      say(made.run.fraction);
-      try {
-        path = await awaitFill(made.run, say);
-      } finally {
-        fills.waiting?.(false, 'preparing sources');
-      }
-    } else if (!fills.needed) return undefined;
-    else throw fillNotReady(made.run, c.id, made.run.fraction === 0);
+    const got = await copyFor(rt, made, c.id, {
+      signal,
+      needed: fills.needed,
+      waiting: fills.waiting,
+    });
+    if (!got) return undefined;
+    path = got;
   } else {
     path = await selectedPicture(input, dir, pass, mattes, purpose, signal ? { signal } : {});
   }

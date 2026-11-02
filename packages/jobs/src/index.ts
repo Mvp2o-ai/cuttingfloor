@@ -348,6 +348,8 @@ export interface StartOptions {
   work?: number;
   /** This job's own stall limit, instead of the one derived from the server's and its work. */
   stallMs?: number;
+  /** What a new call keeps from this one if it is stopped as stalled, said in its error's hint. */
+  kept?: string;
 }
 
 /** An owner's jobs holding a slot of theirs, and the ones waiting for one. */
@@ -362,6 +364,7 @@ interface Active {
   controller: AbortController;
   /** Why it was stopped from outside its work. */
   stop?: 'cancelled' | 'stalled';
+  kept?: string;
   /** Its record was ended and its slot freed while its work had not stopped yet. */
   detached: boolean;
   done: Promise<void>;
@@ -466,6 +469,7 @@ export class JobRunner {
       lane,
       short: options.work !== undefined && options.work <= this.#shortSeconds,
       stallMs: options.stallMs ?? Math.max(this.#stallMs, workMs * STALL_PER_WORK_SECOND),
+      ...(options.kept ? { kept: options.kept } : {}),
       running: false,
       lastMove: Date.now(),
       waiting: false,
@@ -542,7 +546,7 @@ export class JobRunner {
           'stalled',
           `${active.job.tool} stopped making progress: nothing moved for ${minutes(quiet)} (stuck at ${at})`,
           {
-            hint: 'It was stopped and its slot freed. Call the tool again; with the same idempotency_key it starts a fresh job',
+            hint: `It was stopped and its slot freed. Call the tool again; with the same idempotency_key it starts a fresh job${active.kept ? `. ${active.kept}` : ''}`,
             detail: {
               progress: active.fraction,
               ...(active.message ? { status_message: active.message } : {}),

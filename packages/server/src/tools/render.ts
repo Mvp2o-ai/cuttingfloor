@@ -295,6 +295,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
             ((args.range ? args.range.end - args.range.start : lengthFrames(doc)) *
               doc.sequence.fps.den) /
             doc.sequence.fps.num,
+          kept: 'Copies of clips it had finished making (cleaned sound, in-between frames, fills) are kept and reused, so the new job starts from them',
         },
       );
       return jobReply(job, ctx);

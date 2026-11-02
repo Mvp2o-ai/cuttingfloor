@@ -31,9 +31,10 @@ const anyResult = z.object({}).passthrough();
  * points; 461 267 measured with everything above), and to 474 000 for text spans and
  * max_lines, a loop over part of a clip, compressor attack and release, and stills from a
  * frame (media.import still and its origin, on every tool that returns media; 471 505
- * measured with everything above).
+ * measured with everything above), and to 475 500 for saying what a fill does and that fills
+ * and in-between frames are jobs of their own (474 205 measured).
  */
-const BUDGET_BYTES = 474_000;
+const BUDGET_BYTES = 475_500;
 let env: TestEnv;
 
 beforeAll(async () => {

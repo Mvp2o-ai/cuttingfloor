@@ -125,6 +125,8 @@ export {
   splitStems,
 } from './sounds.ts';
 export {
+  betweenFile,
+  betweenFrames,
   betweenPicture,
   betweenStart,
   clipPasses,
