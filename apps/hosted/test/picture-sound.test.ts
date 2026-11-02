@@ -51,7 +51,7 @@ describe.skipIf(!engines)('picture and sound', () => {
   let mediaDir: string;
 
   async function call(name: string, args: Record<string, unknown>) {
-    // A frame of an in-between copy is answered once the copy is made: minutes on a busy runner.
+    // Copies are jobs of their own now; exports still wait for them, minutes on a busy runner.
     return (await client.callTool({ name, arguments: args }, { timeout: 600_000 })) as {
       isError?: boolean;
       structuredContent?: Record<string, unknown>;
@@ -108,8 +108,25 @@ describe.skipIf(!engines)('picture and sound', () => {
   }
 
   /** One rendered frame as 8-bit grey pixels, 320x180. */
+  /** render.frames, waiting out the job that makes a copy it needs (in-between frames). */
+  async function frames(args: Record<string, unknown>) {
+    for (let tries = 0; ; tries++) {
+      const res = await call('render.frames', args);
+      const text = JSON.stringify(res.structuredContent ?? res.content);
+      const making = res.isError && /media_not_ready/.test(text) && /j_[0-9a-z]{26}/.exec(text);
+      if (!making || tries > 3) return res;
+      const until = Date.now() + 900_000;
+      for (;;) {
+        const view = await ok<{ status: string }>('job.get', { job_id: making[0] });
+        if (view.status !== 'working') break;
+        if (Date.now() > until) throw new Error(`${making[0]} still working`);
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+  }
+
   async function grey(timelineId: string, frame: number, size: 'preview' | 'full' = 'full') {
-    const res = await call('render.frames', {
+    const res = await frames({
       timeline_id: timelineId,
       frames: [frame],
       layout: 'single',
@@ -333,18 +350,20 @@ describe.skipIf(!engines)('picture and sound', () => {
       for (const size of ['preview', 'full'] as const) {
         const ref = await grey(t.timeline_id, 0, size);
         const moved = await Promise.all(
-          [2, 3, 4, 6].map(async (f) => shift(await grey(t.timeline_id, f, size), ref)),
+          [1, 2, 3, 4, 6].map(async (f) => shift(await grey(t.timeline_id, f, size), ref)),
         );
-        // A source frame moves 8 px; each of the 6 timeline frames it lasts moves a sixth of it.
-        const expected = [8 / 3, 4, 16 / 3, 8];
+        // A source frame moves 8 px; each of the 6 timeline frames it lasts moves a sixth of it,
+        // from the second frame on (the first is not shown twice).
+        const expected = [4 / 3, 8 / 3, 4, 16 / 3, 8];
         for (const [i, m] of moved.entries()) {
-          expect(Math.abs(m.px - (expected[i] ?? 0))).toBeLessThanOrEqual(1);
+          expect(Math.abs(m.px - (expected[i] ?? 0)), `${size} frame ${i}`).toBeLessThanOrEqual(1);
         }
-        expect(moved[1]?.px).toBe(4);
-        expect(moved[3]?.px).toBe(8);
+        expect(moved[0]?.px).toBeGreaterThan(0);
+        expect(moved[2]?.px).toBe(4);
+        expect(moved[4]?.px).toBe(8);
         // A new frame, sharp where it sits, unlike a blend of two.
         const blend = shift(await grey(blended.timeline_id, 3, size), ref);
-        expect(moved[1]?.error ?? 99).toBeLessThan(blend.error / 2);
+        expect(moved[2]?.error ?? 99).toBeLessThan(blend.error / 2);
       }
       // The first frame is the source frame the clip starts on.
       const plain = await timeline(pan, 30, [], source);

@@ -248,6 +248,20 @@ export function betweenStart(between: InBetween, source: FrameRate): number {
   return (k * source.den) / source.num;
 }
 
+/** Where a clip's in-between copy is kept in `dir`. */
+export function betweenFile(
+  dir: string,
+  between: InBetween,
+  purpose: 'preview' | 'export',
+): string {
+  return join(dir, `${betweenId(between)}.${purpose}.mov`);
+}
+
+/** Frames an in-between copy holds. */
+export function betweenFrames(between: InBetween, source: FrameRate): number {
+  return Math.max(1, Math.ceil((between.to - betweenStart(between, source)) * between.fps));
+}
+
 /**
  * The clip's stretch of `input` with in-between frames, as a video in `dir`: made once, then
  * reused, and two renders asking at once share one run. `offset` is the source second its first
@@ -264,13 +278,16 @@ export function betweenPicture(
     purpose: 'preview' | 'export';
     alpha: boolean;
     signal?: AbortSignal;
+    /** Called with the share of its frames made (0–1). */
+    onProgress?: (fraction: number) => void;
   },
 ): Promise<{ path: string; offset: number; stretch: number }> {
   const offset = betweenStart(between, options.source);
   // MLT reads a file a frame per sequence frame, so the copy's frames are laid out at the
   // sequence rate: a second of source lasts `stretch` seconds in it.
   const stretch = between.fps / between.sequence;
-  const dest = join(dir, `${betweenId(between)}.${options.purpose}.mov`);
+  const dest = betweenFile(dir, between, options.purpose);
+  const total = betweenFrames(between, options.source);
   const going = making.get(dest);
   if (going) return going.then((path) => ({ path, offset, stretch }));
   const job = (async () => {
@@ -308,6 +325,10 @@ export function betweenPicture(
           `setpts=PTS-STARTPTS,${BETWEEN_FILTER[between.mode](between.fps)},setpts=N/(${between.sequence}*TB)`,
           '-r',
           String(between.sequence),
+          '-progress',
+          'pipe:2',
+          '-stats_period',
+          '1',
           ...codec,
           '-f',
           'mov',
@@ -318,6 +339,10 @@ export function betweenPicture(
           heavy: true,
           timeoutMs: 60 * 60_000,
           ...(options.signal ? { signal: options.signal } : {}),
+          onLine: (line) => {
+            const f = /^frame=(\d+)/.exec(line);
+            if (f) options.onProgress?.(Math.min(1, Number(f[1]) / total));
+          },
         },
       );
       await rename(tmp, dest);
