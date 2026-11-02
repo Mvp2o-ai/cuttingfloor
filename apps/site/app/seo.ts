@@ -30,7 +30,7 @@ export const FAQS = [
   },
   {
     q: 'Is there a video editing API for AI agents?',
-    a: 'cuttingfloor is one: 71 tools over MCP, from clip.add and caption.add to audio.set_master and export.video. Every edit returns a new timeline and a preview, so the agent sees what it did and can step back.',
+    a: 'cuttingfloor is one: 71 tools over MCP, from clip.add and caption.add to audio.set_master and export.video. Every edit returns a new timeline and a preview, so the agent sees what it did and can step back. A built-in skills library shows it how to chain those calls for a common job.',
   },
   {
     q: 'Which agents work with it?',

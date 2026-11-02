@@ -131,7 +131,10 @@ export default function Home() {
             71 tools.
             <br />
             No timeline.
-            <small>Granular tools an agent composes.</small>
+            <small>
+              Granular tools an agent composes, and a skills library that shows it how to chain
+              them.
+            </small>
           </h2>
           <Capabilities />
         </section>
