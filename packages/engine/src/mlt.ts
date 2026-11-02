@@ -444,8 +444,13 @@ function retimedChain(
   // A copy of part of the source (in-between frames) starts at its own offset, slowed.
   const offset = media.offset ?? 0;
   const stretch = media.stretch ?? 1;
+  // A copy's frames sit at the sequence rate, so a slowed clip asks for times on its frame
+  // edges; MLT's timeremap then shows the first frame twice. A quarter of a copy frame later
+  // keeps each time inside its own frame (measured with melt 7.30). The copy holds every
+  // frame the clip shows, so it is read frame for frame (nearest), never blended again.
+  const bias = media.stretch !== undefined ? (0.25 * tpf) / TICKS_PER_SECOND : 0;
   const seconds = (i: number) => {
-    const t = (frameSource(c, tpf, i) / TICKS_PER_SECOND - offset) * stretch;
+    const t = (frameSource(c, tpf, i) / TICKS_PER_SECOND - offset) * stretch + bias;
     const r = Math.round(t * 1e6) / 1e6;
     return offset ? Math.max(0, r) : r;
   };
@@ -462,7 +467,7 @@ function retimedChain(
   const map = (steady ? kept.slice(0, 1) : kept).map(([i, v]) => `${i}=${v}`).join(';');
   const only = c.kind === 'video' ? 'audio_index' : 'video_index';
   const pitch = c.kind === 'audio' && c.speed?.preserve_pitch !== false ? 1 : 0;
-  return `<chain id="${id}" out="${n + span.head + span.tail - 1}">${prop('mlt_service', 'avformat')}${prop('resource', path)}${prop(only, -1)}${prop('seekable', 1)}<link>${prop('mlt_service', 'timeremap')}${prop('time_map', map)}${prop('image_mode', c.speed?.interpolate === 'blend' ? 'blend' : 'nearest')}${prop('pitch', pitch)}</link></chain>`;
+  return `<chain id="${id}" out="${n + span.head + span.tail - 1}">${prop('mlt_service', 'avformat')}${prop('resource', path)}${prop(only, -1)}${prop('seekable', 1)}<link>${prop('mlt_service', 'timeremap')}${prop('time_map', map)}${prop('image_mode', c.speed?.interpolate === 'blend' && media.stretch === undefined ? 'blend' : 'nearest')}${prop('pitch', pitch)}</link></chain>`;
 }
 
 /** Keyframes "key=value;..." keeping only the corners of straight runs; one value if constant. */
