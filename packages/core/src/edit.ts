@@ -1,11 +1,15 @@
 import {
   type Animatable,
   CfError,
+  EASES,
+  type Ease,
   type EditArgsOf,
   type EditTool,
   EFFECTS,
   type EffectSpec,
+  effectNamesText,
   effectParamsSchema,
+  effectParamsText,
   MASK_DEFAULTS,
   MASK_LIMITS,
   MASK_NUMBERS,
@@ -17,10 +21,13 @@ import {
   type StoredClip,
   type StoredEffect,
   type StoredMask,
+  type StoredMaskShape,
+  type StoredPoints,
   type StoredSpeed,
   type StoredTrack,
   type StoredTransform,
   type StoredTransition,
+  type TextSpan,
   type TextStyle,
   TICKS_PER_SECOND,
   type TimelineDoc,
@@ -28,9 +35,10 @@ import {
   TRANSFORM_LIMITS,
   TRANSFORM_NUMBERS,
   type TrackKind,
+  textWords,
 } from '@cuttingfloor/schema';
-import { checkKeyframes, sample, toStoredAnim, toViewAnim } from './animate.ts';
-import { extended, frameSource, meanRate, span, subclip } from './speed.ts';
+import { checkKeyframes, loopPlays, sample, toStoredAnim, toViewAnim } from './animate.ts';
+import { extended, frameSource, inBetween, meanRate, ratePoints, span, subclip } from './speed.ts';
 import { parseSubtitles } from './subtitles.ts';
 import { framesToTicks, ticksPerFrame } from './time.ts';
 
@@ -44,6 +52,8 @@ export type TimelineResolver = (timelineId: string) => TimelineDoc | undefined;
 export interface MediaFacts {
   /** Transcript words (source seconds), from media.analyze. */
   words?: Array<{ text: string; start: number; end: number }>;
+  /** The picture's frame rate, for media with one. */
+  fps?: { num: number; den: number };
 }
 
 /** What is known about a media item beyond its streams; undefined when nothing is. */
@@ -715,7 +725,14 @@ function clipAdd(
   const warnings =
     a.mode === 'insert' ? rippleOthers(doc, targets.values(), start, duration, a.other_tracks) : [];
   const main = made.find((c) => c.kind === primary.kind) ?? made[0];
-  return ok(start, { clip_id: main?.id ?? '', clip_ids: made.map((c) => c.id), warnings });
+  // A clip that is only sound has no picture to show: it previews as its waveform and loudness.
+  const sound = made.every((c) => c.kind === 'audio');
+  return ok(start, {
+    clip_id: main?.id ?? '',
+    clip_ids: made.map((c) => c.id),
+    warnings,
+    ...(sound ? { audio: { start, end: start + duration } } : {}),
+  });
 }
 
 function clipRemove(doc: TimelineDoc, a: EditArgsOf<'clip.remove'>): OpOutcome {
@@ -917,7 +934,13 @@ function assertRetimable(clip: StoredClip, what: string): void {
   }
 }
 
-function clipSetSpeed(doc: TimelineDoc, a: EditArgsOf<'clip.set_speed'>): OpOutcome {
+function clipSetSpeed(
+  doc: TimelineDoc,
+  a: EditArgsOf<'clip.set_speed'>,
+  _m: MediaResolver,
+  _t: TimelineResolver,
+  facts: FactsResolver,
+): OpOutcome {
   if (a.rate !== undefined && a.curve) {
     throw new CfError('bad_request', 'Give rate or curve, not both');
   }
@@ -949,6 +972,7 @@ function clipSetSpeed(doc: TimelineDoc, a: EditArgsOf<'clip.set_speed'>): OpOutc
     const old = clip.speed;
     const reverse = a.reverse ?? old?.reverse;
     const pitch = a.preserve_pitch ?? old?.preserve_pitch;
+    const between = a.interpolate ?? old?.interpolate ?? 'none';
     let duration = clip.duration;
     let speed: StoredSpeed = {};
     if (a.rate !== undefined || a.curve) {
@@ -963,10 +987,12 @@ function clipSetSpeed(doc: TimelineDoc, a: EditArgsOf<'clip.set_speed'>): OpOutc
     else if (old?.rate !== undefined) speed = { rate: old.rate };
     if (reverse) speed.reverse = true;
     if (pitch === false) speed.preserve_pitch = false;
+    if (between !== 'none' && clip.kind === 'video') speed.interpolate = between;
     clip.duration = duration;
     if (Object.keys(speed).length) clip.speed = speed;
     else delete clip.speed;
     checkSourceRange(doc, clip);
+    inBetween(clip, doc.sequence.fps);
     const delta = end(clip) - oldEnd;
     if (a.ripple) shiftFrom(track, oldEnd, delta, clip);
     else if (delta > 0 && end(clip) > neighbours(track, clip).nextStart) {
@@ -990,12 +1016,37 @@ function clipSetSpeed(doc: TimelineDoc, a: EditArgsOf<'clip.set_speed'>): OpOutc
         a.other_tracks,
       )
     : [];
+  for (const { clip } of members) {
+    const repeat = repeatedFrames(doc, clip, facts);
+    if (repeat) warnings.push(repeat);
+  }
   return ok(ref.clip.start, {
     clip_id: ref.clip.id,
     clip_ids: members.map((m) => m.clip.id),
     temporal: true,
     warnings,
   });
+}
+
+/**
+ * Says when a video clip shows each source frame more than once (slowed down, or a source with
+ * fewer frames a second than the sequence) and nothing makes the frames in between.
+ */
+function repeatedFrames(doc: TimelineDoc, clip: StoredClip, facts: FactsResolver): string | null {
+  if (clip.kind !== 'video' || clip.type !== 'media' || clip.speed?.interpolate) return null;
+  const fps = facts(clip.media_id)?.fps;
+  if (!fps) return null;
+  const rates = ratePoints(clip)
+    .map((p) => p.rate)
+    .filter((r) => r > 0);
+  if (!rates.length) return null;
+  const source = fps.num / fps.den;
+  const sequence = doc.sequence.fps.num / doc.sequence.fps.den;
+  const slowest = Math.min(...rates);
+  const shown = source * slowest;
+  if (shown >= sequence * 0.999) return null;
+  const r = (n: number) => Math.round(n * 100) / 100;
+  return `Clip ${clip.id} plays its ${r(source)} fps source at ${r(slowest)}x: ${r(shown)} new frames a second against the sequence's ${r(sequence)}, so each frame shows about ${r(sequence / shown)} times. clip.set_speed interpolate blend or motion makes the frames in between`;
 }
 
 function clipFreeze(doc: TimelineDoc, a: EditArgsOf<'clip.freeze'>): OpOutcome {
@@ -1159,18 +1210,40 @@ function clipReplace(
     );
   }
   doc.media[a.media_id] = media;
+  const newIn = framesToTicks(a.source_in ?? 0, doc.sequence.fps);
   // The clip keeps its place and look; a nested timeline swapped for media becomes a media clip.
-  const { timeline: _t, media_id: _m, ...look } = { timeline: '', media_id: '', ...found };
-  const clip: StoredClip = {
-    ...look,
-    type: 'media',
-    media_id: a.media_id,
-    in: framesToTicks(a.source_in ?? 0, doc.sequence.fps),
+  const swap = (from: StoredClip, at: number): StoredClip => {
+    const { timeline: _t, media_id: _m, ...look } = { timeline: '', media_id: '', ...from };
+    const clip: StoredClip = { ...look, type: 'media', media_id: a.media_id, in: at };
+    if (media.duration === null) delete clip.speed;
+    return clip;
   };
-  track.clips = track.clips.map((c) => (c === found ? clip : c));
-  if (media.duration === null) delete clip.speed;
-  checkSourceRange(doc, clip);
-  return ok(clip.start, { clip_id: clip.id });
+  const clip = swap(found, newIn);
+  const replaced = new Map<StoredClip, StoredClip>([[found, clip]]);
+  const warnings: string[] = [];
+  // Its linked clips (the sound of a picture, the picture of a sound) follow onto the new media,
+  // keeping their offset from it, where the new media has that kind.
+  if (a.linked && found.link) {
+    for (const m of group(doc, found.id)) {
+      if (m.clip === found) continue;
+      const has = m.clip.kind === 'video' ? media.video : media.audio;
+      if (!has) {
+        warnings.push(
+          `${m.clip.id} (linked ${m.clip.kind}) still plays the old ${m.clip.kind}: media ${a.media_id} has no ${m.clip.kind}. Remove it or clip.replace it on its own`,
+        );
+        continue;
+      }
+      assertUnlocked(m.track);
+      replaced.set(m.clip, swap(m.clip, newIn + (m.clip.in - found.in)));
+    }
+  }
+  for (const t of doc.tracks) t.clips = t.clips.map((c) => replaced.get(c) ?? c);
+  for (const c of replaced.values()) checkSourceRange(doc, c);
+  return ok(clip.start, {
+    clip_id: clip.id,
+    clip_ids: [...replaced.values()].map((c) => c.id),
+    warnings,
+  });
 }
 
 function rangeRemove(doc: TimelineDoc, a: EditArgsOf<'range.lift'>, ripple: boolean): OpOutcome {
@@ -1181,6 +1254,19 @@ function rangeRemove(doc: TimelineDoc, a: EditArgsOf<'range.lift'>, ripple: bool
     ? a.track_ids.map((id) => getTrack(doc, id))
     : doc.tracks.filter((t) => !t.locked);
   for (const t of tracks) assertUnlocked(t);
+  // What each track had in the span, before it goes: a picture range taking the sound under it
+  // by default is easy to miss, so the result says so.
+  const hit = (t: StoredTrack) =>
+    t.clips.filter((c) => c.start < to && end(c) > from).map((c) => c.id);
+  const sound = a.track_ids
+    ? []
+    : tracks
+        .filter((t) => t.kind === 'audio')
+        .flatMap((t) => {
+          const ids = hit(t);
+          return ids.length ? [`${t.name} (${t.id}: ${ids.join(', ')})`] : [];
+        });
+  const picture = tracks.some((t) => t.kind === 'video' && hit(t).length);
   const removed = removeSpan(doc, tracks, from, to, ripple);
   // Only named tracks moved: the rest keep their place, which the result says.
   const warnings = ripple
@@ -1193,6 +1279,11 @@ function rangeRemove(doc: TimelineDoc, a: EditArgsOf<'range.lift'>, ripple: bool
         'Leave out track_ids to take the span out of every unlocked track',
       )
     : [];
+  if (picture && sound.length) {
+    warnings.push(
+      `The sound in frames ${a.range.start}–${a.range.end} went with the picture, from ${sound.join('; ')}. To keep it, use the parent timeline and lock those tracks (track.set {locked: true}) or name only the picture tracks in track_ids`,
+    );
+  }
   return ok(from, { clip_ids: removed, temporal: true, warnings });
 }
 
@@ -1321,13 +1412,15 @@ export function storeEffectParams(
   const schema = effectParamsSchema(name);
   if (!spec || !schema) {
     throw new CfError('bad_request', `No effect named ${name}`, {
-      hint: 'The effects are listed at video://catalog/effects',
+      hint: effectNamesText(),
     });
   }
   const kind =
     home.scope === 'clip' ? home.clip.kind : home.scope === 'track' ? home.track.kind : spec.kind;
   if (spec.kind !== kind) {
-    throw new CfError('bad_request', `${name} is a ${spec.kind} effect; this is ${kind}`);
+    throw new CfError('bad_request', `${name} is a ${spec.kind} effect; this is ${kind}`, {
+      hint: effectNamesText(),
+    });
   }
   if (spec.sourcePass && (home.scope !== 'clip' || home.clip.type !== 'media')) {
     throw new CfError(
@@ -1341,7 +1434,7 @@ export function storeEffectParams(
     throw new CfError(
       'bad_request',
       `${name}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'params'}: ${i.message}`).join('; ')}`,
-      { hint: 'See video://catalog/effects for its params and ranges' },
+      { hint: effectParamsText(name) },
     );
   }
   const tpf = ticksPerFrame(doc.sequence.fps);
@@ -1587,6 +1680,32 @@ function mergeStyle(
   return Object.keys(out).length ? (out as TextStyle) : undefined;
 }
 
+/** Spans checked against the words they style; undefined when there are none. */
+const withSpans = (spans: TextSpan[] | undefined) => (spans ? { spans } : {});
+
+function checkSpans(
+  clip: { text: string; words?: Array<{ text: string }> | undefined },
+  spans: TextSpan[] | null | undefined,
+): TextSpan[] | undefined {
+  if (!spans?.length) return undefined;
+  const words = textWords(clip);
+  for (const sp of spans) {
+    if (sp.last_word < sp.first_word || sp.last_word >= words.length) {
+      throw new CfError(
+        'bad_request',
+        `A span covers words ${sp.first_word} to ${sp.last_word}, but "${clip.text.slice(0, 60)}" has words 0 to ${words.length - 1}`,
+        {
+          hint: `Words count from 0 (${words
+            .slice(0, 12)
+            .map((w, i) => `${i} ${w}`)
+            .join(', ')}${words.length > 12 ? ', …' : ''}); last_word is included`,
+        },
+      );
+    }
+  }
+  return spans;
+}
+
 function titleAdd(doc: TimelineDoc, a: EditArgsOf<'title.add'>): OpOutcome {
   const track = textTrack(doc, a.track_id);
   const fps = doc.sequence.fps;
@@ -1599,6 +1718,7 @@ function titleAdd(doc: TimelineDoc, a: EditArgsOf<'title.add'>): OpOutcome {
     kind: 'video',
     text: a.text,
     ...(style ? { style } : {}),
+    ...withSpans(checkSpans({ text: a.text }, a.spans)),
     start,
     in: 0,
     duration,
@@ -1656,7 +1776,12 @@ function inClipSegments(
       const wat = place(w.start, w.end);
       return wat ? [{ text: w.text, ...wat }] : [];
     });
-    out.push({ ...at, text: seg.text, ...(words?.length ? { words } : {}) });
+    out.push({
+      ...at,
+      text: seg.text,
+      ...(words?.length ? { words } : {}),
+      ...(seg.spans?.length ? { spans: seg.spans } : {}),
+    });
   }
   return out;
 }
@@ -1722,6 +1847,12 @@ function captionAdd(doc: TimelineDoc, a: EditArgsOf<'caption.add'>): OpOutcome {
       text: seg.text,
       ...(words?.length ? { words } : {}),
       ...(style ? { style } : {}),
+      ...withSpans(
+        checkSpans(
+          { text: seg.text, ...(words?.length ? { words } : {}) },
+          'spans' in seg ? seg.spans : undefined,
+        ),
+      ),
       start,
       in: 0,
       duration: (seg.end_frame - seg.start_frame) * tpf,
@@ -1753,8 +1884,8 @@ function textSet(doc: TimelineDoc, a: EditArgsOf<'text.set'>): OpOutcome {
     : (a.clip_ids ?? []).map((id) => locate(doc, id));
   if (!targets.length)
     throw new CfError('bad_request', `Track ${a.track_id} has no titles or captions`);
-  if (a.text !== undefined && targets.length !== 1) {
-    throw new CfError('bad_request', 'text changes one clip at a time', {
+  if ((a.text !== undefined || a.spans !== undefined) && targets.length !== 1) {
+    throw new CfError('bad_request', 'text and spans change one clip at a time', {
       hint: 'Give a single clip id',
     });
   }
@@ -1765,8 +1896,14 @@ function textSet(doc: TimelineDoc, a: EditArgsOf<'text.set'>): OpOutcome {
     assertUnlocked(track);
     if (a.text !== undefined) {
       clip.text = a.text;
-      // New text no longer matches the old word timings.
+      // New text no longer matches the old word timings, nor spans counted in its words.
       if (clip.type === 'caption') delete clip.words;
+      if (a.spans === undefined) delete clip.spans;
+    }
+    if (a.spans !== undefined) {
+      const spans = checkSpans(clip, a.spans);
+      if (spans) clip.spans = spans;
+      else delete clip.spans;
     }
     const style = mergeStyle(clip.style, a.style);
     if (style) clip.style = style;
@@ -1991,9 +2128,23 @@ function transitionAdd(doc: TimelineDoc, a: EditArgsOf<'transition.add'>): OpOut
         true,
       );
     } else {
+      // Clips linked to the one before the cut keep their place with it: they are in sync, only
+      // longer than its shortened end. Everything else past the cut now plays late.
+      const partner = (c: StoredClip) =>
+        Boolean(ref.clip.link) && c.link === ref.clip.link && c.start < cutAt;
       const late = others.flatMap((t) =>
-        t.clips.filter((c) => end(c) > cutAt - after).map((c) => `${c.id} (${t.id})`),
+        t.clips
+          .filter((c) => end(c) > cutAt - after && !partner(c))
+          .map((c) => `${c.id} (${t.id})`),
       );
+      const longer = others.flatMap((t) =>
+        t.clips.filter((c) => partner(c) && end(c) > cutAt - after).map((c) => c.id),
+      );
+      if (longer.length && after > 0) {
+        warnings.push(
+          `${longer.join(', ')} (linked to ${ref.clip.id}) stay in sync with it but keep their length, so they run ${Math.round(after / tpf)} frames past its new end; clip.trim them to match if they should end with it`,
+        );
+      }
       if (late.length) {
         warnings.push(
           `Everything after the cut on ${ref.track.id} moved ${Math.round((before + after) / tpf)} frames earlier; clips on other tracks did not, so these now play ${Math.round((before + after) / tpf)} frames later against it: ${late.join(', ')}. other_tracks: 'extract' takes the same span out of the other tracks to keep them in sync`,
@@ -2127,34 +2278,137 @@ function clipSetBlend(doc: TimelineDoc, a: EditArgsOf<'clip.set_blend'>): OpOutc
   return ok(clip.start, { clip_id: clip.id });
 }
 
-function clipSetMask(doc: TimelineDoc, a: EditArgsOf<'clip.set_mask'>): OpOutcome {
+type ToolMask = NonNullable<EditArgsOf<'clip.set_mask'>['mask']>;
+type ToolShape = Omit<ToolMask, 'feather' | 'invert' | 'mode' | 'add'>;
+
+function clipSetMask(
+  doc: TimelineDoc,
+  a: EditArgsOf<'clip.set_mask'>,
+  resolve: MediaResolver,
+): OpOutcome {
   const { clip } = videoClip(doc, a.clip_id, 'clip.set_mask');
   if (!a.mask) {
     delete clip.mask;
     return ok(clip.start, { clip_id: clip.id });
   }
   const m = a.mask;
+  const shapes: ToolShape[] = [m, ...(m.add ?? [])];
+  const baked =
+    m.mode === 'fill' || (m.add?.length ?? 0) > 0 || shapes.some((x) => x.shape === 'matte');
+  if (baked && clip.type !== 'media') {
+    const what =
+      m.mode === 'fill' ? 'mode fill' : m.add?.length ? 'A mask of several shapes' : 'A matte mask';
+    throw new CfError(
+      'bad_request',
+      `${what} works on a clip of imported or created media, not a ${clip.type} clip`,
+      {
+        hint: `It is made from the clip's own source file before the render, frame by frame, and a ${clip.type === 'timeline' ? 'nested timeline' : clip.type} has no source file of its own. Bake it first: export.video the part, media.import {source: {job_id}}, and mask that clip`,
+      },
+    );
+  }
+  const tpf = ticksPerFrame(doc.sequence.fps);
+  const mask: StoredMask = storedShape(m, clip, tpf, resolve, 'mask');
+  if (m.add?.length)
+    mask.add = m.add.map((x, i) => storedShape(x, clip, tpf, resolve, `add[${i}]`));
+  if (m.feather) mask.feather = m.feather;
+  if (m.invert) mask.invert = true;
+  if (m.mode && m.mode !== 'show') mask.mode = m.mode;
+  clip.mask = mask;
+  return ok(clip.start, { clip_id: clip.id });
+}
+
+/** One shape of a selection, checked and in stored form. */
+function storedShape(
+  m: ToolShape,
+  clip: StoredClip,
+  tpf: number,
+  resolve: MediaResolver,
+  where: string,
+): StoredMaskShape {
+  const of = where === 'mask' ? '' : ` (${where})`;
+  if (m.shape === 'matte' && !m.media_id) {
+    throw new CfError('bad_request', `A matte mask needs media_id${of}`, {
+      hint: 'Give media_id: a picture or video whose alpha (or brightness) marks the selection, e.g. a create.cutout result',
+    });
+  }
+  if (m.shape !== 'matte' && m.media_id) {
+    throw new CfError('bad_request', `media_id applies only to matte masks, not ${m.shape}${of}`);
+  }
+  if (m.shape === 'matte' && m.media_id) {
+    const matte = resolve(m.media_id);
+    if (!matte?.video) {
+      throw new CfError(
+        matte ? 'bad_request' : 'not_found',
+        matte ? `Media ${m.media_id} has no picture to select with` : `No media ${m.media_id}`,
+        {
+          hint: 'Give a picture or video whose alpha (or brightness) marks the selection, e.g. a create.cutout result',
+        },
+      );
+    }
+    if (clip.type === 'media' && clip.media_id === m.media_id) {
+      throw new CfError('bad_request', 'A clip cannot be its own matte', {
+        hint: 'Make a matte of it first, e.g. create.cutout with a region, and give that media_id',
+      });
+    }
+    const fixed = MASK_NUMBERS.filter((k) => m[k] !== undefined && m[k] !== null);
+    if (fixed.length) {
+      throw new CfError('bad_request', `${fixed.join(', ')} do not apply to a matte mask${of}`, {
+        hint: 'A matte selects by its own pixels; to move or scale it, change the matte media',
+      });
+    }
+  }
   if (m.shape === 'polygon' && !m.points) {
-    throw new CfError('bad_request', 'A polygon mask needs points', {
+    throw new CfError('bad_request', `A polygon mask needs points${of}`, {
       hint: 'Give points: [[x, y], ...] with at least 3 corners in the clip picture (0–1)',
     });
   }
   if (m.shape !== 'polygon' && m.points) {
-    throw new CfError('bad_request', `points apply only to polygon masks, not ${m.shape}`);
+    throw new CfError('bad_request', `points apply only to polygon masks, not ${m.shape}${of}`);
   }
   if (m.corner_radius && m.shape !== 'rectangle') {
-    throw new CfError('bad_request', 'corner_radius applies only to rectangle masks');
+    throw new CfError('bad_request', `corner_radius applies only to rectangle masks${of}`);
   }
-  const tpf = ticksPerFrame(doc.sequence.fps);
-  const mask: StoredMask = { shape: m.shape };
+  const shape: StoredMaskShape = { shape: m.shape };
   for (const key of MASK_NUMBERS)
-    setAnimatable(mask, key, m[key], MASK_DEFAULTS[key], clip, tpf, MASK_LIMITS[key]);
-  if (m.feather) mask.feather = m.feather;
-  if (m.corner_radius) mask.corner_radius = m.corner_radius;
-  if (m.invert) mask.invert = true;
-  if (m.points) mask.points = m.points;
-  clip.mask = mask;
-  return ok(clip.start, { clip_id: clip.id });
+    setAnimatable(shape, key, m[key], MASK_DEFAULTS[key], clip, tpf, MASK_LIMITS[key]);
+  if (m.corner_radius) shape.corner_radius = m.corner_radius;
+  if (m.points) shape.points = storedPoints(m.points, clip, tpf);
+  if (m.media_id) shape.media_id = m.media_id;
+  return shape;
+}
+
+type ToolPoints = ToolShape['points'];
+
+/** Polygon corners in stored form: keyframe frames become source ticks, as other keyframes do. */
+function storedPoints(p: NonNullable<ToolPoints>, clip: StoredClip, tpf: number): StoredPoints {
+  if (Array.isArray(p)) return p;
+  const frames = p.keyframes.map((k) => k.frame);
+  if (new Set(frames).size !== frames.length) {
+    throw new CfError('bad_request', 'points: two keyframes share a frame', {
+      hint: 'Give each keyframe its own frame',
+    });
+  }
+  const unknown = p.keyframes.find((k) => k.ease && !(EASES as readonly string[]).includes(k.ease));
+  if (unknown) {
+    throw new CfError('bad_request', `points: unknown ease ${unknown.ease}`, {
+      hint: `Use one of ${EASES.join(', ')}`,
+    });
+  }
+  const count = p.keyframes[0]?.points.length ?? 0;
+  if (p.keyframes.some((k) => k.points.length !== count)) {
+    throw new CfError('bad_request', 'points: every keyframe needs the same number of corners', {
+      hint: `The first keyframe has ${count}; each corner moves to the same-numbered corner of the next keyframe`,
+    });
+  }
+  const sorted = [...p.keyframes].sort((a, b) => a.frame - b.frame);
+  if (sorted.length === 1 && sorted[0]) return sorted[0].points;
+  return {
+    keyframes: sorted.map((k) => ({
+      t: clip.in + k.frame * tpf,
+      points: k.points,
+      ...(k.ease && k.ease !== 'linear' ? { ease: k.ease as Ease } : {}),
+    })),
+  };
 }
 
 function clipSetAnimation(doc: TimelineDoc, a: EditArgsOf<'clip.set_animation'>): OpOutcome {
@@ -2169,10 +2423,19 @@ function clipSetAnimation(doc: TimelineDoc, a: EditArgsOf<'clip.set_animation'>)
   if (a.loop === null) delete anim.loop;
   else if (a.loop) {
     const period = a.loop.period_frames ?? Math.max(1, Math.round(fps.num / fps.den));
+    const { from_frame: from, to_frame: to } = a.loop;
+    if (from !== undefined && to !== undefined && to <= from) {
+      throw new CfError('bad_request', `loop to_frame ${to} is not after from_frame ${from}`, {
+        hint: 'to_frame is the clip frame the loop stops before',
+      });
+    }
     anim.loop = {
       name: a.loop.name,
       period: framesToTicks(period, fps),
       strength: a.loop.strength,
+      // On the source, as keyframes are, so trims and splits keep it on the same moment.
+      ...(from !== undefined ? { from: clip.in + framesToTicks(from, fps) } : {}),
+      ...(to !== undefined ? { to: clip.in + framesToTicks(to, fps) } : {}),
     };
   }
   const warnings: string[] = [];
@@ -2180,6 +2443,18 @@ function clipSetAnimation(doc: TimelineDoc, a: EditArgsOf<'clip.set_animation'>)
     warnings.push(
       `The entrance and exit together are longer than clip ${clip.id}, so they overlap`,
     );
+  }
+  if (a.loop && anim.loop && (anim.loop.from !== undefined || anim.loop.to !== undefined)) {
+    const tpf = ticksPerFrame(fps);
+    const n = Math.round(clip.duration / tpf);
+    const plays = Array.from({ length: n }, (_, i) => loopPlays(anim.loop, clip, tpf, i)).some(
+      Boolean,
+    );
+    if (!plays) {
+      warnings.push(
+        `The loop's from_frame to to_frame range misses every frame clip ${clip.id} plays (0 to ${n - 1}), so it never shows`,
+      );
+    }
   }
   if (Object.keys(anim).length) clip.animation = anim;
   else delete clip.animation;

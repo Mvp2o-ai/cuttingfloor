@@ -653,7 +653,10 @@ describe('cross-track ripple', () => {
     expect(warning).toContain(`${late} (${v2})`);
     expect(warning).toContain('Leave out track_ids');
     const all = edit(doc, { tool: 'range.extract', args: { range: { start: 90, end: 100 } } });
-    expect(all.outcome.warnings).toEqual([]);
+    // Every track moved together; the only word is that the sound went with the picture.
+    expect(all.outcome.warnings).toHaveLength(1);
+    expect(all.outcome.warnings[0]).toMatch(/^The sound in frames 90–100 went with the picture/);
+    expect(all.outcome.warnings[0]).toContain('track.set {locked: true}');
   });
 
   it('speed changes ripple the other tracks with sync', () => {
@@ -820,6 +823,43 @@ describe('compositing', () => {
     expect(Object.keys(right?.animation ?? {})).toEqual(['out']);
   });
 
+  it('runs a loop over part of the clip, kept on its source moment through a split', () => {
+    let doc = edit(base(), {
+      tool: 'clip.set_animation',
+      args: { clip_id: 'c3', loop: { name: 'shake', from_frame: 10, to_frame: 20, strength: 2 } },
+    }).doc;
+    const moved = (d: TimelineDoc, id: string, i: number) => {
+      const s = transformAt(clip(d, id), tpf, i, 40);
+      return s.x !== 0.5 || s.y !== 0.5;
+    };
+    expect([0, 9, 20, 39].map((i) => moved(doc, 'c3', i))).toEqual([false, false, false, false]);
+    expect(Array.from({ length: 10 }, (_, i) => moved(doc, 'c3', 10 + i)).some(Boolean)).toBe(true);
+    expect(toView('tl_x', doc).tracks[0]?.clips[0]?.animation?.loop).toMatchObject({
+      from_frame: 10,
+      to_frame: 20,
+    });
+    // Split at timeline frame 15 (clip frame 15): the right half shakes for its first 5 frames.
+    const start = Math.round(clip(doc, 'c3').start / tpf);
+    doc = edit(doc, { tool: 'clip.split', args: { clip_id: 'c3', at_frame: start + 15 } }).doc;
+    const right = doc.tracks[0]?.clips[1];
+    expect(toView('tl_x', doc).tracks[0]?.clips[1]?.animation?.loop).toMatchObject({
+      from_frame: -5,
+      to_frame: 5,
+    });
+    expect(moved(doc, right?.id ?? '', 6)).toBe(false);
+    expect(() =>
+      edit(base(), {
+        tool: 'clip.set_animation',
+        args: { clip_id: 'c3', loop: { name: 'shake', from_frame: 20, to_frame: 10 } },
+      }),
+    ).toThrow(/not after from_frame/);
+    const missed = edit(base(), {
+      tool: 'clip.set_animation',
+      args: { clip_id: 'c3', loop: { name: 'shake', from_frame: 500 } },
+    });
+    expect(missed.outcome.warnings.join(' ')).toMatch(/never shows/);
+  });
+
   it('refuses compositing on audio clips and names the linked video clip', () => {
     const { doc } = edit(start(), {
       tool: 'clip.add',
@@ -861,7 +901,19 @@ describe('compositing', () => {
       },
       {
         tool: 'clip.set_animation',
-        args: { clip_id: 'c3', loop: { name: 'pulse', period_frames: 25 } },
+        args: {
+          clip_id: 'c3',
+          loop: { name: 'pulse', period_frames: 25, from_frame: 5, to_frame: 30 },
+        },
+      },
+      {
+        tool: 'title.add',
+        args: {
+          track_id: 't1',
+          text: 'big news today',
+          style: { max_lines: 2 },
+          spans: [{ first_word: 1, last_word: 1, color: '#FFE000', bold: true }],
+        },
       },
       { tool: 'track.set', args: { track_id: 't1', locked: true } },
     );
@@ -869,6 +921,131 @@ describe('compositing', () => {
     const back = fromView(view, resolve);
     expect(toView('tl_x', back)).toEqual({ ...view, parent: null });
     expect(back.tracks[0]?.locked).toBe(true);
+  });
+
+  it('keys lasso points over time, selects with a matte, and keeps the mode through a load', () => {
+    const sq = (x: number) => [
+      [x, 0.4],
+      [x + 0.2, 0.4],
+      [x + 0.2, 0.6],
+      [x, 0.6],
+    ];
+    const { doc } = edit(base(), {
+      tool: 'clip.set_mask',
+      args: {
+        clip_id: 'c3',
+        mask: {
+          shape: 'polygon',
+          mode: 'fill',
+          points: {
+            keyframes: [
+              { frame: 10, points: sq(0.6), ease: 'smooth' },
+              { frame: 0, points: sq(0) },
+            ],
+          },
+        },
+      },
+    });
+    const view = toView('tl_x', doc);
+    expect(view.tracks.flatMap((t) => t.clips).find((c) => c.id === 'c3')?.mask).toEqual({
+      shape: 'polygon',
+      mode: 'fill',
+      points: {
+        keyframes: [
+          { frame: 0, points: sq(0) },
+          { frame: 10, points: sq(0.6), ease: 'smooth' },
+        ],
+      },
+    });
+    expect(toView('tl_x', fromView(view, resolve))).toEqual({ ...view, parent: null });
+    expect(() =>
+      edit(base(), {
+        tool: 'clip.set_mask',
+        args: {
+          clip_id: 'c3',
+          mask: {
+            shape: 'polygon',
+            points: {
+              keyframes: [
+                { frame: 0, points: sq(0) },
+                { frame: 9, points: sq(0).slice(0, 3) },
+              ],
+            },
+          },
+        },
+      }),
+    ).toThrow(/same number of corners/);
+    expect(() =>
+      edit(base(), { tool: 'clip.set_mask', args: { clip_id: 'c3', mask: { shape: 'matte' } } }),
+    ).toThrow(/needs media_id/);
+    expect(() =>
+      edit(base(), {
+        tool: 'clip.set_mask',
+        args: { clip_id: 'c3', mask: { shape: 'matte', media_id: 'm_zzzzzzzzzzzzzzzzzzzzzzzzzz' } },
+      }),
+    ).toThrow(/No media/);
+    expect(() =>
+      edit(base(), {
+        tool: 'clip.set_mask',
+        args: {
+          clip_id: 'c3',
+          mask: { shape: 'ellipse', media_id: 'm_aaaaaaaaaaaaaaaaaaaaaaaaav' },
+        },
+      }),
+    ).toThrow(/only to matte/);
+  });
+
+  it('takes several shapes in one selection and keeps them through a load', () => {
+    const { doc } = edit(base(), {
+      tool: 'clip.set_mask',
+      args: {
+        clip_id: 'c3',
+        mask: {
+          shape: 'rectangle',
+          x: 0.1,
+          width: 0.2,
+          mode: 'fill',
+          feather: 0.01,
+          add: [
+            {
+              shape: 'ellipse',
+              x: {
+                keyframes: [
+                  { frame: 0, value: 0.8 },
+                  { frame: 9, value: 0.7 },
+                ],
+              },
+            },
+            {
+              shape: 'polygon',
+              points: [
+                [0.4, 0.4],
+                [0.6, 0.4],
+                [0.5, 0.6],
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const view = toView('tl_x', doc);
+    const mask = view.tracks.flatMap((t) => t.clips).find((c) => c.id === 'c3')?.mask as {
+      add: Array<Record<string, unknown>>;
+    };
+    expect(mask).toMatchObject({ shape: 'rectangle', mode: 'fill', feather: 0.01 });
+    expect(mask.add).toHaveLength(2);
+    expect(mask.add[0]).toMatchObject({
+      shape: 'ellipse',
+      x: { keyframes: [{ frame: 0 }, { frame: 9 }] },
+    });
+    expect(toView('tl_x', fromView(view, resolve))).toEqual({ ...view, parent: null });
+    // Each added shape is checked as the first is.
+    expect(() =>
+      edit(base(), {
+        tool: 'clip.set_mask',
+        args: { clip_id: 'c3', mask: { shape: 'ellipse', add: [{ shape: 'polygon' }] } },
+      }),
+    ).toThrow(/needs points \(add\[0\]\)/);
   });
 
   it("refuses values outside each field's range", () => {
@@ -1752,7 +1929,7 @@ describe('effects', () => {
     expect(toView('tl_x', fromView(view, withLut))).toEqual({ ...view, parent: null });
     expect(() =>
       run(base(), { tool: 'filter.add', args: { clip_id: 'c5', name: 'nope' } }),
-    ).toThrow(/No effect named/);
+    ).toThrow(/expected one of "brightness_contrast".*"telephone"/);
     expect(() =>
       run(base(), { tool: 'filter.add', args: { clip_id: 'c6', name: 'blur' } }),
     ).toThrow(/video effect/);
@@ -1762,6 +1939,19 @@ describe('effects', () => {
         args: { clip_id: 'c5', name: 'saturation', params: { amount: 9 } },
       }),
     ).toThrow(/amount/);
+    // A wrong param is refused with the effect's params, ranges, units and defaults.
+    try {
+      run(base(), {
+        tool: 'filter.add',
+        args: { clip_id: 'c5', name: 'blur', params: { bogus: 1 } },
+      });
+      expect.unreachable();
+    } catch (error) {
+      expect((error as CfError).message).toMatch(/Unrecognized key: "bogus"/);
+      expect((error as CfError).hint).toBe(
+        'blur (video) takes radius: 0 to 0.2, default 0.01 (Fraction of the frame height; the Gaussian sigma is half of it (0.02 on 1080p is about 11 px); takes keyframes)',
+      );
+    }
     expect(() =>
       run(base(), {
         tool: 'filter.add',

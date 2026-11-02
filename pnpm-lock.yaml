@@ -163,6 +163,9 @@ importers:
       onnxruntime-node:
         specifier: 1.30.0
         version: 1.30.0
+      wawoff2:
+        specifier: 2.0.1
+        version: 2.0.1
 
   packages/jobs:
     dependencies:
@@ -2033,6 +2036,10 @@ packages:
       jsdom:
         optional: true
 
+  wawoff2@2.0.1:
+    resolution: {integrity: sha512-r0CEmvpH63r4T15ebFqeOjGqU4+EgTx4I510NtK35EMciSdcTxCw3Byy3JnBonz7iyIFZ0AbVo0bbFpEVuhCYA==}
+    hasBin: true
+
   webdriver-bidi-protocol@1.0.1:
     resolution: {integrity: sha512-WXWs/aXF2a6Al1Z2/V/7Gp2oPZOAAmHjJOTmv4KCXRJ122IMj3tSSMc6a4q3K4QOmhQbse/Ahr+oTVJOU2dUiw==}
 
@@ -3631,6 +3638,10 @@ snapshots:
       '@types/node': 24.19.2
     transitivePeerDependencies:
       - msw
+
+  wawoff2@2.0.1:
+    dependencies:
+      argparse: 2.0.1
 
   webdriver-bidi-protocol@1.0.1: {}
 

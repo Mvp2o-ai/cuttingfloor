@@ -1,59 +1,28 @@
 'use client';
 
 import { useState } from 'react';
+import { HOME_CLIENTS, MCP_URL } from '../content/clients.ts';
 
-export const MCP_URL = 'https://api.cuttingfloor.ai/mcp';
+export { MCP_URL };
 
+// The short version of /connect: the main apps, one line each. Steps live in content/clients.ts.
 // Kazi is ours, so it leads, in the accent.
-const CLIENTS = [
-  {
-    name: 'Kazi',
-    how: 'In Kazi (app.apifunnel.ai), open Servers and add your own server. Paste the address, Connect, then sign in.',
-    line: MCP_URL,
-    ours: true,
-  },
-  {
-    name: 'Claude',
-    how: 'Settings → Connectors → Add custom connector. Paste the address, then sign in.',
-    line: MCP_URL,
-  },
-  {
-    name: 'Claude Code',
-    how: 'Run this, then /mcp to sign in.',
-    line: `claude mcp add --transport http cuttingfloor ${MCP_URL}`,
-  },
-  {
-    name: 'Cursor',
-    how: 'Add to ~/.cursor/mcp.json. Cursor opens the sign-in when you first use it.',
-    line: `{ "mcpServers": { "cuttingfloor": { "url": "${MCP_URL}" } } }`,
-  },
-  {
-    name: 'Codex',
-    how: 'Run this, then codex mcp login cuttingfloor to sign in.',
-    line: `codex mcp add cuttingfloor --url ${MCP_URL}`,
-  },
-  {
-    name: 'ChatGPT',
-    how: 'Settings → Apps → Create (developer mode). Paste the address, auth: OAuth.',
-    line: MCP_URL,
-  },
-] as const;
-
 export function Connect() {
   const [tab, setTab] = useState(0);
   const [copied, setCopied] = useState(false);
-  const client = CLIENTS[tab] ?? CLIENTS[0];
+  const client = HOME_CLIENTS[tab] ?? HOME_CLIENTS[0];
+  if (!client) return null;
 
   return (
     <div className="connect">
       <div className="connect-tabs" role="tablist">
-        {CLIENTS.map((c, i) => (
+        {HOME_CLIENTS.map((c, i) => (
           <button
-            key={c.name}
+            key={c.slug}
             type="button"
             role="tab"
             aria-selected={i === tab}
-            className={'ours' in c && c.ours ? 'ours' : undefined}
+            className={c.ours ? 'ours' : undefined}
             data-track={`Connect tab: ${c.name}`}
             onClick={() => {
               setTab(i);
@@ -65,19 +34,23 @@ export function Connect() {
         ))}
       </div>
       <div className="connect-body">
-        <p>{client.how}</p>
+        <p>{client.home.how}</p>
         <div className="code-line">
-          <code>{client.line}</code>
+          <code>{client.home.line}</code>
           <button
             type="button"
             data-track={`Copy connect: ${client.name}`}
             onClick={() => {
-              navigator.clipboard.writeText(client.line).then(() => setCopied(true));
+              navigator.clipboard.writeText(client.home.line).then(() => setCopied(true));
             }}
           >
             {copied ? 'Copied' : 'Copy'}
           </button>
         </div>
+        <p className="connect-more">
+          <a href={`/connect#${client.slug}`}>Full steps for {client.name}</a> ·{' '}
+          <a href="/connect">Every app: Cowork, ChatGPT Work, VS Code, Zed, Goose and more</a>
+        </p>
       </div>
     </div>
   );

@@ -121,6 +121,13 @@ jobs:
     steps:
       - if: needs.test.outputs.tested == 'true'
         run: echo "Develop's run smoke-tested this commit (see Test in the image)."
+      # Loading the image keeps a second copy beside buildx's, more than the runner's free disk
+      # holds now the picture models are in it; the runner's unused SDKs make room.
+      - name: Make room for the image
+        if: needs.test.outputs.tested != 'true'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
       - if: needs.test.outputs.tested != 'true'
         uses: actions/checkout@v7
         with:

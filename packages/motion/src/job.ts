@@ -16,11 +16,11 @@ const say = (line: object) => process.stdout.write(`${JSON.stringify(line)}\n`);
 try {
   const job = JSON.parse(await readFile(join(dir, 'job.json'), 'utf8')) as MotionJob;
   const report = (fraction: number, message: string) => say({ progress: fraction, message });
-  const file =
+  const { file, warnings } =
     job.kind === 'still'
       ? await renderStill(dir, job, report)
       : await renderMotion(dir, job, report);
-  say({ done: file });
+  say({ done: file, warnings });
   process.exit(0);
 } catch (error) {
   const e = error as Error & { console?: string[] };

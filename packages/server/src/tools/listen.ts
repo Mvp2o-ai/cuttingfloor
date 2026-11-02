@@ -44,12 +44,14 @@ export function soundLabelIndexes(labels: string[]): number[] {
         .map((w) => w.slice(0, 5));
       const near = SOUND_LABELS.filter((l) => words.some((w) => l.toLowerCase().includes(w)));
       throw new CfError('bad_request', `No sound named "${label}"`, {
-        hint: near.length
-          ? `Names from video://catalog/sounds, e.g. ${near
-              .slice(0, 8)
-              .map((n) => `"${n}"`)
-              .join(', ')}; or media.listen for a sound in your own words`
-          : 'Use names from video://catalog/sounds, or media.listen for a sound in your own words',
+        hint: `${
+          near.length
+            ? `Close names: ${near
+                .slice(0, 8)
+                .map((n) => `"${n}"`)
+                .join(', ')}. `
+            : ''
+        }Or media.listen for a sound in your own words. Every name: ${SOUND_LABELS.join(', ')}`,
       });
     }
     if (!out.includes(at)) out.push(at);
@@ -58,6 +60,10 @@ export function soundLabelIndexes(labels: string[]): number[] {
 }
 
 type Analysis = z.infer<typeof SoundsAnalysis>;
+
+/** What FlexSED can't hear, measured: on a drum bed "music" peaks at 1, every drum query at 0. */
+const LISTEN_NOTE =
+  'The model knows everyday sound events (AudioSet). Inside music it hears "music" as a whole, not instruments, drums or single hits: a drum query over a drum bed peaks near 0. For hits in music use media.analyze beats; create.stems separates the drums.';
 
 /**
  * The stored analysis (every frame) and the result (scores coarsened only if they would pass
@@ -109,6 +115,7 @@ export function registerListenTools(server: McpServer, deps: ServerDeps): void {
         '- Find sound to cut on: a clap, a bang, a hit, the music starting or stopping.',
         '',
         `HOW IT WORKS. FlexSED, an open-vocabulary sound detection model (local, on the CPU; about 15 to 20 times faster than real time), listens to every 40 ms of the sound and gives each description the probability that it can be heard there. Describe the sound itself, briefly, as you would caption it ("laughter", "a crowd cheering", "glass breaking"), not the scene or a judgment; it is asked as "The sound of <your words>". Short, common sound names work best; put each sound you want in its own entry, up to ${SOUNDS_LIMITS.queries} a call, all listened for at once.`,
+        'LIMITS. Inside music it hears "music", not drums, instruments or single hits (for hits in music, media.analyze beats). A short sound can score higher over a short from_seconds to until_seconds around it.',
         'READING THE RESULT. matches gives, per sound, each run of frames at or above min_probability (default 0.5) with its start, end, peak_seconds and frame (for render.frames; media frames for video, timeline frames for an edit). peaks gives the highest probability each sound reaches, and scores every probability (step_seconds apart), for your own cut-off. A sound whose peak stays well under your cut-off is most likely not there; one hovering near it is worth a listen or a lower cut-off.',
         "Media or an edit: with media_id, times are the file's own seconds; with timeline_id, it listens to the edit's mix as it plays (cuts, gaps, levels and effects included), over from_seconds to until_seconds, and times are timeline seconds, so a match is where that sound now sits in the edit. A source or range with no sound fails with no_audio, naming it.",
         'For the 447 sounds with names (Laughter, Applause, Cough, Speech, Music…) as stored data, media.analyze kind sounds. Long-running: returns a task, or a job_id for job.get.',
@@ -155,7 +162,7 @@ export function registerListenTools(server: McpServer, deps: ServerDeps): void {
         until_seconds: args.until_seconds,
       };
       // Fails with no_audio, naming the source, before any job exists.
-      const { plan } = await checkSound(rt, owner, ref);
+      const { plan, seconds } = await checkSound(rt, owner, ref);
       // peak_seconds as a frame for render.frames: a video's own frames, or the timeline's.
       let fps: { num: number; den: number } | undefined;
       if (plan.kind === 'timeline') fps = plan.doc.sequence.fps;
@@ -216,9 +223,10 @@ export function registerListenTools(server: McpServer, deps: ServerDeps): void {
               step_seconds: step,
               values: Object.fromEntries(names.map((n, i) => [n, scoreSeries(scores, i, step)])),
             },
+            note: LISTEN_NOTE,
           }) as never;
         },
-        admit,
+        { ...admit, work: seconds },
       );
       return jobReply(job, ctx);
     }),

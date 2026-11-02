@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { extname, join, normalize } from 'node:path';
+import { MOTION_LIMITS } from '@cuttingfloor/schema';
 import type { Browser, CDPSession, Page } from 'puppeteer-core';
 import { clockScript } from './clock.ts';
 import { libraryPath } from './document.ts';
@@ -80,13 +81,95 @@ const TYPES: Record<string, string> = {
 
 const ORIGIN = 'http://page.invalid/';
 
+/** A page URL as the page names it: assets/logo.png, not the origin it is served from. */
+const pageUrl = (url: string) => (url.startsWith(ORIGIN) ? url.slice(ORIGIN.length) : url);
+const firstLine = (text: string) => text.split('\n', 1)[0] ?? '';
+
+/**
+ * What went wrong in a page while it rendered, for the result's warnings: each problem once, in
+ * the order first seen, with how often it happened. Facts, not verdicts: the render goes on.
+ */
+export class PageProblems {
+  #seen = new Map<string, number>();
+  #unlisted = 0;
+
+  add(problem: string): void {
+    const key = problem.slice(0, 300);
+    const n = this.#seen.get(key);
+    if (n !== undefined) this.#seen.set(key, n + 1);
+    else if (this.#seen.size < MOTION_LIMITS.maxWarnings) this.#seen.set(key, 1);
+    else this.#unlisted += 1;
+  }
+
+  list(): string[] {
+    const out = [...this.#seen].map(([p, n]) => (n > 1 ? `${p} (${n} times)` : p));
+    if (this.#unlisted) out.push(`…and ${this.#unlisted} more page problems not listed`);
+    return out;
+  }
+}
+
+/** Where an error happened in the page (index.html:5:15), from its stack or its location. */
+function where(
+  stack: string | undefined,
+  location?: { url?: string | undefined; lineNumber: number; columnNumber: number },
+): string {
+  for (const line of (stack ?? '').split('\n', 12).slice(1)) {
+    const at = line.lastIndexOf(ORIGIN);
+    if (at !== -1) return ` (${line.slice(at + ORIGIN.length).replace(/\)\s*$/, '')})`;
+  }
+  return location?.url?.startsWith(ORIGIN)
+    ? ` (${pageUrl(location.url)}:${location.lineNumber + 1}:${location.columnNumber + 1})`
+    : '';
+}
+
+/** Collects the page's uncaught errors, console errors and failed loads into `problems`. */
+async function watchPage(cdp: CDPSession, problems: PageProblems): Promise<void> {
+  cdp.on('Runtime.exceptionThrown', ({ exceptionDetails: d }) => {
+    const e = d.exception;
+    const text = e?.description ?? (e && 'value' in e ? String(e.value) : d.text);
+    // A syntax error has no stack, only where it was found.
+    const frame = d.stackTrace?.callFrames[0] ?? d;
+    problems.add(
+      `Uncaught ${firstLine(text).replace(/^Uncaught /, '')}${where(e?.description, frame)}`,
+    );
+  });
+  cdp.on('Runtime.consoleAPICalled', ({ type, args, stackTrace }) => {
+    if (type !== 'error' && type !== 'assert') return;
+    const text = args
+      .map((a) => a.description ?? ('value' in a ? String(a.value) : a.type))
+      .join(' ');
+    problems.add(
+      `console.${type}: ${firstLine(text)}${where(undefined, stackTrace?.callFrames[0])}`,
+    );
+  });
+  cdp.on('Log.entryAdded', ({ entry }) => {
+    if (entry.level !== 'error' && entry.level !== 'warning') return;
+    if (!['network', 'worker', 'other', 'rendering', 'security', 'xml'].includes(entry.source))
+      return;
+    const url = entry.url ?? '';
+    // Headless Chromium asks for a favicon no page named.
+    if (url === `${ORIGIN}favicon.ico`) return;
+    const failed = /^Failed to load resource: (.*)$/.exec(entry.text);
+    if (!failed) return problems.add(entry.text);
+    const why = /ERR_BLOCKED_BY_CLIENT/.test(failed[1] ?? '')
+      ? 'blocked, the page has no network'
+      : /status of 404/.test(failed[1] ?? '')
+        ? 'not found'
+        : (failed[1] ?? '');
+    problems.add(`Could not load ${pageUrl(url)}: ${why}`);
+  });
+  await cdp.send('Runtime.enable');
+  await cdp.send('Log.enable');
+}
+
 /** Loads root/entry in a fresh browser, with only root's files and lib/ answering requests. */
 async function openPage(
   root: string,
   entry: string,
   job: MotionJob,
   profile: string,
-  logs: string[],
+  /** Where the page's problems go; none for a browser whose problems another one reports. */
+  problems: PageProblems | undefined,
 ): Promise<{ browser: Browser; page: Page; cdp: CDPSession; crashed: Promise<never> }> {
   const { default: puppeteer } = await import('puppeteer-core');
   const browser = await puppeteer.launch({
@@ -113,11 +196,8 @@ async function openPage(
     const page = await browser.newPage();
     await page.setViewport({ width: job.width, height: job.height, deviceScaleFactor: 1 });
     await page.evaluateOnNewDocument(clockScript(job.seed ?? 1));
-    // The page's own errors, for the failure detail.
-    page.on('pageerror', (e) => logs.push(String((e as Error).message ?? e).slice(0, 300)));
-    page.on('console', (m) => {
-      if (m.type() === 'error') logs.push(m.text().slice(0, 300));
-    });
+    const cdp = await page.createCDPSession();
+    if (problems) await watchPage(cdp, problems);
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const url = req.url();
@@ -154,7 +234,6 @@ async function openPage(
       new Promise((r) => setTimeout(r, 10_000)),
       crashed,
     ]);
-    const cdp = await page.createCDPSession();
     if (job.transparent) {
       await cdp.send('Emulation.setDefaultBackgroundColorOverride', {
         color: { r: 0, g: 0, b: 0, a: 0 },
@@ -177,8 +256,14 @@ async function capture(cdp: CDPSession, job: MotionJob): Promise<Buffer> {
   return Buffer.from(data, 'base64');
 }
 
-const withLogs = (e: unknown, logs: string[]) =>
-  Object.assign(e instanceof Error ? e : new Error(String(e)), { console: logs.slice(-10) });
+const withLogs = (e: unknown, problems: PageProblems) =>
+  Object.assign(e instanceof Error ? e : new Error(String(e)), { console: problems.list() });
+
+/** A render's file, and what went wrong in the page while it rendered. */
+export interface Rendered {
+  file: string;
+  warnings: string[];
+}
 
 export interface RenderOptions {
   /** Page to load, relative to the folder. Default index.html. */
@@ -200,14 +285,14 @@ export async function renderMotion(
   job: MotionJob,
   report: Report,
   options: RenderOptions = {},
-): Promise<string> {
+): Promise<Rendered> {
   const out = options.out ?? join(dir, job.transparent ? 'out.mov' : 'out.mp4');
   const total = Math.max(1, Math.round(job.duration * job.fps));
   const workers = Math.max(1, Math.min(options.workers ?? motionWorkers(total), total));
   const profile = options.profile ?? join(dir, 'profile');
   report(0, workers > 1 ? `loading ${workers} browsers` : 'loading');
-  // Every browser runs the same page, so only the first one's errors are kept.
-  const logs: string[] = [];
+  // Every browser runs the same page, so only the first one's problems are kept.
+  const problems = new PageProblems();
   const opened = await Promise.allSettled(
     Array.from({ length: workers }, (_, w) =>
       openPage(
@@ -215,7 +300,7 @@ export async function renderMotion(
         options.entry ?? 'index.html',
         job,
         join(profile, `w${w}`),
-        w === 0 ? logs : [],
+        w === 0 ? problems : undefined,
       ),
     ),
   );
@@ -224,7 +309,7 @@ export async function renderMotion(
   const failed = opened.find((o) => o.status === 'rejected');
   if (failed) {
     await closeAll();
-    throw withLogs(failed.reason, logs);
+    throw withLogs(failed.reason, problems);
   }
   const codec = job.transparent
     ? ['-c:v', 'prores_ks', '-profile:v', '4444', '-pix_fmt', 'yuva444p10le', '-vendor', 'apl0']
@@ -331,9 +416,9 @@ export async function renderMotion(
     ffmpeg.stdin.end();
     await finished;
     report(1, 'encoded');
-    return out;
+    return { file: out, warnings: problems.list() };
   } catch (e) {
-    throw withLogs(stopped ?? e, logs);
+    throw withLogs(stopped ?? e, problems);
   } finally {
     if (!ffmpeg.stdin.writableEnded) ffmpeg.stdin.destroy();
     if (ffmpeg.exitCode === null) ffmpeg.kill('SIGKILL');
@@ -347,25 +432,25 @@ export async function renderStill(
   job: MotionJob,
   report: Report,
   options: RenderOptions = {},
-): Promise<string> {
+): Promise<Rendered> {
   report(0.2, 'loading');
-  const logs: string[] = [];
+  const problems = new PageProblems();
   const { browser, cdp, crashed } = await openPage(
     dir,
     options.entry ?? 'index.html',
     job,
     options.profile ?? join(dir, 'profile'),
-    logs,
+    problems,
   ).catch((e) => {
-    throw withLogs(e, logs);
+    throw withLogs(e, problems);
   });
   try {
     report(0.7, 'capturing');
     const out = options.out ?? join(dir, 'out.png');
     await writeFile(out, await Promise.race([capture(cdp, job), crashed]));
-    return out;
+    return { file: out, warnings: problems.list() };
   } catch (e) {
-    throw withLogs(e, logs);
+    throw withLogs(e, problems);
   } finally {
     await browser.close().catch(() => undefined);
   }

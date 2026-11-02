@@ -8,20 +8,35 @@ import {
   InOutAnimation,
   LoopAnimation,
   MASK_LIMITS,
+  MAX_MASK_ADD,
+  MAX_MASK_POINTS,
+  MaskMode,
   MaskShape,
   TRANSFORM_LIMITS,
   TransitionKind,
 } from './compositing.ts';
+import { EFFECT_NAMES, type EffectName } from './effects.ts';
 import { ToolError } from './errors.ts';
 import { JobId, MediaId, TimelineId, UploadId } from './ids.ts';
 import { JUDGE_LIMITS, JudgeName, JudgeQuestion, JudgeText, NoulFields } from './judge.ts';
+import {
+  ClipPlacementSchema,
+  ColourAnalysis,
+  PictureAnalysis,
+  RegionBox,
+  SpeakersAnalysis,
+  VoiceAnalysis,
+} from './measure.ts';
 import { ASSET_NAME, MOTION_LIMITS } from './motion.ts';
 import { Sequence } from './sequence.ts';
 import { STEMS } from './sounds.ts';
-import { Colour, TextStyle } from './text.ts';
+import { Colour, TextSpans, TextStyle } from './text.ts';
 import { Change, TimelineInput, TimelineView, TrackKind } from './timeline.ts';
 
 const frame = z.number().int().nonnegative();
+
+/** What protects the server from in-between frames: the most made a clip, and their rate. */
+export const INTERPOLATE_LIMITS = { fps: 480, frames: 6000 } as const;
 
 export const Preview = z
   .enum(['inline', 'link', 'none'])
@@ -56,35 +71,73 @@ export const TransformArgs = z.object({
   crop: Crop.nullable().optional(),
 });
 
-export const MaskArgs = z.object({
+const MaskPoints = z
+  .array(z.tuple([z.number().min(-4).max(5), z.number().min(-4).max(5)]))
+  .min(3)
+  .max(MAX_MASK_POINTS)
+  .meta({ id: 'MaskPoints' });
+
+const MaskShapeFields = {
   shape: MaskShape,
-  x: anim(MASK_LIMITS.x, 'Mask centre x in the clip picture, 0–1 (default 0.5)'),
-  y: anim(MASK_LIMITS.y, 'Mask centre y in the clip picture, 0–1 (default 0.5)'),
-  width: anim(MASK_LIMITS.width, 'Fraction of the picture width (default 0.5)'),
+  x: anim(MASK_LIMITS.x, 'Mask centre x in the fitted frame, 0–1 (default 0.5)'),
+  y: anim(MASK_LIMITS.y, 'Mask centre y in the fitted frame, 0–1 (default 0.5)'),
+  width: anim(MASK_LIMITS.width, 'Fraction of the fitted frame width (default 0.5)'),
   height: anim(
     MASK_LIMITS.height,
-    'Fraction of the picture height (default 0.5); band thickness for mirror',
+    'Fraction of the fitted frame height (default 0.5); band thickness for mirror',
   ),
   rotation: anim(MASK_LIMITS.rotation, 'Degrees clockwise; for linear, the edge angle'),
-  feather: z
-    .number()
-    .min(0)
-    .max(0.5)
-    .optional()
-    .describe('Soft edge as a fraction of the picture short side'),
   corner_radius: z
     .number()
     .min(0)
     .max(0.5)
     .optional()
     .describe('rectangle: corner radius as a fraction of its short side'),
-  invert: z.boolean().optional().describe('Keep the outside instead'),
   points: z
-    .array(z.tuple([z.number().min(-4).max(5), z.number().min(-4).max(5)]))
-    .min(3)
-    .max(64)
+    .union([
+      MaskPoints,
+      z.object({
+        keyframes: z
+          .array(
+            z.object({
+              frame: z.number().int().min(-1_000_000).max(100_000_000),
+              points: MaskPoints,
+              ease: z.string().optional(),
+            }),
+          )
+          .min(1)
+          .max(1000),
+      }),
+    ])
     .optional()
-    .describe('polygon: [x, y] corners in the clip picture, 0–1'),
+    .describe(
+      'polygon: [x, y] corners in the fitted frame, 0–1, or {keyframes: [{frame, points, ease}]}',
+    ),
+  media_id: MediaId.optional().describe('matte: media whose alpha (or brightness) selects'),
+};
+
+const MaskShapeArgs = z.object(MaskShapeFields).meta({ id: 'MaskShape' });
+
+export const MaskArgs = z.object({
+  ...MaskShapeFields,
+  feather: z
+    .number()
+    .min(0)
+    .max(0.5)
+    .optional()
+    .describe('Soft edge as a fraction of the picture short side'),
+  invert: z.boolean().optional().describe('Select the outside instead'),
+  mode: MaskMode.optional().describe(
+    'show (default) only the selection, hide it, or fill it (painted in from around it and from earlier frames)',
+  ),
+  add: z
+    .array(MaskShapeArgs)
+    .min(1)
+    .max(MAX_MASK_ADD)
+    .optional()
+    .describe(
+      'More shapes in the same selection, e.g. two panels; feather, invert and mode apply to all',
+    ),
 });
 
 const FrameRange = z
@@ -136,7 +189,9 @@ export const EditArgs = {
         z.object({ in: frame, out: frame }),
         z
           .object({ words: z.tuple([z.number().int().min(0), z.number().int().min(0)]) })
-          .describe('Transcript words i to j (inclusive), from media.get include transcript'),
+          .describe(
+            "Transcript words i to j (inclusive), from media.get include transcript: from the frame word i starts in to the frame after word j ends, with no padding (clip.trim adds room for a breath or a word's tail)",
+          ),
       ])
       .optional()
       .describe('Source range in sequence frames, out exclusive. Default: the whole media'),
@@ -201,6 +256,12 @@ export const EditArgs = {
       ),
     reverse: z.boolean().optional(),
     preserve_pitch: z.boolean().optional().describe('Keep voices at their pitch (default true)'),
+    interpolate: z
+      .enum(['none', 'blend', 'motion'])
+      .optional()
+      .describe(
+        `Video, when it shows fewer new frames a second than the sequence (slowed, or a lower frame rate; rate 1 smooths that): none repeats frames; blend crossfades neighbours; motion makes new frames from the movement (minterpolate, slow). Made once as a job of its own (job.list); a render that needs it names the job until it is done, and an export waits. Up to ${INTERPOLATE_LIMITS.frames} frames a clip`,
+      ),
     ripple: z
       .boolean()
       .default(true)
@@ -231,6 +292,12 @@ export const EditArgs = {
     clip_id: z.string(),
     media_id: MediaId,
     source_in: frame.optional().describe('Source frame the clip starts at. Default 0'),
+    linked: z
+      .boolean()
+      .default(true)
+      .describe(
+        'Also swap its linked clips (its sound, or its picture) onto the new media, keeping their offset, where the new media has that kind; false swaps this clip only',
+      ),
   }),
   'range.lift': z.object({ range: FrameRange, track_ids: TrackIds }),
   'range.extract': z.object({ range: FrameRange, track_ids: TrackIds }),
@@ -240,6 +307,7 @@ export const EditArgs = {
     at_frame: frame.optional().describe('Default: after the last clip on the track'),
     duration_frames: z.number().int().positive().max(1_000_000).optional().describe('Default 3 s'),
     style: TextStyle.optional(),
+    spans: TextSpans.optional(),
   }),
   'caption.add': z.object({
     track_id: z.string().describe('A video track for the captions, usually the top one'),
@@ -256,6 +324,7 @@ export const EditArgs = {
             .max(500)
             .optional()
             .describe('Word timings for highlights, timeline frames'),
+          spans: TextSpans.optional(),
         }),
       )
       .max(5000)
@@ -279,6 +348,7 @@ export const EditArgs = {
                 )
                 .max(500)
                 .optional(),
+              spans: TextSpans.optional(),
             }),
           )
           .min(1)
@@ -307,10 +377,17 @@ export const EditArgs = {
       .describe('Instead of clip_ids: every title and caption on a track'),
     text: z.string().min(1).max(2000).optional().describe('Only with a single clip'),
     style: TextStyle.optional().describe("Merged into each clip's style; null fields reset"),
+    spans: TextSpans.nullable()
+      .optional()
+      .describe(
+        "Only with a single clip: replaces its spans (null removes them). New text drops spans it doesn't give",
+      ),
   }),
   'audio.set_gain': z.object({
     clip_id: z.string().describe('An audio clip, or a video clip whose linked audio to change'),
-    gain_db: AnimatableValue.describe('dB, -60 to 24; 0 leaves it as it is; keyframes for rides'),
+    gain_db: AnimatableValue.describe(
+      'dB, -60 to 24; 0 leaves it as it is. Keyframes make a ride: the first key holds backward to the clip start, so a ride that begins part-way down must also key its starting level at frame 0 or the frames before it are changed too. A key past the clip end is stored as given, with no clamp and no warning. Two keys on one frame are refused',
+    ),
   }),
   'audio.set_pan': z.object({
     clip_id: z.string(),
@@ -335,8 +412,13 @@ export const EditArgs = {
     clip_id: z.string().optional().describe('Apply to one clip (or an adjustment clip)'),
     track_id: z.string().optional().describe('Or to every clip on a track'),
     timeline: z.boolean().optional().describe('Or true for the whole picture or mix'),
-    name: z.string().min(1).max(60).describe('An effect from video://catalog/effects'),
-    params: z.record(z.string(), z.unknown()).default({}).describe('As the catalogue lists them'),
+    name: z.enum(EFFECT_NAMES as [EffectName, ...EffectName[]]),
+    params: z
+      .record(z.string(), z.unknown())
+      .default({})
+      .describe(
+        "The effect's own params; any left out take their defaults. A wrong one is refused with the effect's params, ranges, units and defaults",
+      ),
   }),
   'filter.set': z.object({
     filter_id: z.string(),
@@ -387,10 +469,28 @@ export const EditArgs = {
         name: LoopAnimation,
         period_frames: z.number().int().positive().max(100_000).optional(),
         strength: z.number().min(0).max(5).default(1),
+        from_frame: z
+          .number()
+          .int()
+          .min(-10_000_000)
+          .max(10_000_000)
+          .optional()
+          .describe(
+            'Frame from the clip start where it begins, its first repeat starting there; like keyframes it stays on that moment of the source through trims and splits. Default the clip start',
+          ),
+        to_frame: z
+          .number()
+          .int()
+          .min(-10_000_000)
+          .max(10_000_000)
+          .optional()
+          .describe(
+            'Frame from the clip start it stops before, back at rest. Default the clip end',
+          ),
       })
       .nullable()
       .optional()
-      .describe('Repeats for the whole clip'),
+      .describe('Repeats over the clip, or over from_frame to to_frame of it'),
   }),
 } as const;
 export type EditTool = keyof typeof EditArgs;
@@ -425,6 +525,14 @@ export const EditResult = z.object({
 });
 export type EditResult = z.infer<typeof EditResult>;
 
+/** clip.set_transform, set_mask and set_animation (and edit.batch): with where clips now show. */
+export const PlacingEditResult = EditResult.extend({
+  placements: z
+    .array(ClipPlacementSchema)
+    .optional()
+    .describe('Where each clip the edit moved, cropped, masked or animated shows, sequence pixels'),
+});
+
 export const BatchInput = z.object({
   timeline_id: TimelineId,
   preview: Preview,
@@ -442,7 +550,7 @@ export const BatchInput = z.object({
     ),
 });
 
-export const BatchResult = EditResult.extend({
+export const BatchResult = PlacingEditResult.extend({
   results: z.array(
     z.object({
       tool: z.string(),
@@ -548,6 +656,17 @@ export const MediaSource = z.union([
       'A completed export.video: its rendered file becomes media, e.g. to re-edit a finished cut or place it in a sequence of another shape',
     ),
   }),
+  z.object({
+    still: z
+      .object({
+        media_id: MediaId.optional().describe('A video, frame numbered at its own rate'),
+        timeline_id: TimelineId.optional().describe('An edit, timeline frame, as it renders'),
+        frame,
+      })
+      .describe(
+        'One frame of a video or of an edit as a still image (PNG at full size: the media size, or the sequence size; see-through parts of the media stay so): to place, cut out or reuse',
+      ),
+  }),
 ]);
 
 /** A file the client attached (ChatGPT passes these for fields named in openai/fileParams). */
@@ -590,7 +709,18 @@ export const MediaUploadResult = z.object({
   how: z.string(),
 });
 
-export const ANALYSES = ['transcript', 'beats', 'faces', 'look', 'speech', 'sounds'] as const;
+export const ANALYSES = [
+  'transcript',
+  'beats',
+  'faces',
+  'look',
+  'speech',
+  'sounds',
+  'speakers',
+  'voice',
+  'colour',
+  'picture',
+] as const;
 
 export const MediaRefInput = z.object({
   media_id: MediaId,
@@ -598,14 +728,14 @@ export const MediaRefInput = z.object({
     .array(z.enum(ANALYSES))
     .optional()
     .describe(
-      'Also return these analyses (otherwise only their summaries): in full, or the piece from_seconds, to_seconds, offset and limit choose',
+      'Also return these analyses (otherwise only their summaries): in full, or the piece from_seconds, to_seconds, offset and limit choose. One never run on this media is absent, and warnings says so',
     ),
   from_seconds: z
     .number()
     .min(0)
     .optional()
     .describe(
-      'Only what ends after this media time: transcript words, beats, face and look frames',
+      'Only what ends after this media time: transcript words, beats, speaker turns, frames',
     ),
   to_seconds: z.number().positive().optional().describe('Only what starts before this media time'),
   offset: z
@@ -690,30 +820,60 @@ export const SoundsAnalysis = z.object({
   scores: SoundScores.optional(),
 });
 
-/** media.analyze kinds that also measure a timeline's mix (timeline_id). */
-export const TIMELINE_ANALYSES = ['speech', 'loudness', 'silence', 'sounds'] as const;
+export const ANALYZE_KINDS = [
+  'transcript',
+  'beats',
+  'faces',
+  'track',
+  'look',
+  'silence',
+  'scenes',
+  'speech',
+  'loudness',
+  'sounds',
+  'speakers',
+  'voice',
+  'colour',
+  'picture',
+] as const;
+
+/** media.analyze kinds that read a timeline's mix (timeline_id). */
+export const TIMELINE_SOUND_ANALYSES = [
+  'speech',
+  'loudness',
+  'silence',
+  'sounds',
+  'speakers',
+  'voice',
+] as const;
+/** media.analyze kinds that read a timeline's picture as it renders (timeline_id). */
+export const TIMELINE_PICTURE_ANALYSES = [
+  'faces',
+  'track',
+  'look',
+  'scenes',
+  'colour',
+  'picture',
+] as const;
+/** media.analyze kinds that also measure a timeline (timeline_id). */
+export const TIMELINE_ANALYSES = [
+  ...TIMELINE_SOUND_ANALYSES,
+  ...TIMELINE_PICTURE_ANALYSES,
+] as const;
+
+/** Limits that protect the server: regions and percentiles one colour call measures. */
+export const COLOUR_LIMITS = { regions: 16, percentiles: 20 } as const;
 
 export const MediaAnalyzeInput = z
   .object({
     media_id: MediaId.optional().describe('Analyze imported media (media seconds)'),
     timeline_id: TimelineId.optional().describe(
-      `Analyze an edit's mix as it plays (timeline seconds): ${TIMELINE_ANALYSES.join(', ')}`,
+      `Analyze an edit as it plays (timeline seconds): its mix (${TIMELINE_SOUND_ANALYSES.join(', ')}) or its picture (${TIMELINE_PICTURE_ANALYSES.join(', ')})`,
     ),
     kind: z
-      .enum([
-        'transcript',
-        'beats',
-        'faces',
-        'track',
-        'look',
-        'silence',
-        'scenes',
-        'speech',
-        'loudness',
-        'sounds',
-      ])
+      .enum(ANALYZE_KINDS)
       .describe(
-        'transcript: words with times (whisper.cpp, then aligned to the sound); beats: tempo and beat times; faces: face boxes over time; track: follow a region; look: your own questions answered on sampled frames; silence: stretches quieter than threshold_db for min_seconds; scenes: times the picture changes by more than threshold; speech: where someone is speaking (Silero VAD probability every 32 ms, spans at or above min_probability); loudness: integrated loudness, true peak, loudness range, RMS and noise floor; sounds: when each of 447 named sounds (laughter, applause, cough, music, speech, door…) can be heard, every 40 ms',
+        "transcript: words with times (whisper.cpp, then aligned to the sound); beats: tempo, beat times and the onset strength at each; faces: face boxes over time; track: follow a region; look: your own questions answered on sampled frames; silence: stretches quieter than threshold_db for min_seconds; scenes: times the picture changes by more than threshold; speech: where someone is speaking (Silero VAD probability every 32 ms, spans at or above min_probability); loudness: integrated loudness, true peak, loudness range, RMS and noise floor; sounds: when each of 447 named sounds (laughter, applause, cough, music, speech, door…) can be heard, every 40 ms; speakers: who speaks when; voice: pitch, level and pace over time; colour: colour statistics of frames and regions; picture: every frame's brightness, colour and change from the frame before",
       ),
     questions: z
       .record(JudgeName, JudgeQuestion)
@@ -732,19 +892,19 @@ export const MediaAnalyzeInput = z
       .min(0.04)
       .max(3600)
       .optional()
-      .describe('look: sample a frame this often. Default 1'),
+      .describe('look, colour: sample a frame this often. Default 1'),
     at_seconds: z
       .array(z.number().min(0))
       .min(1)
       .max(600)
       .optional()
-      .describe('look: sample exactly these times instead'),
+      .describe('look, colour: sample exactly these times instead'),
     from_seconds: z
       .number()
       .min(0)
       .optional()
       .describe(
-        'look: start sampling here; speech, loudness, silence, sounds: measure from here. Default 0',
+        'Start sampling or measuring here (any kind but beats, and faces and scenes on media). Default 0',
       ),
     with_previous: z
       .boolean()
@@ -769,25 +929,44 @@ export const MediaAnalyzeInput = z
     model: z
       .enum(['tiny', 'base', 'small'])
       .default('base')
-      .describe('transcript: speed vs accuracy'),
+      .describe(
+        'transcript: whisper size, on the server CPU. Bigger is more accurate and slower: small takes about 3 times as long as base, tiny about half',
+      ),
     language: z.string().min(2).max(8).default('auto').describe("transcript: e.g. 'en', or 'auto'"),
-    region: z
-      .object({
-        at_seconds: z.number().min(0),
-        x: z.number().min(0).max(1),
-        y: z.number().min(0).max(1),
-        w: z.number().min(0.005).max(1),
-        h: z.number().min(0.005).max(1),
-      })
+    region: RegionBox.extend({ at_seconds: z.number().min(0) })
+      .optional()
+      .describe('track: the box to follow (top-left x, y and size) and when'),
+    regions: z
+      .record(JudgeName, RegionBox)
       .optional()
       .describe(
-        'track: the box to follow (top-left x, y and size, fractions of the picture) and when',
+        `colour: named boxes to measure besides the whole frame (frame), up to ${COLOUR_LIMITS.regions}`,
+      ),
+    percentiles: z
+      .array(z.number().min(0).max(100))
+      .min(1)
+      .max(COLOUR_LIMITS.percentiles)
+      .default([5, 50, 95])
+      .describe('colour: the percentiles to give of each channel'),
+    speakers: z
+      .int()
+      .min(1)
+      .max(20)
+      .optional()
+      .describe('speakers: how many people speak, when you know (or give cluster_threshold)'),
+    cluster_threshold: z
+      .number()
+      .positive()
+      .max(10)
+      .optional()
+      .describe(
+        'speakers: when the count is unknown, how different two voices must be to count as two people; lower finds more speakers (try 0.5 to 0.9)',
       ),
     until_seconds: z
       .number()
       .min(0)
       .optional()
-      .describe('track, look, speech, loudness, silence, sounds: stop here. Default: the end'),
+      .describe('Stop sampling or measuring here. Default: the end'),
     threshold_db: z
       .number()
       .min(-100)
@@ -805,7 +984,9 @@ export const MediaAnalyzeInput = z
       .min(0)
       .max(100)
       .optional()
-      .describe('scenes (required): how much the picture must change to count as a cut, 0–100'),
+      .describe(
+        "scenes (required): how much the picture must change to count as a cut, 0–100 (FFmpeg scdet's score): the change from the frame before, in percent of full range, less the change just before it (so steady motion stays low). Hard cuts between ordinary shots score about 10 to 30, a cut between opposite pictures up to 100: start at FFmpeg's own default, 10, and raise it if you get too many",
+      ),
     idempotency_key: z.string().min(1).max(200).optional(),
   })
   .refine((v) => Boolean(v.media_id) !== Boolean(v.timeline_id), {
@@ -820,6 +1001,14 @@ export const SpeechAnalysis = z.object({
   probabilities: z.array(z.number()).describe('Speech probability 0–1, one per frame, in order'),
 });
 
+/** One channel's levels (FFmpeg astats); null where it is silent. */
+export const ChannelLevels = z.object({
+  channel: z.number().int().positive(),
+  rms_dbfs: z.number().nullable(),
+  peak_dbfs: z.number().nullable(),
+  noise_floor_dbfs: z.number().nullable(),
+});
+
 export const LoudnessFacts = z.object({
   integrated_lufs: z.number().nullable().describe('EBU R128; null below its -70 LUFS gate'),
   true_peak_dbtp: z.number().nullable(),
@@ -829,6 +1018,9 @@ export const LoudnessFacts = z.object({
     .number()
     .nullable()
     .describe('Level of the quietest moments (FFmpeg astats noise floor): room tone or hiss'),
+  channels: z
+    .array(ChannelLevels)
+    .describe('Each channel on its own, in stream order (1 is left in stereo)'),
 });
 
 export const Transcript = z.object({
@@ -842,6 +1034,8 @@ export const Transcript = z.object({
     .describe(
       "The model that moved word edges to where the letters sound (English); null: the times are whisper's own, up to about a second off",
     ),
+  from: z.number().optional().describe('The stretch transcribed, if not all'),
+  until: z.number().nullable().optional(),
   words: z
     .array(
       z.object({
@@ -856,16 +1050,25 @@ export const Transcript = z.object({
           .describe(
             '0–1: how clearly the letters were heard between start and end; null: not aligned (digits, symbols, other languages), times fitted between neighbours',
           ),
+        speaker: z
+          .number()
+          .nullable()
+          .optional()
+          .describe('Who says it, from the latest speakers run'),
       }),
     )
     .describe(
-      'Media seconds. Aligned words start and end within about 0.05 s of where their letters sound; an end on a soft consonant (s, t, k, f) or a breath can ring on up to about 0.1 s more. Short ums are often missing from the words; kind speech finds them as speech',
+      'Media seconds. Aligned words start and end within about 0.05 s of where their letters sound; an end on a soft consonant (s, t, k, f) or a breath can ring on up to about 0.1 s more. Short ums are often missing from the words; kind speech finds them as speech. A word "-" (or one starting with it) is whisper marking a new speaker, as subtitles do: a hint only; kind speakers measures who speaks when',
     ),
 });
 export const BeatsAnalysis = z.object({
   bpm: z.number(),
   beats: z.array(z.number()),
   downbeats: z.array(z.number()),
+  strengths: z
+    .array(z.number())
+    .optional()
+    .describe('Per beat: its onset strength, 0–1 of the strongest in the sound'),
 });
 export const FacesAnalysis = z.object({
   rate: z.number(),
@@ -873,7 +1076,11 @@ export const FacesAnalysis = z.object({
     z.object({
       time: z.number(),
       faces: z.array(
-        z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number(), score: z.number() }),
+        z
+          .object({ x: z.number(), y: z.number(), w: z.number(), h: z.number(), score: z.number() })
+          .describe(
+            'Top-left corner x, y and size w, h, fractions of the picture (centre: x + w/2, y + h/2); score 0–1',
+          ),
       ),
     }),
   ),
@@ -886,7 +1093,7 @@ export const MediaPage = z.object({
   list: z
     .string()
     .describe(
-      "The list paged: transcript.words, beats.beats, faces.frames, speech.probabilities (one per frame_seconds from `from`), or look runs[].frames (each run is cut the same way; first and the counts are the latest run's)",
+      "The list paged: transcript.words, beats.beats, faces.frames, speech.probabilities (one per frame_seconds from `from`), speakers.turns, voice.frames, colour.frames, picture.columns (every column alike), or look runs[].frames (each run is cut the same way; first and the counts are the latest run's)",
     ),
   first: z
     .int()
@@ -906,9 +1113,9 @@ export type MediaPage = z.infer<typeof MediaPage>;
 export const MediaOrigin = z
   .object({
     from: z
-      .enum(['upload', 'url', 'path', 'render', 'created'])
+      .enum(['upload', 'url', 'path', 'render', 'created', 'still'])
       .describe(
-        'upload: a file the user sent; url: downloaded; path: a media root; render: an export.video; created: a create.* tool',
+        'upload: a file the user sent; url: downloaded; path: a media root; render: an export.video; created: a create.* tool; still: a frame of a video or an edit',
       ),
     url: z
       .string()
@@ -928,7 +1135,11 @@ export const MediaOrigin = z
         'upload: sent through a media.upload link, dropped on the account page, or a data: URI',
       ),
     job_id: JobId.optional().describe('render: the export.video job; created: the create.* job'),
-    timeline_id: TimelineId.optional().describe('render: the timeline that was exported'),
+    timeline_id: TimelineId.optional().describe(
+      'render: the timeline that was exported; still: the edit the frame is from',
+    ),
+    media_id: MediaId.optional().describe('still: the video the frame is from'),
+    frame: z.number().optional().describe('still: the frame'),
     preset: z.string().optional().describe('render: the export preset'),
     range: z
       .object({ start: z.number(), end: z.number() })
@@ -985,6 +1196,13 @@ export const MediaInfo = z.object({
   expires_at: z.string().optional().describe('When url and page_url stop working'),
   origin: MediaOrigin.optional(),
   created_at: z.string().optional().describe('When it was imported or made'),
+  fingerprint: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      'Identity of the file (BLAKE3 of its size and first, middle and last 4 MB), as export.video gives',
+    ),
   status: MediaStatus.describe(
     'importing: not probed yet; processing: usable in edits, proxy still rendering; ready; failed',
   ),
@@ -1014,11 +1232,18 @@ export const MediaInfo = z.object({
   has_video: z.boolean(),
   has_audio: z.boolean(),
   codecs: z.object({ video: z.string().nullable(), audio: z.string().nullable() }),
+  sound_seconds: z
+    .number()
+    .optional()
+    .describe('How long the sound runs; under duration_seconds, the end is soundless'),
   conform: z
     .array(z.string())
     .describe('Why a mezzanine was made (vfr, rotation, hdr, codec); empty when not needed'),
   analysis: z
-    .object({ loudness_lufs: z.number().nullable().describe('Integrated loudness at import') })
+    .object({
+      loudness_lufs: z.number().nullable().describe('Integrated loudness at import'),
+      channels: z.array(ChannelLevels).optional().describe('Each channel at import'),
+    })
     .nullable(),
   analyses: z
     .object({
@@ -1044,6 +1269,13 @@ export const MediaInfo = z.object({
         .object({ model: z.string(), min_probability: z.number(), heard: z.array(z.string()) })
         .optional()
         .describe('heard: the sounds the latest run found at or above its min_probability'),
+      speakers: z.object({ model: z.string(), speakers: z.number(), turns: z.number() }).optional(),
+      voice: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe('frames, and the summary media.analyze voice gives'),
+      colour: z.object({ frames: z.number(), regions: z.array(z.string()) }).optional(),
+      picture: z.object({ frames: z.number(), from: z.number() }).optional(),
     })
     .optional()
     .describe(
@@ -1078,9 +1310,36 @@ export const MediaInfo = z.object({
   sounds: SoundsAnalysis.optional().describe(
     'With include ["sounds"]: the latest media.analyze sounds run, every probability included',
   ),
+  warnings: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'create.motion and create.still: what went wrong in the page as it rendered (uncaught errors, console errors, files blocked or not found, tags never closed). It rendered anyway',
+    ),
+  job: z
+    .object({
+      job_id: JobId,
+      tool: z.string(),
+      // JobStatus, declared further down.
+      status: z.enum(['working', 'completed', 'failed', 'cancelled']),
+      progress: z.number().optional(),
+      status_message: z.string().optional(),
+      seconds_left: z.number().optional(),
+    })
+    .optional()
+    .describe('media.get, while importing or being made: the job doing it'),
   error: ToolError.optional(),
 });
 export type MediaInfo = z.infer<typeof MediaInfo>;
+
+/** media.get: the media, with the measured analyses include asks for in full. */
+export const MediaGetResult = MediaInfo.extend({
+  speakers: SpeakersAnalysis.optional(),
+  voice: VoiceAnalysis.optional(),
+  colour: ColourAnalysis.optional(),
+  picture: PictureAnalysis.optional(),
+});
+export type MediaGetResult = z.infer<typeof MediaGetResult>;
 
 /** Limits that protect the server: the most of each list one media.list returns. */
 export const MEDIA_LIST_LIMIT = 200;
@@ -1148,18 +1407,7 @@ export const MediaDeleteResult = z.object({
 export const MediaAnalyzeResult = z.object({
   media_id: MediaId.optional(),
   timeline_id: TimelineId.optional(),
-  kind: z.enum([
-    'transcript',
-    'beats',
-    'faces',
-    'track',
-    'look',
-    'silence',
-    'scenes',
-    'speech',
-    'loudness',
-    'sounds',
-  ]),
+  kind: z.enum(ANALYZE_KINDS),
   summary: z
     .record(z.string(), z.unknown())
     .optional()
@@ -1191,8 +1439,20 @@ export const MediaAnalyzeResult = z.object({
   silences: z
     .array(z.object({ start: z.number(), end: z.number() }))
     .optional()
-    .describe('silence: media seconds'),
+    .describe(
+      'silence: media seconds; a stretch after the sound stops (see sound_ends) counts as silent',
+    ),
+  sound_ends: z
+    .number()
+    .optional()
+    .describe(
+      'silence: where the sound stream stops, when it stops before the media ends: past it there is no sound at all',
+    ),
   scenes: z.array(z.number()).optional().describe('scenes: cut times, media seconds'),
+  scene_scores: z
+    .array(z.number())
+    .optional()
+    .describe('scenes: how much the picture changed at each cut, on the threshold scale'),
   speech: z
     .object({
       model: z.string(),
@@ -1213,6 +1473,14 @@ export const MediaAnalyzeResult = z.object({
     until: z.number().nullable().describe('Seconds measured until; null: the end'),
   }).optional(),
   sounds: SoundsAnalysis.optional(),
+  speakers: SpeakersAnalysis.optional(),
+  voice: VoiceAnalysis.optional(),
+  colour: ColourAnalysis.optional(),
+  picture: PictureAnalysis.optional(),
+  picture_size: z
+    .object({ width: z.number(), height: z.number() })
+    .optional()
+    .describe('faces, track, colour: the picture measured, in pixels (a box times it is pixels)'),
   note: z
     .string()
     .optional()
@@ -1262,6 +1530,13 @@ export const MediaCorrelateResult = z.object({
     .object({ offset_seconds: z.number(), strength: z.number() })
     .nullable()
     .describe('The best offset outside the winning peak: close to strength means an unclear match'),
+  placement: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      'offset_seconds as where to place b on a timeline, in plain words. Trust it only once strength and next_best agree: two unrelated files still come back with a placement',
+    ),
 });
 
 /** A media.seek criterion: a Jev noul, or its instructions alone as a plain statement. */
@@ -1409,6 +1684,10 @@ export const MediaListenResult = z.object({
     .describe('Per sound: runs of 40 ms frames that match, in time order; empty when none do'),
   peaks: z.record(z.string(), z.number()).describe('Per sound: the highest probability anywhere'),
   scores: SoundScores,
+  note: z
+    .string()
+    .optional()
+    .describe('What the model can and cannot hear, to read a peak near 0 by'),
 });
 
 // Create: new media from a recipe. Always a job; the result is a media_id for clip.add.
@@ -1510,6 +1789,28 @@ export const CreateCutoutInput = z.object({
       'people: MODNet, fast, for video of people; any: BiRefNet, any subject (products, animals, objects), about 1 s a frame and 3 GB of memory; auto: any for pictures, people for video',
     ),
   smooth: z.number().min(0).max(0.9).default(0.3).describe('Video: steadies the edge'),
+  region: z
+    .object({
+      at_seconds: z.number().min(0).default(0),
+      x: z.number().min(0).max(1).optional(),
+      y: z.number().min(0).max(1).optional(),
+      w: z.number().min(0.005).max(1).optional(),
+      h: z.number().min(0.005).max(1).optional(),
+      points: z
+        .array(
+          z.object({
+            x: z.number().min(0).max(1),
+            y: z.number().min(0).max(1),
+            keep: z.boolean().default(true),
+          }),
+        )
+        .max(16)
+        .optional(),
+    })
+    .optional()
+    .describe(
+      'The item in this box (top-left x, y, size w, h; fractions) and/or at these points (keep false: not it) at at_seconds, outlined through the video (EdgeTAM, ~0.5 s a frame)',
+    ),
   ...createCommon,
 });
 
@@ -1538,6 +1839,33 @@ export const CreateStabilizedInput = z.object({
     .default('zoom')
     .describe(
       'What fills the edges steadying moves into view. zoom: one zoom for the whole video, enough to hide them; adaptive_zoom: as little zoom as each moment needs; black: no zoom, black edges; keep: no zoom, edges filled from earlier frames',
+    ),
+  ...createCommon,
+});
+
+/** What protects the server from upscaling: the source size, the size made and the work. */
+export const UPSCALE_LIMITS = {
+  /** Source pixels a frame (1280x720). */
+  sourcePixels: 1280 * 720,
+  /** Long edge of the picture made. */
+  longEdge: 3840,
+  /** Source pixels over all frames: about 50 minutes of work on 8 cores. */
+  work: 250_000_000,
+} as const;
+
+export const CreateUpscaledInput = z.object({
+  media_id: MediaId.describe('Video or image to enlarge'),
+  scale: z
+    .number()
+    .min(1.25)
+    .max(4)
+    .default(2)
+    .describe('How many times wider and taller the result is'),
+  denoise: z
+    .enum(['light', 'medium', 'strong'])
+    .default('medium')
+    .describe(
+      'How much noise and compression blocking is cleaned while detail is drawn in: light keeps grain and fine texture, strong gives the smoothest picture',
     ),
   ...createCommon,
 });
@@ -1593,6 +1921,22 @@ export const JobStarted = z.object({
   hint: z.string(),
 });
 
+/** Limits that protect the server: the longest one job.get waits for a change. */
+export const JOB_WAIT_LIMIT_SECONDS = 50;
+/** In a result summary, lists longer than this keep only their first items. */
+export const RESULT_SUMMARY_ITEMS = 5;
+
+export const JobFor = z
+  .object({
+    media_id: MediaId.optional().describe('The media it imports, makes or reads'),
+    media_ids: z.array(MediaId).optional().describe('Stems it makes'),
+    inputs: z.array(MediaId).optional().describe('Media it is made from'),
+    timeline_id: TimelineId.optional(),
+    kind: z.string().optional(),
+    preset: z.string().optional(),
+  })
+  .describe('What it is for, known from the start');
+
 export const JobView = z.object({
   job_id: JobId,
   tool: z.string(),
@@ -1604,14 +1948,39 @@ export const JobView = z.object({
       'What it is doing; while it waits, its place in the queue and what it waits for (a job slot, a render slot or the sandbox)',
     ),
   progress: z.number().min(0).max(1).optional(),
+  for: JobFor.optional(),
+  seconds_left: z
+    .number()
+    .optional()
+    .describe(
+      'Running: seconds left at its recent rate of progress, once it has moved steadily (later steps may differ)',
+    ),
+  starts_in_seconds: z
+    .number()
+    .optional()
+    .describe(
+      'Queued next in line: seconds until a slot should free, when every job holding one has seconds_left',
+    ),
   created_at: z.string(),
   updated_at: z.string(),
   result: z.unknown().optional().describe("The tool's structured result once completed"),
+  result_summary: z
+    .object({
+      value: z.unknown().describe(`Lists cut to ${RESULT_SUMMARY_ITEMS} items, long text cut`),
+      cut: z.record(z.string(), z.number()).describe('Path of each cut (a.b.0.c): its full length'),
+    })
+    .optional()
+    .describe('result "summary": the result in brief; result "full" has all of it'),
   error: ToolError.optional(),
 });
 export const JobRef = z.object({ job_id: JobId });
 /** Limits that protect the server: the most jobs one job.get reads. */
 export const JOB_GET_LIMIT = 100;
+const ResultMode = z
+  .enum(['full', 'summary', 'none'])
+  .describe(
+    'full: the whole result; summary: lists cut to their first items (result_summary); none: status only',
+  );
 export const JobGetInput = z.object({
   job_id: JobId.optional().describe('One job: the answer is that job'),
   job_ids: z
@@ -1620,6 +1989,17 @@ export const JobGetInput = z.object({
     .max(JOB_GET_LIMIT)
     .optional()
     .describe(`Many jobs at once (up to ${JOB_GET_LIMIT}): the answer is {jobs, not_found}`),
+  wait_seconds: z
+    .number()
+    .min(0)
+    .max(JOB_WAIT_LIMIT_SECONDS)
+    .default(0)
+    .describe(
+      `Wait up to this long (at most ${JOB_WAIT_LIMIT_SECONDS} s) for any job asked for to finish (its status changes); progress along the way does not end the wait; 0 answers at once`,
+    ),
+  result: ResultMode.optional().describe(
+    'Default full for one job_id; summary for job_ids, so a check on many stays small (full gives them whole)',
+  ),
 });
 export const JobGetManyResult = z.object({
   jobs: z.array(JobView).describe('The jobs found, in the order asked'),
@@ -1630,7 +2010,14 @@ export const JobGetManyResult = z.object({
 export const JobGetResult = z.union([JobView, JobGetManyResult]);
 export const JobListInput = z.object({
   status: JobStatus.optional(),
+  tool: z.string().optional().describe('Only jobs of this tool, e.g. media.import'),
+  media_id: MediaId.optional().describe(
+    'Only jobs for this media (importing, making or reading it)',
+  ),
   limit: z.number().int().min(1).max(200).default(50),
+  result: ResultMode.default('none').describe(
+    'none (default): each job without its result, to find one; summary: lists cut short; full: every result whole',
+  ),
 });
 export const JobListResult = z.object({ jobs: z.array(JobView) });
 
@@ -1790,6 +2177,11 @@ export const ExportResult = z.object({
   height: z.number().nullable().optional(),
   preset: ExportPreset,
   mime_type: z.string(),
+  sha256: z.string().optional().describe('SHA-256 of the whole file: equal only for equal bytes'),
+  fingerprint: z
+    .string()
+    .optional()
+    .describe('The fingerprint media.get gives the file once imported'),
 });
 
 export const QaCheckInput = z.object({
@@ -1826,7 +2218,7 @@ export const QaCheckInput = z.object({
     })
     .optional()
     .describe(
-      'List every cut with speech facts (Silero VAD on the mix, and the transcript word each clip edge cuts through); left out, cuts are not listed',
+      'List every cut with speech facts (Silero VAD on the mix, and the transcript word each clip edge cuts through); left out, cuts are not listed. Only junctions between two clips are listed, so a lone clip reports none and its own head and tail are never examined. A null word means the edge falls between words: that is a clean cut, not a missing reading',
     ),
 });
 

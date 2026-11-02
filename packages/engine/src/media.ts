@@ -2,16 +2,22 @@ import { copyFile, mkdir, open, readdir, realpath, rename, stat } from 'node:fs/
 import { basename, extname, join, sep } from 'node:path';
 import { ownerKey, randomId, secondsToTicks, type Workspace } from '@cuttingfloor/core';
 import {
+  type ANALYSES,
   CfError,
+  type MediaGetResult,
   type MediaInfo,
   type MediaOrigin,
   type MediaRef,
+  mediaNotReady,
   type ToolError,
 } from '@cuttingfloor/schema';
 import { createBLAKE3 } from 'hash-wasm';
 import { BIN, run } from './exec.ts';
 import { directDownloadUrl, download } from './fetch.ts';
 import { conformReasons, type Probe, probe } from './probe.ts';
+import { wordSpeakers } from './speakers.ts';
+import { LOUDNESS_STATS, parseChannelLevels } from './speech.ts';
+import { unwrapWebFont } from './webfont.ts';
 
 export const MEDIA_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -35,7 +41,8 @@ export interface MediaRecord {
         /** Where each stretch of the render comes from (see MediaOrigin.sources). */
         sources?: NonNullable<MediaOrigin['sources']>;
       }
-    | { created: string; recipe: string; job_id?: string; from?: string[] };
+    | { created: string; recipe: string; job_id?: string; from?: string[] }
+    | { still: number; media_id?: string; timeline_id?: string };
   /** The original: the user's file in place, or the downloaded copy. */
   file: string | null;
   size: number | null;
@@ -53,13 +60,24 @@ export interface MediaRecord {
     look?: NonNullable<MediaInfo['look']>;
     speech?: NonNullable<MediaInfo['speech']>;
     sounds?: NonNullable<MediaInfo['sounds']>;
+    speakers?: NonNullable<MediaGetResult['speakers']>;
+    voice?: NonNullable<MediaGetResult['voice']>;
+    colour?: NonNullable<MediaGetResult['colour']>;
+    picture?: NonNullable<MediaGetResult['picture']>;
   };
+  /** The media.import job that ingests it (a create.* job is in source). */
+  job_id?: string;
+  /** create.motion and create.still: what went wrong in the page as it rendered. */
+  warnings?: string[];
   error?: ToolError;
   created_at: string;
   updated_at: string;
 }
 
 type LookRun = NonNullable<MediaInfo['look']>['runs'][number];
+
+/** The analyses kept with a media, one file each (look: one per run). */
+export type StoredAnalysis = (typeof ANALYSES)[number];
 
 /** Look runs kept with each media. */
 export const LOOK_RUNS_KEPT = 10;
@@ -181,9 +199,7 @@ export class MediaLibrary {
       const value = await this.#ws.readJson<never>(join(dir, name));
       if (!value) continue;
       if (name.startsWith('look-')) runs.push(value);
-      else
-        analyses[name.slice(0, -5) as 'transcript' | 'beats' | 'faces' | 'speech' | 'sounds'] =
-          value;
+      else analyses[name.slice(0, -5) as Exclude<StoredAnalysis, 'look'>] = value;
     }
     if (runs.length) analyses.look = { runs: runs.slice(-LOOK_RUNS_KEPT) };
     if (Object.keys(analyses).length) record.analyses = analyses;
@@ -213,7 +229,7 @@ export class MediaLibrary {
   async saveAnalysis(
     owner: string,
     id: string,
-    kind: 'transcript' | 'beats' | 'faces' | 'look' | 'speech' | 'sounds',
+    kind: StoredAnalysis,
     value: unknown,
   ): Promise<MediaRecord> {
     const dir = join(this.dir(owner, id), 'analyses');
@@ -341,7 +357,9 @@ export class MediaLibrary {
               ? source.job
               : 'upload' in source
                 ? source.upload
-                : source.created),
+                : 'still' in source
+                  ? `${source.timeline_id ?? source.media_id}-frame-${source.still}.png`
+                  : source.created),
       status: 'importing',
       source,
       file: null,
@@ -410,6 +428,9 @@ export class MediaLibrary {
       let file = record.file;
       record.size = (await stat(file)).size;
       record.fingerprint = await fingerprint(file);
+      // A web font (WOFF, WOFF2) is used as the TrueType or OpenType font it packs.
+      const unpacked = await unwrapWebFont(file, dir);
+      if (unpacked) record.file = file = unpacked;
       progress(0.3, 'probing');
       record.probe = await probe(file, signal);
       // A copy the server holds is named for what it is, whatever name it came with (a PNG sent
@@ -443,6 +464,7 @@ export class MediaLibrary {
           if (p.duration !== null && conformed.duration !== null) {
             p.duration = Math.min(p.duration, conformed.duration);
           }
+          if (p.video && conformed.video) p.video.frames = conformed.video.frames;
           await this.save(owner, record);
         }
         progress(0.7, 'making proxy');
@@ -501,8 +523,10 @@ export class MediaLibrary {
     const record = await this.#ws.readJson<MediaRecord>(join(dir, 'media.json'));
     if (!record) throw await this.missing(owner, id);
     if (record.status === 'importing' || record.status === 'processing') {
-      throw new CfError('media_not_ready', `Media ${id} is still importing`, {
-        hint: 'Wait for its job to finish, or stop it with job.cancel, then delete it',
+      const busy = notReady(record, 'media.delete');
+      throw new CfError('media_not_ready', busy.message, {
+        hint: `${busy.hint}; or stop that job with job.cancel, then delete it`,
+        ...(busy.detail ? { detail: busy.detail } : {}),
       });
     }
     const freed = await folderBytes(dir);
@@ -587,6 +611,14 @@ export function mediaOrigin(record: MediaRecord): MediaOrigin {
       ...(s.sources ? { sources: s.sources } : {}),
     };
   }
+  if ('still' in s) {
+    return {
+      from: 'still',
+      frame: s.still,
+      ...(s.media_id ? { media_id: s.media_id } : {}),
+      ...(s.timeline_id ? { timeline_id: s.timeline_id } : {}),
+    };
+  }
   return {
     from: 'created',
     tool: s.created,
@@ -611,10 +643,10 @@ export function mediaRef(record: MediaRecord): MediaRef | undefined {
 
 export function mediaInfo(
   record: MediaRecord,
-  include: Array<'transcript' | 'beats' | 'faces' | 'look' | 'speech' | 'sounds'> = [],
+  include: StoredAnalysis[] = [],
   /** Everything the probe read (media.get gives it). */
   options: { probe?: boolean } = {},
-): MediaInfo {
+): MediaGetResult {
   const p = record.probe;
   const a = record.analyses;
   const analyses = a
@@ -655,6 +687,32 @@ export function mediaInfo(
               },
             }
           : {}),
+        ...(a.speakers
+          ? {
+              speakers: {
+                model: a.speakers.model,
+                speakers: a.speakers.speakers,
+                turns: a.speakers.turns.length,
+              },
+            }
+          : {}),
+        ...(a.voice ? { voice: { ...a.voice.summary, frames: a.voice.frames.length } } : {}),
+        ...(a.colour
+          ? {
+              colour: {
+                frames: a.colour.frames.length,
+                regions: Object.keys(a.colour.frames[0]?.regions ?? {}),
+              },
+            }
+          : {}),
+        ...(a.picture
+          ? {
+              picture: {
+                frames: a.picture.columns.time?.length ?? 0,
+                from: a.picture.from,
+              },
+            }
+          : {}),
         ...(a.look?.runs.length
           ? {
               look: {
@@ -671,6 +729,7 @@ export function mediaInfo(
     name: record.name,
     origin: mediaOrigin(record),
     created_at: record.created_at,
+    fingerprint: record.fingerprint,
     status: record.status,
     kind: p?.kind ?? null,
     ...(p?.family ? { font_family: p.family } : {}),
@@ -683,12 +742,47 @@ export function mediaInfo(
     has_video: Boolean(p?.video),
     has_audio: Boolean(p?.audio),
     codecs: { video: p?.video?.codec ?? null, audio: p?.audio?.codec ?? null },
+    ...(p?.audio && soundSeconds(p) !== null ? { sound_seconds: soundSeconds(p) as number } : {}),
     conform: record.conform,
     analysis: record.analysis,
     ...(analyses && Object.keys(analyses).length ? { analyses } : {}),
     ...(options.probe && p?.raw ? { probe: p.raw } : {}),
     ...Object.fromEntries(include.flatMap((k) => (a?.[k] ? [[k, a[k]]] : []))),
+    // Each transcript word carries the speaker the latest speakers run heard saying it.
+    ...(include.includes('transcript') && a?.transcript && a.speakers
+      ? { transcript: withSpeakers(a.transcript, a.speakers) }
+      : {}),
+    ...(record.warnings?.length ? { warnings: record.warnings } : {}),
     ...(record.error ? { error: record.error } : {}),
+  };
+}
+
+/** How long the first sound stream runs, from the probe; null when unknown. */
+function soundSeconds(p: Probe): number | null {
+  const of = (type: string) => {
+    const s = p.raw?.streams.find((x) => x.codec_type === type);
+    if (!s) return null;
+    const tagged = (s.tags as { DURATION?: string } | undefined)?.DURATION;
+    const hms = tagged ? /^(\d+):(\d+):([\d.]+)$/.exec(tagged) : null;
+    const seconds = s.duration
+      ? Number(s.duration)
+      : hms
+        ? Number(hms[1]) * 3600 + Number(hms[2]) * 60 + Number(hms[3])
+        : Number.NaN;
+    return Number.isFinite(seconds) ? Math.round(seconds * 1000) / 1000 : null;
+  };
+  return of('audio');
+}
+
+/** A transcript whose words carry the speaker whose turns overlap each most. */
+function withSpeakers(
+  transcript: NonNullable<MediaInfo['transcript']>,
+  speakers: NonNullable<MediaGetResult['speakers']>,
+): NonNullable<MediaInfo['transcript']> {
+  const who = wordSpeakers(transcript.words, speakers.turns);
+  return {
+    ...transcript,
+    words: transcript.words.map((w, i) => ({ ...w, speaker: who[i] ?? null })),
   };
 }
 
@@ -731,12 +825,31 @@ export function renderPicture(
   };
 }
 
+/** The job that makes a media: the create.* job that made it, or its media.import. */
+export function makingJob(record: MediaRecord): { tool: string; job_id?: string } {
+  if ('created' in record.source) {
+    return {
+      tool: record.source.created,
+      ...(record.source.job_id ? { job_id: record.source.job_id } : {}),
+    };
+  }
+  return { tool: 'media.import', ...(record.job_id ? { job_id: record.job_id } : {}) };
+}
+
+/**
+ * media_not_ready (or failed) for a media that `needs` must have ready, naming the job making
+ * it; `needs` null when only a probe is needed (status processing).
+ */
+export function notReady(record: MediaRecord, needs: string | null): CfError {
+  return mediaNotReady(record.media_id, record.status, needs, makingJob(record));
+}
+
 export function renderSource(record: MediaRecord, purpose: 'preview' | 'export'): string {
   const file =
     purpose === 'preview'
       ? (record.proxy ?? record.mezzanine ?? record.file)
       : (record.mezzanine ?? record.file);
-  if (!file) throw new CfError('media_not_ready', `Media ${record.media_id} is still importing`);
+  if (!file) throw notReady(record, null);
   return file;
 }
 
@@ -894,12 +1007,25 @@ async function analyse(
   if (!p.audio) return { loudness_lufs: null };
   const { stderr } = await run(
     BIN.ffmpeg,
-    [...INPUT, '-i', `file:${file}`, '-vn', '-af', 'ebur128=framelog=quiet', '-f', 'null', '-'],
+    [
+      ...INPUT,
+      '-i',
+      `file:${file}`,
+      '-vn',
+      '-af',
+      `ebur128=framelog=quiet,astats=${LOUDNESS_STATS}`,
+      '-f',
+      'null',
+      '-',
+    ],
     { signal },
   );
   const i = /I:\s+(-?[\d.]+) LUFS/.exec(stderr.slice(stderr.lastIndexOf('Summary')));
   const loudness = i ? Number(i[1]) : null;
-  return { loudness_lufs: loudness !== null && loudness >= -70 ? loudness : null };
+  return {
+    loudness_lufs: loudness !== null && loudness >= -70 ? loudness : null,
+    channels: parseChannelLevels(stderr),
+  };
 }
 
 /** The name a URL import starts with: the last part of its path. */

@@ -11,6 +11,7 @@ import {
   download,
   estimateTempo,
   isBlockedAddress,
+  loadFace,
   onsetEnvelope,
   type Probe,
   renderLoad,
@@ -214,7 +215,7 @@ describe('MLT compiler', () => {
     if (!clip) throw new Error('no audio clip');
     const key = sourceKey(clip);
     expect(key).toBe(`${id}#denoise-voice-0.5`);
-    expect(clipPasses(clip)[0]?.filter).toMatch(
+    expect((clipPasses(clip)[0] as { filter?: string } | undefined)?.filter).toMatch(
       /arnndn=m=.*bd\.rnnn:mix=0\.5,atrim=start_sample=480/,
     );
     const xml = compileMlt(cleaned, {
@@ -361,7 +362,7 @@ describe('MLT compiler', () => {
     expect(held).toContain('<property name="time_map">0=0.6</property>');
   });
 
-  it('compiles a nested timeline once, as a tractor over transparency', () => {
+  it('compiles a nested timeline as a tractor over transparency, one per kind of use', () => {
     const outer = runEdits(
       newTimeline('outer', seq, { video: 1, audio: 1 }),
       'tl_y',
@@ -380,15 +381,20 @@ describe('MLT compiler', () => {
       () => doc,
     ).doc;
     const xml = compile(outer);
-    expect(xml.match(/<tractor id="n1_main"/g)).toHaveLength(1);
+    // Two uses one after the other share the picture's tractor; the sound has its own, so no
+    // tractor is fetched twice for one frame.
+    expect(xml.match(/<tractor id="n\d+_main"/g)).toHaveLength(2);
     expect(xml).toContain(
       '<producer id="n1_base" in="0" out="34"><property name="mlt_service">color</property><property name="resource">0x00000000</property>',
     );
     expect(xml).toMatch(/<entry producer="n1_main" in="0" out="34">/);
     expect(xml.indexOf('id="n1_main"')).toBeLessThan(xml.indexOf('<tractor id="main"'));
-    // The nested level decodes its media with producers of its own, never the parent's.
-    expect(xml).toMatch(/<producer id="l1_m_[0-9a-z]+_v">/);
-    expect(xml).toMatch(/<entry producer="l1_m_[0-9a-z]+_v"/);
+    expect(xml).toMatch(/<entry producer="n2_main" in="0" out="34">/);
+    // Each nested tractor decodes its media with producers of its own, never the parent's.
+    expect(xml).toMatch(/<producer id="n1_m_[0-9a-z]+_v">/);
+    expect(xml).toMatch(/<entry producer="n1_m_[0-9a-z]+_v"/);
+    expect(xml).toMatch(/<producer id="n2_m_[0-9a-z]+_a">/);
+    expect(xml).not.toMatch(/<producer id="n1_m_[0-9a-z]+_a">/);
   });
 
   it('plays both clips of a transition on separate sub-tracks', () => {
@@ -415,6 +421,100 @@ describe('MLT compiler', () => {
       /<transition in="17" out="34">.*<property name="rect">0=80 0 480 360 0\.0833;/,
     );
     expect(xml).toContain('<property name="level">12=-100;');
+  });
+
+  it('styles spans of words and shows max_lines a screenful at a time', () => {
+    const titled = runEdits(
+      newTimeline('t', seq, { video: 1, audio: 0 }),
+      'tl_z',
+      [
+        {
+          tool: 'caption.add',
+          args: {
+            track_id: 't1',
+            segments: [
+              {
+                start_frame: 0,
+                end_frame: 100,
+                text: 'one two three four five six',
+                words: ['one', 'two', 'three', 'four', 'five', 'six'].map((text, i) => ({
+                  text,
+                  start_frame: i * 15,
+                  end_frame: i * 15 + 10,
+                })),
+                spans: [{ first_word: 1, last_word: 1, color: '#FFE000', bold: false }],
+              },
+            ],
+            style: { max_lines: 1, max_width: 0.4, shadow: null },
+          },
+        },
+      ],
+      () => media,
+      { tool: 'x', args: null },
+    ).doc;
+    const files = new Map<string, string>();
+    // Every letter and space half an em, 10.8 px at 21.6 px, in a 256 px line.
+    const faces: unknown[] = [];
+    compileMlt(titled, {
+      width: 640,
+      height: 360,
+      sources: new Map(),
+      files,
+      measure: (face) => {
+        faces.push(face);
+        return (text) => [...text].length * 0.5;
+      },
+    });
+    const ass = files.get('c2_text.ass') ?? '';
+    const events = ass.split('\n').filter((l) => l.startsWith('Dialogue:'));
+    // 256 px fits "one two three four five" (23 with spaces, 248.4 px) but not " six": two pages,
+    // the second from "six" at frame 75 (3 s).
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatch(
+      /^Dialogue: 1,0:00:00\.00,0:00:03\.00,Text,,0,0,0,,\{\\pos\(320,324\)\\q2\}/,
+    );
+    expect(events[0]).toContain('{\\b0\\1c&H00E0FF&}two');
+    expect(events[0]).toContain('{\\b1\\1c&HFFFFFF&}one');
+    expect(events[1]).toMatch(
+      /^Dialogue: 1,0:00:03\.00,0:00:04\.00,Text,.*\{\\b1\\1c&HFFFFFF&\}six$/,
+    );
+    expect(faces).toContainEqual({ font: 'Inter', bold: true, italic: false });
+    // Two lines a page: one page, the lines balanced (three words each), not five and one.
+    const two = runEdits(
+      titled,
+      'tl_z',
+      [{ tool: 'text.set', args: { clip_ids: ['c2'], style: { max_lines: 2 } } }],
+      () => media,
+      { tool: 'x', args: null },
+    ).doc;
+    files.clear();
+    compileMlt(two, {
+      width: 640,
+      height: 360,
+      sources: new Map(),
+      files,
+      measure: () => (text) => [...text].length * 0.5,
+    });
+    const balanced = (files.get('c2_text.ass') ?? '')
+      .split('\n')
+      .filter((l) => l.startsWith('Dialogue:'));
+    expect(balanced).toHaveLength(1);
+    expect(balanced[0]).toMatch(/three\\N\{[^}]*\}four/);
+    // A span past the last word is refused with the words it can use.
+    expect(() =>
+      runEdits(
+        titled,
+        'tl_z',
+        [
+          {
+            tool: 'text.set',
+            args: { clip_ids: ['c2'], spans: [{ first_word: 4, last_word: 6 }] },
+          },
+        ],
+        () => media,
+        { tool: 'x', args: null },
+      ),
+    ).toThrow(/has words 0 to 5/);
   });
 
   it('writes text as an ASS script over a transparent layer', () => {
@@ -482,6 +582,31 @@ describe('MLT compiler', () => {
     );
     expect(xml).toMatch(
       /<\/transition><filter><property name="mlt_service">volume<\/property><property name="level">3<\/property><\/filter><filter><property name="mlt_service">avfilter\.alimiter<\/property><property name="av\.limit">0\.8414<\/property><property name="av\.level">0<\/property>.*<\/tractor>/,
+    );
+  });
+
+  it('gives the compressor its attack and release, defaulting to FFmpeg’s own', () => {
+    const set = compile(
+      edit([
+        { tool: 'track.set', args: { track_id: 't2', muted: false } },
+        {
+          tool: 'filter.add',
+          args: {
+            clip_id: 'c5',
+            name: 'compressor',
+            params: { ratio: 6, attack_ms: 5, release_ms: 800 },
+          },
+        },
+      ]),
+    );
+    expect(set).toMatch(
+      /avfilter\.acompressor<\/property><property name="av\.threshold">0\.125893<\/property><property name="av\.ratio">6<\/property><property name="av\.makeup">1<\/property><property name="av\.attack">5<\/property><property name="av\.release">800<\/property>/,
+    );
+    const plain = compile(
+      edit([{ tool: 'filter.add', args: { clip_id: 'c5', name: 'compressor' } }]),
+    );
+    expect(plain).toMatch(
+      /<property name="av\.attack">20<\/property><property name="av\.release">250</,
     );
   });
 
@@ -621,5 +746,27 @@ describe('media helpers', () => {
         video: { ...v, vfr: true, rotation: 90, transfer: 'arib-std-b67', codec: 'theora' },
       }),
     ).toEqual(['vfr', 'rotation', 'hdr', 'codec']);
+  });
+});
+
+describe('font widths', () => {
+  it('reads character widths from an installed font', async () => {
+    let measure: Awaited<ReturnType<typeof loadFace>>;
+    try {
+      measure = await loadFace({ family: 'DejaVu Sans', bold: false, italic: false });
+    } catch {
+      // No fontconfig on this host.
+      if (process.env.CUTTINGFLOOR_REQUIRE_ENGINES) throw new Error('fc-match is missing');
+      return;
+    }
+    expect(measure('')).toBe(0);
+    const i = measure('i');
+    const m = measure('M');
+    expect(i).toBeGreaterThan(0.1);
+    expect(m).toBeGreaterThan(i * 2);
+    expect(m).toBeLessThan(1.2);
+    expect(measure('iM iM')).toBeCloseTo(2 * (i + m) + measure(' '), 6);
+    const bold = await loadFace({ family: 'DejaVu Sans', bold: true, italic: false });
+    expect(bold('Mmm')).toBeGreaterThan(measure('Mmm'));
   });
 });

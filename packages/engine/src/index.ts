@@ -13,6 +13,7 @@ export { alignGroups, forcedAlign, logSoftmax, W2V_LABELS, wordTokens } from './
 export {
   CUTOUT_MODELS,
   type CutoutModel,
+  type CutoutRegion,
   type CutoutSource,
   cutout,
   matteSize,
@@ -30,6 +31,8 @@ export {
   watchRenderQueue,
 } from './exec.ts';
 export { directDownloadUrl, download, isBlockedAddress } from './fetch.ts';
+export { fontMeasure, loadFace, type Measure } from './fontmetrics.ts';
+export { type ClipPlacement, clipPlacements, type PixelBox } from './geometry.ts';
 export {
   fingerprint,
   hasAlpha,
@@ -37,15 +40,30 @@ export {
   type MediaConfig,
   MediaLibrary,
   type MediaRecord,
+  makingJob,
   mayBeTransparent,
   mediaInfo,
   mediaOrigin,
   mediaRef,
+  notReady,
   type Progress,
   renderPicture,
   renderSource,
 } from './media.ts';
 export { compileMlt, lengthFrames, type MltSource, scaledSize } from './mlt.ts';
+export {
+  type Box,
+  type ChannelStats,
+  type ColourStats,
+  colourStats,
+  mediaRgbFrames,
+  type PictureSeries,
+  parseSignalstats,
+  pictureSeries,
+  pngsToRgb,
+  type RgbFrame,
+  renderPictureFile,
+} from './picture.ts';
 export {
   fitBox,
   type Overrides,
@@ -56,6 +74,15 @@ export {
   resolvePreset,
 } from './presets.ts';
 export { conformReasons, type Probe, probe, standardRate } from './probe.ts';
+export {
+  measureVoice,
+  VOICE_FRAME_SECONDS,
+  VOICE_METHOD,
+  type VoiceFrame,
+  type VoiceSeries,
+  type VoiceSummary,
+  voiceSeries,
+} from './prosody.ts';
 export {
   type CutFact,
   type CutWord,
@@ -73,6 +100,16 @@ export {
   renderTimelineFrames,
 } from './render.ts';
 export {
+  isMade,
+  type MatteSource,
+  passFrames,
+  type SelectionPass,
+  type SelectionSource,
+  selectedFile,
+  selectedPicture,
+  selectionPass,
+} from './selection.ts';
+export {
   detectSounds,
   type FrameScores,
   listenFor,
@@ -88,12 +125,25 @@ export {
   splitStems,
 } from './sounds.ts';
 export {
+  betweenFile,
+  betweenFrames,
+  betweenPicture,
+  betweenStart,
   clipPasses,
   DENOISE_MODELS,
   passedAudio,
   type SourcePass,
   sourceKey,
 } from './sourcepass.ts';
+export {
+  diarize,
+  numberSpeakers,
+  parseTurns,
+  SPEAKER_MODELS,
+  type Speakers,
+  type SpeakerTurn,
+  wordSpeakers,
+} from './speakers.ts';
 export {
   ALIGN_LANGUAGES,
   type AlignedWord,
@@ -118,6 +168,13 @@ export {
   WHISPER_MODELS,
   type WhisperModel,
 } from './transcribe.ts';
+export {
+  UPSCALE_MODEL,
+  UPSCALE_MODELS,
+  type UpscaleDenoise,
+  type UpscaleOptions,
+  upscale,
+} from './upscale.ts';
 export { detectFaces, type Faces, type TrackPoint, trackRegion } from './vision.ts';
 export {
   alignWords,

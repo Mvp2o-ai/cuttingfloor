@@ -1,5 +1,8 @@
+import type { Metadata } from 'next';
 import { DEMOS } from '../content/demos.ts';
+import { LICENCE } from '../content/facts.ts';
 import { HOME_SESSION } from '../content/home-session.ts';
+import { AGENT_PAINS, EDITING_PAINS, type Pain } from '../content/pains.ts';
 import { Capabilities } from './capabilities.tsx';
 import { Connect } from './connect.tsx';
 import { AgentDemo } from './demos/demo.tsx';
@@ -9,11 +12,53 @@ import { ALTERNATIVES, FAQS, structuredData } from './seo.ts';
 import { Session } from './session/session.tsx';
 import { Check, Footer, JsonLd, Nav, SIGN_UP } from './shell.tsx';
 
+// The home page's Markdown version is /index.md; layout.tsx has the rest of its metadata.
+export const metadata: Metadata = {
+  alternates: { canonical: '/', types: { 'text/markdown': '/index.md' } },
+};
+
 // Linking here plays the session from the top.
 const SESSION_ID = 'session';
 
 // The agents it already works in. Kazi is ours, so it leads, in the accent.
-const CLIENTS = ['Kazi', 'Claude', 'Claude Code', 'Cursor', 'ChatGPT', 'Codex'] as const;
+const CLIENTS = [
+  'Kazi',
+  'Claude',
+  'Claude Cowork',
+  'Claude Code',
+  'ChatGPT',
+  'ChatGPT Work',
+  'Codex',
+  'Cursor',
+] as const;
+
+function PainTable({ caption, rows }: { caption: string; rows: Pain[] }) {
+  return (
+    <table className="compare-table">
+      <caption className="label">{caption}</caption>
+      <thead>
+        <tr>
+          <th scope="col">The problem</th>
+          <th scope="col">What your agent does with cuttingfloor</th>
+          <th scope="col">Tools</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.pain}>
+            <th scope="row" className="tier">
+              {r.pain}
+            </th>
+            <td>{r.answer}</td>
+            <td className="note">
+              {r.tools.length ? r.tools.map((t) => <code key={t}>{t} </code>) : '—'}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
 
 export default function Home() {
   return (
@@ -66,7 +111,7 @@ export default function Home() {
               <p>Any remote MCP client</p>
               <p>
                 Bring the agent you already use. Sign in, then add one server address; the setup for
-                each is <a href="#start">below</a>.
+                each is on <a href="/connect">Connect</a>.
               </p>
             </div>
           </div>
@@ -80,9 +125,52 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="cell" id="ai-native" aria-label="Tools for your agent">
+          <div className="head">
+            <span className="label">02 / AI native</span>
+            <div>
+              <h2 className="display">Not an editor with an agent inside.</h2>
+              <p className="compare-lede">
+                Other AI editors put their own assistant in their app and hand it your prompt.
+                cuttingfloor turns that around: it is the editing tools, served over MCP, for the
+                agent you already chose. Your agent brings the judgment of a professional editor and
+                cinematographer; cuttingfloor gives it real cuts, real sound and real pictures to
+                check. You keep your agent, your history and your habits.{' '}
+                <a href="/compare">Compare the two kinds</a>.
+              </p>
+            </div>
+          </div>
+          <ul className="ledger">
+            <li>
+              <span className="n">01</span>
+              <h3>Real editing verbs.</h3>
+              <p>
+                Cut, trim, split, speed, caption, mix, grade, animate: each a tool your agent calls,
+                not a prompt sent to someone else’s AI.
+              </p>
+            </li>
+            <li>
+              <span className="n">02</span>
+              <h3>It checks its own work.</h3>
+              <p>
+                A preview comes back with every edit, plus exact checks for gaps, black frames,
+                clipping and sync, so your agent sees what it made before you do.
+              </p>
+            </li>
+            <li>
+              <span className="n">03</span>
+              <h3>The edit stays yours.</h3>
+              <p>
+                Every edit is a timeline you can step back to, or open in your own editor as FCPXML,
+                OTIO or EDL. Open source ({LICENCE}): run it yourself, or let us host it.
+              </p>
+            </li>
+          </ul>
+        </section>
+
         <section className="cell" id={SESSION_ID} aria-label="A session">
           <div className="head">
-            <span className="label">02 / A session</span>
+            <span className="label">03 / A session</span>
             <h2 className="lede">
               AI video editing, one tool call at a time. <em>Here is one.</em>
             </h2>
@@ -97,7 +185,7 @@ export default function Home() {
         {DEMOS[0] && (
           <section className="cell" aria-label="Your agent, editing">
             <div className="head">
-              <span className="label">03 / In your agent</span>
+              <span className="label">04 / In your agent</span>
               <h2 className="lede">
                 Plug cuttingfloor into the agent you already use. <em>We make it finish.</em>
               </h2>
@@ -110,9 +198,30 @@ export default function Home() {
           </section>
         )}
 
+        <section className="cell" id="problems" aria-label="Problems it solves">
+          <div className="head">
+            <span className="label">05 / Solved</span>
+            <div>
+              <h2 className="display">The jobs that eat your week.</h2>
+              <p className="compare-lede">
+                The editing creators hate most, and the places AI editors still fall down, each with
+                what your agent does about it here.
+              </p>
+            </div>
+          </div>
+          <PainTable caption="The ten slowest editing jobs" rows={EDITING_PAINS} />
+          <PainTable
+            caption="Where AI editing goes wrong, and what is different"
+            rows={AGENT_PAINS}
+          />
+          <p className="wt-links">
+            <a href="/features">Everything it can do</a> · <a href="/skills">Skills</a>
+          </p>
+        </section>
+
         <section className="cell" aria-label="Things to ask for">
           <div className="head">
-            <span className="label">04 / Ask for</span>
+            <span className="label">06 / Ask for</span>
             <div>
               <h2 className="display">Say it like you’d say it to an editor.</h2>
               <p className="compare-lede">
@@ -126,7 +235,7 @@ export default function Home() {
 
         <section className="cell paper marks" id="how">
           <span className="mark-b" />
-          <span className="label">05 / What it does</span>
+          <span className="label">07 / What it does</span>
           <h2 className="display big-stat">
             71 tools.
             <br />
@@ -141,7 +250,7 @@ export default function Home() {
 
         <section className="cell" id="start">
           <div className="head">
-            <span className="label">06 / Start</span>
+            <span className="label">08 / Start</span>
             <h2 className="display">Three steps.</h2>
           </div>
           <ol className="ledger">
@@ -149,9 +258,9 @@ export default function Home() {
               <span className="n">01</span>
               <h3>Connect your agent.</h3>
               <p>
-                Add <code>https://api.cuttingfloor.ai/mcp</code> as an MCP server in Claude, Cursor,
-                ChatGPT or Kazi. Your client opens a sign-in page; Google, GitHub, Microsoft, Apple
-                or email.
+                Add <code>https://api.cuttingfloor.ai/mcp</code> as an MCP server in Kazi, Claude,
+                ChatGPT, Codex or Cursor. Your client opens a sign-in page the first time. Or{' '}
+                <a href="/self-host">run it yourself</a>.
               </p>
             </li>
             <li>
@@ -187,7 +296,7 @@ export default function Home() {
               </figcaption>
             </div>
             <div>
-              <span className="label">07 / Made here</span>
+              <span className="label">09 / Made here</span>
               <h2
                 className="display"
                 style={{ fontSize: 'clamp(40px, 5.4vw, 80px)', margin: '16px 0 20px' }}
@@ -204,7 +313,7 @@ export default function Home() {
 
         <section className="cell" id="pricing">
           <div className="head">
-            <span className="label">08 / Pricing</span>
+            <span className="label">10 / Pricing</span>
             <div>
               <h2 className="display">Pay for the minutes you use, not the seat.</h2>
               <p className="compare-lede">
@@ -224,6 +333,15 @@ export default function Home() {
               </tr>
             </thead>
             <tbody>
+              <tr>
+                <td className="tier">Self-hosted</td>
+                <td className="amount">
+                  <a href="/self-host">Free</a>
+                </td>
+                <td>No minute limits</td>
+                <td className="over">Your machine, the same image</td>
+                <td className="note">Open source ({LICENCE}). Bring your own keys where needed.</td>
+              </tr>
               {PLANS.map((p) => (
                 <tr key={p.name} className={p.pick ? 'pick' : ''}>
                   <td className="tier">{p.name}</td>
@@ -253,13 +371,14 @@ export default function Home() {
 
         <section className="cell" id="compare">
           <div className="head">
-            <span className="label">09 / Compared</span>
+            <span className="label">11 / Compared</span>
             <div>
               <h2 className="display">Edits, not templates.</h2>
               <p className="compare-lede">
                 Looking for a Remotion, Shotstack, Creatomate or JSON2Video alternative? Those
                 render a video you have already described in code or JSON. cuttingfloor is a video
-                editing API your agent drives call by call, looking at each result.
+                editing API your agent drives call by call, looking at each result.{' '}
+                <a href="/compare">Full comparison</a>.
               </p>
             </div>
           </div>
@@ -285,7 +404,7 @@ export default function Home() {
 
         <section className="cell">
           <div className="head">
-            <span className="label">10 / Questions</span>
+            <span className="label">12 / Questions</span>
             <h2 className="display">Asked.</h2>
           </div>
           <div className="faq">

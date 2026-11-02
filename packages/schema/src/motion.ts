@@ -14,6 +14,8 @@ export const MOTION_LIMITS = {
   maxHtmlBytes: 1024 * 1024,
   maxAssets: 32,
   maxAssetBytes: 32 * 1024 * 1024,
+  /** Distinct page problems a render lists in its warnings; the rest are counted. */
+  maxWarnings: 20,
 } as const;
 
 export const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -44,5 +46,5 @@ export type MotionRequest = z.infer<typeof MotionRequest>;
 /** One NDJSON line of the worker's answer to POST /render. */
 export type MotionEvent =
   | { progress: number; message: string }
-  | { done: { id: string; type: string; bytes: number } }
+  | { done: { id: string; type: string; bytes: number; warnings?: string[] } }
   | { error: ToolError };

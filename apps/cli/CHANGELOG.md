@@ -1,5 +1,84 @@
 # cuttingfloor
 
+## 0.29.3
+
+### Patch Changes
+
+- a20c0b8: Fixes for fills and in-between frames:
+
+  - A cancelled or failed fill or in-between job no longer stays attached to its clip: the next render starts a new one.
+  - An export waiting for a fill or in-between job now gives up its job slot until that work is done, so it no longer holds up other jobs.
+  - job.get wait_seconds now answers when a job finishes, fails or is cancelled (or when the wait runs out), not at each step of progress.
+  - render.frames no longer shows an earlier frame in place of the last frames of a clip whose in-between copy ends with the media.
+  - A fill on a clip cut from the middle of a file whose frame rate is odd or varies now covers the clip's first frames.
+  - media.analyze on a stretch of a timeline only waits for copies of the clips in that stretch, as render.frames does.
+  - A fill's level follows the picture around it in each frame, which makes it blend in better during a flash.
+
+## 0.29.2
+
+### Patch Changes
+
+- 95e428f: In-between frames (clip.set_speed interpolate) are now a job of their own, like fills. They show in job.list with progress per frame, an export waits for them without being stopped as stalled, and render.frames answers media_not_ready naming the job instead of timing out. A render only waits on copies for clips at the frames it shows. A fill or an in-between copy is now made once per clip, whatever size it is shown at. A not-ready answer gives the job's place in the queue or its measured time left, not a guess. A fill also reuses the real picture from earlier frames where the area showed, and the description says what follows: something that never moves against its background leaves a smudge. A slowed clip no longer shows its first frame twice. A stalled export now says that copies it had finished are kept for the next try.
+
+## 0.29.1
+
+### Patch Changes
+
+- b5e4f3f: Fill fixes. A fill is now a job of its own, shown in job.list with its progress per frame; an export waits for it without being ended as stalled, and a render that needs it names the job. render.frames no longer waits on fills of clips that are not at its frames. A filled item no longer shows through as a ghost: a fill paints over the whole selection, its soft edge included, and grows a little past it. A mask takes several shapes (add), so two regions are shown, hidden or filled in one pass. Refusals of a fill on a nested clip say why.
+
+## 0.29.0
+
+### Minor Changes
+
+- ded0ed9: Captions and titles: style `max_lines` shows long text a screenful at a time, each from its first word, with its lines broken by the font's own widths and balanced; `spans` style part of a text (a word in another colour, bold, italic, underlined or sized) on `title.add`, `caption.add` segments and `text.set`. `clip.set_animation` loops take `from_frame` and `to_frame`, so a shake can run for part of a clip. The `compressor` effect takes `attack_ms` and `release_ms` (FFmpeg's 20 ms and 250 ms by default, as before). `media.import {source: {still: {media_id | timeline_id, frame}}}` makes one frame of a video or an edit into a full-size PNG still. `job.get {job_ids}` sums each result up (`result_summary`) unless asked for `result: "full"`; one `job_id` still answers whole. Video `denoise` now visibly takes grain out, frame by frame (FFmpeg fftdnoiz, so a preview matches the export): `strength` is the noise level in 8-bit levels, 0 to 50, default 4 (it was hqdn3d, 0 to 10, default 3, which barely changed a frame). Transcript words say that a "-" word is whisper marking a new speaker.
+
+### Patch Changes
+
+- 5875c5f: clip.set_speed interpolate (blend or motion) now plays the right moment through the whole clip: the slowed copy used to stop a fraction of the way through its source, so later frames showed the wrong footage, white or black. Copies made before are made again.
+
+## 0.28.0
+
+### Minor Changes
+
+- 1316e4e: Jobs no longer hold the server when they stall, and agents can wait for them and find them. A running job whose progress stops for its stall limit (`CUTTINGFLOOR_STALL_SECONDS`, default 300, longer for long media) ends with a `stalled` error and frees its slot; `job.cancel` stops a job within seconds, killing its engine's whole process group. Work queues by the resource it holds: `create.stabilized` no longer waits in the heavy-model slot, and lip sync, seek and look wait in a lane of their own. One extra slot (`CUTTINGFLOOR_SHORT_JOBS`) is kept for short jobs (up to `CUTTINGFLOOR_SHORT_JOB_SECONDS` of media), so an 8 s transcript doesn't wait behind long ones. `job.get` takes `wait_seconds` (up to 50) and answers as soon as a job moves, gives `seconds_left` and `starts_in_seconds` when progress allows, and `result: summary` cuts long lists. Every job names what it is `for` (media, timeline, kind, preset). `job.list` filters by `tool` and `media_id`, and now leaves results out by default (`result: summary` or `full` to include them). `media.get` names the job importing or making the media, and `media_not_ready` hints say to wait for it with `wait_seconds`. Transcripts report progress as whisper runs.
+- 8a4a3f5: New measured facts, no verdicts. media.analyze speakers says who speaks when (sherpa-onnx: pyannote segmentation 3.0 and 3D-Speaker ERes2Net, on the CPU), and each transcript word then carries its speaker. voice gives pitch, level and pace over a stretch, with a summary to hand judge.ask. colour gives per-channel means and percentiles, luma, a white point estimate and clipping for whole frames and named regions; picture gives every frame's signalstats, ydif (change from the frame before) included. beats now carry each beat's onset strength, and transcript takes from_seconds and until_seconds. The picture kinds (faces, track, look, scenes, colour, picture) take a timeline_id and read the edit as it renders; judge.ask takes {timeline_id, at_seconds} pictures. Boxes you give can be in pixels (units: "pixels"). clip.set_transform, set_mask and set_animation (and edit.batch) return placements: where each clip now shows in sequence pixels and which source pixels show there. media.get gives the import fingerprint; export.video gives the render's SHA-256 and the same fingerprint.
+- ae538ed: Picture over time and sound: clip.set_speed interpolate (blend or motion in-between frames) and a warning when a clip repeats frames; create.upscaled (Real-ESRGAN super-resolution); lens_correction, directional_blur, channels and dereverb effects; each channel's levels in the loudness facts.
+- ca6987b: clip.replace now swaps the clip's linked clips too (its sound, or its picture) onto the new media, keeping their offset, so a replaced shot's sound no longer stays on the old file. Default change: pass `linked: false` to swap only the clip named. When the new media lacks that kind (no sound), the linked clip stays and a warning says so; `clip_ids` lists every clip swapped.
+- 306cebd: Select, then act on the selection. create.cutout takes a region (a box and/or points at a moment) and follows that one item's exact outline through the video (EdgeTAM). clip.set_mask takes a matte (any media's alpha, such as that cut-out) as its selection, polygon points that take keyframes, and a mode: show, hide, or fill, which paints the selection over from its surroundings in every frame (LaMa).
+- dc58b65: media.get gives `sound_seconds` (how long the sound runs), so a sound track that stops before the picture (under `duration_seconds`) shows as a fact. media.analyze silence counts the soundless end as silence and says where the sound stops (`sound_ends`); before, it reported no silence at all where the track simply ended.
+
+### Patch Changes
+
+- 9357cb4: clip.add of sound alone (music, a voiceover, audio-only media) now previews as the waveform of the added span with its measured loudness, as audio edits do, instead of a black frame.
+- b1baf1d: Tool descriptions say what the tools actually do: mask coordinates are fractions of the clip's fitted frame (a sequence-shaped box with the picture fitted inside), not of the picture itself; face boxes are top-left corner plus size; a keyframe's ease shapes the move from it to the next; chroma_key tolerance compares colour alone; fit cover crops equally on both sides around x, y; effects run in order; denoise is a picture effect; only some effect numbers take keyframes; clip.add {words} adds no padding; only inline previews carry loudness; captions wrap at max_width and each highlight mode is described; scenes threshold and transcript model cost have guidance; qa.check no longer promises an instant answer under load; nesting a timeline makes overlays follow a zoom. The server instructions now say edits take media while it is processing but media.analyze, media.seek, judge.ask and create.\* need it ready, and those refusals say the media's status instead of "still importing". media.get warns when it is asked to include an analysis that was never run.
+- c94a7bc: render.frames of a media that is still importing says so and names its import job, instead of "has no picture".
+- 75246e5: media.listen says what it can't hear: its model learned everyday sound events, so inside music it hears "music", not drums, instruments or single hits (on a drum bed "music" scores 1 and every drum query 0). The description and the result's new `note` say so and point to media.analyze beats and create.stems; the description also says a short sound can score higher listened to over a short range around it.
+- 576683a: Frame renders no longer fail on a busy server with "melt rendered 0 of 1 frames" (or hang until the render times out). The cause was a race in MLT 7.30's avformat consumer, which started its encoder thread before marking itself running; the image now carries MLT's avformat module rebuilt from the same release with that fixed.
+- b5970c5: A nested timeline now renders inside another exactly as it does alone. Its picture and its linked sound were played from one shared renderer, which dropped inner scale and crop and lost overlay tracks; each use now has its own.
+- 340924a: media_not_ready errors name the job making the media (the media.import job, or the create.\* job that makes it) with its job_id, in the message, the hint and the detail, so the caller waits on the right job with job.get. Before, media made by create.motion was said to wait for "its media.import job".
+- ecdd7e6: transition.add in overlap mode no longer names the clip's own linked sound as playing late: it stays in sync. The warning says instead that it keeps its length and runs past the shortened picture, so it can be trimmed to match.
+- efb5a39: Inline previews and render.frames try melt once more when it ends without all its frames (it did on a loaded server, where render.frames of the same timeline then worked), and when frames still don't come the error says what melt logged.
+- a0f454a: Refusals name what is valid instead of pointing at a catalogue many clients can't read: an unknown effect lists every video and audio effect, a wrong or out-of-range effect param lists that effect's params with ranges, units, defaults and which take keyframes, an unknown ease lists every ease, a preset override it doesn't take lists what each preset takes, and an unknown sound name lists every name. filter.add's name and keyframe eases are enums in the input schema. timeline.get shows every effect param as applied, defaults included.
+- e5dbcdb: Results say when a default did something easy to miss. range.lift and range.extract name the track each removed clip was on and warn when the sound under a picture range went too; timeline.set_sequence warns how many clips no longer fill the frame; export.timeline with media reference warns that the file points at media this server keeps (unreachable from another machine, gone 7 days after last use) and suggests media: collect; create.motion over its pixel budget is refused with the largest size that fits at that length and rate, and the longest length at that size; media.seek says sampling can't prove a one-frame defect absent; media.correlate adds `placement`, the offset as where to put b's clip in plain words.
+- 9e6d8da: media.analyze scenes says what its threshold measures: hard cuts between ordinary shots score about 10 to 30 (threshold 30 found none of the cuts in a 50 s piece whose cuts scored 14 to 25), and the result's new `scene_scores` give each cut's score.
+- 3300eb1: Media whose frame rates drift apart by a fraction of a percent (screen and game recorders), whose frame count doesn't fit its length, or whose rate isn't a standard one is now conformed to a constant rate on import (conform `vfr`), so its fps and frame numbers are true. Before, a 20.36 fps recording was called 20 fps without being retimed.
+- 4819a29: .woff and .woff2 fonts import: they are unpacked on import to the .ttf or .otf they hold and used as that (kind font, with its family), so font_media_id sets text in them. Before, they failed as "not a readable media file".
+
+## 0.27.6
+
+### Patch Changes
+
+- f2db653: create.motion and create.still no longer refuse a page because a URL or `fetch(` appears in its script text (a bundled library's warning strings, code that never runs). The early check now refuses only what the browser would load from the network: element attributes such as src, href, srcset and poster, CSS url() and @import, and a meta refresh, with the URL and where it is in the error. Scripts that reach for the network at run time are still blocked by the sandbox, WebSockets to loopback included.
+- 9c13a4b: create.motion and create.still say what went wrong in a page: the result's `warnings` (kept with the media, so media.get and a repeated recipe show them too) list uncaught errors and syntax errors with where they happened, console errors, files that were blocked or not found, fonts that failed to load, and tags never closed or CSS showing as text. Each problem is listed once with how often it happened, up to 20. The page still renders.
+- 3bf9c93: create.motion and create.still seed `crypto.getRandomValues` (and `crypto.randomUUID` where the page has it) from the same seed as `Math.random`, so a page that draws its randomness from crypto renders the same every time.
+
+## 0.27.5
+
+### Patch Changes
+
+- b789535: The site speaks to agents: every page has a Markdown version at its address plus `.md` (and for `Accept: text/markdown`), llms.txt is rewritten for agents with llms-full.txt beside it, `/.well-known/ai-catalog.json` points to the MCP server card, and robots.txt names the AI crawlers it welcomes.
+- 253c15b: Tool hints are now pinned by a test, so agents in Claude Cowork and ChatGPT keep running the read-only tools (looking at a timeline, frames, media, jobs, skills) without asking for approval. Cancelling a job, and exporting where an export may replace a file in your exports folder, are now marked as destructive, so clients can ask before them.
+
 ## 0.27.4
 
 ### Patch Changes

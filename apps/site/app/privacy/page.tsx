@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: 'Privacy — cuttingfloor',
   description:
     'What cuttingfloor keeps about you and your footage, how long, and who helps us run it. Footage is deleted after 7 days and never used to train models.',
-  alternates: { canonical: '/privacy' },
+  alternates: { canonical: '/privacy', types: { 'text/markdown': '/privacy.md' } },
 };
 
 const mail = <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>;

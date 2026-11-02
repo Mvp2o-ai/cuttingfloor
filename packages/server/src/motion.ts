@@ -1,6 +1,7 @@
 import { createWriteStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { jobAlive } from '@cuttingfloor/jobs';
 import { CfError, type MotionEvent, type MotionRequest, serverBusy } from '@cuttingfloor/schema';
 
 // The main server's side of the motion sandbox: send a render to the worker, follow its progress,
@@ -12,7 +13,7 @@ export async function renderInSandbox(
   dest: string,
   progress: (fraction: number, message: string) => void,
   signal: AbortSignal,
-): Promise<{ type: string }> {
+): Promise<{ type: string; warnings: string[] }> {
   if (!base) {
     throw new CfError('engine_error', 'No motion sandbox is configured on this server', {
       hint: 'Run the motion service (docker compose up, which starts it) and set CUTTINGFLOOR_MOTION_URL; create.matte needs no sandbox',
@@ -47,6 +48,8 @@ export async function renderInSandbox(
   const decoder = new TextDecoder();
   try {
     for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+      // The sandbox writes a line at least every few seconds, queued or rendering: it is alive.
+      jobAlive();
       pending += decoder.decode(chunk, { stream: true });
       const lines = pending.split('\n');
       pending = lines.pop() ?? '';
@@ -79,7 +82,7 @@ export async function renderInSandbox(
       `Could not fetch the render from the motion sandbox (${(error as Error).message}); it may have restarted`,
     );
   }
-  return { type: done.type };
+  return { type: done.type, warnings: done.warnings ?? [] };
 }
 
 function sandboxError(e: {

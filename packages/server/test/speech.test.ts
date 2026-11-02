@@ -106,7 +106,8 @@ describe.skipIf(!ready)('speech and sound facts', () => {
     );
     client = await connect(env.runtime);
     const m = env.mediaDir;
-    // Three phrases with known pauses, over faint room noise, as a video with sound.
+    // Three phrases with known pauses, over faint room noise, as a video with sound. The noise is
+    // seeded: unseeded, every run had different sound, and whisper heard different words in it.
     const lines = ['Hello there.', 'Cutting floor makes edits.', 'Seriously quick.'];
     for (const [i, text] of lines.entries()) {
       await exec('espeak-ng', ['-s', '150', '-w', join(m, `line${i}.wav`), text]);
@@ -116,7 +117,7 @@ describe.skipIf(!ready)('speech and sound facts', () => {
       '-f',
       'lavfi',
       '-i',
-      'anoisesrc=color=pink:amplitude=0.002:sample_rate=22050:duration=30',
+      'anoisesrc=color=pink:amplitude=0.002:sample_rate=22050:duration=30:seed=1',
       '-filter_complex',
       '[0:a]adelay=500[a0];[1:a]adelay=1200[a1];[2:a]adelay=900[a2];[a0][a1][a2]concat=n=3:v=0:a=1[s];[s][3:a]amix=inputs=2:duration=first:normalize=0[out]',
       '-map',
@@ -236,7 +237,7 @@ describe.skipIf(!ready)('speech and sound facts', () => {
     };
     expect(t.aligned_by).toBe('wav2vec2-base-960h');
     // Whisper's tiny model can mishear espeak's voice ("Hello there" as "For load, add") and
-    // hears it differently from run to run. A misheard word can't be aligned to sound it
+    // hears it differently from one CPU to another. A misheard word can't be aligned to sound it
     // doesn't match, so each phrase's edges are checked where whisper heard that edge's word.
     const script = [
       ['hello', 'there'],
@@ -244,6 +245,10 @@ describe.skipIf(!ready)('speech and sound facts', () => {
       ['seriously', 'quick'],
     ];
     const plain = (text: string) => text.toLowerCase().replace(/[^a-z]/g, '');
+    // Whisper sometimes joins words into one token with hyphens ("cutting-thlaw"): the token
+    // starts where its first part does and ends where its last part does.
+    const head = (text: string) => plain(text.split('-')[0] ?? '');
+    const tail = (text: string) => plain(text.split('-').at(-1) ?? '');
     let checked = 0;
     truth.forEach((span, i) => {
       const inside = t.words.filter((w) => {
@@ -253,11 +258,11 @@ describe.skipIf(!ready)('speech and sound facts', () => {
       const why = JSON.stringify({ phrase: i, span, words: t.words });
       expect(inside.length, why).toBeGreaterThan(0);
       const [first, last] = [inside[0], inside.at(-1)];
-      if (first && plain(first.text) === script[i]?.[0]) {
+      if (first && head(first.text) === script[i]?.[0]) {
         expect(Math.abs(first.start - span.start), why).toBeLessThan(0.1);
         checked += 1;
       }
-      if (last && plain(last.text) === script[i]?.[1]) {
+      if (last && tail(last.text) === script[i]?.[1]) {
         expect(Math.abs(last.end - span.end), why).toBeLessThan(0.15);
         checked += 1;
       }
@@ -302,6 +307,10 @@ describe.skipIf(!ready)('speech and sound facts', () => {
     expect(res.isError).toBe(false);
     expect(res.structured.offset_seconds as number).toBeCloseTo(-0.37, 2);
     expect(res.structured.strength as number).toBeGreaterThan(0.5);
+    // The same offset as where to put b, so its sign can't be read backwards.
+    expect(String(res.structured.placement)).toMatch(
+      new RegExp(`^Place b's clip \\(${shifted}\\) 0\\.3\\d* s earlier than a's \\(${speech}\\)`),
+    );
     // A stretch of b against all of a, on b's own clock.
     const part = await job('media.correlate', {
       a: { media_id: speech },
@@ -400,8 +409,9 @@ describe.skipIf(!ready)('speech and sound facts', () => {
     });
     expect(past.structured.code).toBe('no_audio');
     expect(String(past.structured.message)).toContain(`timeline ${tl}`);
-    const picture = await call(client, 'media.analyze', { timeline_id: tl, kind: 'faces' });
-    expect(picture.structured.code).toBe('bad_request');
+    // Words read imported media only; an edit's picture and mix take the other kinds.
+    const words = await call(client, 'media.analyze', { timeline_id: tl, kind: 'transcript' });
+    expect(words.structured.code).toBe('bad_request');
 
     const qa = await job('qa.check', { timeline_id: tl, speech: { min_probability: 0.5 } });
     expect(qa.isError).toBe(false);

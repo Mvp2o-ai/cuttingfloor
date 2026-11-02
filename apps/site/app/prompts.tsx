@@ -40,6 +40,9 @@ const GROUPS = [
   },
 ] as const;
 
+// The homepage groups these. /index.md lists the same sentences flat.
+export const PROMPTS = GROUPS.flatMap((group) => group.items);
+
 export function Prompts() {
   return (
     <ul className="prompts">

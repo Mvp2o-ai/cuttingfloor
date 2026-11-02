@@ -1,7 +1,9 @@
 import {
+  frameSource,
   type MaskState,
   maskAnimates,
   maskAt,
+  pointsAt,
   type TransformState,
   transformAnimates,
   transformAt,
@@ -55,7 +57,12 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 const r4 = (n: number) => Math.round(n * 10_000) / 10_000;
 
 /** qtblend rect "x y w h opacity" for one frame's transform: exactly the picture's box. */
-function rectFor(clip: StoredClip, s: TransformState, src: SourceSize, out: Frame): number[] {
+export function rectFor(
+  clip: StoredClip,
+  s: TransformState,
+  src: SourceSize,
+  out: Frame,
+): number[] {
   const W = out.width;
   const H = out.height;
   // Size of the picture fitted with `contain`, then the fit mode, then scale.
@@ -320,6 +327,7 @@ function outline(mask: StoredMask, m: MaskState, sw: number, sh: number): BPoint
         corner([-far, h / 2]),
       ];
     case 'polygon':
+    case 'matte':
       return [];
   }
 }
@@ -329,10 +337,11 @@ function placer(src: SourceSize) {
   return (p: Pt): Pt => [r4(p[0] / src.width), r4(p[1] / src.height)];
 }
 
-function maskSpline(mask: StoredMask, m: MaskState, src: SourceSize): BPoint[] {
+/** A mask's outline at source tick `t`, in 0–1 units of the picture. */
+export function maskSpline(mask: StoredMask, m: MaskState, src: SourceSize, t: number): BPoint[] {
   const place = placer(src);
   if (mask.shape === 'polygon') {
-    return (mask.points ?? []).map(([x, y]) => corner(place([x * src.width, y * src.height])));
+    return pointsAt(mask.points, t).map(([x, y]) => corner(place([x * src.width, y * src.height])));
   }
   const cx = m.x * src.width;
   const cy = m.y * src.height;
@@ -379,7 +388,9 @@ export function rotoFilters(
     filters.push({ spline: JSON.stringify(pts), invert: false, feather: 0, operation: op() });
   }
   const mask = clip.mask;
-  if (mask) {
+  // A matte, a selection of several shapes, and any that is filled, is applied to the source before the render
+  // (sourcepass.ts); the clip then plays that copy whole.
+  if (mask && mask.shape !== 'matte' && mask.mode !== 'fill' && !mask.add) {
     // Feather is a fraction of the picture's short side as it appears in the frame.
     const short =
       Math.min(out.width / src.width, out.height / src.height) * Math.min(src.width, src.height);
@@ -387,14 +398,19 @@ export function rotoFilters(
     if (maskAnimates(clip)) {
       const keys: Record<string, BPoint[]> = {};
       for (let i = -span.head; i < n + span.tail; i++)
-        keys[String(keyBase + i)] = maskSpline(mask, maskAt(clip, tpf, i), src);
+        keys[String(keyBase + i)] = maskSpline(
+          mask,
+          maskAt(clip, tpf, i),
+          src,
+          frameSource(clip, tpf, i),
+        );
       spline = JSON.stringify(keys);
     } else {
-      spline = JSON.stringify(maskSpline(mask, maskAt(clip, tpf, 0), src));
+      spline = JSON.stringify(maskSpline(mask, maskAt(clip, tpf, 0), src, clip.in));
     }
     filters.push({
       spline,
-      invert: Boolean(mask.invert),
+      invert: Boolean(mask.invert) !== (mask.mode === 'hide'),
       feather: Math.round((mask.feather ?? 0) * short),
       operation: op(),
     });

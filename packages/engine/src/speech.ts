@@ -288,6 +288,15 @@ export interface LoudnessFacts {
   rms_dbfs: number | null;
   /** Quietest short window's level, dBFS (astats noise floor): the room or hiss under speech. */
   noise_floor_dbfs: number | null;
+  /** Each channel's own levels, in stream order (1 is left in stereo). */
+  channels: ChannelLevels[];
+}
+
+export interface ChannelLevels {
+  channel: number;
+  rms_dbfs: number | null;
+  peak_dbfs: number | null;
+  noise_floor_dbfs: number | null;
 }
 
 const num = (s: string | undefined) => {
@@ -312,7 +321,7 @@ export async function measureLoudness(
         `file:${file}`,
         '-vn',
         '-af',
-        'ebur128=peak=true:framelog=quiet,astats=measure_perchannel=none:measure_overall=RMS_level+Noise_floor+Number_of_samples',
+        `ebur128=peak=true:framelog=quiet,astats=${LOUDNESS_STATS}`,
         '-f',
         'null',
         '-',
@@ -331,7 +340,31 @@ export async function measureLoudness(
   return parseLoudness(stderr);
 }
 
-/** Reads ebur128's summary and astats' overall lines. */
+/** astats measures: each channel's levels, then the whole. */
+export const LOUDNESS_STATS =
+  'measure_perchannel=RMS_level+Peak_level+Noise_floor:measure_overall=RMS_level+Noise_floor+Number_of_samples';
+
+/** Each channel's levels from astats' per-channel lines (-inf, silence, is null). */
+export function parseChannelLevels(stderr: string): ChannelLevels[] {
+  const end = stderr.lastIndexOf('Overall');
+  const head = end < 0 ? stderr : stderr.slice(0, end);
+  // Only the last run's channels: astats prints its blocks once, at the end.
+  const blocks = head.split(/\] Channel: (\d+)\s*\n/);
+  const out = new Map<number, ChannelLevels>();
+  for (let i = 1; i + 1 < blocks.length; i += 2) {
+    const body = blocks[i + 1] ?? '';
+    const channel = Number(blocks[i]);
+    out.set(channel, {
+      channel,
+      rms_dbfs: num(/RMS level dB:\s*(-?[\d.]+)/.exec(body)?.[1]),
+      peak_dbfs: num(/Peak level dB:\s*(-?[\d.]+)/.exec(body)?.[1]),
+      noise_floor_dbfs: num(/Noise floor dB:\s*(-?[\d.]+)/.exec(body)?.[1]),
+    });
+  }
+  return [...out.values()].sort((a, b) => a.channel - b.channel);
+}
+
+/** Reads ebur128's summary and astats' overall and per-channel lines. */
 export function parseLoudness(stderr: string): LoudnessFacts {
   const summary = stderr.slice(stderr.lastIndexOf('Summary:'));
   const lufs = num(/I:\s+(-?[\d.]+) LUFS/.exec(summary)?.[1]);
@@ -344,6 +377,7 @@ export function parseLoudness(stderr: string): LoudnessFacts {
     loudness_range_lu: num(/LRA:\s+(-?[\d.]+) LU/.exec(summary)?.[1]),
     rms_dbfs: rms,
     noise_floor_dbfs: floor,
+    channels: parseChannelLevels(stderr),
   };
 }
 

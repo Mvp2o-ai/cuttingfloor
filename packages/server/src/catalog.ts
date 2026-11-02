@@ -47,7 +47,9 @@ const MASKS: Record<MaskShape, string> = {
   mirror: 'Keeps a band of thickness height through x, y; rotation turns it',
   heart: 'x, y, width, height, rotation',
   star: 'Five points; x, y, width, height, rotation',
-  polygon: 'points: [[x, y], ...] corners in the clip picture',
+  polygon: 'points: [[x, y], ...] corners in the fitted frame, or {keyframes: [{frame, points}]}',
+  matte:
+    'media_id: a picture or video whose alpha (or brightness) is the selection, frame by frame, e.g. a create.cutout result',
 };
 
 const IN_OUT: Record<(typeof IN_OUT_ANIMATIONS)[number], string> = {
@@ -121,7 +123,7 @@ const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<u
   effects: {
     title: 'Effects',
     body: {
-      note: 'filter.add {clip_id | track_id | timeline: true, name, params}. Video effects go on video clips, tracks or the timeline (and adjustment clips); audio effects on audio. Numbers marked animatable take {keyframes: [{frame, value, ease}]}.',
+      note: "filter.add {clip_id | track_id | timeline: true, name, params}. Video effects go on video clips, tracks or the timeline (and adjustment clips); audio effects on audio. Effects run in order, so order changes the result: on each clip its track's effects, then its own, each in the order added; the timeline's apply to the finished picture or mix. Numbers marked animatable take {keyframes: [{frame, value, ease}]}; the rest are constants.",
       effects: Object.fromEntries(
         Object.entries(EFFECTS).map(([name, spec]) => [
           name,
@@ -153,7 +155,7 @@ const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<u
   text: {
     title: 'Text styles',
     body: {
-      note: 'Sizes are fractions of the frame height (size) or of the text size (outline, shadow, box padding, letter_spacing); x, y and max_width are fractions of the frame. A style field left out takes its value from defaults (title or caption); timeline.get shows the full style of each text clip. Set any field to change it, or null to turn off an outline, shadow, box or highlight. Highlights need caption word timings.',
+      note: 'Sizes are fractions of the frame height (size) or of the text size (outline, shadow, box padding, letter_spacing); x, y and max_width are fractions of the frame. A style field left out takes its value from defaults (title or caption); timeline.get shows the full style of each text clip. Set any field to change it, or null to turn off an outline, shadow, box or highlight. Highlights need caption word timings. max_lines caps the lines shown at once: longer text shows a screenful at a time, broken into balanced lines by the widths of the font. To style part of a text (one word in another colour, bold or size), give the clip spans: {first_word, last_word, color, bold, italic, underline, size}, words counted from 0.',
       defaults: TEXT_DEFAULTS,
       highlight: HIGHLIGHT_TEXT,
       reveal: REVEAL_TEXT,
@@ -183,7 +185,7 @@ const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<u
   eases: {
     title: 'Keyframe easing',
     body: {
-      note: 'A keyframe ease shapes the move into the next keyframe. Default linear. hold jumps at the next keyframe.',
+      note: "A keyframe's ease shapes the move from it to the next keyframe. Default linear. _in starts slow, _out ends slow, _in_out both. hold keeps its value, then jumps at the next keyframe.",
       eases: EASES,
     },
   },
@@ -194,14 +196,14 @@ const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<u
   mask_shapes: {
     title: 'Mask shapes',
     body: {
-      note: 'Positions and sizes are fractions of the clip picture (0–1). feather is a fraction of its short side.',
+      note: "Positions and sizes are fractions (0–1) of the clip's fitted frame: a box the shape of the sequence with the picture fitted inside it (bars where the shapes differ), before the clip's scale and position. A picture the sequence's shape fills it; a narrower one fills (its aspect / the sequence's) of its width, centred; a wider one (the sequence's aspect / its) of its height. feather is a fraction of the picture's short side.",
       shapes: Object.fromEntries(MASK_SHAPES.map((m) => [m, MASKS[m]])),
     },
   },
   animations: {
     title: 'Animation presets',
     body: {
-      note: 'Presets layer over the clip transform: in runs from the clip start, out ends at the clip end, loop repeats every period_frames (default 1 s) at strength (default 1).',
+      note: 'Presets layer over the clip transform: in runs from the clip start, out ends at the clip end, loop repeats every period_frames (default 1 s) at strength (default 1), over the whole clip or from from_frame to to_frame of it (clip frames).',
       in_out: IN_OUT,
       loop: LOOPS,
     },

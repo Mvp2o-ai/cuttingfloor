@@ -200,7 +200,9 @@ export function resolvePreset(
   }
   const refuse = (what: string) =>
     new CfError('bad_request', `${name} does not take ${what}`, {
-      hint: `video://catalog/presets lists what each preset takes`,
+      hint: `Overrides each preset takes: ${presetCatalog()
+        .map((p) => `${p.name}: ${p.overrides.join(', ') || 'none'}`)
+        .join('; ')}`,
     });
   if (spec.audioOnly && (overrides.width || overrides.height || overrides.fps)) {
     throw refuse('a picture size or frame rate');

@@ -6,9 +6,9 @@ export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cuttingfloo
 export const MCP_ADDRESS = 'https://api.cuttingfloor.ai/mcp';
 export const DOCS_URL = 'https://github.com/mvp2o-ai/cuttingfloor';
 
-export const TITLE = 'cuttingfloor — the control plane for AI video agents';
+export const TITLE = 'Video Editing MCP Server for Claude, ChatGPT, Codex & Cursor | cuttingfloor';
 export const DESCRIPTION =
-  'Turn Claude, Cursor or ChatGPT into a video editing agent. One MCP server, 71 tools: cut by transcript, caption, mix and export real video.';
+  'Editing tools for the agent you already use. Connect Claude, ChatGPT, Codex, Cursor or Kazi to one MCP server and it cuts by transcript, captions, mixes, makes graphics and exports real video, checking its work as it goes. Open source: run it yourself free, or hosted.';
 
 // Questions in the words people search them with.
 export const FAQS = [
@@ -18,23 +18,35 @@ export const FAQS = [
   },
   {
     q: 'Can ChatGPT edit videos?',
-    a: 'Yes, in developer mode, which lets ChatGPT use remote MCP servers. Add the cuttingfloor address under Settings → Apps → Create, sign in, and ask for the cut you want.',
+    a: 'Yes. In ChatGPT, open Plugins, choose Add custom MCP server, paste the cuttingfloor address and sign in. Then ask for the cut you want, in a chat or a ChatGPT Work task.',
   },
   {
     q: 'How do I add a video editing MCP server to Cursor?',
     a: `Add cuttingfloor to ~/.cursor/mcp.json with the address ${MCP_ADDRESS}. Cursor opens the sign-in the first time a tool runs. The same address works in Claude, VS Code, Kazi and any client that takes remote MCP servers.`,
   },
   {
-    q: 'What is AI video editing?',
+    q: 'What is agentic video editing?',
     a: 'An AI agent edits the footage itself: it reads the material, decides the cuts, makes them with real editing tools and checks the result before it hands it over. cuttingfloor gives the agent those tools; you say what you want.',
   },
   {
     q: 'Is there a video editing API for AI agents?',
-    a: 'cuttingfloor is one: 71 tools over MCP, from clip.add and caption.add to audio.set_master and export.video. Every edit returns a new timeline and a preview, so the agent sees what it did and can step back. A built-in skills library shows it how to chain those calls for a common job.',
+    a: 'cuttingfloor is one: granular editing tools over MCP, from clip.add and caption.add to audio.set_master and export.video. Every edit returns a new timeline and a preview, so the agent sees what it did and can step back. The full list is on the features page.',
+  },
+  {
+    q: 'Is cuttingfloor an editor with an AI inside?',
+    a: 'No. It is the editing tools, without an editor around them. Your own agent (Claude, ChatGPT, Codex, Cursor, Kazi) makes every cut with them, so the intelligence is the agent you already chose, and the edit stays a timeline you can change, not a finished render.',
+  },
+  {
+    q: 'Can Codex edit videos?',
+    a: `Yes. Run codex mcp add cuttingfloor --url ${MCP_ADDRESS}, then codex mcp login cuttingfloor. The same setup works in the Codex CLI, its IDE extension and the desktop app.`,
+  },
+  {
+    q: 'Does it work in Claude Cowork and ChatGPT Work?',
+    a: 'Yes. Add cuttingfloor as a custom connector in Claude (Cowork uses the same connectors) or as a custom MCP plugin in ChatGPT, then ask for the edit in a Cowork or Work task.',
   },
   {
     q: 'Which agents work with it?',
-    a: 'Any MCP client with remote servers: Kazi, Claude (web, desktop and Code), Cursor, ChatGPT in developer mode, VS Code, and anything built on the MCP SDKs.',
+    a: 'Any MCP client that takes remote servers: Kazi, Claude (web, desktop, Cowork and Code), ChatGPT and ChatGPT Work, Codex, Cursor, VS Code with Copilot, Zed, Goose, and anything built on the MCP SDKs.',
   },
   {
     q: 'Where does my footage go?',
@@ -45,12 +57,12 @@ export const FAQS = [
     a: 'Editing and previews keep working; new jobs such as exports and imports wait until your minutes renew, or until you move to a bigger plan. You are never charged more than the plan price. We email you at 80% and at 100%.',
   },
   {
-    q: 'Can I run it myself?',
-    a: 'Yes. cuttingfloor runs in one Docker image on your own machine. The hosted version is the same image, run for you.',
+    q: 'Can I run it myself for free?',
+    a: 'Yes. cuttingfloor is open source (AGPL-3.0) and runs in one Docker image on your own machine: clone the repository and run docker compose up -d. The hosted version is the same image, run for you, with nothing to install.',
   },
   {
     q: 'Do I need my own AI keys?',
-    a: 'No. Transcription, voiceover, cutouts and graphics run on our servers. Your agent is whatever you already use.',
+    a: 'Only for lip-sync, which uses your own sync. labs key. Transcripts, voiceover, background removal, stems, stabilizing and graphics run inside cuttingfloor with no key. Self-hosted, the visual judgment tools (judge.ask, look and media.seek) also need a TypeSafe key; hosted plans include them.',
   },
 ];
 
@@ -58,13 +70,13 @@ export const FAQS = [
 export const ALTERNATIVES = [
   {
     name: 'cuttingfloor',
-    is: 'An MCP server of 71 editing tools. The agent imports footage, reads the transcript, cuts, captions, mixes and checks every step with a preview.',
+    is: 'An open-source MCP server of editing tools. Your agent imports footage, reads the transcript, cuts, captions, mixes and checks every step with a preview.',
     when: 'the agent decides the edit, on footage it has not seen before.',
     ours: true,
   },
   {
     name: 'Remotion',
-    is: 'Videos written as React components and rendered from code.',
+    is: 'A React framework: videos written as components and rendered from code.',
     when: 'you want the video to be a codebase you keep and maintain.',
   },
   {
