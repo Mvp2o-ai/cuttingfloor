@@ -237,7 +237,7 @@ export default function Home() {
           <span className="mark-b" />
           <span className="label">07 / What it does</span>
           <h2 className="display big-stat">
-            71 tools.
+            72 tools.
             <br />
             No timeline.
             <small>

@@ -6,9 +6,9 @@ export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cuttingfloo
 export const MCP_ADDRESS = 'https://api.cuttingfloor.ai/mcp';
 export const DOCS_URL = 'https://github.com/mvp2o-ai/cuttingfloor';
 
-export const TITLE = 'Video Editing MCP Server for Claude, ChatGPT, Codex & Cursor | cuttingfloor';
+export const TITLE = 'cuttingfloor — the control plane for AI video agents';
 export const DESCRIPTION =
-  'Editing tools for the agent you already use. Connect Claude, ChatGPT, Codex, Cursor or Kazi to one MCP server and it cuts by transcript, captions, mixes, makes graphics and exports real video, checking its work as it goes. Open source: run it yourself free, or hosted.';
+  'Editing tools for the agent you already use. Connect Claude, ChatGPT, Codex, Cursor or Kazi to one MCP server, 72 tools: it cuts by transcript, captions, mixes, makes graphics and exports real video, checking its work as it goes. Open source: run it yourself free, or hosted.';
 
 // Questions in the words people search them with.
 export const FAQS = [
@@ -30,7 +30,7 @@ export const FAQS = [
   },
   {
     q: 'Is there a video editing API for AI agents?',
-    a: 'cuttingfloor is one: granular editing tools over MCP, from clip.add and caption.add to audio.set_master and export.video. Every edit returns a new timeline and a preview, so the agent sees what it did and can step back. The full list is on the features page.',
+    a: 'cuttingfloor is one: 72 tools over MCP, from clip.add and caption.add to audio.set_master and export.video. Every edit returns a new timeline and a preview, so the agent sees what it did and can step back. The full list is on the features page.',
   },
   {
     q: 'Is cuttingfloor an editor with an AI inside?',
@@ -70,7 +70,7 @@ export const FAQS = [
 export const ALTERNATIVES = [
   {
     name: 'cuttingfloor',
-    is: 'An open-source MCP server of editing tools. Your agent imports footage, reads the transcript, cuts, captions, mixes and checks every step with a preview.',
+    is: 'An open-source MCP server of 72 editing tools. Your agent imports footage, reads the transcript, cuts, captions, mixes and checks every step with a preview.',
     when: 'the agent decides the edit, on footage it has not seen before.',
     ours: true,
   },
