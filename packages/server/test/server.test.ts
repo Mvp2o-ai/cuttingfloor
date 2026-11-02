@@ -238,29 +238,44 @@ describe('protocol surface', () => {
     );
   });
 
-  it('offers a player view (MCP Apps) on export.video and media.get results', async () => {
+  it('offers the editor view on export.video results and the player on media.get', async () => {
     const client = await connect(env.runtime);
     const { tools } = await client.listTools();
-    const withPlayer = tools
-      .filter((t) => (t._meta as { ui?: { resourceUri?: string } })?.ui?.resourceUri)
-      .map((t) => t.name);
-    expect(withPlayer.sort()).toEqual(['export.video', 'media.get']);
-    const { resources } = await client.listResources();
-    const listed = resources.find((r) => r.uri === 'ui://cuttingfloor/player');
-    expect(listed?.mimeType).toBe('text/html;profile=mcp-app');
-    const res = await client.readResource({ uri: 'ui://cuttingfloor/player' });
-    const page = res.contents[0] as { mimeType?: string; text?: string; _meta?: unknown };
-    expect(page.mimeType).toBe('text/html;profile=mcp-app');
-    expect(page.text).toContain("'ui/initialize'");
-    expect(page.text).not.toContain('__VERSION__');
-    // The sandbox may load media only from this server.
-    expect(page._meta).toEqual({
-      ui: {
-        csp: { resourceDomains: ['http://127.0.0.1:8787'] },
-        permissions: { clipboardWrite: {} },
-        prefersBorder: false,
-      },
+    const views = Object.fromEntries(
+      tools
+        .filter((t) => (t._meta as { ui?: { resourceUri?: string } })?.ui?.resourceUri)
+        .map((t) => [t.name, (t._meta as { ui: { resourceUri: string } }).ui.resourceUri]),
+    );
+    expect(views).toEqual({
+      'export.video': 'ui://cuttingfloor/editor',
+      'media.get': 'ui://cuttingfloor/player',
     });
+    // Everything the editor calls stays callable from a view (no visibility limits it to the model).
+    for (const name of ['timeline.get', 'timeline.history', 'timeline.diff', 'job.get']) {
+      const tool = tools.find((t) => t.name === name);
+      expect((tool?._meta as { ui?: { visibility?: string[] } })?.ui?.visibility).toBeUndefined();
+    }
+    const { resources } = await client.listResources();
+    const origin = 'http://127.0.0.1:8787';
+    for (const [uri, csp] of [
+      ['ui://cuttingfloor/player', { resourceDomains: [origin] }],
+      // The editor also reads the export's sound for its mix lane.
+      ['ui://cuttingfloor/editor', { resourceDomains: [origin], connectDomains: [origin] }],
+    ] as const) {
+      expect(resources.find((r) => r.uri === uri)?.mimeType).toBe('text/html;profile=mcp-app');
+      const res = await client.readResource({ uri });
+      const page = res.contents[0] as { mimeType?: string; text?: string; _meta?: unknown };
+      expect(page.mimeType).toBe('text/html;profile=mcp-app');
+      expect(page.text).toContain("'ui/initialize'");
+      expect(page.text).not.toContain('__VERSION__');
+      expect(page._meta).toEqual({
+        ui: { csp, permissions: { clipboardWrite: {} }, prefersBorder: false },
+      });
+      // The inline script parses.
+      const script = /<script>([\s\S]*)<\/script>/.exec(page.text ?? '')?.[1] ?? '';
+      expect(script.length).toBeGreaterThan(1000);
+      expect(() => new Function(script)).not.toThrow();
+    }
   });
 
   it('serves health without key values', async () => {

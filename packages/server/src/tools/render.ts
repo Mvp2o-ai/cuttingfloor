@@ -35,8 +35,8 @@ import {
 } from '@cuttingfloor/schema';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import type * as z from 'zod/v4';
+import { EDITOR_TOOL_META } from '../editor.ts';
 import { admitJob } from '../meter.ts';
-import { PLAYER_TOOL_META } from '../player.ts';
 import {
   addPasses,
   assertOnline,
@@ -152,7 +152,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       ].join(' '),
       inputSchema: ExportVideoInput,
       outputSchema: withJob(ExportResult),
-      _meta: PLAYER_TOOL_META,
+      _meta: EDITOR_TOOL_META,
       annotations: {
         title: 'Export video',
         readOnlyHint: false,

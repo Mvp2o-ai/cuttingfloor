@@ -1,6 +1,7 @@
 import type { CredentialStore } from '@cuttingfloor/credentials';
 import { McpServer } from '@modelcontextprotocol/server';
 import { registerCatalogs } from './catalog.ts';
+import { registerEditor } from './editor.ts';
 import type { OwnerLimits } from './meter.ts';
 import { registerPlayer } from './player.ts';
 import { registerResources } from './resources.ts';
@@ -70,6 +71,7 @@ export function createServer(deps: ServerDeps): McpServer {
   registerResources(server, deps);
   registerCatalogs(server);
   registerPlayer(server, deps);
+  registerEditor(server, deps);
   registerTimelineTools(server, deps);
   registerMediaTools(server, deps);
   registerSeekTools(server, deps);

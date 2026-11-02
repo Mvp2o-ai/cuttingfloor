@@ -1,0 +1,1530 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cuttingfloor editor</title>
+<style>
+  /*
+   * One card: the picture and an inspector side by side, controls under the picture, the
+   * timeline across the bottom. One column on a narrow frame. Host style variables
+   * (hostContext.styles) win when the host sends them; these are the fallbacks.
+   */
+  :root {
+    --card: var(--color-background-primary, #ffffff);
+    --card-2: var(--color-background-secondary, #f3f4f1);
+    --card-3: #e9ebe6;
+    --fg: var(--color-text-primary, #16181a);
+    --muted: var(--color-text-secondary, #5d6166);
+    --line: var(--color-border-secondary, #e2e4df);
+    --accent: #12b84a;
+    --accent-fg: #ffffff;
+    --changed: #e0601f;
+    --stage: #0b0d0c;
+    --playhead: #16181a;
+    --c-video: #3f7fe0;
+    --c-nested: #1f9e9a;
+    --c-title: #d9932b;
+    --c-caption: #c9ad1f;
+    --c-adjust: #8a68e8;
+    --c-audio: #2a9d6c;
+    --clip-fg: #0f1110;
+    --radius: var(--border-radius-lg, 14px);
+    --font: var(--font-sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+    --mono: var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    --heads: 136px;
+    --stage-h: 420px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --card: var(--color-background-primary, #121513);
+      --card-2: var(--color-background-secondary, #191d1b);
+      --card-3: #222725;
+      --fg: var(--color-text-primary, #eceeea);
+      --muted: var(--color-text-secondary, #9ea39c);
+      --line: var(--color-border-secondary, #2a2f2c);
+      --accent: #2bd665;
+      --accent-fg: #06210f;
+      --changed: #ff8a4c;
+      --playhead: #f4f6f2;
+      --c-video: #5b95ef;
+      --c-nested: #34b8b3;
+      --c-title: #eaa645;
+      --c-caption: #e0c53c;
+      --c-adjust: #a084f5;
+      --c-audio: #3dbb85;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --card: var(--color-background-primary, #121513);
+    --card-2: var(--color-background-secondary, #191d1b);
+    --card-3: #222725;
+    --fg: var(--color-text-primary, #eceeea);
+    --muted: var(--color-text-secondary, #9ea39c);
+    --line: var(--color-border-secondary, #2a2f2c);
+    --accent: #2bd665;
+    --accent-fg: #06210f;
+    --changed: #ff8a4c;
+    --playhead: #f4f6f2;
+    --c-video: #5b95ef;
+    --c-nested: #34b8b3;
+    --c-title: #eaa645;
+    --c-caption: #e0c53c;
+    --c-adjust: #a084f5;
+    --c-audio: #3dbb85;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  /* biome-ignore lint/complexity/noImportantStyles: hidden must beat every display rule below */
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: transparent; }
+  body { font: 13px/1.45 var(--font); color: var(--fg); -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  button:focus-visible, .clip:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  svg { display: block; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  svg.solid { fill: currentColor; stroke: none; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .grow { flex: 1; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
+
+  /* Header */
+  .head { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .head .logo { color: var(--accent); flex: none; }
+  .head .name { font-weight: 650; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 46ch; }
+  .head .meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .head .meta span + span::before { content: "·"; margin-right: 8px; opacity: .6; }
+  .head .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); font-size: 12px; font-weight: 600; background: var(--card); white-space: nowrap; }
+  .pill:hover:not(:disabled) { background: var(--card-2); }
+  .pill svg { width: 15px; height: 15px; }
+  .pill.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+  .pill.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, #000); }
+  .pill.done { color: var(--accent); }
+
+  /* Picture and inspector */
+  .main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; border-bottom: 1px solid var(--line); min-height: 0; }
+  .viewer { display: flex; flex-direction: column; min-width: 0; background: var(--stage); color: #fff; }
+  .stage { position: relative; height: var(--stage-h); display: grid; place-items: center; overflow: hidden; isolation: isolate; }
+  .stage video, .stage img { max-width: calc(100% - 20px); max-height: calc(100% - 20px); width: auto; height: auto; display: block; border-radius: 4px; }
+  .stage video { width: 100%; height: calc(100% - 20px); object-fit: contain; }
+  .stage .cover { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 24px; }
+  .cover b { font-size: 15px; }
+  .cover small, .sub { color: rgba(255,255,255,.62); font-size: 12.5px; max-width: 46ch; }
+  .stage .msg { font-size: 15px; font-weight: 600; }
+  .stage .mid { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 24px; }
+  .bar-p { width: 220px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.14); overflow: hidden; }
+  .bar-p i { display: block; height: 100%; width: 30%; background: #2bd665; border-radius: 4px; transition: width .5s ease; }
+  .bar-p .run { animation: slide 1.3s ease-in-out infinite; }
+  @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(330%); } }
+  .stage .ic2 { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,90,90,.16); color: #ff7b7b; }
+  .stage .act { margin-top: 4px; display: inline-flex; gap: 6px; align-items: center; height: 32px; padding: 0 12px; border-radius: 8px; background: rgba(255,255,255,.1); font-weight: 600; }
+  .stage .tag { position: absolute; right: 10px; top: 10px; font: 600 11px/1 var(--mono); color: rgba(255,255,255,.75); background: rgba(0,0,0,.45); padding: 5px 7px; border-radius: 6px; max-width: calc(100% - 20px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stage .tag:empty { display: none; }
+  .flash { position: absolute; left: 50%; top: 50%; translate: -50% -50%; width: 60px; height: 60px; border-radius: 50%; display: grid; place-items: center; background: rgba(0,0,0,.5); opacity: 0; pointer-events: none; }
+  .flash.on { animation: flash .6s ease-out; }
+  @keyframes flash { 0% { opacity: .9; transform: scale(.8); } 100% { opacity: 0; transform: scale(1.3); } }
+
+  .transport { display: flex; align-items: center; gap: 2px; padding: 7px 10px; background: #111412; border-top: 1px solid rgba(255,255,255,.06); flex-wrap: wrap; }
+  .tbtn { height: 32px; min-width: 32px; padding: 0 6px; display: inline-grid; place-items: center; border-radius: 7px; opacity: .9; font-size: 12px; font-weight: 600; color: #fff; }
+  .tbtn:hover:not(:disabled) { background: rgba(255,255,255,.1); opacity: 1; }
+  .tbtn.on { color: #2bd665; }
+  .tbtn.play { background: #2bd665; color: #06210f; opacity: 1; width: 36px; }
+  .tc { font: 600 13px/1 var(--mono); padding: 7px 8px; border-radius: 7px; font-variant-numeric: tabular-nums; white-space: nowrap; color: #fff; }
+  .tc:hover { background: rgba(255,255,255,.1); }
+  .tc .dur { color: rgba(255,255,255,.5); }
+  .sep { width: 1px; height: 18px; background: rgba(255,255,255,.14); margin: 0 4px; }
+  .rate { font: 600 12px/1 var(--mono); }
+  .ctx { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border-radius: 999px; font: 500 11.5px/1 var(--mono); color: rgba(255,255,255,.72); background: rgba(255,255,255,.07); margin-right: 4px; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; transition: background .3s, color .3s; }
+  .ctx svg { width: 14px; height: 14px; flex: none; }
+  .ctx.fresh { background: rgba(43,214,101,.22); color: #2bd665; }
+  .ctx.waiting { opacity: .55; }
+
+  .inspector { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--line); height: calc(var(--stage-h) + 47px); }
+  .tabs { display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--line); flex: none; }
+  .tab { padding: 8px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+  .tab .n { font: 600 10.5px/1 var(--mono); background: var(--card-2); color: var(--muted); padding: 3px 5px; border-radius: 5px; }
+  .tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+  .pane { flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
+  .pane h4 { margin: 0 0 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 650; }
+  .here-at { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+  .here-at b { font: 650 18px/1 var(--mono); font-variant-numeric: tabular-nums; }
+  .here-at span { color: var(--muted); font-size: 12px; }
+  .layer { display: grid; grid-template-columns: 4px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; text-align: left; padding: 7px 8px 7px 0; border-radius: 8px; }
+  .layer:hover { background: var(--card-2); }
+  .layer .sw { align-self: stretch; border-radius: 3px; }
+  .layer .t { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .layer .s { display: block; color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .layer .r { font: 500 11px/1.3 var(--mono); color: var(--muted); text-align: right; white-space: nowrap; }
+  .layer.off .t { text-decoration: line-through; color: var(--muted); }
+  .empty { color: var(--muted); padding: 12px 0; }
+  .kv { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 6px 10px; margin: 0 0 14px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .clip-title { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; }
+  .clip-title .sw { width: 10px; height: 34px; border-radius: 3px; flex: none; }
+  .clip-title b { display: block; font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
+  .clip-title span { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { font-size: 11.5px; padding: 3px 8px; border-radius: 999px; background: var(--card-2); border: 1px solid var(--line); white-space: nowrap; color: var(--fg); }
+  button.chip:hover { border-color: var(--muted); }
+  .fx { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; }
+  .fx b { font-weight: 600; }
+  .fx .p { color: var(--muted); font: 500 11.5px/1.5 var(--mono); overflow-wrap: anywhere; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .words { line-height: 1.9; font-size: 14px; }
+  .words .line { display: block; padding: 2px 0 6px; border-bottom: 1px dashed var(--line); margin-bottom: 6px; }
+  .words .lt { display: block; font: 500 10.5px/1.4 var(--mono); color: var(--muted); }
+  .w { border-radius: 4px; padding: 1px 2px; cursor: pointer; }
+  .w:hover { background: var(--card-3); }
+  .w.now { background: var(--c-caption); color: var(--clip-fg); }
+  .w.past { color: var(--muted); }
+  .compose { display: flex; flex-direction: column; gap: 10px; }
+  .compose textarea { width: 100%; min-height: 120px; resize: vertical; font: 13.5px/1.45 var(--font); color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .compose .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .compose .hint { color: var(--muted); font-size: 12px; }
+  .sent { border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; background: var(--card-2); margin-bottom: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .sent small { display: block; color: var(--muted); font: 500 11px/1.4 var(--mono); margin-bottom: 3px; }
+
+  /* Timeline */
+  .tl-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .tl-bar b { font-weight: 650; margin-right: 2px; }
+  .legend { display: flex; gap: 2px; flex-wrap: wrap; }
+  .lg { display: inline-flex; align-items: center; gap: 6px; padding: 4px 7px; border-radius: 6px; font-size: 12px; color: var(--muted); }
+  .lg i { width: 9px; height: 9px; border-radius: 2px; display: block; }
+  .lg:hover { background: var(--card-2); color: var(--fg); }
+  .lg[aria-pressed="true"] { background: var(--card-2); color: var(--fg); box-shadow: inset 0 0 0 1px var(--line); }
+  .zoom { display: flex; align-items: center; gap: 2px; }
+  .zbtn { height: 28px; min-width: 28px; padding: 0 8px; border-radius: 7px; font-weight: 600; font-size: 12px; display: inline-grid; place-items: center; }
+  .zbtn:hover { background: var(--card-2); }
+  .zbtn.on { color: var(--accent); }
+  .zoom input { width: 90px; accent-color: var(--accent); }
+  .lastedit { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--changed) 9%, var(--card)); font-size: 12.5px; flex-wrap: wrap; }
+  .lastedit .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--changed); flex: none; }
+  .lastedit code { font: 600 12px/1 var(--mono); }
+  .linkbtn { color: var(--changed); font-weight: 600; font-size: 12px; }
+  .note-row { padding: 8px 12px; color: var(--muted); font-size: 12.5px; border-bottom: 1px solid var(--line); }
+
+  /* One scroller for both axes: the ruler sticks to the top, the track names to the left. */
+  .scroller { overflow: auto; max-height: var(--tl-max, 300px); position: relative; user-select: none; scrollbar-width: thin; }
+  .grid { display: grid; grid-template-columns: var(--heads) auto; position: relative; }
+  .corner { position: sticky; top: 0; left: 0; z-index: 8; height: 30px; background: var(--card); border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); display: flex; align-items: center; padding: 0 10px; font: 600 10.5px/1 var(--mono); color: var(--muted); }
+  .ruler { position: sticky; top: 0; z-index: 7; height: 30px; border-bottom: 1px solid var(--line); background: var(--card); cursor: ew-resize; }
+  .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--line); }
+  .tick.minor { top: 22px; }
+  .tick span { position: absolute; left: 4px; top: 5px; font: 500 10.5px/1 var(--mono); color: var(--muted); white-space: nowrap; }
+  .cut { position: absolute; bottom: 0; width: 1px; height: 6px; background: var(--muted); opacity: .7; }
+  .loop { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 18%, transparent); border-left: 2px solid var(--accent); border-right: 2px solid var(--accent); pointer-events: none; }
+  .knob { position: absolute; top: 0; width: 14px; height: 16px; margin-left: -7px; background: var(--playhead); clip-path: polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%); cursor: ew-resize; z-index: 2; }
+  .heads { position: sticky; left: 0; z-index: 6; background: var(--card); border-right: 1px solid var(--line); }
+  .th { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .th .k { font: 700 10px/1 var(--mono); color: var(--muted); width: 22px; flex: none; }
+  .th .n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 550; }
+  .th .st { display: flex; gap: 3px; color: var(--muted); }
+  .th .st svg { width: 13px; height: 13px; }
+  .th.off .n { color: var(--muted); }
+  .area { position: relative; }
+  .lane { position: relative; border-bottom: 1px solid var(--line); background: var(--card); }
+  .lane:nth-child(even) { background: color-mix(in srgb, var(--card-2) 55%, var(--card)); }
+  .lane.hidden-track { background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--line) 60%, transparent) 6px 7px), var(--card); }
+  .lane canvas { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; }
+  .clip { position: absolute; top: 3px; bottom: 3px; border-radius: 5px; overflow: hidden; cursor: pointer; color: var(--clip-fg); background: var(--c); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); display: flex; align-items: center; }
+  .clip.audio { background: color-mix(in srgb, var(--c) 38%, var(--card)); color: var(--fg); }
+  .clip .lb { position: relative; z-index: 2; padding: 0 6px; font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .clip.audio .lb { align-self: flex-start; padding-top: 2px; font-size: 11px; }
+  .clip .bd { position: relative; z-index: 2; margin-left: auto; margin-right: 4px; display: flex; gap: 3px; flex: none; }
+  .clip .bd i { font: 700 9.5px/1 var(--mono); font-style: normal; padding: 2px 4px; border-radius: 4px; background: rgba(0,0,0,.18); }
+  .clip.audio .bd { align-self: flex-start; margin-top: 3px; }
+  .clip.audio .bd i { background: color-mix(in srgb, var(--fg) 12%, transparent); }
+  .clip.disabled { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--c) 45%, var(--card)) 0 5px, color-mix(in srgb, var(--c) 25%, var(--card)) 5px 10px); color: var(--muted); }
+  .clip.disabled .lb { text-decoration: line-through; }
+  .clip.track-off { opacity: .45; }
+  .clip:hover { filter: brightness(1.08); }
+  .clip.linked { box-shadow: inset 0 0 0 2px var(--fg); }
+  .clip.changed { box-shadow: inset 0 0 0 2px var(--changed); }
+  .clip.selected { box-shadow: inset 0 0 0 2px var(--fg), 0 0 0 2px var(--accent); z-index: 4; }
+  .clip.dim { opacity: .22; }
+  .ghost { position: absolute; top: 3px; bottom: 3px; border: 1.5px dashed var(--changed); border-radius: 5px; display: flex; align-items: flex-end; justify-content: flex-end; pointer-events: none; z-index: 3; }
+  .ghost span { font: 600 9.5px/1 var(--mono); color: var(--changed); background: var(--card); border-radius: 3px; margin: 0 2px 2px; padding: 1px 3px; white-space: nowrap; }
+  .trans { position: absolute; top: 3px; bottom: 3px; z-index: 3; border-radius: 4px;
+    background: linear-gradient(to right top, transparent 49%, rgba(255,255,255,.75) 50%, transparent 51%), linear-gradient(to right bottom, transparent 49%, rgba(255,255,255,.75) 50%, transparent 51%), rgba(0,0,0,.35); }
+  .playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--playhead); z-index: 5; pointer-events: none; }
+  .hover-line { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--playhead) 40%, transparent); z-index: 5; pointer-events: none; display: none; }
+  .hover-tc { position: absolute; top: 7px; z-index: 3; font: 600 10.5px/1 var(--mono); background: var(--fg); color: var(--card); padding: 3px 5px; border-radius: 4px; white-space: nowrap; pointer-events: none; display: none; }
+  .tip { position: fixed; z-index: 50; pointer-events: none; background: var(--fg); color: var(--card); padding: 6px 8px; border-radius: 7px; font-size: 12px; max-width: 280px; display: none; }
+  .tip small { display: block; opacity: .75; font: 500 11px/1.4 var(--mono); }
+  .keys { padding: 7px 12px; color: var(--muted); font-size: 11.5px; display: flex; gap: 14px; flex-wrap: wrap; border-top: 1px solid var(--line); }
+  kbd { font: 600 10.5px/1 var(--mono); padding: 2px 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; color: var(--fg); background: var(--card); }
+  .toast { position: fixed; left: 50%; bottom: 20px; translate: -50% 0; background: var(--fg); color: var(--card); padding: 8px 13px; border-radius: 10px; font-size: 12.5px; max-width: calc(100% - 32px); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
+  .toast.on { opacity: 1; }
+
+  /* .fill: the host gives a fixed height (containerDimensions.height); .full: full screen. */
+  .fill body, .full body, .fill #root, .full #root { height: 100%; }
+  .fill .card, .full .card { height: 100vh; }
+  .full .card { border-radius: 0; border: 0; }
+  .fill .main, .full .main { flex: 1 1 auto; }
+  .fill .stage, .full .stage { height: auto; flex: 1; min-height: 160px; }
+  .fill .inspector, .full .inspector { height: auto; }
+  .fill .viewer, .full .viewer { min-height: 0; }
+
+  @media (max-width: 860px) {
+    .main { grid-template-columns: minmax(0, 1fr); }
+    .inspector, .fill .inspector, .full .inspector { border-left: 0; border-top: 1px solid var(--line); height: 260px; }
+    :root { --heads: 96px; --stage-h: 340px; }
+    .th .st, .keys, .narrow-hide { display: none; }
+    .head .meta { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion has to beat every rule above */
+    *, *::before, *::after { animation-duration: .001s !important; animation-iteration-count: 1 !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+<script>
+(() => {
+  const VERSION = '__VERSION__';
+  const root = document.getElementById('root');
+  const html = document.documentElement;
+
+  // ---------- host protocol (MCP Apps, ui/*) ----------
+  let nextId = 1;
+  const pending = new Map();
+  const host = { caps: {}, modes: [], mode: 'inline', ready: false };
+  const send = (msg) => window.parent.postMessage(msg, '*');
+  const request = (method, params) => new Promise((resolve, reject) => {
+    const id = nextId++;
+    pending.set(id, { resolve, reject });
+    send({ jsonrpc: '2.0', id, method, params });
+  });
+  const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
+  const openLink = (url) => request('ui/open-link', { url }).catch(() => window.open(url, '_blank', 'noopener'));
+  async function callTool(name, args) {
+    const r = await request('tools/call', { name, arguments: args });
+    if (r?.isError) {
+      const t = r.content?.find((c) => c?.type === 'text')?.text;
+      throw new Error(r.structuredContent?.message || t || `${name} failed`);
+    }
+    return r?.structuredContent;
+  }
+
+  function applyContext(ctx) {
+    if (!ctx) return;
+    if (ctx.theme) html.dataset.theme = ctx.theme;
+    const vars = ctx.styles?.variables;
+    if (vars) for (const [k, v] of Object.entries(vars)) if (v) html.style.setProperty(k, v);
+    if (Array.isArray(ctx.availableDisplayModes)) host.modes = ctx.availableDisplayModes;
+    if (ctx.displayMode) {
+      host.mode = ctx.displayMode;
+      html.classList.toggle('full', host.mode === 'fullscreen');
+    }
+    const dims = ctx.containerDimensions;
+    if (dims) html.classList.toggle('fill', !!dims.height);
+    if (ui) ui.onLayout();
+  }
+
+  // ---------- helpers ----------
+  const $ = (sel, scope = document) => scope.querySelector(sel);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(`cf-editor:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(`cf-editor:${k}`, JSON.stringify(v)); } catch {} },
+  };
+  const pad = (n, w = 2) => String(Math.floor(n)).padStart(w, '0');
+  const ICON = {
+    play: '<svg class="solid" viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>',
+    pause: '<svg class="solid" viewBox="0 0 24 24"><rect x="6" y="4" width="4.5" height="16" rx="1.2"/><rect x="13.5" y="4" width="4.5" height="16" rx="1.2"/></svg>',
+    prevCut: '<svg viewBox="0 0 24 24"><path d="M6 5v14M18 6l-8 6 8 6z"/></svg>',
+    nextCut: '<svg viewBox="0 0 24 24"><path d="M18 5v14M6 6l8 6-8 6z"/></svg>',
+    prevF: '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>',
+    nextF: '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
+    loop: '<svg viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>',
+    vol: '<svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>',
+    mute: '<svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></svg>',
+    agent: '<svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12v1M15 12v1M9.5 16h5"/></svg>',
+    link: '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+    open: '<svg viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
+    down: '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>',
+    max: '<svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/></svg>',
+    min: '<svg viewBox="0 0 24 24"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/></svg>',
+    film: '<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="M2 9h20M7 4v5M12 4v5M17 4v5"/></svg>',
+    alert: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>',
+    eyeOff: '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A10 10 0 0 1 12 6c5 0 9 6 9 6a17 17 0 0 1-3.2 3.7M6.6 6.6C4.3 8.1 3 12 3 12s4 6 9 6a9 9 0 0 0 4-.9"/></svg>',
+    lock: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+    fx: '<svg viewBox="0 0 24 24"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/></svg>',
+    music: '<svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+  };
+  let toastT = 0;
+  function toast(text) { const t = $('#toast'); t.textContent = text; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2400); }
+  function untilText(iso) {
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) return null;
+    const ms = t - Date.now();
+    if (ms <= 0) return 'link expired';
+    const h = ms / 3600000;
+    if (h < 1) return `link works ${Math.max(1, Math.round(ms / 60000))} more min`;
+    if (h < 48) return `link works ${Math.round(h)} more h`;
+    return `link works ${Math.round(h / 24)} more days`;
+  }
+  function kindOfFile(data) {
+    return (data.mime_type || '').split('/')[0];
+  }
+
+  // ---------- state ----------
+  // The timeline comes from timeline.get on the exported timeline_id (from the call's input);
+  // the picture is the exported file. Until the file lands the timeline already scrubs.
+  const S = {
+    timelineId: null, view: null, parentView: null, last: null, file: null,
+    fps: 30, D: 0, t: 0, playing: false, rate: 1, muted: false,
+    ppf: 1, fitPpf: 1, frameMode: store.get('frames', false), selected: null, tab: 'here',
+    focusType: null, loop: null, loopOn: false, follow: true, showChange: true, compact: store.get('compact', false),
+    composing: false, sent: [], mix: null, timelineError: null,
+  };
+  const RATES = [0.25, 0.5, 1, 1.5, 2];
+  const TYPES = {
+    video: { label: 'Video', css: '--c-video' },
+    nested: { label: 'Nested', css: '--c-nested' },
+    title: { label: 'Titles', css: '--c-title' },
+    caption: { label: 'Captions', css: '--c-caption' },
+    adjustment: { label: 'Adjustments', css: '--c-adjust' },
+    audio: { label: 'Audio', css: '--c-audio' },
+  };
+  let order = [], allClips = [], byId = new Map(), cuts = [], changed = new Map(), captions = [];
+
+  const typeOf = (c) => (c.kind === 'audio' ? 'audio' : c.type === 'timeline' ? 'nested' : c.type === 'media' || !c.type ? 'video' : c.type);
+  const colorVar = (c) => `var(${TYPES[typeOf(c)].css})`;
+  const cssColor = (name) => getComputedStyle(html).getPropertyValue(name).trim();
+  function nameOf(c) {
+    if (c.type === 'title' || c.type === 'caption') return c.text || (c.type === 'title' ? 'Title' : 'Caption');
+    if (c.type === 'adjustment') return (c.effects || []).map((e) => e.name).join(' + ') || 'Adjustment';
+    if (c.type === 'timeline') return S.view?.nested?.[c.nested_timeline]?.name || 'Nested timeline';
+    return S.view?.media?.[c.media_id]?.name || c.media_id || 'Clip';
+  }
+  function tc(fr, frames = S.frameMode) {
+    fr = Math.max(0, Math.round(fr));
+    if (frames) return `${fr}`;
+    const f = Math.max(1, Math.round(S.fps));
+    const s = Math.floor(fr / S.fps), ff = Math.floor(fr - s * S.fps + 1e-6) % f;
+    const h = Math.floor(s / 3600);
+    return h ? `${h}:${pad((s % 3600) / 60)}:${pad(s % 60)}.${pad(ff)}` : `${Math.floor(s / 60)}:${pad(s % 60)}.${pad(ff)}`;
+  }
+  const short = (fr) => { const s = Math.floor(fr / S.fps); const h = Math.floor(s / 3600); return h ? `${h}:${pad((s % 3600) / 60)}:${pad(s % 60)}` : `${Math.floor(s / 60)}:${pad(s % 60)}`; };
+  const len = (fr) => (fr >= S.fps ? `${(fr / S.fps).toFixed(fr % Math.round(S.fps) ? 2 : 0)} s` : `${fr} f`);
+  const fmtVal = (v) => (typeof v === 'number' ? String(+v.toFixed(3)) : typeof v === 'object' && v ? JSON.stringify(v) : String(v));
+  const params = (p) => Object.entries(p || {}).filter(([, v]) => v != null).map(([k, v]) => `${k} ${fmtVal(v)}`).join(' · ');
+
+  function index(view) {
+    S.view = view;
+    S.fps = view.sequence.fps.num / view.sequence.fps.den;
+    S.D = Math.max(1, view.duration);
+    const video = view.tracks.filter((t) => t.kind === 'video');
+    const audio = view.tracks.filter((t) => t.kind === 'audio');
+    order = [...video.slice().reverse(), ...audio];
+    for (const [i, t] of video.entries()) t._label = `V${i + 1}`;
+    for (const [i, t] of audio.entries()) t._label = `A${i + 1}`;
+    allClips = view.tracks.flatMap((t) => t.clips.map((c) => Object.assign(c, { _track: t })));
+    byId = new Map(allClips.map((c) => [c.id, c]));
+    cuts = [...new Set(allClips.flatMap((c) => [c.start, c.end]))].filter((x) => x > 0 && x < S.D).sort((a, b) => a - b);
+    captions = allClips.filter((c) => c.type === 'caption').sort((a, b) => a.start - b.start);
+  }
+  const active = (fr) => order.flatMap((t) => t.clips.filter((c) => fr >= c.start && fr < c.end).map((c) => ({ c, t })));
+
+  // ---------- picture ----------
+  let media = null; // <video> or <audio> once the export lands
+  let seeking = false, seekWant = null;
+  function frameToTime(fr) { return (fr + 0.5) / S.fps; }
+  function seekMedia(fr) {
+    if (!media || !Number.isFinite(media.duration)) return;
+    const t = Math.min(media.duration - 0.001, frameToTime(fr));
+    if (seeking) { seekWant = t; return; }
+    seeking = true;
+    media.currentTime = t;
+  }
+
+  // ---------- the view ----------
+  let ui = null;
+  function build() {
+    root.innerHTML = `
+    <div class="card">
+      <div class="head">
+        <span class="logo">${ICON.film}</span>
+        <div class="name" id="tlName">Loading the timeline…</div>
+        <div class="meta" id="tlMeta"></div>
+        <div class="grow"></div>
+        <div class="acts">
+          <button class="pill" id="sendAgent" type="button" title="Write a note to the agent in this chat" hidden>${ICON.agent}<span>Send to agent</span></button>
+          <button class="pill narrow-hide" id="copyLink" type="button" title="Copy a link anyone can open" disabled>${ICON.link}<span>Copy link</span></button>
+          <button class="pill narrow-hide" id="openPage" type="button" title="Open the watch page" disabled>${ICON.open}<span>Open</span></button>
+          <button class="pill" id="download" type="button" title="Download the file" disabled>${ICON.down}<span>Download</span></button>
+          <button class="pill primary" id="fullBtn" type="button" title="Full screen" hidden>${ICON.max}</button>
+        </div>
+      </div>
+      <div class="main">
+        <div class="viewer">
+          <div class="stage" id="stage"></div>
+          <div class="transport">
+            <button class="tbtn play" id="play" type="button" aria-label="Play (Space)">${ICON.play}</button>
+            <button class="tbtn" id="prevCut" type="button" title="Previous cut ([)">${ICON.prevCut}</button>
+            <button class="tbtn narrow-hide" id="back5" type="button" title="Back 5 s (J)">−5</button>
+            <button class="tbtn" id="prevFrame" type="button" title="Back one frame (←)">${ICON.prevF}</button>
+            <button class="tbtn" id="nextFrame" type="button" title="Forward one frame (→)">${ICON.nextF}</button>
+            <button class="tbtn narrow-hide" id="fwd5" type="button" title="Forward 5 s (L)">+5</button>
+            <button class="tbtn" id="nextCut" type="button" title="Next cut (])">${ICON.nextCut}</button>
+            <div class="sep"></div>
+            <button class="tc" id="tc" type="button" title="Switch between time and frame number"></button>
+            <div class="grow"></div>
+            <span class="ctx narrow-hide" id="ctx" hidden>${ICON.agent}<span id="ctxText">Agent sees</span></span>
+            <button class="tbtn narrow-hide" id="loopBtn" type="button" title="Loop between I and O">${ICON.loop}</button>
+            <button class="tbtn rate" id="rate" type="button" title="Playback speed">1×</button>
+            <button class="tbtn" id="mute" type="button" title="Mute (M)">${ICON.vol}</button>
+          </div>
+        </div>
+        <aside class="inspector">
+          <div class="tabs" role="tablist">
+            <button class="tab" role="tab" id="tab-here" aria-selected="true" type="button">At playhead <span class="n" id="hereN">0</span></button>
+            <button class="tab" role="tab" id="tab-clip" aria-selected="false" type="button">Clip</button>
+            <button class="tab" role="tab" id="tab-words" aria-selected="false" type="button" hidden>Captions <span class="n" id="wordsN">0</span></button>
+          </div>
+          <div class="pane" id="pane"><div class="empty">Loading the timeline…</div></div>
+        </aside>
+      </div>
+      <div class="tl-bar">
+        <b>Timeline</b>
+        <div class="legend" id="legend"></div>
+        <div class="grow"></div>
+        <div class="zoom">
+          <button class="zbtn narrow-hide" id="compact" type="button" title="Short rows">Rows</button>
+          <button class="zbtn on narrow-hide" id="follow" type="button" title="Keep the playhead in view while playing">Follow</button>
+          <button class="zbtn" id="zOut" type="button" aria-label="Zoom out">−</button>
+          <input type="range" id="zoom" min="0" max="100" value="0" aria-label="Zoom">
+          <button class="zbtn" id="zIn" type="button" aria-label="Zoom in">+</button>
+          <button class="zbtn" id="fit" type="button">Fit</button>
+        </div>
+      </div>
+      <div class="lastedit" id="lastEdit" hidden></div>
+      <div class="note-row" id="tlNote" hidden></div>
+      <div class="scroller" id="scroller">
+        <div class="grid" id="grid">
+          <div class="corner" id="corner"></div>
+          <div class="ruler" id="ruler"></div>
+          <div class="heads" id="heads"></div>
+          <div class="area" id="area">
+            <div id="lanes"></div>
+            <div class="hover-line" id="hoverLine"></div>
+            <div class="playhead" id="playhead"></div>
+          </div>
+        </div>
+      </div>
+      <div class="keys">
+        <span><kbd>Space</kbd> play</span>
+        <span><kbd>←</kbd> <kbd>→</kbd> one frame, with <kbd>Shift</kbd> one second</span>
+        <span><kbd>[</kbd> <kbd>]</kbd> previous / next cut</span>
+        <span><kbd>I</kbd> <kbd>O</kbd> loop in / out, <kbd>Esc</kbd> clears</span>
+        <span><kbd>+</kbd> <kbd>−</kbd> zoom, <kbd>0</kbd> fit</span>
+        <span>Hold <kbd>Shift</kbd> while dragging to snap to cuts</span>
+      </div>
+    </div>`;
+    wire();
+    return { onLayout };
+  }
+
+  // ---------- header ----------
+  function paintHeader() {
+    const v = S.view;
+    if (v) {
+      $('#tlName').textContent = v.name || 'Untitled timeline';
+      $('#tlName').title = v.name || '';
+      const seq = v.sequence;
+      const fps = Math.round(S.fps * 1000) / 1000;
+      $('#tlMeta').innerHTML = `<span>${seq.width}×${seq.height}</span><span>${fps} fps</span><span>${short(S.D)}</span><span class="mono" title="timeline_id">${esc(S.timelineId)}</span>`;
+      $('#corner').textContent = `${seq.width}×${seq.height}`;
+    } else if (S.timelineError) {
+      $('#tlName').textContent = 'Export';
+    }
+    const f = S.file;
+    for (const id of ['#copyLink', '#openPage', '#download']) $(id).disabled = !f;
+    if (f) {
+      $('#openPage').disabled = !f.page_url;
+      const exp = f.expires_at ? untilText(f.expires_at) : null;
+      $('#download').title = `Download the file${f.preset ? ` (${f.preset})` : ''}${exp ? `, ${exp}` : ''}`;
+    }
+    $('#sendAgent').hidden = !(host.caps.message || navigator.clipboard);
+    $('#fullBtn').hidden = !host.modes.includes('fullscreen');
+    $('#fullBtn').innerHTML = host.mode === 'fullscreen' ? ICON.min : ICON.max;
+    $('#ctx').hidden = !host.caps.updateModelContext || !S.view;
+  }
+
+  // ---------- stage ----------
+  function stageWait(text, progress) {
+    const known = typeof progress === 'number' && progress > 0;
+    const stage = $('#stage');
+    let mid = stage.querySelector('.mid.waiting');
+    if (!mid) {
+      stage.innerHTML = `<div class="mid waiting"><div class="msg"></div><div class="bar-p"><i></i></div><div class="sub">The timeline below already scrubs. The picture follows once the export lands.</div></div>`;
+      mid = stage.querySelector('.mid');
+    }
+    mid.querySelector('.msg').textContent = text;
+    const bar = mid.querySelector('.bar-p');
+    bar.querySelector('i').classList.toggle('run', !known);
+    bar.querySelector('i').style.width = known ? `${Math.round(Math.min(1, progress) * 100)}%` : '30%';
+  }
+  function stageError(text, retry) {
+    media = null;
+    $('#stage').innerHTML = `<div class="mid"><div class="ic2">${ICON.alert}</div><div class="msg">Can't play this</div><div class="sub">${esc(text)}</div>${retry ? '<button class="act" type="button" id="retry">Try again</button>' : ''}</div>`;
+    if (retry) $('#retry').onclick = retry;
+  }
+  function stageFile(data) {
+    const kind = kindOfFile(data);
+    const stage = $('#stage');
+    media = null;
+    if (kind === 'video' || kind === 'audio') {
+      if (kind === 'video') {
+        stage.innerHTML = '<video playsinline preload="auto"></video><div class="flash" id="flash"></div><div class="tag" id="tag"></div>';
+      } else {
+        stage.innerHTML = `<div class="cover">${ICON.music}<b>${esc(S.view?.name || 'Audio export')}</b><small>Sound only. Scrub the timeline to hear it.</small></div><audio preload="auto"></audio><div class="tag" id="tag"></div>`;
+      }
+      media = stage.querySelector(kind);
+      media.src = data.url;
+      media.muted = S.muted;
+      media.playbackRate = S.rate;
+      media.addEventListener('loadedmetadata', () => { if (!S.view && (S.timelineError || !S.timelineId)) fallbackTimeline(media.duration, data.frames); seekMedia(Math.floor(S.t)); });
+      media.addEventListener('seeked', () => {
+        seeking = false;
+        if (seekWant != null) { const t = seekWant; seekWant = null; seeking = true; media.currentTime = t; }
+      });
+      media.addEventListener('play', () => { S.playing = true; paintPlay(); startClock(); });
+      media.addEventListener('pause', () => { S.playing = false; paintPlay(); scheduleContext(); });
+      media.addEventListener('ended', () => { S.playing = false; paintPlay(); });
+      media.addEventListener('click', () => togglePlay());
+      media.addEventListener('error', () => {
+        const expired = data.expires_at && Date.parse(data.expires_at) < Date.now();
+        stageError(expired ? 'This link expired. Run the export again, or ask job.get for a fresh link.' : 'The file did not load. The link may have expired, or the chat app blocked it.', () => stageFile(data));
+      });
+      maybeMix();
+    } else if (kind === 'image') {
+      stage.innerHTML = `<img alt="${esc(S.view?.name || 'Export')}"><div class="tag">A GIF plays on its own; the timeline does not move it.</div>`;
+      stage.querySelector('img').src = data.url;
+    } else {
+      stage.innerHTML = '<div class="mid"><div class="msg">This file does not play here</div><div class="sub">Download it to open it.</div></div>';
+    }
+    paintPicture();
+  }
+
+  // The mix, measured from the exported file's own sound, drawn as the last lane: once both the
+  // file and the timeline are here, for a file small enough to fetch whole.
+  let mixAsked = false;
+  function maybeMix() {
+    const f = S.file;
+    if (mixAsked || !f || !S.view || !media) return;
+    if (!(f.bytes && f.bytes <= 150 * 1024 ** 2)) return;
+    if (!S.view.tracks.some((t) => t.kind === 'audio' && t.clips.length)) return;
+    mixAsked = true;
+    loadMix(f.url);
+  }
+  async function loadMix(url) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const buf = await res.arrayBuffer();
+      const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      if (!Ctx) return;
+      const audio = await new Ctx(1, 1, 44100).decodeAudioData(buf);
+      const per = audio.sampleRate / S.fps;
+      const frames = Math.ceil(audio.length / per);
+      const peaks = new Float32Array(frames);
+      for (let ch = 0; ch < audio.numberOfChannels; ch++) {
+        const d = audio.getChannelData(ch);
+        for (let i = 0; i < d.length; i++) {
+          const f = (i / per) | 0;
+          const v = d[i] < 0 ? -d[i] : d[i];
+          if (v > peaks[f]) peaks[f] = v;
+        }
+      }
+      S.mix = peaks;
+      renderLanes();
+    } catch {
+      // No mix lane: the host blocked the fetch or the browser can't decode this container.
+    }
+  }
+
+  function paintPicture() {
+    const tag = $('#tag');
+    if (!tag || !S.view) return;
+    const fr = Math.floor(S.t);
+    const top = active(fr).find(({ c, t }) => c.type === 'media' && c.kind === 'video' && c.enabled && !t.hidden)
+      || active(fr).find(({ c, t }) => c.type === 'media' && c.enabled && !t.muted);
+    tag.textContent = top ? `${nameOf(top.c)} · src ${tc(sourceAt(top.c, fr), false)}` : '';
+  }
+  function sourceAt(c, fr) {
+    const local = fr - c.start;
+    const span = c.end - c.start;
+    const curve = c.speed?.curve;
+    if (curve?.length) {
+      // Between the ramp's points the source frame moves evenly; timeline.get gives each point's.
+      const at = local / span;
+      for (let i = 0; i < curve.length - 1; i++) {
+        const a = curve[i], b = curve[i + 1];
+        if (at >= a.at && at <= b.at && a.source_frame != null && b.source_frame != null) {
+          return a.source_frame + (b.source_frame - a.source_frame) * ((at - a.at) / Math.max(1e-6, b.at - a.at));
+        }
+      }
+    }
+    const src = c.source.out - c.source.in;
+    return c.speed?.reverse ? c.source.out - 1 - (local * src) / span : c.source.in + (local * src) / span;
+  }
+
+  // ---------- timeline ----------
+  const laneH = (t) => (S.compact ? (t.kind === 'audio' ? 24 : 20) : t.kind === 'audio' ? 36 : 28);
+  const MIX_H = () => (S.compact ? 26 : 40);
+
+  function paintLegend() {
+    const present = Object.keys(TYPES).filter((k) => allClips.some((c) => typeOf(c) === k));
+    $('#legend').innerHTML = present.map((k) => `<button class="lg" type="button" data-type="${k}" aria-pressed="${S.focusType === k}" title="Highlight ${TYPES[k].label.toLowerCase()}"><i style="background:var(${TYPES[k].css})"></i>${TYPES[k].label}</button>`).join('');
+  }
+
+  function renderHeads() {
+    const heads = $('#heads');
+    let h = '';
+    for (const t of order) {
+      const st = [
+        t.effects?.length ? `<span title="Track effects: ${esc(t.effects.map((e) => e.name).join(', '))}">${ICON.fx}</span>` : '',
+        t.hidden ? `<span title="Hidden">${ICON.eyeOff}</span>` : '',
+        t.muted ? `<span title="Muted">${ICON.mute}</span>` : '',
+        t.locked ? `<span title="Locked">${ICON.lock}</span>` : '',
+      ].join('');
+      h += `<div class="th${t.hidden || t.muted ? ' off' : ''}" style="height:${laneH(t)}px"><span class="k">${t._label}</span><span class="n" title="${esc(t.name)} (${esc(t.id)})">${esc(t.name)}</span><span class="st">${st}</span></div>`;
+    }
+    if (S.mix) h += `<div class="th" style="height:${MIX_H()}px"><span class="k">MIX</span><span class="n" title="Measured from the exported file">Mix</span></div>`;
+    heads.innerHTML = h;
+  }
+
+  function renderLanes() {
+    if (!S.view) return;
+    renderHeads();
+    const lanes = $('#lanes');
+    let h = '';
+    for (const t of order) {
+      h += `<div class="lane${t.hidden ? ' hidden-track' : ''}" data-track="${esc(t.id)}" style="height:${laneH(t)}px">${t.kind === 'audio' ? '<canvas></canvas>' : ''}`;
+      for (const c of t.clips) {
+        const badges = [];
+        if (c.speed?.curve) badges.push('ramp');
+        else if (c.speed?.rate != null && c.speed.rate !== 1) badges.push(`${+c.speed.rate.toFixed(2)}×`);
+        if (c.speed?.reverse) badges.push('rev');
+        if (c.effects?.length && c.type !== 'adjustment') badges.push(`fx${c.effects.length > 1 ? c.effects.length : ''}`);
+        if (c.mask) badges.push('mask');
+        if (c.transform && c.kind === 'video') badges.push('pos');
+        if (c.link) badges.push('link');
+        h += `<div class="clip${c.kind === 'audio' ? ' audio' : ''}${c.enabled ? '' : ' disabled'}${t.hidden || t.muted ? ' track-off' : ''}" data-id="${esc(c.id)}" tabindex="0" style="--c:${colorVar(c)}"><span class="lb">${esc(nameOf(c))}</span>${badges.length ? `<span class="bd">${badges.map((b) => `<i>${b}</i>`).join('')}</span>` : ''}</div>`;
+      }
+      for (const tr of t.transitions || []) h += `<div class="trans" data-start="${tr.start}" data-end="${tr.end}" data-kind="${esc(tr.kind)}"></div>`;
+      if (S.showChange) for (const [id, ch] of changed) {
+        if (!ch.was || ch.was.track !== t.id) continue;
+        const now = byId.get(id);
+        const label = ch.change === 'removed' ? 'removed' : now && now.start === ch.was.start ? `ended ${tc(ch.was.end, false)}` : `was ${tc(ch.was.start, false)}`;
+        h += `<div class="ghost" data-start="${ch.was.start}" data-end="${ch.was.end}"><span>${label}</span></div>`;
+      }
+      h += '</div>';
+    }
+    if (S.mix) h += `<div class="lane" data-track="__mix" style="height:${MIX_H()}px"><canvas></canvas></div>`;
+    lanes.innerHTML = h;
+    layout();
+    paintClipClasses();
+  }
+
+  function layout() {
+    if (!S.view) return;
+    const w = Math.ceil(S.D * S.ppf) + 24;
+    $('#grid').style.gridTemplateColumns = `var(--heads) ${w}px`;
+    for (const el of document.querySelectorAll('#lanes .clip')) {
+      const c = byId.get(el.dataset.id);
+      el.style.left = `${c.start * S.ppf}px`;
+      el.style.width = `${Math.max(2, (c.end - c.start) * S.ppf - 1)}px`;
+    }
+    for (const el of document.querySelectorAll('#lanes .trans, #lanes .ghost')) {
+      el.style.left = `${el.dataset.start * S.ppf}px`;
+      el.style.width = `${Math.max(4, (el.dataset.end - el.dataset.start) * S.ppf)}px`;
+    }
+    renderRuler();
+    paintCanvases();
+    paintPlayhead();
+  }
+
+  function renderRuler() {
+    const fps = Math.max(1, Math.round(S.fps));
+    const steps = [1, 2, 5, 10, fps / 2, fps, 2 * fps, 5 * fps, 10 * fps, 15 * fps, 30 * fps, 60 * fps, 120 * fps, 300 * fps, 600 * fps, 1800 * fps];
+    const major = steps.find((s) => s * S.ppf >= 70) ?? steps.at(-1);
+    const minor = steps.slice().reverse().find((s) => s < major && major % s === 0 && s * S.ppf >= 10);
+    let h = '';
+    if (minor) for (let x = 0; x <= S.D; x += minor) if (x % major) h += `<div class="tick minor" style="left:${x * S.ppf}px"></div>`;
+    for (let x = 0; x <= S.D; x += major) h += `<div class="tick" style="left:${x * S.ppf}px"><span>${major < fps ? tc(x, false) : short(x)}</span></div>`;
+    if (cuts.length < 4000) for (const x of cuts) h += `<div class="cut" style="left:${x * S.ppf}px"></div>`;
+    if (S.loop) h += `<div class="loop" style="left:${S.loop[0] * S.ppf}px;width:${(S.loop[1] - S.loop[0]) * S.ppf}px"></div>`;
+    h += `<div class="knob" id="knob" style="left:${S.t * S.ppf}px"></div><div class="hover-tc" id="hoverTc"></div>`;
+    $('#ruler').innerHTML = h;
+    $('#knob').addEventListener('pointerdown', startScrub);
+  }
+
+  // Gain and fades from the timeline, the mix from the exported sound; only the visible stretch.
+  function gainDb(c, local) {
+    const g = c.gain;
+    if (typeof g === 'number') return g;
+    const k = g?.keyframes;
+    if (!k?.length) return 0;
+    if (local <= k[0].frame) return k[0].value;
+    if (local >= k.at(-1).frame) return k.at(-1).value;
+    for (let i = 0; i < k.length - 1; i++) {
+      const a = k[i], b = k[i + 1];
+      if (local >= a.frame && local <= b.frame) return a.ease === 'hold' ? a.value : a.value + (b.value - a.value) * ((local - a.frame) / Math.max(1, b.frame - a.frame));
+    }
+    return 0;
+  }
+  function fadeK(c, local) {
+    const span = c.end - c.start;
+    let k = 1;
+    if (c.fade?.in_frames && local < c.fade.in_frames) k *= local / c.fade.in_frames;
+    if (c.fade?.out_frames && local > span - c.fade.out_frames) k *= (span - local) / c.fade.out_frames;
+    return Math.max(0, k);
+  }
+  function paintCanvases() {
+    const sc = $('#scroller');
+    const headsW = $('#heads').offsetWidth;
+    const vw = Math.max(0, sc.clientWidth - headsW);
+    const sl = sc.scrollLeft;
+    const dpr = window.devicePixelRatio || 1;
+    const line = cssColor('--changed'), wave = cssColor('--c-audio');
+    for (const lane of document.querySelectorAll('#lanes .lane')) {
+      const cv = lane.querySelector('canvas');
+      if (!cv) continue;
+      const h = lane.clientHeight;
+      cv.width = Math.ceil(vw * dpr); cv.height = Math.ceil(h * dpr);
+      cv.style.width = `${vw}px`; cv.style.height = `${h}px`; cv.style.left = `${sl}px`;
+      const g = cv.getContext('2d');
+      g.scale(dpr, dpr);
+      if (lane.dataset.track === '__mix') {
+        const p = S.mix, mid = h / 2, amp = h / 2 - 3;
+        g.fillStyle = wave;
+        g.beginPath();
+        for (let x = 0; x < vw; x++) {
+          const f0 = Math.floor((x + sl) / S.ppf), f1 = Math.max(f0 + 1, Math.floor((x + 1 + sl) / S.ppf));
+          if (f0 >= S.D) break;
+          let m = 0;
+          for (let f = f0; f < f1 && f < p.length; f++) if (p[f] > m) m = p[f];
+          const v = Math.sqrt(m) * amp;
+          if (v > 0.2) g.rect(x, mid - v, 1, v * 2);
+        }
+        g.fill();
+        continue;
+      }
+      const t = order.find((x) => x.id === lane.dataset.track);
+      for (const c of t.clips) {
+        if (c.gain == null && !c.fade) continue;
+        const x0 = Math.max(0, c.start * S.ppf - sl), x1 = Math.min(vw, c.end * S.ppf - sl - 1);
+        if (x1 <= x0) continue;
+        // 0 dB sits a third down the lane; the bottom is -30 dB.
+        const y = (db) => 3 + ((6 - Math.max(-30, Math.min(6, db))) / 36) * (h - 6);
+        g.strokeStyle = line; g.lineWidth = 1.5; g.globalAlpha = c.enabled && !t.muted ? 1 : 0.4;
+        g.beginPath();
+        for (let x = x0; x <= x1; x += 2) {
+          const local = (x + sl) / S.ppf - c.start;
+          const k = fadeK(c, local);
+          const db = k > 0 ? gainDb(c, local) + 20 * Math.log10(k) : -30;
+          x === x0 ? g.moveTo(x, y(db)) : g.lineTo(x, y(db));
+        }
+        g.stroke();
+      }
+    }
+  }
+
+  function paintClipClasses() {
+    const sel = S.selected ? byId.get(S.selected) : null;
+    for (const el of document.querySelectorAll('#lanes .clip')) {
+      const c = byId.get(el.dataset.id);
+      el.classList.toggle('selected', c.id === S.selected);
+      el.classList.toggle('linked', Boolean(sel?.link && c.link === sel.link && c.id !== sel.id));
+      el.classList.toggle('changed', S.showChange && changed.has(c.id));
+      el.classList.toggle('dim', Boolean(S.focusType && typeOf(c) !== S.focusType));
+    }
+  }
+  function paintPlayhead() {
+    const x = `${S.t * S.ppf}px`;
+    const ph = $('#playhead'); if (ph) ph.style.left = x;
+    const k = $('#knob'); if (k) k.style.left = x;
+  }
+
+  function setZoom(ppf, anchorFrame = S.t) {
+    const sc = $('#scroller');
+    const min = S.fitPpf, max = Math.max(min * 2, 16);
+    ppf = Math.min(max, Math.max(min, ppf));
+    const anchorX = anchorFrame * S.ppf - sc.scrollLeft;
+    S.ppf = ppf;
+    layout();
+    sc.scrollLeft = Math.max(0, anchorFrame * ppf - anchorX);
+    $('#zoom').value = String(Math.round((100 * Math.log(ppf / min)) / Math.log(max / min)));
+    $('#fit').classList.toggle('on', ppf <= min * 1.001);
+    paintCanvases();
+  }
+  function measureFit() {
+    const sc = $('#scroller');
+    S.fitPpf = Math.max(0.002, (sc.clientWidth - $('#heads').offsetWidth - 24) / S.D);
+  }
+  function fit() { measureFit(); setZoom(S.fitPpf, 0); $('#scroller').scrollLeft = 0; }
+  function reveal(a, b = a) {
+    const sc = $('#scroller');
+    const vw = sc.clientWidth - $('#heads').offsetWidth;
+    const l = a * S.ppf, r = b * S.ppf;
+    if (l < sc.scrollLeft + 20 || r > sc.scrollLeft + vw - 20) sc.scrollLeft = Math.max(0, (l + r) / 2 - vw / 2);
+  }
+
+  // ---------- inspector ----------
+  function setTab(tab) {
+    S.tab = tab; S.composing = false;
+    for (const k of ['here', 'clip', 'words']) $(`#tab-${k}`).setAttribute('aria-selected', String(k === tab));
+    renderPane(true);
+  }
+  let paneKey = '';
+  function renderPane(force = false) {
+    const pane = $('#pane');
+    if (S.composing) { if (force) { pane.innerHTML = composeHtml(); paneKey = 'compose'; } return; }
+    if (!S.view) {
+      const k = `none${S.timelineError}`;
+      if (force || paneKey !== k) pane.innerHTML = `<div class="empty">${esc(S.timelineError || 'Loading the timeline…')}</div>`;
+      paneKey = k;
+      return;
+    }
+    const fr = Math.floor(S.t);
+    const here = active(fr);
+    $('#hereN').textContent = here.length;
+    let key = S.tab;
+    if (S.tab === 'here') key += here.map(({ c }) => c.id).join() + (S.playing ? Math.floor(fr / Math.max(1, Math.round(S.fps / 4))) : fr);
+    if (S.tab === 'clip') key += S.selected;
+    if (S.tab === 'words') {
+      // Only when the word under the playhead changes.
+      const c = captions.find((x) => fr >= x.start && fr < x.end);
+      const w = c?.words?.findIndex((x) => fr - c.start >= x.start && fr - c.start < x.end);
+      key += c ? `${c.id}:${w}` : `gap${captions.findIndex((x) => x.start > fr)}`;
+    }
+    if (!force && key === paneKey) return;
+    paneKey = key;
+    if (S.tab === 'here') pane.innerHTML = hereHtml(here, fr);
+    else if (S.tab === 'clip') pane.innerHTML = clipHtml(S.selected && byId.get(S.selected));
+    else { pane.innerHTML = wordsHtml(fr); pane.querySelector('.w.now')?.scrollIntoView({ block: 'nearest' }); }
+  }
+  function hereHtml(here, fr) {
+    if (!here.length) return `<div class="here-at"><b>${tc(fr)}</b></div><div class="empty">Nothing plays here.</div>`;
+    return `<div class="here-at"><b>${tc(fr)}</b><span>top layer first</span></div>${here.map(({ c, t }) => {
+      const local = fr - c.start;
+      const at = c.type === 'media' || c.type === 'timeline' ? `src ${tc(sourceAt(c, fr), false)}` : `${tc(local, false)} in`;
+      const word = c.type === 'caption' && c.words ? c.words.find((w) => local >= w.start && local < w.end)?.text : null;
+      const sub = [t.name, word ? `“${word}”` : null, !c.enabled ? 'switched off' : null, t.hidden ? 'track hidden' : null, t.muted ? 'track muted' : null].filter(Boolean).join(' · ');
+      return `<button type="button" class="layer${!c.enabled || t.hidden || t.muted ? ' off' : ''}" data-id="${esc(c.id)}"><span class="sw" style="background:${colorVar(c)}"></span><span style="min-width:0"><span class="t">${esc(nameOf(c))}</span><span class="s">${esc(sub)}</span></span><span class="r">${at}<br>${len(c.end - fr)} left</span></button>`;
+    }).join('')}`;
+  }
+  function clipHtml(c) {
+    if (!c) return '<div class="empty">Click a clip on the timeline to see everything about it.</div>';
+    const rows = [];
+    const row = (k, v) => { if (v != null && v !== '') rows.push(`<dt>${k}</dt><dd>${v}</dd>`); };
+    const t = c._track;
+    row('Track', `${esc(t.name)} <span class="mono" style="color:var(--muted)">${t._label}</span>`);
+    row('On timeline', `<span class="mono">${tc(c.start, false)} – ${tc(c.end, false)}</span> · ${len(c.end - c.start)}`);
+    row('Frames', `<span class="mono">${c.start} – ${c.end}</span>`);
+    if (c.type === 'media' || c.type === 'timeline') {
+      const dur = c.type === 'media' ? S.view.media?.[c.media_id]?.duration : S.view.nested?.[c.nested_timeline]?.duration;
+      row('Source', `<span class="mono">${tc(c.source.in, false)} – ${tc(c.source.out, false)}</span>${dur ? ` of ${short(dur)}` : ''}`);
+    }
+    if (c.speed) row('Speed', esc(c.speed.curve ? `ramp, ${c.speed.curve.map((p) => `${+p.rate.toFixed(2)}× at ${Math.round(p.at * 100)}%`).join(', ')}` : `${c.speed.rate ?? 1}×`) + (c.speed.reverse ? ', reversed' : ''));
+    if (!c.enabled) row('Switched off', 'Yes: it does not show or play');
+    if (c.transform) row('Placement', `<span class="mono">${esc(params(c.transform))}</span>`);
+    if (c.blend) row('Blend', esc(c.blend));
+    if (c.mask) row('Mask', `<span class="mono">${esc(params(c.mask))}</span>`);
+    if (c.animation) row('Animation', `<span class="mono">${esc(params(c.animation))}</span>`);
+    if (c.gain != null) row('Gain', typeof c.gain === 'number' ? `${c.gain} dB` : c.gain?.keyframes ? esc(c.gain.keyframes.map((k) => `${k.value} dB at ${tc(c.start + k.frame, false)}`).join(', ')) : esc(fmtVal(c.gain)));
+    if (c.pan != null) row('Pan', c.pan === 0 ? 'centre' : `${Math.abs(c.pan * 100).toFixed(0)}% ${c.pan < 0 ? 'left' : 'right'}`);
+    if (c.fade) row('Fades', [c.fade.in_frames && `in ${len(c.fade.in_frames)}`, c.fade.out_frames && `out ${len(c.fade.out_frames)}`].filter(Boolean).join(', '));
+    if (c.style) row('Style', `<span class="mono">${esc(params(c.style))}</span>`);
+    if (c.words) row('Words', `${c.words.length} timed`);
+    const linked = c.link ? allClips.filter((x) => x.link === c.link && x.id !== c.id) : [];
+    if (linked.length) row('Linked with', `<span class="chips">${linked.map((x) => `<button type="button" class="chip" data-id="${esc(x.id)}">${esc(x._track.name)}</button>`).join('')}</span>`);
+    if (S.showChange && changed.has(c.id)) row('Last edit', `<span style="color:var(--changed);font-weight:600">${esc(changed.get(c.id).change)} by ${esc(S.last?.tool || 'the last edit')}</span>`);
+    const fx = (c.effects || []).concat((t.effects || []).map((e) => ({ ...e, fromTrack: true })));
+    return `<div class="clip-title"><span class="sw" style="background:${colorVar(c)}"></span><div style="min-width:0"><b>${esc(nameOf(c))}</b><span class="mono">${esc(c.id)}</span></div></div>
+      <dl class="kv">${rows.join('')}</dl>
+      ${fx.length ? `<h4>Effects</h4>${fx.map((e) => `<div class="fx"><b>${esc(e.name)}</b>${e.fromTrack ? ' <span style="color:var(--muted)">(whole track)</span>' : ''}${e.enabled === false ? ' <span style="color:var(--muted)">off</span>' : ''}<div class="p">${esc(params(e.params))}</div></div>`).join('')}` : ''}
+      <div class="actions"><button class="pill" type="button" id="playClip">Play this clip</button><button class="pill" type="button" id="copyId">Copy clip id</button>${$('#sendAgent').hidden ? '' : `<button class="pill" type="button" id="toAgent">${ICON.agent}Send to agent</button>`}</div>`;
+  }
+  function wordsHtml(fr) {
+    return `<div class="words">${captions.map((c) => {
+      const local = fr - c.start;
+      const words = c.words?.length ? c.words : [{ text: c.text, start: 0, end: c.end - c.start }];
+      return `<span class="line"><span class="lt">${tc(c.start, false)}</span>${words.map((w) => {
+        const cls = local >= w.start && local < w.end ? 'now' : fr >= c.start + w.end ? 'past' : '';
+        return `<span class="w ${cls}" data-f="${c.start + w.start}">${esc(w.text)}</span>`;
+      }).join(' ')}</span>`;
+    }).join('')}</div>`;
+  }
+
+  // ---------- the agent ----------
+  // Nothing goes to the agent while scrubbing or playing. Once the view settles (playhead still
+  // for a second, a clip selected, a loop set) it sends ui/update-model-context, which starts no
+  // turn and replaces the last one. A note the person writes goes as ui/message: the one thing
+  // that starts a turn. Each only when the host advertises it.
+  let ctxTimer = 0, lastCtx = '';
+  function contextNow() {
+    const fr = Math.floor(S.t), sel = S.selected && byId.get(S.selected);
+    return {
+      timeline_id: S.timelineId,
+      playhead: { frame: fr, time: tc(fr, false) },
+      ...(sel ? { selected_clip: { id: sel.id, track_id: sel._track.id, track: sel._track.name, name: nameOf(sel), start: sel.start, end: sel.end } } : {}),
+      ...(S.loop ? { loop: { start: S.loop[0], end: S.loop[1] } } : {}),
+    };
+  }
+  function contextText(c) {
+    return `${[
+      `In the cuttingfloor editor the person is looking at timeline ${c.timeline_id}, playhead at ${c.playhead.time} (frame ${c.playhead.frame})`,
+      c.selected_clip && `, clip ${c.selected_clip.id} (${c.selected_clip.name}) on track ${c.selected_clip.track_id} (${c.selected_clip.track}) selected`,
+      c.loop && `, looping frames ${c.loop.start} to ${c.loop.end}`,
+    ].filter(Boolean).join('')}.`;
+  }
+  function scheduleContext() {
+    if (!host.caps.updateModelContext || !S.view) return;
+    clearTimeout(ctxTimer);
+    $('#ctx').classList.add('waiting');
+    ctxTimer = setTimeout(sendContext, 1000);
+  }
+  function sendContext() {
+    if (S.playing || dragging) return scheduleContext();
+    $('#ctx').classList.remove('waiting');
+    const c = contextNow(), key = JSON.stringify(c);
+    if (key === lastCtx) return;
+    lastCtx = key;
+    request('ui/update-model-context', { content: [{ type: 'text', text: contextText(c) }], structuredContent: c }).then(() => {
+      $('#ctxText').textContent = `Agent sees ${c.playhead.time}${c.selected_clip ? ` · ${c.selected_clip.name}` : ''}`;
+      $('#ctx').title = `Your agent will know this when you next write to it: ${contextText(c)}`;
+      const el = $('#ctx'); el.classList.add('fresh'); setTimeout(() => el.classList.remove('fresh'), 900);
+    }, () => { lastCtx = ''; });
+  }
+  function openCompose() {
+    S.composing = true;
+    for (const k of ['here', 'clip', 'words']) $(`#tab-${k}`).setAttribute('aria-selected', 'false');
+    renderPane(true);
+    setTimeout(() => $('#note')?.focus(), 0);
+  }
+  function composeHtml() {
+    const c = contextNow();
+    const chips = [`<span class="chip mono">${c.playhead.time}</span>`];
+    if (c.selected_clip) chips.push(`<span class="chip">${esc(c.selected_clip.name)}</span>`);
+    if (c.loop) chips.push(`<span class="chip mono">loop ${tc(c.loop.start, false)}–${tc(c.loop.end, false)}</span>`);
+    return `<div class="compose"><h4>Send to agent</h4><div class="chips">${chips.join('')}</div>
+      <textarea id="note" placeholder="What should change here? For example: this cut is a beat late, or the B-roll covers my face."></textarea>
+      <div class="row"><span class="hint">${host.caps.message ? 'Goes into the chat as your message, with this moment attached.' : 'This chat app does not take messages from the view, so this copies the note to paste.'}</span><div class="grow"></div><button class="pill" type="button" id="cancelNote">Cancel</button><button class="pill primary" type="button" id="sendNote">${host.caps.message ? 'Send' : 'Copy'}</button></div>
+      ${S.sent.length ? `<h4 style="margin-top:6px">Sent</h4>${S.sent.map((n) => `<div class="sent"><small>${esc(n.at)}</small>${esc(n.text)}</div>`).join('')}` : ''}</div>`;
+  }
+  async function sendNote() {
+    const box = $('#note');
+    const text = box?.value.trim();
+    if (!text) { box?.focus(); return; }
+    const c = contextNow();
+    const message = `${text}\n\n(${contextText(c)})`;
+    const at = c.playhead.time + (c.selected_clip ? ` · ${c.selected_clip.name}` : '');
+    if (host.caps.message) {
+      try {
+        const r = await request('ui/message', { role: 'user', content: [{ type: 'text', text: message }] });
+        if (r?.isError) throw new Error('refused');
+        S.sent.unshift({ at, text });
+        toast('Sent to your agent');
+      } catch {
+        toast('The chat app did not take the message. Try again, or copy it.');
+        return;
+      }
+    } else {
+      try { await navigator.clipboard.writeText(message); toast('Copied. Paste it into the chat.'); } catch { toast('Copy did not work here.'); return; }
+      S.sent.unshift({ at, text });
+    }
+    renderPane(true);
+  }
+
+  // ---------- transport ----------
+  function seek(fr, { pause = false } = {}) {
+    if (!S.view) return;
+    S.t = Math.min(S.D - 1, Math.max(0, fr));
+    if (pause && S.playing) togglePlay(false);
+    if (media && !S.playing) seekMedia(Math.floor(S.t));
+    else if (media && S.playing) media.currentTime = frameToTime(S.t);
+    tick();
+  }
+  function tick() {
+    $('#tc').innerHTML = `${tc(S.t)} <span class="dur">/ ${tc(S.D)}</span>`;
+    paintPlayhead();
+    paintPicture();
+    renderPane();
+    if (!S.playing) scheduleContext();
+  }
+  // While playing, the playhead follows the file; without a file it runs on its own clock.
+  let raf = 0, lastTs = 0;
+  function startClock() {
+    cancelAnimationFrame(raf);
+    lastTs = performance.now();
+    const stepFn = (ts) => {
+      if (!S.playing) return;
+      if (media) {
+        S.t = Math.min(S.D - 1, media.currentTime * S.fps);
+      } else {
+        S.t += ((ts - lastTs) / 1000) * S.fps * S.rate;
+        if (S.t >= S.D - 1) { S.t = S.D - 1; S.playing = false; paintPlay(); }
+      }
+      lastTs = ts;
+      if (S.loopOn && S.loop && S.t >= S.loop[1]) { S.t = S.loop[0]; if (media) media.currentTime = frameToTime(S.t); }
+      if (S.follow) {
+        const sc = $('#scroller'), vw = sc.clientWidth - $('#heads').offsetWidth, x = S.t * S.ppf;
+        if (x > sc.scrollLeft + vw - 40 || x < sc.scrollLeft) sc.scrollLeft = Math.max(0, x - 40);
+      }
+      tick();
+      raf = requestAnimationFrame(stepFn);
+    };
+    raf = requestAnimationFrame(stepFn);
+  }
+  function togglePlay(want = !S.playing) {
+    if (!S.view) return;
+    if (want && S.t >= S.D - 1) S.t = S.loopOn && S.loop ? S.loop[0] : 0;
+    if (media) {
+      if (want) {
+        media.currentTime = frameToTime(S.t);
+        media.play().catch((e) => toast(e?.name === 'NotAllowedError' ? 'Press play again' : 'This file does not play here'));
+      } else media.pause();
+      pulse(want ? 'play' : 'pause');
+      return;
+    }
+    S.playing = want;
+    paintPlay();
+    if (want) startClock();
+    else tick();
+  }
+  function pulse(name) {
+    const f = $('#flash');
+    if (!f) return;
+    f.innerHTML = ICON[name];
+    f.classList.remove('on'); void f.offsetWidth; f.classList.add('on');
+  }
+  function paintPlay() {
+    $('#play').innerHTML = S.playing ? ICON.pause : ICON.play;
+    $('#play').setAttribute('aria-label', S.playing ? 'Pause (Space)' : 'Play (Space)');
+    renderPane(true);
+  }
+  const prevCut = () => seek([...cuts].reverse().find((x) => x < Math.floor(S.t)) ?? 0);
+  const nextCut = () => seek(cuts.find((x) => x > Math.floor(S.t)) ?? S.D - 1);
+
+  // ---------- pointer ----------
+  const frameAt = (clientX) => (clientX - $('#area').getBoundingClientRect().left) / S.ppf;
+  const snap = (fr, on) => {
+    if (!on) return fr;
+    let best = fr, d = Infinity;
+    for (const x of [0, ...cuts, S.D - 1]) { const dd = Math.abs(x - fr); if (dd < d) { d = dd; best = x; } }
+    return d * S.ppf < 14 ? best : fr;
+  };
+  let dragging = false;
+  function startScrub(e) {
+    if (!S.view || e.button > 0) return;
+    e.preventDefault();
+    dragging = true;
+    const wasPlaying = S.playing;
+    if (wasPlaying) togglePlay(false);
+    const move = (ev) => seek(snap(frameAt(ev.clientX), ev.shiftKey));
+    move(e);
+    const up = () => {
+      dragging = false;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      if (wasPlaying) togglePlay(true);
+      else scheduleContext();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  }
+  function select(id) {
+    S.selected = id;
+    paintClipClasses();
+    if (!S.composing) setTab('clip');
+    scheduleContext();
+  }
+
+  function wire() {
+    $('#legend').addEventListener('click', (e) => {
+      const b = e.target.closest('.lg'); if (!b) return;
+      S.focusType = S.focusType === b.dataset.type ? null : b.dataset.type;
+      for (const x of $('#legend').children) x.setAttribute('aria-pressed', String(x.dataset.type === S.focusType));
+      paintClipClasses();
+    });
+    for (const k of ['here', 'clip', 'words']) $(`#tab-${k}`).addEventListener('click', () => setTab(k));
+    $('#pane').addEventListener('click', async (e) => {
+      if (e.target.closest('#sendNote')) return sendNote();
+      if (e.target.closest('#cancelNote')) return setTab(S.tab);
+      const layer = e.target.closest('[data-id]');
+      if (layer) return select(layer.dataset.id);
+      const w = e.target.closest('.w');
+      if (w) return seek(Number(w.dataset.f));
+      const c = S.selected && byId.get(S.selected);
+      if (!c) return;
+      if (e.target.closest('#playClip')) { S.loop = [c.start, c.end]; S.loopOn = true; $('#loopBtn').classList.add('on'); renderRuler(); seek(c.start); togglePlay(true); }
+      if (e.target.closest('#copyId')) { try { await navigator.clipboard.writeText(c.id); toast(`Copied ${c.id}`); } catch { toast(c.id); } }
+      if (e.target.closest('#toAgent')) openCompose();
+    });
+    $('#sendAgent').onclick = openCompose;
+    $('#play').onclick = () => togglePlay();
+    $('#prevFrame').onclick = () => seek(Math.floor(S.t) - 1, { pause: true });
+    $('#nextFrame').onclick = () => seek(Math.floor(S.t) + 1, { pause: true });
+    $('#back5').onclick = () => seek(S.t - 5 * S.fps);
+    $('#fwd5').onclick = () => seek(S.t + 5 * S.fps);
+    $('#prevCut').onclick = prevCut;
+    $('#nextCut').onclick = nextCut;
+    $('#tc').onclick = () => { S.frameMode = !S.frameMode; store.set('frames', S.frameMode); tick(); renderPane(true); };
+    $('#rate').onclick = () => {
+      S.rate = RATES[(RATES.indexOf(S.rate) + 1) % RATES.length];
+      $('#rate').textContent = `${S.rate}×`;
+      if (media) media.playbackRate = S.rate;
+    };
+    $('#mute').onclick = () => {
+      S.muted = !S.muted;
+      if (media) media.muted = S.muted;
+      $('#mute').innerHTML = S.muted ? ICON.mute : ICON.vol;
+      $('#mute').classList.toggle('on', S.muted);
+    };
+    $('#loopBtn').onclick = () => {
+      if (!S.loop) return toast('Press I and O to set where the loop starts and ends');
+      S.loopOn = !S.loopOn; $('#loopBtn').classList.toggle('on', S.loopOn);
+    };
+    $('#copyLink').onclick = async () => {
+      const url = S.file?.page_url || S.file?.url;
+      if (!url) return;
+      try { await navigator.clipboard.writeText(url); toast('Link copied'); $('#copyLink').classList.add('done'); setTimeout(() => $('#copyLink').classList.remove('done'), 1500); } catch { openLink(url); }
+    };
+    $('#openPage').onclick = () => S.file?.page_url && openLink(S.file.page_url);
+    $('#download').onclick = () => {
+      const f = S.file;
+      if (!f) return;
+      const fallback = () => openLink(f.url);
+      if (!host.caps.downloadFile) return fallback();
+      const name = (S.view?.name || 'export').replace(/[^\w .-]+/g, '').trim() || 'export';
+      request('ui/download-file', { contents: [{ type: 'resource_link', uri: f.url, name, mimeType: f.mime_type || undefined }] })
+        .then((r) => { if (r?.isError) fallback(); }, fallback);
+    };
+    $('#fullBtn').onclick = async () => {
+      const want = host.mode === 'fullscreen' ? 'inline' : 'fullscreen';
+      try {
+        const r = await request('ui/request-display-mode', { mode: want });
+        host.mode = r?.mode || want;
+        html.classList.toggle('full', host.mode === 'fullscreen');
+        paintHeader();
+        onLayout();
+      } catch {}
+    };
+
+    const ruler = $('#ruler'), lanes = $('#lanes'), area = $('#area'), sc = $('#scroller');
+    ruler.addEventListener('pointerdown', (e) => { if (!e.target.closest('#knob')) startScrub(e); });
+    lanes.addEventListener('pointerdown', (e) => {
+      const el = e.target.closest('.clip');
+      if (el) return select(el.dataset.id);
+      startScrub(e);
+    });
+    lanes.addEventListener('dblclick', (e) => { const el = e.target.closest('.clip'); if (el) seek(byId.get(el.dataset.id).start); });
+    lanes.addEventListener('keydown', (e) => {
+      const el = e.target.closest('.clip');
+      if (el && e.key === 'Enter') { select(el.dataset.id); seek(byId.get(el.dataset.id).start); }
+    });
+    const hl = $('#hoverLine'), tip = $('#tip');
+    const hover = (e) => {
+      if (!S.view) return;
+      const fr = Math.max(0, Math.min(S.D, frameAt(e.clientX)));
+      const x = `${fr * S.ppf}px`;
+      hl.style.display = 'block'; hl.style.left = x;
+      const htc = $('#hoverTc');
+      if (htc) { htc.style.display = 'block'; htc.style.left = `${fr * S.ppf + 6}px`; htc.textContent = tc(fr); }
+      const el = e.target.closest('.clip, .trans');
+      if (el && !dragging) {
+        let h;
+        if (el.classList.contains('trans')) h = `${esc(el.dataset.kind.replace(/_/g, ' '))}<small>${tc(+el.dataset.start, false)} – ${tc(+el.dataset.end, false)}</small>`;
+        else {
+          const c = byId.get(el.dataset.id);
+          h = `${esc(nameOf(c))}<small>${tc(c.start, false)} – ${tc(c.end, false)} · ${len(c.end - c.start)}${c.type === 'media' ? ` · src ${tc(c.source.in, false)}` : ''}</small>`;
+        }
+        tip.innerHTML = h; tip.style.display = 'block';
+        tip.style.left = `${Math.min(window.innerWidth - tip.offsetWidth - 8, e.clientX + 12)}px`;
+        tip.style.top = `${Math.min(window.innerHeight - tip.offsetHeight - 8, e.clientY + 16)}px`;
+      } else tip.style.display = 'none';
+    };
+    const leave = () => { hl.style.display = 'none'; tip.style.display = 'none'; const htc = $('#hoverTc'); if (htc) htc.style.display = 'none'; };
+    area.addEventListener('pointermove', hover);
+    ruler.addEventListener('pointermove', hover);
+    area.addEventListener('pointerleave', leave);
+    ruler.addEventListener('pointerleave', leave);
+    sc.addEventListener('scroll', () => paintCanvases(), { passive: true });
+    sc.addEventListener('wheel', (e) => {
+      if (!(e.ctrlKey || e.metaKey) || !S.view) return;
+      e.preventDefault();
+      setZoom(S.ppf * Math.exp(-e.deltaY * 0.01), frameAt(e.clientX));
+    }, { passive: false });
+
+    $('#zoom').addEventListener('input', (e) => {
+      const min = S.fitPpf, max = Math.max(min * 2, 16);
+      setZoom(min * (max / min) ** (Number(e.target.value) / 100));
+    });
+    $('#zIn').onclick = () => setZoom(S.ppf * 1.6);
+    $('#zOut').onclick = () => setZoom(S.ppf / 1.6);
+    $('#fit').onclick = fit;
+    $('#follow').onclick = () => { S.follow = !S.follow; $('#follow').classList.toggle('on', S.follow); };
+    $('#compact').onclick = () => { S.compact = !S.compact; store.set('compact', S.compact); $('#compact').classList.toggle('on', S.compact); renderLanes(); onLayout(); };
+    $('#compact').classList.toggle('on', S.compact);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.target.closest?.('input, textarea')) {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && e.target.id === 'note') { e.preventDefault(); sendNote(); }
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey || !S.view) return;
+      const k = e.key;
+      if (k === ' ' || k === 'k') { if (e.target instanceof HTMLButtonElement && k === ' ') return; e.preventDefault(); togglePlay(); }
+      else if (k === 'ArrowLeft') { e.preventDefault(); seek(Math.floor(S.t) - (e.shiftKey ? Math.round(S.fps) : 1), { pause: true }); }
+      else if (k === 'ArrowRight') { e.preventDefault(); seek(Math.floor(S.t) + (e.shiftKey ? Math.round(S.fps) : 1), { pause: true }); }
+      else if (k === 'j') seek(S.t - 5 * S.fps);
+      else if (k === 'l') seek(S.t + 5 * S.fps);
+      else if (k === '[') prevCut();
+      else if (k === ']') nextCut();
+      else if (k === 'i' || k === 'o') {
+        const fr = Math.floor(S.t);
+        const [a, b] = S.loop ?? [0, S.D];
+        S.loop = k === 'i' ? [fr, Math.max(fr + 1, b)] : [Math.min(a, Math.max(0, fr - 1)), Math.max(1, fr)];
+        S.loopOn = true; $('#loopBtn').classList.add('on'); renderRuler();
+        toast(`Loop ${tc(S.loop[0], false)} – ${tc(S.loop[1], false)}`);
+        scheduleContext();
+      } else if (k === 'Escape') {
+        if (S.composing) return setTab(S.tab);
+        S.loop = null; S.loopOn = false; $('#loopBtn').classList.remove('on'); renderRuler(); scheduleContext();
+      } else if (k === '+' || k === '=') setZoom(S.ppf * 1.6);
+      else if (k === '-') setZoom(S.ppf / 1.6);
+      else if (k === '0') fit();
+      else if (k === 'm') $('#mute').click();
+      else if (k === 'Home') seek(0);
+      else if (k === 'End') seek(S.D - 1);
+    });
+
+    new ResizeObserver(() => {
+      if (!S.view) return;
+      const wasFit = S.ppf <= S.fitPpf * 1.001;
+      measureFit();
+      if (wasFit) fit(); else setZoom(S.ppf);
+    }).observe($('#scroller'));
+    matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => paintCanvases());
+  }
+
+  function onLayout() {
+    paintHeader();
+    // A fixed-height frame gives the timeline what the picture leaves; inline it grows to ~8 rows.
+    const fixed = html.classList.contains('fill') || html.classList.contains('full');
+    const sc = $('#scroller');
+    if (sc) sc.style.setProperty('--tl-max', fixed ? `${Math.max(140, Math.round(window.innerHeight * 0.36))}px` : '300px');
+    if (S.view) { measureFit(); if (S.ppf < S.fitPpf) fit(); paintCanvases(); }
+  }
+
+  // ---------- data ----------
+  function showTimeline() {
+    paintHeader();
+    paintLegend();
+    $('#tab-words').hidden = !captions.length;
+    $('#wordsN').textContent = captions.reduce((n, c) => n + (c.words?.length || 1), 0);
+    renderLanes();
+    fit();
+    tick();
+    renderPane(true);
+    maybeMix();
+  }
+  // A host that won't relay tools/call still gets a scrubbable ruler over the file.
+  function fallbackTimeline(seconds, frames) {
+    if (S.view || !Number.isFinite(seconds)) return;
+    const fps = frames && seconds ? frames / seconds : 30;
+    index({ name: 'Export', sequence: { width: 0, height: 0, fps: { num: Math.round(fps * 1000), den: 1000 } }, duration: Math.max(1, Math.round(frames || seconds * fps)), tracks: [], media: {} });
+    paintHeader();
+    $('#tlMeta').textContent = '';
+    $('#corner').textContent = '';
+    renderLanes();
+    fit();
+    tick();
+  }
+
+  async function loadTimeline(id) {
+    if (S.timelineId === id && (S.view || S.loading)) return;
+    S.timelineId = id;
+    S.loading = true;
+    if (!host.caps.serverTools) {
+      S.timelineError = 'This chat app does not let the view read the timeline, so only the file shows.';
+      $('#tlNote').hidden = false; $('#tlNote').textContent = S.timelineError;
+      renderPane(true);
+      if (media && Number.isFinite(media.duration)) fallbackTimeline(media.duration, S.file?.frames);
+      return;
+    }
+    try {
+      const view = await callTool('timeline.get', { timeline_id: id });
+      index(view);
+      showTimeline();
+    } catch (e) {
+      S.timelineError = `The timeline did not load: ${e.message}`;
+      $('#tlNote').hidden = false; $('#tlNote').textContent = S.timelineError;
+      renderPane(true);
+      if (media && Number.isFinite(media.duration)) fallbackTimeline(media.duration, S.file?.frames);
+      return;
+    } finally {
+      S.loading = false;
+    }
+    loadLastEdit();
+  }
+
+  // The edit that made this timeline: its history entry, and what it changed against its parent.
+  async function loadLastEdit() {
+    const view = S.view;
+    if (!view?.parent) return;
+    try {
+      const [hist, diff, parent] = await Promise.all([
+        callTool('timeline.history', { timeline_id: view.timeline_id, limit: 1 }),
+        callTool('timeline.diff', { from: view.parent, to: view.timeline_id }),
+        callTool('timeline.get', { timeline_id: view.parent }).catch(() => null),
+      ]);
+      S.last = hist?.entries?.[0] || null;
+      const before = new Map((parent?.tracks || []).flatMap((t) => t.clips.map((c) => [c.id, { ...c, track: t.id }])));
+      changed = new Map();
+      for (const ch of diff?.changed || []) {
+        if (ch.type !== 'clip') continue;
+        const was = before.get(ch.id);
+        const moved = was && (was.start !== ch.start || was.end !== ch.end || was.track !== ch.track_id);
+        changed.set(ch.id, { change: ch.change, was: was && (ch.change === 'removed' || moved) ? { start: was.start, end: was.end, track: was.track } : null });
+      }
+      paintLastEdit(diff?.changed || []);
+      renderLanes();
+    } catch {
+      // The strip is a convenience; the timeline already shows.
+    }
+  }
+  function paintLastEdit(all) {
+    const box = $('#lastEdit');
+    if (!S.last?.tool) { box.hidden = true; return; }
+    const clips = all.filter((c) => c.type === 'clip');
+    const counts = ['added', 'modified', 'removed'].map((k) => [k, clips.filter((c) => c.change === k).length]).filter(([, n]) => n);
+    const words = { added: 'added', modified: 'changed', removed: 'removed' };
+    const others = all.length - clips.length;
+    const summary = [...counts.map(([k, n]) => `${n} clip${n > 1 ? 's' : ''} ${words[k]}`), others ? `${others} other change${others > 1 ? 's' : ''}` : null].filter(Boolean).join(', ') || 'no changes';
+    const first = clips.find((c) => c.change !== 'removed' && byId.has(c.id));
+    box.hidden = false;
+    box.innerHTML = `<span class="dot"></span><span>Last edit <code>${esc(S.last.tool)}</code>: ${esc(summary)}</span><div class="grow"></div>${first ? '<button class="linkbtn" id="goChange" type="button">Go to it</button>' : ''}${changed.size ? `<button class="linkbtn" id="toggleChange" type="button">${S.showChange ? 'Hide' : 'Show'} changes</button>` : ''}`;
+    if (first) $('#goChange').onclick = () => { const c = byId.get(first.id); select(c.id); seek(c.start); reveal(c.start, c.end); };
+    const tg = $('#toggleChange');
+    if (tg) tg.onclick = () => { S.showChange = !S.showChange; paintLastEdit(all); renderLanes(); };
+  }
+
+  // ---------- the export ----------
+  let following = 0;
+  async function follow(jobId) {
+    const mine = ++following;
+    for (let first = true; ; first = false) {
+      // job.get answers at once, so the view checks back on its own interval.
+      if (!first) await new Promise((r) => setTimeout(r, 1000));
+      if (mine !== following) return;
+      let job;
+      try {
+        job = await callTool('job.get', { job_id: jobId });
+      } catch (e) {
+        if (mine !== following) return;
+        return stageError(`Lost track of the export: ${e.message}.`, () => { stageWait('Checking…'); follow(jobId); });
+      }
+      if (mine !== following) return;
+      if (!job) return stageError('The job could not be read.');
+      if (job.status === 'completed' && job.result) return onFile(job.result);
+      if (job.status === 'failed' || job.status === 'cancelled') return stageError(job.error?.message || `The export ${job.status}.`);
+      stageWait(job.status_message || 'Exporting…', job.progress);
+    }
+  }
+  function onFile(data) {
+    S.file = data;
+    paintHeader();
+    stageFile(data);
+  }
+  function render(data) {
+    if (!data) return stageError('Nothing to show.');
+    if (data.url) return onFile(data);
+    if (data.job_id && data.status && data.status !== 'completed') {
+      stageWait(data.status_message || 'Exporting…', data.progress);
+      if (host.caps.serverTools) return follow(data.job_id);
+      return stageWait('Exporting… This chat app does not let the view check on it; ask for the result when it is done.');
+    }
+    stageError('Nothing to play yet.');
+  }
+  function onResult(result) {
+    if (!result) return;
+    let data = result.structuredContent;
+    if (!data && Array.isArray(result.content)) {
+      const t = result.content.find((c) => c?.type === 'text');
+      try { data = t && JSON.parse(t.text); } catch {}
+    }
+    if (result.isError) return stageError(data?.message || result.content?.find((c) => c?.type === 'text')?.text || 'The export failed.');
+    render(data);
+  }
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== window.parent) return;
+    const msg = event.data;
+    if (msg?.jsonrpc !== '2.0') return;
+    if (msg.id !== undefined && pending.has(msg.id) && !msg.method) {
+      const p = pending.get(msg.id);
+      pending.delete(msg.id);
+      if (msg.error) p.reject(new Error(msg.error.message || 'error'));
+      else p.resolve(msg.result);
+      return;
+    }
+    const params = msg.params || {};
+    if (msg.method === 'ui/notifications/tool-input') {
+      const id = params.arguments?.timeline_id;
+      if (typeof id === 'string') whenReady(() => loadTimeline(id));
+      if (!S.file) stageWait('Exporting…');
+    } else if (msg.method === 'ui/notifications/tool-result') whenReady(() => onResult(params));
+    else if (msg.method === 'ui/notifications/tool-cancelled') stageError(`The export was cancelled${params.reason ? `: ${params.reason}` : '.'}`);
+    else if (msg.method === 'ui/notifications/host-context-changed') applyContext(params);
+    else if (msg.method === 'ui/resource-teardown' && msg.id !== undefined) {
+      following++;
+      if (media) media.pause();
+      send({ jsonrpc: '2.0', id: msg.id, result: {} });
+    }
+  });
+
+  // Tool calls wait for the handshake, so the host's capabilities are known.
+  const queue = [];
+  function whenReady(fn) { if (host.ready) fn(); else queue.push(fn); }
+
+  new ResizeObserver(() => {
+    notify('ui/notifications/size-changed', { width: Math.ceil(html.scrollWidth), height: Math.ceil(root.getBoundingClientRect().height) });
+  }).observe(root);
+  window.addEventListener('resize', () => ui?.onLayout());
+
+  ui = build();
+  stageWait('Getting ready…');
+  tick();
+  request('ui/initialize', {
+    appInfo: { name: 'cuttingfloor-editor', version: VERSION },
+    appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] },
+    protocolVersion: '2026-01-26',
+  }).then((r) => {
+    host.caps = r?.hostCapabilities || {};
+    applyContext(r?.hostContext);
+  }, () => {}).finally(() => {
+    host.ready = true;
+    notify('ui/notifications/initialized', {});
+    for (const fn of queue.splice(0)) fn();
+    paintHeader();
+  });
+})();
+</script>
+</body>
+</html>

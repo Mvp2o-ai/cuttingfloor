@@ -4,9 +4,9 @@ import type { ServerDeps } from './server.ts';
 import { SERVER_VERSION } from './version.ts';
 
 /**
- * The player an MCP Apps host (io.modelcontextprotocol/ui) shows with export.video and media.get
- * results: it plays the signed file in the chat. While an export still runs (a client without
- * Tasks gets a job handle), it follows the job with job.get and plays the result when it lands.
+ * The player an MCP Apps host (io.modelcontextprotocol/ui) shows with media.get results: it plays
+ * the signed file in the chat. While an import still runs it says so; it also follows a job
+ * handle with job.get and plays the result when it lands. export.video shows the editor instead.
  */
 export const PLAYER_URI = 'ui://cuttingfloor/player';
 export const MCP_APP_MIME = 'text/html;profile=mcp-app';
