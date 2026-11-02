@@ -296,10 +296,14 @@ async function makeSelected(
   const after = shapeFilters(pass, src);
   parts.push(`[${union}]${after.length ? after.join(',') : 'null'}[s]`);
   const sel = parts.join(';');
+  // The copy's frame k is the source at k / rate, as the render reads it: a file whose own
+  // frames are not on that grid (an odd or varying rate) is put on it first, so the copy, the
+  // shapes drawn per frame and the span a fill covers all line up with the clip.
+  const retime = src.image ? '' : `fps=${rate},`;
   // A source with its own transparency keeps it: the selection multiplies it.
   const merge = src.alpha
-    ? `${sel};[0:v]format=rgba,split[c][a];[a]alphaextract[sa];[sa][s]blend=all_mode=multiply:shortest=1[m];[c][m]alphamerge=shortest=1,format=rgba[v]`
-    : `${sel};[0:v]format=rgb24[c];[c][s]alphamerge=shortest=1,format=rgba[v]`;
+    ? `${sel};[0:v]${retime}format=rgba,split[c][a];[a]alphaextract[sa];[sa][s]blend=all_mode=multiply:shortest=1[m];[c][m]alphamerge=shortest=1,format=rgba[v]`
+    : `${sel};[0:v]${retime}format=rgb24[c];[c][s]alphamerge=shortest=1,format=rgba[v]`;
   const first = [
     ...INPUT,
     ...(src.image ? ['-loop', '1'] : []),

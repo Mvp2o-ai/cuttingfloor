@@ -1361,8 +1361,15 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(waiting.isError).toBe(true);
       const said = JSON.stringify(waiting.structured);
       expect(said).toMatch(/media_not_ready/);
-      const jobId = /j_[0-9a-z]{26}/.exec(said)?.[0] as string;
+      const cancelledId = /j_[0-9a-z]{26}/.exec(said)?.[0] as string;
+      expect(cancelledId).toBeTruthy();
+      // A cancelled fill does not stay the selection's maker: the next render starts afresh.
+      await ok(client, 'job.cancel', { job_id: cancelledId });
+      const again = JSON.stringify((await render(0)).structured);
+      expect(again).toMatch(/media_not_ready/);
+      const jobId = /j_[0-9a-z]{26}/.exec(again)?.[0] as string;
       expect(jobId).toBeTruthy();
+      expect(jobId).not.toBe(cancelledId);
       const listed = await ok<{ jobs: Array<{ job_id: string; for?: { kind?: string } }> }>(
         client,
         'job.list',
@@ -1409,12 +1416,16 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         size: 'full',
       });
       expect(full.isError).toBe(false);
-      const fills = await ok<{ jobs: Array<{ for?: { kind?: string; media_id?: string } }> }>(
-        client,
-        'job.list',
-        { tool: 'clip.set_mask', media_id: boxed },
-      );
-      expect(fills.jobs.filter((j) => j.for?.kind === 'fill')).toHaveLength(1);
+      const fills = await ok<{
+        jobs: Array<{ status: string; for?: { kind?: string; media_id?: string } }>;
+      }>(client, 'job.list', { tool: 'clip.set_mask', media_id: boxed });
+      // The cancelled one, and the one that made it.
+      expect(
+        fills.jobs
+          .filter((j) => j.for?.kind === 'fill')
+          .map((j) => j.status)
+          .sort(),
+      ).toEqual(['cancelled', 'completed']);
       // A matte or a fill needs a clip of media.
       const titled = await ok<{ timeline_id: string; clip_id: string }>(client, 'title.add', {
         timeline_id: filled.timeline_id,

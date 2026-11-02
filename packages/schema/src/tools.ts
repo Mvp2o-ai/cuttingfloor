@@ -1995,7 +1995,7 @@ export const JobGetInput = z.object({
     .max(JOB_WAIT_LIMIT_SECONDS)
     .default(0)
     .describe(
-      `Wait up to this long (at most ${JOB_WAIT_LIMIT_SECONDS} s) for any job asked for to change status, progress or status message; 0 answers at once`,
+      `Wait up to this long (at most ${JOB_WAIT_LIMIT_SECONDS} s) for any job asked for to finish (its status changes); progress along the way does not end the wait; 0 answers at once`,
     ),
   result: ResultMode.optional().describe(
     'Default full for one job_id; summary for job_ids, so a check on many stays small (full gives them whole)',

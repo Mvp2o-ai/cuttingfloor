@@ -22,6 +22,8 @@ export interface CopyRun {
   fraction: number;
   frames: number;
   listeners: Set<(fraction: number) => void>;
+  /** Ends whoever waits on it, when its job ended without making the copy. */
+  reject: (error: unknown) => void;
 }
 
 /** Copies this server is making, by the file each makes. */
@@ -52,7 +54,14 @@ export async function copyJob(
   }) => Promise<string>,
 ): Promise<{ path: string } | { run: CopyRun }> {
   const going = runs.get(dest);
-  if (going) return { run: going };
+  if (going) {
+    // A job that was cancelled or failed, or that the server stopped, makes nothing: the copy
+    // is started afresh.
+    const job = await rt.jobs.store.get(going.jobId, what.owner);
+    if (job?.status === 'working') return { run: going };
+    runs.delete(dest);
+    going.reject(new CfError('cancelled', `Job ${going.jobId} ended before the copy was made`));
+  }
   if (await isMade(dest)) return { path: dest };
   const label = `the ${WHAT[what.kind]} of clip ${what.clipId}`;
   const job = await rt.jobs.store.create({
@@ -79,6 +88,7 @@ export async function copyJob(
     fraction: 0,
     frames,
     listeners: new Set(),
+    reject: (e) => settle?.reject(e),
   };
   runs.set(dest, run);
   rt.jobs.start(
@@ -114,6 +124,13 @@ export async function copyJob(
     },
     { lane: 'heavy', work: seconds },
   );
+  // However the job ends (a cancel while it waited for a slot never runs the work), it is no
+  // longer the copy's maker.
+  void rt.jobs.settled(job.id).finally(() => {
+    if (runs.get(dest) !== run) return;
+    runs.delete(dest);
+    run.reject(new CfError('cancelled', `Job ${job.id} ended before the copy was made`));
+  });
   return { run };
 }
 
@@ -132,7 +149,7 @@ export function copyNotReady(rt: Runtime, run: CopyRun, clipId: string): CfError
     'media_not_ready',
     `The ${WHAT[run.kind]} of clip ${clipId} ${run.kind === 'fill' ? 'is' : 'are'} being made by job ${run.jobId}: ${where}`,
     {
-      hint: `job.get {job_id: "${run.jobId}", wait_seconds} follows it (progress per frame, seconds_left once it moves); render again when it is done. An export waits for it`,
+      hint: `job.get {job_id: "${run.jobId}", wait_seconds: 50} answers when it is done (progress per frame and seconds_left meanwhile); render again then. An export waits for it`,
       detail: {
         job_id: run.jobId,
         progress: run.fraction,
@@ -174,6 +191,8 @@ export async function copyFor(
     signal: AbortSignal | undefined;
     needed: boolean;
     waiting?: ((on: boolean, message: string) => void) | undefined;
+    /** Inside a job: waits out of its slot (JobContext.aside). */
+    aside?: (<T>(wait: Promise<T>) => Promise<T>) | undefined;
   },
 ): Promise<string | undefined> {
   if ('path' in made) return made.path;
@@ -187,7 +206,8 @@ export async function copyFor(
       );
     say(run.fraction);
     try {
-      return await awaitCopy(run, say);
+      const waited = awaitCopy(run, say);
+      return await (options.aside ? options.aside(waited) : waited);
     } finally {
       options.waiting?.(false, 'preparing sources');
     }

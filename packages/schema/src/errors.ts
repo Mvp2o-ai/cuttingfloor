@@ -109,7 +109,7 @@ export function mediaNotReady(
     'media_not_ready',
     `Media ${id} ${state} (${maker})${needs === null ? '' : `; ${needs} needs it ready`}`,
     {
-      hint: `${importing ? 'Edits and render.frames take it once it is processing' : 'Edits and render.frames take it already'}. Wait until ${maker} ${wait}${job?.job_id ? ` (job.get {job_id: "${job.job_id}", wait_seconds: 30} answers as soon as it moves)` : ' (media.get says its status)'}, then call again`,
+      hint: `${importing ? 'Edits and render.frames take it once it is processing' : 'Edits and render.frames take it already'}. Wait until ${maker} ${wait}${job?.job_id ? ` (job.get {job_id: "${job.job_id}", wait_seconds: 30} answers when it is done)` : ' (media.get says its status)'}, then call again`,
       detail: {
         media_id: id,
         status,

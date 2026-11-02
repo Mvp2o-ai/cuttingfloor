@@ -237,6 +237,12 @@ export interface JobContext {
    * it does while the job waits in a queue.
    */
   waiting(on: boolean): void;
+  /**
+   * Runs `wait` (another job's work this one needs) with this job out of its slot: the slot
+   * goes to the next job in line and the stall clock stops; when `wait` ends the job takes the
+   * next free slot again, ahead of jobs that have not started, and goes on.
+   */
+  aside<T>(wait: Promise<T>): Promise<T>;
 }
 
 export type JobWork = (ctx: JobContext) => Promise<JobResult>;
@@ -244,7 +250,14 @@ export type JobWork = (ctx: JobContext) => Promise<JobResult>;
 /** A context for job work run inline in a call (a short one answered at once): reports go nowhere. */
 export function inlineJobContext(signal: AbortSignal): JobContext {
   const none = () => undefined;
-  return { signal, progress: none, status: none, alive: none, waiting: none };
+  return {
+    signal,
+    progress: none,
+    status: none,
+    alive: none,
+    waiting: none,
+    aside: (wait) => wait,
+  };
 }
 
 const currentJob = new AsyncLocalStorage<JobContext>();
@@ -843,6 +856,39 @@ export class JobRunner {
       lane.running.delete(job.id);
       if (this.#grant(lane)) this.#announce(lane);
     });
+    /** Out of its slot while it waits on other work, then back in line at the front. */
+    const aside = async <T>(wait: Promise<T>): Promise<T> => {
+      lane.running.delete(job.id);
+      if (this.#grant(lane)) this.#announce(lane);
+      active.waiting = true;
+      try {
+        return await wait;
+      } finally {
+        await new Promise<void>((resolve) => {
+          const entry: Waiter = {
+            id: job.id,
+            tool: job.tool,
+            short: active.short,
+            take: () => resolve(),
+            save,
+          };
+          if (controller.signal.aborted) return resolve();
+          lane.queue.unshift(entry);
+          this.#grant(lane);
+          controller.signal.addEventListener(
+            'abort',
+            () => {
+              const at = lane.queue.indexOf(entry);
+              if (at >= 0) lane.queue.splice(at, 1);
+              resolve();
+            },
+            { once: true },
+          );
+        });
+        active.waiting = false;
+        active.lastMove = Date.now();
+      }
+    };
     void save({ startedAt: new Date().toISOString() }).catch(() => undefined);
     active.running = true;
     active.lastMove = Date.now();
@@ -910,6 +956,7 @@ export class JobRunner {
           active.waiting = on;
           active.lastMove = Date.now();
         },
+        aside,
       };
       const result = await currentJob.run(ctx, () =>
         this.#around ? this.#around(ctx, () => work(ctx)) : work(ctx),
