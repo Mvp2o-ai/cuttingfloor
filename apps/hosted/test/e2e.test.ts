@@ -1402,6 +1402,19 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         ] as const)
           expect(colour(await pixel(image, x, y)), `frame ${frame} at ${x},${y}`).toBe('blue');
       }
+      // Made once: the export and full-size frames use the same fill as the previews.
+      const full = await call(client, 'render.frames', {
+        timeline_id: filled.timeline_id,
+        frames: [2],
+        size: 'full',
+      });
+      expect(full.isError).toBe(false);
+      const fills = await ok<{ jobs: Array<{ for?: { kind?: string; media_id?: string } }> }>(
+        client,
+        'job.list',
+        { tool: 'clip.set_mask', media_id: boxed },
+      );
+      expect(fills.jobs.filter((j) => j.for?.kind === 'fill')).toHaveLength(1);
       // A matte or a fill needs a clip of media.
       const titled = await ok<{ timeline_id: string; clip_id: string }>(client, 'title.add', {
         timeline_id: filled.timeline_id,

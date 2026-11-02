@@ -1,62 +1,67 @@
-import {
-  isMade,
-  type MatteSource,
-  passFrames,
-  type SelectionPass,
-  type SelectionSource,
-  selectedFile,
-  selectedPicture,
-} from '@cuttingfloor/engine';
+import { isMade } from '@cuttingfloor/engine';
 import { CfError } from '@cuttingfloor/schema';
 import type { Runtime } from './runtime.ts';
 
-// A filled selection takes minutes (LaMa, about 1.5 s a frame), so it is a job of its own: it
-// shows in job.list with its progress and what it is for, it is not ended as stalled while it
-// moves, and whatever needs it (a render, an export) either waits on it, hearing each frame
-// (an export job, so it is not taken for stalled either), or is told which job to wait for.
+// Copies of a clip's source that take minutes to make (a filled selection, in-between frames)
+// are jobs of their own: each shows in job.list with its progress per frame and what it is for,
+// it is not ended as stalled while it moves, and whatever needs it either waits on it, hearing
+// each frame (an export job, which so is not taken for stalled either), or is told which job
+// makes it. A copy is made once per clip and setting, whatever size it is shown at.
 
-export interface FillRun {
+export type CopyKind = 'fill' | 'in-between';
+
+const WHAT: Record<CopyKind, string> = {
+  fill: 'filled selection',
+  'in-between': 'in-between frames',
+};
+
+export interface CopyRun {
   jobId: string;
+  kind: CopyKind;
   done: Promise<string>;
   fraction: number;
   frames: number;
   listeners: Set<(fraction: number) => void>;
 }
 
-/** Fills this server is making, by the file each makes. */
-const runs = new Map<string, FillRun>();
+/** Copies this server is making, by the file each makes. */
+const runs = new Map<string, CopyRun>();
 
-export interface FillFor {
+export interface CopyFor {
   owner: string;
   mediaId: string;
   timelineId?: string | undefined;
   clipId: string;
+  kind: CopyKind;
 }
 
 /**
- * The fill's file when it is made; otherwise the job making it (started here if none is).
+ * The copy's file when it is made; otherwise the job making it (started here if none is).
+ * `make` writes `dest`, calling `onProgress` (0–1) as it goes.
  */
-export async function fillCopy(
+export async function copyJob(
   rt: Runtime,
-  what: FillFor,
-  src: SelectionSource,
-  dir: string,
-  pass: SelectionPass,
-  mattes: Map<string, MatteSource>,
-  purpose: 'preview' | 'export',
-): Promise<{ path: string } | { run: FillRun }> {
-  const dest = selectedFile(src, dir, pass, purpose);
+  what: CopyFor,
+  dest: string,
+  frames: number,
+  /** Seconds of source it reads, for the job's stall limit. */
+  seconds: number,
+  make: (options: {
+    signal: AbortSignal;
+    onProgress: (fraction: number) => void;
+  }) => Promise<string>,
+): Promise<{ path: string } | { run: CopyRun }> {
   const going = runs.get(dest);
   if (going) return { run: going };
   if (await isMade(dest)) return { path: dest };
-  const frames = passFrames(src);
+  const label = `the ${WHAT[what.kind]} of clip ${what.clipId}`;
   const job = await rt.jobs.store.create({
     owner: what.owner,
-    tool: 'clip.set_mask',
+    tool: what.kind === 'fill' ? 'clip.set_mask' : 'clip.set_speed',
     meta: {
       media_id: what.mediaId,
       ...(what.timelineId ? { timeline_id: what.timelineId } : {}),
-      kind: 'fill',
+      kind: what.kind,
       clip_id: what.clipId,
     },
     statusMessage: 'queued',
@@ -65,33 +70,38 @@ export async function fillCopy(
   const done = new Promise<string>((resolve, reject) => {
     settle = { resolve, reject };
   });
-  // A failed fill is reported to whoever waits; nobody waiting is fine too.
+  // A failed copy is reported to whoever waits; nobody waiting is fine too.
   done.catch(() => undefined);
-  const run: FillRun = { jobId: job.id, done, fraction: 0, frames, listeners: new Set() };
+  const run: CopyRun = {
+    jobId: job.id,
+    kind: what.kind,
+    done,
+    fraction: 0,
+    frames,
+    listeners: new Set(),
+  };
   runs.set(dest, run);
   rt.jobs.start(
     job,
     async ({ signal, progress }) => {
       try {
-        progress(0, `filling the selection of clip ${what.clipId}: ${frames} frames`);
-        const path = await selectedPicture(src, dir, pass, mattes, purpose, {
+        progress(0, `making ${label}: ${frames} frames`);
+        const path = await make({
           signal,
           onProgress: (f) => {
             run.fraction = f;
-            progress(
-              f,
-              `filling the selection of clip ${what.clipId}: frame ${Math.round(f * frames)} of ${frames}`,
-            );
+            progress(f, `making ${label}: frame ${Math.round(f * frames)} of ${frames}`);
             for (const l of run.listeners) l(f);
           },
         });
         settle?.resolve(path);
         return {
-          content: [{ type: 'text', text: `Filled the selection of clip ${what.clipId}` }],
+          content: [{ type: 'text', text: `Made ${label}` }],
           structuredContent: {
             media_id: what.mediaId,
             clip_id: what.clipId,
             ...(what.timelineId ? { timeline_id: what.timelineId } : {}),
+            kind: what.kind,
             frames,
           },
         };
@@ -102,30 +112,44 @@ export async function fillCopy(
         runs.delete(dest);
       }
     },
-    { lane: 'heavy', work: src.image ? 1 : src.duration },
+    { lane: 'heavy', work: seconds },
   );
   return { run };
 }
 
-/** The refusal for a render that needs a fill not made yet: which job makes it, how far it is. */
-export function fillNotReady(run: FillRun, clipId: string, started: boolean): CfError {
-  const left = Math.max(1, Math.ceil(((1 - run.fraction) * run.frames * 1.5) / 60));
+/**
+ * The refusal for a render that needs a copy not made yet: which job makes it, how far it is,
+ * and, from the job runner, where it waits in the queue or the time left at its measured rate.
+ */
+export function copyNotReady(rt: Runtime, run: CopyRun, clipId: string): CfError {
+  const queued = rt.jobs.queuePosition(run.jobId);
+  const estimate = rt.jobs.estimate(run.jobId);
+  const pct = Math.round(run.fraction * 100);
+  const where = queued
+    ? `waiting for a slot (${queued.ahead} ${queued.ahead === 1 ? 'job' : 'jobs'} ahead; ${queued.limit} ${queued.limit === 1 ? 'runs' : 'run'} at once)`
+    : `${pct}% done${estimate?.secondsLeft !== undefined ? `, about ${Math.ceil(estimate.secondsLeft / 60)} min left at its rate so far` : ''}`;
   return new CfError(
     'media_not_ready',
-    `The filled selection of clip ${clipId} is ${started ? 'now' : 'still'} being made by job ${run.jobId} (${Math.round(run.fraction * 100)}%)`,
+    `The ${WHAT[run.kind]} of clip ${clipId} ${run.kind === 'fill' ? 'is' : 'are'} being made by job ${run.jobId}: ${where}`,
     {
-      hint: `Filling takes about 1.5 s a frame on this server's CPU (${run.frames} frames, about ${left} min left). Follow it with job.get {job_id: "${run.jobId}", wait_seconds}, then render again; an export waits for it`,
-      detail: { job_id: run.jobId, progress: run.fraction, frames: run.frames },
+      hint: `job.get {job_id: "${run.jobId}", wait_seconds} follows it (progress per frame, seconds_left once it moves); render again when it is done. An export waits for it`,
+      detail: {
+        job_id: run.jobId,
+        progress: run.fraction,
+        frames: run.frames,
+        ...(queued ? { jobs_ahead: queued.ahead } : {}),
+        ...(estimate?.secondsLeft !== undefined ? { seconds_left: estimate.secondsLeft } : {}),
+      },
     },
   );
 }
 
 /**
- * Waits for a fill inside another job, telling that job each frame (`onFrame`), so it is not
- * taken for stalled while the fill moves.
+ * Waits for a copy inside another job, telling that job each frame (`onFrame`), so it is not
+ * taken for stalled while the copy moves.
  */
-export async function awaitFill(
-  run: FillRun,
+export async function awaitCopy(
+  run: CopyRun,
   onFrame: (fraction: number) => void,
 ): Promise<string> {
   const listener = (f: number) => onFrame(f);
@@ -135,4 +159,39 @@ export async function awaitFill(
   } finally {
     run.listeners.delete(listener);
   }
+}
+
+/**
+ * Gets a copy for a render: its file once made; inside a job (`signal`) it waits, saying how
+ * far the copy is with its stall clock stopped; a request refuses, naming the job, unless the
+ * clip is not at the frames it shows (then undefined: the clip plays without it there).
+ */
+export async function copyFor(
+  rt: Runtime,
+  made: { path: string } | { run: CopyRun },
+  clipId: string,
+  options: {
+    signal: AbortSignal | undefined;
+    needed: boolean;
+    waiting?: ((on: boolean, message: string) => void) | undefined;
+  },
+): Promise<string | undefined> {
+  if ('path' in made) return made.path;
+  const { run } = made;
+  if (options.signal) {
+    // The copy job has its own stall watch; this one waits with its clock stopped.
+    const say = (f: number) =>
+      options.waiting?.(
+        true,
+        `waiting for the ${WHAT[run.kind]} of clip ${clipId} (job ${run.jobId}, ${Math.round(f * 100)}%)`,
+      );
+    say(run.fraction);
+    try {
+      return await awaitCopy(run, say);
+    } finally {
+      options.waiting?.(false, 'preparing sources');
+    }
+  }
+  if (!options.needed) return undefined;
+  throw copyNotReady(rt, run, clipId);
 }

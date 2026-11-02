@@ -128,7 +128,7 @@ export const MaskArgs = z.object({
     .describe('Soft edge as a fraction of the picture short side'),
   invert: z.boolean().optional().describe('Select the outside instead'),
   mode: MaskMode.optional().describe(
-    'show (default) only the selection, hide it, or fill it: painted in from its surroundings',
+    'show (default) only the selection, hide it, or fill it (painted in from around it and from earlier frames)',
   ),
   add: z
     .array(MaskShapeArgs)
@@ -260,7 +260,7 @@ export const EditArgs = {
       .enum(['none', 'blend', 'motion'])
       .optional()
       .describe(
-        `Video, when it shows fewer new frames a second than the sequence (slowed, or a lower frame rate; rate 1 smooths that): none repeats frames; blend crossfades neighbours; motion makes new frames from the movement (minterpolate, slow, on first render). Up to ${INTERPOLATE_LIMITS.frames} frames a clip`,
+        `Video, when it shows fewer new frames a second than the sequence (slowed, or a lower frame rate; rate 1 smooths that): none repeats frames; blend crossfades neighbours; motion makes new frames from the movement (minterpolate, slow). Made once as a job of its own (job.list); a render that needs it names the job until it is done, and an export waits. Up to ${INTERPOLATE_LIMITS.frames} frames a clip`,
       ),
     ripple: z
       .boolean()
