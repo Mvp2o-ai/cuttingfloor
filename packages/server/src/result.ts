@@ -161,16 +161,15 @@ export function jobView(
   };
 }
 
-/** What a wait watches: a change in any of these is an answer. */
-const stateOf = (job: Job | undefined) =>
-  job ? `${job.status}|${job.progress ?? ''}|${job.statusMessage ?? ''}` : '';
+/** What a wait watches: a job's status, so it answers when a job ends, not at each step. */
+const stateOf = (job: Job | undefined) => (job ? job.status : '');
 
 /** How often a wait rereads the job files, for jobs another server runs. */
 const WAIT_POLL_MS = 1000;
 
 /**
- * Waits up to `seconds` for any of the jobs to change status, progress or status message, and
- * returns at once if none is working (a finished job will not change). Hears this server's own
+ * Waits up to `seconds` for any of the jobs to change status (finish, fail or be cancelled),
+ * and returns at once if none is working (a finished job will not change). Hears this server's own
  * writes as they happen, and rereads the files for jobs other servers run.
  */
 export async function waitForChange(
