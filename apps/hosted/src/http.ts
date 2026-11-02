@@ -515,6 +515,10 @@ async function sendFile(
     'content-disposition': `attachment; filename="${name.replace(/"/g, '')}"`,
     'cache-control': 'private, max-age=3600',
     'x-content-type-options': 'nosniff',
+    // The link is the permission, so a page anywhere may read it: the editor view measures the
+    // export's sound from its sandbox. No credentials are involved.
+    'access-control-allow-origin': '*',
+    'access-control-expose-headers': 'content-length, content-range',
   };
   const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '');
   if (range && (range[1] || range[2])) {
