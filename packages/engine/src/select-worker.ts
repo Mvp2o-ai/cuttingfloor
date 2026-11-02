@@ -483,12 +483,84 @@ function shiftSince(
   return best;
 }
 
+/** Frames a remembered pixel is used for after it was last seen. */
+const MEMORY_FRAMES = 120;
+
+/** Which pixels of a part are selected or within `r` pixels of the selection (a square reach). */
+function nearSelection(rgba: Buffer, w: number, a: Area, r: number): Uint8Array {
+  const bw = a.x1 - a.x0 + 1;
+  const bh = a.y1 - a.y0 + 1;
+  const sel = new Uint8Array(bw * bh);
+  for (let y = 0; y < bh; y++)
+    for (let x = 0; x < bw; x++)
+      sel[y * bw + x] = (rgba[((a.y0 + y) * w + a.x0 + x) * 4 + 3] as number) > 0 ? 1 : 0;
+  // A running count along each row, then each column: any selected pixel within r.
+  const rows = new Uint8Array(bw * bh);
+  for (let y = 0; y < bh; y++) {
+    let count = 0;
+    for (let x = -r; x < bw; x++) {
+      if (x + r < bw) count += sel[y * bw + x + r] as number;
+      if (x - r - 1 >= 0) count -= sel[y * bw + x - r - 1] as number;
+      if (x >= 0) rows[y * bw + x] = count > 0 ? 1 : 0;
+    }
+  }
+  const out = new Uint8Array(bw * bh);
+  for (let x = 0; x < bw; x++) {
+    let count = 0;
+    for (let y = -r; y < bh; y++) {
+      if (y + r < bh) count += rows[(y + r) * bw + x] as number;
+      if (y - r - 1 >= 0) count -= rows[(y - r - 1) * bw + x] as number;
+      if (y >= 0) out[y * bw + x] = count > 0 ? 1 : 0;
+    }
+  }
+  return out;
+}
+
+/** Moves the remembered picture within a part by the picture's shift since the last frame. */
+function moveMemory(
+  memory: Uint8Array,
+  seen: Uint16Array,
+  w: number,
+  h: number,
+  a: Area,
+  dx: number,
+  dy: number,
+): void {
+  const bw = a.x1 - a.x0 + 1;
+  const bh = a.y1 - a.y0 + 1;
+  const m = new Uint8Array(bw * bh * 3);
+  const s = new Uint16Array(bw * bh);
+  for (let y = 0; y < bh; y++)
+    for (let x = 0; x < bw; x++) {
+      const px = a.x0 + x - dx;
+      const py = a.y0 + y - dy;
+      if (px < 0 || py < 0 || px >= w || py >= h) continue;
+      const from = py * w + px;
+      const to = y * bw + x;
+      s[to] = seen[from] as number;
+      m[to * 3] = memory[from * 3] as number;
+      m[to * 3 + 1] = memory[from * 3 + 1] as number;
+      m[to * 3 + 2] = memory[from * 3 + 2] as number;
+    }
+  for (let y = 0; y < bh; y++)
+    for (let x = 0; x < bw; x++) {
+      const at = (a.y0 + y) * w + a.x0 + x;
+      const from = y * bw + x;
+      seen[at] = s[from] as number;
+      memory[at * 3] = m[from * 3] as number;
+      memory[at * 3 + 1] = m[from * 3 + 1] as number;
+      memory[at * 3 + 2] = m[from * 3 + 2] as number;
+    }
+}
+
 /**
  * Fills each frame's selection with LaMa (Apache-2.0; Carve/LaMa-ONNX, 512 × 512). Each part of
  * the selection gets a square crop around it with as much surrounding picture again on each
- * side. To keep the fill from shimmering, each frame's fill is blended half and half with the
- * last frame's output moved by how far the picture around it moved. Only selected pixels change,
- * blended by the selection's own softness.
+ * side. Where an earlier frame showed the area (the item has moved off it, or the picture
+ * moved), that real picture is used instead, moved along with the picture. Elsewhere, to keep
+ * the fill from shimmering, each frame's fill is blended half and half with the last frame's
+ * output moved by how far the picture around it moved. Only selected pixels change, blended
+ * by the selection's own softness.
  */
 async function fill(model: string, w: number, h: number) {
   const session = await ort.InferenceSession.create(model, {
@@ -506,6 +578,11 @@ async function fill(model: string, w: number, h: number) {
   // never pixels that kept their own picture (the item itself, where it was not selected).
   let prevFilled: Uint8Array | undefined;
   const painted01 = new Uint8Array(w * h);
+  // What the picture showed where each pixel is now, from the last frame it was not selected,
+  // moved along with the picture: an area the item has moved off is shown as it really was.
+  // seen[i] counts the frames since (0: never seen).
+  const memory = new Uint8Array(w * h * 3);
+  const seen = new Uint16Array(w * h);
   let n = 0;
   for (;;) {
     const rgba = await read();
@@ -552,6 +629,8 @@ async function fill(model: string, w: number, h: number) {
       const filled = new Float32Array(cw * ch * 3);
       resize(inter, LAMA, LAMA, 3, cw, ch, filled);
       const [dx, dy] = prev ? shiftSince(prev, rgba, w, h, { left, top, cw, ch }) : [0, 0];
+      if (!prev) seen.fill(0);
+      else if (dx || dy) moveMemory(memory, seen, w, h, a, dx, dy);
       for (let y = 0; y < ch; y++)
         for (let x = 0; x < cw; x++) {
           const gx = left + x;
@@ -566,12 +645,32 @@ async function fill(model: string, w: number, h: number) {
           const inside = prev && px >= 0 && py >= 0 && px < w && py < h;
           const held = inside && prevFilled?.[py * w + px] ? (py * w + px) * 3 : -1;
           if (alpha >= 0.98) painted01[at] = 1;
+          const real = seen[at] ? at * 3 : -1;
           for (let c = 0; c < 3; c++) {
             let v = filled[(y * cw + x) * 3 + c] as number;
-            if (held >= 0) v = 0.5 * v + 0.5 * ((prev as Buffer)[held + c] as number);
+            if (real >= 0) v = memory[real + c] as number;
+            else if (held >= 0) v = 0.5 * v + 0.5 * ((prev as Buffer)[held + c] as number);
             const o = rgba[at * 4 + c] as number;
             out[at * 3 + c] = Math.max(0, Math.min(255, Math.round(o + (v - o) * alpha)));
           }
+        }
+    }
+    // Remember what shows around each part now, keeping clear of the selection's edge (where
+    // a selection that is a little off would let the item itself in); age what is hidden.
+    const margin = Math.max(4, Math.round(Math.min(w, h) * 0.02));
+    for (const a of parts) {
+      const near = nearSelection(rgba, w, a, margin);
+      const bw = a.x1 - a.x0 + 1;
+      for (let y = a.y0; y <= a.y1; y++)
+        for (let x = a.x0; x <= a.x1; x++) {
+          const at = y * w + x;
+          if (!near[(y - a.y0) * bw + x - a.x0]) {
+            memory[at * 3] = rgba[at * 4] as number;
+            memory[at * 3 + 1] = rgba[at * 4 + 1] as number;
+            memory[at * 3 + 2] = rgba[at * 4 + 2] as number;
+            seen[at] = 1;
+          } else if (seen[at] && rgba[at * 4 + 3])
+            seen[at] = (seen[at] as number) >= MEMORY_FRAMES ? 0 : (seen[at] as number) + 1;
         }
     }
     prev = parts.length ? out : undefined;
