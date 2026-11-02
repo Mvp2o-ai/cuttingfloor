@@ -1,5 +1,21 @@
 # cuttingfloor
 
+## 0.29.1
+
+### Patch Changes
+
+- b5e4f3f: Fill fixes. A fill is now a job of its own, shown in job.list with its progress per frame; an export waits for it without being ended as stalled, and a render that needs it names the job. render.frames no longer waits on fills of clips that are not at its frames. A filled item no longer shows through as a ghost: a fill paints over the whole selection, its soft edge included, and grows a little past it. A mask takes several shapes (add), so two regions are shown, hidden or filled in one pass. Refusals of a fill on a nested clip say why.
+
+## 0.29.0
+
+### Minor Changes
+
+- ded0ed9: Captions and titles: style `max_lines` shows long text a screenful at a time, each from its first word, with its lines broken by the font's own widths and balanced; `spans` style part of a text (a word in another colour, bold, italic, underlined or sized) on `title.add`, `caption.add` segments and `text.set`. `clip.set_animation` loops take `from_frame` and `to_frame`, so a shake can run for part of a clip. The `compressor` effect takes `attack_ms` and `release_ms` (FFmpeg's 20 ms and 250 ms by default, as before). `media.import {source: {still: {media_id | timeline_id, frame}}}` makes one frame of a video or an edit into a full-size PNG still. `job.get {job_ids}` sums each result up (`result_summary`) unless asked for `result: "full"`; one `job_id` still answers whole. Video `denoise` now visibly takes grain out, frame by frame (FFmpeg fftdnoiz, so a preview matches the export): `strength` is the noise level in 8-bit levels, 0 to 50, default 4 (it was hqdn3d, 0 to 10, default 3, which barely changed a frame). Transcript words say that a "-" word is whisper marking a new speaker.
+
+### Patch Changes
+
+- 5875c5f: clip.set_speed interpolate (blend or motion) now plays the right moment through the whole clip: the slowed copy used to stop a fraction of the way through its source, so later frames showed the wrong footage, white or black. Copies made before are made again.
+
 ## 0.28.0
 
 ### Minor Changes

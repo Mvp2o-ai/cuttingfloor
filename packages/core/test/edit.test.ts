@@ -995,6 +995,59 @@ describe('compositing', () => {
     ).toThrow(/only to matte/);
   });
 
+  it('takes several shapes in one selection and keeps them through a load', () => {
+    const { doc } = edit(base(), {
+      tool: 'clip.set_mask',
+      args: {
+        clip_id: 'c3',
+        mask: {
+          shape: 'rectangle',
+          x: 0.1,
+          width: 0.2,
+          mode: 'fill',
+          feather: 0.01,
+          add: [
+            {
+              shape: 'ellipse',
+              x: {
+                keyframes: [
+                  { frame: 0, value: 0.8 },
+                  { frame: 9, value: 0.7 },
+                ],
+              },
+            },
+            {
+              shape: 'polygon',
+              points: [
+                [0.4, 0.4],
+                [0.6, 0.4],
+                [0.5, 0.6],
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const view = toView('tl_x', doc);
+    const mask = view.tracks.flatMap((t) => t.clips).find((c) => c.id === 'c3')?.mask as {
+      add: Array<Record<string, unknown>>;
+    };
+    expect(mask).toMatchObject({ shape: 'rectangle', mode: 'fill', feather: 0.01 });
+    expect(mask.add).toHaveLength(2);
+    expect(mask.add[0]).toMatchObject({
+      shape: 'ellipse',
+      x: { keyframes: [{ frame: 0 }, { frame: 9 }] },
+    });
+    expect(toView('tl_x', fromView(view, resolve))).toEqual({ ...view, parent: null });
+    // Each added shape is checked as the first is.
+    expect(() =>
+      edit(base(), {
+        tool: 'clip.set_mask',
+        args: { clip_id: 'c3', mask: { shape: 'ellipse', add: [{ shape: 'polygon' }] } },
+      }),
+    ).toThrow(/needs points \(add\[0\]\)/);
+  });
+
   it("refuses values outside each field's range", () => {
     expect(() =>
       edit(base(), { tool: 'clip.set_transform', args: { clip_id: 'c3', opacity: 2 } }),

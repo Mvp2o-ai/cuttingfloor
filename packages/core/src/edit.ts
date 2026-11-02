@@ -21,6 +21,7 @@ import {
   type StoredClip,
   type StoredEffect,
   type StoredMask,
+  type StoredMaskShape,
   type StoredPoints,
   type StoredSpeed,
   type StoredTrack,
@@ -2277,6 +2278,9 @@ function clipSetBlend(doc: TimelineDoc, a: EditArgsOf<'clip.set_blend'>): OpOutc
   return ok(clip.start, { clip_id: clip.id });
 }
 
+type ToolMask = NonNullable<EditArgsOf<'clip.set_mask'>['mask']>;
+type ToolShape = Omit<ToolMask, 'feather' | 'invert' | 'mode' | 'add'>;
+
 function clipSetMask(
   doc: TimelineDoc,
   a: EditArgsOf<'clip.set_mask'>,
@@ -2288,22 +2292,47 @@ function clipSetMask(
     return ok(clip.start, { clip_id: clip.id });
   }
   const m = a.mask;
+  const shapes: ToolShape[] = [m, ...(m.add ?? [])];
+  const baked =
+    m.mode === 'fill' || (m.add?.length ?? 0) > 0 || shapes.some((x) => x.shape === 'matte');
+  if (baked && clip.type !== 'media') {
+    const what =
+      m.mode === 'fill' ? 'mode fill' : m.add?.length ? 'A mask of several shapes' : 'A matte mask';
+    throw new CfError(
+      'bad_request',
+      `${what} works on a clip of imported or created media, not a ${clip.type} clip`,
+      {
+        hint: `It is made from the clip's own source file before the render, frame by frame, and a ${clip.type === 'timeline' ? 'nested timeline' : clip.type} has no source file of its own. Bake it first: export.video the part, media.import {source: {job_id}}, and mask that clip`,
+      },
+    );
+  }
+  const tpf = ticksPerFrame(doc.sequence.fps);
+  const mask: StoredMask = storedShape(m, clip, tpf, resolve, 'mask');
+  if (m.add?.length)
+    mask.add = m.add.map((x, i) => storedShape(x, clip, tpf, resolve, `add[${i}]`));
+  if (m.feather) mask.feather = m.feather;
+  if (m.invert) mask.invert = true;
+  if (m.mode && m.mode !== 'show') mask.mode = m.mode;
+  clip.mask = mask;
+  return ok(clip.start, { clip_id: clip.id });
+}
+
+/** One shape of a selection, checked and in stored form. */
+function storedShape(
+  m: ToolShape,
+  clip: StoredClip,
+  tpf: number,
+  resolve: MediaResolver,
+  where: string,
+): StoredMaskShape {
+  const of = where === 'mask' ? '' : ` (${where})`;
   if (m.shape === 'matte' && !m.media_id) {
-    throw new CfError('bad_request', 'A matte mask needs media_id', {
+    throw new CfError('bad_request', `A matte mask needs media_id${of}`, {
       hint: 'Give media_id: a picture or video whose alpha (or brightness) marks the selection, e.g. a create.cutout result',
     });
   }
   if (m.shape !== 'matte' && m.media_id) {
-    throw new CfError('bad_request', `media_id applies only to matte masks, not ${m.shape}`);
-  }
-  if ((m.shape === 'matte' || m.mode === 'fill') && clip.type !== 'media') {
-    throw new CfError(
-      'bad_request',
-      `${m.shape === 'matte' ? 'A matte mask' : 'mode fill'} works on a clip of imported or created media, not a ${clip.type} clip`,
-      {
-        hint: 'Bake it first: export.video the part, media.import {source: {job_id}}, and mask that clip',
-      },
-    );
+    throw new CfError('bad_request', `media_id applies only to matte masks, not ${m.shape}${of}`);
   }
   if (m.shape === 'matte' && m.media_id) {
     const matte = resolve(m.media_id);
@@ -2321,41 +2350,34 @@ function clipSetMask(
         hint: 'Make a matte of it first, e.g. create.cutout with a region, and give that media_id',
       });
     }
-  }
-  if (m.shape === 'matte') {
     const fixed = MASK_NUMBERS.filter((k) => m[k] !== undefined && m[k] !== null);
     if (fixed.length) {
-      throw new CfError('bad_request', `${fixed.join(', ')} do not apply to a matte mask`, {
+      throw new CfError('bad_request', `${fixed.join(', ')} do not apply to a matte mask${of}`, {
         hint: 'A matte selects by its own pixels; to move or scale it, change the matte media',
       });
     }
   }
   if (m.shape === 'polygon' && !m.points) {
-    throw new CfError('bad_request', 'A polygon mask needs points', {
+    throw new CfError('bad_request', `A polygon mask needs points${of}`, {
       hint: 'Give points: [[x, y], ...] with at least 3 corners in the clip picture (0–1)',
     });
   }
   if (m.shape !== 'polygon' && m.points) {
-    throw new CfError('bad_request', `points apply only to polygon masks, not ${m.shape}`);
+    throw new CfError('bad_request', `points apply only to polygon masks, not ${m.shape}${of}`);
   }
   if (m.corner_radius && m.shape !== 'rectangle') {
-    throw new CfError('bad_request', 'corner_radius applies only to rectangle masks');
+    throw new CfError('bad_request', `corner_radius applies only to rectangle masks${of}`);
   }
-  const tpf = ticksPerFrame(doc.sequence.fps);
-  const mask: StoredMask = { shape: m.shape };
+  const shape: StoredMaskShape = { shape: m.shape };
   for (const key of MASK_NUMBERS)
-    setAnimatable(mask, key, m[key], MASK_DEFAULTS[key], clip, tpf, MASK_LIMITS[key]);
-  if (m.feather) mask.feather = m.feather;
-  if (m.corner_radius) mask.corner_radius = m.corner_radius;
-  if (m.invert) mask.invert = true;
-  if (m.points) mask.points = storedPoints(m.points, clip, tpf);
-  if (m.media_id) mask.media_id = m.media_id;
-  if (m.mode && m.mode !== 'show') mask.mode = m.mode;
-  clip.mask = mask;
-  return ok(clip.start, { clip_id: clip.id });
+    setAnimatable(shape, key, m[key], MASK_DEFAULTS[key], clip, tpf, MASK_LIMITS[key]);
+  if (m.corner_radius) shape.corner_radius = m.corner_radius;
+  if (m.points) shape.points = storedPoints(m.points, clip, tpf);
+  if (m.media_id) shape.media_id = m.media_id;
+  return shape;
 }
 
-type ToolPoints = NonNullable<EditArgsOf<'clip.set_mask'>['mask']>['points'];
+type ToolPoints = ToolShape['points'];
 
 /** Polygon corners in stored form: keyframe frames become source ticks, as other keyframes do. */
 function storedPoints(p: NonNullable<ToolPoints>, clip: StoredClip, tpf: number): StoredPoints {

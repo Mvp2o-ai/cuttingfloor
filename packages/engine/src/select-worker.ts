@@ -502,6 +502,10 @@ async function fill(model: string, w: number, h: number) {
   const crop = new Float32Array(LAMA * LAMA * 4);
   const plane = LAMA * LAMA;
   let prev: Buffer | undefined;
+  // Where the last output was painted in fully: only those pixels are blended into this one,
+  // never pixels that kept their own picture (the item itself, where it was not selected).
+  let prevFilled: Uint8Array | undefined;
+  const painted01 = new Uint8Array(w * h);
   let n = 0;
   for (;;) {
     const rgba = await read();
@@ -559,7 +563,9 @@ async function fill(model: string, w: number, h: number) {
           if (!alpha) continue;
           const px = gx - dx;
           const py = gy - dy;
-          const held = prev && px >= 0 && py >= 0 && px < w && py < h ? (py * w + px) * 3 : -1;
+          const inside = prev && px >= 0 && py >= 0 && px < w && py < h;
+          const held = inside && prevFilled?.[py * w + px] ? (py * w + px) * 3 : -1;
+          if (alpha >= 0.98) painted01[at] = 1;
           for (let c = 0; c < 3; c++) {
             let v = filled[(y * cw + x) * 3 + c] as number;
             if (held >= 0) v = 0.5 * v + 0.5 * ((prev as Buffer)[held + c] as number);
@@ -569,6 +575,8 @@ async function fill(model: string, w: number, h: number) {
         }
     }
     prev = parts.length ? out : undefined;
+    prevFilled = parts.length ? Uint8Array.from(painted01) : undefined;
+    painted01.fill(0);
     process.stdout.write(out);
     n += 1;
     if (n % 10 === 0) process.stderr.write(`frames ${n}\n`);

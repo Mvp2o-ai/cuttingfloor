@@ -1293,16 +1293,17 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(JSON.stringify(bad.structured)).toMatch(/same number of corners/);
     }, 180_000);
 
-    it('fills a selection from its surroundings in every frame', async () => {
+    it('fills a selection of several shapes as a job of its own, in every frame', async () => {
       const m = env.mediaDir;
-      // Blue with a white box in the middle (x 270–370, y 190–290 of 640×480), 10 frames.
+      // Blue with two white boxes (x 40–90 and 230–280, y 95–145 of 320×240), 5 frames: small,
+      // since the fill is slow and the suite shares the machine.
       await ff([
         '-f',
         'lavfi',
         '-i',
-        'color=c=0x1030d0:size=640x480:rate=25,drawbox=x=270:y=190:w=100:h=100:c=white:t=fill',
+        'color=c=0x1030d0:size=320x240:rate=25,drawbox=x=40:y=95:w=50:h=50:c=white:t=fill,drawbox=x=230:y=95:w=50:h=50:c=white:t=fill',
         '-frames:v',
-        '10',
+        '5',
         '-pix_fmt',
         'yuv420p',
         join(m, 'boxed.mp4'),
@@ -1310,55 +1311,94 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       const boxed = (await importMedia({ path: join(m, 'boxed.mp4') })).media_id;
       const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
         name: 'fill',
-        sequence: { width: 640, height: 480, fps: { num: 25, den: 1 } },
+        sequence: { width: 320, height: 240, fps: { num: 25, den: 1 } },
         tracks: { video: 1, audio: 0 },
       });
-      const placed = await ok<{ timeline_id: string; clip_id: string }>(client, 'clip.add', {
+      // The boxed clip twice: frames 0–4 filled, frames 5–9 as they are.
+      const placed = await ok<{ timeline_id: string; clip_ids: string[] }>(client, 'edit.batch', {
         timeline_id,
-        track_id: 't1',
-        media_id: boxed,
-        av: 'video',
-        source: { in: 0, out: 10 },
         preview: 'none',
+        ops: [
+          {
+            tool: 'clip.add',
+            args: { track_id: 't1', media_id: boxed, av: 'video', source: { in: 0, out: 5 } },
+          },
+          {
+            tool: 'clip.add',
+            args: { track_id: 't1', media_id: boxed, av: 'video', source: { in: 0, out: 5 } },
+          },
+        ],
       });
+      const view = await ok<{ tracks: Array<{ clips: Array<{ id: string }> }> }>(
+        client,
+        'timeline.get',
+        { timeline_id: placed.timeline_id },
+      );
+      const first = view.tracks[0]?.clips[0]?.id as string;
       const filled = await ok<{ timeline_id: string }>(client, 'clip.set_mask', {
         timeline_id: placed.timeline_id,
-        clip_id: placed.clip_id,
-        mask: { shape: 'rectangle', width: 0.2, height: 0.25, mode: 'fill' },
+        clip_id: first,
+        mask: {
+          shape: 'rectangle',
+          x: 65 / 320,
+          width: 0.2,
+          height: 0.25,
+          mode: 'fill',
+          add: [{ shape: 'rectangle', x: 255 / 320, width: 0.2, height: 0.25 }],
+        },
         preview: 'none',
       });
-      // The fill is made in the background; until then renders say so.
-      const first = await call(client, 'render.frames', {
-        timeline_id: filled.timeline_id,
-        frames: [0],
+      const render = (frame: number) =>
+        call(client, 'render.frames', {
+          timeline_id: filled.timeline_id,
+          frames: [frame],
+          layout: 'single',
+          format: 'png',
+          long_edge: 320,
+        });
+      // The fill is a job of its own; a render that needs it says which.
+      const waiting = await render(0);
+      expect(waiting.isError).toBe(true);
+      const said = JSON.stringify(waiting.structured);
+      expect(said).toMatch(/media_not_ready/);
+      const jobId = /j_[0-9a-z]{26}/.exec(said)?.[0] as string;
+      expect(jobId).toBeTruthy();
+      const listed = await ok<{ jobs: Array<{ job_id: string; for?: { kind?: string } }> }>(
+        client,
+        'job.list',
+        { tool: 'clip.set_mask' },
+      );
+      expect(listed.jobs.find((j) => j.job_id === jobId)?.for).toMatchObject({
+        kind: 'fill',
+        media_id: boxed,
       });
-      expect(first.isError).toBe(true);
-      expect(JSON.stringify(first.structured)).toMatch(/media_not_ready/);
-      for (const frame of [0, 5, 9]) {
-        let res = first;
-        for (const until = Date.now() + 400_000; Date.now() < until; ) {
-          res = await call(client, 'render.frames', {
-            timeline_id: filled.timeline_id,
-            frames: [frame],
-            layout: 'single',
-            format: 'png',
-            long_edge: 640,
-          });
-          if (!res.isError) break;
-          expect(JSON.stringify(res.structured)).toMatch(/media_not_ready/);
-          await new Promise((r) => setTimeout(r, 2000));
-        }
+      // A frame of the other clip needs no fill, and renders now.
+      const other = await render(7);
+      expect(other.isError).toBe(false);
+      // An export started meanwhile waits for the fill, saying so, and then finishes.
+      const exported = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: filled.timeline_id,
+        preset: 'master_prores_422hq',
+        filename: 'filled-two',
+      });
+      const done = await waitJob(jobId, 400_000);
+      expect(done.status).toBe('completed');
+      expect((await waitJob(exported.job_id, 400_000)).status).toBe('completed');
+      for (const frame of [0, 2, 4]) {
+        const res = await render(frame);
         expect(res.isError).toBe(false);
         const image = Buffer.from(
           (res.content.find((c) => c.type === 'image')?.data as string) ?? '',
           'base64',
         );
-        // The box is gone: its middle and its edges are the blue around it.
+        // Both boxes are gone: their middles and edges are the blue around them.
         for (const [x, y] of [
-          [320, 240],
-          [275, 195],
-          [365, 285],
-          [100, 100],
+          [65, 120],
+          [43, 98],
+          [87, 142],
+          [255, 120],
+          [277, 142],
+          [160, 50],
         ] as const)
           expect(colour(await pixel(image, x, y)), `frame ${frame} at ${x},${y}`).toBe('blue');
       }
@@ -1367,7 +1407,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         timeline_id: filled.timeline_id,
         track_id: 't1',
         text: 'Hi',
-        at_frame: 20,
+        at_frame: 10,
         duration_frames: 10,
         preview: 'none',
       });
@@ -1377,6 +1417,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         mask: { shape: 'ellipse', mode: 'fill' },
       });
       expect(refused.isError).toBe(true);
+      expect(JSON.stringify(refused.structured)).toMatch(/no source file of its own/);
     }, 600_000);
 
     it("keeps a picture's own transparency under a mask", async () => {

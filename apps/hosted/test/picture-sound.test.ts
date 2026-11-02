@@ -51,7 +51,8 @@ describe.skipIf(!engines)('picture and sound', () => {
   let mediaDir: string;
 
   async function call(name: string, args: Record<string, unknown>) {
-    return (await client.callTool({ name, arguments: args })) as {
+    // A frame of an in-between copy is answered once the copy is made: minutes on a busy runner.
+    return (await client.callTool({ name, arguments: args }, { timeout: 600_000 })) as {
       isError?: boolean;
       structuredContent?: Record<string, unknown>;
       content: Array<{ type: string; text?: string; data?: string }>;
@@ -198,6 +199,7 @@ describe.skipIf(!engines)('picture and sound', () => {
   describe('in-between frames', () => {
     let moving: string;
     let pan: string;
+    let clock: string;
 
     beforeAll(async () => {
       // A 10 fps clip: a white box 10 px wide moving right 20 px each frame over black.
@@ -242,6 +244,30 @@ describe.skipIf(!engines)('picture and sound', () => {
         join(mediaDir, 'pan.mp4'),
       ]);
       pan = await importFile(join(mediaDir, 'pan.mp4'));
+      // A clock: a 10 fps box that moves 1 px right each frame, so where it sits says which
+      // source frame (or moment between two) a frame shows.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=black:size=320x180:rate=10',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=white:size=10x40:rate=10',
+        '-filter_complex',
+        "[0][1]overlay=x='t*10':y=70:shortest=1",
+        '-t',
+        '30',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-crf',
+        '10',
+        join(mediaDir, 'clock.mp4'),
+      ]);
+      clock = await importFile(join(mediaDir, 'clock.mp4'));
     }, 120_000);
 
     /** How far `img` has moved left of `ref`, in whole pixels, and how well it then matches. */
@@ -347,6 +373,71 @@ describe.skipIf(!engines)('picture and sound', () => {
       });
       expect(exported.frames).toBe(96);
     }, 600_000);
+
+    it('shows the right source moment to the last frame of a slowed clip from mid-file', async () => {
+      // Source 20 to 21 s (frames 200 to 210 of the clock), so the copy starts well inside the
+      // file; the plain clip (frames repeated) is the reference for where each moment sits.
+      const mid = { source: { in: 600, out: 630 }, av: 'video' };
+      const speeds: Array<Record<string, unknown>> = [
+        { rate: 0.5 },
+        { rate: 0.25 },
+        {
+          curve: [
+            { at: 0, rate: 1 },
+            { at: 0.5, rate: 0.25 },
+            { at: 1, rate: 0.5 },
+          ],
+        },
+      ];
+      for (const speed of speeds) {
+        const made = async (interpolate?: string) =>
+          timeline(
+            clock,
+            30,
+            [
+              {
+                tool: 'clip.set_speed',
+                args: {
+                  clip_id: { $ref: 'ops[0].clip_id' },
+                  ...speed,
+                  ...(interpolate ? { interpolate } : {}),
+                },
+              },
+            ],
+            mid,
+          );
+        const plain = await made();
+        const view = await ok<{ tracks: Array<{ clips: Array<{ end: number }> }> }>(
+          'timeline.get',
+          { timeline_id: plain.timeline_id },
+        );
+        const length = view.tracks[0]?.clips[0]?.end ?? 0;
+        expect(length).toBeGreaterThan(40);
+        const frames = [0, Math.floor(length / 2), length - 3, length - 1];
+        const reference = await Promise.all(
+          frames.map(async (f) => box(await grey(plain.timeline_id, f))),
+        );
+        // The repeated frames are the source frames themselves: 200 + k px, plus half the box.
+        expect(Math.abs((reference[0]?.x ?? 0) - 204.5)).toBeLessThan(1);
+        expect(reference[3]?.x ?? 0).toBeGreaterThan(212);
+        for (const mode of ['blend', 'motion']) {
+          const smooth = await made(mode);
+          for (const size of ['preview', 'full'] as const) {
+            for (const [i, f] of frames.entries()) {
+              const b = box(await grey(smooth.timeline_id, f, size));
+              // Within two source frames (2 px) of the plain clip, which shows the frame before a
+              // moment where blend and motion show the moment itself; a copy off its time is
+              // tens of frames out, or empty.
+              expect(
+                Math.abs(b.x - (reference[i]?.x ?? 0)),
+                `${JSON.stringify(speed)} ${mode} ${size} frame ${f}`,
+              ).toBeLessThan(2.2);
+              expect(b.peak).toBeGreaterThan(100);
+            }
+          }
+        }
+      }
+    }, 900_000);
 
     it('refuses more in-between frames than one clip may have', async () => {
       const t = await timeline(moving, 30, [], { av: 'video' });
