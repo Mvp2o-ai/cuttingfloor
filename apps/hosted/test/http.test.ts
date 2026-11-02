@@ -157,6 +157,7 @@ describe('HTTP face', () => {
     expect(src).toMatch(/^\/outputs\/[^?]+\?exp=\d+&sig=/);
     const file = await fetch(`${base}${src}`);
     expect(file.status).toBe(200);
+    expect(file.headers.get('access-control-allow-origin')).toBe('*');
     expect(await file.text()).toBe('not really a video');
     expect((await fetch(page.replace(/sig=[^&]+/, 'sig=AAAA'))).status).toBe(403);
   });
