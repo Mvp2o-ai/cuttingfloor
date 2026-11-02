@@ -458,6 +458,47 @@ describe.skipIf(!engines)('picture and sound', () => {
       }
     }, 900_000);
 
+    it('shows the last frames of a copy that runs to the end of the media, asked alone or together', async () => {
+      // The last 2 s of the clock at rate 1, motion: 60 frames at 30 fps, ending at the file's end.
+      const t = await timeline(
+        clock,
+        30,
+        [
+          {
+            tool: 'clip.set_speed',
+            args: { clip_id: { $ref: 'ops[0].clip_id' }, interpolate: 'motion' },
+          },
+        ],
+        { source: { in: 840, out: 900 }, av: 'video' },
+      );
+      const alone = box(await grey(t.timeline_id, 59));
+      const both = await frames({
+        timeline_id: t.timeline_id,
+        frames: [10, 59],
+        layout: 'single',
+        format: 'png',
+        long_edge: 320,
+      });
+      expect(both.isError).toBeFalsy();
+      const images = both.content.filter((c) => c.type === 'image');
+      expect(images).toHaveLength(2);
+      const decode = async (data: string) => {
+        const png = join(dir, `p-${Math.random().toString(36).slice(2)}.png`);
+        await writeFile(png, Buffer.from(data, 'base64'));
+        const { stdout } = await exec(
+          'ffmpeg',
+          ['-v', 'error', '-i', png, '-vf', 'scale=320:180,format=gray', '-f', 'rawvideo', '-'],
+          { encoding: 'buffer' },
+        );
+        return new Uint8Array(stdout);
+      };
+      const first = box(await decode(images[0]?.data ?? ''));
+      const last = box(await decode(images[1]?.data ?? ''));
+      // 49 frames later the clock has moved about 16 px; the last frame is not a copy of the first.
+      expect(last.x - first.x).toBeGreaterThan(12);
+      expect(Math.abs(last.x - alone.x)).toBeLessThan(1.5);
+    }, 600_000);
+
     it('refuses more in-between frames than one clip may have', async () => {
       const t = await timeline(moving, 30, [], { av: 'video' });
       const view = await ok<{ tracks: Array<{ clips: Array<{ id: string }> }> }>('timeline.get', {

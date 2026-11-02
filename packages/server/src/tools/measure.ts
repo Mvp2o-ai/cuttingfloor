@@ -328,7 +328,20 @@ export async function analyzeTimelinePicture(
       hint: 'Lower finds subtler cuts, e.g. {threshold: 10}',
     });
   }
-  const { sources, offline } = await sourcesFor(rt, owner, doc, 'export', false);
+  // Only the clips this reads need their copies (fills, in-between frames).
+  const fpsNow = doc.sequence.fps;
+  const { sources, offline } = await sourcesFor(rt, owner, doc, 'export', false, true, {
+    timelineId,
+    ...(range
+      ? { range: { start: range.start, end: range.end } }
+      : sampled
+        ? {
+            frames: times.map((t) =>
+              Math.min(lengthFrames(doc) - 1, Math.floor((t * fpsNow.num) / fpsNow.den + 1e-6)),
+            ),
+          }
+        : {}),
+  });
   assertOnline(offline);
   const admit = await admitJob(deps.limits);
   const job = await store.create({

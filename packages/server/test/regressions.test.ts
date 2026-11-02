@@ -717,7 +717,7 @@ describe('media not ready yet', () => {
     });
     expect(String(edit.structured.message)).toMatch(/still being made \(create\.motion job j_a+\)/);
     expect(String(edit.structured.hint)).toMatch(
-      /job\.get \{job_id: "j_a+", wait_seconds: 30\} answers as soon as it moves/,
+      /job\.get \{job_id: "j_a+", wait_seconds: 30\} answers when it is done/,
     );
     expect(String(edit.structured.hint)).not.toMatch(/media\.import/);
 

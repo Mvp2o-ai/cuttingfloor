@@ -16,6 +16,7 @@ import {
   notReady,
   passedAudio,
   passFrames,
+  probe,
   renderPicture,
   renderSource,
   renderTimelineFrames,
@@ -82,10 +83,14 @@ export async function addPasses(
   const tpf = ticksPerFrame(fps);
   // A frames render needs only the fills of clips at its frames; the others play as they are
   // (unseen there) and their fills keep going.
-  const shown = (c: StoredClip, top: boolean) =>
-    !fills.frames ||
-    !top ||
-    fills.frames.some((f) => f * tpf >= c.start && f * tpf < c.start + c.duration);
+  const shown = (c: StoredClip, top: boolean) => {
+    if (!top) return true;
+    const from = c.start;
+    const to = c.start + c.duration;
+    if (fills.range) return fills.range.start * tpf < to && fills.range.end * tpf > from;
+    if (fills.frames) return fills.frames.some((f) => f * tpf >= from && f * tpf < to);
+    return true;
+  };
   for (const body of [doc, ...Object.values(doc.nested ?? {})])
     for (const t of body.tracks)
       for (const c of t.clips) {
@@ -114,7 +119,12 @@ export async function addPasses(
           // copy, itself made at full size), whatever size it is shown at: a job of its own.
           const input = plain === media ? renderSource(record, 'export') : plain.path;
           const dir = join(rt.media.dir(owner, c.media_id), 'between');
-          const options = { source: own, purpose: 'export' as const, alpha: plain.alpha };
+          const options = {
+            source: own,
+            purpose: 'export' as const,
+            alpha: plain.alpha,
+            ...(record.probe?.duration ? { duration: record.probe.duration } : {}),
+          };
           const made = await copyJob(
             rt,
             {
@@ -125,7 +135,7 @@ export async function addPasses(
               kind: 'in-between',
             },
             betweenFile(dir, between, 'export'),
-            betweenFrames(between, own),
+            betweenFrames(between, own, record.probe?.duration ?? undefined),
             between.to - between.from,
             ({ signal: own2, onProgress }) =>
               betweenPicture(input, dir, between, { ...options, signal: own2, onProgress }).then(
@@ -136,6 +146,7 @@ export async function addPasses(
             signal,
             needed: shown(c, body === doc),
             waiting: fills.waiting,
+            aside: fills.aside,
           });
           if (!path) continue;
           sources.set(key, {
@@ -143,6 +154,7 @@ export async function addPasses(
             path,
             offset: betweenStart(between, own),
             stretch: between.fps / between.sequence,
+            ...(await lastFrame(path, between.sequence)),
           });
           continue;
         }
@@ -162,14 +174,30 @@ export async function addPasses(
       }
 }
 
+/** Seconds into a copy of its last frame, from the file itself. */
+const lasts = new Map<string, number>();
+async function lastFrame(path: string, rate: number): Promise<{ last?: number }> {
+  const known = lasts.get(path);
+  if (known !== undefined) return { last: known };
+  const frames = (await probe(path).catch(() => undefined))?.video?.frames;
+  if (!frames) return {};
+  const last = (frames - 1) / rate;
+  lasts.set(path, last);
+  return { last };
+}
+
 /** How renders treat fills (selection.ts mode fill), which take minutes to make. */
 export interface FillOptions {
   /** The timeline, for the fill job's record. */
   timelineId?: string;
   /** A frames render: the timeline frames it shows. */
   frames?: number[];
+  /** A render of a stretch: its timeline frames, end exclusive. */
+  range?: { start: number; end: number };
   /** Inside a job that waits for a fill: what it is waiting for, heard each frame. */
   waiting?: (on: boolean, message: string) => void;
+  /** Inside a job: waits for a copy out of its job slot (JobContext.aside). */
+  aside?: <T>(wait: Promise<T>) => Promise<T>;
 }
 
 /**
@@ -228,6 +256,7 @@ async function selected(
       signal,
       needed: fills.needed,
       waiting: fills.waiting,
+      aside: fills.aside,
     });
     if (!got) return undefined;
     path = got;

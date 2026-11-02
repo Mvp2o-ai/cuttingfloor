@@ -136,7 +136,9 @@ export function registerJudgeTools(server: McpServer, deps: ServerDeps): void {
         { hint: length ? `Pick a time from 0 up to ${duration} s` : 'Add a clip first' },
       );
     }
-    const { sources, offline } = await sourcesFor(rt, owner, doc, 'preview', false);
+    const { sources, offline } = await sourcesFor(rt, owner, doc, 'preview', false, true, {
+      frames: [n],
+    });
     assertOnline(offline);
     const longEdge = Math.max(
       PICTURE.longEdge,
