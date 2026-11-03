@@ -13,6 +13,9 @@ import { ALTERNATIVES, FAQS, structuredData } from './seo.ts';
 import { Session } from './session/session.tsx';
 import { Check, Footer, JsonLd, Nav, SIGN_UP } from './shell.tsx';
 
+// The cheapest paid plan, for the pricing line.
+const FROM_PRICE = `$${Math.min(...PLANS.flatMap((p) => (p.amount ? [p.amount] : [])))}`;
+
 // The home page's Markdown version is /index.md; layout.tsx has the rest of its metadata.
 export const metadata: Metadata = {
   alternates: { canonical: '/', types: { 'text/markdown': '/index.md' } },
@@ -73,7 +76,7 @@ export default function Home() {
           <h1 className="leader rise">
             <b>cuttingfloor</b>
             <span className="dots" />
-            <span>the control plane for AI video agents</span>
+            <span>the video editing MCP for creators</span>
           </h1>
           <p className="display title rise d1">
             Video editing,
@@ -98,7 +101,9 @@ export default function Home() {
                   Watch it edit
                 </a>
               </div>
-              <span>Self-hosted · no external AI keys</span>
+              <p>
+                Open source ({LICENCE}): <a href="/self-host">run it yourself, free</a>.
+              </p>
             </div>
             <div className="rise d3 works-in">
               <span className="label">Works in</span>
@@ -121,8 +126,10 @@ export default function Home() {
         <section className="cell floor" aria-label="An agent editing over MCP">
           <video src="/floor.mp4" poster="/floor.jpg" muted loop playsInline autoPlay />
           <div className="floor-cap">
-            <span className="label">01 / The layer after generation</span>
-            <span className="label">Generation is cheap now. Assembly is not.</span>
+            <span className="label">01 / The floor</span>
+            <span className="label">
+              AI video editing: your agent, one MCP server, every edit a call
+            </span>
           </div>
         </section>
 
@@ -188,7 +195,7 @@ export default function Home() {
             <div className="head">
               <span className="label">04 / In your agent</span>
               <h2 className="lede">
-                Plug cuttingfloor into the agent you already use. <em>We make it finish.</em>
+                Plug cuttingfloor into the agent you already use. <em>It becomes your editor.</em>
               </h2>
             </div>
             <AgentDemo demo={DEMOS[0]} />
@@ -318,8 +325,8 @@ export default function Home() {
             <div>
               <h2 className="display">Pay for the minutes you use, not the seat.</h2>
               <p className="compare-lede">
-                About 16 cents a rendered minute. A ten-minute captioned, mixed video uses about 35
-                of them — around $5.70, against four to six hours of manual work.
+                Hosted plans from {FROM_PRICE} a month, billed in render minutes. Editing the
+                timeline is free. Run it yourself and it is all free.
               </p>
             </div>
           </div>

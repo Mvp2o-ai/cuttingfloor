@@ -7,7 +7,8 @@ export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cuttingfloo
 export const MCP_ADDRESS = 'https://api.cuttingfloor.ai/mcp';
 export const DOCS_URL = 'https://github.com/mvp2o-ai/cuttingfloor';
 
-export const TITLE = 'cuttingfloor — the control plane for AI video agents';
+export const TITLE =
+  'Video Editing MCP Server for Creators: Claude, ChatGPT, Codex & Cursor | cuttingfloor';
 export const DESCRIPTION = `Editing tools for the agent you already use. Connect Claude, ChatGPT, Codex, Cursor or Kazi to one MCP server, ${TOOL_COUNT} tools: it cuts by transcript, captions, mixes, makes graphics and exports real video, checking its work as it goes. Open source: run it yourself free, or hosted.`;
 
 // Questions in the words people search them with.
