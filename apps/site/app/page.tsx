@@ -3,6 +3,7 @@ import { DEMOS } from '../content/demos.ts';
 import { LICENCE } from '../content/facts.ts';
 import { HOME_SESSION } from '../content/home-session.ts';
 import { AGENT_PAINS, EDITING_PAINS, type Pain } from '../content/pains.ts';
+import { TOOL_COUNT } from '../content/tools.ts';
 import { Capabilities } from './capabilities.tsx';
 import { Connect } from './connect.tsx';
 import { AgentDemo } from './demos/demo.tsx';
@@ -11,6 +12,9 @@ import { Prompts } from './prompts.tsx';
 import { ALTERNATIVES, FAQS, structuredData } from './seo.ts';
 import { Session } from './session/session.tsx';
 import { Check, Footer, JsonLd, Nav, SIGN_UP } from './shell.tsx';
+
+// The cheapest paid plan, for the pricing line.
+const FROM_PRICE = `$${Math.min(...PLANS.flatMap((p) => (p.amount ? [p.amount] : [])))}`;
 
 // The home page's Markdown version is /index.md; layout.tsx has the rest of its metadata.
 export const metadata: Metadata = {
@@ -72,7 +76,7 @@ export default function Home() {
           <h1 className="leader rise">
             <b>cuttingfloor</b>
             <span className="dots" />
-            <span>editing tools for the agent you already use</span>
+            <span>the video editing MCP for creators</span>
           </h1>
           <p className="display title rise d1">
             Video editing,
@@ -83,24 +87,23 @@ export default function Home() {
           <div className="hero-row">
             <div className="rise d2">
               <p className="lede">
-                Stay in the agent you already use. Connect Kazi, Claude, ChatGPT, Codex or Cursor to
-                one MCP server and say what you want cut.{' '}
+                One connection.{' '}
                 <em>
-                  It imports your footage, reads the transcript, trims, captions, mixes, makes the
-                  graphics and hands back a finished file.
+                  Your AI assistant cuts, captions and mixes — then hands back a file a human editor
+                  can finish.
                 </em>
               </p>
               <div className="actions">
                 <a className="link-big" href={SIGN_UP}>
-                  Start hosted, free for 3 days
-                </a>
-                <a className="link-big quiet" href="/self-host">
-                  Run it yourself, free
+                  Start free — 3 days
                 </a>
                 <a className="link-big quiet" href="/demos">
                   Watch it edit
                 </a>
               </div>
+              <p>
+                Open source ({LICENCE}): <a href="/self-host">run it yourself, free</a>.
+              </p>
             </div>
             <div className="rise d3 works-in">
               <span className="label">Works in</span>
@@ -111,6 +114,7 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
+              <p>Any remote MCP client</p>
               <p>
                 Bring the agent you already use. Sign in, then add one server address; the setup for
                 each is on <a href="/connect">Connect</a>.
@@ -124,7 +128,7 @@ export default function Home() {
           <div className="floor-cap">
             <span className="label">01 / The floor</span>
             <span className="label">
-              Agentic video editing: your agent, one MCP server, every edit a call
+              AI video editing: your agent, one MCP server, every edit a call
             </span>
           </div>
         </section>
@@ -176,7 +180,7 @@ export default function Home() {
           <div className="head">
             <span className="label">03 / A session</span>
             <h2 className="lede">
-              Agentic video editing, one tool call at a time. <em>Here is one.</em>
+              AI video editing, one tool call at a time. <em>Here is one.</em>
             </h2>
           </div>
           <Session
@@ -241,12 +245,12 @@ export default function Home() {
           <span className="mark-b" />
           <span className="label">07 / What it does</span>
           <h2 className="display big-stat">
-            Every edit a call.
+            {TOOL_COUNT} tools.
             <br />
-            No timeline UI.
+            No timeline.
             <small>
-              A video editing API built for agents: granular primitives it composes, plus code when
-              it needs a loop. <a href="/features">See every tool</a>.
+              Granular tools an agent composes, and a skills library that shows it how to chain
+              them.
             </small>
           </h2>
           <Capabilities />
@@ -318,7 +322,13 @@ export default function Home() {
         <section className="cell" id="pricing">
           <div className="head">
             <span className="label">10 / Pricing</span>
-            <h2 className="display">Pay for rendering. Or nothing.</h2>
+            <div>
+              <h2 className="display">Pay for the minutes you use, not the seat.</h2>
+              <p className="compare-lede">
+                Hosted plans from {FROM_PRICE} a month, billed in render minutes. Editing the
+                timeline is free. Run it yourself and it is all free.
+              </p>
+            </div>
           </div>
           <table className="price-table">
             <thead>
@@ -362,10 +372,8 @@ export default function Home() {
           <p className="price-foot">
             A render minute is a minute of our servers working for you: exports, imports,
             transcripts, graphics, voiceovers, cutouts. Planning and editing the timeline cost
-            nothing. When a plan's minutes are used, new jobs wait until they renew or you move up;
-            you are never charged more than the price. Yearly plans get two months free. Payments by
-            Stripe; cancel any time. <a href="/pricing">Full pricing and keys</a> ·{' '}
-            <a href="/terms">Terms</a> · <a href="/refunds">Refunds</a>
+            nothing. When minutes run out, work waits. You are never charged more than the plan
+            price. Yearly plans get two months free. Payments by Stripe; cancel any time.
           </p>
         </section>
 
