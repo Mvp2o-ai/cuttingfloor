@@ -1,5 +1,12 @@
 # cuttingfloor
 
+## 0.31.0
+
+### Minor Changes
+
+- 7f2f9e9: The editor view gets a divider under the picture: drag it to give the picture or the timeline more room (double-click puts it back). "Hide editor" (or E) folds the timeline and inspector away and leaves the picture, its play controls and a seek bar.
+- 757da88: media.list results show the library: everything on the floor in a cuttingfloor-branded list (kind, length, size, where it came from, when it goes), with filters, a name search and storage used. Pick one to preview it (video and audio play, images and fonts show); Use in chat hands the pick to the agent, and files sent but not imported yet can be passed on for import.
+
 ## 0.30.0
 
 ### Minor Changes
