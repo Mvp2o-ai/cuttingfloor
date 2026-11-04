@@ -238,7 +238,7 @@ describe('protocol surface', () => {
     );
   });
 
-  it('offers the editor view on export.video results and the player on media.get', async () => {
+  it('offers the editor on export.video, the player on media.get and the library on media.list', async () => {
     const client = await connect(env.runtime);
     const { tools } = await client.listTools();
     const views = Object.fromEntries(
@@ -249,9 +249,17 @@ describe('protocol surface', () => {
     expect(views).toEqual({
       'export.video': 'ui://cuttingfloor/editor',
       'media.get': 'ui://cuttingfloor/player',
+      'media.list': 'ui://cuttingfloor/library',
     });
-    // Everything the editor calls stays callable from a view (no visibility limits it to the model).
-    for (const name of ['timeline.get', 'timeline.history', 'timeline.diff', 'job.get']) {
+    // Everything the views call stays callable from a view (no visibility limits it to the model).
+    for (const name of [
+      'timeline.get',
+      'timeline.history',
+      'timeline.diff',
+      'job.get',
+      'media.get',
+      'media.list',
+    ]) {
       const tool = tools.find((t) => t.name === name);
       expect((tool?._meta as { ui?: { visibility?: string[] } })?.ui?.visibility).toBeUndefined();
     }
@@ -259,6 +267,7 @@ describe('protocol surface', () => {
     const origin = 'http://127.0.0.1:8787';
     for (const [uri, csp] of [
       ['ui://cuttingfloor/player', { resourceDomains: [origin] }],
+      ['ui://cuttingfloor/library', { resourceDomains: [origin] }],
       // The editor also reads the export's sound for its mix lane.
       ['ui://cuttingfloor/editor', { resourceDomains: [origin], connectDomains: [origin] }],
     ] as const) {

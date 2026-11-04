@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cuttingfloor library</title>
+<style>
+  /*
+   * What is on the floor: the media.list result as a list, and a preview of the one picked
+   * (media.get for its signed file). It wears cuttingfloor's own colours, not the host's, so
+   * nobody mistakes it for the chat app's own file list.
+   */
+  :root {
+    --bg: #0e0d0b;
+    --bg-2: #161511;
+    --bg-3: #1d1b17;
+    --ink: #eee8dc;
+    --mute: #8f887c;
+    --rule: #2a2722;
+    --rule-2: #3a362f;
+    --key: #00b140;
+    --key-hi: #19c957;
+    --gold: #d9a845;
+    --red: #e0573f;
+    --k-video: #8fb8d0;
+    --k-audio: #d9a845;
+    --k-image: #e07ab8;
+    --k-font: #c9b48f;
+    --k-lut: #b59be0;
+    --k-upload: #8f887c;
+    --radius: 14px;
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --list-h: 420px;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  /* biome-ignore lint/complexity/noImportantStyles: hidden must beat every display rule below */
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: transparent; }
+  body { font: 13px/1.45 var(--font); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--key); outline-offset: 2px; }
+  svg { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .grow { flex: 1; }
+
+  .card { background: var(--bg); border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
+
+  /* Header: the mark and the wordmark, then what is held. */
+  .head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+  .marker { width: 14px; height: 14px; flex: none;
+    background: linear-gradient(var(--key), var(--key)) center / 3px 100% no-repeat, linear-gradient(var(--key), var(--key)) center / 100% 3px no-repeat; }
+  .wm { font-weight: 800; font-size: 17px; letter-spacing: -0.02em; }
+  .wm b { color: var(--key); font-weight: 800; margin-left: 4px; }
+  .sub { font: 600 10.5px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--mute); padding-left: 10px; border-left: 1px solid var(--rule-2); }
+  .store { display: flex; align-items: center; gap: 8px; color: var(--mute); font: 500 11.5px/1 var(--mono); }
+  .meter { width: 90px; height: 4px; border-radius: 4px; background: var(--rule-2); overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--key); }
+  .meter.high i { background: var(--gold); }
+  .ibtn { height: 30px; width: 30px; display: inline-grid; place-items: center; border-radius: 8px; border: 1px solid var(--rule-2); color: var(--ink); }
+  .ibtn:hover:not(:disabled) { background: var(--bg-3); }
+  .ibtn.spin svg { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Filters */
+  .bar { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--rule-2); font-size: 12px; color: var(--mute); white-space: nowrap; }
+  .chip i { width: 8px; height: 8px; border-radius: 2px; display: block; }
+  .chip .n { font: 600 10.5px/1 var(--mono); opacity: .8; }
+  .chip:hover { color: var(--ink); }
+  .chip[aria-pressed="true"] { color: var(--ink); border-color: var(--key); background: color-mix(in srgb, var(--key) 14%, transparent); }
+  .find { height: 28px; min-width: 0; width: 180px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--rule-2); background: var(--bg-2); color: var(--ink); font: inherit; }
+  .find::placeholder { color: var(--mute); }
+
+  /* The list and the preview */
+  .body { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); min-height: 0; }
+  .list { overflow-y: auto; max-height: var(--list-h); min-height: 160px; scrollbar-width: thin; }
+  .group { position: sticky; top: 0; z-index: 1; padding: 8px 14px 6px; background: var(--bg); font: 600 10.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--mute); border-bottom: 1px solid var(--rule); }
+  .row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 11px; align-items: center; width: 100%; text-align: left; padding: 8px 14px; border-bottom: 1px solid var(--rule); }
+  .row:hover { background: var(--bg-2); }
+  .row[aria-selected="true"] { background: var(--bg-3); box-shadow: inset 3px 0 0 var(--key); }
+  .tile { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--k) 18%, var(--bg-2)); color: var(--k); }
+  .row .t { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .s { display: block; color: var(--mute); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .r { text-align: right; font: 500 11px/1.4 var(--mono); color: var(--mute); white-space: nowrap; }
+  .badge { display: inline-block; font: 600 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; padding: 3px 5px; border-radius: 4px; background: var(--rule-2); color: var(--ink); }
+  .badge.warn { background: color-mix(in srgb, var(--gold) 22%, transparent); color: var(--gold); }
+  .badge.bad { background: color-mix(in srgb, var(--red) 22%, transparent); color: var(--red); }
+  .soon { color: var(--gold); }
+  .empty { color: var(--mute); padding: 28px 16px; text-align: center; }
+  .empty b { display: block; color: var(--ink); font-size: 14px; margin-bottom: 4px; }
+
+  .preview { border-left: 1px solid var(--rule); display: flex; flex-direction: column; min-width: 0; max-height: var(--list-h); overflow-y: auto; scrollbar-width: thin; }
+  .stage { position: relative; aspect-ratio: 16 / 9; flex: none; background: #000; display: grid; place-items: center; overflow: hidden; }
+  .stage video, .stage img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .stage audio { width: calc(100% - 28px); }
+  .stage .msg { color: var(--mute); text-align: center; padding: 18px; font-size: 12.5px; max-width: 40ch; }
+  .stage .msg b { display: block; color: var(--ink); font-size: 14px; margin-bottom: 4px; }
+  .stage .sound { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 100%; color: var(--k-audio); }
+  .stage .sound svg { width: 34px; height: 34px; }
+  .stage .glyphs { font-size: 26px; line-height: 1.25; text-align: center; padding: 16px; color: var(--ink); }
+  .stage .glyphs small { display: block; font-size: 14px; color: var(--mute); margin-top: 6px; }
+  .stage .tag { position: absolute; left: 10px; top: 10px; font: 600 10.5px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink); background: rgba(14,13,11,.75); padding: 5px 7px; border-radius: 5px; pointer-events: none; }
+  .dots { display: flex; gap: 6px; }
+  .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--key); animation: blink 1s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay: .15s; } .dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes blink { 50% { opacity: .2; } }
+  .info { padding: 12px 14px 14px; }
+  .info h3 { margin: 0 0 2px; font-size: 14.5px; line-height: 1.3; overflow-wrap: anywhere; }
+  .info .id { display: block; color: var(--mute); font: 500 11px/1.4 var(--mono); margin-bottom: 10px; overflow-wrap: anywhere; }
+  .kv { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 5px 10px; margin: 0 0 12px; }
+  .kv dt { color: var(--mute); }
+  .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--rule-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .pill:hover:not(:disabled) { background: var(--bg-3); }
+  .pill svg { width: 14px; height: 14px; }
+  .pill.primary { background: var(--key); border-color: transparent; color: #04170a; }
+  .pill.primary:hover:not(:disabled) { background: var(--key-hi); }
+
+  .foot { padding: 7px 14px; border-top: 1px solid var(--rule); color: var(--mute); font-size: 11.5px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .toast { position: fixed; left: 50%; bottom: 18px; translate: -50% 0; background: var(--ink); color: var(--bg); padding: 8px 13px; border-radius: 10px; font-size: 12.5px; max-width: calc(100% - 32px); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
+  .toast.on { opacity: 1; }
+
+  /* A host that gives the frame a fixed height: the list and preview take what is left. */
+  .fill body, .fill #root { height: 100%; }
+  .fill .card { height: 100vh; }
+  .fill .body { flex: 1 1 auto; }
+  .fill .list, .fill .preview { max-height: none; }
+
+  @media (max-width: 640px) {
+    .body { grid-template-columns: minmax(0, 1fr); }
+    .preview { border-left: 0; border-bottom: 1px solid var(--rule); order: -1; max-height: none; }
+    .list { max-height: 340px; }
+    .sub, .find { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion has to beat every rule above */
+    *, *::before, *::after { animation-duration: .001s !important; animation-iteration-count: 1 !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div class="toast" id="toast"></div>
+<script>
+(() => {
+  const VERSION = '__VERSION__';
+  const root = document.getElementById('root');
+  const html = document.documentElement;
+
+  // ---------- host protocol (MCP Apps, ui/*) ----------
+  let nextId = 1;
+  const pending = new Map();
+  const host = { caps: {}, ready: false };
+  const send = (msg) => window.parent.postMessage(msg, '*');
+  const request = (method, params) => new Promise((resolve, reject) => {
+    const id = nextId++;
+    pending.set(id, { resolve, reject });
+    send({ jsonrpc: '2.0', id, method, params });
+  });
+  const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
+  const openLink = (url) => request('ui/open-link', { url }).catch(() => window.open(url, '_blank', 'noopener'));
+  async function callTool(name, args) {
+    const r = await request('tools/call', { name, arguments: args });
+    if (r?.isError) {
+      const t = r.content?.find((c) => c?.type === 'text')?.text;
+      throw new Error(r.structuredContent?.message || t || `${name} failed`);
+    }
+    return r?.structuredContent;
+  }
+  function applyContext(ctx) {
+    if (!ctx) return;
+    const dims = ctx.containerDimensions;
+    if (dims) html.classList.toggle('fill', !!dims.height);
+  }
+
+  // ---------- helpers ----------
+  const $ = (sel, scope = document) => scope.querySelector(sel);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  let toastT = 0;
+  function toast(text) { const t = $('#toast'); t.textContent = text; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2400); }
+  const ICON = {
+    video: '<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="M2 9h20M7 4v5M12 4v5M17 4v5"/></svg>',
+    audio: '<svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+    image: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>',
+    font: '<svg viewBox="0 0 24 24"><path d="M4 20 10 4h4l6 16M7 14h10"/></svg>',
+    lut: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>',
+    upload: '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>',
+    other: '<svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>',
+    refresh: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg>',
+    open: '<svg viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
+    chat: '<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+    copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  };
+  const KINDS = {
+    video: { label: 'Video', css: '--k-video' },
+    audio: { label: 'Audio', css: '--k-audio' },
+    image: { label: 'Images', css: '--k-image' },
+    other: { label: 'Fonts & LUTs', css: '--k-font' },
+    upload: { label: 'Not imported', css: '--k-upload' },
+  };
+  const FROM = { upload: 'You sent it', url: 'Downloaded', path: 'From a folder', render: 'An export', created: 'Made here', still: 'A still' };
+  const groupOf = (m) => (m.upload_id ? 'upload' : m.kind === 'font' || m.kind === 'lut' || !m.kind ? 'other' : m.kind);
+  const iconOf = (m) => (m.upload_id ? ICON.upload : ICON[m.kind] || ICON.other);
+  const colourOf = (m) => `var(${m.upload_id ? '--k-upload' : m.kind === 'lut' ? '--k-lut' : KINDS[groupOf(m)].css})`;
+  function bytes(n) {
+    if (n == null) return '';
+    const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; }
+    return `${n >= 100 || i === 0 ? Math.round(n) : n.toFixed(1)} ${u[i]}`;
+  }
+  function dur(s) {
+    if (s == null) return '';
+    const t = Math.round(s);
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), x = t % 60;
+    return h ? `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${m}:${String(x).padStart(2, '0')}`;
+  }
+  // Media goes 7 days after its last use; within two days it is flagged.
+  function goneIn(iso) {
+    const ms = Date.parse(iso) - Date.now();
+    if (!Number.isFinite(ms)) return { text: '', soon: false };
+    if (ms <= 0) return { text: 'expired', soon: true };
+    const h = ms / 3600000;
+    const text = h < 1 ? `gone in ${Math.max(1, Math.round(ms / 60000))} min` : h < 48 ? `gone in ${Math.round(h)} h` : `gone in ${Math.round(h / 24)} days`;
+    return { text, soon: h < 48 };
+  }
+  function when(iso) {
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) return '';
+    return new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+
+  // ---------- state ----------
+  const S = { data: null, items: [], filter: 'all', query: '', selected: null, error: null, loading: false };
+  const details = new Map(); // media_id -> media.get result, or a Promise while it is asked
+  const keyOf = (m) => m.media_id || m.upload_id;
+
+  function setData(data) {
+    S.data = data;
+    S.error = null;
+    S.items = [...(data.media || []), ...(data.uploads || [])];
+    if (S.selected && !S.items.some((m) => keyOf(m) === S.selected)) S.selected = null;
+    paint();
+  }
+
+  // ---------- the view ----------
+  function build() {
+    root.innerHTML = `
+    <div class="card">
+      <div class="head">
+        <div class="brand"><span class="marker" aria-hidden="true"></span><span class="wm">cuttingfloor<b>ai</b></span><span class="sub">On the floor</span></div>
+        <div class="grow"></div>
+        <div class="store" id="store"></div>
+        <button class="ibtn" id="refresh" type="button" title="List again" aria-label="List again" hidden>${ICON.refresh}</button>
+      </div>
+      <div class="bar">
+        <div id="chips" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        <div class="grow"></div>
+        <input class="find" id="find" type="search" placeholder="Find by name" aria-label="Find by name">
+      </div>
+      <div class="body">
+        <div class="list" id="list" role="listbox" aria-label="Media on the floor"></div>
+        <aside class="preview" id="preview"></aside>
+      </div>
+      <div class="foot" id="foot"></div>
+    </div>`;
+    $('#chips').addEventListener('click', (e) => {
+      const b = e.target.closest('.chip'); if (!b) return;
+      S.filter = b.dataset.f;
+      paint();
+    });
+    $('#find').addEventListener('input', (e) => { S.query = e.target.value.trim().toLowerCase(); paintList(); });
+    $('#list').addEventListener('click', (e) => { const r = e.target.closest('.row'); if (r) pick(r.dataset.key); });
+    $('#list').addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      e.preventDefault();
+      const rows = [...document.querySelectorAll('#list .row')];
+      const i = rows.findIndex((r) => r.dataset.key === S.selected);
+      const next = rows[Math.max(0, Math.min(rows.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+      if (next) { pick(next.dataset.key); next.focus(); }
+    });
+    $('#refresh').onclick = refresh;
+    $('#preview').addEventListener('click', onAction);
+  }
+
+  function paint() {
+    paintHead();
+    paintChips();
+    paintList();
+    paintPreview();
+  }
+  function paintHead() {
+    const st = S.data?.storage;
+    if (st) {
+      const share = st.max_bytes ? st.used_bytes / st.max_bytes : null;
+      $('#store').innerHTML = `${share != null ? `<span class="meter${share > 0.85 ? ' high' : ''}"><i style="width:${Math.min(100, share * 100).toFixed(1)}%"></i></span>` : ''}<span>${bytes(st.used_bytes)}${st.max_bytes ? ` of ${bytes(st.max_bytes)}` : ''}</span>`;
+      $('#store').title = 'Storage used: uploads, media with its proxies, and exports';
+    }
+    $('#refresh').hidden = !host.caps.serverTools;
+  }
+  function paintChips() {
+    const counts = { all: S.items.length };
+    for (const m of S.items) counts[groupOf(m)] = (counts[groupOf(m)] || 0) + 1;
+    const chips = [['all', 'All', null], ...Object.entries(KINDS).filter(([k]) => counts[k]).map(([k, v]) => [k, v.label, v.css])];
+    if (!chips.some(([k]) => k === S.filter)) S.filter = 'all';
+    $('#chips').innerHTML = chips.map(([k, label, css]) => `<button class="chip" type="button" data-f="${k}" aria-pressed="${S.filter === k}">${css ? `<i style="background:var(${css})"></i>` : ''}${label} <span class="n">${counts[k] || 0}</span></button>`).join('');
+  }
+  function rowHtml(m) {
+    const key = keyOf(m);
+    let sub, right = '', badge = '';
+    if (m.upload_id) {
+      sub = m.complete ? 'Sent, not imported yet' : `Still arriving: ${bytes(m.received_bytes)}${m.bytes ? ` of ${bytes(m.bytes)}` : ''}`;
+      right = bytes(m.bytes ?? m.received_bytes);
+    } else {
+      sub = [FROM[m.from] || m.from, m.kind && m.kind !== 'video' && m.kind !== 'audio' && m.kind !== 'image' ? m.kind.toUpperCase() : null].filter(Boolean).join(' · ');
+      right = [dur(m.duration_seconds), bytes(m.bytes)].filter(Boolean).join('<br>');
+      if (m.status === 'failed') badge = '<span class="badge bad">failed</span> ';
+      else if (m.status !== 'ready') badge = `<span class="badge warn">${esc(m.status)}</span> `;
+    }
+    const gone = goneIn(m.expires_at);
+    return `<button type="button" class="row" role="option" data-key="${esc(key)}" aria-selected="${S.selected === key}" style="--k:${colourOf(m)}">
+      <span class="tile">${iconOf(m)}</span>
+      <span style="min-width:0"><span class="t">${badge}${esc(m.name)}</span><span class="s">${esc(sub)}${gone.text ? ` · <span class="${gone.soon ? 'soon' : ''}">${gone.text}</span>` : ''}</span></span>
+      <span class="r">${right}</span></button>`;
+  }
+  function paintList() {
+    const list = $('#list');
+    if (S.error) { list.innerHTML = `<div class="empty"><b>The list did not load</b>${esc(S.error)}</div>`; return; }
+    if (!S.data) { list.innerHTML = '<div class="empty"><div class="dots" style="justify-content:center"><i></i><i></i><i></i></div></div>'; return; }
+    if (!S.items.length) {
+      list.innerHTML = '<div class="empty"><b>Nothing on the floor yet</b>Ask your agent to import a video, a song or a logo, or make something new. It shows up here.</div>';
+      return;
+    }
+    const shown = S.items.filter((m) => (S.filter === 'all' || groupOf(m) === S.filter) && (!S.query || m.name.toLowerCase().includes(S.query)));
+    if (!shown.length) { list.innerHTML = '<div class="empty">Nothing here matches.</div>'; return; }
+    const media = shown.filter((m) => !m.upload_id), ups = shown.filter((m) => m.upload_id);
+    let h = '';
+    if (media.length) h += `<div class="group">Media · last used first</div>${media.map(rowHtml).join('')}`;
+    if (ups.length) h += `<div class="group">Sent, not imported yet</div>${ups.map(rowHtml).join('')}`;
+    list.innerHTML = h;
+    const d = S.data;
+    const more = [d.media_count > (d.media?.length || 0) ? `${d.media_count - d.media.length} more media not listed` : null, d.upload_count > (d.uploads?.length || 0) ? `${d.upload_count - d.uploads.length} more uploads not listed` : null].filter(Boolean);
+    $('#foot').innerHTML = `<span>${d.media_count} media${d.upload_count ? ` · ${d.upload_count} not imported` : ''}</span>${more.length ? `<span>${esc(more.join(', '))}</span>` : ''}<span class="grow"></span><span>Media stays 7 days after its last use</span>`;
+  }
+
+  // ---------- preview ----------
+  function pick(key) {
+    if (S.selected === key) return;
+    S.selected = key;
+    for (const r of document.querySelectorAll('#list .row')) r.setAttribute('aria-selected', String(r.dataset.key === key));
+    paintPreview();
+  }
+  const selectedItem = () => S.items.find((m) => keyOf(m) === S.selected);
+  function paintPreview() {
+    const box = $('#preview');
+    const m = selectedItem();
+    if (!m) {
+      box.innerHTML = `<div class="stage"><div class="msg"><b>Pick something to preview it</b>${S.items.length ? 'Click any row to play it or see it here.' : ''}</div></div>`;
+      return;
+    }
+    if (m.upload_id) {
+      box.innerHTML = `<div class="stage" style="--k:var(--k-upload)"><div class="msg"><b>Not imported yet</b>${m.complete ? 'The file is all here. Import it to edit with it or play it.' : 'The file is still arriving.'}</div></div>${infoHtml(m, null)}`;
+      return;
+    }
+    const got = details.get(m.media_id);
+    if (got && !(got instanceof Promise)) { box.innerHTML = `${stageHtml(m, got)}${infoHtml(m, got)}`; afterStage(m, got); return; }
+    box.innerHTML = `<div class="stage"><div class="dots"><i></i><i></i><i></i></div></div>${infoHtml(m, null)}`;
+    if (!host.caps.serverTools) {
+      box.querySelector('.stage').innerHTML = '<div class="msg"><b>No preview in this chat app</b>It does not let the view open files. Ask the agent for media.get on it to play it.</div>';
+      return;
+    }
+    if (!got) {
+      const p = callTool('media.get', { media_id: m.media_id }).then(
+        (r) => { details.set(m.media_id, r || {}); },
+        (e) => { details.set(m.media_id, { error: e.message }); },
+      ).finally(() => { if (S.selected === m.media_id) paintPreview(); });
+      details.set(m.media_id, p);
+    }
+  }
+  function stageHtml(m, d) {
+    const tag = `<span class="tag">${esc(KINDS[groupOf(m)]?.label?.replace(/s$/, '') || m.kind || 'File')}</span>`;
+    if (d.error) return `<div class="stage"><div class="msg"><b>Can't preview this</b>${esc(d.error)}</div></div>`;
+    if (!d.url) {
+      const why = d.status === 'failed' ? 'The import failed.' : d.status !== 'ready' ? 'It is still importing. Try again in a moment.' : 'There is no file to show yet.';
+      return `<div class="stage"><div class="msg"><b>No preview yet</b>${why}</div></div>`;
+    }
+    if (m.kind === 'video') return `<div class="stage"><video controls playsinline preload="metadata"></video></div>`;
+    if (m.kind === 'audio') return `<div class="stage"><div class="sound">${ICON.audio}<audio controls preload="metadata"></audio></div>${tag}</div>`;
+    if (m.kind === 'image') return `<div class="stage"><img alt="${esc(m.name)}"></div>`;
+    if (m.kind === 'font') return `<div class="stage"><div class="glyphs" id="glyphs">The quick brown fox<small>ABCDEFGHIJKLM 0123456789</small></div>${tag}</div>`;
+    return `<div class="stage"><div class="msg"><b>A colour LUT</b>It has no picture of its own. Put it on a clip with filter.add to see what it does.</div>${tag}</div>`;
+  }
+  function afterStage(m, d) {
+    if (!d.url || d.error) return;
+    const el = $('#preview video, #preview audio, #preview img');
+    if (el) {
+      el.src = d.url;
+      el.addEventListener('error', () => {
+        const st = $('#preview .stage');
+        if (st) st.innerHTML = '<div class="msg"><b>It did not load</b>The link may have expired, or the chat app blocked it. Use Open to watch it in the browser.</div>';
+      }, { once: true });
+    }
+    if (m.kind === 'font' && window.FontFace) {
+      const fam = `cf-${m.media_id}`;
+      new FontFace(fam, `url(${JSON.stringify(d.url)})`).load().then((f) => {
+        document.fonts.add(f);
+        const g = $('#glyphs');
+        if (g) g.style.fontFamily = `"${fam}"`;
+      }, () => {});
+    }
+  }
+  function infoHtml(m, d) {
+    const rows = [];
+    const row = (k, v) => { if (v) rows.push(`<dt>${k}</dt><dd>${v}</dd>`); };
+    if (m.upload_id) {
+      row('Received', `${bytes(m.received_bytes)}${m.bytes ? ` of ${bytes(m.bytes)}` : ''}`);
+      row('Sent', esc(when(m.created_at)));
+      row('Gone', esc(goneIn(m.expires_at).text));
+    } else {
+      row('Kind', esc(m.kind || 'file'));
+      row('Length', esc(dur(m.duration_seconds)));
+      if (d?.width && d?.height) row('Picture', `${d.width}×${d.height}${d.fps ? ` · ${+(d.fps.num / d.fps.den).toFixed(3)} fps` : ''}`);
+      if (d?.font_family) row('Family', esc(d.font_family));
+      row('Size', esc(bytes(m.bytes)));
+      row('From', esc(FROM[m.from] || m.from));
+      row('Added', esc(when(m.created_at)));
+      const g = goneIn(m.expires_at);
+      row('Gone', g.text ? `<span class="${g.soon ? 'soon' : ''}">${esc(g.text)}</span>` : '');
+    }
+    const id = keyOf(m);
+    const acts = [];
+    if (host.caps.message) acts.push(`<button class="pill primary" type="button" data-act="chat">${ICON.chat}${m.upload_id ? 'Ask to import' : 'Use in chat'}</button>`);
+    if (d?.page_url) acts.push(`<button class="pill" type="button" data-act="open">${ICON.open}Open</button>`);
+    acts.push(`<button class="pill" type="button" data-act="copy">${ICON.copy}Copy id</button>`);
+    return `<div class="info"><h3>${esc(m.name)}</h3><span class="id">${esc(id)}</span><dl class="kv">${rows.join('')}</dl><div class="acts">${acts.join('')}</div></div>`;
+  }
+  async function onAction(e) {
+    const b = e.target.closest('[data-act]');
+    const m = selectedItem();
+    if (!b || !m) return;
+    const id = keyOf(m);
+    if (b.dataset.act === 'copy') {
+      try { await navigator.clipboard.writeText(id); toast(`Copied ${id}`); } catch { toast(id); }
+    } else if (b.dataset.act === 'open') {
+      const d = details.get(m.media_id);
+      if (d?.page_url) openLink(d.page_url);
+    } else if (b.dataset.act === 'chat') {
+      // The one thing that starts a turn: a message from the person, naming what they picked.
+      const text = m.upload_id
+        ? `Import “${m.name}” from the cutting floor (upload_id ${id}).`
+        : `Use “${m.name}” from the cutting floor (media_id ${id}).`;
+      try {
+        const r = await request('ui/message', { role: 'user', content: [{ type: 'text', text }] });
+        if (r?.isError) throw new Error('refused');
+        toast('Sent to your agent');
+      } catch {
+        toast('The chat app did not take the message. Copy the id instead.');
+      }
+    }
+  }
+
+  async function refresh() {
+    if (S.loading) return;
+    S.loading = true;
+    $('#refresh').classList.add('spin');
+    try { setData(await callTool('media.list', {})); }
+    catch (e) { toast(`Could not list again: ${e.message}`); }
+    finally { S.loading = false; $('#refresh').classList.remove('spin'); }
+  }
+
+  function onResult(result) {
+    if (!result) return;
+    let data = result.structuredContent;
+    if (!data && Array.isArray(result.content)) {
+      const t = result.content.find((c) => c?.type === 'text');
+      try { data = t && JSON.parse(t.text); } catch {}
+    }
+    if (result.isError || !data) {
+      S.error = data?.message || result.content?.find((c) => c?.type === 'text')?.text || 'media.list failed.';
+      return paint();
+    }
+    setData(data);
+  }
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== window.parent) return;
+    const msg = event.data;
+    if (msg?.jsonrpc !== '2.0') return;
+    if (msg.id !== undefined && pending.has(msg.id) && !msg.method) {
+      const p = pending.get(msg.id);
+      pending.delete(msg.id);
+      if (msg.error) p.reject(new Error(msg.error.message || 'error'));
+      else p.resolve(msg.result);
+      return;
+    }
+    const params = msg.params || {};
+    if (msg.method === 'ui/notifications/tool-result') whenReady(() => onResult(params));
+    else if (msg.method === 'ui/notifications/host-context-changed') applyContext(params);
+    else if (msg.method === 'ui/resource-teardown' && msg.id !== undefined) {
+      for (const el of document.querySelectorAll('video, audio')) el.pause();
+      send({ jsonrpc: '2.0', id: msg.id, result: {} });
+    }
+  });
+
+  // Calls wait for the handshake, so the host's capabilities are known.
+  const queue = [];
+  function whenReady(fn) { if (host.ready) fn(); else queue.push(fn); }
+
+  new ResizeObserver(() => {
+    notify('ui/notifications/size-changed', { width: Math.ceil(html.scrollWidth), height: Math.ceil(root.getBoundingClientRect().height) });
+  }).observe(root);
+
+  build();
+  paint();
+  request('ui/initialize', {
+    appInfo: { name: 'cuttingfloor-library', version: VERSION },
+    appCapabilities: {},
+    protocolVersion: '2026-01-26',
+  }).then((r) => {
+    host.caps = r?.hostCapabilities || {};
+    applyContext(r?.hostContext);
+  }, () => {}).finally(() => {
+    host.ready = true;
+    notify('ui/notifications/initialized', {});
+    for (const fn of queue.splice(0)) fn();
+    paint();
+  });
+})();
+</script>
+</body>
+</html>

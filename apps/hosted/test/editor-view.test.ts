@@ -340,6 +340,61 @@ describe.skipIf(!engines || !browserFound)('editor view', () => {
     await page.close();
   });
 
+  it('lists what is on the floor under its own name and previews a pick', async () => {
+    const listed = await call('media.list', {});
+    const libraryHtml = (
+      (await client.readResource({ uri: 'ui://cuttingfloor/library' })).contents[0] as {
+        text: string;
+      }
+    ).text;
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 1100 });
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e instanceof Error ? e.message : String(e)));
+    await page.exposeFunction('mcpCall', (name: string, args: Rec) =>
+      client.callTool({ name, arguments: args }),
+    );
+    await page.setContent(HOST_PAGE);
+    await page.evaluate(
+      (result, html) => {
+        Object.assign(window, {
+          CAPS: { serverTools: {}, message: { text: {} } },
+          ARGS: {},
+          RESULT: result,
+        });
+        (document.getElementById('v') as HTMLIFrameElement).srcdoc = html;
+      },
+      { content: [], structuredContent: listed },
+      libraryHtml,
+    );
+    await new Promise((r) => setTimeout(r, 200));
+    const view = page.frames().find((f) => f !== page.mainFrame()) as Frame;
+    await view.waitForSelector('#list .row');
+    expect(await view.$eval('.wm', (el) => el.textContent)).toBe('cuttingfloorai');
+    const media = listed.media as Array<{ media_id: string; kind: string }>;
+    expect(await view.$$eval('#list .row', (els) => els.length)).toBe(media.length);
+
+    // A pick plays from media.get's signed file.
+    const video = media.find((m) => m.kind === 'video');
+    await view.click(`#list .row[data-key="${video?.media_id}"]`);
+    await view.waitForFunction(
+      () => {
+        const v = document.querySelector('#preview video') as HTMLVideoElement | null;
+        return v && v.readyState >= 1;
+      },
+      { timeout: 20_000 },
+    );
+    expect((await host(page)).calls).toContain('media.get');
+
+    // Use in chat hands the pick to the agent as the person's message.
+    await view.click('[data-act="chat"]');
+    await page.waitForFunction(() => (window as unknown as { __msgs: Rec[] }).__msgs.length === 1);
+    const [msg] = (await host(page)).msgs as Array<{ content: Rec[] }>;
+    expect(String(msg?.content[0]?.text)).toContain(`media_id ${video?.media_id}`);
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
   it('still plays the file in a host that will not relay tool calls', async () => {
     // Without serverTools the view can't follow a job, so this host hands it the finished file.
     const done = await call('job.get', { job_id: String(exportResult.job_id) });
