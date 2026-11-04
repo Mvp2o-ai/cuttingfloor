@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { WALKTHROUGHS, type Walkthrough, walkthrough } from '../../../content/walkthroughs.ts';
+import { AgentBlock } from '../../agents/block.tsx';
 import { SITE_URL } from '../../seo.ts';
 import { Session } from '../../session/session.tsx';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav } from '../../shell.tsx';
@@ -125,9 +126,11 @@ export default async function WalkthroughPage({ params }: Props) {
           </div>
         </section>
 
+        <AgentBlock n="05" />
+
         <section className="cell wt-end">
           <div className="head">
-            <span className="label">05 / The file</span>
+            <span className="label">06 / The file</span>
             <h2 className="lede">What came out?</h2>
           </div>
           <dl className="wt-file">

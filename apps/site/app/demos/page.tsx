@@ -4,9 +4,9 @@ import { Breadcrumbs, Footer, Nav } from '../shell.tsx';
 import { Poster } from './poster.tsx';
 
 export const metadata: Metadata = {
-  title: 'AI video editing demos: Claude and ChatGPT editing real clips | cuttingfloor',
+  title: 'AI video editing demos: Kazi, Claude and ChatGPT editing real clips | cuttingfloor',
   description:
-    'Watch an AI agent edit video: a creator’s own Claude or ChatGPT, with cuttingfloor connected, cuts the pauses, adds captions and hands back a finished short. Before and after, every step.',
+    'Watch an AI agent edit video: a creator’s own Kazi, Claude or ChatGPT, with cuttingfloor connected, cuts the pauses, adds captions and hands back a finished short. Before and after, every step.',
   alternates: { canonical: '/demos', types: { 'text/markdown': '/demos.md' } },
 };
 

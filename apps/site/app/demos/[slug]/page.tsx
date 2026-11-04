@@ -10,6 +10,7 @@ import {
   lengths,
 } from '../../../content/demos.ts';
 import { skill } from '../../../content/skills.ts';
+import { AgentBlock } from '../../agents/block.tsx';
 import { Breadcrumbs, Footer, JsonLd, Nav } from '../../shell.tsx';
 import { AgentDemo } from '../demo.tsx';
 import { Seek } from '../seek.tsx';
@@ -147,6 +148,8 @@ export default async function DemoPage({ params }: Props) {
             </figure>
           ))}
         </section>
+
+        <AgentBlock />
 
         <section className="cell wt-end">
           <p className="wt-links">

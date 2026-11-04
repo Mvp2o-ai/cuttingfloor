@@ -56,6 +56,11 @@ export function Footer({ cta = 'Start free' }: { cta?: string }) {
         </p>
         <div className="footer-links">
           <a href={SIGN_UP}>{cta}</a>
+          <a href="/agents">Agents</a>
+          <a href="/guides/add-captions-to-a-video">Captions</a>
+          <a href="/es/editar-videos-con-ia" hrefLang="es">
+            En español
+          </a>
           <a href="/walkthroughs">Walkthroughs</a>
           <a href="/skills">Skills</a>
           <a href="/features">Features</a>
@@ -134,9 +139,9 @@ export function JsonLd({ data }: { data: unknown }) {
   );
 }
 
-/** "18 October 2026", for the visible Updated line. */
-export function formatDate(iso: string): string {
-  return new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', {
+/** "18 October 2026" (or "18 de octubre de 2026"), for the visible Updated line. */
+export function formatDate(iso: string, lang: 'en' | 'es' = 'en'): string {
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString(lang === 'es' ? 'es-MX' : 'en-GB', {
     day: 'numeric',
     month: 'long',
     year: 'numeric',

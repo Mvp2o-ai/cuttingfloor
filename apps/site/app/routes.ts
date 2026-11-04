@@ -1,4 +1,6 @@
+import { AGENTS, AGENTS_UPDATED } from '../content/agents.ts';
 import { DEMOS } from '../content/demos.ts';
+import { GUIDES, guidePath } from '../content/guides.ts';
 import { SKILLS, SKILLS_UPDATED } from '../content/skills.ts';
 import { WALKTHROUGHS } from '../content/walkthroughs.ts';
 
@@ -39,6 +41,13 @@ export const ROUTES: Route[] = [
     title: 'Compare AI video editing: MCP servers, APIs and editing apps',
     updated: '2026-11-01',
   },
+  {
+    path: '/agents',
+    title: 'Edit videos with your AI agent: Kazi, Claude and ChatGPT',
+    updated: AGENTS_UPDATED,
+  },
+  ...AGENTS.map((a) => ({ path: `/agents/${a.slug}`, title: a.title, updated: AGENTS_UPDATED })),
+  ...GUIDES.map((g) => ({ path: guidePath(g), title: g.title, updated: g.updated })),
   { path: '/walkthroughs', title: 'Walkthroughs', updated: '2026-10-18' },
   ...WALKTHROUGHS.map((w) => ({
     path: `/walkthroughs/${w.slug}`,
