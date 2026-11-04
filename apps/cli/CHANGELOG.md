@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.32.1
+
+### Patch Changes
+
+- e82804e: Editor: the picture always shows whole in a host panel (a tall video no longer shows only its top), and the bar under the picture drags it taller or shorter again, also in a fixed-height panel, where the editor below scrolls with the header pinned.
+
 ## 0.32.0
 
 ### Minor Changes
