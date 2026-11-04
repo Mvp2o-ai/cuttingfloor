@@ -108,8 +108,8 @@ export default function Home() {
             <div className="rise d3 works-in">
               <span className="label">Works in</span>
               <ul>
-                {CLIENTS.map((c, i) => (
-                  <li key={c} className={i === 0 ? 'ours' : undefined}>
+                {CLIENTS.map((c) => (
+                  <li key={c} className={c === 'Kazi' ? 'ours kazi-word' : undefined}>
                     {c}
                   </li>
                 ))}

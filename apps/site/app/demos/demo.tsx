@@ -138,10 +138,15 @@ export function AgentDemo({ demo }: { demo: Demo }) {
 
       <section className="demo-chat" aria-label={`${agent}, with cuttingfloor connected`}>
         <header>
-          <span className={`demo-agent ${agent.toLowerCase()}`} aria-hidden="true">
-            {agent[0]}
-          </span>
-          <b>{agent}</b>
+          {agent === 'Kazi' ? (
+            // biome-ignore lint/performance/noImgElement: a small static icon; next/image adds nothing
+            <img className="demo-agent kazi" src="/logos/kazi.png" alt="" aria-hidden="true" />
+          ) : (
+            <span className={`demo-agent ${agent.toLowerCase()}`} aria-hidden="true">
+              {agent[0]}
+            </span>
+          )}
+          <b className={agent === 'Kazi' ? 'kazi-word' : undefined}>{agent}</b>
           <span className="demo-tool">
             <i aria-hidden="true" />
             cuttingfloor

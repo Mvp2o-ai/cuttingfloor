@@ -143,6 +143,11 @@
   .ctx svg { width: 14px; height: 14px; flex: none; }
   .ctx.fresh { background: rgba(43,214,101,.22); color: #2bd665; }
   .ctx.waiting { opacity: .55; }
+  /* A seek bar for the minimized view, where the timeline's ruler is gone. */
+  .mscrub { display: none; padding: 6px 12px; background: #111412; cursor: pointer; touch-action: none; }
+  .mscrub b { display: block; position: relative; height: 4px; border-radius: 4px; background: rgba(255,255,255,.18); }
+  .mscrub i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: #2bd665; }
+  .mscrub:hover b { height: 6px; margin: -1px 0; }
 
   .inspector { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--line); height: calc(var(--stage-h) + 47px); }
   .tabs { display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--line); flex: none; }
@@ -271,6 +276,23 @@
   .fill .inspector, .full .inspector { height: auto; }
   .fill .viewer, .full .viewer { min-height: 0; }
 
+  /* The divider under the picture: dragging it sets the picture's height (--stage-h). In a
+   * fixed-height frame (.sized once dragged) the timeline takes what the picture leaves. */
+  .split { flex: none; height: 10px; display: grid; place-items: center; cursor: ns-resize; touch-action: none; border-bottom: 1px solid var(--line); background: var(--card); }
+  .split i { width: 40px; height: 3px; border-radius: 3px; background: var(--line); }
+  .split:hover i, .split.drag i, .split:focus-visible i { background: var(--accent); }
+  .split:focus-visible { outline: 0; }
+  .fill.sized .main, .full.sized .main { flex: none; }
+  .fill.sized .stage, .full.sized .stage { flex: none; height: var(--stage-h); }
+  .fill.sized .scroller, .full.sized .scroller { flex: 1 1 auto; max-height: none; min-height: 60px; }
+
+  /* Minimized: the picture and its controls only, as the player was. */
+  .mini .inspector, .mini .split, .mini .tl-bar, .mini .lastedit, .mini .note-row, .mini .scroller, .mini .keys { display: none; }
+  .mini .main { grid-template-columns: minmax(0, 1fr); border-bottom: 0; }
+  .mini .mscrub { display: block; }
+  .fill.mini .main, .full.mini .main { flex: 1 1 auto; }
+  .fill.mini .stage, .full.mini .stage { flex: 1; height: auto; }
+
   @media (max-width: 860px) {
     .main { grid-template-columns: minmax(0, 1fr); }
     .inspector, .fill .inspector, .full .inspector { border-left: 0; border-top: 1px solid var(--line); height: 260px; }
@@ -360,6 +382,7 @@
     lock: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
     fx: '<svg viewBox="0 0 24 24"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/></svg>',
     music: '<svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+    panel: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 14h18"/></svg>',
   };
   let toastT = 0;
   function toast(text) { const t = $('#toast'); t.textContent = text; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2400); }
@@ -386,6 +409,7 @@
     ppf: 1, fitPpf: 1, frameMode: store.get('frames', false), selected: null, tab: 'here',
     focusType: null, loop: null, loopOn: false, follow: true, showChange: true, compact: store.get('compact', false),
     composing: false, sent: [], mix: null, timelineError: null,
+    mini: store.get('mini', false), stageH: store.get('stageH', null),
   };
   const RATES = [0.25, 0.5, 1, 1.5, 2];
   const TYPES = {
@@ -463,12 +487,14 @@
           <button class="pill narrow-hide" id="copyLink" type="button" title="Copy a link anyone can open" disabled>${ICON.link}<span>Copy link</span></button>
           <button class="pill narrow-hide" id="openPage" type="button" title="Open the watch page" disabled>${ICON.open}<span>Open</span></button>
           <button class="pill" id="download" type="button" title="Download the file" disabled>${ICON.down}<span>Download</span></button>
+          <button class="pill" id="miniBtn" type="button" title="Hide or show the timeline and inspector (E)">${ICON.panel}<span id="miniText">Hide editor</span></button>
           <button class="pill primary" id="fullBtn" type="button" title="Full screen" hidden>${ICON.max}</button>
         </div>
       </div>
       <div class="main">
         <div class="viewer">
           <div class="stage" id="stage"></div>
+          <div class="mscrub" id="mscrub" role="slider" tabindex="-1" aria-label="Seek"><b id="mscrubBar"><i id="mscrubFill"></i></b></div>
           <div class="transport">
             <button class="tbtn play" id="play" type="button" aria-label="Play (Space)">${ICON.play}</button>
             <button class="tbtn" id="prevCut" type="button" title="Previous cut ([)">${ICON.prevCut}</button>
@@ -495,6 +521,7 @@
           <div class="pane" id="pane"><div class="empty">Loading the timeline…</div></div>
         </aside>
       </div>
+      <div class="split" id="split" role="separator" aria-orientation="horizontal" aria-label="Resize the picture" tabindex="0" title="Drag to resize the picture; double-click to reset"><i></i></div>
       <div class="tl-bar">
         <b>Timeline</b>
         <div class="legend" id="legend"></div>
@@ -528,10 +555,13 @@
         <span><kbd>[</kbd> <kbd>]</kbd> previous / next cut</span>
         <span><kbd>I</kbd> <kbd>O</kbd> loop in / out, <kbd>Esc</kbd> clears</span>
         <span><kbd>+</kbd> <kbd>−</kbd> zoom, <kbd>0</kbd> fit</span>
+        <span><kbd>E</kbd> hide the editor</span>
         <span>Hold <kbd>Shift</kbd> while dragging to snap to cuts</span>
       </div>
     </div>`;
     wire();
+    if (S.mini) { html.classList.add('mini'); $('#miniText').textContent = 'Show editor'; }
+    $('#miniBtn').setAttribute('aria-pressed', String(S.mini));
     return { onLayout };
   }
 
@@ -856,6 +886,7 @@
     const x = `${S.t * S.ppf}px`;
     const ph = $('#playhead'); if (ph) ph.style.left = x;
     const k = $('#knob'); if (k) k.style.left = x;
+    $('#mscrubFill').style.width = `${(100 * S.t) / Math.max(1, S.D - 1)}%`;
   }
 
   function setZoom(ppf, anchorFrame = S.t) {
@@ -1128,13 +1159,13 @@
     return d * S.ppf < 14 ? best : fr;
   };
   let dragging = false;
-  function startScrub(e) {
+  function startScrub(e, at = frameAt) {
     if (!S.view || e.button > 0) return;
     e.preventDefault();
     dragging = true;
     const wasPlaying = S.playing;
     if (wasPlaying) togglePlay(false);
-    const move = (ev) => seek(snap(frameAt(ev.clientX), ev.shiftKey));
+    const move = (ev) => seek(snap(at(ev.clientX), ev.shiftKey));
     move(e);
     const up = () => {
       dragging = false;
@@ -1148,6 +1179,38 @@
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
   }
+
+  // The divider sets the picture's height. Inline the frame grows with it; in a fixed-height
+  // frame the timeline below gives up the room, down to a few rows.
+  function stageBounds() {
+    const fixed = html.classList.contains('fill') || html.classList.contains('full');
+    if (!fixed) return [160, 1600];
+    const stage = $('#stage').offsetHeight, sc = $('#scroller').offsetHeight;
+    return [160, Math.max(160, stage + sc - 60)];
+  }
+  function setStageH(px) {
+    const [lo, hi] = stageBounds();
+    S.stageH = Math.round(Math.min(hi, Math.max(lo, px)));
+    html.style.setProperty('--stage-h', `${S.stageH}px`);
+    html.classList.add('sized');
+  }
+  function resetStageH() {
+    S.stageH = null;
+    store.set('stageH', null);
+    html.style.removeProperty('--stage-h');
+    html.classList.remove('sized');
+    onLayout();
+  }
+  function setMini(on) {
+    S.mini = on;
+    store.set('mini', on);
+    html.classList.toggle('mini', on);
+    $('#miniText').textContent = on ? 'Show editor' : 'Hide editor';
+    $('#miniBtn').setAttribute('aria-pressed', String(on));
+    onLayout();
+    if (!on) renderPane(true);
+  }
+
   function select(id) {
     S.selected = id;
     paintClipClasses();
@@ -1225,6 +1288,40 @@
         onLayout();
       } catch {}
     };
+
+    $('#miniBtn').onclick = () => setMini(!S.mini);
+    $('#mscrub').addEventListener('pointerdown', (e) => {
+      const r = $('#mscrubBar').getBoundingClientRect();
+      startScrub(e, (x) => ((x - r.left) / Math.max(1, r.width)) * S.D);
+    });
+    const split = $('#split');
+    split.addEventListener('pointerdown', (e) => {
+      if (e.button > 0) return;
+      e.preventDefault();
+      const y0 = e.clientY, h0 = $('#stage').offsetHeight;
+      split.setPointerCapture(e.pointerId);
+      split.classList.add('drag');
+      const move = (ev) => setStageH(h0 + ev.clientY - y0);
+      const up = () => {
+        split.classList.remove('drag');
+        split.removeEventListener('pointermove', move);
+        split.removeEventListener('pointerup', up);
+        split.removeEventListener('pointercancel', up);
+        store.set('stageH', S.stageH);
+        onLayout();
+      };
+      split.addEventListener('pointermove', move);
+      split.addEventListener('pointerup', up);
+      split.addEventListener('pointercancel', up);
+    });
+    split.addEventListener('dblclick', resetStageH);
+    split.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      e.stopPropagation();
+      setStageH($('#stage').offsetHeight + (e.key === 'ArrowUp' ? -24 : 24));
+      store.set('stageH', S.stageH);
+    });
 
     const ruler = $('#ruler'), lanes = $('#lanes'), area = $('#area'), sc = $('#scroller');
     ruler.addEventListener('pointerdown', (e) => { if (!e.target.closest('#knob')) startScrub(e); });
@@ -1310,6 +1407,7 @@
       else if (k === '-') setZoom(S.ppf / 1.6);
       else if (k === '0') fit();
       else if (k === 'm') $('#mute').click();
+      else if (k === 'e') setMini(!S.mini);
       else if (k === 'Home') seek(0);
       else if (k === 'End') seek(S.D - 1);
     });
@@ -1329,6 +1427,7 @@
     const fixed = html.classList.contains('fill') || html.classList.contains('full');
     const sc = $('#scroller');
     if (sc) sc.style.setProperty('--tl-max', fixed ? `${Math.max(140, Math.round(window.innerHeight * 0.36))}px` : '300px');
+    if (S.stageH && !S.mini) setStageH(S.stageH);
     if (S.view) { measureFit(); if (S.ppf < S.fitPpf) fit(); paintCanvases(); }
   }
 

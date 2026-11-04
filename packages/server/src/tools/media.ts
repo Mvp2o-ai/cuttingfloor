@@ -59,6 +59,7 @@ import {
 import type { McpServer } from '@modelcontextprotocol/server';
 import { askFrames, checkFrameState, type JudgedFrame, sampleTimes } from '../frames.ts';
 import { JEV_MODEL, JEV_URL } from '../jev.ts';
+import { LIBRARY_TOOL_META } from '../library.ts';
 import { admitJob } from '../meter.ts';
 import { PLAYER_TOOL_META } from '../player.ts';
 import { type SourceSpan, timelineImage } from '../render.ts';
@@ -736,6 +737,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       ].join(' '),
       inputSchema: MediaListInput,
       outputSchema: MediaListResult,
+      _meta: LIBRARY_TOOL_META,
       annotations: {
         title: 'List media',
         readOnlyHint: true,
