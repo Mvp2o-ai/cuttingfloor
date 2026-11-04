@@ -44,7 +44,7 @@ window.addEventListener('message', async (e) => {
   if (e.source !== f.contentWindow) return;
   const m = e.data;
   const reply = (result) => f.contentWindow.postMessage({ jsonrpc: '2.0', id: m.id, result }, '*');
-  if (m.method === 'ui/initialize') return reply({ protocolVersion: '2026-01-26', hostInfo: { name: 'test-host', version: '0' }, hostCapabilities: window.CAPS, hostContext: { theme: 'dark', displayMode: 'inline', availableDisplayModes: ['inline'] } });
+  if (m.method === 'ui/initialize') return reply({ protocolVersion: '2026-01-26', hostInfo: { name: 'test-host', version: '0' }, hostCapabilities: window.CAPS, hostContext: { theme: 'dark', displayMode: 'inline', availableDisplayModes: ['inline'], ...window.HOSTCTX } });
   if (m.method === 'ui/notifications/initialized') {
     f.contentWindow.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/tool-input', params: { arguments: window.ARGS } }, '*');
     f.contentWindow.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: window.RESULT }, '*');
@@ -66,6 +66,7 @@ describe.skipIf(!engines || !browserFound)('editor view', () => {
   let timelineId: string;
   let tracks: Array<{ id: string; name: string; clips: Array<{ id: string; start: number }> }>;
   let exportResult: Rec;
+  let portrait: { timelineId: string; exportResult: Rec };
 
   async function call(name: string, args: Rec): Promise<Rec> {
     const r = (await client.callTool({ name, arguments: args })) as {
@@ -166,6 +167,28 @@ describe.skipIf(!engines || !browserFound)('editor view', () => {
     exportResult = started;
     expect((await waitJob(String(started.job_id))).status).toBe('completed');
 
+    // A portrait export, as a phone video is: in a narrow panel it is the tall case.
+    const tall = await call('timeline.create', {
+      name: 'Portrait',
+      sequence: { width: 360, height: 640, fps: { num: 30, den: 1 } },
+    });
+    const tallV1 = (tall.tracks as Array<{ id: string; kind: string }>).find(
+      (t) => t.kind === 'video',
+    )?.id;
+    const tallClip = await call('clip.add', {
+      timeline_id: tall.timeline_id,
+      preview: 'none',
+      track_id: tallV1,
+      media_id: imported.media_id,
+      source: { in: 0, out: 90 },
+    });
+    const tallExport = await call('export.video', {
+      timeline_id: tallClip.timeline_id,
+      preset: 'review_h264',
+    });
+    expect((await waitJob(String(tallExport.job_id))).status).toBe('completed');
+    portrait = { timelineId: String(tallClip.timeline_id), exportResult: tallExport };
+
     editorHtml = (
       (await client.readResource({ uri: 'ui://cuttingfloor/editor' })).contents[0] as {
         text: string;
@@ -186,7 +209,11 @@ describe.skipIf(!engines || !browserFound)('editor view', () => {
     http?.close();
   });
 
-  async function open(caps: Rec): Promise<{ page: Page; view: Frame }> {
+  async function open(
+    caps: Rec,
+    frame?: { width: number; height: number },
+    of = { timelineId, exportResult },
+  ): Promise<{ page: Page; view: Frame }> {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 1100 });
     const errors: string[] = [];
@@ -196,14 +223,19 @@ describe.skipIf(!engines || !browserFound)('editor view', () => {
     );
     await page.setContent(HOST_PAGE);
     await page.evaluate(
-      (c, args, result, html) => {
-        Object.assign(window, { CAPS: c, ARGS: args, RESULT: result });
-        (document.getElementById('v') as HTMLIFrameElement).srcdoc = html;
+      (c, args, result, html, size) => {
+        // A host panel of a fixed size tells the view its containerDimensions.
+        const hostCtx = size ? { containerDimensions: size } : {};
+        Object.assign(window, { CAPS: c, ARGS: args, RESULT: result, HOSTCTX: hostCtx });
+        const v = document.getElementById('v') as HTMLIFrameElement;
+        if (size) Object.assign(v.style, { width: `${size.width}px`, height: `${size.height}px` });
+        v.srcdoc = html;
       },
       caps,
-      { timeline_id: timelineId, preset: 'review_h264' },
-      { content: [], structuredContent: exportResult },
+      { timeline_id: of.timelineId, preset: 'review_h264' },
+      { content: [], structuredContent: of.exportResult },
       editorHtml,
+      frame ?? null,
     );
     const view = await new Promise<Frame>((resolve) => {
       const find = () => page.frames().find((f) => f !== page.mainFrame());
@@ -309,6 +341,75 @@ describe.skipIf(!engines || !browserFound)('editor view', () => {
     expect(msg?.role).toBe('user');
     expect(String(msg?.content[0]?.text)).toMatch(/^This cut is a beat late\n\n\(.*timeline /);
     expect(String(msg?.content[0]?.text)).toContain(`clip ${first?.id}`);
+    await page.close();
+  });
+
+  it('in a narrow fixed panel shows the whole picture and the bar under it resizes it', async () => {
+    const { page, view } = await open({ serverTools: {} }, { width: 575, height: 1000 }, portrait);
+    await view.waitForSelector('#lanes .clip');
+    const box = (sel: string) =>
+      view.$eval(sel, (el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          top: Math.round(r.top),
+          bottom: Math.round(r.bottom),
+          height: Math.round(r.height),
+        };
+      });
+    const shot = async (name: string) => {
+      if (process.env.EDITOR_SHOTS)
+        await page.screenshot({ path: join(process.env.EDITOR_SHOTS, name) });
+    };
+    await shot('narrow-panel.png');
+    // The picture fits inside the stage, whole, and the editor fits the panel.
+    const stage = await box('#stage');
+    const video = await box('#stage video');
+    expect(video.top).toBeGreaterThanOrEqual(stage.top);
+    expect(video.bottom).toBeLessThanOrEqual(stage.bottom);
+    expect(await view.$eval('.card', (el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+
+    // Dragging the bar down makes the picture taller; the editor keeps its size and scrolls.
+    const split = await (await view.$('#split'))?.boundingBox();
+    if (!split) throw new Error('no bar');
+    const x = split.x + split.width / 2,
+      y = split.y + split.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y + 150, { steps: 6 });
+    await page.mouse.up();
+    expect((await box('#stage')).height).toBe(stage.height + 150);
+    expect((await box('#scroller')).height).toBeGreaterThan(0);
+    expect(await view.$eval('.card', (el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    const grown = await box('#stage');
+    const grownVideo = await box('#stage video');
+    expect(grownVideo.bottom).toBeLessThanOrEqual(grown.bottom);
+    await shot('narrow-panel-dragged.png');
+
+    // Double-click puts it back to fit the panel.
+    await view.$eval('#split', (el) =>
+      el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })),
+    );
+    expect(await view.$eval('.card', (el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+    await page.close();
+  });
+
+  it('resizes the picture from the bar inline', async () => {
+    const { page, view } = await open({ serverTools: {} });
+    await view.waitForSelector('#lanes .clip');
+    const before = await view.$eval('#stage', (el) =>
+      Math.round(el.getBoundingClientRect().height),
+    );
+    const split = await (await view.$('#split'))?.boundingBox();
+    if (!split) throw new Error('no bar');
+    await page.mouse.move(split.x + split.width / 2, split.y + split.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(split.x + split.width / 2, split.y + split.height / 2 + 120, {
+      steps: 6,
+    });
+    await page.mouse.up();
+    expect(await view.$eval('#stage', (el) => Math.round(el.getBoundingClientRect().height))).toBe(
+      before + 120,
+    );
     await page.close();
   });
 
