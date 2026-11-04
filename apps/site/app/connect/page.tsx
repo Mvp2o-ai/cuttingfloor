@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
-import { CLIENTS, CLIENTS_CHECKED, type Client, MCP_URL } from '../../content/clients.ts';
+import { CLIENTS, CLIENTS_CHECKED, MCP_URL } from '../../content/clients.ts';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
 import { Copy } from '../walkthroughs/copy.tsx';
+import { ClientSection } from './client-section.tsx';
 import { CONNECT_DESCRIPTION, CONNECT_FAQS, CONNECT_LEAD, CONNECT_TITLE, HOW } from './copy.ts';
 import { LogoSlot } from './logo.tsx';
 
@@ -119,64 +120,5 @@ export default function ConnectPage() {
         <Footer />
       </main>
     </>
-  );
-}
-
-function ClientSection({ client: c, n }: { client: Client; n: number }) {
-  return (
-    <section className="cell cl-client" id={c.slug} aria-labelledby={`${c.slug}-name`}>
-      <div className="head">
-        <span className="label">
-          {String(n).padStart(2, '0')} / {c.where}
-        </span>
-        <h2 id={`${c.slug}-name`} className="cl-name">
-          <LogoSlot client={c} />
-          <span className="sr-only">: how to connect cuttingfloor</span>
-        </h2>
-      </div>
-      <div className="cl-body">
-        <div>
-          <ol className="cl-steps">
-            {c.steps.map((s) => (
-              <li key={s}>{s}</li>
-            ))}
-          </ol>
-          {c.install && (
-            <p className="actions">
-              <a className="link-big" href={c.install.href} data-track={`Install: ${c.name}`}>
-                {c.install.label}
-              </a>
-            </p>
-          )}
-          {c.notes && (
-            <ul className="cl-notes">
-              {c.notes.map((note) => (
-                <li key={note}>{note}</li>
-              ))}
-            </ul>
-          )}
-          {c.docs && (
-            <p className="wt-links">
-              <a href={c.docs} rel="noopener">
-                {c.docsLabel ?? `${c.name}’s own help page`}
-              </a>
-            </p>
-          )}
-        </div>
-        <div className="cl-snippets">
-          {c.snippets.map((s) => (
-            <figure key={s.label} className="wt-prompt">
-              <pre>
-                <code>{s.code}</code>
-              </pre>
-              <figcaption>
-                <span className="label">{s.label}</span>
-                <Copy text={s.code} label="Copy" />
-              </figcaption>
-            </figure>
-          ))}
-        </div>
-      </div>
-    </section>
   );
 }

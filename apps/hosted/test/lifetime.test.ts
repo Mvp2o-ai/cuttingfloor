@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Access } from '../src/access.ts';
-import { lifetimeFor } from '../src/lifecycle.ts';
+import { clientName, lifetimeFor } from '../src/lifecycle.ts';
 
 // Who gets lifetime when they use cuttingfloor through a client that grants it (Kazi). The WorkOS
 // write itself runs against the real WorkOS in scripts/smoke-account.ts.
@@ -27,5 +27,15 @@ describe('lifetime through a client', () => {
     expect(lifetimeFor({}, { allowed: true, plan: 'pro', period, email })).toBe('paying');
     expect(lifetimeFor({}, { allowed: true, plan: 'creator', period, email })).toBe('paying');
     expect(lifetimeFor({}, { allowed: false, reason: 'payment_failed', email })).toBe('paying');
+  });
+});
+
+describe('the app an account is used from', () => {
+  it('keeps the clientInfo name printable, trimmed and short', () => {
+    expect(clientName('openai-mcp')).toBe('openai-mcp');
+    expect(clientName('  claude-ai\n')).toBe('claude-ai');
+    expect(clientName('x'.repeat(200))).toHaveLength(80);
+    expect(clientName('\u0000\u0007')).toBeUndefined();
+    expect(clientName(undefined)).toBeUndefined();
   });
 });

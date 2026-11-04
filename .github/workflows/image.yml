@@ -1,6 +1,6 @@
 name: Image
 
-# Every PR and push: lint, typecheck and all tests (engine and end-to-end included) inside the
+# Every PR and push that touches more than the site (apps/site is Vercel's, never in the image): lint, typecheck and all tests (engine and end-to-end included) inside the
 # image, then a smoke test of the built image as users run it. Pushes to main and develop, and
 # releases, publish the image to GHCR for linux/amd64 and linux/arm64 (:latest is main only):
 # each platform builds on its own native runner, then one job tags both as one multi-arch image.
@@ -13,7 +13,9 @@ name: Image
 on:
   push:
     branches: [main, develop]
+    paths-ignore: ['apps/site/**']
   pull_request:
+    paths-ignore: ['apps/site/**']
   workflow_call:
     inputs:
       version:

@@ -150,6 +150,7 @@ const server = createHttpServer({
   ...(lifecycle
     ? {
         onCall: (owner: string, client?: string) => lifecycle.called(owner, client),
+        onApp: (owner: string, app: string) => lifecycle.usedFrom(owner, app),
         route: (req, res, url) => lifecycle.route(req, res, url),
       }
     : {}),

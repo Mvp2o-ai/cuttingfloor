@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Promote develop to main. Pending changesets are versioned on develop first (version bump and
 # changelog, committed as "chore: release vX.Y.Z" in a throwaway worktree), then the develop →
-# main pull request titled "Promote develop: <summary>" is opened (or reused), its checks are
-# awaited, and it is merged with a merge commit so main and develop keep one history. On main,
-# the release workflow tags the new version and publishes the image.
+# main pull request titled "Promote develop: <summary>" is opened (or reused), its required checks
+# are awaited (not the image, which still gates the server deploy on main), and it is merged with
+# a merge commit so main and develop keep one history. On main, the release workflow tags the new
+# version and publishes the image.
 #
 # Usage: scripts/promote-develop.sh "<summary>"
 set -euo pipefail
@@ -46,8 +47,8 @@ if [ -z "$pr" ]; then
 fi
 
 # Checks register a few seconds after a push to develop; until then there are none to watch.
-until [ "$(gh pr checks "$pr" --json name --jq length 2>/dev/null || echo 0)" -gt 0 ]; do sleep 10; done
-gh pr checks "$pr" --watch --fail-fast
+until [ "$(gh pr checks "$pr" --required --json name --jq length 2>/dev/null || echo 0)" -gt 0 ]; do sleep 10; done
+gh pr checks "$pr" --required --watch --fail-fast
 gh pr merge "$pr" --merge --subject "Promote develop: $1"
 git fetch -q origin main
 echo "Promoted: main is $(git rev-parse --short origin/main)"

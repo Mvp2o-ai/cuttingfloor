@@ -24,6 +24,7 @@ let base: string;
 let server: Server;
 let dataDir: string;
 const checked: string[] = [];
+const apps: [string, string][] = [];
 
 beforeAll(async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cf-script-keys-'));
@@ -64,6 +65,7 @@ beforeAll(async () => {
       if (owner === LAPSED) throw new CfError('subscription_required', 'The trial has ended');
     },
     route: (req, res, url) => lifecycle.route(req, res, url),
+    onApp: (owner, app) => apps.push([owner, app]),
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -161,5 +163,30 @@ describe('script keys', () => {
     expect(((await after.json()) as { error_description: string }).error_description).toMatch(
       /revoked or has expired/,
     );
+  });
+
+  it('name the app the account is used from, from the handshake or each request', async () => {
+    const made = (await (await site('/account/keys', { user: USER })).json()) as { key: string };
+    const client = await connect(made.key);
+    expect(apps).toContainEqual([USER, 'script']);
+    await client.close();
+    const modern = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${made.key}`,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list',
+        params: {
+          _meta: { 'io.modelcontextprotocol/clientInfo': { name: 'claude-ai', version: '1' } },
+        },
+      }),
+    });
+    await modern.body?.cancel();
+    expect(apps).toContainEqual([USER, 'claude-ai']);
   });
 });

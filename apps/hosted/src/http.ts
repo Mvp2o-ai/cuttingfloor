@@ -65,6 +65,8 @@ export interface HttpOptions {
    * records, lifetime for some clients); awaited, so what it changes counts for this request.
    */
   onCall?: (owner: string, client?: string) => void | Promise<void>;
+  /** Told the app a signed-in owner's request came from, by its MCP clientInfo name. */
+  onApp?: (owner: string, app: string) => void;
   /** Provider keys signed-in users saved on their account page, after any in the request. */
   savedKeys?: SavedKeys;
   /** Routes of the hosting app (billing webhooks, account data); true when it answered. */
@@ -88,6 +90,36 @@ const DISCOVERY_METHODS = new Set([
   'resources/templates/list',
   'prompts/list',
 ]);
+
+// The 2026-07-28 protocol puts the client's identity in every request's _meta; the 2025 handshake
+// sends it once, in initialize.
+const CLIENT_INFO_META = 'io.modelcontextprotocol/clientInfo';
+// Bodies larger than this (a data: URI import) aren't read for the name; the next request is.
+const APP_BODY_MAX = 64 * 1024;
+
+/** The clientInfo name a POST body carries, if any. */
+async function appName(request: Request): Promise<string | undefined> {
+  if (request.method !== 'POST') return undefined;
+  if (Number(request.headers.get('content-length') ?? 0) > APP_BODY_MAX) return undefined;
+  let body: unknown;
+  try {
+    const text = await request.clone().text();
+    if (text.length > APP_BODY_MAX) return undefined;
+    body = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  for (const m of Array.isArray(body) ? body : [body]) {
+    const params = (m as { params?: Record<string, unknown> } | null)?.params;
+    const info =
+      (m as { method?: unknown }).method === 'initialize'
+        ? params?.clientInfo
+        : (params?._meta as Record<string, unknown> | undefined)?.[CLIENT_INFO_META];
+    const name = (info as { name?: unknown } | undefined)?.name;
+    if (typeof name === 'string' && name) return name;
+  }
+  return undefined;
+}
 
 /** Whether a POST body holds only discovery messages (one, or a 2025-03-26 batch). */
 async function isDiscovery(request: Request): Promise<boolean> {
@@ -258,6 +290,11 @@ export function createHttpServer(options: HttpOptions): Server {
       let owner = 'local';
       let via = 'local';
       const request = await toWebRequest(req as IncomingMessage & { method: string; url: string });
+      const tellApp = async (who: string) => {
+        if (!options.onApp) return;
+        const app = await appName(request);
+        if (app) options.onApp(who, app);
+      };
       if (hashedKeys.length || requireToken || options.scriptKeys) {
         const keyOwner = apiKeyOwner(req);
         const bearer = /^Bearer (cf_\S+)$/i.exec(req.headers.authorization ?? '')?.[1];
@@ -270,6 +307,7 @@ export function createHttpServer(options: HttpOptions): Server {
           owner = scriptOwner;
           via = 'script';
           await options.onCall?.(owner);
+          await tellApp(owner);
         } else if (bearer && options.scriptKeys) {
           res
             .writeHead(401, {
@@ -296,6 +334,7 @@ export function createHttpServer(options: HttpOptions): Server {
           owner = String(auth.extra?.sub);
           via = 'oauth';
           await options.onCall?.(owner, auth.clientId);
+          await tellApp(owner);
         } else {
           res
             .writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' })
