@@ -312,19 +312,11 @@ describe.skipIf(!engines || !browserFound)('editor view', () => {
     await page.close();
   });
 
-  it('resizes the picture from the divider and hides the editor down to the player', async () => {
+  it('hides the editor down to the player and shows it again', async () => {
     const { page, view } = await open({ serverTools: {} });
     await view.waitForSelector('#lanes .clip');
     const height = (sel: string) =>
       view.$eval(sel, (el) => Math.round(el.getBoundingClientRect().height));
-    const before = await height('#stage');
-    const box = await (await view.$('#split'))?.boundingBox();
-    if (!box) throw new Error('no divider');
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 120, { steps: 6 });
-    await page.mouse.up();
-    expect(await height('#stage')).toBe(before + 120);
 
     // Hidden, only the picture, its controls and a seek bar are left; the seek bar seeks.
     await view.click('#miniBtn');

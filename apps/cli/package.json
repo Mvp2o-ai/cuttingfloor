@@ -1,6 +1,6 @@
 {
   "name": "cuttingfloor",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "license": "AGPL-3.0-only",
   "private": true,
   "description": "The cuttingfloor command: serve (HTTP) and mcp (stdio).",

@@ -267,27 +267,21 @@
   .toast { position: fixed; left: 50%; bottom: 20px; translate: -50% 0; background: var(--fg); color: var(--card); padding: 8px 13px; border-radius: 10px; font-size: 12.5px; max-width: calc(100% - 32px); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
   .toast.on { opacity: 1; }
 
-  /* .fill: the host gives a fixed height (containerDimensions.height); .full: full screen. */
+  /* .fill: the host gives a fixed or capped height (containerDimensions, as --frame-h); .full:
+   * full screen. The picture takes what the header, controls and a short timeline leave, so it
+   * always shows whole; the timeline scrolls instead. */
   .fill body, .full body, .fill #root, .full #root { height: 100%; }
-  .fill .card, .full .card { height: 100vh; }
+  .fill .card { height: var(--frame-h, 100vh); }
+  .full .card { height: 100vh; }
+  .fill .keys, .full .keys { display: none; }
   .full .card { border-radius: 0; border: 0; }
   .fill .main, .full .main { flex: 1 1 auto; }
   .fill .stage, .full .stage { height: auto; flex: 1; min-height: 160px; }
   .fill .inspector, .full .inspector { height: auto; }
   .fill .viewer, .full .viewer { min-height: 0; }
 
-  /* The divider under the picture: dragging it sets the picture's height (--stage-h). In a
-   * fixed-height frame (.sized once dragged) the timeline takes what the picture leaves. */
-  .split { flex: none; height: 10px; display: grid; place-items: center; cursor: ns-resize; touch-action: none; border-bottom: 1px solid var(--line); background: var(--card); }
-  .split i { width: 40px; height: 3px; border-radius: 3px; background: var(--line); }
-  .split:hover i, .split.drag i, .split:focus-visible i { background: var(--accent); }
-  .split:focus-visible { outline: 0; }
-  .fill.sized .main, .full.sized .main { flex: none; }
-  .fill.sized .stage, .full.sized .stage { flex: none; height: var(--stage-h); }
-  .fill.sized .scroller, .full.sized .scroller { flex: 1 1 auto; max-height: none; min-height: 60px; }
-
   /* Minimized: the picture and its controls only, as the player was. */
-  .mini .inspector, .mini .split, .mini .tl-bar, .mini .lastedit, .mini .note-row, .mini .scroller, .mini .keys { display: none; }
+  .mini .inspector, .mini .tl-bar, .mini .lastedit, .mini .note-row, .mini .scroller, .mini .keys { display: none; }
   .mini .main { grid-template-columns: minmax(0, 1fr); border-bottom: 0; }
   .mini .mscrub { display: block; }
   .fill.mini .main, .full.mini .main { flex: 1 1 auto; }
@@ -347,8 +341,14 @@
       host.mode = ctx.displayMode;
       html.classList.toggle('full', host.mode === 'fullscreen');
     }
+    // A host that caps the frame (maxHeight) clips anything taller, so lay out to the cap too.
     const dims = ctx.containerDimensions;
-    if (dims) html.classList.toggle('fill', !!dims.height);
+    if (dims) {
+      const h = dims.height || dims.maxHeight;
+      html.classList.toggle('fill', !!h);
+      if (h) html.style.setProperty('--frame-h', `${h}px`);
+      else html.style.removeProperty('--frame-h');
+    }
     if (ui) ui.onLayout();
   }
 
@@ -409,7 +409,7 @@
     ppf: 1, fitPpf: 1, frameMode: store.get('frames', false), selected: null, tab: 'here',
     focusType: null, loop: null, loopOn: false, follow: true, showChange: true, compact: store.get('compact', false),
     composing: false, sent: [], mix: null, timelineError: null,
-    mini: store.get('mini', false), stageH: store.get('stageH', null),
+    mini: store.get('mini', false),
   };
   const RATES = [0.25, 0.5, 1, 1.5, 2];
   const TYPES = {
@@ -521,7 +521,6 @@
           <div class="pane" id="pane"><div class="empty">Loading the timeline…</div></div>
         </aside>
       </div>
-      <div class="split" id="split" role="separator" aria-orientation="horizontal" aria-label="Resize the picture" tabindex="0" title="Drag to resize the picture; double-click to reset"><i></i></div>
       <div class="tl-bar">
         <b>Timeline</b>
         <div class="legend" id="legend"></div>
@@ -1180,27 +1179,6 @@
     window.addEventListener('pointercancel', up);
   }
 
-  // The divider sets the picture's height. Inline the frame grows with it; in a fixed-height
-  // frame the timeline below gives up the room, down to a few rows.
-  function stageBounds() {
-    const fixed = html.classList.contains('fill') || html.classList.contains('full');
-    if (!fixed) return [160, 1600];
-    const stage = $('#stage').offsetHeight, sc = $('#scroller').offsetHeight;
-    return [160, Math.max(160, stage + sc - 60)];
-  }
-  function setStageH(px) {
-    const [lo, hi] = stageBounds();
-    S.stageH = Math.round(Math.min(hi, Math.max(lo, px)));
-    html.style.setProperty('--stage-h', `${S.stageH}px`);
-    html.classList.add('sized');
-  }
-  function resetStageH() {
-    S.stageH = null;
-    store.set('stageH', null);
-    html.style.removeProperty('--stage-h');
-    html.classList.remove('sized');
-    onLayout();
-  }
   function setMini(on) {
     S.mini = on;
     store.set('mini', on);
@@ -1293,34 +1271,6 @@
     $('#mscrub').addEventListener('pointerdown', (e) => {
       const r = $('#mscrubBar').getBoundingClientRect();
       startScrub(e, (x) => ((x - r.left) / Math.max(1, r.width)) * S.D);
-    });
-    const split = $('#split');
-    split.addEventListener('pointerdown', (e) => {
-      if (e.button > 0) return;
-      e.preventDefault();
-      const y0 = e.clientY, h0 = $('#stage').offsetHeight;
-      split.setPointerCapture(e.pointerId);
-      split.classList.add('drag');
-      const move = (ev) => setStageH(h0 + ev.clientY - y0);
-      const up = () => {
-        split.classList.remove('drag');
-        split.removeEventListener('pointermove', move);
-        split.removeEventListener('pointerup', up);
-        split.removeEventListener('pointercancel', up);
-        store.set('stageH', S.stageH);
-        onLayout();
-      };
-      split.addEventListener('pointermove', move);
-      split.addEventListener('pointerup', up);
-      split.addEventListener('pointercancel', up);
-    });
-    split.addEventListener('dblclick', resetStageH);
-    split.addEventListener('keydown', (e) => {
-      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-      e.preventDefault();
-      e.stopPropagation();
-      setStageH($('#stage').offsetHeight + (e.key === 'ArrowUp' ? -24 : 24));
-      store.set('stageH', S.stageH);
     });
 
     const ruler = $('#ruler'), lanes = $('#lanes'), area = $('#area'), sc = $('#scroller');
@@ -1423,11 +1373,11 @@
 
   function onLayout() {
     paintHeader();
-    // A fixed-height frame gives the timeline what the picture leaves; inline it grows to ~8 rows.
+    // A fixed-height frame keeps the timeline short (it scrolls) so the picture shows whole;
+    // inline it grows to ~8 rows.
     const fixed = html.classList.contains('fill') || html.classList.contains('full');
     const sc = $('#scroller');
-    if (sc) sc.style.setProperty('--tl-max', fixed ? `${Math.max(140, Math.round(window.innerHeight * 0.36))}px` : '300px');
-    if (S.stageH && !S.mini) setStageH(S.stageH);
+    if (sc) sc.style.setProperty('--tl-max', fixed ? `${Math.max(72, Math.min(300, Math.round(window.innerHeight * 0.28)))}px` : '300px');
     if (S.view) { measureFit(); if (S.ppf < S.fitPpf) fit(); paintCanvases(); }
   }
 
