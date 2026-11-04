@@ -9,8 +9,8 @@ import type { ScriptKeys } from './keys.ts';
 import { type ProviderKeys, SAVABLE } from './provider-keys.ts';
 
 // What happens around an account as it is used, still without a database:
-// - WorkOS metadata records the first tool call and the first export (the site's welcome page
-//   waits on the first, the funnel counts both).
+// - WorkOS metadata records the first tool call, the first export (the site's welcome page
+//   waits on the first, the funnel counts both) and the app the first tool call came from.
 // - Email goes out after sign-up, when the trial is about to end and once it has, at 80% and 100% of a period's
 //   render minutes, and when a payment fails. A notice file under the owner's data claims each
 //   message once, across servers (`owners/{owner}/notices/{name}.json`, kept 400 days).
@@ -65,6 +65,7 @@ export function lifetimeFor(
 export class Lifecycle {
   #o: LifecycleOptions;
   #seen = new Set<string>();
+  #apps = new Set<string>();
   #lifetime = new Set<string>();
   #timer: NodeJS.Timeout | undefined;
 
@@ -110,6 +111,20 @@ export class Lifecycle {
     this.#seen.add(owner);
     void this.#markOnce(owner, 'first_call_at').catch((error: Error) => {
       this.#seen.delete(owner);
+      process.stderr.write(`lifecycle: ${owner}: ${error.message}\n`);
+    });
+  }
+
+  /**
+   * A signed-in owner's request came from an app: records the first app's name on their account
+   * (`first_client`), so the funnel can tell which agents people use.
+   */
+  usedFrom(owner: string, app: string | undefined): void {
+    const name = clientName(app);
+    if (!name || this.#apps.has(owner)) return;
+    this.#apps.add(owner);
+    void this.#markOnce(owner, 'first_client', name).catch((error: Error) => {
+      this.#apps.delete(owner);
       process.stderr.write(`lifecycle: ${owner}: ${error.message}\n`);
     });
   }
@@ -275,8 +290,8 @@ export class Lifecycle {
     process.stderr.write(`lifecycle: ${owner}: lifetime via ${via}\n`);
   }
 
-  /** Sets a timestamp in the user's WorkOS metadata, if it isn't set yet. */
-  async #markOnce(owner: string, field: string): Promise<void> {
+  /** Sets a field in the user's WorkOS metadata (the time, by default), if it isn't set yet. */
+  async #markOnce(owner: string, field: string, value = new Date().toISOString()): Promise<void> {
     if (!isUser(owner)) return;
     const path = `/user_management/users/${encodeURIComponent(owner)}`;
     const user = await this.#workos(path);
@@ -284,7 +299,7 @@ export class Lifecycle {
     if (metadata[field]) return;
     await this.#workos(path, {
       method: 'PUT',
-      body: { metadata: { ...metadata, [field]: new Date().toISOString() } },
+      body: { metadata: { ...metadata, [field]: value } },
     });
   }
 
@@ -550,6 +565,15 @@ export function verifyStripe(body: string, header: string, secret: string, now =
   if (!t || !signatures.length || Math.abs(now / 1000 - Number(t)) > 300) return false;
   const expected = createHmac('sha256', secret).update(`${t}.${body}`).digest('hex');
   return signatures.some((s) => same(s, expected));
+}
+
+/** An app's MCP clientInfo name, made safe to keep: printable, trimmed, at most 80 characters. */
+export function clientName(app: string | undefined): string | undefined {
+  const name = app
+    ?.replace(/[^\x20-\x7e]/g, '')
+    .trim()
+    .slice(0, 80);
+  return name || undefined;
 }
 
 const isUser = (owner: string) => /^user_[0-9A-Z]{26}$/.test(owner);
