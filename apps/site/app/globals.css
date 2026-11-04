@@ -294,6 +294,11 @@ h2.lede {
   color: var(--bg);
   background: var(--key);
 }
+.connect-tabs button.kazi-word {
+  font-family: var(--font-kazi), sans-serif;
+  font-size: 17px;
+  text-transform: none;
+}
 .connect-body {
   padding: 18px;
 }
@@ -2115,7 +2120,14 @@ button.link-big {
   background: #10a37f;
 }
 .demo-agent.kazi {
-  background: #00b140;
+  background: none;
+}
+/* Kazi's wordmark, wherever the name stands as a brand rather than in a sentence. */
+.kazi-word {
+  font-family: var(--font-kazi), sans-serif;
+  font-weight: 700;
+  font-variation-settings: normal;
+  letter-spacing: 0;
 }
 .demo-tool {
   display: inline-flex;

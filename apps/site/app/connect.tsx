@@ -22,7 +22,7 @@ export function Connect() {
             type="button"
             role="tab"
             aria-selected={i === tab}
-            className={c.ours ? 'ours' : undefined}
+            className={c.ours ? `ours${c.slug === 'kazi' ? ' kazi-word' : ''}` : undefined}
             data-track={`Connect tab: ${c.name}`}
             onClick={() => {
               setTab(i);
