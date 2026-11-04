@@ -6,7 +6,7 @@ A headless video editor for agents, as an MCP server. An agent imports footage, 
 - **Nothing is stored for you.** Timelines, media and outputs live in a cache with a time limit (24 hours for timelines, 7 days for media and exports). Export to keep work.
 - **One Docker image** runs locally (free) and hosted. Engines (FFmpeg, MLT) ship inside it; Docker is the only thing you install.
 
-> Status: Phase 3 in progress. Import, timelines, clip editing, timing (speed, ramps, reverse, freeze frames, roll/slip/slide, range extract, nested timelines), transitions, titles and captions, audio (gain, pan, fades, ducking, loudness), effects (colour, LUTs, blur, chroma key and more; EQ, compressor, denoise, pitch), analysis (transcripts, beats, faces, tracking), compositing (transforms, keyframes, masks, blend modes, animations), motion graphics and HTML stills (sandboxed), mattes, local voiceover with timed words, people cut-outs, previews, exact QA checks and H.264/ProRes export work end to end. Provider tools (ElevenLabs, OpenAI) and NLE interchange come next.
+> What it covers: import, cutting on words, timing, transitions, titles and captions, audio, effects, analysis (transcripts, beats, faces, tracking, scenes), compositing, motion graphics and stills from HTML, voiceover, cut-outs, stems, stabilizing, upscaling, lip-sync, previews, QA checks, and export to MP4, ProRes, GIF and audio or to Final Cut, Premiere and Resolve (FCPXML, OTIO, EDL). Every tool: [cuttingfloor.ai/features](https://cuttingfloor.ai/features). Use it from [Kazi](https://cuttingfloor.ai/agents/kazi), [Claude](https://cuttingfloor.ai/agents/claude), [ChatGPT](https://cuttingfloor.ai/agents/chatgpt) or [any MCP app](https://cuttingfloor.ai/connect).
 
 ## Use it hosted
 
