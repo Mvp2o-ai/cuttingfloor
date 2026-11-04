@@ -312,6 +312,34 @@ describe.skipIf(!engines || !browserFound)('editor view', () => {
     await page.close();
   });
 
+  it('resizes the picture from the divider and hides the editor down to the player', async () => {
+    const { page, view } = await open({ serverTools: {} });
+    await view.waitForSelector('#lanes .clip');
+    const height = (sel: string) =>
+      view.$eval(sel, (el) => Math.round(el.getBoundingClientRect().height));
+    const before = await height('#stage');
+    const box = await (await view.$('#split'))?.boundingBox();
+    if (!box) throw new Error('no divider');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 120, { steps: 6 });
+    await page.mouse.up();
+    expect(await height('#stage')).toBe(before + 120);
+
+    // Hidden, only the picture, its controls and a seek bar are left; the seek bar seeks.
+    await view.click('#miniBtn');
+    expect(await height('#scroller')).toBe(0);
+    expect(await height('.inspector')).toBe(0);
+    const bar = await (await view.$('#mscrubBar'))?.boundingBox();
+    if (!bar) throw new Error('no seek bar');
+    await page.mouse.click(bar.x + bar.width / 2, bar.y + bar.height / 2);
+    expect(await view.$eval('#tc', (el) => el.textContent)).toContain('0:03.');
+    await view.click('#miniBtn');
+    expect(await height('#scroller')).toBeGreaterThan(0);
+    expect(await height('#mscrub')).toBe(0);
+    await page.close();
+  });
+
   it('still plays the file in a host that will not relay tool calls', async () => {
     // Without serverTools the view can't follow a job, so this host hands it the finished file.
     const done = await call('job.get', { job_id: String(exportResult.job_id) });
