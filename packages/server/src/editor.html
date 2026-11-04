@@ -110,8 +110,8 @@
   .main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; border-bottom: 1px solid var(--line); min-height: 0; }
   .viewer { display: flex; flex-direction: column; min-width: 0; background: var(--stage); color: #fff; }
   .stage { position: relative; height: var(--stage-h); display: grid; place-items: center; overflow: hidden; isolation: isolate; }
-  .stage video, .stage img { max-width: calc(100% - 20px); max-height: calc(100% - 20px); width: auto; height: auto; display: block; border-radius: 4px; }
-  .stage video { width: 100%; height: calc(100% - 20px); object-fit: contain; }
+  /* The picture fills the stage's box and shows whole at any size; it never sizes the stage. */
+  .stage > video, .stage > img { position: absolute; inset: 10px; width: calc(100% - 20px); height: calc(100% - 20px); object-fit: contain; display: block; border-radius: 4px; }
   .stage .cover { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 24px; }
   .cover b { font-size: 15px; }
   .cover small, .sub { color: rgba(255,255,255,.62); font-size: 12.5px; max-width: 46ch; }
@@ -275,13 +275,30 @@
   .full .card { height: 100vh; }
   .fill .keys, .full .keys { display: none; }
   .full .card { border-radius: 0; border: 0; }
-  .fill .main, .full .main { flex: 1 1 auto; }
+  /* The picture's row never shrinks below the picture's minimum and its controls; when the
+   * frame is shorter than that, the frame scrolls rather than overlap anything. */
+  .fill .card, .full .card { overflow-y: auto; }
+  .fill .main, .full .main { flex: 1 1 auto; grid-template-rows: minmax(auto, 1fr) auto; }
+  .fill .scroller, .full .scroller { min-height: 72px; }
   .fill .stage, .full .stage { height: auto; flex: 1; min-height: 160px; }
   .fill .inspector, .full .inspector { height: auto; }
-  .fill .viewer, .full .viewer { min-height: 0; }
+  .fill .main, .full .main, .fill .viewer, .full .viewer { min-height: auto; }
+
+  /* The bar under the picture: dragging it sets the picture's height (--stage-h, .sized once
+   * dragged). In a fixed-height frame the editor below keeps its size and the frame scrolls,
+   * with the header pinned. */
+  .split { grid-column: 1 / -1; position: relative; z-index: 3; height: 10px; display: grid; place-items: center; cursor: ns-resize; touch-action: none; border-top: 1px solid var(--line); background: var(--card); }
+  .split i { width: 40px; height: 3px; border-radius: 3px; background: var(--line); }
+  .split:hover i, .split.drag i, .split:focus-visible i { background: var(--accent); }
+  .split:focus-visible { outline: 0; }
+  .fill.sized .card > *, .full.sized .card > * { flex-shrink: 0; }
+  .fill.sized .head, .full.sized .head { position: sticky; top: 0; z-index: 8; background: var(--card); }
+  .fill.sized .main, .full.sized .main { flex: none; grid-template-rows: none; }
+  .fill.sized .stage, .full.sized .stage { flex: none; height: var(--stage-h); }
+  .fill.sized .inspector, .full.sized .inspector { height: calc(var(--stage-h) + 47px); }
 
   /* Minimized: the picture and its controls only, as the player was. */
-  .mini .inspector, .mini .tl-bar, .mini .lastedit, .mini .note-row, .mini .scroller, .mini .keys { display: none; }
+  .mini .inspector, .mini .split, .mini .tl-bar, .mini .lastedit, .mini .note-row, .mini .scroller, .mini .keys { display: none; }
   .mini .main { grid-template-columns: minmax(0, 1fr); border-bottom: 0; }
   .mini .mscrub { display: block; }
   .fill.mini .main, .full.mini .main { flex: 1 1 auto; }
@@ -289,7 +306,11 @@
 
   @media (max-width: 860px) {
     .main { grid-template-columns: minmax(0, 1fr); }
-    .inspector, .fill .inspector, .full .inspector { border-left: 0; border-top: 1px solid var(--line); height: 260px; }
+    .inspector, .fill .inspector, .full .inspector { border-left: 0; border-top: 1px solid var(--line); height: 260px; grid-row: 3; }
+    /* In a panel the inspector is as tall as its rows, up to 260px, so the picture gets the rest. */
+    .fill .inspector, .full .inspector, .fill.sized .inspector, .full.sized .inspector { height: auto; max-height: 260px; }
+    .split { grid-row: 2; }
+    .fill .main, .full .main { grid-template-rows: minmax(auto, 1fr) auto auto; }
     :root { --heads: 96px; --stage-h: 340px; }
     .th .st, .keys, .narrow-hide { display: none; }
     .head .meta { display: none; }
@@ -409,7 +430,7 @@
     ppf: 1, fitPpf: 1, frameMode: store.get('frames', false), selected: null, tab: 'here',
     focusType: null, loop: null, loopOn: false, follow: true, showChange: true, compact: store.get('compact', false),
     composing: false, sent: [], mix: null, timelineError: null,
-    mini: store.get('mini', false),
+    mini: store.get('mini', false), stageH: store.get('stageH', null),
   };
   const RATES = [0.25, 0.5, 1, 1.5, 2];
   const TYPES = {
@@ -520,6 +541,7 @@
           </div>
           <div class="pane" id="pane"><div class="empty">Loading the timeline…</div></div>
         </aside>
+        <div class="split" id="split" role="separator" aria-orientation="horizontal" aria-label="Resize the picture" tabindex="0" title="Drag to resize the picture; double-click to reset"><i></i></div>
       </div>
       <div class="tl-bar">
         <b>Timeline</b>
@@ -1179,6 +1201,27 @@
     window.addEventListener('pointercancel', up);
   }
 
+  // The bar sets the picture's height. Inline the frame grows with it; in a fixed-height frame
+  // the picture can take the whole frame below the header and the editor scrolls under it.
+  function stageBounds() {
+    const fixed = html.classList.contains('fill') || html.classList.contains('full');
+    if (!fixed) return [160, 1600];
+    const room = $('.card').clientHeight - $('.head').offsetHeight - $('.transport').offsetHeight - $('#split').offsetHeight;
+    return [160, Math.max(160, room)];
+  }
+  function setStageH(px) {
+    const [lo, hi] = stageBounds();
+    S.stageH = Math.round(Math.min(hi, Math.max(lo, px)));
+    html.style.setProperty('--stage-h', `${S.stageH}px`);
+    html.classList.add('sized');
+  }
+  function resetStageH() {
+    S.stageH = null;
+    store.set('stageH', null);
+    html.style.removeProperty('--stage-h');
+    html.classList.remove('sized');
+    onLayout();
+  }
   function setMini(on) {
     S.mini = on;
     store.set('mini', on);
@@ -1271,6 +1314,34 @@
     $('#mscrub').addEventListener('pointerdown', (e) => {
       const r = $('#mscrubBar').getBoundingClientRect();
       startScrub(e, (x) => ((x - r.left) / Math.max(1, r.width)) * S.D);
+    });
+    const split = $('#split');
+    split.addEventListener('pointerdown', (e) => {
+      if (e.button > 0) return;
+      e.preventDefault();
+      const y0 = e.clientY, h0 = $('#stage').offsetHeight;
+      split.setPointerCapture(e.pointerId);
+      split.classList.add('drag');
+      const move = (ev) => setStageH(h0 + ev.clientY - y0);
+      const up = () => {
+        split.classList.remove('drag');
+        split.removeEventListener('pointermove', move);
+        split.removeEventListener('pointerup', up);
+        split.removeEventListener('pointercancel', up);
+        store.set('stageH', S.stageH);
+        onLayout();
+      };
+      split.addEventListener('pointermove', move);
+      split.addEventListener('pointerup', up);
+      split.addEventListener('pointercancel', up);
+    });
+    split.addEventListener('dblclick', resetStageH);
+    split.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      e.stopPropagation();
+      setStageH($('#stage').offsetHeight + (e.key === 'ArrowUp' ? -24 : 24));
+      store.set('stageH', S.stageH);
     });
 
     const ruler = $('#ruler'), lanes = $('#lanes'), area = $('#area'), sc = $('#scroller');
@@ -1378,6 +1449,7 @@
     const fixed = html.classList.contains('fill') || html.classList.contains('full');
     const sc = $('#scroller');
     if (sc) sc.style.setProperty('--tl-max', fixed ? `${Math.max(72, Math.min(300, Math.round(window.innerHeight * 0.28)))}px` : '300px');
+    if (S.stageH && !S.mini) setStageH(S.stageH);
     if (S.view) { measureFit(); if (S.ppf < S.fitPpf) fit(); paintCanvases(); }
   }
 
