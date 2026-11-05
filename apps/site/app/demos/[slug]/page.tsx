@@ -13,11 +13,13 @@ import { skill } from '../../../content/skills.ts';
 import { AgentBlock } from '../../agents/block.tsx';
 import { Breadcrumbs, Footer, JsonLd, Nav } from '../../shell.tsx';
 import { AgentDemo } from '../demo.tsx';
+import { BeforeAfter } from '../pair.tsx';
 import { Seek } from '../seek.tsx';
 import { videoObject } from '../video.ts';
 
-// One watch page per demo, told in order: the clip before, the edit in the agent's chat, and the
-// finished video after. The finished video carries the VideoObject, so search shows the after.
+// One watch page per demo. It opens on the result (the finished video beside the clip it came
+// from), then tells it in order: the clip before, the edit in the agent's chat, and the finished
+// video after. The finished video carries the VideoObject, so search shows the after.
 
 export const dynamicParams = false;
 
@@ -62,16 +64,19 @@ export default async function DemoPage({ params }: Props) {
       <JsonLd data={videoObject(d)} />
       <Nav />
       <main className="frame wt">
-        <section className="cell wt-head marks">
+        <section className="cell wt-head dm-hero marks">
           <span className="mark-b" />
-          <Breadcrumbs
-            trail={[
-              { name: 'Demos', href: '/demos' },
-              { name: d.title, href: `/demos/${d.slug}` },
-            ]}
-          />
-          <span className="label">Demo · {d.agent}</span>
-          <h1 className="display">{d.title}</h1>
+          <div className="dm-hero-head">
+            <Breadcrumbs
+              trail={[
+                { name: 'Demos', href: '/demos' },
+                { name: d.title, href: `/demos/${d.slug}` },
+              ]}
+            />
+            <span className="label">Demo · {d.agent}</span>
+            <h1 className="display">{d.title}</h1>
+          </div>
+          <BeforeAfter before={d.raw} after={v} />
           <p className="lede wt-answer">{d.description}</p>
         </section>
 
