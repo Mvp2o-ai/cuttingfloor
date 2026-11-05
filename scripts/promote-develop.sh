@@ -49,7 +49,18 @@ fi
 # Checks register a few seconds after a push to develop; until then there are none to watch.
 until [ "$(gh pr checks "$pr" --required --json name --jq length 2>/dev/null || echo 0)" -gt 0 ]; do sleep 10; done
 gh pr checks "$pr" --required --watch --fail-fast
-gh pr merge "$pr" --merge --subject "Promote develop: $1"
+# A second run of a required check (the pull request's own, after develop's) can register after the
+# watch returns, and the merge is refused until it passes. Wait it out rather than give up.
+for _ in $(seq 60); do
+  gh pr merge "$pr" --merge --subject "Promote develop: $1" 2>/dev/null && break
+  [ "$(gh pr view "$pr" --json state --jq .state)" = MERGED ] && break
+  sleep 20
+  gh pr checks "$pr" --required --watch --fail-fast >/dev/null
+done
+[ "$(gh pr view "$pr" --json state --jq .state)" = MERGED ] || {
+  echo "Pull request #$pr is still not mergeable after 20 minutes: gh pr view $pr" >&2
+  exit 1
+}
 git fetch -q origin main
 echo "Promoted: main is $(git rev-parse --short origin/main)"
 "$(dirname "$0")/sync-main-checkout.sh"
