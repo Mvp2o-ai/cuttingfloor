@@ -60,6 +60,19 @@ Optional, deeper checks against production (they make and delete throwaway accou
 `node scripts/smoke-hosted.ts`, `CHROME_PATH=… node scripts/smoke-oauth.ts`,
 `CHROME_PATH=… node scripts/smoke-account.ts`.
 
+## Slow is not broken
+
+This pipeline is reliable. When something seems stuck, it is almost always still on its way:
+
+- A Vercel build can start many minutes after the push. No Vercel status or deployment on a commit
+  yet means queued, not disconnected. Wait (`npx vercel@65.9.0 ls cuttingfloor-site` from
+  `apps/site`, or the commit's statuses) and keep working meanwhile.
+- `promote-develop.sh` waits for late check runs and retries the merge on its own. Rerun it if it
+  stopped; it picks up the open pull request.
+- Never ask the person to redeploy, reconnect Git, run a deploy by hand or approve a workaround.
+  Run the flow, wait, and report only a failure that a run, a status or a deployment actually
+  shows. Then fix it in the flow, as with any other bug.
+
 ## Redeploy or roll back
 
 - Redeploy main as it is: `gh workflow run deploy.yml --ref main`.
