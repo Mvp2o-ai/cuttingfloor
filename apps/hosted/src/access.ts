@@ -189,7 +189,6 @@ export class AccessCheck {
     const metadata = (user.metadata ?? {}) as Record<string, string>;
     const tagged = taggedPlan(metadata.plan);
     if (tagged) return { allowed: true, plan: tagged, period: month(now), email };
-    if (user.email_verified === false) return { allowed: false, reason: 'email_unverified', email };
 
     const customer = metadata.stripe_customer_id;
     let lapsed: string | undefined;
@@ -200,10 +199,15 @@ export class AccessCheck {
       for (const sub of (subs.data ?? []) as StripeSubscription[]) {
         if (!PAYING.has(sub.status)) continue;
         const item = sub.items?.data?.[0];
-        const plan = fromLookupKey(item?.price?.lookup_key)?.plan ?? 'pro';
+        const named = fromLookupKey(item?.price?.lookup_key);
+        const plan = named?.plan ?? 'pro';
         const start = (item?.current_period_start ?? sub.current_period_start ?? now / 1000) * 1000;
         const end = (item?.current_period_end ?? sub.current_period_end ?? now / 1000) * 1000;
-        const period = { start: new Date(start).toISOString(), end: new Date(end).toISOString() };
+        // Minutes are a month's however the plan is billed: a yearly one counts each month of its year.
+        const period =
+          (named?.interval ?? item?.price?.recurring?.interval) === 'year'
+            ? monthOfYear(start, end, now)
+            : { start: new Date(start).toISOString(), end: new Date(end).toISOString() };
         if (sub.status !== 'past_due') return { allowed: true, plan, period, email };
         // A failed renewal keeps working while Stripe retries the card, for GRACE_DAYS.
         const grace = start + GRACE_DAYS * 86_400_000;
@@ -213,6 +217,8 @@ export class AccessCheck {
       }
     }
     if (lapsed) return { allowed: false, reason: 'payment_failed', ended: lapsed, email };
+    // Checked after the subscription: a paying account is never held back for its email.
+    if (user.email_verified === false) return { allowed: false, reason: 'email_unverified', email };
 
     const began = Date.parse(String(user.created_at));
     const ends = new Date(began + TRIAL_DAYS * 86_400_000).toISOString();
@@ -254,6 +260,27 @@ function month(now: number): { start: string; end: string } {
   };
 }
 
+/** The month of a yearly billing period that `now` falls in, on the period's own day of the month. */
+function monthOfYear(start: number, end: number, now: number): { start: string; end: string } {
+  let k = 0;
+  while (k < 11 && now >= addMonths(start, k + 1)) k++;
+  return {
+    start: new Date(addMonths(start, k)).toISOString(),
+    end: new Date(Math.min(addMonths(start, k + 1), end)).toISOString(),
+  };
+}
+
+/** `t` moved on `k` calendar months (UTC), kept to the last day of a shorter month. */
+function addMonths(t: number, k: number): number {
+  const d = new Date(t);
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + k + 1, 0)).getUTCDate();
+  const moved = new Date(d);
+  moved.setUTCDate(1);
+  moved.setUTCMonth(d.getUTCMonth() + k);
+  moved.setUTCDate(Math.min(d.getUTCDate(), last));
+  return moved.getTime();
+}
+
 function day(iso: string | undefined): string {
   return iso ? iso.slice(0, 10) : 'an earlier date';
 }
@@ -266,7 +293,7 @@ interface StripeSubscription {
     data?: {
       current_period_start?: number;
       current_period_end?: number;
-      price?: { lookup_key?: string | null };
+      price?: { lookup_key?: string | null; recurring?: { interval?: string } | null };
     }[];
   };
 }
