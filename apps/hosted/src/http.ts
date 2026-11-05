@@ -71,7 +71,15 @@ export interface HttpOptions {
   savedKeys?: SavedKeys;
   /** Routes of the hosting app (billing webhooks, account data); true when it answered. */
   route?: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>;
+  /**
+   * Told of each step toward sign-in this server sees, with the client's User-Agent: `challenged`
+   * (an /mcp request without a token got the sign-in challenge) and `metadata` (a client read where
+   * to sign in). The steps between them and a signed-in call happen at the authorization server.
+   */
+  onSignInStep?: (step: SignInStep, userAgent: string) => void;
 }
+
+export type SignInStep = 'challenged' | 'metadata';
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 
@@ -219,6 +227,8 @@ export function createHttpServer(options: HttpOptions): Server {
           },
         );
         if (metadata) {
+          if (url.pathname.startsWith('/.well-known/oauth-protected-resource'))
+            options.onSignInStep?.('metadata', req.headers['user-agent'] ?? '');
           await sendResponse(res, metadata);
           return;
         }
@@ -328,6 +338,8 @@ export function createHttpServer(options: HttpOptions): Server {
         } else if (requireToken) {
           const auth = await requireToken(request);
           if (auth instanceof Response) {
+            if (!req.headers.authorization)
+              options.onSignInStep?.('challenged', req.headers['user-agent'] ?? '');
             await sendResponse(res, auth);
             return;
           }
