@@ -2349,6 +2349,7 @@ button.link-big {
   align-items: end;
 }
 .dm-pair figure {
+  position: relative;
   margin: 0;
   display: grid;
   gap: 8px;
@@ -2374,12 +2375,19 @@ button.link-big {
   font-size: 13px;
   color: var(--mute);
 }
+/* The tag sits on the video's corner, so it is seen with the video even when the caption isn't. */
 .dm-pair figcaption .label {
-  font-size: 18px;
-  margin-right: 4px;
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 5px 7px 4px;
+  font-size: 16px;
+  color: var(--ink);
+  background: rgb(0 0 0 / 0.72);
 }
 .dm-pair-after figcaption .label {
-  color: var(--key);
+  color: #000;
+  background: var(--key);
 }
 /* On a phone the last crumb repeats the title just under it; the structured data keeps it. */
 @media (max-width: 700px) {
