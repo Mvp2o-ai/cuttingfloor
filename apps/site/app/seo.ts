@@ -7,8 +7,17 @@ export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cuttingfloo
 export const MCP_ADDRESS = 'https://api.cuttingfloor.ai/mcp';
 export const DOCS_URL = 'https://github.com/mvp2o-ai/cuttingfloor';
 
+// The name leads: "cutting floor" is also an editing phrase, and people search for us in two words.
 export const TITLE =
-  'Video Editing MCP Server for Creators: Claude, ChatGPT, Codex & Cursor | cuttingfloor';
+  'cuttingfloor (Cutting Floor): Video Editing MCP Server for ChatGPT, Claude, Kazi & Codex';
+
+// Every way the name is written, and the other pages that are us, so search engines join them.
+export const BRAND_NAMES = ['Cutting Floor', 'cuttingfloor.ai'];
+export const PROFILES = [
+  DOCS_URL,
+  'https://glama.ai/mcp/connectors/io.github.Mvp2o-ai/cuttingfloor',
+  'https://lobehub.com/mcp/mvp2o-ai-cuttingfloor',
+];
 export const DESCRIPTION = `Editing tools for the agent you already use. Connect Claude, ChatGPT, Codex, Cursor or Kazi to one MCP server, ${TOOL_COUNT} tools: it cuts by transcript, captions, mixes, makes graphics and exports real video, checking its work as it goes. Open source: run it yourself free, or hosted.`;
 
 // Questions in the words people search them with.
@@ -101,9 +110,31 @@ export function structuredData() {
   return [
     {
       '@context': 'https://schema.org',
+      '@type': 'Organization',
+      '@id': `${SITE_URL}/#organization`,
+      name: 'cuttingfloor',
+      alternateName: BRAND_NAMES,
+      url: SITE_URL,
+      logo: `${SITE_URL}/apple-icon.png`,
+      sameAs: PROFILES,
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'WebSite',
+      '@id': `${SITE_URL}/#website`,
+      name: 'cuttingfloor',
+      alternateName: BRAND_NAMES,
+      url: SITE_URL,
+      publisher: { '@id': `${SITE_URL}/#organization` },
+    },
+    {
+      '@context': 'https://schema.org',
       '@type': 'SoftwareApplication',
       name: 'cuttingfloor',
+      alternateName: BRAND_NAMES,
       url: SITE_URL,
+      publisher: { '@id': `${SITE_URL}/#organization` },
+      sameAs: PROFILES,
       description: DESCRIPTION,
       applicationCategory: 'MultimediaApplication',
       applicationSubCategory: 'Video editing MCP server',
