@@ -112,25 +112,28 @@ async function statusFrom(
     const subs = await stripe(
       `/v1/subscriptions?customer=${encodeURIComponent(metadata.stripe_customer_id)}&status=all&limit=20`,
     );
-    const sub = (subs.data as Sub[]).find((s) => PAYING.has(s.status));
-    if (sub) {
+    // As the server decides: the first paying subscription not past its grace days counts.
+    for (const sub of subs.data as Sub[]) {
+      if (!PAYING.has(sub.status)) continue;
       const item = sub.items.data[0];
       const named = fromLookupKey(item?.price.lookup_key) ?? { plan: 'pro', interval: 'month' };
       const start = (item?.current_period_start ?? sub.current_period_start ?? 0) * 1000;
       const grace = start + GRACE_DAYS * 86_400_000;
-      if (sub.status === 'past_due' && Date.now() >= grace) lapsed = new Date(grace).toISOString();
-      else
-        return {
-          kind: 'subscribed',
-          plan: named.plan,
-          interval: named.interval,
-          status: sub.status,
-          renews: item?.current_period_end
-            ? new Date(item.current_period_end * 1000).toISOString()
-            : null,
-          cancels: sub.cancel_at_period_end,
-          graceEnds: sub.status === 'past_due' ? new Date(grace).toISOString() : null,
-        };
+      if (sub.status === 'past_due' && Date.now() >= grace) {
+        lapsed = new Date(grace).toISOString();
+        continue;
+      }
+      return {
+        kind: 'subscribed',
+        plan: named.plan,
+        interval: named.interval,
+        status: sub.status,
+        renews: item?.current_period_end
+          ? new Date(item.current_period_end * 1000).toISOString()
+          : null,
+        cancels: sub.cancel_at_period_end,
+        graceEnds: sub.status === 'past_due' ? new Date(grace).toISOString() : null,
+      };
     }
   }
   if (lapsed) return { kind: 'lapsed', ended: lapsed };

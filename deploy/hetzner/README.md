@@ -47,6 +47,8 @@ Signed links cover only the path, so links made under the old address still work
 
 **Check accounts and billing:** `CHROME_PATH=<chrome> node scripts/smoke-account.ts https://cuttingfloor.ai`. It signs a throwaway user up on the site, checks the account and welcome pages, opens Checkout, then checks the server's rules on the real WorkOS and Stripe: trial limits, a refused unverified email, refusal when WorkOS can't be reached, trial over, subscribed, lifetime.
 
+**Check paying accounts:** `ssh root@<server> 'cd /opt/cuttingfloor && docker compose exec -T cuttingfloor node scripts/smoke-paid.ts'`. On the server, with production's keys, it subscribes a throwaway account to Creator (monthly) and Pro (yearly) through a 100%-off coupon (real paid $0 invoices, no card), and checks through `/mcp` and `/account/usage` that each plan is honoured past the trial with its limits, that a yearly plan's minutes renew monthly, that the webhook arrives, and that cancelling ends access.
+
 **Check sign-in:** `WORKOS_API_KEY=sk_… CHROME_PATH=<chrome> node scripts/smoke-oauth.ts https://<domain>`. It makes a throwaway WorkOS user, registers a client with AuthKit as an MCP client does, signs in on AuthKit's page in headless Chrome, calls tools with the token, then deletes the user and the client. AuthKit caches its metadata for five minutes, so a registration setting changed there takes that long to show.
 
 ## Moving authentication from staging to production
