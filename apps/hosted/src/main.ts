@@ -155,6 +155,9 @@ const server = createHttpServer({
         route: (req, res, url) => lifecycle.route(req, res, url),
       }
     : {}),
+  ...(process.env.CUTTINGFLOOR_OPENAI_CHALLENGE
+    ? { openaiChallenge: process.env.CUTTINGFLOOR_OPENAI_CHALLENGE.trim() }
+    : {}),
   ...(oauth
     ? {
         onSignInStep: (step, userAgent) =>

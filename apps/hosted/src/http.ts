@@ -77,6 +77,8 @@ export interface HttpOptions {
    * to sign in). The steps between them and a signed-in call happen at the authorization server.
    */
   onSignInStep?: (step: SignInStep, userAgent: string) => void;
+  /** The token OpenAI's plugin portal asks this host to serve, to prove it owns the domain. */
+  openaiChallenge?: string;
 }
 
 export type SignInStep = 'challenged' | 'metadata';
@@ -213,6 +215,10 @@ export function createHttpServer(options: HttpOptions): Server {
       const url = new URL(req.url ?? '/', 'http://localhost');
       if (url.pathname === '/healthz') {
         res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
+        return;
+      }
+      if (options.openaiChallenge && url.pathname === '/.well-known/openai-apps-challenge') {
+        res.writeHead(200, { 'content-type': 'text/plain' }).end(options.openaiChallenge);
         return;
       }
       // The discovery documents: Protected Resource Metadata (RFC 9728), and the authorization

@@ -485,7 +485,10 @@ describe('HTTP face', () => {
         }),
         resource: new URL(`${b}/mcp`),
       }),
-      { onSignInStep: (step, userAgent) => steps.push(`${step} ${userAgent}`) },
+      {
+        onSignInStep: (step, userAgent) => steps.push(`${step} ${userAgent}`),
+        openaiChallenge: 'token-123',
+      },
     );
     const prmUrl = `${base}/.well-known/oauth-protected-resource/mcp`;
 
@@ -503,6 +506,10 @@ describe('HTTP face', () => {
       authorization_servers: [issuer],
       resource_name: 'cuttingfloor',
     });
+    // The domain token OpenAI's plugin portal checks, as plain text.
+    const challenge = await fetch(`${base}/.well-known/openai-apps-challenge`);
+    expect(challenge.headers.get('content-type')).toBe('text/plain');
+    expect(await challenge.text()).toBe('token-123');
     // The two steps toward sign-in this server sees; a bad token is not one of them.
     expect(steps).toEqual(['challenged openai-mcp/1.0.0', 'metadata node']);
     const asMeta = (await (
