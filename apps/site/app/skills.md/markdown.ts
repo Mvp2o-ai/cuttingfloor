@@ -19,7 +19,7 @@ export function markdown(): string {
       `## Skills\n\n${list(
         SKILLS.map(
           (s) =>
-            `${pageLink(s.title, `/skills/${s.slug}`)}: ${s.description} (${steps(s.body)} steps, version ${s.version})`,
+            `${pageLink(s.title, `/skills/${s.slug}`)}: ${s.description} (${steps(s.body)} steps, version ${s.version}, by ${s.author})`,
         ),
       )}`,
     ].join('\n\n'),

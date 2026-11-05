@@ -18,6 +18,7 @@ const FIELDS = {
   version: '1',
   type: 'playbook',
   source: 'system',
+  author: 'Ken Wiltshire',
 };
 
 const BODY = `# Add captions
@@ -65,6 +66,8 @@ describe('skill files', () => {
       version: 1,
       type: 'playbook',
       source: 'system',
+      author: 'Ken Wiltshire',
+      authorUrl: null,
       hidden: false,
       title: 'Add captions',
       related: [{ slug: 'cut-pauses-ums-and-restarts', relationship: 'prerequisite' }],
@@ -117,6 +120,13 @@ describe('skill files', () => {
       /must not name the skill itself/,
     );
     expect(problems(skill({}), 'Add_Captions')).toMatch(/file name must be lowercase/);
+  });
+
+  it('credits an author, with an optional https link', () => {
+    expect(problems(skill({ author: '' }))).toMatch(/requires author/);
+    expect(problems(skill({ author_url: 'youtube.com/watch' }))).toMatch(/https link/);
+    const s = parseSkill(skill({ author_url: 'https://example.com/talk' }), 'add-captions');
+    expect(s.authorUrl).toBe('https://example.com/talk');
   });
 
   it('needs a title and the five sections, in order', () => {

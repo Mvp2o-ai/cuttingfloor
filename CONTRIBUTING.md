@@ -24,4 +24,12 @@ A pull request into `main` from anywhere but `develop` fails the Flow check and 
 change its base to `develop`. Workflows on a first-time contributor's pull request wait for a
 maintainer's approval, and they run without access to secrets.
 
+## Adding a skill
+
+A skill is one file, `skills/<slug>.md`: step-by-step instructions an agent follows with the
+tools. The library test checks its format (the frontmatter, then When to use, Prerequisites,
+Steps, Decision table and Required behavior). Credit goes in the frontmatter: `author` is
+required, and `author_url` can link to you or to the work the skill came from. The skill's page
+on the site shows both.
+
 Security issues: see [SECURITY.md](SECURITY.md), not the issue tracker.

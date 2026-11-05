@@ -61,6 +61,11 @@ export const SkillsGetResult = z.object({
   name: z.string(),
   description: z.string(),
   version: z.number(),
+  author: z.string().describe('Who wrote the skill; credit them when you name it'),
+  author_url: z
+    .url()
+    .nullable()
+    .describe('A link to the author or the work the skill came from; null when there is none'),
   related: z.array(SkillRelated),
   markdown: z.string().describe('The whole skill, frontmatter included: follow its Steps'),
 });

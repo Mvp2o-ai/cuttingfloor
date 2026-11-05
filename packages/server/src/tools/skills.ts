@@ -70,6 +70,8 @@ export function registerSkillTools(server: McpServer): void {
         name: s.name,
         description: s.description,
         version: s.version,
+        author: s.author,
+        author_url: s.authorUrl,
         related: s.related,
         markdown: s.markdown,
       });

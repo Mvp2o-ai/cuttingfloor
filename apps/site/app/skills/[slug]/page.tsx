@@ -69,7 +69,9 @@ export default async function SkillPage({ params }: Props) {
           <span className="label">Skill {n}</span>
           <h1 className="display">{s.title}</h1>
           <p className="lede wt-answer">{s.description}</p>
-          <p className="wt-byline">Version {s.version} · Ken Wiltshire</p>
+          <p className="wt-byline">
+            Version {s.version} · {s.authorUrl ? <a href={s.authorUrl}>{s.author}</a> : s.author}
+          </p>
         </section>
 
         <section className="cell">
