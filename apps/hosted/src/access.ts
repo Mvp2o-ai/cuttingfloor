@@ -86,9 +86,12 @@ export class AccessCheck {
           detail: { reason: access.reason, ended: access.ended, account },
         },
       );
+    // The plans page only describes them: ChatGPT's plugin rules allow pointing to plans, not
+    // to where they are bought.
+    const plans = new URL('/pricing', account).toString();
     throw new CfError('subscription_required', `The free trial ended on ${day(access.ended)}`, {
-      hint: `This account's plan and billing are at ${account} (sign in with the same account); after a change there, call the tool again. Media and exports are kept 7 days, timelines 24 hours after last use`,
-      detail: { reason: access.reason, trial_ended: access.ended, subscribe: account },
+      hint: `This account has no plan now; the plans are described at ${plans}. Once the account has one, call the tool again. Media and exports are kept 7 days, timelines 24 hours after last use`,
+      detail: { reason: access.reason, trial_ended: access.ended, plans },
     });
   }
 
@@ -112,7 +115,7 @@ export class AccessCheck {
         'quota_exceeded',
         `This ${access.plan === 'trial' ? 'trial' : 'period'}'s ${usage.included_minutes} render minutes are used`,
         {
-          hint: `They renew on ${day(usage.period.end)}, and this account's plan is at ${account}. Editing the timeline and previews still work; only new jobs (exports, imports, analysis, create.*) wait`,
+          hint: `They renew on ${day(usage.period.end)}; the plans are described at ${new URL('/pricing', account)}. Editing the timeline and previews still work; only new jobs (exports, imports, analysis, create.*) wait`,
           detail: {
             used_minutes: usage.used_minutes,
             included_minutes: usage.included_minutes,

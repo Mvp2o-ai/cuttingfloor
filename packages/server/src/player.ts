@@ -20,6 +20,8 @@ export function registerPlayer(server: McpServer, deps: ServerDeps): void {
   const ui = {
     csp: { resourceDomains: [new URL(deps.runtime.config.publicUrl).origin] },
     permissions: { clipboardWrite: {} },
+    // ChatGPT serves each plugin's views from their own sandbox origin, named after this.
+    domain: new URL(deps.runtime.config.publicUrl).origin,
     prefersBorder: false,
   };
   server.registerResource(
