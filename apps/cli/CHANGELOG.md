@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.34.1
+
+### Patch Changes
+
+- a4d23e0: Paying accounts are always let in: a yearly plan's render minutes renew every month instead of once a year, and a subscription counts even when the account's email shows unverified.
+
 ## 0.34.0
 
 ### Minor Changes
