@@ -14,13 +14,13 @@ export function BeforeAfter({ before, after }: { before: DemoVideo; after: DemoV
       <figure className="dm-pair-after">
         <Loop v={after} controls />
         <figcaption>
-          <span className="label">After</span> ready to post · {length(after)}
+          <span className="label">After</span>Ready to post · {length(after)}
         </figcaption>
       </figure>
       <figure className="dm-pair-before">
         <Loop v={before} />
         <figcaption>
-          <span className="label">Before</span> as it came in · {length(before)}
+          <span className="label">Before</span>As it came in · {length(before)}
         </figcaption>
       </figure>
     </div>
