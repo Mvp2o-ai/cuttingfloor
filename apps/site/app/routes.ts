@@ -59,5 +59,6 @@ export const ROUTES: Route[] = [
   { path: '/terms', title: 'Terms', updated: '2026-10-20' },
   { path: '/privacy', title: 'Privacy', updated: '2026-10-20' },
   { path: '/refunds', title: 'Refunds', updated: '2026-10-20' },
+  { path: '/support', title: 'Support', updated: '2026-11-05' },
   { path: '/acceptable-use', title: 'Acceptable use', updated: '2026-10-20' },
 ];

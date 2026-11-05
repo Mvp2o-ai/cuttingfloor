@@ -39,11 +39,17 @@ export default function Privacy() {
             'Account records: which app you first connected from and when you first edited and exported, kept with your account, to see which apps people use and to send the right account emails.',
             'Keys you save: a provider key (your sync. labs key) is kept encrypted in your account, and only its last four characters are ever shown. Keys you make for scripts are kept as long as they last.',
             'Sign-in steps: when an app asks this server how to sign in, we note the time and the app’s name (no address): 13 months, to see where people stop while connecting.',
-            'Server logs: a few weeks, to keep the service running and safe.',
+            'Server logs: the address a request came from, its time and what it asked for, kept a few weeks to keep the service running and safe.',
+            'What we work out from your media (transcripts, beats, scenes, where faces and speakers are): kept with the media for 7 days. Faces and voices are used only to make the edit you asked for, never to identify anyone.',
+            'Sign-in: the account id your app signs in with. We check each sign-in token and don’t keep it.',
           ]}
         />
       </Part>
-      <Part title="What your agent gets back">
+      <Part title="What your agent sends and gets back">
+        <P>
+          From the app you connected we get only what your agent sends each tool: its instructions
+          for that step and any file you attach to it. We never see your chat.
+        </P>
         <P>
           Tool results go to the app you connected (ChatGPT, Claude, Kazi or another), which handles
           them under its own privacy policy. They hold what your agent asked for: the names, sizes

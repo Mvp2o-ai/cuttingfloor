@@ -13,6 +13,7 @@ export const TOP_TWINS = [
   'terms',
   'privacy',
   'refunds',
+  'support',
   'acceptable-use',
   'pricing',
   'features',
