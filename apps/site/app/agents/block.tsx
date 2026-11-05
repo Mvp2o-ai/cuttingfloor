@@ -1,6 +1,7 @@
 import { AGENTS } from '../../content/agents.ts';
 import { CLIENTS } from '../../content/clients.ts';
 import type { Lang } from '../../content/guides.ts';
+import { SendToSelf } from './send.tsx';
 
 // "Do it from your agent": Kazi, Claude and ChatGPT side by side, each with its one-line setup and
 // its own page. Job pages, walkthroughs and demos all end with it, so every job names every agent.
@@ -63,6 +64,7 @@ export function AgentBlock({ lang = 'en', n }: { lang?: Lang; n?: string }) {
       <p className="wt-links">
         {t.more} <a href="/connect">{t.connect}</a>
       </p>
+      <SendToSelf lang={lang} />
     </section>
   );
 }

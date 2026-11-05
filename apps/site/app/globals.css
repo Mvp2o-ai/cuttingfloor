@@ -1840,6 +1840,20 @@ button.link-big {
 .wt-links a {
   color: var(--ink);
 }
+/* Sending the setup to yourself is for phones; on a computer you can connect now. */
+.send-later {
+  display: none;
+}
+@media (pointer: coarse) {
+  .send-later {
+    display: block;
+  }
+}
+.send-later .copy {
+  display: inline-block;
+  margin-top: 10px;
+  text-decoration: none;
+}
 
 .wt-hub {
   margin: 0;

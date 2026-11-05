@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { DEMOS, finished, lengths } from '../../content/demos.ts';
+import { AgentBlock } from '../agents/block.tsx';
 import { Breadcrumbs, Footer, Nav } from '../shell.tsx';
 import { Poster } from './poster.tsx';
 
@@ -50,6 +51,7 @@ export default function Demos() {
             })}
           </ol>
         </section>
+        <AgentBlock />
         <Footer />
       </main>
     </>
