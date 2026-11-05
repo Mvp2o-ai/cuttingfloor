@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.34.3
+
+### Patch Changes
+
+- b5cf8a8: Views name their sandbox origin for ChatGPT, plan refusals point to the plans page, and the server can serve OpenAI's domain verification token.
+
 ## 0.34.2
 
 ### Patch Changes
