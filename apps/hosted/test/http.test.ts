@@ -18,6 +18,7 @@ const servers: Server[] = [];
 async function listen(
   apiKeys?: Map<string, string>,
   oauth?: (base: string) => { verifier: JwtTokenVerifier; resource: URL },
+  extra: Partial<Parameters<typeof createHttpServer>[0]> = {},
 ): Promise<string> {
   // The OAuth resource names the server's own address, so take a free port first.
   const port = oauth ? await freePort() : 0;
@@ -26,6 +27,7 @@ async function listen(
     credentials: new LocalCredentialStore({}, false),
     ...(apiKeys ? { apiKeys } : {}),
     ...(oauth ? { oauth: oauth(`http://127.0.0.1:${port}`) } : {}),
+    ...extra,
   });
   await new Promise<void>((r) => server.listen(port, '127.0.0.1', r));
   servers.push(server);
@@ -469,20 +471,29 @@ describe('HTTP face', () => {
 
   it('challenges for OAuth and describes itself as a protected resource', async () => {
     const issuer = 'https://auth.example.com';
-    const base = await listen(parseApiKeys(`ken:${KEY}`), (b) => ({
-      // The authorization server's metadata as AuthKit publishes it; no token is checked here.
-      verifier: new JwtTokenVerifier({
-        issuer,
-        authorization_endpoint: `${issuer}/oauth2/authorize`,
-        token_endpoint: `${issuer}/oauth2/token`,
-        jwks_uri: `${issuer}/oauth2/jwks`,
-        response_types_supported: ['code'],
+    const steps: string[] = [];
+    const base = await listen(
+      parseApiKeys(`ken:${KEY}`),
+      (b) => ({
+        // The authorization server's metadata as AuthKit publishes it; no token is checked here.
+        verifier: new JwtTokenVerifier({
+          issuer,
+          authorization_endpoint: `${issuer}/oauth2/authorize`,
+          token_endpoint: `${issuer}/oauth2/token`,
+          jwks_uri: `${issuer}/oauth2/jwks`,
+          response_types_supported: ['code'],
+        }),
+        resource: new URL(`${b}/mcp`),
       }),
-      resource: new URL(`${b}/mcp`),
-    }));
+      { onSignInStep: (step, userAgent) => steps.push(`${step} ${userAgent}`) },
+    );
     const prmUrl = `${base}/.well-known/oauth-protected-resource/mcp`;
 
-    const anon = await fetch(`${base}/mcp`, { method: 'POST', body: '{}' });
+    const anon = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { 'user-agent': 'openai-mcp/1.0.0' },
+      body: '{}',
+    });
     expect(anon.status).toBe(401);
     expect(anon.headers.get('www-authenticate')).toMatch(/^Bearer /);
     expect(anon.headers.get('www-authenticate')).toContain(`resource_metadata="${prmUrl}"`);
@@ -492,6 +503,8 @@ describe('HTTP face', () => {
       authorization_servers: [issuer],
       resource_name: 'cuttingfloor',
     });
+    // The two steps toward sign-in this server sees; a bad token is not one of them.
+    expect(steps).toEqual(['challenged openai-mcp/1.0.0', 'metadata node']);
     const asMeta = (await (
       await fetch(`${base}/.well-known/oauth-authorization-server`)
     ).json()) as { issuer: string };

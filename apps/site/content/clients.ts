@@ -39,6 +39,8 @@ export type Client = {
   docs?: string;
   /** The link's words, when it isn't a help page. */
   docsLabel?: string;
+  /** Added only on a computer: phone visitors get a way forward instead (Kazi, or send it later). */
+  computerOnly?: boolean;
   /** The home page's Connect box: one line of how, and the one thing to copy. */
   home?: { how: string; line: string };
 };
@@ -63,6 +65,7 @@ export const CLIENTS: Client[] = [
       { label: 'Server address', code: MCP_URL },
       { label: 'Or say to Kazi', code: `Connect the cuttingfloor MCP server at ${MCP_URL}` },
     ],
+    notes: ['Free through Kazi: an account connected from Kazi gets cuttingfloor for good.'],
     docs: 'https://kazi.apifunnel.ai',
     docsLabel: 'Meet Kazi at kazi.apifunnel.ai',
     home: {
@@ -72,6 +75,7 @@ export const CLIENTS: Client[] = [
   },
   {
     slug: 'claude',
+    computerOnly: true,
     name: 'Claude',
     where: 'claude.ai on the web and the desktop app',
     steps: [
@@ -95,6 +99,7 @@ export const CLIENTS: Client[] = [
   },
   {
     slug: 'claude-cowork',
+    computerOnly: true,
     name: 'Claude Cowork',
     where: 'The Claude desktop app, web and Chrome',
     steps: [
@@ -137,6 +142,7 @@ export const CLIENTS: Client[] = [
   },
   {
     slug: 'chatgpt',
+    computerOnly: true,
     name: 'ChatGPT',
     where: 'chatgpt.com (add it on the web)',
     steps: [
@@ -161,6 +167,7 @@ export const CLIENTS: Client[] = [
   },
   {
     slug: 'chatgpt-work',
+    computerOnly: true,
     name: 'ChatGPT Work',
     where: 'ChatGPT on the web and the desktop app',
     steps: [

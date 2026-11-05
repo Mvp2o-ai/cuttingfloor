@@ -1,4 +1,5 @@
 import type { Client } from '../../content/clients.ts';
+import { SendToSelf } from '../agents/send.tsx';
 import { Copy } from '../walkthroughs/copy.tsx';
 import { LogoSlot } from './logo.tsx';
 
@@ -36,6 +37,7 @@ export function ClientSection({ client: c, n }: { client: Client; n: number }) {
               ))}
             </ul>
           )}
+          {c.computerOnly && <SendToSelf app={c.name} />}
           {c.docs && (
             <p className="wt-links">
               <a href={c.docs} rel="noopener">

@@ -247,6 +247,8 @@ export class Runtime {
       await this.ws.sweep(this.ws.path('owners', owner, 'meter'), METER_TTL_MS);
     }
     await this.ws.sweep(this.ws.path('cache', 'frames'), 24 * 3_600_000);
+    // Hosted sign-in steps (apps/hosted funnel.ts), one folder per day.
+    await this.ws.sweep(this.ws.path('funnel'), METER_TTL_MS);
   }
 
   async secret(): Promise<Buffer> {

@@ -3,6 +3,7 @@ import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { configFromEnv, Runtime } from '@cuttingfloor/server';
 import { AccessCheck } from './access.ts';
 import { Mailer } from './email.ts';
+import { recordSignInStep } from './funnel.ts';
 import { createHttpServer, parseApiKeys } from './http.ts';
 import { ScriptKeys } from './keys.ts';
 import { Lifecycle } from './lifecycle.ts';
@@ -152,6 +153,14 @@ const server = createHttpServer({
         onCall: (owner: string, client?: string) => lifecycle.called(owner, client),
         onApp: (owner: string, app: string) => lifecycle.usedFrom(owner, app),
         route: (req, res, url) => lifecycle.route(req, res, url),
+      }
+    : {}),
+  ...(oauth
+    ? {
+        onSignInStep: (step, userAgent) =>
+          void recordSignInStep(runtime.ws, step, userAgent).catch((error: Error) =>
+            process.stderr.write(`funnel: ${error.message}\n`),
+          ),
       }
     : {}),
 });
