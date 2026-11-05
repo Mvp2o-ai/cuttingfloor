@@ -87,7 +87,7 @@ export class AccessCheck {
         },
       );
     throw new CfError('subscription_required', `The free trial ended on ${day(access.ended)}`, {
-      hint: `Pick a plan at ${account} (sign in with the same account), then call the tool again. Media and exports are kept 7 days, timelines 24 hours after last use`,
+      hint: `This account's plan and billing are at ${account} (sign in with the same account); after a change there, call the tool again. Media and exports are kept 7 days, timelines 24 hours after last use`,
       detail: { reason: access.reason, trial_ended: access.ended, subscribe: account },
     });
   }
@@ -108,12 +108,11 @@ export class AccessCheck {
     const usage = await this.usage(owner, access);
     if (usage.included_minutes !== null && usage.used_minutes >= usage.included_minutes) {
       const account = this.#o.accountUrl;
-      const upgrade = access.plan === 'trial' || access.plan === 'creator';
       out.refuseJobs = new CfError(
         'quota_exceeded',
         `This ${access.plan === 'trial' ? 'trial' : 'period'}'s ${usage.included_minutes} render minutes are used`,
         {
-          hint: `${upgrade ? `Move to a bigger plan at ${account} for more minutes now, or wait` : `Wait`} until ${day(usage.period.end)}, when they renew. Editing the timeline and previews still work; only new jobs (exports, imports, analysis, create.*) wait`,
+          hint: `They renew on ${day(usage.period.end)}, and this account's plan is at ${account}. Editing the timeline and previews still work; only new jobs (exports, imports, analysis, create.*) wait`,
           detail: {
             used_minutes: usage.used_minutes,
             included_minutes: usage.included_minutes,
