@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.34.0
+
+### Minor Changes
+
+- a1cd633: Skills credit their author: `skills.get` returns `author` and `author_url`, and every skill page on the site shows them. make-motion-graphics is by Sanji Nai-Chien, linked to his video, and now asks the user before it is used.
+
 ## 0.33.0
 
 ### Minor Changes

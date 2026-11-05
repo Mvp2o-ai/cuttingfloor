@@ -54,6 +54,7 @@ describe('skills', () => {
     expect(got.markdown).toBe(`${file.trim()}\n`);
     expect(got.markdown).toMatch(/## Steps\n1\. The assistant should/);
     expect(got.version).toBeGreaterThanOrEqual(1);
+    expect(got.author).not.toBe('');
     const { library } = await skills();
     for (const r of got.related) {
       expect(library.skills.map((s) => s.slug)).toContain(r.slug);

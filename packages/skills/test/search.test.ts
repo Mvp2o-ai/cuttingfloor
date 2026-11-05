@@ -32,7 +32,8 @@ name: ${name}
 description: ${description}
 version: 1
 type: playbook
-source: system${hidden ? '\nhidden: true' : ''}
+source: system
+author: Ken Wiltshire${hidden ? '\nhidden: true' : ''}
 ---
 
 # ${name}

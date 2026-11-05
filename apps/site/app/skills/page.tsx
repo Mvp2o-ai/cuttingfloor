@@ -36,7 +36,7 @@ export default function Skills() {
                   <p>{s.description}</p>
                   <span className="wt-hub-meta">
                     {s.body.split('\n').filter((l) => /^\d+\.\s/.test(l)).length} steps · version{' '}
-                    {s.version}
+                    {s.version} · {s.author}
                   </span>
                 </a>
               </li>

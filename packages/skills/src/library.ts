@@ -41,6 +41,10 @@ export interface Skill {
   version: number;
   type: 'playbook';
   source: 'system';
+  /** Who wrote it, credited wherever the skill is shown. */
+  author: string;
+  /** A link to the author or the work the skill came from. */
+  authorUrl: string | null;
   /** Only relations to skills in the library; see `dangling` for the rest. */
   related: SkillRelated[];
   hidden: boolean;
@@ -133,6 +137,12 @@ export function parseSkill(raw: string, slug: string): Skill {
   }
   if (fields.type !== 'playbook') errors.push('type must be "playbook"');
   if (fields.source !== 'system') errors.push('source must be "system"');
+  const author = fields.author ?? '';
+  if (!author) errors.push('frontmatter requires author (who wrote the skill, for the credit)');
+  const authorUrl = fields.author_url || null;
+  if (authorUrl !== null && !/^https:\/\/\S+$/.test(authorUrl)) {
+    errors.push('author_url must be an https link');
+  }
   if (fields.hidden !== undefined && fields.hidden !== 'true' && fields.hidden !== 'false') {
     errors.push('hidden must be true or false');
   }
@@ -163,6 +173,8 @@ export function parseSkill(raw: string, slug: string): Skill {
     version,
     type: 'playbook',
     source: 'system',
+    author,
+    authorUrl,
     related,
     hidden: fields.hidden === 'true',
     title,

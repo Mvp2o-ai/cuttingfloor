@@ -8,7 +8,7 @@ import { loadLibrary, type Skill } from '@cuttingfloor/skills/library';
 export type { Skill };
 
 /** The last time any skill changed; the sitemap's date for the skill pages. */
-export const SKILLS_UPDATED = '2026-10-18';
+export const SKILLS_UPDATED = '2026-11-04';
 
 // next build runs in apps/site.
 export const SKILLS: Skill[] = loadLibrary(join(process.cwd(), '..', '..', 'skills')).skills.filter(
