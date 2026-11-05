@@ -278,7 +278,7 @@ describe('protocol surface', () => {
       expect(page.text).toContain("'ui/initialize'");
       expect(page.text).not.toContain('__VERSION__');
       expect(page._meta).toEqual({
-        ui: { csp, permissions: { clipboardWrite: {} }, prefersBorder: false },
+        ui: { csp, permissions: { clipboardWrite: {} }, domain: origin, prefersBorder: false },
       });
       // The inline script parses.
       const text = page.text ?? '';

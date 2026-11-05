@@ -80,7 +80,7 @@ const LIMITS: Record<string, string> = {
     "Send a shorter range (range / audio_range), or raise the plan on the user's sync. labs account",
   file_size_exceeds_plan_limit: 'Send a shorter range of the video (range)',
   free_tier_generations_exhausted:
-    "The user's free sync. labs generations for this month are used; they can upgrade at sync.so",
+    "The user's free sync. labs generations for this month are used; their sync. labs account is at sync.so",
   insufficient_credits: 'The user needs more credits on their sync. labs account (sync.so)',
   plan_feature_unavailable:
     "Pick another model, or raise the plan on the user's sync. labs account",

@@ -23,6 +23,7 @@ export function registerEditor(server: McpServer, deps: ServerDeps): void {
   const ui = {
     csp: { resourceDomains: [origin], connectDomains: [origin] },
     permissions: { clipboardWrite: {} },
+    domain: origin,
     prefersBorder: false,
   };
   server.registerResource(
