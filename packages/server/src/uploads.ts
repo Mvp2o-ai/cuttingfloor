@@ -233,7 +233,7 @@ export class Uploads {
       const tooBig =
         meta.max_bytes === undefined
           ? `uploads take up to ${limit} bytes`
-          : `the account's storage has room for ${limit} more bytes; let older files expire or move to a bigger plan`;
+          : `the account's storage has room for ${limit} more bytes; let older files expire`;
       if ((total ?? 0) > limit || start + (request.length ?? 0) > limit) {
         throw new UploadRefused(413, tooBig, received);
       }

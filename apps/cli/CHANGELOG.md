@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.34.2
+
+### Patch Changes
+
+- 44ba276: Refusals for an ended trial, used-up minutes or full storage now state the account's plan, its renewal date and where the account page is, without suggesting an upgrade.
+
 ## 0.34.1
 
 ### Patch Changes

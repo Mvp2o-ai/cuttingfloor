@@ -64,7 +64,7 @@ export async function storageRoom(
       ? `The file is ${gb(need)}; the account's storage has ${gb(room)} left of ${gb(cap)}`
       : `The account's storage is full: ${gb(used)} of ${gb(cap)}`,
     {
-      hint: `Files expire on their own: uploads a day after they were sent, media and exports 7 days after last use. media.delete removes media you no longer need, or wait for older files to go${limits?.account ? `, or move to a bigger plan at ${limits.account}` : ''}`,
+      hint: `Files expire on their own: uploads a day after they were sent, media and exports 7 days after last use. media.delete removes media you no longer need, or wait for older files to go${limits?.account ? ` (this account's plan, and the room it gives, is at ${limits.account})` : ''}`,
       detail: {
         used_bytes: used,
         max_bytes: cap,
