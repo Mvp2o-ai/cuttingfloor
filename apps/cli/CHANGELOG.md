@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.34.4
+
+### Patch Changes
+
+- a61b6e6: Each demo page opens on the result: the finished video, playing and bigger, with the raw clip beside it labelled Before, on the first screen on phones and laptops. The step-by-step before, edit and after still follow.
+
 ## 0.34.3
 
 ### Patch Changes
