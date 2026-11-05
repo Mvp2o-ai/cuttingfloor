@@ -2323,6 +2323,99 @@ button.link-big {
   font-size: 28px;
   color: var(--key);
 }
+/* A watch page opens on the result: the finished video first and bigger, the raw clip beside it
+   (16:9 or 9:16; every finished demo is 9:16). Phone: title, then the pair, then the description,
+   so the pair is on the first screen. Wide: the title and description left, the pair right. */
+.dm-hero {
+  display: grid;
+  grid-template-areas: "head" "pair" "lede";
+  column-gap: clamp(32px, 4vw, 64px);
+}
+.dm-hero-head {
+  grid-area: head;
+}
+.dm-hero h1 {
+  font-size: clamp(40px, 5.2vw, 88px);
+}
+.dm-hero .wt-answer {
+  grid-area: lede;
+  margin: clamp(20px, 3vw, 32px) 0 0;
+}
+.dm-pair {
+  grid-area: pair;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 12px;
+  align-items: end;
+}
+.dm-pair figure {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.dm-pair video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 9 / 16;
+  max-height: 58svh;
+  object-fit: cover;
+  background: #000;
+  border: 1px solid var(--rule);
+}
+.dm-pair video.wide {
+  aspect-ratio: 16 / 9;
+}
+.dm-pair-after video {
+  border-color: var(--key);
+}
+.dm-pair figcaption {
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+  color: var(--mute);
+}
+.dm-pair figcaption .label {
+  font-size: 18px;
+  margin-right: 4px;
+}
+.dm-pair-after figcaption .label {
+  color: var(--key);
+}
+/* On a phone the last crumb repeats the title just under it; the structured data keeps it. */
+@media (max-width: 700px) {
+  .dm-hero .crumbs li[aria-current="page"] {
+    display: none;
+  }
+  .dm-pair video {
+    max-height: 50svh;
+  }
+}
+@media (min-width: 900px) {
+  .dm-hero {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "head pair" "lede pair";
+    align-items: start;
+  }
+  .dm-pair {
+    grid-template-columns: auto auto;
+  }
+  .dm-pair-after video {
+    width: auto;
+    height: min(66vh, 600px);
+    max-height: none;
+  }
+  .dm-pair-before video {
+    width: auto;
+    height: min(44vh, 400px);
+    max-height: none;
+  }
+  /* A 16:9 clip in, sized by its width so it sits beside the finished video. */
+  .dm-pair-before video.wide {
+    width: min(24vw, 360px);
+    height: auto;
+  }
+}
+
 /* Before, the edit, after: each act gets room, so the order reads at a glance. */
 .dm-act .head h2 {
   margin: 0 0 10px;
