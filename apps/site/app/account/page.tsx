@@ -1,6 +1,7 @@
 import { PLANS, type PlanId, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import { withAuth } from '@workos-inc/authkit-nextjs';
 import { Connect } from '../connect.tsx';
+import { TryKazi } from '../kazi.tsx';
 import { accountOf, type Status, type Usage, usageOf } from '../lib/billing.ts';
 import { filesOf } from '../lib/files.ts';
 import { keysOf } from '../lib/keys.ts';
@@ -73,6 +74,7 @@ export default async function Account({
             </p>
           </div>
           <Connect />
+          <TryKazi place="account" label="No agent yet? Try it live in Kazi, free" />
         </section>
 
         {providerKeys ? (

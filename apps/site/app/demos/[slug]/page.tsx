@@ -11,6 +11,7 @@ import {
 } from '../../../content/demos.ts';
 import { skill } from '../../../content/skills.ts';
 import { AgentBlock } from '../../agents/block.tsx';
+import { TryKazi } from '../../kazi.tsx';
 import { Breadcrumbs, Footer, JsonLd, Nav } from '../../shell.tsx';
 import { AgentDemo } from '../demo.tsx';
 import { BeforeAfter } from '../pair.tsx';
@@ -18,7 +19,7 @@ import { Seek } from '../seek.tsx';
 import { videoObject } from '../video.ts';
 
 // One watch page per demo. It opens on the result (the finished video beside the clip it came
-// from), then tells it in order: the clip before, the edit in the agent's chat, and the finished
+// from) and a link to try the same edit in Kazi, then tells it in order: the clip before, the edit in the agent's chat, and the finished
 // video after. The finished video carries the VideoObject, so search shows the after.
 
 export const dynamicParams = false;
@@ -77,7 +78,15 @@ export default async function DemoPage({ params }: Props) {
             <h1 className="display">{d.title}</h1>
           </div>
           <BeforeAfter before={d.raw} after={v} />
-          <p className="lede wt-answer">{d.description}</p>
+          <div className="dm-hero-lede">
+            <p className="lede wt-answer">{d.description}</p>
+            <TryKazi
+              place={`demo-${d.id}`}
+              clip={d.raw.src}
+              edit={d.turns[0]?.prompt}
+              label="Try this edit live in Kazi, free"
+            />
+          </div>
         </section>
 
         <section className="cell dm-act">
