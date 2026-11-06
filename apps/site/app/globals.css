@@ -1116,6 +1116,11 @@ h2.lede {
   margin: 0;
   color: var(--mute);
 }
+/* /fixes: the answer, the prompt and a link stack in the ledger's last column. */
+.fix-body {
+  display: grid;
+  gap: 16px;
+}
 .ledger code {
   font-family: var(--font-mono), monospace;
   font-size: 0.86em;
@@ -1386,7 +1391,8 @@ h2.lede {
   .ledger li {
     grid-template-columns: 56px minmax(0, 1fr);
   }
-  .ledger li p {
+  .ledger li > p,
+  .ledger li > .fix-body {
     grid-column: 2;
   }
   .price-table thead {
