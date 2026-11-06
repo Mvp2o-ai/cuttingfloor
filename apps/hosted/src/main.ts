@@ -1,14 +1,16 @@
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { configFromEnv, Runtime } from '@cuttingfloor/server';
 import { AccessCheck } from './access.ts';
-import { Mailer } from './email.ts';
+import { Mailer, ResendProvider } from './email.ts';
 import { recordSignInStep } from './funnel.ts';
 import { createHttpServer, parseApiKeys } from './http.ts';
 import { ScriptKeys } from './keys.ts';
 import { Lifecycle } from './lifecycle.ts';
 import { discoverAuthorizationServer, JwtTokenVerifier } from './oauth.ts';
 import { ProviderKeys } from './provider-keys.ts';
+import { Sequence, WorkosSubscribers } from './sequence.ts';
 
 // `cuttingfloor serve`: the long-running HTTP node. Local mode (compose) is one user on
 // loopback; hosted mode requires bearer API keys or OAuth and takes provider keys per tenant.
@@ -97,6 +99,28 @@ const lifetimeClients = new Map(
 const keySecret = process.env.CUTTINGFLOOR_KEY_SECRET;
 const providerKeys =
   access && workosKey && keySecret ? new ProviderKeys(workosKey, keySecret) : undefined;
+// The sign-up sequence: a welcome, then one follow-up chosen by whether a first edit is done.
+// Everything about it comes from the environment; it is off until all of it is set, and the
+// lifecycle's plain welcome goes out instead meanwhile.
+const sequenceEnv = {
+  RESEND_API_KEY: process.env.RESEND_API_KEY,
+  CUTTINGFLOOR_EMAIL_FROM: process.env.CUTTINGFLOOR_EMAIL_FROM,
+  CUTTINGFLOOR_EMAIL_REPLY_TO: process.env.CUTTINGFLOOR_EMAIL_REPLY_TO,
+  CUTTINGFLOOR_EMAIL_SIGNER: process.env.CUTTINGFLOOR_EMAIL_SIGNER,
+  CUTTINGFLOOR_UNSUBSCRIBE_SECRET: process.env.CUTTINGFLOOR_UNSUBSCRIBE_SECRET,
+};
+const followUpHours = Number(process.env.CUTTINGFLOOR_FOLLOW_UP_AFTER_HOURS ?? 72);
+const pollSeconds = Number(process.env.CUTTINGFLOOR_SEQUENCE_POLL_SECONDS ?? 30);
+if (!(followUpHours > 0) || !(pollSeconds > 0)) {
+  process.stderr.write(
+    'CUTTINGFLOOR_FOLLOW_UP_AFTER_HOURS and CUTTINGFLOOR_SEQUENCE_POLL_SECONDS must be positive numbers\n',
+  );
+  process.exit(1);
+}
+const unset = Object.entries(sequenceEnv)
+  .filter(([, value]) => !value)
+  .map(([name]) => name);
+const sequenceOn = !unset.length && Boolean(publicUrl);
 const lifecycle =
   access && workosKey && stripeKey
     ? new Lifecycle({
@@ -105,8 +129,14 @@ const lifecycle =
         workosKey,
         stripeKey,
         accountUrl,
-        welcomeUrl: new URL('/welcome', accountUrl).toString(),
-        serverUrl: publicUrl ?? '',
+        ...(sequenceOn
+          ? {}
+          : {
+              welcome: {
+                url: new URL('/welcome', accountUrl).toString(),
+                serverUrl: publicUrl ?? '',
+              },
+            }),
         ...(scriptKeys ? { keys: scriptKeys } : {}),
         ...(process.env.RESEND_API_KEY ? { mailer: new Mailer(process.env.RESEND_API_KEY) } : {}),
         ...(process.env.STRIPE_WEBHOOK_SECRET
@@ -128,6 +158,41 @@ if (lifecycle) {
     ['CUTTINGFLOOR_KEY_SECRET', process.env.CUTTINGFLOOR_KEY_SECRET],
   ] as const)
     if (!set) process.stderr.write(`lifecycle: ${name} unset; that part is off\n`);
+}
+let sequence: Sequence | undefined;
+if (lifecycle && workosKey && publicUrl) {
+  const env = sequenceEnv as Record<keyof typeof sequenceEnv, string>;
+  if (unset.length) process.stderr.write(`sequence: off; set ${unset.join(', ')}\n`);
+  else {
+    try {
+      sequence = new Sequence({
+        ws: runtime.ws,
+        subscribers: new WorkosSubscribers(workosKey),
+        provider: new ResendProvider(env.RESEND_API_KEY),
+        from: env.CUTTINGFLOOR_EMAIL_FROM,
+        replyTo: env.CUTTINGFLOOR_EMAIL_REPLY_TO,
+        signer: env.CUTTINGFLOOR_EMAIL_SIGNER,
+        publicUrl,
+        unsubscribeSecret: env.CUTTINGFLOOR_UNSUBSCRIBE_SECRET,
+        followUpAfterMs: followUpHours * 3_600_000,
+        pollMs: pollSeconds * 1000,
+        templatesDir:
+          process.env.CUTTINGFLOOR_EMAIL_TEMPLATES ??
+          fileURLToPath(new URL('../email/', import.meta.url)),
+        ...(process.env.RESEND_WEBHOOK_SECRET
+          ? { eventsSecret: process.env.RESEND_WEBHOOK_SECRET }
+          : {}),
+      });
+    } catch (error) {
+      process.stderr.write(`sequence: ${(error as Error).message}\n`);
+      process.exit(1);
+    }
+    sequence.start();
+    if (!process.env.RESEND_WEBHOOK_SECRET)
+      process.stderr.write(
+        'sequence: RESEND_WEBHOOK_SECRET unset; bounces and complaints are not heard\n',
+      );
+  }
 }
 // Hosted, the server's own TypeSafe key answers judge.ask and media.analyze look for every
 // account; no other provider key comes from this process's environment.
@@ -152,7 +217,8 @@ const server = createHttpServer({
     ? {
         onCall: (owner: string, client?: string) => lifecycle.called(owner, client),
         onApp: (owner: string, app: string) => lifecycle.usedFrom(owner, app),
-        route: (req, res, url) => lifecycle.route(req, res, url),
+        route: async (req, res, url) =>
+          (await sequence?.route(req, res, url)) || lifecycle.route(req, res, url),
       }
     : {}),
   ...(process.env.CUTTINGFLOOR_OPENAI_CHALLENGE
@@ -179,6 +245,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     runtime.stop();
     lifecycle?.stop();
+    sequence?.stop();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 5000).unref();
   });

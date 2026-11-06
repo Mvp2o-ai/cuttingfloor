@@ -43,8 +43,6 @@ beforeAll(async () => {
     access,
     ...options,
     accountUrl: 'https://cuttingfloor.ai/account',
-    welcomeUrl: 'https://cuttingfloor.ai/welcome',
-    serverUrl: 'https://api.cuttingfloor.ai',
     stripeWebhookSecret: SECRET,
     accountKey: ACCOUNT_KEY,
   });

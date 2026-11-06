@@ -13,6 +13,8 @@ services:
       CUTTINGFLOOR_MOTION_URL: http://motion:8790
     volumes:
       - /var/lib/cuttingfloor:/data
+      # The sign-up sequence's email copy, editable here without a deploy (CUTTINGFLOOR_EMAIL_TEMPLATES).
+      - ./email:/etc/cuttingfloor/email:ro
 
   # The sandbox, as locally, plus gVisor: agent-written pages render on a user-space kernel.
   motion:

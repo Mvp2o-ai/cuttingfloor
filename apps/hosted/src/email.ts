@@ -3,7 +3,8 @@ import { SUPPORT_EMAIL } from '@cuttingfloor/plans';
 // Account email through Resend: a welcome, credits running low, a failed payment. Stripe sends
 // receipts and invoices; WorkOS sends sign-in mail. Each message is sent at most once: the caller
 // claims a notice file under the data root first (lifecycle.ts), and Resend's idempotency key
-// covers a retry of the same send.
+// covers a retry of the same send. The sign-up sequence (sequence.ts) sends through
+// `EmailProvider`, whose default is `ResendProvider`.
 
 export interface Message {
   to: string;
@@ -49,6 +50,69 @@ export class Mailer {
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+}
+
+/** One plain-text email, as the sign-up sequence sends it. */
+export interface OutboundEmail {
+  from: string;
+  to: string;
+  replyTo: string;
+  subject: string;
+  text: string;
+  headers: Record<string, string>;
+  /** The same key never sends twice, where the provider supports it. */
+  idempotencyKey: string;
+}
+
+/** Where email goes out. Resend by default; anything that can send one message fits. */
+export interface EmailProvider {
+  /** Resolves with the provider's message id. Throws `EmailError`. */
+  send(email: OutboundEmail): Promise<{ id: string }>;
+}
+
+export class EmailError extends Error {
+  /** Sending it again won't help (a refused address, a bad request). */
+  readonly permanent: boolean;
+
+  constructor(message: string, permanent: boolean) {
+    super(message);
+    this.permanent = permanent;
+  }
+}
+
+export class ResendProvider implements EmailProvider {
+  #key: string;
+
+  constructor(apiKey: string) {
+    this.#key = apiKey;
+  }
+
+  async send(email: OutboundEmail): Promise<{ id: string }> {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${this.#key}`,
+        'content-type': 'application/json',
+        'idempotency-key': email.idempotencyKey.slice(0, 256),
+      },
+      body: JSON.stringify({
+        from: email.from,
+        to: [email.to],
+        reply_to: email.replyTo,
+        subject: email.subject,
+        text: email.text,
+        headers: email.headers,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      const detail = `Resend ${res.status}: ${(await res.text()).slice(0, 200)}`;
+      throw new EmailError(detail, res.status >= 400 && res.status < 500 && res.status !== 429);
+    }
+    const { id } = (await res.json()) as { id?: string };
+    if (!id) throw new EmailError('Resend answered without a message id', false);
+    return { id };
   }
 }
 

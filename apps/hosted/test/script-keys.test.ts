@@ -50,8 +50,6 @@ beforeAll(async () => {
     workosKey: 'sk_test_none',
     stripeKey: 'sk_test_none',
     accountUrl: 'https://cuttingfloor.ai/account',
-    welcomeUrl: 'https://cuttingfloor.ai/welcome',
-    serverUrl: 'https://api.cuttingfloor.ai',
     accountKey: ACCOUNT_KEY,
     keys,
   });
