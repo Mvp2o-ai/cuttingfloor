@@ -57,6 +57,7 @@ export function Footer({ cta = 'Start free' }: { cta?: string }) {
         <div className="footer-links">
           <a href={SIGN_UP}>{cta}</a>
           <a href="/agents">Agents</a>
+          <a href="/fixes">Fixes</a>
           <a href="/guides/add-captions-to-a-video">Captions</a>
           <a href="/es/editar-videos-con-ia" hrefLang="es">
             En español
