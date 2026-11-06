@@ -156,8 +156,8 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       annotations: {
         title: 'Export video',
         readOnlyHint: false,
-        // overwrite: true replaces a file in the exports folder, when there is one.
-        destructiveHint: Boolean(rt.config.exportsDir),
+        // overwrite: true replaces an earlier file in the exports folder.
+        destructiveHint: true,
         idempotentHint: true,
         openWorldHint: false,
       },
@@ -311,7 +311,8 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       description: `Measure the rendered timeline: gaps in the picture, offline media, rendered against expected frame count, integrated loudness (LUFS) and true peak (dBTP), plus black and silent stretches when you give their settings. With speech {min_probability}, every cut is listed with speech facts: the speech probability of the mix just before and after it (Silero VAD), whether it lands while someone is speaking, the seconds without speech each side, and, per clip edge, the transcript word it cuts through and how much of that word is lost (from the media's transcript, when it has one). Facts only, no verdicts. A timeline up to ${QA_INLINE_SECONDS} s is checked within the call (which waits its turn for a render when the server is busy); longer ones return a task or job.`,
       inputSchema: QaCheckInput,
       outputSchema: withJob(QaCheckResult),
-      annotations: { ...readOnly, title: 'QA check' },
+      // A long timeline queues a job, which counts as a write.
+      annotations: { ...readOnly, readOnlyHint: false, title: 'QA check' },
     },
     guard(async (args, ctx) => {
       const owner = deps.owner();

@@ -124,7 +124,8 @@ export function registerListenTools(server: McpServer, deps: ServerDeps): void {
       outputSchema: withJob(MediaListenResult),
       annotations: {
         title: 'Find sounds by description',
-        readOnlyHint: true,
+        // A long run queues a job, which counts as a write.
+        readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: false,

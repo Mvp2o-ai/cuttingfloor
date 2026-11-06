@@ -157,9 +157,9 @@ export function registerJudgeTools(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
     'judge.ask',
     {
-      title: 'Ask Jev',
+      title: 'Ask questions about text or pictures',
       description: [
-        'Ask TypeSafe Jev, a fast judgment model (preview), your questions about a state you give, and get typed answers back in about a second.',
+        'Answer your questions about text and pictures you give (yes or no, a choice, a score, or where something is in a picture), as typed answers in about a second. It asks TypeSafe Jev, a fast judgment model (preview).',
         'Jev sees exactly the state: each entry under its name, and your questions refer to entries by name in backticks ("in `passage`"). An entry is text (a string, or a JSON object or array of related facts) or a picture: {media_id} for an imported image, {media_id, at_seconds} for the frame of a video at that time, {timeline_id, at_seconds} for a frame of an edit as it renders (to judge a grade or a layout you made). Mix them freely. Each call stands alone, so put everything a judgment needs into its state.',
         'Choose the type by the answer you need. noul: yes or no, answered as noul, the probability of yes from 0 to 1 (0.5 or more reads as yes). choice: one of options you name, answered as choice plus probabilities and confidence. score: a degree on levels you order, answered as score (0 is the first level) plus confidence. box: where one thing is in a picture, answered as box {x, y, w, h} in fractions of that picture plus confidence.',
         'Write each question as one thing, worded so yes means it is there. Open with what the state is ("`passage` is a transcript of someone speaking off the cuff"), and give a noul criteria {true, false} with an example of each: Jev answers most accurately from examples. To locate, name the one thing so only it fits ("the yellow headline \'Get started\' at the top of `shot`") and ask a noul whether it is there; trust a box with high confidence.',
@@ -169,7 +169,7 @@ export function registerJudgeTools(server: McpServer, deps: ServerDeps): void {
       inputSchema: JudgeAskInput,
       outputSchema: JudgeAskResult,
       annotations: {
-        title: 'Ask Jev',
+        title: 'Ask questions about text or pictures',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
