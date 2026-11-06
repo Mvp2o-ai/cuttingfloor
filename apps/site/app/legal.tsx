@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { LiveCard } from './live-card.tsx';
 import { Breadcrumbs, Footer, Nav } from './shell.tsx';
 
 // The policy pages share one shape: a head with the effective date, then short sections.
@@ -28,6 +29,7 @@ export function LegalPage({
           <span className="label">{label}</span>
           <h1 className="display">{title}</h1>
           <p className="lede wt-answer">{lede}</p>
+          <LiveCard />
           <p className="wt-links">In effect from {EFFECTIVE}.</p>
         </section>
         <section className="cell">

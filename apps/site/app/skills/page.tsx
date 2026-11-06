@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { SKILLS } from '../../content/skills.ts';
+import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, Nav } from '../shell.tsx';
 
 export const metadata: Metadata = {
@@ -25,6 +26,7 @@ export default function Skills() {
             hands you the video. Copy one into your agent, or let it find the right one itself once
             cuttingfloor is connected.
           </p>
+          <LiveCard />
         </section>
         <section className="cell">
           <ol className="wt-hub">

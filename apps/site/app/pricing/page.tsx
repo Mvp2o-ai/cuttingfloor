@@ -9,6 +9,7 @@ import {
   REPO_URL,
   SELF_HOST_STEPS,
 } from '../../content/facts.ts';
+import { LiveCard } from '../live-card.tsx';
 import {
   KEPT,
   markWord,
@@ -100,6 +101,7 @@ export default function Pricing() {
               Creator at ${CREATOR} a month or Pro at ${PRO} a month. Editing and previews are free.
             </em>
           </p>
+          <LiveCard />
           <div className="actions">
             <a className="link-big" href={SIGN_UP}>
               Start free for {TRIAL_DAYS} days

@@ -3,6 +3,7 @@ import { DEMOS } from '../../content/demos.ts';
 import { type Guide, guidePath, type Lang } from '../../content/guides.ts';
 import { AgentBlock } from '../agents/block.tsx';
 import { DemoCards } from '../demos/cards.tsx';
+import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
 import { Copy } from '../walkthroughs/copy.tsx';
 
@@ -112,6 +113,7 @@ export function GuideView({ g }: { g: Guide }) {
           <span className="label">{t.label}</span>
           <h1 className="display">{g.title}</h1>
           <p className="lede wt-answer">{g.answer}</p>
+          <LiveCard />
           <p className="wt-byline">
             {t.updated} <time dateTime={g.updated}>{formatDate(g.updated, g.lang)}</time> · Ken
             Wiltshire

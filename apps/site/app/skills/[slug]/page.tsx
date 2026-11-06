@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { demoForSkill } from '../../../content/demos.ts';
 import { SKILLS, SKILLS_UPDATED, type Skill, skill } from '../../../content/skills.ts';
+import { LiveCard } from '../../live-card.tsx';
 import { SITE_URL } from '../../seo.ts';
 import { Breadcrumbs, Footer, JsonLd, Nav } from '../../shell.tsx';
 import { Copy } from '../../walkthroughs/copy.tsx';
@@ -69,6 +70,7 @@ export default async function SkillPage({ params }: Props) {
           <span className="label">Skill {n}</span>
           <h1 className="display">{s.title}</h1>
           <p className="lede wt-answer">{s.description}</p>
+          <LiveCard />
           <p className="wt-byline">
             Version {s.version} · {s.authorUrl ? <a href={s.authorUrl}>{s.author}</a> : s.author}
           </p>

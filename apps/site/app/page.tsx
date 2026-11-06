@@ -8,6 +8,7 @@ import { Capabilities } from './capabilities.tsx';
 import { Connect } from './connect.tsx';
 import { AgentDemo } from './demos/demo.tsx';
 import { TryKazi } from './kazi.tsx';
+import { LiveCard } from './live-card.tsx';
 import { PLANS } from './pricing.ts';
 import { Prompts } from './prompts.tsx';
 import { ALTERNATIVES, FAQS, structuredData } from './seo.ts';
@@ -94,6 +95,7 @@ export default function Home() {
                   can finish.
                 </em>
               </p>
+              <LiveCard />
               <div className="actions">
                 <a className="link-big" href={SIGN_UP}>
                   Start free — 3 days
@@ -102,7 +104,6 @@ export default function Home() {
                   Watch it edit
                 </a>
               </div>
-              <TryKazi place="home" />
               <p>
                 Open source ({LICENCE}): <a href="/self-host">run it yourself, free</a>.
               </p>

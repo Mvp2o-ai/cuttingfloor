@@ -9,6 +9,7 @@ import {
   REPO_URL,
   SELF_HOST_STEPS,
 } from '../../content/facts.ts';
+import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, Nav, SIGN_UP } from '../shell.tsx';
 import { Copy } from '../walkthroughs/copy.tsx';
 import {
@@ -68,6 +69,7 @@ export default function SelfHostPage() {
           <p className="lede wt-answer">
             {SELF_HOST_LEAD} <em>Run it on your computer for free, or let us run it for you.</em>
           </p>
+          <LiveCard />
           <div className="actions">
             <a className="link-big" href="#quick-start">
               Run it yourself, free

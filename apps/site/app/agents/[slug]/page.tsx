@@ -9,6 +9,7 @@ import {
 } from '../../../content/agents.ts';
 import { ClientSection } from '../../connect/client-section.tsx';
 import { DemoCards } from '../../demos/cards.tsx';
+import { LiveCard } from '../../live-card.tsx';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../../shell.tsx';
 import { Copy } from '../../walkthroughs/copy.tsx';
 
@@ -67,6 +68,7 @@ export default async function AgentPage({ params }: Props) {
           <span className="label">Edit with {a.name}</span>
           <h1 className="display">{a.title}</h1>
           <p className="lede wt-answer">{a.answer}</p>
+          <LiveCard />
           <p className="wt-byline">
             Updated <time dateTime={AGENTS_UPDATED}>{formatDate(AGENTS_UPDATED)}</time> · Ken
             Wiltshire

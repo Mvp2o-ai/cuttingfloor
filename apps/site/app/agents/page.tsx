@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { AGENTS, agentDemos } from '../../content/agents.ts';
+import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, Nav } from '../shell.tsx';
 
 export const metadata: Metadata = {
@@ -24,6 +25,7 @@ export default function Agents() {
             can: your agent cuts your footage, adds captions and music, checks a preview and gives
             you the finished video. Each page has the setup and real edits made in that agent.
           </p>
+          <LiveCard />
         </section>
         <section className="cell">
           <ol className="ledger">
