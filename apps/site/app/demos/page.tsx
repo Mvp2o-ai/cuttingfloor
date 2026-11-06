@@ -2,12 +2,13 @@ import type { Metadata } from 'next';
 import { DEMOS, finished, lengths } from '../../content/demos.ts';
 import { AgentBlock } from '../agents/block.tsx';
 import { Breadcrumbs, Footer, Nav } from '../shell.tsx';
+import { LiveDemo } from './live.tsx';
 import { Poster } from './poster.tsx';
 
 export const metadata: Metadata = {
   title: 'AI video editing demos: Kazi, Claude and ChatGPT editing real clips | cuttingfloor',
   description:
-    'Watch an AI agent edit video: a creator’s own Kazi, Claude or ChatGPT, with cuttingfloor connected, cuts the pauses, adds captions and hands back a finished short. Before and after, every step.',
+    'Try a live AI video edit in your browser, free and with no sign-up: Kazi gives Big Buck Bunny a happy ending on cuttingfloor while you watch. Then see creators’ own Kazi, Claude or ChatGPT edit real clips, before and after, every step.',
   alternates: { canonical: '/demos', types: { 'text/markdown': '/demos.md' } },
 };
 
@@ -19,14 +20,19 @@ export default function Demos() {
         <section className="cell wt-head marks">
           <span className="mark-b" />
           <Breadcrumbs trail={[{ name: 'Demos', href: '/demos' }]} />
-          <span className="label">Demos</span>
-          <h1 className="display">Watch your agent edit.</h1>
-          <p className="lede wt-answer">
-            Each demo is a real clip edited by a creator’s own agent with cuttingfloor connected.
-            You see what they asked for, every step the agent took, and the video before and after.
-          </p>
+          <LiveDemo />
         </section>
         <section className="cell">
+          <div className="head">
+            <span className="label">Real footage</span>
+            <div>
+              <h2 className="display">Or watch real creators’ edits.</h2>
+              <p className="lede">
+                Each one is a real clip edited by a creator’s own agent with cuttingfloor connected:
+                what they asked for, every step the agent took, and the video before and after.
+              </p>
+            </div>
+          </div>
           <ol className="wt-hub dm-hub">
             {DEMOS.map((d) => {
               const v = finished(d);

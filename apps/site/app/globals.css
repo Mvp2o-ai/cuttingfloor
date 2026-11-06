@@ -3356,3 +3356,197 @@ table.pr-grid td {
   }
 }
 /* ---------- end features page ---------- */
+
+/* ---------- /demos: the live demo ---------- */
+
+/* The live demo leads /demos: what it is and the one button on the left, an example of the result
+   in a Kazi window on the right, its steps ticking off in turn. Phone: copy, then the window. */
+.live {
+  display: grid;
+  gap: clamp(28px, 4vw, 56px);
+  margin-top: 8px;
+}
+.live h1 {
+  font-size: clamp(44px, 6vw, 104px);
+  margin-top: 12px;
+}
+.live .lede {
+  max-width: 34em;
+}
+.live-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.live-facts li {
+  font-family: var(--font-mono), monospace;
+  font-size: 14px;
+  padding: 6px 10px 5px;
+  border: 1px solid var(--rule);
+}
+.live-facts li::before {
+  content: "✓ ";
+  color: var(--key);
+}
+.live-go {
+  display: inline-flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 28px;
+  padding: 16px 28px 17px;
+  background: var(--key);
+  color: #000;
+  font-weight: 700;
+  font-variation-settings: "wdth" 75;
+  font-size: clamp(26px, 2.6vw, 36px);
+  letter-spacing: -0.02em;
+  line-height: 1;
+  text-decoration: none;
+}
+.live-go:hover {
+  background: var(--ink);
+}
+.live-go span {
+  transition: transform 0.2s var(--ease);
+}
+.live-go:hover span {
+  transform: translateX(4px);
+}
+.live-after {
+  margin: 16px 0 0;
+  max-width: 46ch;
+  font-size: 15px;
+  color: var(--mute);
+}
+.live-screen {
+  margin: 0;
+  border: 1px solid var(--rule);
+  background: var(--bg-2);
+  align-self: center;
+}
+.live-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--rule);
+}
+.live-bar span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--rule);
+}
+.live-bar b {
+  margin-left: 8px;
+  font-size: 15px;
+  color: var(--key);
+}
+.live-screen video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+.live-steps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 16px;
+  list-style: none;
+  font-family: var(--font-mono), monospace;
+  font-size: 14px;
+}
+.live-steps li::before {
+  content: "✓ ";
+  color: var(--key);
+}
+.live-screen figcaption {
+  padding: 0 16px 14px;
+  font-size: 12px;
+  color: var(--mute);
+}
+.live-screen figcaption a {
+  color: inherit;
+}
+/* Each step lights up in turn over a 13 s cycle, the length of the example, then they reset. */
+@media (prefers-reduced-motion: no-preference) {
+  .live-steps li {
+    opacity: 0.3;
+  }
+  .live-steps li:nth-child(1) {
+    animation: live-step-1 13s infinite;
+  }
+  .live-steps li:nth-child(2) {
+    animation: live-step-2 13s infinite;
+  }
+  .live-steps li:nth-child(3) {
+    animation: live-step-3 13s infinite;
+  }
+  .live-steps li:nth-child(4) {
+    animation: live-step-4 13s infinite;
+  }
+  .live-steps li:nth-child(5) {
+    animation: live-step-5 13s infinite;
+  }
+}
+@keyframes live-step-1 {
+  0%,
+  2% {
+    opacity: 0.3;
+  }
+  5%,
+  94% {
+    opacity: 1;
+  }
+}
+@keyframes live-step-2 {
+  0%,
+  17% {
+    opacity: 0.3;
+  }
+  20%,
+  94% {
+    opacity: 1;
+  }
+}
+@keyframes live-step-3 {
+  0%,
+  32% {
+    opacity: 0.3;
+  }
+  35%,
+  94% {
+    opacity: 1;
+  }
+}
+@keyframes live-step-4 {
+  0%,
+  52% {
+    opacity: 0.3;
+  }
+  55%,
+  94% {
+    opacity: 1;
+  }
+}
+@keyframes live-step-5 {
+  0%,
+  67% {
+    opacity: 0.3;
+  }
+  70%,
+  94% {
+    opacity: 1;
+  }
+}
+@media (min-width: 960px) {
+  .live {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    align-items: center;
+  }
+}

@@ -4,6 +4,7 @@
 export const KAZI_LINKS = {
   home: '2XDlD9QfXx',
   compare: 'Kj1BrrXdfw',
+  demos: 'PsFVYwBiOA',
   welcome: 'rAct6z5wAh',
   account: 'u1Mzist24U',
   phone: 'LzUOknGmzC',
