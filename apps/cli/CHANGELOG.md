@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.34.12
+
+### Patch Changes
+
+- 9e0bf32: media.analyze is marked as able to replace data: a run replaces the result of that kind stored with the media.
+
 ## 0.34.11
 
 ### Patch Changes
