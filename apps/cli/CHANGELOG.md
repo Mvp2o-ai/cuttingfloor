@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.34.7
+
+### Patch Changes
+
+- 35997b8: Site: /demos opens on the live demo. One click starts Kazi in the browser, free and with no sign-up, giving Big Buck Bunny a happy ending on cuttingfloor; an example of the result loops beside it. The creators' before-and-after demos follow.
+
 ## 0.34.6
 
 ### Patch Changes
