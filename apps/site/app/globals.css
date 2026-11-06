@@ -258,7 +258,7 @@ h2.lede {
   color: var(--ink);
 }
 
-/* Try it in Kazi: the link, then the message it copies, small. */
+/* Try it in Kazi: the link, then a line on what opens, small. */
 .try-kazi {
   margin-top: 28px;
   display: grid;
@@ -276,9 +276,6 @@ h2.lede {
   max-width: 62ch;
   font-size: 15px;
   color: var(--mute);
-}
-.try-kazi-how code {
-  overflow-wrap: anywhere;
 }
 
 /* ---------- connect box ---------- */
