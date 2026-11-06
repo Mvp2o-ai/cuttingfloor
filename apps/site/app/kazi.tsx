@@ -1,19 +1,19 @@
 // Kazi's share links: one per page, so Kazi knows where a visitor came from. Each opens a guest
 // chat with a sample clip loaded and cuttingfloor editing it, then offers sign-up. Codes come from
-// Kazi; fill one in here.
+// Kazi and never move; what each opens is Kazi's to change.
 export const KAZI_LINKS = {
-  home: '',
-  compare: '',
-  welcome: '',
-  account: '',
-  phone: '',
-  'demo-dance': '',
-  'demo-interview': '',
-  'demo-product': '',
-  'demo-listing': '',
-  'demo-tips': '',
-  'demo-jev': '',
-  'demo-memory': '',
+  home: '2XDlD9QfXx',
+  compare: 'Kj1BrrXdfw',
+  welcome: 'rAct6z5wAh',
+  account: 'u1Mzist24U',
+  phone: 'LzUOknGmzC',
+  'demo-dance': '3RVMAHa4dE',
+  'demo-interview': 'UXB19gQxHp',
+  'demo-product': 'eYQt1e3b7T',
+  'demo-listing': 't9aZ8kHAym',
+  'demo-tips': 'pOzd50YORY',
+  'demo-jev': 'CV5zUYdD9T',
+  'demo-memory': 'YILSUsgTRG',
 } as const satisfies Record<string, string>;
 
 export type KaziPlace = keyof typeof KAZI_LINKS;
