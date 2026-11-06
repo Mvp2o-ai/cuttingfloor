@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.34.9
+
+### Patch Changes
+
+- 4781a0c: Demo pages link from the top down to the full editing journey: Before, your agent edits, After.
+
 ## 0.34.8
 
 ### Patch Changes
