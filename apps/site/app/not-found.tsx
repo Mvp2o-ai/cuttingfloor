@@ -1,4 +1,5 @@
 import { SUPPORT_EMAIL } from '@cuttingfloor/plans';
+import { LiveCard } from './live-card.tsx';
 import { Footer, Nav } from './shell.tsx';
 
 export const metadata = { title: 'Page not found — cuttingfloor' };
@@ -16,6 +17,7 @@ export default function NotFound() {
             This page doesn't exist, or it moved. Start from the home page, or write to{' '}
             <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> if a link brought you here.
           </p>
+          <LiveCard />
           <p className="actions">
             <a className="link-big" href="/">
               Go home

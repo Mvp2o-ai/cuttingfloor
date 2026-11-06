@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { WALKTHROUGHS } from '../../content/walkthroughs.ts';
+import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, Nav } from '../shell.tsx';
 
 export const metadata: Metadata = {
@@ -25,6 +26,7 @@ export default function Walkthroughs() {
             timeline it left, and the file that came out. Copy a prompt and try it on your own
             footage.
           </p>
+          <LiveCard />
         </section>
         <section className="cell">
           <ol className="wt-hub">

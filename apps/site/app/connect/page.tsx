@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { CLIENTS, CLIENTS_CHECKED, MCP_URL } from '../../content/clients.ts';
+import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
 import { Copy } from '../walkthroughs/copy.tsx';
 import { ClientSection } from './client-section.tsx';
@@ -46,6 +47,7 @@ export default function ConnectPage() {
             {CONNECT_LEAD}{' '}
             <em>One address works in every app below, and your app opens the sign-in for you.</em>
           </p>
+          <LiveCard />
           <div className="cl-address">
             <span className="label">The address</span>
             <div className="code-line">

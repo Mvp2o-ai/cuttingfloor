@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { WALKTHROUGHS, type Walkthrough, walkthrough } from '../../../content/walkthroughs.ts';
 import { AgentBlock } from '../../agents/block.tsx';
+import { LiveCard } from '../../live-card.tsx';
 import { SITE_URL } from '../../seo.ts';
 import { Session } from '../../session/session.tsx';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav } from '../../shell.tsx';
@@ -51,6 +52,7 @@ export default async function WalkthroughPage({ params }: Props) {
           <span className="label">Walkthrough {n}</span>
           <h1 className="display">{w.title}</h1>
           <p className="lede wt-answer">{w.answer}</p>
+          <LiveCard />
           <p className="wt-byline">
             Updated <time dateTime={w.updated}>{formatDate(w.updated)}</time> · Ken Wiltshire
           </p>

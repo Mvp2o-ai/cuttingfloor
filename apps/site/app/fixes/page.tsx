@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { FIXES, FIXES_UPDATED } from '../../content/fixes.ts';
 import { AgentBlock } from '../agents/block.tsx';
+import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
 import { Copy } from '../walkthroughs/copy.tsx';
 
@@ -44,6 +45,7 @@ export default function Fixes() {
             video and say what is wrong. Here are the problems people search for most, what the
             agent does about each, and what to type.
           </p>
+          <LiveCard />
           <p className="wt-byline">
             Updated <time dateTime={FIXES_UPDATED}>{formatDate(FIXES_UPDATED, 'en')}</time> · Ken
             Wiltshire

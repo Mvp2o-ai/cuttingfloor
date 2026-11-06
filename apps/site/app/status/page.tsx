@@ -1,5 +1,6 @@
 import { SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
+import { LiveCard } from '../live-card.tsx';
 import { Footer, Nav } from '../shell.tsx';
 
 export const dynamic = 'force-dynamic';
@@ -75,6 +76,7 @@ export default async function Status() {
           <span className="label">Status</span>
           <h1 className="display">{allUp ? 'Everything is up.' : 'Something is down.'}</h1>
           <p className="lede">Checked live just now ({at}). Reload to check again.</p>
+          <LiveCard />
         </section>
         <section className="cell">
           <div className="wt-prose">

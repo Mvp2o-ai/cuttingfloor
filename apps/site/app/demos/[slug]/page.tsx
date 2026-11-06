@@ -12,6 +12,7 @@ import {
 import { skill } from '../../../content/skills.ts';
 import { AgentBlock } from '../../agents/block.tsx';
 import { demoPlace, TryKazi } from '../../kazi.tsx';
+import { LiveCard } from '../../live-card.tsx';
 import { Breadcrumbs, Footer, JsonLd, Nav } from '../../shell.tsx';
 import { AgentDemo } from '../demo.tsx';
 import { BeforeAfter } from '../pair.tsx';
@@ -80,6 +81,7 @@ export default async function DemoPage({ params }: Props) {
           <BeforeAfter before={d.raw} after={v} />
           <div className="dm-hero-lede">
             <p className="lede wt-answer">{d.description}</p>
+            <LiveCard />
             <TryKazi place={demoPlace(d.id)} />
             <nav className="dm-jump" aria-label="The editing journey">
               <a className="link-big quiet" href="#before" data-track="Demo jump: journey">

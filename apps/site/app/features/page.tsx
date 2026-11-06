@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { KEYS, LICENCE, NO_KEY } from '../../content/facts.ts';
 import { TOOL_COUNT } from '../../content/tools.ts';
+import { LiveCard } from '../live-card.tsx';
 import { DOCS_URL, SITE_URL } from '../seo.ts';
 import { Breadcrumbs, Footer, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
 import {
@@ -57,6 +58,7 @@ export default function Features() {
             and exports an MP4 or the edit for your editing app.{' '}
             <em>Here is all of it, in plain words first and tool names second.</em>
           </p>
+          <LiveCard />
           <nav className="ft-jump" aria-label="Feature groups">
             {GROUPS.map((g) => (
               <a key={g.id} href={`#${g.id}`}>

@@ -14,6 +14,7 @@ import {
 } from '../../content/compare.ts';
 import { REPO_URL } from '../../content/facts.ts';
 import { TryKazi } from '../kazi.tsx';
+import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
 
 // Like for like: the agent-facing video servers and APIs, and the creator editing apps, from
@@ -66,6 +67,7 @@ export default function Compare() {
             result after every edit. Here is how that compares with everything else an agent can
             edit video with, cell by cell.
           </p>
+          <LiveCard />
           <TryKazi place="compare" />
           <p className="cmp-asof">
             {AS_OF}. Checked {formatDate(COMPARED_ON)}. “?” means we could not confirm it in the

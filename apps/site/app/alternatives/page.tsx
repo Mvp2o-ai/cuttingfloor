@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { DEMOS, finished, lengths } from '../../content/demos.ts';
 import { Connect } from '../connect.tsx';
 import { Poster } from '../demos/poster.tsx';
+import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
 
 // For people who edit in CapCut, Descript, VEED, Kapwing and editing software like them, and search for
@@ -127,6 +128,7 @@ export default function Alternatives() {
               in your agent's.
             </em>
           </p>
+          <LiveCard />
           <div className="actions">
             <a className="link-big" href={SIGN_UP}>
               Start free for 3 days
