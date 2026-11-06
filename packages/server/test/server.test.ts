@@ -190,12 +190,8 @@ describe('protocol surface', () => {
         'job.get',
         'job.list',
         'judge.ask',
-        'media.correlate',
         'media.get',
         'media.list',
-        'media.listen',
-        'media.seek',
-        'qa.check',
         'render.frames',
         'skills.get',
         'skills.search',
@@ -204,7 +200,7 @@ describe('protocol surface', () => {
         'timeline.history',
       ].sort(),
     );
-    // The test runtime has an exports folder, where overwrite: true replaces a file.
+    // The exports can replace an earlier file (overwrite: true).
     expect(where('destructiveHint')).toEqual(
       ['export.timeline', 'export.video', 'job.cancel', 'media.delete'].sort(),
     );

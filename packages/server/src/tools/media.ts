@@ -1245,7 +1245,8 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       outputSchema: withJob(MediaCorrelateResult),
       annotations: {
         title: 'Sync offset',
-        readOnlyHint: true,
+        // A long run queues a job, which counts as a write.
+        readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: false,

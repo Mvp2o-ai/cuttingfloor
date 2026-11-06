@@ -309,7 +309,7 @@ export const TOOLS: ToolEntry[] = [
   {
     name: 'media.correlate',
     title: 'Sync offset',
-    readOnly: true,
+    readOnly: false,
     longRunning: 'sometimes',
   },
   {
@@ -321,18 +321,18 @@ export const TOOLS: ToolEntry[] = [
   {
     name: 'media.seek',
     title: 'Seek by natural language',
-    readOnly: true,
+    readOnly: false,
     longRunning: 'always',
   },
   {
     name: 'media.listen',
     title: 'Find sounds by description',
-    readOnly: true,
+    readOnly: false,
     longRunning: 'always',
   },
   {
     name: 'judge.ask',
-    title: 'Ask Jev',
+    title: 'Ask questions about text or pictures',
     readOnly: true,
     longRunning: 'never',
   },
@@ -405,7 +405,7 @@ export const TOOLS: ToolEntry[] = [
   {
     name: 'qa.check',
     title: 'QA check',
-    readOnly: true,
+    readOnly: false,
     longRunning: 'sometimes',
   },
   {
