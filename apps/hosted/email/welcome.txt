@@ -1,0 +1,23 @@
+version: 1
+subject: You're in - start with one clip
+---
+Hi,
+
+You're set up: your cuttingfloor account works, and your agent can edit video as soon as it's connected.
+
+The fastest first step: hand your agent one clip and describe the edit in plain English, the way you'd brief a person. For example: "Cut the pauses and ums out of this and add captions."
+
+Quickstart (connect your agent, then that first edit): https://cuttingfloor.ai/welcome
+Docs for each agent: https://cuttingfloor.ai/connect
+
+Two honest notes:
+- It's early software. Some edits will go wrong, and when they do I want to hear about it.
+- It's open source. The code is all here: https://github.com/Mvp2o-ai/cuttingfloor
+
+One question: what are you hoping to edit? Just reply to this email. I read every reply.
+
+{{signer}}
+cuttingfloor
+
+--
+You're getting this because you signed up for cuttingfloor. Stop these emails in one click: {{unsubscribe_url}}
