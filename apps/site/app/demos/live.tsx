@@ -3,7 +3,7 @@ import { Loop } from './pair.tsx';
 
 // The top of /demos: the live demo in Kazi. One click opens a guest chat where Kazi gives the
 // ending of Big Buck Bunny a happy ending on cuttingfloor and plays it back, then offers sign-up.
-// Beside it, an example of that result looping, with the steps Kazi takes ticking off.
+// Beside it, the end of a real run looping, with the steps Kazi takes ticking off.
 
 const ENDING = {
   src: '/demo/live/ending.mp4',
@@ -34,7 +34,7 @@ export function LiveDemo() {
         </p>
         <ul className="live-facts">
           <li>Free</li>
-          <li>About a minute</li>
+          <li>A few minutes</li>
           <li>No sign-up, nothing to install</li>
         </ul>
         <a className="live-go" href={kaziUrl('demos')} rel="noopener" data-track="Live demo">
@@ -59,7 +59,8 @@ export function LiveDemo() {
           ))}
         </ol>
         <figcaption>
-          An example of the result, made on cuttingfloor. Big Buck Bunny © Blender Foundation,{' '}
+          The end of a real run. Kazi designs the ending each time, so yours will differ a little.
+          Big Buck Bunny © Blender Foundation,{' '}
           <a href="https://creativecommons.org/licenses/by/3.0/" rel="noopener">
             CC BY 3.0
           </a>
