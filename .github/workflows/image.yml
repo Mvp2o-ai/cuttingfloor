@@ -5,7 +5,7 @@ name: Image
 # releases, publish the image to GHCR for linux/amd64 and linux/arm64 (:latest is main only):
 # each platform builds on its own native runner, then one job tags both as one multi-arch image.
 # Test, smoke and the builds run side by side; publish (and so deploy) waits for all of them.
-# [quick] in the commit message or pull request title skips the engine suite (see QUICK).
+# [quick] in the commit's first line or the pull request title skips the engine suite (see reuse).
 #
 # Build caches live in GHCR next to the image (:buildcache-test, :buildcache-amd64,
 # :buildcache-arm64), not in the Actions cache: the layers are several GB per platform and the
@@ -39,9 +39,6 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/mvp2o-ai/cuttingfloor
-  # [quick] in the pushed commit's message or the pull request's title skips the engine suite in
-  # the image, for changes that touch only words (descriptions, hints, docs). Never for a release.
-  QUICK: ${{ inputs.version == '' && (contains(github.event.head_commit.message, '[quick]') || contains(github.event.pull_request.title, '[quick]')) }}
   CACHE: ghcr.io/mvp2o-ai/cuttingfloor:buildcache
   CACHE_OPTS: mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
 
@@ -54,7 +51,21 @@ jobs:
       actions: read
     outputs:
       tested: ${{ steps.tested.outputs.tested }}
+      quick: ${{ steps.quick.outputs.quick }}
     steps:
+      # [quick] in the first line of the pushed commit, or in the pull request's title, skips the
+      # engine suite in the image, for changes that touch only words (descriptions, hints, docs).
+      # Only the first line counts, so a message that mentions the flag does not set it. A release
+      # (a version input) always runs everything.
+      - id: quick
+        env:
+          SUBJECT: ${{ github.event.pull_request.title || github.event.head_commit.message }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          first=$(printf '%s\n' "$SUBJECT" | head -n1)
+          if [ -z "$VERSION" ] && [[ "$first" == *"[quick]"* ]]; then
+            echo "quick=true" >> "$GITHUB_OUTPUT"; echo "Quick: $first"
+          fi
       - if: github.event_name != 'pull_request'
         run: echo "Not a promotion pull request; test and smoke run here."
       # A promotion (develop -> main) merges a commit whose tree develop's own push run tests
@@ -118,10 +129,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - if: needs.reuse.outputs.tested != 'true' && env.QUICK == 'true'
+      - if: needs.reuse.outputs.tested != 'true' && needs.reuse.outputs.quick == 'true'
         run: echo "Quick change, engine suite skipped. CI's pnpm check and the smoke test still run."
       - name: Lint, typecheck and test with FFmpeg and MLT
-        if: needs.reuse.outputs.tested != 'true' && env.QUICK != 'true'
+        if: needs.reuse.outputs.tested != 'true' && needs.reuse.outputs.quick != 'true'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
