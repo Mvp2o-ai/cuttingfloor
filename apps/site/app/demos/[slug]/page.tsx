@@ -19,8 +19,8 @@ import { Seek } from '../seek.tsx';
 import { videoObject } from '../video.ts';
 
 // One watch page per demo. It opens on the result (the finished video beside the clip it came
-// from) and a link to try it live in Kazi, then tells it in order: the clip before, the edit in the agent's chat, and the finished
-// video after. The finished video carries the VideoObject, so search shows the after.
+// from), a link to try it live in Kazi and links down to each act, then tells it in order: the
+// clip before, the edit in the agent's chat, and the finished video after. The finished video carries the VideoObject, so search shows the after.
 
 export const dynamicParams = false;
 
@@ -81,10 +81,32 @@ export default async function DemoPage({ params }: Props) {
           <div className="dm-hero-lede">
             <p className="lede wt-answer">{d.description}</p>
             <TryKazi place={demoPlace(d.id)} />
+            <nav className="dm-jump" aria-label="The editing journey">
+              <a className="link-big quiet" href="#before" data-track="Demo jump: journey">
+                See the full editing journey ↓
+              </a>
+              <ol>
+                <li>
+                  <a href="#before" data-track="Demo jump: before">
+                    <span className="label">01</span>Before
+                  </a>
+                </li>
+                <li>
+                  <a href="#edit" data-track="Demo jump: edit">
+                    <span className="label">02</span>Your agent edits
+                  </a>
+                </li>
+                <li>
+                  <a href="#after" data-track="Demo jump: after">
+                    <span className="label">03</span>After
+                  </a>
+                </li>
+              </ol>
+            </nav>
           </div>
         </section>
 
-        <section className="cell dm-act">
+        <section className="cell dm-act" id="before">
           <div className="head">
             <span className="label">01</span>
             <div>
@@ -114,7 +136,7 @@ export default async function DemoPage({ params }: Props) {
           </div>
         </section>
 
-        <section className="cell dm-act">
+        <section className="cell dm-act" id="edit">
           <div className="head">
             <span className="label">02</span>
             <div>
@@ -125,7 +147,7 @@ export default async function DemoPage({ params }: Props) {
           <AgentDemo demo={d} />
         </section>
 
-        <section className="cell dm-act">
+        <section className="cell dm-act" id="after">
           <div className="head">
             <span className="label">03</span>
             <div>

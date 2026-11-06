@@ -2446,6 +2446,39 @@ button.link-big {
   }
 }
 
+/* The acts are below the fold, so the hero links down to the whole story and to each act. */
+.dm-jump {
+  margin-top: clamp(24px, 3vw, 36px);
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+}
+.dm-jump ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dm-jump ol a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 11px;
+  font-size: 15px;
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  text-decoration: none;
+}
+.dm-jump ol .label {
+  font-size: 13px;
+}
+.dm-jump ol a:hover {
+  border-color: var(--key);
+  color: var(--key);
+}
+
 /* Before, the edit, after: each act gets room, so the order reads at a glance. */
 .dm-act .head h2 {
   margin: 0 0 10px;
