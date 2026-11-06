@@ -796,7 +796,8 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       annotations: {
         title: 'Analyze media',
         readOnlyHint: false,
-        destructiveHint: false,
+        // A run replaces the result of that kind stored with the media (look keeps the last 10).
+        destructiveHint: true,
         idempotentHint: true,
         openWorldHint: true,
       },
