@@ -1,5 +1,6 @@
 import { LEGAL_NAME, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import cli from '../../cli/package.json' with { type: 'json' };
+import { kaziUrl } from './kazi.tsx';
 import { DOCS_URL, SITE_URL } from './seo.ts';
 
 // The chrome every page shares: the nav, the footer and the breadcrumb trail.
@@ -18,6 +19,9 @@ export function Check() {
   );
 }
 
+// The live demo, on every page: the menu link, and a strip under the nav that phones see too.
+const LIVE_DEMO = kaziUrl('demos');
+
 /** cta: the button's words. Pages for creators say "Get started", without trial language. */
 export function Nav({ cta = 'Start free' }: { cta?: string }) {
   return (
@@ -28,6 +32,9 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
           cuttingfloor
         </a>
         <nav className="nav-links" aria-label="Sections">
+          <a className="nav-live" href={LIVE_DEMO} rel="noopener" data-track="Live demo: menu">
+            Watch it live
+          </a>
           <a href="/#session">How it works</a>
           <a href="/demos">Demos</a>
           <a href="/features">Features</a>
@@ -41,6 +48,12 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
           {cta}
         </a>
       </div>
+      <a className="live-strip" href={LIVE_DEMO} rel="noopener" data-track="Live demo: strip">
+        <b>
+          Watch it live now <span aria-hidden="true">→</span>
+        </b>
+        <small>Kazi gives Big Buck Bunny a happy ending. Free, no sign-up.</small>
+      </a>
     </header>
   );
 }

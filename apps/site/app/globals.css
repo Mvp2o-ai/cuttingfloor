@@ -175,6 +175,35 @@ a {
   background: var(--key);
 }
 
+.nav-links .nav-live {
+  color: var(--key);
+  font-weight: 600;
+}
+/* The live demo strip under the nav, on every page and every width. */
+.live-strip {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 7px var(--gutter);
+  background: var(--key);
+  color: #000;
+  text-decoration: none;
+  font-size: 15px;
+  line-height: 1.3;
+}
+.live-strip b {
+  font-weight: 700;
+}
+.live-strip small {
+  font-size: 13px;
+  opacity: 0.8;
+}
+.live-strip:hover b {
+  text-decoration: underline;
+}
+
 /* ---------- hero ---------- */
 
 .hero {
