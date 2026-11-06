@@ -27,7 +27,7 @@ export function BeforeAfter({ before, after }: { before: DemoVideo; after: DemoV
   );
 }
 
-function Loop({ v, controls }: { v: DemoVideo; controls?: boolean }) {
+export function Loop({ v, controls }: { v: DemoVideo; controls?: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const el = ref.current;
