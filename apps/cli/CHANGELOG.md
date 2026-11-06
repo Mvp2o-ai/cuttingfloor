@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.34.8
+
+### Patch Changes
+
+- 306e64b: Site: the /demos live demo shows the end of a real Kazi run, and says it takes a few minutes.
+
 ## 0.34.7
 
 ### Patch Changes
