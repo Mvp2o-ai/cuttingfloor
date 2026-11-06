@@ -6,13 +6,18 @@
 # a merge commit so main and develop keep one history. On main, the release workflow tags the new
 # version and publishes the image.
 #
-# Usage: scripts/promote-develop.sh "<summary>"
+# --quick adds [quick] to the title, so main's image run skips the engine suite (lint, typecheck,
+# the fast tests and the smoke test still run). Only for changes to words: descriptions, hints, docs.
+#
+# Usage: scripts/promote-develop.sh "<summary>" [--quick]
 set -euo pipefail
 
 if [ $# -lt 1 ] || [ -z "$1" ]; then
-  echo "Usage: $0 \"<summary>\"" >&2
+  echo "Usage: $0 \"<summary>\" [--quick]" >&2
   exit 1
 fi
+summary="$1"
+if [ "${2:-}" = --quick ]; then summary="$summary [quick]"; fi
 
 git fetch -q origin main develop
 if [ -z "$(git rev-list origin/main..origin/develop)" ]; then
@@ -41,7 +46,7 @@ fi
 
 pr=$(gh pr list --base main --head develop --state open --json number --jq '.[0].number // empty')
 if [ -z "$pr" ]; then
-  gh pr create --base main --head develop --title "Promote develop: $1" \
+  gh pr create --base main --head develop --title "Promote develop: $summary" \
     --body "$(git log --no-merges --format='- %s' origin/main..origin/develop)"
   pr=$(gh pr list --base main --head develop --state open --json number --jq '.[0].number')
 fi
@@ -52,7 +57,7 @@ gh pr checks "$pr" --required --watch --fail-fast
 # A second run of a required check (the pull request's own, after develop's) can register after the
 # watch returns, and the merge is refused until it passes. Wait it out rather than give up.
 for _ in $(seq 60); do
-  gh pr merge "$pr" --merge --subject "Promote develop: $1" 2>/dev/null && break
+  gh pr merge "$pr" --merge --subject "Promote develop: $summary" 2>/dev/null && break
   [ "$(gh pr view "$pr" --json state --jq .state)" = MERGED ] && break
   sleep 20
   gh pr checks "$pr" --required --watch --fail-fast >/dev/null

@@ -37,6 +37,10 @@ and stays on develop. Another session's worktree is theirs; leave it alone.
 scripts/promote-develop.sh "<one-line summary>"
 ```
 
+For a change to words only (tool descriptions, hints, titles, docs), put `[quick]` in the first
+line of the commit message and add `--quick` here: the image run skips the engine suite and the server deploys in
+about 8 minutes instead of about 11. Anything that changes behaviour runs the full suite.
+
 It versions pending changesets on develop, opens the develop → main pull request, waits for its
 checks and merges it. That merge deploys everything:
 
