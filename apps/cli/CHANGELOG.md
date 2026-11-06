@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.34.6
+
+### Patch Changes
+
+- 1df3ac2: Site: "Try it live in Kazi, free" opens Kazi's share link for each page, a guest chat that edits a sample clip on cuttingfloor while you watch. No more copying a message to paste.
+
 ## 0.34.5
 
 ### Patch Changes
