@@ -200,9 +200,9 @@ describe('protocol surface', () => {
         'timeline.history',
       ].sort(),
     );
-    // The exports can replace an earlier file (overwrite: true).
+    // The exports can replace an earlier file (overwrite: true); media.analyze replaces the stored result.
     expect(where('destructiveHint')).toEqual(
-      ['export.timeline', 'export.video', 'job.cancel', 'media.delete'].sort(),
+      ['export.timeline', 'export.video', 'job.cancel', 'media.analyze', 'media.delete'].sort(),
     );
     expect(where('openWorldHint')).toEqual(
       ['create.lipsync', 'judge.ask', 'media.analyze', 'media.import', 'media.seek'].sort(),
