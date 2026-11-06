@@ -258,6 +258,29 @@ h2.lede {
   color: var(--ink);
 }
 
+/* Try it in Kazi: the link, then the message it copies, small. */
+.try-kazi {
+  margin-top: 28px;
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+.try-kazi .link-big {
+  color: var(--key);
+}
+.try-kazi .link-big:hover {
+  color: var(--ink);
+}
+.try-kazi-how {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 15px;
+  color: var(--mute);
+}
+.try-kazi-how code {
+  overflow-wrap: anywhere;
+}
+
 /* ---------- connect box ---------- */
 
 .connect {
@@ -2337,8 +2360,10 @@ button.link-big {
 .dm-hero h1 {
   font-size: clamp(40px, 5.2vw, 88px);
 }
-.dm-hero .wt-answer {
+.dm-hero-lede {
   grid-area: lede;
+}
+.dm-hero .wt-answer {
   margin: clamp(20px, 3vw, 32px) 0 0;
 }
 .dm-pair {

@@ -2,6 +2,7 @@ import { PLANS, TRIAL_DAYS } from '@cuttingfloor/plans';
 import { withAuth } from '@workos-inc/authkit-nextjs';
 import { AccountNav } from '../account/chrome.tsx';
 import { Connect } from '../connect.tsx';
+import { TryKazi } from '../kazi.tsx';
 import { accountOf } from '../lib/billing.ts';
 import { FirstCall, Prompt } from './live.tsx';
 
@@ -42,6 +43,7 @@ export default async function Welcome() {
             </p>
           </div>
           <Connect />
+          <TryKazi place="welcome" label="No agent yet? Try it live in Kazi, free" />
         </section>
 
         <section className="cell">

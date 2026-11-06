@@ -1,10 +1,11 @@
 'use client';
 
+import { kaziUrl } from '../kazi.tsx';
+
 // Not seo.ts: it pulls the pricing and tool tables into the browser bundle.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cuttingfloor.ai';
 // Not content/clients.ts either, for the same reason.
 const MCP_URL = 'https://api.cuttingfloor.ai/mcp';
-const KAZI_URL = 'https://app.apifunnel.ai';
 
 // Most agents add a server only on a computer, and many visitors arrive on a phone (from the
 // ChatGPT app). Two ways forward from there: Kazi, which works on a phone, connects from one
@@ -49,7 +50,7 @@ export function SendToSelf({ lang = 'en', app }: { lang?: 'en' | 'es'; app?: str
         {t.lead(app)}{' '}
         <a
           className="copy"
-          href={KAZI_URL}
+          href={kaziUrl(app ? `phone-${app.toLowerCase().replace(/\s+/g, '-')}` : 'phone', t.say)}
           rel="noopener"
           data-track={app ? `Try in Kazi: ${app}` : 'Try in Kazi'}
           onClick={() => {
