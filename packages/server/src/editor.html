@@ -1550,15 +1550,20 @@
   let following = 0;
   async function follow(jobId) {
     const mine = ++following;
+    // A dropped call (the host asleep in a background tab, a network blip) is retried with a
+    // growing pause; the error shows only once the host has stayed silent for about a minute.
+    let misses = 0;
     for (let first = true; ; first = false) {
       // job.get answers at once, so the view checks back on its own interval.
-      if (!first) await new Promise((r) => setTimeout(r, 1000));
+      if (!first) await new Promise((r) => setTimeout(r, misses ? Math.min(1000 * 2 ** misses, 15000) : 1000));
       if (mine !== following) return;
       let job;
       try {
         job = await callTool('job.get', { job_id: jobId });
+        misses = 0;
       } catch (e) {
         if (mine !== following) return;
+        if (++misses <= 6) { stageWait('Reconnecting…'); continue; }
         return stageError(`Lost track of the export: ${e.message}.`, () => { stageWait('Checking…'); follow(jobId); });
       }
       if (mine !== following) return;
@@ -1577,8 +1582,8 @@
     if (!data) return stageError('Nothing to show.');
     if (data.url) return onFile(data);
     if (data.job_id && data.status && data.status !== 'completed') {
-      stageWait(data.status_message || 'Exporting…', data.progress);
-      if (host.caps.serverTools) return follow(data.job_id);
+      // The result may be old (a chat opened again later), so it says nothing about now until job.get answers.
+      if (host.caps.serverTools) { stageWait('Checking on the export…'); return follow(data.job_id); }
       return stageWait('Exporting… This chat app does not let the view check on it; ask for the result when it is done.');
     }
     stageError('Nothing to play yet.');
