@@ -69,7 +69,7 @@ export interface OwnerLimits {
   storageBytes?: number;
   /** Where the owner moves to a bigger plan, for refusals that a bigger plan lifts. */
   account?: string;
-  /** Why no new job may start now (the plan's render minutes are used up). */
+  /** Why no new job may start now (the plan's credits are used up). */
   refuseJobs?: CfError;
 }
 

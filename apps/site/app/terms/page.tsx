@@ -1,11 +1,11 @@
-import { GRACE_DAYS, LEGAL_NAME, PLANS, SUPPORT_EMAIL, TRIAL_DAYS } from '@cuttingfloor/plans';
+import { FREE_CREDITS, GRACE_DAYS, LEGAL_NAME, PLANS, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { Items, LegalPage, P, Part } from '../legal.tsx';
 
 export const metadata: Metadata = {
   title: 'Terms — cuttingfloor',
   description:
-    'The terms for using cuttingfloor, the hosted video editing server for AI agents: the trial, plans and render minutes, cancelling, your content and ours.',
+    'The terms for using cuttingfloor, the hosted video editing server for AI agents: free credits, plans and credits, cancelling, your content and ours.',
   alternates: { canonical: '/terms', types: { 'text/markdown': '/terms.md' } },
 };
 
@@ -39,13 +39,13 @@ export default function Terms() {
           live.
         </P>
       </Part>
-      <Part title="The trial and plans">
+      <Part title="Free credits and plans">
         <Items
           items={[
-            `Every new account gets a free trial for ${TRIAL_DAYS} days, with no card. It includes ${PLANS.trial.limits.renderMinutes} render minutes.`,
+            `Every new account gets ${FREE_CREDITS} free credits, with no card. They don't expire and don't renew.`,
             `Paid plans (${PLANS.creator.name} and ${PLANS.pro.name}) are billed monthly or yearly, in advance, through Stripe. The prices are on the pricing page.`,
-            'Each plan includes a number of render minutes per billing period. A render minute is one minute of a job running on our servers (an export, an import, a transcript, motion graphics, a voiceover, a cutout). Editing the timeline and previews are free.',
-            'When the minutes run out, new jobs stop until they renew or you move to a bigger plan. We never charge for going over.',
+            'Each paid plan includes a number of credits per billing period. A credit is one minute of a job running on our servers (an export, an import, a transcript, motion graphics, a voiceover, a cutout). Editing the timeline and previews are free.',
+            'When the credits run out, new jobs stop until they renew or you move to a bigger plan. We never charge for going over.',
             `${PLANS.enterprise.name} is arranged with us directly: write to ${SUPPORT_EMAIL}.`,
             'We may change prices or plans. A change to what you pay starts at your next renewal, and we tell you by email first.',
           ]}

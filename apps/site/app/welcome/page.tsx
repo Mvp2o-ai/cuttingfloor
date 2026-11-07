@@ -1,4 +1,4 @@
-import { PLANS, TRIAL_DAYS } from '@cuttingfloor/plans';
+import { PLANS } from '@cuttingfloor/plans';
 import { withAuth } from '@workos-inc/authkit-nextjs';
 import { AccountNav } from '../account/chrome.tsx';
 import { Connect } from '../connect.tsx';
@@ -16,7 +16,7 @@ const FIRST_PROMPT =
 export default async function Welcome() {
   const { user } = await withAuth({ ensureSignedIn: true });
   const { status, metadata } = await accountOf(user.id);
-  const trial = status.kind === 'trial';
+  const free = status.kind === 'free';
 
   return (
     <>
@@ -27,8 +27,8 @@ export default async function Welcome() {
           <span className="label">Welcome{user.firstName ? `, ${user.firstName}` : ''}</span>
           <h1 className="display account-head">Connect your agent.</h1>
           <p className="lede">
-            {trial
-              ? `Your trial is on: ${TRIAL_DAYS} days and ${PLANS.trial.limits.renderMinutes} render minutes, no card. `
+            {free
+              ? `You have ${PLANS.free.limits.renderMinutes} free credits: every tool, no card, no time limit. `
               : ''}
             Three steps, about a minute.
           </p>

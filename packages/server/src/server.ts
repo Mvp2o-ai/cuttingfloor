@@ -26,7 +26,7 @@ export interface ServerDeps {
   /** Identity that owns timelines, media and jobs: `local` in local mode, the token's `sub` hosted. */
   owner: () => string;
   /**
-   * Hosted: whether the owner may work right now (trial, plan). Throws a CfError, which every
+   * Hosted: whether the owner may work right now (its plan). Throws a CfError, which every
    * tool call returns instead of running. Absent locally.
    */
   access?: () => Promise<void>;

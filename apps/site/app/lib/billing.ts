@@ -6,7 +6,6 @@ import {
   lookupKey,
   PLANS,
   type PlanId,
-  TRIAL_DAYS,
   taggedPlan,
 } from '@cuttingfloor/plans';
 
@@ -29,8 +28,7 @@ export type Status =
       /** A failed payment's last day of access. */
       graceEnds: string | null;
     }
-  | { kind: 'trial'; ends: string }
-  | { kind: 'expired'; ended: string }
+  | { kind: 'free' }
   | { kind: 'lapsed'; ended: string };
 
 export type Usage = {
@@ -138,14 +136,11 @@ async function statusFrom(
   }
   if (lapsed) return { kind: 'lapsed', ended: lapsed };
 
-  const ends = new Date(Date.parse(String(user.created_at)) + TRIAL_DAYS * 86_400_000);
-  return Date.now() < ends.getTime()
-    ? { kind: 'trial', ends: ends.toISOString() }
-    : { kind: 'expired', ended: ends.toISOString() };
+  return { kind: 'free' };
 }
 
 /**
- * Render minutes used this period, from the MCP server that counts them. Undefined when it can't
+ * Credits (render minutes) used this period, from the MCP server that counts them. Undefined when it can't
  * say (not configured, or unreachable): the page then leaves the meter out rather than guess.
  */
 export async function usageOf(userId: string): Promise<Usage | undefined> {

@@ -45,7 +45,7 @@ export interface HttpOptions {
   apiKeys?: Map<string, string>;
   /**
    * Hosted: the keys signed-in users make on the account page for scripts (`cf_…`). A request
-   * with one acts as that account, with the same trial and plan checks as a sign-in.
+   * with one acts as that account, with the same plan checks as a sign-in.
    */
   scriptKeys?: { owner(key: string): Promise<string | undefined> };
   /**
@@ -54,7 +54,7 @@ export interface HttpOptions {
    */
   oauth?: { verifier: JwtTokenVerifier; resource: URL };
   /**
-   * Hosted: whether a signed-in owner may work (trial, plan); throws a CfError when not. Applies
+   * Hosted: whether a signed-in owner may work (its plan); throws a CfError when not. Applies
    * to OAuth sign-ins and script keys: maintenance API keys are never gated.
    */
   access?: (owner: string) => Promise<void>;

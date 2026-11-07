@@ -64,13 +64,13 @@ if (oauth && issuer)
 const runtime = new Runtime(config);
 await runtime.start();
 
-// Trial and plan checks for signed-in users: WorkOS holds the account, Stripe the subscription.
+// Plan checks for signed-in users: WorkOS holds the account, Stripe the subscription.
 // Signing in without them would let everyone in, so hosted mode won't start that way.
 const workosKey = process.env.WORKOS_API_KEY;
 const stripeKey = process.env.STRIPE_SECRET_KEY;
 if (oauth && (!workosKey || !stripeKey)) {
   process.stderr.write(
-    "OAuth sign-in needs WORKOS_API_KEY and STRIPE_SECRET_KEY, to check each account's trial and plan\n",
+    "OAuth sign-in needs WORKOS_API_KEY and STRIPE_SECRET_KEY, to check each account's plan\n",
   );
   process.exit(1);
 }

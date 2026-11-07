@@ -1,4 +1,4 @@
-import { SUPPORT_EMAIL, TRIAL_DAYS } from '@cuttingfloor/plans';
+import { FREE_CREDITS, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import {
   ALSO,
@@ -315,7 +315,7 @@ export default function Compare() {
               <h2>Try it on your own footage</h2>
               <p>
                 <a href={SIGN_UP}>Connect cuttingfloor to your agent</a> and ask for the edit you
-                want. Free for {TRIAL_DAYS} days, no card. Or run it yourself from{' '}
+                want. {FREE_CREDITS} free credits, no card. Or run it yourself from{' '}
                 <a href={REPO_URL}>GitHub</a>, free. For people coming from CapCut, Descript, VEED
                 or Kapwing, see <a href="/alternatives">the alternatives page</a>.
               </p>

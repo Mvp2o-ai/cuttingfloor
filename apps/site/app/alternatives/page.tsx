@@ -1,3 +1,4 @@
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { DEMOS, finished, lengths } from '../../content/demos.ts';
 import { Connect } from '../connect.tsx';
@@ -93,7 +94,7 @@ const FAQS = [
   },
   {
     q: 'What does it cost?',
-    a: 'Start free for three days. After that you pay for rendering minutes, with a plan price you never go over. See pricing on the home page.',
+    a: `Start free with ${FREE_CREDITS} credits, no card and no time limit; a credit is a minute of a job running. After that, plans have a price you never go over. See the pricing page.`,
   },
 ];
 
@@ -131,7 +132,7 @@ export default function Alternatives() {
           <LiveCard />
           <div className="actions">
             <a className="link-big" href={SIGN_UP}>
-              Start free for 3 days
+              Start free: {FREE_CREDITS} credits
             </a>
             <a className="link-big quiet" href="/demos">
               Watch it edit

@@ -36,7 +36,7 @@ export default function AcceptableUse() {
           items={[
             'Break into, probe or overload our servers, or try to get around plan limits.',
             'Use the code sandbox to mine, scan networks, send spam or attack anyone.',
-            'Share an account, or open accounts to chain free trials.',
+            'Share an account, or open extra accounts to collect more free credits.',
             'Resell the hosted service without an agreement with us.',
           ]}
         />

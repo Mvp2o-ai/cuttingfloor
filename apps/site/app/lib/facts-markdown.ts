@@ -12,12 +12,12 @@ import { list, table } from './markdown.ts';
 
 // The product facts as Markdown, for every twin and llms.txt that states them.
 
-export const RENDER_MINUTE =
-  'A render minute is one minute of a job running on the hosted servers (export, import, transcript, motion graphics, voiceover, cutout). Planning and editing the timeline are free. When a plan’s minutes are used, new jobs wait for the renewal or a bigger plan; nothing is ever billed past the plan price.';
+export const CREDIT_TEXT =
+  'A credit is one minute of a job running on the hosted servers (export, import, transcript, motion graphics, voiceover, cutout). Planning and editing the timeline are free. Every plan has every tool. When credits are used, new jobs wait for the renewal or a bigger plan; nothing is ever billed past the plan price.';
 
-/** "$49 / month", "$0 for 3 days", "Talk to us". */
+/** "$49 / month", "$0, no time limit", "Talk to us". */
 export const priceText = (p: Plan) =>
-  !p.per ? p.price : p.per.startsWith('/') ? `${p.price} ${p.per}` : `${p.price} for ${p.per}`;
+  !p.per ? p.price : p.per.startsWith('/') ? `${p.price} ${p.per}` : `${p.price}, ${p.per}`;
 
 /** One row per plan, self-hosted first. */
 export function plansTable(): string {
@@ -27,7 +27,7 @@ export function plansTable(): string {
       [
         'Self-hosted',
         'Free',
-        'No minute limits',
+        'No credit limits',
         'Your machine, the same image',
         `Open source (${LICENCE}). Bring your own keys where needed.`,
       ],

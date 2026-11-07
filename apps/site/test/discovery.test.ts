@@ -136,7 +136,7 @@ describe('Markdown twins and discovery files', () => {
     const md = markdown();
     expect(md).toContain('## Payments and cancelling');
     expect(md).toContain('[refunds page](https://cuttingfloor.ai/refunds)');
-    expect(md).toMatch(/- Every new account gets a free trial for \d+ days/);
+    expect(md).toMatch(/- Every new account gets \d+ free credits/);
   });
 
   it('publishes an AI Catalog that points at the server card', async () => {

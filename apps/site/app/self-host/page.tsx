@@ -1,4 +1,4 @@
-import { TRIAL_DAYS } from '@cuttingfloor/plans';
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import {
   IMAGE,
@@ -75,7 +75,7 @@ export default function SelfHostPage() {
               Run it yourself, free
             </a>
             <a className="link-big quiet" href={SIGN_UP}>
-              Go hosted: {TRIAL_DAYS} days free
+              Go hosted: {FREE_CREDITS} free credits
             </a>
           </div>
         </section>
@@ -155,7 +155,7 @@ export default function SelfHostPage() {
             </table>
           </div>
           <p className="wt-links">
-            <a href={SIGN_UP}>Start hosted, {TRIAL_DAYS} days free</a> ·{' '}
+            <a href={SIGN_UP}>Start hosted, {FREE_CREDITS} free credits</a> ·{' '}
             <a href="/#pricing">Plans</a> · <a href="/connect">Connect to hosted</a>
           </p>
         </section>

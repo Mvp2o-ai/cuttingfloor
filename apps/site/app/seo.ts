@@ -75,8 +75,8 @@ export const FAQS = [
     a: 'To our servers, for as long as you work on it. Media and renders expire after seven days, timelines after a day without use. No one else can see them.',
   },
   {
-    q: 'What happens when my render minutes run out?',
-    a: 'Editing and previews keep working; new jobs such as exports and imports wait until your minutes renew, or until you move to a bigger plan. You are never charged more than the plan price. We email you at 80% and at 100%.',
+    q: 'What happens when my credits run out?',
+    a: 'Editing and previews keep working; new jobs such as exports and imports wait until your credits renew, or until you move to a bigger plan. You are never charged more than the plan price. We email you at 80% and at 100%.',
   },
   {
     q: 'Can I run it myself for free?',

@@ -1,4 +1,4 @@
-import { TRIAL_DAYS } from '@cuttingfloor/plans';
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 
 // One page per job, in the words people search it with: /guides/<slug> in English, /es/<slug> in
 // Spanish. Each says what to do from your own agent (Kazi, Claude or ChatGPT side by side), shows
@@ -89,7 +89,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: 'What does it cost?',
-        a: `Start free for ${TRIAL_DAYS} days, no card. After that, plans are on the pricing page.`,
+        a: `Start free with ${FREE_CREDITS} credits, no card and no time limit. After that, plans are on the pricing page.`,
       },
     ],
   },
@@ -152,7 +152,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: '¿Cuánto cuesta?',
-        a: `Empieza gratis por ${TRIAL_DAYS} días, sin tarjeta. Después, los planes están en la página de precios (en inglés).`,
+        a: `Empieza gratis con ${FREE_CREDITS} créditos, sin tarjeta y sin límite de tiempo. Después, los planes están en la página de precios (en inglés).`,
       },
     ],
   },
@@ -210,7 +210,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: '¿Cuánto cuesta?',
-        a: `Empieza gratis por ${TRIAL_DAYS} días, sin tarjeta. Después, los planes están en la página de precios (en inglés).`,
+        a: `Empieza gratis con ${FREE_CREDITS} créditos, sin tarjeta y sin límite de tiempo. Después, los planes están en la página de precios (en inglés).`,
       },
     ],
   },

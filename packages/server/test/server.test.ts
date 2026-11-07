@@ -1021,7 +1021,7 @@ describe('access', () => {
     let allowed = false;
     const client = await connect(env.runtime, 'user_x', {}, async () => {
       if (!allowed)
-        throw new CfError('subscription_required', 'The free trial ended', {
+        throw new CfError('subscription_required', 'The last payment failed', {
           hint: 'Subscribe at https://example.com/account',
         });
     });

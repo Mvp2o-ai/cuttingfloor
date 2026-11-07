@@ -1,4 +1,4 @@
-import { PRICED, SUPPORT_EMAIL, TRIAL_DAYS } from '@cuttingfloor/plans';
+import { PRICED, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import {
   IMAGE,
   KEYS,
@@ -8,7 +8,7 @@ import {
   REPO_URL,
   SELF_HOST_STEPS,
 } from '../../content/facts.ts';
-import { JUDGMENT_TOOLS, KEPT_DAYS, RENDER_MINUTE, TIMELINE_HOURS } from '../pricing.ts';
+import { CREDIT, EVERY_PLAN, JUDGMENT_TOOLS, KEPT_DAYS, TIMELINE_HOURS } from '../pricing.ts';
 import { SITE_URL } from '../seo.ts';
 
 // /pricing as data, for agents: the plans file's numbers with their units, self-hosting and keys.
@@ -17,30 +17,31 @@ export const dynamic = 'force-static';
 
 export function GET() {
   const body = {
-    schema: 'cuttingfloor.pricing/1',
+    schema: 'cuttingfloor.pricing/2',
     url: `${SITE_URL}/pricing`,
     markdown: `${SITE_URL}/pricing.md`,
     currency: 'USD',
     units: {
       price_month: 'US dollars a month',
       price_year: 'US dollars a year (ten months)',
-      render_minutes:
-        'minutes of jobs running (export, import, transcript, graphics, voiceover, cutout), per period',
-      period: 'the trial, or a month',
+      credits:
+        'one credit is one minute of a job running (export, import, transcript, graphics, voiceover, cutout), per period',
+      period: 'once (free credits, no time limit), or a month',
       jobs: 'jobs that run at once; more wait their turn',
       short_side_px: 'largest export, as its short side in pixels (1080 is 1080p, 2160 is 4K)',
       storage_gb: 'gigabytes held on the server at once',
       judgments_per_day: `visual judgments a day (${JUDGMENT_TOOLS.join(', ')})`,
       null: 'no limit',
     },
-    render_minute: RENDER_MINUTE,
+    credit: CREDIT,
+    every_plan: EVERY_PLAN,
     overage: 'none: at the limit new jobs wait; editing and previews keep working',
     self_hosted: {
       price_month: 0,
       licence: LICENCE,
       image: IMAGE,
       same_image_as_hosted: true,
-      render_minutes: null,
+      credits: null,
       repository: REPO_URL,
       steps: SELF_HOST_STEPS,
       address: LOCAL_ADDRESS,
@@ -49,16 +50,16 @@ export function GET() {
     plans: PRICED.map((p) => ({
       id: p.id,
       name: p.name,
-      price_month: p.id === 'trial' ? 0 : (p.price?.month ?? null),
+      price_month: p.id === 'free' ? 0 : (p.price?.month ?? null),
       price_year: p.price?.year ?? null,
       sold: p.sold === 'contact' ? `contact ${SUPPORT_EMAIL}` : 'self-serve',
-      ...(p.id === 'trial' ? { trial_days: TRIAL_DAYS, card_required: false } : {}),
-      period: p.id === 'trial' ? 'trial' : 'month',
+      ...(p.id === 'free' ? { card_required: false, expires: false } : {}),
+      period: p.id === 'free' ? 'once' : 'month',
       // Enterprise limits are agreed on a call, so it publishes none.
       ...(p.sold === 'contact'
         ? { limits: 'agreed with us' }
         : {
-            render_minutes: p.limits.renderMinutes,
+            credits: p.limits.renderMinutes,
             jobs: p.limits.jobs,
             short_side_px: p.limits.shortSide,
             storage_gb: p.limits.storageGb,

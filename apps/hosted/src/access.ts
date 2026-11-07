@@ -1,11 +1,4 @@
-import {
-  fromLookupKey,
-  GRACE_DAYS,
-  PLANS,
-  type PlanId,
-  TRIAL_DAYS,
-  taggedPlan,
-} from '@cuttingfloor/plans';
+import { fromLookupKey, GRACE_DAYS, PLANS, type PlanId, taggedPlan } from '@cuttingfloor/plans';
 import { CfError } from '@cuttingfloor/schema';
 import { meteredSeconds, type OwnerLimits, type Runtime } from '@cuttingfloor/server';
 
@@ -21,7 +14,7 @@ export type Access =
   | {
       allowed: true;
       plan: PlanId;
-      /** The span render minutes count over: the trial, the billing period, or the month. */
+      /** The span credits count over: a free account's whole life, the billing period, or the month. */
       period: { start: string; end: string };
       email: string;
       /** Set while a failed payment is in its grace days: when access stops. */
@@ -29,8 +22,8 @@ export type Access =
     }
   | {
       allowed: false;
-      reason: 'trial_ended' | 'payment_failed' | 'email_unverified';
-      /** When the trial or the grace days ended. */
+      reason: 'payment_failed' | 'email_unverified';
+      /** When the grace days ended. */
       ended?: string;
       email: string;
     };
@@ -77,25 +70,17 @@ export class AccessCheck {
         hint: `Open the verification email from cuttingfloor (or sign in at ${account} to get a new one), then call the tool again`,
         detail: { account },
       });
-    if (access.reason === 'payment_failed')
-      throw new CfError(
-        'subscription_required',
-        `The last payment failed and the ${GRACE_DAYS} days to fix it ended on ${day(access.ended)}`,
-        {
-          hint: `Update the card at ${account} (sign in with the same account), then call the tool again. Media and exports are kept 7 days, timelines 24 hours after last use`,
-          detail: { reason: access.reason, ended: access.ended, account },
-        },
-      );
-    // The plans page only describes them: ChatGPT's plugin rules allow pointing to plans, not
-    // to where they are bought.
-    const plans = new URL('/pricing', account).toString();
-    throw new CfError('subscription_required', `The free trial ended on ${day(access.ended)}`, {
-      hint: `This account has no plan now; the plans are described at ${plans}. Once the account has one, call the tool again. Media and exports are kept 7 days, timelines 24 hours after last use`,
-      detail: { reason: access.reason, trial_ended: access.ended, plans },
-    });
+    throw new CfError(
+      'subscription_required',
+      `The last payment failed and the ${GRACE_DAYS} days to fix it ended on ${day(access.ended)}`,
+      {
+        hint: `Update the card at ${account} (sign in with the same account), then call the tool again. Media and exports are kept 7 days, timelines 24 hours after last use`,
+        detail: { reason: access.reason, ended: access.ended, account },
+      },
+    );
   }
 
-  /** The owner's plan as limits on the work they start, with a refusal once the minutes are used. */
+  /** The owner's plan as limits on the work they start, with a refusal once the credits are used. */
   async limits(owner: string): Promise<OwnerLimits> {
     const access = await this.require(owner);
     const limits = PLANS[access.plan].limits;
@@ -111,15 +96,21 @@ export class AccessCheck {
     const usage = await this.usage(owner, access);
     if (usage.included_minutes !== null && usage.used_minutes >= usage.included_minutes) {
       const account = this.#o.accountUrl;
+      const free = access.plan === 'free';
+      // The plans page only describes them: ChatGPT's plugin rules allow pointing to plans, not
+      // to where they are bought.
+      const plans = new URL('/pricing', account);
       out.refuseJobs = new CfError(
         'quota_exceeded',
-        `This ${access.plan === 'trial' ? 'trial' : 'period'}'s ${usage.included_minutes} render minutes are used`,
+        free
+          ? `This account's ${usage.included_minutes} free credits are used`
+          : `This period's ${usage.included_minutes} credits are used`,
         {
-          hint: `They renew on ${day(usage.period.end)}; the plans are described at ${new URL('/pricing', account)}. Editing the timeline and previews still work; only new jobs (exports, imports, analysis, create.*) wait`,
+          hint: `${free ? 'Free credits do not renew; the plans' : `They renew on ${day(usage.period.end)}; the plans`} are described at ${plans}. A credit is one minute of a job running. Editing the timeline and previews still work; only new jobs (exports, imports, analysis, create.*) wait`,
           detail: {
             used_minutes: usage.used_minutes,
             included_minutes: usage.included_minutes,
-            renews: usage.period.end,
+            ...(free ? {} : { renews: usage.period.end }),
             account,
           },
         },
@@ -128,7 +119,7 @@ export class AccessCheck {
     return out;
   }
 
-  /** Render minutes used this period against the plan's. */
+  /** Credits (render minutes) used this period against the plan's. */
   async usage(owner: string, known?: Access & { allowed: true }): Promise<Usage> {
     const access = known ?? (await this.require(owner));
     const included = PLANS[access.plan].limits.renderMinutes;
@@ -222,16 +213,18 @@ export class AccessCheck {
     // Checked after the subscription: a paying account is never held back for its email.
     if (user.email_verified === false) return { allowed: false, reason: 'email_unverified', email };
 
+    // Free credits count from sign-up and never renew. The meter keeps 13 months, so the period
+    // ends then: credits used before it are no longer counted.
     const began = Date.parse(String(user.created_at));
-    const ends = new Date(began + TRIAL_DAYS * 86_400_000).toISOString();
-    if (now < Date.parse(ends))
-      return {
-        allowed: true,
-        plan: 'trial',
-        period: { start: new Date(began).toISOString(), end: ends },
-        email,
-      };
-    return { allowed: false, reason: 'trial_ended', ended: ends, email };
+    return {
+      allowed: true,
+      plan: 'free',
+      period: {
+        start: new Date(began).toISOString(),
+        end: new Date(addMonths(began, 13)).toISOString(),
+      },
+      email,
+    };
   }
 
   async #workos(path: string): Promise<Record<string, unknown>> {

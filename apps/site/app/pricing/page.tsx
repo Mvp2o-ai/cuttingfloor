@@ -1,21 +1,22 @@
-import { PLANS, SUPPORT_EMAIL, TRIAL_DAYS } from '@cuttingfloor/plans';
+import { PLANS, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import {
   IMAGE,
   KEYS,
   LICENCE,
   LOCAL_ADDRESS,
-  NO_KEY,
   REPO_URL,
   SELF_HOST_STEPS,
 } from '../../content/facts.ts';
 import { LiveCard } from '../live-card.tsx';
 import {
+  CREDIT,
+  EVERY_PLAN,
+  EVERY_PLAN_LEAD,
   KEPT,
   markWord,
   OPTIONS,
   PRICING_FAQS,
-  RENDER_MINUTE,
   ROWS,
   SELF_HOSTED,
 } from '../pricing.ts';
@@ -27,8 +28,9 @@ import { Breadcrumbs, Footer, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
 
 const CREATOR = PLANS.creator.price?.month;
 const PRO = PLANS.pro.price?.month;
-const TITLE = `Pricing: free to self-host, hosted plans from $${CREATOR} a month`;
-const DESCRIPTION = `cuttingfloor is free to self-host (open source, ${LICENCE}, one Docker image). Hosted: a ${TRIAL_DAYS}-day free trial, Creator $${CREATOR} a month, Pro $${PRO} a month, Enterprise by agreement. You pay for render minutes; editing and previews are free.`;
+const FREE = PLANS.free.limits.renderMinutes;
+const TITLE = `Pricing: ${FREE} free credits, every tool on every plan, from $${CREATOR} a month`;
+const DESCRIPTION = `cuttingfloor, the video editing MCP server: start with ${FREE} free credits, no card and no time limit. Every plan has every tool. Creator $${CREATOR} a month, Pro $${PRO} a month, Enterprise by agreement; free to self-host (open source, ${LICENCE}). A credit is a minute of our servers working; editing and previews are free.`;
 
 export const metadata: Metadata = {
   title: `${TITLE} | cuttingfloor`,
@@ -65,7 +67,7 @@ function structuredData() {
                 '@type': 'UnitPriceSpecification',
                 price: String(o.amount),
                 priceCurrency: 'USD',
-                billingDuration: o.id === 'trial' ? `P${TRIAL_DAYS}D` : 'P1M',
+                ...(o.id === 'free' ? {} : { billingDuration: 'P1M' }),
               },
             }),
       })),
@@ -92,19 +94,18 @@ export default function Pricing() {
           <span className="mark-b" />
           <Breadcrumbs trail={[{ name: 'Pricing', href: '/pricing' }]} />
           <span className="label">Pricing</span>
-          <h1 className="display">Free to run yourself. Or we run it.</h1>
+          <h1 className="display">Start free. Every tool, every plan.</h1>
           <p className="lede wt-answer">
-            Self-hosted cuttingfloor is free: open source under {LICENCE}, the same Docker image the
-            hosted service runs, on your own machine with no render-minute limits.{' '}
+            {FREE} free credits, no card, no time limit.{' '}
             <em>
-              Hosted, you pay for render minutes: a {TRIAL_DAYS}-day free trial with no card, then
-              Creator at ${CREATOR} a month or Pro at ${PRO} a month. Editing and previews are free.
+              Then Creator at ${CREATOR} a month or Pro at ${PRO}. A credit is a minute of our
+              servers working; editing and previews are free. Or run it yourself, free.
             </em>
           </p>
           <LiveCard />
           <div className="actions">
             <a className="link-big" href={SIGN_UP}>
-              Start free for {TRIAL_DAYS} days
+              Start free: {FREE} credits
             </a>
             <a className="link-big quiet" href={SELF_HOSTED.href}>
               Run it yourself, free
@@ -129,7 +130,7 @@ export default function Pricing() {
             <tbody>
               {OPTIONS.map((o) => (
                 <tr key={o.id} className={o.pick ? 'pick' : ''}>
-                  <td className="tier">{o.hosted ? o.name : 'Self-hosted · Free'}</td>
+                  <td className="tier">{o.name}</td>
                   <td className="amount">
                     {o.price} {o.per ? <small>{o.per}</small> : null}
                     {o.yearly ? <small className="pr-year">or ${o.yearly} a year</small> : null}
@@ -144,14 +145,33 @@ export default function Pricing() {
           </table>
         </section>
 
+        <section className="cell" id="every-plan">
+          <div className="head">
+            <span className="label">02 / Every plan</span>
+            <div>
+              <h2 className="display">What you get.</h2>
+              <p className="compare-lede">{EVERY_PLAN_LEAD}</p>
+            </div>
+          </div>
+          <ul className="pr-list">
+            {EVERY_PLAN.map((f) => (
+              <li key={f} className="pr-item">
+                {f}
+              </li>
+            ))}
+          </ul>
+          <p className="price-foot">
+            All of it, tool by tool: <a href="/features">Features</a>
+          </p>
+        </section>
+
         <section className="cell" id="compare">
           <div className="head">
-            <span className="label">02 / Included</span>
+            <span className="label">03 / Limits</span>
             <div>
-              <h2 className="display">What each one includes.</h2>
+              <h2 className="display">Where plans differ.</h2>
               <p className="compare-lede">
-                Every option has every editing tool. The plans differ in minutes, speed, size and
-                storage. Prices in US dollars.
+                Credits, speed, size and storage. Prices in US dollars.
               </p>
             </div>
           </div>
@@ -196,13 +216,13 @@ export default function Pricing() {
           </p>
         </section>
 
-        <section className="cell" id="render-minute">
+        <section className="cell" id="credits">
           <div className="head">
-            <span className="label">03 / The unit</span>
-            <h2 className="display">What a render minute is.</h2>
+            <span className="label">04 / Credits</span>
+            <h2 className="display">What a credit is.</h2>
           </div>
           <ol className="ledger">
-            {RENDER_MINUTE.map((line, i) => (
+            {CREDIT.map((line, i) => (
               <li key={line}>
                 <span className="n">{String(i + 1).padStart(2, '0')}</span>
                 <p className="pr-ledger-p">{line}</p>
@@ -213,7 +233,7 @@ export default function Pricing() {
 
         <section className="cell" id="keys">
           <div className="head">
-            <span className="label">04 / Keys</span>
+            <span className="label">05 / Keys</span>
             <div>
               <h2 className="display">What needs your own key.</h2>
               <p className="compare-lede">
@@ -248,27 +268,18 @@ export default function Pricing() {
               ))}
             </tbody>
           </table>
-          <h3 className="pr-sub">No key needed</h3>
-          <p className="compare-lede">Built into the image and run on the server:</p>
-          <ul className="pr-list">
-            {NO_KEY.map((n) => (
-              <li key={n} className="pr-item">
-                {n}
-              </li>
-            ))}
-          </ul>
         </section>
 
         <section className="cell paper" id="self-host">
           <div className="wt-prose">
             <section>
-              <span className="label">05 / Self-hosted</span>
+              <span className="label">06 / Self-hosted</span>
               <h2>Self-hosted · Free</h2>
               <p>
                 cuttingfloor is open source under {LICENCE}. It runs in one Docker image ({IMAGE}),
                 the same image the hosted service runs. You run it on your own machine, with no
-                render-minute limits, and bring your own keys for lip-sync and visual judgment (the
-                table above).
+                credit limits, and bring your own keys for lip-sync and visual judgment (the table
+                above).
               </p>
               <pre className="pr-steps">
                 <code>{SELF_HOST_STEPS.join('\n')}</code>
@@ -284,12 +295,12 @@ export default function Pricing() {
 
         <section className="cell" id="faq">
           <div className="head">
-            <span className="label">06 / Questions</span>
+            <span className="label">07 / Questions</span>
             <h2 className="display">Asked.</h2>
           </div>
           <div className="faq">
             {PRICING_FAQS.map((f) => (
-              <details key={f.q} open>
+              <details key={f.q}>
                 <summary>{f.q}</summary>
                 <p>{f.a}</p>
               </details>

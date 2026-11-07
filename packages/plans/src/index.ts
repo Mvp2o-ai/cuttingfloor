@@ -1,12 +1,14 @@
 // The hosted plans, in one place: the site's pricing table, checkout and account page, and the
-// hosted server's access checks read this file. The billable unit is a render minute: one minute
-// of a job running (export, import, transcript, motion graphics, voiceover, cutout, code). Editing
-// the timeline and inline previews are free. Costs and margins behind the numbers: plans/pricing.md.
+// hosted server's access checks read this file. The billable unit is a credit: one minute of a job
+// running (export, import, transcript, motion graphics, voiceover, cutout, code), which the meter
+// counts as a render minute. Editing the timeline and inline previews are free. Every plan has
+// every tool; plans differ in credits and the limits below. Costs behind the numbers:
+// plans/pricing.md.
 
-export type PlanId = 'trial' | 'creator' | 'pro' | 'enterprise' | 'lifetime' | 'staff';
+export type PlanId = 'free' | 'creator' | 'pro' | 'enterprise' | 'lifetime' | 'staff';
 
 export interface Limits {
-  /** Render minutes in a period (the trial, or a month); null for no cap. */
+  /** Credits (render minutes) in a period (a free account's lifetime, or a month); null for no cap. */
   renderMinutes: number | null;
   /** Jobs that run at once for one account; more wait their turn. null for no cap. */
   jobs: number | null;
@@ -34,19 +36,18 @@ export interface Plan {
   note: string;
 }
 
-export const TRIAL_DAYS = 3;
 /** Days a subscription whose payment failed keeps working while Stripe retries the card. */
 export const GRACE_DAYS = 7;
 export const SUPPORT_EMAIL = 'support@cuttingfloor.ai';
 export const LEGAL_NAME = 'mvp2o';
 
 export const PLANS: Record<PlanId, Plan> = {
-  trial: {
-    id: 'trial',
-    name: 'Trial',
+  free: {
+    id: 'free',
+    name: 'Free',
     sold: 'none',
-    limits: { renderMinutes: 60, jobs: 1, shortSide: 1080, judgmentsPerDay: 300, storageGb: 5 },
-    note: `Everything, no card, for ${TRIAL_DAYS} days. About six hours of an agent editing.`,
+    limits: { renderMinutes: 100, jobs: 1, shortSide: 1080, judgmentsPerDay: 300, storageGb: 5 },
+    note: 'Every tool, no card, no time limit. About 10 hours of an agent editing.',
   },
   creator: {
     id: 'creator',
@@ -54,7 +55,7 @@ export const PLANS: Record<PlanId, Plan> = {
     sold: 'self',
     price: { month: 49, year: 490 },
     limits: { renderMinutes: 300, jobs: 1, shortSide: 1080, judgmentsPerDay: 1500, storageGb: 50 },
-    note: 'About 30 hours of editing a month. One job at a time, up to 1080p.',
+    note: 'About 30 hours of an agent editing a month. One job at a time, up to 1080p.',
   },
   pro: {
     id: 'pro',
@@ -75,7 +76,7 @@ export const PLANS: Record<PlanId, Plan> = {
       judgmentsPerDay: 20000,
       storageGb: 1000,
     },
-    note: 'Agents editing all day, for a team. Minutes, seats and dedicated servers to suit.',
+    note: 'Agents editing all day, for a team. Credits, seats and dedicated servers to suit.',
   },
   lifetime: {
     id: 'lifetime',
@@ -100,7 +101,7 @@ export const PLANS: Record<PlanId, Plan> = {
 };
 
 /** The plans on the pricing table, in order. */
-export const PRICED: Plan[] = [PLANS.trial, PLANS.creator, PLANS.pro, PLANS.enterprise];
+export const PRICED: Plan[] = [PLANS.free, PLANS.creator, PLANS.pro, PLANS.enterprise];
 
 export type Interval = 'month' | 'year';
 
@@ -130,3 +131,6 @@ export function taggedPlan(tag: string | null | undefined): PlanId | undefined {
   if (tag === 'enterprise') return 'enterprise';
   return undefined;
 }
+
+/** Credits a new account starts with: no card, no time limit. */
+export const FREE_CREDITS = PLANS.free.limits.renderMinutes ?? 0;

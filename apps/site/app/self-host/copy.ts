@@ -1,4 +1,4 @@
-import { TRIAL_DAYS } from '@cuttingfloor/plans';
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { IMAGE, LICENCE, LOCAL_ADDRESS, REPO_URL } from '../../content/facts.ts';
 
 // The words on /self-host, shared by the page and its Markdown twin. Checked against README.md and
@@ -70,7 +70,7 @@ export const COMPARE: { row: string; hosted: string; self: string }[] = [
   {
     row: 'Render limits',
     hosted:
-      'Your plan’s render minutes each month, plus its jobs at once, video size and storage. When minutes run out, new jobs wait; you’re never charged more than the plan.',
+      'Your plan’s credits each month, plus its jobs at once, video size and storage. When credits run out, new jobs wait; you’re never charged more than the plan.',
     self: 'None but your machine. How many jobs run at once follows your computer’s cores, and you can change it.',
   },
   {
@@ -92,7 +92,7 @@ export const COMPARE: { row: string; hosted: string; self: string }[] = [
   },
   {
     row: 'Cost',
-    hosted: `A monthly plan, after ${TRIAL_DAYS} days free. Editing is free; you pay for render minutes.`,
+    hosted: `${FREE_CREDITS} free credits to start, then a monthly plan. Editing is free; a credit is a minute of a job running.`,
     self: 'Free. You pay for your own computer, and for any key you choose to add.',
   },
 ];

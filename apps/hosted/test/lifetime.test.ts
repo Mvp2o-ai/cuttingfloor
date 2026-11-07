@@ -9,10 +9,9 @@ const period = { start: '2026-10-01T00:00:00.000Z', end: '2026-11-01T00:00:00.00
 const email = 'someone@example.com';
 
 describe('lifetime through a client', () => {
-  it('gives it to a trial, an ended trial and an unverified account', () => {
-    const trial: Access = { allowed: true, plan: 'trial', period, email };
-    expect(lifetimeFor({}, trial)).toBe('give');
-    expect(lifetimeFor({}, { allowed: false, reason: 'trial_ended', email })).toBe('give');
+  it('gives it to a free account and an unverified one', () => {
+    const free: Access = { allowed: true, plan: 'free', period, email };
+    expect(lifetimeFor({}, free)).toBe('give');
     expect(lifetimeFor({}, { allowed: false, reason: 'email_unverified', email })).toBe('give');
   });
 

@@ -1,8 +1,8 @@
-import { TRIAL_DAYS } from '@cuttingfloor/plans';
+import { PLANS as ALL } from '@cuttingfloor/plans';
 import { IMAGE, LICENCE, LOCAL_ADDRESS, REPO_URL, SELF_HOST_STEPS } from '../../content/facts.ts';
 import { kaziUrl } from '../kazi.tsx';
 import { connectMarkdown } from '../lib/connect-lines.ts';
-import { keysMarkdown, priceText, RENDER_MINUTE } from '../lib/facts-markdown.ts';
+import { CREDIT_TEXT, keysMarkdown, priceText } from '../lib/facts-markdown.ts';
 import { abs, pageLink } from '../lib/markdown.ts';
 import { PLANS } from '../pricing.ts';
 import { ROUTES } from '../routes.ts';
@@ -26,7 +26,7 @@ A free live demo, no sign-up: ${kaziUrl('demos')} opens Kazi in the browser, whi
 
 ## Run it
 
-- Hosted: \`${MCP_ADDRESS}\` (Streamable HTTP, OAuth sign-in). Free ${TRIAL_DAYS}-day trial, no card.
+- Hosted: \`${MCP_ADDRESS}\` (Streamable HTTP, OAuth sign-in). Start with ${ALL.free.limits.renderMinutes} free credits: no card, no time limit, every tool.
 - Self-hosted: free and open source (${LICENCE}), one Docker image (\`${IMAGE}\`): \`${SELF_HOST_STEPS.join(' && ')}\`, then connect to \`${LOCAL_ADDRESS}\`. ${pageLink('Self-host', '/self-host')}
 
 ## Pricing
@@ -34,7 +34,7 @@ A free live demo, no sign-up: ${kaziUrl('demos')} opens Kazi in the browser, whi
 ${PLANS.map((p) => `- ${p.name}: ${priceText(p)}, ${p.included}. ${p.limits}.`).join('\n')}
 - Self-hosted: free (${LICENCE}), no minute limits.
 
-${RENDER_MINUTE} Details: ${pageLink('Pricing', '/pricing')}, [pricing.json](${abs('/pricing.json')})
+${CREDIT_TEXT} Details: ${pageLink('Pricing', '/pricing')}, [pricing.json](${abs('/pricing.json')})
 
 ## What needs your own key
 

@@ -1,3 +1,4 @@
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { CLIENTS, CLIENTS_CHECKED, MCP_URL } from '../../content/clients.ts';
 import { LiveCard } from '../live-card.tsx';
@@ -115,8 +116,9 @@ export default function ConnectPage() {
 
         <section className="cell wt-end">
           <p className="wt-links">
-            <a href={SIGN_UP}>Start free for 3 days</a> · <a href="/self-host">Run it yourself</a> ·{' '}
-            <a href="/demos">Watch it edit</a> · <a href="/skills">Skills</a>
+            <a href={SIGN_UP}>Start free: {FREE_CREDITS} credits</a> ·{' '}
+            <a href="/self-host">Run it yourself</a> · <a href="/demos">Watch it edit</a> ·{' '}
+            <a href="/skills">Skills</a>
           </p>
         </section>
         <Footer />

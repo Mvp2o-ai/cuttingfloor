@@ -1,4 +1,4 @@
-import { SUPPORT_EMAIL, TRIAL_DAYS } from '@cuttingfloor/plans';
+import { FREE_CREDITS, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { Items, LegalPage, P, Part } from '../legal.tsx';
 
@@ -17,7 +17,7 @@ export default function Refunds() {
       label="Refunds"
       href="/refunds"
       title="Refunds."
-      lede={`Try it free for ${TRIAL_DAYS} days first, no card. If you pay and it isn't working out, here's what we refund.`}
+      lede={`Try it free first with ${FREE_CREDITS} credits, no card. If you pay and it isn't working out, here's what we refund.`}
     >
       <Part title="Yearly plans">
         <P>
