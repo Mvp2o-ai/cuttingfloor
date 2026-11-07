@@ -42,14 +42,17 @@ export function legalMarkdown(page: () => ReactElement, metadata: Metadata): str
     title: string;
     lede: string;
     href: string;
+    dated?: boolean;
     children: ReactNode;
   }>;
   if (el.type !== LegalPage) throw new Error('legalMarkdown: the page is not a LegalPage');
-  const { title, lede, href, children } = el.props;
+  const { title, lede, href, dated = true, children } = el.props;
   return doc({
     path: href,
     title: title.replace(/\.$/, ''),
     summary: String(metadata.description ?? lede),
-    body: [lede, `In effect from ${EFFECTIVE}.`, ...blocks(children)].join('\n\n'),
+    body: [lede, ...(dated ? [`In effect from ${EFFECTIVE}.`] : []), ...blocks(children)].join(
+      '\n\n',
+    ),
   });
 }

@@ -63,6 +63,11 @@ export function LiveDemo() {
           Want to keep going? Kazi then asks for your email: sign up free to keep the chat and edit
           your own footage.
         </p>
+        <p className="live-after">
+          Kazi is just one way in. cuttingfloor is an MCP server, so ChatGPT, Claude, Codex or any
+          MCP app connects to it directly, with the same tools: <a href="/connect">connect yours</a>{' '}
+          · <a href="/mcp">what is MCP?</a>
+        </p>
       </div>
       <figure className="live-screen">
         <div className="live-bar" aria-hidden="true">

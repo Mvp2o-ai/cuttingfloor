@@ -22,6 +22,7 @@ export const TOP_TWINS = [
   'compare',
   'agents',
   'fixes',
+  'mcp',
 ] as const;
 
 /** Sections whose pages have twins at `/<section>/<slug>.md`. */

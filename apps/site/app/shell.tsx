@@ -38,10 +38,9 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
           <a href="/#session">How it works</a>
           <a href="/demos">Demos</a>
           <a href="/features">Features</a>
-          <a href="/skills">Skills</a>
+          <a href="/mcp">What is MCP</a>
           <a href="/connect">Connect</a>
           <a href="/pricing">Pricing</a>
-          <a href="/self-host">Run it yourself</a>
           <a href={SIGN_IN}>Sign in</a>
         </nav>
         <a className="nav-cta" href={SIGN_UP}>
@@ -52,7 +51,10 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
         <b>
           Watch it live now <span aria-hidden="true">→</span>
         </b>
-        <small>Kazi gives Big Buck Bunny a happy ending. Free, no sign-up.</small>
+        <small>
+          Kazi gives Big Buck Bunny a happy ending. Free, no sign-up. Then connect your own AI over
+          MCP.
+        </small>
       </a>
     </header>
   );
@@ -78,6 +80,7 @@ export function Footer({ cta = 'Start free' }: { cta?: string }) {
           <a href="/walkthroughs">Walkthroughs</a>
           <a href="/skills">Skills</a>
           <a href="/features">Features</a>
+          <a href="/mcp">What is MCP</a>
           <a href="/pricing">Pricing</a>
           <a href="/connect">Connect</a>
           <a href="/self-host">Self-host</a>
