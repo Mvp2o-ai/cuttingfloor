@@ -1,5 +1,6 @@
 import { TRIAL_DAYS } from '@cuttingfloor/plans';
 import { IMAGE, LICENCE, LOCAL_ADDRESS, REPO_URL, SELF_HOST_STEPS } from '../../content/facts.ts';
+import { kaziUrl } from '../kazi.tsx';
 import { connectMarkdown } from '../lib/connect-lines.ts';
 import { keysMarkdown, priceText, RENDER_MINUTE } from '../lib/facts-markdown.ts';
 import { abs, pageLink } from '../lib/markdown.ts';
@@ -18,6 +19,10 @@ export function GET() {
 > ${DESCRIPTION}
 
 cuttingfloor is video editing tools for your agent, not an editor with an AI inside. It is an open-source MCP server: your own agent (Kazi, Claude, ChatGPT, Codex, Cursor or any MCP client) calls its granular tools to import footage, transcribe it, cut on words, caption, mix to a loudness target, make graphics and voiceovers, check its work with previews and export an MP4, FCPXML, OTIO or EDL. The judgment is the agent's; cuttingfloor makes the edits and reports facts (transcripts, speech edges, frames, loudness). Connected agents find step-by-step methods with \`skills.search\` and \`skills.get\`.
+
+## Try it live
+
+A free live demo, no sign-up: ${kaziUrl('demos')} opens Kazi in the browser, which gives Big Buck Bunny a happy ending on cuttingfloor and plays the finished video. ${pageLink('Demos', '/demos')}
 
 ## Run it
 

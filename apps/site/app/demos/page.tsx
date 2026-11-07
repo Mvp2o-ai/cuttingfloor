@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
 import { DEMOS, finished, lengths } from '../../content/demos.ts';
 import { AgentBlock } from '../agents/block.tsx';
-import { Breadcrumbs, Footer, Nav } from '../shell.tsx';
-import { LiveDemo } from './live.tsx';
+import { Breadcrumbs, Footer, JsonLd, Nav } from '../shell.tsx';
+import { LiveDemo, liveVideoObject } from './live.tsx';
 import { Poster } from './poster.tsx';
 
 export const metadata: Metadata = {
-  title: 'AI video editing demos: Kazi, Claude and ChatGPT editing real clips | cuttingfloor',
+  title: 'Live AI video editing demo, free: Kazi, Claude and ChatGPT edit over MCP | cuttingfloor',
   description:
     'Try a live AI video edit in your browser, free and with no sign-up: Kazi gives Big Buck Bunny a happy ending on cuttingfloor while you watch. Then see creators’ own Kazi, Claude or ChatGPT edit real clips, before and after, every step.',
   alternates: { canonical: '/demos', types: { 'text/markdown': '/demos.md' } },
@@ -15,6 +15,7 @@ export const metadata: Metadata = {
 export default function Demos() {
   return (
     <>
+      <JsonLd data={liveVideoObject()} />
       <Nav />
       <main className="frame wt">
         <section className="cell wt-head marks">
@@ -38,7 +39,7 @@ export default function Demos() {
               const v = finished(d);
               return (
                 <li key={d.slug}>
-                  <a href={`/demos/${d.slug}`}>
+                  <a href={`/demos/${d.slug}`} data-track={`Demo: ${d.title}`}>
                     <span className="dm-ba">
                       <Poster v={d.raw} tag="Before" />
                       <span className="dm-arrow" aria-hidden="true">

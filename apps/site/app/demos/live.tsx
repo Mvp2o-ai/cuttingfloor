@@ -1,5 +1,7 @@
 import { kaziUrl } from '../kazi.tsx';
+import { SITE_URL } from '../seo.ts';
 import { Loop } from './pair.tsx';
+import { isoDuration } from './video.ts';
 
 // The top of /demos: the live demo in Kazi. One click opens a guest chat where Kazi gives the
 // ending of Big Buck Bunny a happy ending on cuttingfloor and plays it back, then offers sign-up.
@@ -12,6 +14,23 @@ const ENDING = {
   seconds: 13,
   wide: true,
 };
+
+// The looping ending as Google reads it, so the live demo can show up in video results.
+export function liveVideoObject() {
+  const abs = (path: string) => new URL(path, SITE_URL).toString();
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'VideoObject',
+    name: 'Live demo: an AI agent gives Big Buck Bunny a happy ending',
+    description:
+      'Kazi, an AI agent, edits the end of Big Buck Bunny over the cuttingfloor video editing MCP server: it finds the final scene, builds a happy-ending animation over it and exports the video. Try it live, free, with no sign-up.',
+    thumbnailUrl: [abs(ENDING.poster)],
+    uploadDate: '2026-11-05T12:00:00+00:00',
+    duration: isoDuration(ENDING.seconds),
+    contentUrl: abs(ENDING.src),
+    url: abs('/demos'),
+  };
+}
 
 const STEPS = [
   'Opens the last minute of Big Buck Bunny',
