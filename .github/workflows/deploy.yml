@@ -51,6 +51,8 @@ jobs:
         run: |
           image="$IMAGE:$SHA"
           scp -q deploy/hetzner/compose.yaml deploy/hetzner/Caddyfile tools/motion/seccomp.json "root@$HOST:/opt/cuttingfloor/"
+          # The sign-up sequence's email copy, which compose mounts: the repository's copy wins on deploy.
+          scp -rq apps/hosted/email "root@$HOST:/opt/cuttingfloor/"
           echo "$TOKEN" | ssh "root@$HOST" docker login ghcr.io -u "$ACTOR" --password-stdin
           # .env pins the image for compose, so a reboot or a later `compose up` keeps this one.
           ssh "root@$HOST" "cd /opt/cuttingfloor && echo CUTTINGFLOOR_IMAGE=$image > .env \

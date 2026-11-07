@@ -1,0 +1,20 @@
+version: 1
+subject: Did it work?
+---
+Hi,
+
+You signed up for cuttingfloor a few days ago and haven't finished a first edit yet. If something got in the way, that's most likely on us, not you, and I'd like to fix it.
+
+Which of these fits? Reply with just the one word:
+
+Later - you haven't got to it yet.
+Broken - you got in and something didn't work.
+Unclear - you couldn't tell what to do first.
+
+When you want to pick it back up, this is the shortest way in: https://cuttingfloor.ai/welcome
+
+{{signer}}
+cuttingfloor
+
+--
+You're getting this because you signed up for cuttingfloor. Stop these emails in one click: {{unsubscribe_url}}

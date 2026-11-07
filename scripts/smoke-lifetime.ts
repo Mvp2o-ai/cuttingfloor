@@ -59,8 +59,6 @@ const lifecycle = new Lifecycle({
   workosKey,
   stripeKey,
   accountUrl,
-  welcomeUrl: 'https://cuttingfloor.ai/welcome',
-  serverUrl: 'https://api.cuttingfloor.ai',
   lifetimeClients: new Map([[KAZI, 'Kazi']]),
 });
 
@@ -90,8 +88,6 @@ try {
   expect(now.allowed && now.plan === 'lifetime', 'access says lifetime at once');
   await new Lifecycle({
     ...{ runtime, access, workosKey, stripeKey, accountUrl },
-    welcomeUrl: '',
-    serverUrl: '',
     lifetimeClients: new Map([[KAZI, 'Kazi']]),
   }).called(kazi, KAZI);
   expect((await metadataOf(kazi)).plan_since === tagged.plan_since, 'a later call changes nothing');

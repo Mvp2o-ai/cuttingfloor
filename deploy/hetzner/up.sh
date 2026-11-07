@@ -45,6 +45,7 @@ echo "Waiting for $NAME ($IP) to finish setting up…"
 until "${SSH[@]}" test -f /var/lib/cloud/cuttingfloor-ready 2>/dev/null; do sleep 10; done
 
 scp -q compose.yaml Caddyfile ../../tools/motion/seccomp.json "root@$IP:/opt/cuttingfloor/"
+scp -rq ../../apps/hosted/email "root@$IP:/opt/cuttingfloor/"
 scp -q cuttingfloor.env "root@$IP:/opt/cuttingfloor/cuttingfloor.env"
 "${SSH[@]}" "chmod 600 /opt/cuttingfloor/cuttingfloor.env \
   && echo CUTTINGFLOOR_NODE=$NAME >> /opt/cuttingfloor/cuttingfloor.env \

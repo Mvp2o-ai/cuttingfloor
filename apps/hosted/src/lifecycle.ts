@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { Job } from '@cuttingfloor/jobs';
 import { PLANS } from '@cuttingfloor/plans';
 import { CfError, MediaUploadInput } from '@cuttingfloor/schema';
 import { listHeld, type MeterEntry, type Runtime, startUpload } from '@cuttingfloor/server';
@@ -10,17 +11,19 @@ import { type ProviderKeys, SAVABLE } from './provider-keys.ts';
 
 // What happens around an account as it is used, still without a database:
 // - WorkOS metadata records the first tool call, the first export (the site's welcome page
-//   waits on the first, the funnel counts both) and the app the first tool call came from.
-// - Email goes out after sign-up, at 80% and 100% of a free account's or a period's credits
-//   (render minutes), and when a payment fails. A notice file under the owner's data claims each
-//   message once, across servers (`owners/{owner}/notices/{name}.json`, kept 400 days).
+//   waits on the first, the funnel counts both), the first export that succeeded (the sign-up
+//   sequence's first edit, sequence.ts) and the app the first tool call came from.
+// - Email goes out at 80% and 100% of a free account's or a period's credits (render minutes),
+//   and when a payment fails. The welcome is the sign-up sequence's; this sends it only while the
+//   sequence is off. A notice file under the owner's data claims each message once, across
+//   servers (`owners/{owner}/notices/{name}.json`, kept 400 days).
 // - Stripe's webhook tells the access check a subscription changed, so it shows at once.
 // - An account first used through a client that grants lifetime (Kazi) is tagged lifetime in its
 //   WorkOS metadata, with the reason and date (`plan_reason`, `plan_since`), so exactly those
 //   accounts can be found and the tag taken off again.
 
 const NOTICE_TTL_MS = 400 * 24 * 3_600_000;
-// How often new accounts are looked at: a welcome arrives within this of signing up.
+// How often new accounts are looked at: a fallback welcome arrives within this of signing up.
 const SWEEP_MS = 10 * 60_000;
 
 export interface LifecycleOptions {
@@ -29,11 +32,12 @@ export interface LifecycleOptions {
   workosKey: string;
   stripeKey: string;
   accountUrl: string;
-  /** The site's page that walks a new account through connecting its agent. */
-  welcomeUrl: string;
-  /** This server's address, as agents connect to it. */
-  serverUrl: string;
   mailer?: Mailer;
+  /**
+   * Sends the plain welcome while the sign-up sequence (sequence.ts) is off: the site's page that
+   * walks a new account through connecting, and this server's address as agents connect to it.
+   */
+  welcome?: { url: string; serverUrl: string };
   /** Signs Stripe's webhook calls (whsec_…). Without it the webhook is refused. */
   stripeWebhookSecret?: string;
   /**
@@ -75,7 +79,7 @@ export class Lifecycle {
   /** Meters into usage email and first-export records; sweeps new accounts. */
   start(): void {
     this.#o.runtime.onMetered((job, entry) => {
-      void this.#metered(job.owner, job.tool, entry).catch((error: Error) =>
+      void this.#metered(job, entry).catch((error: Error) =>
         process.stderr.write(`lifecycle: ${job.owner}: ${error.message}\n`),
       );
     });
@@ -128,10 +132,15 @@ export class Lifecycle {
     });
   }
 
-  async #metered(owner: string, tool: string, entry: MeterEntry): Promise<void> {
+  async #metered(job: Job, entry: MeterEntry): Promise<void> {
+    const owner = job.owner;
     if (!isUser(owner)) return;
     this.#o.access.addSeconds(owner, entry.seconds);
-    if (tool === 'export.video') await this.#markOnce(owner, 'first_export_at');
+    if (job.tool === 'export.video') {
+      await this.#markOnce(owner, 'first_export_at');
+      if (job.status === 'completed' && !job.result?.isError)
+        await this.#markOnce(owner, 'first_edit_at');
+    }
     const access = await this.#o.access.get(owner);
     if (!access.allowed) return;
     const usage = await this.#o.access.usage(owner, access);
@@ -169,7 +178,8 @@ export class Lifecycle {
   }
 
   /**
-   * Email for accounts made in the last day (welcome), and the TTL sweep of notice files.
+   * Email for accounts made in the last day (a welcome, while the sign-up sequence is off), and
+   * the TTL sweep of notice files.
    */
   async sweep(now = Date.now()): Promise<void> {
     const ws = this.#o.runtime.ws;
@@ -177,7 +187,8 @@ export class Lifecycle {
       await ws.sweep(ws.path('owners', key, 'notices'), NOTICE_TTL_MS);
     }
     await this.#o.keys?.sweep();
-    if (!this.#o.mailer) return;
+    const welcome = this.#o.welcome;
+    if (!this.#o.mailer || !welcome) return;
     const oldest = now - 86_400_000;
     for await (const user of this.#users(oldest)) {
       const created = Date.parse(user.created_at);
@@ -187,10 +198,10 @@ export class Lifecycle {
           subject: 'Welcome to cuttingfloor',
           lines: [
             'Your agent can edit video now. Add cuttingfloor to it once: the welcome page has the step for Claude, Claude Code, Cursor, Codex, ChatGPT and Kazi.',
-            `The address is ${this.#o.serverUrl}/mcp. Your agent opens a sign-in the first time; use this same account.`,
+            `The address is ${welcome.serverUrl}/mcp. Your agent opens a sign-in the first time; use this same account.`,
             `Then ask it for an edit, for example: "Import my video and cut out the pauses and ums." You start with ${PLANS.free.limits.renderMinutes} free credits: a credit is one minute of our servers working (an export, a transcript), and editing itself is free. No card, no time limit.`,
           ],
-          action: { label: 'Connect your agent', url: this.#o.welcomeUrl },
+          action: { label: 'Connect your agent', url: welcome.url },
         });
       }
     }
