@@ -31,7 +31,7 @@ export function markdown(): string {
     '',
     '## Two kinds of AI video editing',
     '',
-    '- An editor with an AI inside: Descript (Underlord), CapCut, VEED, Kapwing, OpusClip, invideo. You open their app and their AI works in it, on their credits. Agent access, when offered, is often a way to send a request to that AI.',
+    '- An editor with an AI inside: Descript (Underlord), invideo (Agent Two), Vidova, CutClip, Tella, OpusClip, Kapwing, CapCut, VEED. You open their app and their AI works in it, on their credits. Agent access, when offered, is a way into their app: a request to their AI, or edits to a project that lives in their editor.',
     '- Editing tools for your agent: cuttingfloor. You stay in Claude, ChatGPT, Codex, Cursor or Kazi and connect one open-source MCP server, hosted or self-hosted. The agent makes each edit (cut, trim, caption, mix, effects, export) and sees the result after every edit.',
     '',
     'Forwarding a prompt: Descript\'s API and MCP have one editing call, a job that takes a written request ("remove the section from 1:30 to 2:15") and hands it to Underlord. There is no cut, trim, caption or render call, and no picture of the result is documented coming back. Import, search, publish and transcript export are direct calls. VideoDB\'s call_director works the same way.',
