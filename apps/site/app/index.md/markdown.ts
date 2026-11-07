@@ -3,12 +3,7 @@ import { DEMOS, lengths } from '../../content/demos.ts';
 import { LICENCE } from '../../content/facts.ts';
 import { AGENT_PAINS, EDITING_PAINS, type Pain } from '../../content/pains.ts';
 import { connectMarkdown } from '../lib/connect-lines.ts';
-import {
-  keysMarkdown,
-  plansTable,
-  RENDER_MINUTE,
-  selfHostMarkdown,
-} from '../lib/facts-markdown.ts';
+import { CREDIT_TEXT, keysMarkdown, plansTable, selfHostMarkdown } from '../lib/facts-markdown.ts';
 import { abs, doc, list, pageLink, table } from '../lib/markdown.ts';
 import { PROMPTS } from '../prompts.tsx';
 import { ALTERNATIVES, DESCRIPTION, FAQS, MCP_ADDRESS } from '../seo.ts';
@@ -77,7 +72,7 @@ ${CAPS.map(
 
 ${plansTable()}
 
-${RENDER_MINUTE} Yearly plans get two months free. Payments by Stripe; cancel any time.
+${CREDIT_TEXT} Yearly plans get two months free. Payments by Stripe; cancel any time.
 
 Full pricing: ${pageLink('Pricing', '/pricing')}
 

@@ -122,7 +122,7 @@ export default async function Account({
 /** The plan whose limits apply now; none once access has ended. */
 function planOf(s: Status): PlanId | undefined {
   if (s.kind === 'given' || s.kind === 'subscribed') return s.plan;
-  if (s.kind === 'trial') return 'trial';
+  if (s.kind === 'free') return 'free';
   return undefined;
 }
 
@@ -131,10 +131,8 @@ function headline(s: Status): string {
     case 'given':
     case 'subscribed':
       return `${PLANS[s.plan].name}.`;
-    case 'trial':
-      return 'On the trial.';
-    case 'expired':
-      return 'Trial over.';
+    case 'free':
+      return 'On the free plan.';
     case 'lapsed':
       return 'Paused.';
   }
@@ -150,10 +148,8 @@ function explain(s: Status, justSubscribed: boolean): string {
       if (s.status === 'past_due')
         return `Your last payment didn’t go through. Your agent keeps working until ${s.graceEnds ? day(s.graceEnds) : 'Stripe’s last retry'}; update the card to keep it that way.`;
       return `${justSubscribed ? 'Thank you. ' : ''}Billed ${s.interval === 'year' ? 'yearly' : 'monthly'}${s.renews ? `; ${s.cancels ? 'ends' : 'renews'} ${day(s.renews)}` : ''}.`;
-    case 'trial':
-      return `Everything works until ${day(s.ends)}. Subscribe now or when it ends; your work carries over.`;
-    case 'expired':
-      return `The trial ended ${day(s.ended)}. Pick a plan and your agent picks up where it left off.`;
+    case 'free':
+      return `Every tool, with ${PLANS.free.limits.renderMinutes} free credits and no time limit. Pick a plan when you want more; your work carries over.`;
     case 'lapsed':
       return `The last payment didn’t go through, and access paused on ${day(s.ended)}. Update the card and your agent picks up where it left off.`;
   }
@@ -163,19 +159,17 @@ function Meter({ usage, plan }: { usage: Usage; plan: PlanId }) {
   const included = usage.included_minutes;
   const used = Math.min(usage.used_minutes, included ?? usage.used_minutes);
   const share = included ? Math.min(1, usage.used_minutes / included) : 0;
-  const renews = plan === 'trial' ? 'The trial ends' : 'Minutes renew';
+  const free = plan === 'free';
   return (
     <div className="meter">
       <p className="meter-line">
         <span>
           <strong>{Math.round(used).toLocaleString('en-US')}</strong>
           {included === null
-            ? ' render minutes this month'
-            : ` of ${included.toLocaleString('en-US')} render minutes used`}
+            ? ' credits this month'
+            : ` of ${included.toLocaleString('en-US')} ${free ? 'free ' : ''}credits used`}
         </span>
-        <span className="meter-renews">
-          {renews} {day(usage.period.end)}
-        </span>
+        {free ? null : <span className="meter-renews">Credits renew {day(usage.period.end)}</span>}
       </p>
       {included === null ? null : (
         <div
@@ -187,8 +181,10 @@ function Meter({ usage, plan }: { usage: Usage; plan: PlanId }) {
       )}
       {share >= 1 ? (
         <p className="meter-note">
-          New jobs wait until the minutes renew. Editing and previews still work.
-          {plan === 'trial' || plan === 'creator' ? ' A bigger plan adds minutes now.' : ''}
+          {free
+            ? 'New jobs wait until you pick a plan. Editing and previews still work.'
+            : 'New jobs wait until the credits renew. Editing and previews still work.'}
+          {plan === 'creator' ? ' A bigger plan adds credits now.' : ''}
         </p>
       ) : null}
     </div>
@@ -241,7 +237,7 @@ function Billing({ status }: { status: Status }) {
           <div className="plan" key={id}>
             <h2 className="tier">{p.name}</h2>
             <p>
-              {l.renderMinutes} render min a month. {p.note}
+              {l.renderMinutes} credits a month. {p.note}
             </p>
             <div className="plan-buttons">
               <form action="/api/checkout" method="post">

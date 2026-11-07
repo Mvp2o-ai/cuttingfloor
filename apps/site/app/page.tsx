@@ -1,8 +1,9 @@
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { DEMOS } from '../content/demos.ts';
 import { LICENCE } from '../content/facts.ts';
 import { HOME_SESSION } from '../content/home-session.ts';
-import { AGENT_PAINS, EDITING_PAINS, type Pain } from '../content/pains.ts';
+import { EDITING_PAINS, type Pain } from '../content/pains.ts';
 import { TOOL_COUNT } from '../content/tools.ts';
 import { Capabilities } from './capabilities.tsx';
 import { Connect } from './connect.tsx';
@@ -12,7 +13,7 @@ import { LiveCard } from './live-card.tsx';
 import { McpAddress } from './mcp-address.tsx';
 import { PLANS } from './pricing.ts';
 import { Prompts } from './prompts.tsx';
-import { ALTERNATIVES, FAQS, structuredData } from './seo.ts';
+import { FAQS, structuredData } from './seo.ts';
 import { Session } from './session/session.tsx';
 import { Check, Footer, JsonLd, Nav, SIGN_UP } from './shell.tsx';
 
@@ -110,12 +111,13 @@ export default function Home() {
                 </p>
                 <McpAddress />
                 <p>
-                  Then sign in. Steps for each app are on <a href="/connect">Connect</a>.
+                  Then sign in. Steps for each app are on <a href="/connect">Connect</a>. New to
+                  MCP? <a href="/mcp">Here’s what it is</a>.
                 </p>
               </div>
               <div className="actions">
                 <a className="link-big" href={SIGN_UP}>
-                  Start free — 3 days
+                  Start free — {FREE_CREDITS} credits
                 </a>
                 <a className="link-big quiet" href="/demos">
                   Watch it edit
@@ -226,12 +228,9 @@ export default function Home() {
             </div>
           </div>
           <PainTable caption="The ten slowest editing jobs" rows={EDITING_PAINS} />
-          <PainTable
-            caption="Where AI editing goes wrong, and what is different"
-            rows={AGENT_PAINS}
-          />
           <p className="wt-links">
-            <a href="/features">Everything it can do</a> · <a href="/skills">Skills</a>
+            <a href="/features">Everything it can do</a> ·{' '}
+            <a href="/compare">Where other AI editors go wrong</a>
           </p>
         </section>
 
@@ -331,10 +330,10 @@ export default function Home() {
           <div className="head">
             <span className="label">10 / Pricing</span>
             <div>
-              <h2 className="display">Pay for the minutes you use, not the seat.</h2>
+              <h2 className="display">Every tool on every plan. Start free.</h2>
               <p className="compare-lede">
-                Hosted plans from {FROM_PRICE} a month, billed in render minutes. Editing the
-                timeline is free. Run it yourself and it is all free.
+                {FREE_CREDITS} free credits, no card, no time limit. Then plans from {FROM_PRICE} a
+                month. Run it yourself and it is all free.
               </p>
             </div>
           </div>
@@ -378,49 +377,16 @@ export default function Home() {
             </tbody>
           </table>
           <p className="price-foot">
-            A render minute is a minute of our servers working for you: exports, imports,
-            transcripts, graphics, voiceovers, cutouts. Planning and editing the timeline cost
-            nothing. When minutes run out, work waits. You are never charged more than the plan
-            price. Yearly plans get two months free. Payments by Stripe; cancel any time.
+            A credit is a minute of our servers working for you: an export, a transcript, graphics,
+            a voiceover. Editing the timeline costs nothing. When credits run out, work waits; you
+            are never charged more than the plan price.{' '}
+            <a href="/pricing#every-plan">What every plan includes</a>.
           </p>
-        </section>
-
-        <section className="cell" id="compare">
-          <div className="head">
-            <span className="label">11 / Compared</span>
-            <div>
-              <h2 className="display">Edits, not templates.</h2>
-              <p className="compare-lede">
-                Looking for a Remotion, Shotstack, Creatomate or JSON2Video alternative? Those
-                render a video you have already described in code or JSON. cuttingfloor is a video
-                editing API your agent drives call by call, looking at each result.{' '}
-                <a href="/compare">Full comparison</a>.
-              </p>
-            </div>
-          </div>
-          <table className="compare-table">
-            <thead>
-              <tr>
-                <th>Tool</th>
-                <th>What it is</th>
-                <th>Pick it when</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ALTERNATIVES.map((a) => (
-                <tr key={a.name} className={'ours' in a && a.ours ? 'ours' : ''}>
-                  <td className="tier">{a.name}</td>
-                  <td>{a.is}</td>
-                  <td className="note">{a.when}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </section>
 
         <section className="cell">
           <div className="head">
-            <span className="label">12 / Questions</span>
+            <span className="label">11 / Questions</span>
             <h2 className="display">Asked.</h2>
           </div>
           <div className="faq">

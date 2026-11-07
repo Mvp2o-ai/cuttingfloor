@@ -24,6 +24,7 @@ export function LiveCard() {
           Watch it live now <span aria-hidden="true">→</span>
         </b>
         <small>Kazi gives Big Buck Bunny a happy ending, while you watch.</small>
+        <small>Kazi is one way in: ChatGPT, Claude or any MCP app connects the same way.</small>
         <small className="live-card-facts">Free · a few minutes · no sign-up</small>
       </span>
     </a>

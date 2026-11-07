@@ -25,6 +25,11 @@ export const ROUTES: Route[] = [
     title: 'AI video editor your agent runs: a CapCut, Descript and VEED alternative',
     updated: '2026-10-29',
   },
+  {
+    path: '/mcp',
+    title: 'What is MCP? How ChatGPT and Claude connect to a video editor',
+    updated: '2026-11-07',
+  },
   { path: '/features', title: 'Features', updated: '2026-11-01' },
   { path: '/pricing', title: 'Pricing', updated: '2026-11-01' },
   {

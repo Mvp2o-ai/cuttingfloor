@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "license": "AGPL-3.0-only",
   "private": true,
-  "description": "The hosted plans: prices, included render minutes and limits. The site's pricing, checkout and account pages and the hosted server's access checks all read this one file.",
+  "description": "The hosted plans: prices, included credits (render minutes) and limits. The site's pricing, checkout and account pages and the hosted server's access checks all read this one file.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

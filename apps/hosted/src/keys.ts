@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { randomId, type Workspace } from '@cuttingfloor/core';
 
 // Script keys: bearer keys a signed-in user makes on the account page, so a script reaches /mcp
-// without a browser sign-in. A key acts as its account, with the same trial and plan checks.
+// without a browser sign-in. A key acts as its account, with the same plan checks.
 // Still no database: each key is two files under the data root, and neither holds the key, only
 // its SHA-256. `keys/{sha256}.json` says whose it is (read on each request);
 // `owners/{owner}/keys/{key_id}.json` lists it on the account page. A key works for a year.

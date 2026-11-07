@@ -12,7 +12,7 @@ import { Lifecycle } from '../src/lifecycle.ts';
 
 // The account page's drop zone: the site asks for an upload with its key, the browser sends the
 // file straight to the signed URL, and the account's files and storage come back as media.list
-// gives them. The account itself is a stand-in here (a trial with a small storage cap); the real
+// gives them. The account itself is a stand-in here (a free account with a small storage cap); the real
 // WorkOS and Stripe checks run in scripts/smoke-account.ts.
 
 const ACCOUNT_KEY = 'account-key-0123456789abcdef';
@@ -38,7 +38,7 @@ beforeAll(async () => {
   });
   await runtime.start({ sweep: false });
   const access = {
-    get: async () => ({ allowed: true, plan: 'trial' }),
+    get: async () => ({ allowed: true, plan: 'free' }),
     limits: async () => ({ storageBytes: CAP, account: 'https://cuttingfloor.ai/account' }),
   } as unknown as AccessCheck;
   const lifecycle = new Lifecycle({

@@ -1,4 +1,4 @@
-import { TRIAL_DAYS } from '@cuttingfloor/plans';
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { CLIENTS, type Client } from './clients.ts';
 import { DEMOS, type Demo } from './demos.ts';
 
@@ -29,7 +29,7 @@ export type Agent = {
   faqs: { q: string; a: string }[];
 };
 
-const TRIAL = `Start free for ${TRIAL_DAYS} days, no card.`;
+const TRIAL = `Start free with ${FREE_CREDITS} credits: no card, no time limit, every tool.`;
 
 export const AGENTS: Agent[] = [
   {

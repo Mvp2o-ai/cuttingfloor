@@ -25,14 +25,14 @@ const PLANS = [
   {
     id: 'creator',
     name: 'cuttingfloor Creator',
-    description: '300 render minutes a month. Editing, solved.',
+    description: '300 credits a month. Every tool. Editing, solved.',
     month: 4900,
     year: 49000,
   },
   {
     id: 'pro',
     name: 'cuttingfloor Pro',
-    description: '900 render minutes a month, two jobs at once, 4K. Editing, solved.',
+    description: '900 credits a month, two jobs at once, 4K. Every tool. Editing, solved.',
     month: 9900,
     year: 99000,
   },

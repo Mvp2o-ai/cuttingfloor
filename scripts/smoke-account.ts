@@ -6,8 +6,8 @@
 // automation bypass secret (Settings → Deployment Protection; VERCEL_BYPASS in the env file).
 //
 // Keys come from deploy/hetzner/cuttingfloor.env. Makes a throwaway WorkOS user, signs in on the
-// site through AuthKit, checks the account page shows the trial, drops a file on its drop zone, opens Stripe Checkout for Pro
-// (stopping before payment), then checks the MCP server's access rules: trial, trial over,
+// site through AuthKit, checks the account page shows the free plan, drops a file on its drop zone, opens Stripe Checkout for Pro
+// (stopping before payment), then checks the MCP server's access rules: free (no time limit),
 // subscribed (a $0 trialing subscription with no card), and lifetime. Deletes everything after.
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
@@ -68,7 +68,7 @@ step(`a throwaway user (${userId})`);
 const browser = await puppeteer.launch({ executablePath: chrome, headless: true });
 
 try {
-  step('signs in on the site and sees the trial');
+  step('signs in on the site and sees the free plan');
   const page = await browser.newPage();
   await page.setViewport({ width: 1440, height: 900 });
   if (bypass)
@@ -89,7 +89,7 @@ try {
     await new Promise((r) => setTimeout(r, 1000));
   const text = await page.evaluate(() => document.body.innerText);
   expect(page.url().startsWith(`${site}/account`), `back on the account page (${page.url()})`);
-  expect(text.includes('On the trial.'), 'the page says the trial is on');
+  expect(text.includes('On the free plan.'), 'the page says the free plan is on');
   expect(text.includes(email), 'the page names the user');
   if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });
 
@@ -148,16 +148,16 @@ try {
       accountUrl: `${site}/account`,
       now: () => Date.now() + offsetDays * 86_400_000,
     });
-  expect((await at(0).resolve(userId)).allowed, 'a new account works (trial)');
+  expect((await at(0).resolve(userId)).allowed, 'a new account works (free)');
   const limits = await at(0).limits(userId);
   expect(
     limits.jobs === 1 && limits.shortSide === 1080 && !limits.refuseJobs,
-    `the trial runs one job at a time, up to 1080p (${JSON.stringify(limits)})`,
+    `the free plan runs one job at a time, up to 1080p (${JSON.stringify(limits)})`,
   );
   const usage = await at(0).usage(userId);
   expect(
-    usage.plan === 'trial' && usage.included_minutes === 60 && usage.used_minutes === 0,
-    `the trial has 60 render minutes, none used (${JSON.stringify(usage)})`,
+    usage.plan === 'free' && usage.included_minutes === 100 && usage.used_minutes === 0,
+    `the free plan has 100 credits, none used (${JSON.stringify(usage)})`,
   );
   const outage = await new AccessCheck({
     workosKey: 'sk_test_not_a_key',
@@ -183,17 +183,10 @@ try {
     'an unverified email is refused until it is verified',
   );
   await workos(`/user_management/users/${unverified.id}`, { method: 'DELETE' });
-  const later = await at(4).resolve(userId);
-  expect(!later.allowed, 'four days later it is refused');
-  const refusal = await at(4)
-    .require(userId)
-    .then(
-      () => null,
-      (e: { code?: string; hint?: string }) => e,
-    );
+  const later = await at(90).resolve(userId);
   expect(
-    refusal?.code === 'subscription_required' && String(refusal.hint).includes('/account'),
-    'the refusal says where to subscribe',
+    later.allowed && later.plan === 'free',
+    'ninety days later it still works: free credits have no time limit',
   );
 
   const prices = await stripe('/v1/prices?active=true&lookup_keys[]=cf_pro_month');
@@ -210,7 +203,7 @@ try {
   const subscribed = await at(4).resolve(userId);
   expect(
     subscribed.allowed && subscribed.plan === 'pro',
-    `subscribed works past the trial (${JSON.stringify(subscribed)})`,
+    `subscribed counts as Pro (${JSON.stringify(subscribed)})`,
   );
   await stripe(`/v1/subscriptions/${sub.id}`, undefined, 'DELETE');
 
@@ -219,7 +212,7 @@ try {
     body: { metadata: { ...linked, plan: 'lifetime' } },
   });
   const lifetime = await at(4).resolve(userId);
-  expect(lifetime.allowed && lifetime.plan === 'lifetime', 'lifetime works past the trial');
+  expect(lifetime.allowed && lifetime.plan === 'lifetime', 'lifetime counts as lifetime');
 
   await stripe(`/v1/customers/${customer}`, undefined, 'DELETE');
 } finally {

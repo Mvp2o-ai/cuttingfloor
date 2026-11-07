@@ -9,7 +9,16 @@ import {
   SELF_HOST_STEPS,
 } from '../../content/facts.ts';
 import { cell } from '../lib/markdown.ts';
-import { KEPT, markWord, OPTIONS, PRICING_FAQS, RENDER_MINUTE, ROWS } from '../pricing.ts';
+import {
+  CREDIT,
+  EVERY_PLAN,
+  EVERY_PLAN_LEAD,
+  KEPT,
+  markWord,
+  OPTIONS,
+  PRICING_FAQS,
+  ROWS,
+} from '../pricing.ts';
 import { SITE_URL } from '../seo.ts';
 
 // /pricing as Markdown, for agents and AI search, built from the same data as the page.
@@ -18,7 +27,7 @@ export function markdown(): string {
   const body = [
     '# cuttingfloor pricing',
     '',
-    `> Free to self-host: open source under ${LICENCE}, the same Docker image the hosted service runs, on your own machine with no render-minute limits. Hosted plans charge for render minutes; editing and previews are free. Prices in US dollars.`,
+    `> Free to self-host: open source under ${LICENCE}, the same Docker image the hosted service runs, on your own machine with no credit limits. Hosted: start with free credits, no card and no time limit; every plan has every tool. A credit is a minute of a job running; editing and previews are free. Prices in US dollars.`,
     '',
     `Page: ${SITE_URL}/pricing · JSON: ${SITE_URL}/pricing.json`,
     '',
@@ -29,7 +38,13 @@ export function markdown(): string {
         `- **${o.name}**: ${[o.price, o.per].filter(Boolean).join(' ')}${o.yearly ? ` (or $${o.yearly} a year)` : ''}. ${o.note} ${new URL(o.href, SITE_URL).toString()}`,
     ),
     '',
-    '## Included and not included',
+    '## Every plan includes',
+    '',
+    EVERY_PLAN_LEAD,
+    '',
+    ...EVERY_PLAN.map((f) => `- ${f}`),
+    '',
+    '## Where plans differ',
     '',
     `| | ${OPTIONS.map((o) => o.name).join(' | ')} |`,
     `|---|${OPTIONS.map(() => '---').join('|')}|`,
@@ -43,9 +58,9 @@ export function markdown(): string {
     '',
     KEPT,
     '',
-    '## What a render minute is',
+    '## What a credit is',
     '',
-    ...RENDER_MINUTE.map((l) => `- ${l}`),
+    ...CREDIT.map((l) => `- ${l}`),
     '',
     '## What needs your own key',
     '',
@@ -62,7 +77,7 @@ export function markdown(): string {
     '',
     '## Self-hosted · Free',
     '',
-    `Open source under ${LICENCE}. One Docker image (${IMAGE}), the same image the hosted service runs. You run it on your own machine, with no render-minute limits, and bring your own keys for lip-sync and visual judgment.`,
+    `Open source under ${LICENCE}. One Docker image (${IMAGE}), the same image the hosted service runs. You run it on your own machine, with no credit limits, and bring your own keys for lip-sync and visual judgment.`,
     '',
     '```sh',
     ...SELF_HOST_STEPS,

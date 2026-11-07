@@ -5,11 +5,11 @@
 //
 // Makes a throwaway account linked to a Stripe customer as checkout links it, and a script key
 // for it on the server. Real subscriptions are paid with a 100%-off coupon, so the invoices are
-// real, paid and $0: no card, no charge. Checks through /mcp and /account/usage that the trial
+// real, paid and $0: no card, no charge. Checks through /mcp and /account/usage that the free plan
 // works, that Creator (monthly) and Pro (yearly) are honoured with their own limits, that a
 // yearly plan's minutes count per month, that Stripe's webhook reaches the server, and that
-// cancelling ends it. The days past the trial run the server's own access rules with a clock
-// moved on. Deletes everything after.
+// cancelling returns it to the free plan. Later days run the server's own access rules with a
+// clock moved on. Deletes everything after.
 import { AccessCheck } from '../apps/hosted/src/access.ts';
 
 const need = (name: string) => {
@@ -174,12 +174,12 @@ try {
     return sub;
   };
 
-  step('on the trial');
+  step('on the free plan');
   expect((await works()) === 'works', 'a tool call works');
-  const trial = await usage();
-  expect(trial.plan === 'trial', `the server counts it as the trial (${trial.plan})`);
-  const over = await at(4).resolve(userId);
-  expect(!over.allowed && over.reason === 'trial_ended', 'four days on, unpaid, it is refused');
+  const free = await usage();
+  expect(free.plan === 'free', `the server counts it as the free plan (${free.plan})`);
+  const unpaid = await at(4).resolve(userId);
+  expect(unpaid.allowed && unpaid.plan === 'free', 'four days on, unpaid, it still works (free)');
 
   step('subscribed to Creator, monthly (a real, paid $0 invoice)');
   const creator = await subscribe('cf_creator_month');
@@ -203,7 +203,7 @@ try {
     `the server counts Creator, 300 minutes (${monthly.plan}, ${monthly.included_minutes})`,
   );
   const paid = await at(4).resolve(userId);
-  expect(paid.allowed && paid.plan === 'creator', 'four days on, past the trial, it still works');
+  expect(paid.allowed && paid.plan === 'creator', 'four days on, it is Creator');
   const limits = await at(4).limits(userId);
   expect(
     limits.jobs === 1 && limits.shortSide === 1080 && !limits.refuseJobs,
@@ -260,9 +260,9 @@ try {
   step('cancelled');
   await stripe(`/v1/subscriptions/${pro.id}`, undefined, 'DELETE');
   const ended = await at(4).resolve(userId);
-  expect(!ended.allowed && ended.reason === 'trial_ended', 'past the trial, it is refused again');
+  expect(ended.allowed && ended.plan === 'free', 'cancelled, it is back on the free plan');
   await wait(8000);
-  expect((await usage()).plan === 'trial', 'the server is back to the trial at once (webhook)');
+  expect((await usage()).plan === 'free', 'the server is back to the free plan at once (webhook)');
 } finally {
   if (keyId) await site('/account/keys/revoke', { user: userId, key_id: keyId }).catch(() => {});
   if (customer) await stripe(`/v1/customers/${customer}`, undefined, 'DELETE').catch(() => {});

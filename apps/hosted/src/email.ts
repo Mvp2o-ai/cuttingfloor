@@ -1,6 +1,6 @@
 import { SUPPORT_EMAIL } from '@cuttingfloor/plans';
 
-// Account email through Resend: trial ending, minutes running low, a failed payment. Stripe sends
+// Account email through Resend: a welcome, credits running low, a failed payment. Stripe sends
 // receipts and invoices; WorkOS sends sign-in mail. Each message is sent at most once: the caller
 // claims a notice file under the data root first (lifecycle.ts), and Resend's idempotency key
 // covers a retry of the same send.

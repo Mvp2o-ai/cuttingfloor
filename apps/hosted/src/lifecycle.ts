@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { PLANS, TRIAL_DAYS } from '@cuttingfloor/plans';
+import { PLANS } from '@cuttingfloor/plans';
 import { CfError, MediaUploadInput } from '@cuttingfloor/schema';
 import { listHeld, type MeterEntry, type Runtime, startUpload } from '@cuttingfloor/server';
 import type { Access, AccessCheck } from './access.ts';
@@ -11,8 +11,8 @@ import { type ProviderKeys, SAVABLE } from './provider-keys.ts';
 // What happens around an account as it is used, still without a database:
 // - WorkOS metadata records the first tool call, the first export (the site's welcome page
 //   waits on the first, the funnel counts both) and the app the first tool call came from.
-// - Email goes out after sign-up, when the trial is about to end and once it has, at 80% and 100% of a period's
-//   render minutes, and when a payment fails. A notice file under the owner's data claims each
+// - Email goes out after sign-up, at 80% and 100% of a free account's or a period's credits
+//   (render minutes), and when a payment fails. A notice file under the owner's data claims each
 //   message once, across servers (`owners/{owner}/notices/{name}.json`, kept 400 days).
 // - Stripe's webhook tells the access check a subscription changed, so it shows at once.
 // - An account first used through a client that grants lifetime (Kazi) is tagged lifetime in its
@@ -20,7 +20,7 @@ import { type ProviderKeys, SAVABLE } from './provider-keys.ts';
 //   accounts can be found and the tag taken off again.
 
 const NOTICE_TTL_MS = 400 * 24 * 3_600_000;
-// How often new accounts and trials are looked at: a welcome arrives within this of signing up.
+// How often new accounts are looked at: a welcome arrives within this of signing up.
 const SWEEP_MS = 10 * 60_000;
 
 export interface LifecycleOptions {
@@ -57,8 +57,7 @@ export function lifetimeFor(
 ): 'give' | 'tagged' | 'paying' {
   if (metadata.plan) return 'tagged';
   // A subscription keeps billing whatever the tag says; that stays the account owner's to end.
-  if (access.allowed ? access.plan !== 'trial' : access.reason === 'payment_failed')
-    return 'paying';
+  if (access.allowed ? access.plan !== 'free' : access.reason === 'payment_failed') return 'paying';
   return 'give';
 }
 
@@ -73,7 +72,7 @@ export class Lifecycle {
     this.#o = options;
   }
 
-  /** Meters into usage email and first-export records; sweeps new accounts and trials. */
+  /** Meters into usage email and first-export records; sweeps new accounts. */
   start(): void {
     this.#o.runtime.onMetered((job, entry) => {
       void this.#metered(job.owner, job.tool, entry).catch((error: Error) =>
@@ -140,26 +139,28 @@ export class Lifecycle {
     const share = usage.used_minutes / usage.included_minutes;
     const period = usage.period.start.slice(0, 10);
     const renews = day(usage.period.end);
-    const trial = usage.plan === 'trial';
+    const free = usage.plan === 'free';
     if (share >= 1) {
       await this.#notify(owner, `minutes-${period}-100`, {
         to: access.email,
-        subject: trial ? 'Your trial minutes are used up' : 'Your render minutes are used up',
+        subject: free ? 'Your free credits are used up' : 'Your credits are used up',
         lines: [
-          `Your agent has used all ${usage.included_minutes} render minutes ${trial ? 'in the trial' : 'for this period'}.`,
-          'Editing still works, and so do previews. New jobs (exports, imports, motion graphics, voiceovers) wait until the minutes renew.',
-          trial
-            ? 'Pick a plan to keep going now.'
+          `Your agent has used all ${usage.included_minutes} ${free ? 'free credits' : 'credits for this period'}.`,
+          free
+            ? 'Editing still works, and so do previews. New jobs (exports, imports, motion graphics, voiceovers) wait until you pick a plan.'
+            : 'Editing still works, and so do previews. New jobs (exports, imports, motion graphics, voiceovers) wait until the credits renew.',
+          free
+            ? 'Pick a plan to keep going. Your media and exports carry over.'
             : `They renew on ${renews}. For more now, move to a bigger plan.`,
         ],
-        action: { label: trial ? 'Pick a plan' : 'Open your account', url: this.#o.accountUrl },
+        action: { label: free ? 'Pick a plan' : 'Open your account', url: this.#o.accountUrl },
       });
     } else if (share >= 0.8) {
       await this.#notify(owner, `minutes-${period}-80`, {
         to: access.email,
-        subject: `You've used ${Math.floor(share * 100)}% of your render minutes`,
+        subject: `You've used ${Math.floor(share * 100)}% of your ${free ? 'free ' : ''}credits`,
         lines: [
-          `Your agent has used ${usage.used_minutes} of ${usage.included_minutes} render minutes ${trial ? 'in the trial' : `this period; they renew on ${renews}`}.`,
+          `Your agent has used ${usage.used_minutes} of ${usage.included_minutes} ${free ? 'free credits' : `credits this period; they renew on ${renews}`}.`,
           'At the limit, new jobs wait. Editing and previews keep working.',
         ],
         action: { label: 'See your usage', url: this.#o.accountUrl },
@@ -168,8 +169,7 @@ export class Lifecycle {
   }
 
   /**
-   * Email for accounts made in the last day (welcome), whose trial ends within a day, or whose
-   * trial ended in the last two; and the TTL sweep of notice files.
+   * Email for accounts made in the last day (welcome), and the TTL sweep of notice files.
    */
   async sweep(now = Date.now()): Promise<void> {
     const ws = this.#o.runtime.ws;
@@ -178,7 +178,7 @@ export class Lifecycle {
     }
     await this.#o.keys?.sweep();
     if (!this.#o.mailer) return;
-    const oldest = now - (TRIAL_DAYS + 2) * 86_400_000;
+    const oldest = now - 86_400_000;
     for await (const user of this.#users(oldest)) {
       const created = Date.parse(user.created_at);
       if (now - created < 86_400_000) {
@@ -188,34 +188,9 @@ export class Lifecycle {
           lines: [
             'Your agent can edit video now. Add cuttingfloor to it once: the welcome page has the step for Claude, Claude Code, Cursor, Codex, ChatGPT and Kazi.',
             `The address is ${this.#o.serverUrl}/mcp. Your agent opens a sign-in the first time; use this same account.`,
-            `Then ask it for an edit, for example: "Import my video and cut out the pauses and ums." The trial runs ${TRIAL_DAYS} days with ${PLANS.trial.limits.renderMinutes} render minutes, no card needed.`,
+            `Then ask it for an edit, for example: "Import my video and cut out the pauses and ums." You start with ${PLANS.free.limits.renderMinutes} free credits: a credit is one minute of our servers working (an export, a transcript), and editing itself is free. No card, no time limit.`,
           ],
           action: { label: 'Connect your agent', url: this.#o.welcomeUrl },
-        });
-        continue;
-      }
-      if (now - created < (TRIAL_DAYS - 1) * 86_400_000) continue;
-      const access = await this.#o.access.get(user.id);
-      const ends = created + TRIAL_DAYS * 86_400_000;
-      if (access.allowed && access.plan === 'trial' && now >= ends - 86_400_000) {
-        await this.#notify(user.id, 'trial-ending', {
-          to: user.email,
-          subject: 'Your cuttingfloor trial ends tomorrow',
-          lines: [
-            `Your free trial ends on ${day(new Date(ends).toISOString())}.`,
-            'Pick a plan to keep your agent editing. Your media and exports carry over.',
-          ],
-          action: { label: 'Pick a plan', url: this.#o.accountUrl },
-        });
-      } else if (!access.allowed && access.reason === 'trial_ended') {
-        await this.#notify(user.id, 'trial-over', {
-          to: user.email,
-          subject: 'Your cuttingfloor trial has ended',
-          lines: [
-            'Your free trial is over, so your agent’s calls are paused.',
-            'Pick a plan and it picks up where it left off. Media and exports are kept for 7 days.',
-          ],
-          action: { label: 'Pick a plan', url: this.#o.accountUrl },
         });
       }
     }

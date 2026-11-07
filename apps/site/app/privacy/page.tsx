@@ -83,7 +83,7 @@ export default function Privacy() {
             'Vercel: this website.',
             'TypeSafe: answers to judge.ask and look questions.',
             'sync. labs, only with your own key: lip sync for create.lipsync.',
-            'Resend: account email (trial ending, usage, payment problems).',
+            'Resend: account email (welcome, credits running low, payment problems).',
           ]}
         />
         <P>Each one gets only what its job needs.</P>

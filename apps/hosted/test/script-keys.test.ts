@@ -62,7 +62,7 @@ beforeAll(async () => {
     scriptKeys: keys,
     access: async (owner) => {
       checked.push(owner);
-      if (owner === LAPSED) throw new CfError('subscription_required', 'The trial has ended');
+      if (owner === LAPSED) throw new CfError('subscription_required', 'The last payment failed');
     },
     route: (req, res, url) => lifecycle.route(req, res, url),
     onApp: (owner, app) => apps.push([owner, app]),
