@@ -576,16 +576,63 @@ h2.lede {
   color: var(--mute);
   max-width: 44ch;
 }
-.works-in .mcp-address {
-  max-width: 560px;
-  margin: 10px 0;
+/* ---------- connect now: under the headline on home and /connect ---------- */
+
+.connect-now {
+  max-width: 640px;
+  margin: 32px 0 28px;
+}
+.connect-now .label {
+  display: block;
+  margin-bottom: 12px;
+}
+.connect-now-apps {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+}
+.connect-now-apps a {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 800;
+  font-variation-settings: "wdth" 72;
+  font-size: clamp(24px, 2.4vw, 32px);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.connect-now-apps a:hover {
+  color: var(--key);
+}
+.connect-now-apps svg,
+.connect-now-apps img {
+  width: 1em;
+  height: 1em;
+  flex: none;
+  display: block;
+}
+.connect-now-apps .kazi-word {
+  color: var(--key);
+}
+.connect-now p {
+  margin: 10px 0 0;
+  color: var(--mute);
+  max-width: 52ch;
+}
+.connect-now p a {
+  color: var(--ink);
 }
 @media (max-width: 520px) {
-  .works-in .mcp-address code {
+  .connect-now .mcp-address code {
     padding: 12px 10px;
     font-size: 12.5px;
   }
-  .works-in .mcp-address button {
+  .connect-now .mcp-address button {
     min-width: 68px;
     padding: 0 10px;
   }
@@ -2742,7 +2789,7 @@ button.link-big {
 
 /* ---------- account: usage, limits, first run ---------- */
 .meter {
-  margin: 32px 0 8px;
+  margin: 32px 0 28px;
   max-width: 640px;
 }
 .meter-line {
@@ -3067,15 +3114,6 @@ table.pr-grid td {
 }
 .logo-slot.ours {
   color: var(--key);
-}
-
-.cl-address {
-  max-width: 640px;
-  margin-top: 28px;
-}
-.cl-address .label {
-  display: block;
-  margin-bottom: 8px;
 }
 
 .cl-index {

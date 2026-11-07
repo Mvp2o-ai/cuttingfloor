@@ -7,10 +7,10 @@ import { EDITING_PAINS, type Pain } from '../content/pains.ts';
 import { TOOL_COUNT } from '../content/tools.ts';
 import { Capabilities } from './capabilities.tsx';
 import { Connect } from './connect.tsx';
+import { ConnectNow } from './connect-now.tsx';
 import { AgentDemo } from './demos/demo.tsx';
 import { TryKazi } from './kazi.tsx';
 import { LiveCard } from './live-card.tsx';
-import { McpAddress } from './mcp-address.tsx';
 import { PLANS } from './pricing.ts';
 import { Prompts } from './prompts.tsx';
 import { FAQS, structuredData } from './seo.ts';
@@ -88,6 +88,9 @@ export default function Home() {
             solved.
             <Check />
           </p>
+          <div className="rise d2">
+            <ConnectNow />
+          </div>
           <div className="hero-row">
             <div className="rise d2">
               <p className="lede">
@@ -106,14 +109,6 @@ export default function Home() {
                     </li>
                   ))}
                 </ul>
-                <p>
-                  Add it to ChatGPT, Claude or any MCP app as a connector. Just paste this address:
-                </p>
-                <McpAddress />
-                <p>
-                  Then sign in. Steps for each app are on <a href="/connect">Connect</a>. New to
-                  MCP? <a href="/mcp">Here’s what it is</a>.
-                </p>
               </div>
               <div className="actions">
                 <a className="link-big" href={SIGN_UP}>

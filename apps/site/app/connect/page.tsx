@@ -1,9 +1,9 @@
 import { FREE_CREDITS } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
-import { CLIENTS, CLIENTS_CHECKED, MCP_URL } from '../../content/clients.ts';
+import { CLIENTS, CLIENTS_CHECKED } from '../../content/clients.ts';
+import { ConnectNow } from '../connect-now.tsx';
 import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
-import { Copy } from '../walkthroughs/copy.tsx';
 import { ClientSection } from './client-section.tsx';
 import { CONNECT_DESCRIPTION, CONNECT_FAQS, CONNECT_LEAD, CONNECT_TITLE, HOW } from './copy.ts';
 import { LogoSlot } from './logo.tsx';
@@ -44,25 +44,19 @@ export default function ConnectPage() {
           <Breadcrumbs trail={[{ name: 'Connect', href: '/connect' }]} />
           <span className="label">Connect your agent</span>
           <h1 className="display">Keep your agent. Add the editing.</h1>
+          <ConnectNow steps="#apps" />
           <p className="lede wt-answer">
             {CONNECT_LEAD}{' '}
             <em>One address works in every app below, and your app opens the sign-in for you.</em>
           </p>
           <LiveCard />
-          <div className="cl-address">
-            <span className="label">The address</span>
-            <div className="code-line">
-              <code>{MCP_URL}</code>
-              <Copy text={MCP_URL} label="Copy" />
-            </div>
-          </div>
           <p className="wt-byline">
             Steps checked <time dateTime={CLIENTS_CHECKED}>{formatDate(CLIENTS_CHECKED)}</time>{' '}
             against each app’s own help pages
           </p>
         </section>
 
-        <section className="cell" aria-label="Pick your app">
+        <section className="cell" id="apps" aria-label="Pick your app">
           <div className="head">
             <span className="label">00 / Your app</span>
             <h2 className="lede">Which one do you use?</h2>
