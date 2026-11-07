@@ -19,10 +19,13 @@ export interface Message {
 export class Mailer {
   #key: string;
   #from: string;
+  #replyTo: string;
 
-  constructor(apiKey: string, from = `cuttingfloor <${SUPPORT_EMAIL}>`) {
+  /** Sent from and answered at support unless the server names a person (as the sequence does). */
+  constructor(apiKey: string, { from, replyTo }: { from?: string; replyTo?: string } = {}) {
     this.#key = apiKey;
-    this.#from = from;
+    this.#from = from ?? `cuttingfloor <${SUPPORT_EMAIL}>`;
+    this.#replyTo = replyTo ?? SUPPORT_EMAIL;
   }
 
   async send(message: Message): Promise<void> {
@@ -42,7 +45,7 @@ export class Mailer {
       body: JSON.stringify({
         from: this.#from,
         to: [message.to],
-        reply_to: SUPPORT_EMAIL,
+        reply_to: this.#replyTo,
         subject: message.subject,
         text,
         html: html(message),
