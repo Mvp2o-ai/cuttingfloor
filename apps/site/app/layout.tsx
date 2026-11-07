@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     type: 'website',
     url: '/',
     siteName: 'cuttingfloor',
-    title: 'cuttingfloor (Cutting Floor) — video editing, solved',
+    title: 'cuttingfloor: the video editing MCP server. Watch a free live demo',
     description: DESCRIPTION,
     images: [{ url: '/floor.jpg' }],
   },

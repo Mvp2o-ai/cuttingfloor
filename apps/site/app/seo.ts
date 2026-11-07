@@ -18,10 +18,18 @@ export const PROFILES = [
   'https://glama.ai/mcp/connectors/io.github.Mvp2o-ai/cuttingfloor',
   'https://lobehub.com/mcp/mvp2o-ai-cuttingfloor',
 ];
-export const DESCRIPTION = `Editing tools for the agent you already use. Connect Claude, ChatGPT, Codex, Cursor or Kazi to one MCP server, ${TOOL_COUNT} tools: it cuts by transcript, captions, mixes, makes graphics and exports real video, checking its work as it goes. Open source: run it yourself free, or hosted.`;
+export const DESCRIPTION = `The video editing MCP server for ChatGPT, Claude, Codex, Cursor and Kazi. Paste one MCP address and your AI agent gets ${TOOL_COUNT} editing tools: it cuts by transcript, captions, mixes, makes graphics and exports real video, checking its work as it goes. Watch a free live demo, no sign-up. Open source: run it yourself free, or hosted.`;
 
 // Questions in the words people search them with.
 export const FAQS = [
+  {
+    q: 'What is a video editing MCP server?',
+    a: `MCP (Model Context Protocol) is how AI apps such as ChatGPT and Claude connect to outside tools. cuttingfloor is an MCP server: add its address (${MCP_ADDRESS}) to your AI app as a connector, sign in, and the AI can cut, caption, mix and export your video with ${TOOL_COUNT} editing tools.`,
+  },
+  {
+    q: 'Can I try AI video editing without signing up?',
+    a: 'Yes. The live demo on the Demos page opens Kazi in your browser, free, with no sign-up and nothing to install. Kazi gives Big Buck Bunny a happy ending on cuttingfloor and plays you the finished video, each step showing as it runs. It takes a few minutes.',
+  },
   {
     q: 'Can Claude edit videos?',
     a: 'Yes, with cuttingfloor connected. Claude (web, desktop and Claude Code) calls its tools to import your footage, transcribe it, cut on words, add captions, mix the sound and export an MP4. In Claude, add it under Settings → Connectors; in Claude Code, run claude mcp add.',
@@ -29,6 +37,10 @@ export const FAQS = [
   {
     q: 'Can ChatGPT edit videos?',
     a: 'Yes. In ChatGPT, open Plugins, choose Add custom MCP server, paste the cuttingfloor address and sign in. Then ask for the cut you want, in a chat or a ChatGPT Work task.',
+  },
+  {
+    q: 'Is there a video editor app for ChatGPT?',
+    a: `Yes: cuttingfloor connects to ChatGPT as an MCP app. Open Plugins, choose Add custom MCP server, paste ${MCP_ADDRESS} and sign in. Then ask ChatGPT to cut, caption or mix your video, and it hands back a real MP4.`,
   },
   {
     q: 'How do I add a video editing MCP server to Cursor?',
