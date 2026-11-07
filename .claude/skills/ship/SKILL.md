@@ -42,7 +42,10 @@ line of the commit message and add `--quick` here: the image run skips the engin
 about 8 minutes instead of about 11. Anything that changes behaviour runs the full suite.
 
 It versions pending changesets on develop, opens the develop → main pull request, waits for its
-checks and merges it. That merge deploys everything:
+checks and merges it with a merge commit, then brings main back into develop
+(`scripts/merge-main-into-develop.sh`: a fast-forward, or a merge commit if develop moved
+meanwhile), so develop is never behind main. The back-merge is a push to develop, so develop's
+workflows may run once more on the same tree. The merge into main deploys everything:
 
 | What | How it deploys | Where to look |
 |---|---|---|
@@ -56,8 +59,8 @@ checks and merges it. That merge deploys everything:
 scripts/finish-release.sh .claude/worktrees/<topic>   # in the background; the image takes a while
 ```
 
-It waits for every run on main's head, then removes your worktree and fast-forwards the main
-checkout. On a failure it keeps the worktree and says which run failed. Report that; the
+It waits for every run on main's head, brings main into develop again if anything reached main
+since, then removes your worktree and fast-forwards the main checkout. On a failure it keeps the worktree and says which run failed. Report that; the
 release isn't done.
 
 Optional, deeper checks against production (they make and delete throwaway accounts):

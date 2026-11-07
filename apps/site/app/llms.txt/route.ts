@@ -1,5 +1,11 @@
 import { PLANS as ALL } from '@cuttingfloor/plans';
 import { IMAGE, LICENCE, LOCAL_ADDRESS, REPO_URL, SELF_HOST_STEPS } from '../../content/facts.ts';
+import {
+  DESKTOP_TOOLS,
+  TOOLKIT_HEADLINE,
+  TOOLKIT_LEDE,
+  TOOLKIT_LINE,
+} from '../../content/toolkit.ts';
 import { kaziUrl } from '../kazi.tsx';
 import { connectMarkdown } from '../lib/connect-lines.ts';
 import { CREDIT_TEXT, keysMarkdown, priceText } from '../lib/facts-markdown.ts';
@@ -19,6 +25,14 @@ export function GET() {
 > ${DESCRIPTION}
 
 cuttingfloor is video editing tools for your agent, not an editor with an AI inside. It is an open-source MCP server: your own agent (Kazi, Claude, ChatGPT, Codex, Cursor or any MCP client) calls its granular tools to import footage, transcribe it, cut on words, caption, mix to a loudness target, make graphics and voiceovers, check its work with previews and export an MP4, FCPXML, OTIO or EDL. The judgment is the agent's; cuttingfloor makes the edits and reports facts (transcripts, speech edges, frames, loudness). Connected agents find step-by-step methods with \`skills.search\` and \`skills.get\`.
+
+## ${TOOLKIT_HEADLINE}
+
+${TOOLKIT_LEDE} ${TOOLKIT_LINE}
+
+${DESKTOP_TOOLS.map((r) => `- ${r.does}: ${r.tools.map((t) => `\`${t}\``).join(', ')}`).join('\n')}
+
+Hosted video MCPs side by side, including which have their own AI inside: ${pageLink('Compare', '/compare')}
 
 ## Try it live
 

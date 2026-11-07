@@ -1380,6 +1380,21 @@ h2.lede {
   color: var(--mute);
   margin: 0 0 16px;
 }
+.toolkit-reel {
+  margin: clamp(32px, 5vw, 64px) 0 0;
+}
+.compare-table.toolkit-table caption {
+  text-align: left;
+  line-height: 1.2;
+}
+.compare-table.toolkit-table .tier {
+  font-size: clamp(20px, 1.8vw, 24px);
+  white-space: normal;
+}
+.toolkit-table code {
+  display: inline-block;
+  margin-right: 0.6em;
+}
 
 /* ---------- pricing ---------- */
 

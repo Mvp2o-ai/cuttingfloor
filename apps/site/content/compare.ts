@@ -3,7 +3,7 @@
 // "?" means we could not confirm it there, and a missing claim is one we could not check.
 
 /** The day the public docs were read. */
-export const COMPARED_ON = '2026-11-01';
+export const COMPARED_ON = '2026-11-07';
 export const AS_OF = 'As of November 2026, from public docs';
 
 // ---------- agent-facing servers and APIs ----------
@@ -11,6 +11,7 @@ export const AS_OF = 'As of November 2026, from public docs';
 export const SERVER_COLUMNS = [
   { key: 'where', label: 'Hosted or local' },
   { key: 'source', label: 'Open source' },
+  { key: 'agent', label: 'Its own AI inside' },
   { key: 'tools', label: 'Editing tools or a prompt' },
   { key: 'sees', label: 'Agent sees its result' },
   { key: 'words', label: 'Cut by words' },
@@ -40,8 +41,9 @@ export const SERVERS: ServerRow[] = [
     cells: {
       where: 'Both: hosted, or the same Docker image on your own machine',
       source: 'Yes, AGPL-3.0',
+      agent: 'No. Your agent makes every edit',
       tools:
-        'Editing tools: cut, trim, move, caption, mix, effects, export. Every edit is a new timeline you can go back to',
+        'Editing tools: cut, trim, roll, slip, slide, speed, keyframes, masks, blend modes, captions, mix, effects, motion graphics from any HTML, export. Every edit is a new timeline you can go back to',
       sees: 'Yes: a preview comes back with every edit (frames, or a waveform with loudness measured), plus qa.check for exact checks and media.seek to find a moment in plain words',
       words: 'Yes, cut by word timings',
       audio:
@@ -58,6 +60,7 @@ export const SERVERS: ServerRow[] = [
     cells: {
       where: 'Hosted (Descript sign-in)',
       source: 'No',
+      agent: 'Yes, Underlord: editing goes to it',
       tools:
         'A prompt: editing is a written request to Underlord. Import, search, publish and transcript export are direct calls',
       sees: 'Not documented. Publishing returns MP4 links',
@@ -71,20 +74,58 @@ export const SERVERS: ServerRow[] = [
   },
   {
     name: 'invideo MCP',
-    is: 'Hosted access to the invideo timeline you see live, with generation models.',
+    is: 'Hosted access to the invideo editor and its own agent, Agent Two, with generation models.',
     cells: {
-      where: 'Hosted (sign-in)',
+      where: 'Hosted (invideo sign-in)',
       source: 'No',
+      agent: 'Yes, Agent Two, in the invideo editor. The MCP also edits the timeline directly',
       tools:
-        'Editing tools on a multitrack timeline, says invideo. The full tool list is not published',
-      sees: '?',
-      words: '?',
-      audio: 'Mixing with buses and faders, and generation models (vendor claim)',
+        'Editing tools: about 30, with 148 operations inside edit_timeline (roll, slip, keyframes, masks, grade curves, track mattes, shapes, nesting)',
+      sees: 'Yes, on request: capture renders frames; check_timeline finds structural problems',
+      words: 'Transcripts through its media tool, and word-timed captions',
+      audio:
+        'Gain, pan, fades, audio effects, buses, sends and sidechain ducking, plus generation models',
       keys: 'None',
-      export: '?',
-      price: 'Credits',
+      export: 'Premiere, Final Cut and Resolve project files, and imports them back',
+      price: 'Credits for generation; timeline edits and exports are free',
     },
     pick: 'you want generated footage from many models and want to watch the agent work in the same timeline you edit.',
+  },
+  {
+    name: 'Vidova MCP',
+    is: 'Hosted access to the Vidova editor (browser, iPhone, Mac), which has its own agent.',
+    cells: {
+      where: 'Hosted (Vidova sign-in)',
+      source: 'No',
+      agent: 'Yes, a built-in agent in the editor',
+      tools:
+        'Editing tools: arrange clips, captions, titles, generation, object tracking, cutouts. The tool list is not published',
+      sees: 'Yes, frame previews',
+      words: '?',
+      audio: 'Generated voice, music and sound effects',
+      keys: 'None',
+      export: 'FCPXML and OTIO',
+      price: 'Credits',
+    },
+    pick: 'you want an editor app with its own agent that you also edit in by hand, and your agent can reach it too.',
+  },
+  {
+    name: 'CutClip MCP',
+    is: 'Hosted access to the CutClip film editor, which has its own assistant.',
+    cells: {
+      where: 'Hosted',
+      source: '?',
+      agent: 'Yes, a built-in assistant (on Claude) that edits through the same tools',
+      tools:
+        '111 tools: about 30 timeline edits (trim, split, speed, volume, transform, transitions); most plan AI films (storylines, characters, shots, generation). No captions, titles, masks or filters in its tool list',
+      sees: 'Partly: frame captures and preview renders',
+      words: 'No transcript tool in its list',
+      audio: 'Volume, generated music and voice, lip-sync',
+      keys: 'Optional: your Anthropic key for its assistant',
+      export: 'Its own project export',
+      price: 'Credit packs',
+    },
+    pick: 'you are making an AI short film from a storyline, with characters and shots generated to match.',
   },
   {
     name: 'OpusClip MCP',
@@ -92,6 +133,7 @@ export const SERVERS: ServerRow[] = [
     cells: {
       where: 'Hosted',
       source: 'No',
+      agent: 'Yes, Agent Opus',
       tools:
         'Jobs: submit a project to clip, caption and reframe, then edit one clip with a JSON edit script',
       sees: '?',
@@ -109,6 +151,7 @@ export const SERVERS: ServerRow[] = [
     cells: {
       where: 'Hosted (Kapwing sign-in)',
       source: 'No',
+      agent: 'Yes, Kai',
       tools:
         'A few direct tools: add subtitles, translate subtitles, dubbing, upload and download. A call to its AI, Kai, is planned',
       sees: 'No',
@@ -126,6 +169,7 @@ export const SERVERS: ServerRow[] = [
     cells: {
       where: 'Hosted, with an API key (no sign-in flow)',
       source: 'No',
+      agent: '?',
       tools:
         'Project settings: templates, presets, media insertions and transcript fixes before a render. Not timeline edits',
       sees: '?',
@@ -143,6 +187,7 @@ export const SERVERS: ServerRow[] = [
     cells: {
       where: 'Runs in your browser tab; the agent pairs with it through a code',
       source: '?',
+      agent: '?',
       tools:
         'Editing tools: add, split, trim, move, ripple, effects, transitions, keyframes, multicam',
       sees: 'Yes, on request: contact sheets of the timeline and media, a timeline check, loudness',
@@ -161,6 +206,7 @@ export const SERVERS: ServerRow[] = [
     cells: {
       where: 'Local: Resolve open on the same machine (most need Resolve Studio)',
       source: 'The bridges, mostly MIT. Resolve itself is closed',
+      agent: 'No (the bridges)',
       tools: 'Editing tools that mirror Resolve’s scripting API, hundreds in the largest',
       sees: 'Partly: frame exports to a file, marker thumbnails',
       words: 'Yes in the largest bridge, with optional Whisper',
@@ -177,6 +223,7 @@ export const SERVERS: ServerRow[] = [
     cells: {
       where: 'Local: the Adobe app open on the same machine',
       source: 'The bridges, MIT. The Adobe apps are closed',
+      agent: 'No (the bridges)',
       tools: 'Editing tools for Premiere (hundreds) or After Effects comps, layers and keyframes',
       sees: 'Partly: still-frame exports in Premiere. None documented for After Effects',
       words: 'Partly: transcript cleanup and caption tracks in Premiere',
@@ -193,6 +240,7 @@ export const SERVERS: ServerRow[] = [
     cells: {
       where: 'Mostly local, a few hosted',
       source: 'Mostly MIT; Kinocut is Apache-2.0',
+      agent: 'No',
       tools: 'File operations: each one writes a new file. No timeline',
       sees: 'Partly: some extract frames or storyboards',
       words: 'Mostly no; Kinocut makes Whisper subtitles',
@@ -209,6 +257,7 @@ export const SERVERS: ServerRow[] = [
     cells: {
       where: 'Hosted',
       source: 'No',
+      agent: 'No',
       tools:
         'Render: the agent writes the whole edit as JSON and gets a video back. Templates and generated assets',
       sees: 'Not documented for the agent. A preview canvas is shown to you',
@@ -226,6 +275,7 @@ export const SERVERS: ServerRow[] = [
     cells: {
       where: 'Hosted',
       source: 'No',
+      agent: 'No',
       tools: 'Render: templates and render jobs',
       sees: 'No (a free dry-run check only)',
       words: 'Not documented',
@@ -242,6 +292,7 @@ export const SERVERS: ServerRow[] = [
     cells: {
       where: 'Local command-line server that calls its cloud',
       source: '?',
+      agent: 'No',
       tools: 'Render: send a JSON movie, check it, use templates',
       sees: 'No',
       words: '?',
@@ -258,6 +309,7 @@ export const SERVERS: ServerRow[] = [
     cells: {
       where: 'Local command line and skills; a hosted MCP in beta',
       source: 'Yes, Apache-2.0 (the framework)',
+      agent: 'No',
       tools: 'Code: the agent writes the video as HTML, previews it and renders it',
       sees: 'Partly: a local preview loop',
       words: '?',
@@ -274,7 +326,7 @@ export const SERVERS: ServerRow[] = [
 export const ALSO = [
   {
     name: 'Tella',
-    is: 'A screen recorder with a hosted MCP of editing tools that checks frames of the edited video.',
+    is: 'A screen recorder with its own AI (Tella Agent) and a hosted MCP of editing tools that checks frames of the edited video.',
     pick: 'your videos are screen recordings.',
   },
   {

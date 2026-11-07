@@ -3,8 +3,10 @@
 # changelog, committed as "chore: release vX.Y.Z" in a throwaway worktree), then the develop →
 # main pull request titled "Promote develop: <summary>" is opened (or reused), its required checks
 # are awaited (not the image, which still gates the server deploy on main), and it is merged with
-# a merge commit so main and develop keep one history. On main, the release workflow tags the new
-# version and publishes the image.
+# a merge commit so main and develop keep one history. Then main is brought back into develop
+# (scripts/merge-main-into-develop.sh: a fast-forward to the promotion, or a merge when develop has
+# moved), so develop is never behind main. On main, the release workflow tags the new version and
+# publishes the image; it commits nothing, so develop has everything main does.
 #
 # --quick adds [quick] to the title, so main's image run skips the engine suite (lint, typecheck,
 # the fast tests and the smoke test still run). Only for changes to words: descriptions, hints, docs.
@@ -68,4 +70,5 @@ done
 }
 git fetch -q origin main
 echo "Promoted: main is $(git rev-parse --short origin/main)"
+"$(dirname "$0")/merge-main-into-develop.sh"
 "$(dirname "$0")/sync-main-checkout.sh"

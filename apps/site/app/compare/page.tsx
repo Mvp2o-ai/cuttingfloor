@@ -23,7 +23,7 @@ import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../shell.
 
 const TITLE = 'Compare AI video editing: MCP servers, APIs and editing apps';
 const DESCRIPTION =
-  'cuttingfloor side by side with the Descript, invideo, OpusClip, Kapwing and Submagic MCPs, Frapea, the Resolve and Premiere bridges, FFmpeg servers, Shotstack, Creatomate, JSON2Video and HyperFrames, and with CapCut, VEED and other editing apps. From public docs, November 2026.';
+  'cuttingfloor side by side with the Descript, invideo, Vidova, CutClip, OpusClip, Kapwing and Submagic MCPs, Frapea, the Resolve and Premiere bridges, FFmpeg servers, Shotstack, Creatomate, JSON2Video and HyperFrames, and with CapCut, VEED and other editing apps. From public docs, November 2026.';
 
 export const metadata: Metadata = {
   title: `${TITLE} | cuttingfloor`,
@@ -87,9 +87,10 @@ export default function Compare() {
             <div>
               <h3>An editor with an AI inside</h3>
               <p>
-                Descript (with Underlord), CapCut, VEED, Kapwing, OpusClip, invideo. You open their
-                app and their AI works in it, on their credits. When they offer agent access, it is
-                often a way to send a request to that AI.
+                Descript (with Underlord), invideo (Agent Two), Vidova, CutClip, Tella, OpusClip,
+                Kapwing, CapCut, VEED. You open their app and their AI works in it, on their
+                credits. When they offer agent access, it is a way into their app: a request to
+                their AI, or edits to a project that lives in their editor.
               </p>
             </div>
             <div className="ours">

@@ -1,5 +1,6 @@
 // Words the page is found by: the title, the FAQ and the comparison, shared by the page, its
 // structured data and llms.txt so the three never disagree. Volumes behind the phrasing: MVP-172.
+import { DESKTOP_TOOLS } from '../content/toolkit.ts';
 import { TOOL_COUNT } from '../content/tools.ts';
 import { PLANS } from './pricing.ts';
 
@@ -18,7 +19,7 @@ export const PROFILES = [
   'https://glama.ai/mcp/connectors/io.github.Mvp2o-ai/cuttingfloor',
   'https://lobehub.com/mcp/mvp2o-ai-cuttingfloor',
 ];
-export const DESCRIPTION = `The video editing MCP server for ChatGPT, Claude, Codex, Cursor and Kazi. Paste one MCP address and your AI agent gets ${TOOL_COUNT} editing tools: it cuts by transcript, captions, mixes, makes graphics and exports real video, checking its work as it goes. Watch a free live demo, no sign-up. Open source: run it yourself free, or hosted.`;
+export const DESCRIPTION = `The video editing MCP server for ChatGPT, Claude, Codex, Cursor and Kazi. The most complete video and motion graphics toolkit for your agent: paste one MCP address and your AI agent gets ${TOOL_COUNT} editing tools. It cuts by transcript, captions, mixes, makes graphics and exports real video, checking its work as it goes. Watch a free live demo, no sign-up. Open source: run it yourself free, or hosted.`;
 
 // Questions in the words people search them with.
 export const FAQS = [
@@ -53,6 +54,18 @@ export const FAQS = [
   {
     q: 'Is there a video editing API for AI agents?',
     a: `cuttingfloor is one: ${TOOL_COUNT} tools over MCP, from clip.add and caption.add to audio.set_master and export.video. Every edit returns a new timeline and a preview, so the agent sees what it did and can step back. The full list is on the features page.`,
+  },
+  {
+    q: 'Can AI edit video like CapCut or Premiere?',
+    a: `Yes, with cuttingfloor connected. Your agent gets the tools a desktop editor has: ripple, roll, slip and slide trims, speed ramps, keyframes, masks, blend modes, adjustment layers, nested sequences, colour and LUTs, green screen, captions, motion graphics and a full mix, ${TOOL_COUNT} tools in all. ChatGPT, Claude or Kazi decides the edit and makes it, one tool call at a time, and can hand the timeline to Premiere, Final Cut or Resolve.`,
+  },
+  {
+    q: 'Is there an MCP for motion graphics?',
+    a: 'Yes. cuttingfloor’s create.motion renders any animated HTML your agent writes into video, frame-exact and with transparency, so titles, lower thirds, charts and explainer slides sit over footage on the same timeline. Titles, captions, keyframes and blend modes are tools too.',
+  },
+  {
+    q: 'How is cuttingfloor different from other video MCPs?',
+    a: 'The other hosted video editing MCPs are editor apps with their own AI inside (invideo, Vidova, CutClip, Tella, OpusClip, Descript): their MCP is a way into their app. cuttingfloor has no AI of its own and no app to open. It is the editing tools, for the agent you already use, and it is open source, so you can run the same server yourself. The compare page has the details.',
   },
   {
     q: 'Is cuttingfloor an editor with an AI inside?',
@@ -150,6 +163,7 @@ export function structuredData() {
       description: DESCRIPTION,
       applicationCategory: 'MultimediaApplication',
       applicationSubCategory: 'Video editing MCP server',
+      featureList: DESKTOP_TOOLS.map((r) => `${r.does} (${r.tools.join(', ')})`),
       operatingSystem: 'Any MCP client; self-hosted with Docker',
       softwareHelp: DOCS_URL,
       offers: PLANS.filter((p) => p.amount !== undefined).map((p) => ({
