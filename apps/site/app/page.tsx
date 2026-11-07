@@ -9,6 +9,7 @@ import { Connect } from './connect.tsx';
 import { AgentDemo } from './demos/demo.tsx';
 import { TryKazi } from './kazi.tsx';
 import { LiveCard } from './live-card.tsx';
+import { McpAddress } from './mcp-address.tsx';
 import { PLANS } from './pricing.ts';
 import { Prompts } from './prompts.tsx';
 import { ALTERNATIVES, FAQS, structuredData } from './seo.ts';
@@ -89,13 +90,29 @@ export default function Home() {
           <div className="hero-row">
             <div className="rise d2">
               <p className="lede">
-                One connection.{' '}
+                One MCP connection.{' '}
                 <em>
                   Your AI assistant cuts, captions and mixes — then hands back a file a human editor
                   can finish.
                 </em>
               </p>
-              <LiveCard />
+              <div className="works-in">
+                <span className="label">An MCP server for</span>
+                <ul>
+                  {CLIENTS.map((c) => (
+                    <li key={c} className={c === 'Kazi' ? 'ours kazi-word' : undefined}>
+                      {c}
+                    </li>
+                  ))}
+                </ul>
+                <p>
+                  Add it to ChatGPT, Claude or any MCP app as a connector. Just paste this address:
+                </p>
+                <McpAddress />
+                <p>
+                  Then sign in. Steps for each app are on <a href="/connect">Connect</a>.
+                </p>
+              </div>
               <div className="actions">
                 <a className="link-big" href={SIGN_UP}>
                   Start free — 3 days
@@ -108,20 +125,8 @@ export default function Home() {
                 Open source ({LICENCE}): <a href="/self-host">run it yourself, free</a>.
               </p>
             </div>
-            <div className="rise d3 works-in">
-              <span className="label">Works in</span>
-              <ul>
-                {CLIENTS.map((c) => (
-                  <li key={c} className={c === 'Kazi' ? 'ours kazi-word' : undefined}>
-                    {c}
-                  </li>
-                ))}
-              </ul>
-              <p>Any remote MCP client</p>
-              <p>
-                Bring the agent you already use. Sign in, then add one server address; the setup for
-                each is on <a href="/connect">Connect</a>.
-              </p>
+            <div className="rise d3 hero-live">
+              <LiveCard />
             </div>
           </div>
         </section>
