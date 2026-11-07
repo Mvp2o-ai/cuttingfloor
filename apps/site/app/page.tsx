@@ -1,14 +1,10 @@
 import { FREE_CREDITS } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
-import { DEMOS } from '../content/demos.ts';
 import { LICENCE } from '../content/facts.ts';
 import { HOME_SESSION } from '../content/home-session.ts';
 import { EDITING_PAINS, type Pain } from '../content/pains.ts';
-import { TOOL_COUNT } from '../content/tools.ts';
-import { Capabilities } from './capabilities.tsx';
-import { Connect } from './connect.tsx';
+import { DESKTOP_TOOLS, TOOLKIT_HEADLINE, TOOLKIT_LEDE, TOOLKIT_LINE } from '../content/toolkit.ts';
 import { ConnectNow } from './connect-now.tsx';
-import { AgentDemo } from './demos/demo.tsx';
 import { TryKazi } from './kazi.tsx';
 import { LiveCard } from './live-card.tsx';
 import { PLANS } from './pricing.ts';
@@ -138,47 +134,58 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="cell" id="ai-native" aria-label="Tools for your agent">
+        <section className="cell" id="toolkit" aria-label="The toolkit">
           <div className="head">
-            <span className="label">02 / AI native</span>
+            <span className="label">02 / The toolkit</span>
             <div>
-              <h2 className="display">Not an editor with an agent inside.</h2>
+              <h2 className="display">{TOOLKIT_HEADLINE}</h2>
               <p className="compare-lede">
-                Other AI editors put their own assistant in their app and hand it your prompt.
-                cuttingfloor turns that around: it is the editing tools, served over MCP, for the
-                agent you already chose. Your agent brings the judgment of a professional editor and
-                cinematographer; cuttingfloor gives it real cuts, real sound and real pictures to
-                check. You keep your agent, your history and your habits.{' '}
-                <a href="/compare">Compare the two kinds</a>.
+                {TOOLKIT_LEDE} <strong>{TOOLKIT_LINE}</strong>
               </p>
             </div>
           </div>
-          <ul className="ledger">
-            <li>
-              <span className="n">01</span>
-              <h3>Real editing verbs.</h3>
+          <table className="compare-table toolkit-table">
+            <caption className="label">In a desktop editor, and the tools your agent calls</caption>
+            <thead>
+              <tr>
+                <th scope="col">What you’d reach for</th>
+                <th scope="col">Tools</th>
+              </tr>
+            </thead>
+            <tbody>
+              {DESKTOP_TOOLS.map((r) => (
+                <tr key={r.does}>
+                  <th scope="row" className="tier">
+                    {r.does}
+                  </th>
+                  <td>
+                    {r.tools.map((t) => (
+                      <code key={t}>{t} </code>
+                    ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <figure className="reel toolkit-reel">
+            <div>
+              <video src="/reel.mp4" poster="/reel.jpg" muted loop playsInline autoPlay />
+              <figcaption className="label">
+                <span>infinite agentic memory</span>
+                <span className="tc">00:00:13:00</span>
+              </figcaption>
+            </div>
+            <div>
               <p>
-                Cut, trim, split, speed, caption, mix, grade, animate: each a tool your agent calls,
-                not a prompt sent to someone else’s AI.
+                Made here: a 24-minute explainer, every slide drawn with create.motion, every cut
+                placed by an agent. This is thirteen seconds of it.
               </p>
-            </li>
-            <li>
-              <span className="n">02</span>
-              <h3>It checks its own work.</h3>
-              <p>
-                A preview comes back with every edit, plus exact checks for gaps, black frames,
-                clipping and sync, so your agent sees what it made before you do.
+              <p className="wt-links">
+                <a href="/features">Every tool</a> ·{' '}
+                <a href="/compare">How the other video MCPs compare</a>
               </p>
-            </li>
-            <li>
-              <span className="n">03</span>
-              <h3>The edit stays yours.</h3>
-              <p>
-                Every edit is a timeline you can step back to, or open in your own editor as FCPXML,
-                OTIO or EDL. Open source ({LICENCE}): run it yourself, or let us host it.
-              </p>
-            </li>
-          </ul>
+            </div>
+          </figure>
         </section>
 
         <section className="cell" id={SESSION_ID} aria-label="A session">
@@ -195,25 +202,9 @@ export default function Home() {
           />
         </section>
 
-        {DEMOS[0] && (
-          <section className="cell" aria-label="Your agent, editing">
-            <div className="head">
-              <span className="label">04 / In your agent</span>
-              <h2 className="lede">
-                Plug cuttingfloor into the agent you already use. <em>It becomes your editor.</em>
-              </h2>
-            </div>
-            <AgentDemo demo={DEMOS[0]} />
-            <p className="wt-links">
-              <a href={`/demos/${DEMOS[0].slug}`}>Watch the before and after</a> ·{' '}
-              <a href="/demos">All demos</a>
-            </p>
-          </section>
-        )}
-
         <section className="cell" id="problems" aria-label="Problems it solves">
           <div className="head">
-            <span className="label">05 / Solved</span>
+            <span className="label">04 / Solved</span>
             <div>
               <h2 className="display">The jobs that eat your week.</h2>
               <p className="compare-lede">
@@ -222,7 +213,7 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <PainTable caption="The ten slowest editing jobs" rows={EDITING_PAINS} />
+          <PainTable caption="Five of the slowest editing jobs" rows={EDITING_PAINS.slice(0, 5)} />
           <p className="wt-links">
             <a href="/features">Everything it can do</a> ·{' '}
             <a href="/compare">Where other AI editors go wrong</a>
@@ -231,7 +222,7 @@ export default function Home() {
 
         <section className="cell" aria-label="Things to ask for">
           <div className="head">
-            <span className="label">06 / Ask for</span>
+            <span className="label">05 / Ask for</span>
             <div>
               <h2 className="display">Say it like you’d say it to an editor.</h2>
               <p className="compare-lede">
@@ -243,87 +234,9 @@ export default function Home() {
           <Prompts />
         </section>
 
-        <section className="cell paper marks" id="how">
-          <span className="mark-b" />
-          <span className="label">07 / What it does</span>
-          <h2 className="display big-stat">
-            {TOOL_COUNT} tools.
-            <br />
-            No timeline.
-            <small>
-              Granular tools an agent composes, and a skills library that shows it how to chain
-              them.
-            </small>
-          </h2>
-          <Capabilities />
-        </section>
-
-        <section className="cell" id="start">
-          <div className="head">
-            <span className="label">08 / Start</span>
-            <h2 className="display">Three steps.</h2>
-          </div>
-          <ol className="ledger">
-            <li>
-              <span className="n">01</span>
-              <h3>Connect your agent.</h3>
-              <p>
-                Add <code>https://api.cuttingfloor.ai/mcp</code> as an MCP server in Kazi, Claude,
-                ChatGPT, Codex or Cursor. Your client opens a sign-in page the first time. Or{' '}
-                <a href="/self-host">run it yourself</a>.
-              </p>
-            </li>
-            <li>
-              <span className="n">02</span>
-              <h3>Hand it footage.</h3>
-              <p>
-                A link to a file, or nothing at all: it can make titles, graphics, stills and a
-                voiceover from scratch.
-              </p>
-            </li>
-            <li>
-              <span className="n">03</span>
-              <h3>Say what you want.</h3>
-              <p>
-                “A 30-second cut for LinkedIn, captions, logo at the end.” It edits, checks its work
-                and gives you a download link.
-              </p>
-            </li>
-          </ol>
-          <div className="start-connect">
-            <p className="label">Your agent’s setup</p>
-            <Connect />
-          </div>
-        </section>
-
-        <section className="cell">
-          <figure className="reel" style={{ margin: 0 }}>
-            <div>
-              <video src="/reel.mp4" poster="/reel.jpg" muted loop playsInline autoPlay />
-              <figcaption className="label">
-                <span>infinite agentic memory</span>
-                <span className="tc">00:00:13:00</span>
-              </figcaption>
-            </div>
-            <div>
-              <span className="label">09 / Made here</span>
-              <h2
-                className="display"
-                style={{ fontSize: 'clamp(40px, 5.4vw, 80px)', margin: '16px 0 20px' }}
-              >
-                Graphics, cuts and sound, from one conversation.
-              </h2>
-              <p>
-                A 24-minute explainer: every slide drawn with create.motion, every cut placed by an
-                agent. This is thirteen seconds of it.
-              </p>
-            </div>
-          </figure>
-        </section>
-
         <section className="cell" id="pricing">
           <div className="head">
-            <span className="label">10 / Pricing</span>
+            <span className="label">06 / Pricing</span>
             <div>
               <h2 className="display">Every tool on every plan. Start free.</h2>
               <p className="compare-lede">
@@ -332,56 +245,14 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <table className="price-table">
-            <thead>
-              <tr>
-                <th>Plan</th>
-                <th>Price</th>
-                <th>Included</th>
-                <th>Runs</th>
-                <th>For</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="tier">Self-hosted</td>
-                <td className="amount">
-                  <a href="/self-host">Free</a>
-                </td>
-                <td>No minute limits</td>
-                <td className="over">Your machine, the same image</td>
-                <td className="note">Open source ({LICENCE}). Bring your own keys where needed.</td>
-              </tr>
-              {PLANS.map((p) => (
-                <tr key={p.name} className={p.pick ? 'pick' : ''}>
-                  <td className="tier">{p.name}</td>
-                  <td className="amount">
-                    {p.amount === undefined ? (
-                      <a href={p.href}>{p.price}</a>
-                    ) : (
-                      <>
-                        {p.price} <small>{p.per}</small>
-                      </>
-                    )}
-                  </td>
-                  <td>{p.included}</td>
-                  <td className="over">{p.limits}</td>
-                  <td className="note">{p.note}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="price-foot">
-            A credit is a minute of our servers working for you: an export, a transcript, graphics,
-            a voiceover. Editing the timeline costs nothing. When credits run out, work waits; you
-            are never charged more than the plan price.{' '}
-            <a href="/pricing#every-plan">What every plan includes</a>.
+          <p className="wt-links">
+            <a href="/pricing">See the plans</a> · <a href="/self-host">Run it yourself</a>
           </p>
         </section>
 
         <section className="cell">
           <div className="head">
-            <span className="label">11 / Questions</span>
+            <span className="label">07 / Questions</span>
             <h2 className="display">Asked.</h2>
           </div>
           <div className="faq">

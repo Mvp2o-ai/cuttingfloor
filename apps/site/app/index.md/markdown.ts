@@ -2,6 +2,12 @@ import { CAPS } from '../../content/capabilities.ts';
 import { DEMOS, lengths } from '../../content/demos.ts';
 import { LICENCE } from '../../content/facts.ts';
 import { AGENT_PAINS, EDITING_PAINS, type Pain } from '../../content/pains.ts';
+import {
+  DESKTOP_TOOLS,
+  TOOLKIT_HEADLINE,
+  TOOLKIT_LEDE,
+  TOOLKIT_LINE,
+} from '../../content/toolkit.ts';
 import { connectMarkdown } from '../lib/connect-lines.ts';
 import { CREDIT_TEXT, keysMarkdown, plansTable, selfHostMarkdown } from '../lib/facts-markdown.ts';
 import { abs, doc, list, pageLink, table } from '../lib/markdown.ts';
@@ -27,7 +33,16 @@ export function markdown(): string {
 
 cuttingfloor is an open-source MCP server of video editing tools. Connect the agent you already use (Kazi, Claude, Claude Cowork, Claude Code, ChatGPT, ChatGPT Work, Codex or Cursor) and say what you want cut. It imports your footage, reads the transcript, trims, captions, mixes, makes the graphics and hands back a finished file.
 
-It is not an editor with an AI inside. Other AI editors put their own assistant in their app and hand it your prompt; cuttingfloor is the editing tools, served over MCP, for the agent you already chose. Your agent brings the judgment; cuttingfloor gives it real cuts, real sound and real pictures to check.
+## ${TOOLKIT_HEADLINE}
+
+${TOOLKIT_LEDE} ${TOOLKIT_LINE}
+
+${table(
+  ['In a desktop editor', 'The tools your agent calls'],
+  DESKTOP_TOOLS.map((r) => [r.does, r.tools.map((t) => `\`${t}\``).join(', ')]),
+)}
+
+How the other hosted video MCPs compare (most are editor apps with their own AI inside): ${pageLink('Compare', '/compare')}
 
 - **Real editing verbs.** Cut, trim, split, speed, caption, mix, grade, animate: each a tool your agent calls.
 - **It checks its own work.** A preview comes back with every edit, plus exact checks for gaps, black frames, clipping and sync.
