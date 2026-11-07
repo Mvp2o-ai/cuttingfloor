@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.36.1
+
+### Patch Changes
+
+- fa07a4d: Account email (credits running low, a failed payment) comes from the same person as the sign-up emails when `CUTTINGFLOOR_EMAIL_FROM` and `CUTTINGFLOOR_EMAIL_REPLY_TO` are set, instead of support@.
+
 ## 0.36.0
 
 ### Minor Changes

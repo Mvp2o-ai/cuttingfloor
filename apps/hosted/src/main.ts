@@ -138,7 +138,19 @@ const lifecycle =
               },
             }),
         ...(scriptKeys ? { keys: scriptKeys } : {}),
-        ...(process.env.RESEND_API_KEY ? { mailer: new Mailer(process.env.RESEND_API_KEY) } : {}),
+        ...(process.env.RESEND_API_KEY
+          ? {
+              // Account email comes from the same person as the sign-up sequence, when one is set.
+              mailer: new Mailer(process.env.RESEND_API_KEY, {
+                ...(process.env.CUTTINGFLOOR_EMAIL_FROM
+                  ? { from: process.env.CUTTINGFLOOR_EMAIL_FROM }
+                  : {}),
+                ...(process.env.CUTTINGFLOOR_EMAIL_REPLY_TO
+                  ? { replyTo: process.env.CUTTINGFLOOR_EMAIL_REPLY_TO }
+                  : {}),
+              }),
+            }
+          : {}),
         ...(process.env.STRIPE_WEBHOOK_SECRET
           ? { stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET }
           : {}),
