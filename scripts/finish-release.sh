@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Finish a release after scripts/promote-develop.sh: wait for every workflow run on main's head
-# (CI, Image, CodeQL, Release), then remove the given worktree and sync the main checkout. On a
-# failed run it stops, prints which, and keeps the worktree. The image build takes a while; run
-# this in the background.
+# (CI, Image, CodeQL, Release), bring main back into develop if anything reached main since the
+# promotion, then remove the given worktree and sync the main checkout. On a failed run it stops,
+# prints which, and keeps the worktree. The image build takes a while; run this in the background.
 #
 # Usage: scripts/finish-release.sh [worktree-path]
 set -euo pipefail
@@ -24,6 +24,8 @@ if grep -qv '|completed|success$' <<<"$runs"; then
   echo "A run on ${sha:0:8} did not succeed. The worktree is kept." >&2
   exit 1
 fi
+
+"$(dirname "$0")/merge-main-into-develop.sh"
 
 if [ -n "$worktree" ]; then
   git fetch -q origin develop
