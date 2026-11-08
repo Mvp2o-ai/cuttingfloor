@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@cuttingfloor/plans": "workspace:*",
+    "@cuttingfloor/schema": "workspace:*",
     "@cuttingfloor/skills": "workspace:*",
     "@vercel/analytics": "2.0.1",
     "@workos-inc/authkit-nextjs": "4.4.0",

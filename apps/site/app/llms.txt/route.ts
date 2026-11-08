@@ -1,4 +1,4 @@
-import { PLANS as ALL } from '@cuttingfloor/plans';
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { IMAGE, LICENCE, LOCAL_ADDRESS, REPO_URL, SELF_HOST_STEPS } from '../../content/facts.ts';
 import {
   DESKTOP_TOOLS,
@@ -40,7 +40,7 @@ A free live demo, no sign-up: ${kaziUrl('demos')} opens Kazi in the browser, whi
 
 ## Run it
 
-- Hosted: \`${MCP_ADDRESS}\` (Streamable HTTP, OAuth sign-in). Start with ${ALL.free.limits.renderMinutes} free credits: no card, no time limit, every tool.
+- Hosted: \`${MCP_ADDRESS}\` (Streamable HTTP, OAuth sign-in). Start with ${FREE_CREDITS} free credits: no card, no time limit, every tool. Then pay as you go.
 - Self-hosted: free and open source (${LICENCE}), one Docker image (\`${IMAGE}\`): \`${SELF_HOST_STEPS.join(' && ')}\`, then connect to \`${LOCAL_ADDRESS}\`. ${pageLink('Self-host', '/self-host')}
 
 ## Pricing

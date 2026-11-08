@@ -87,7 +87,7 @@ ${CAPS.map(
 
 ${plansTable()}
 
-${CREDIT_TEXT} Yearly plans get two months free. Payments by Stripe; cancel any time.
+${CREDIT_TEXT} Payments by Stripe; nothing renews.
 
 Full pricing: ${pageLink('Pricing', '/pricing')}
 

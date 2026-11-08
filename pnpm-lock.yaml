@@ -96,6 +96,9 @@ importers:
       '@cuttingfloor/plans':
         specifier: workspace:*
         version: link:../../packages/plans
+      '@cuttingfloor/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
       '@cuttingfloor/skills':
         specifier: workspace:*
         version: link:../../packages/skills

@@ -1,4 +1,11 @@
-import { PRICED, SUPPORT_EMAIL } from '@cuttingfloor/plans';
+import {
+  FREE_CREDITS,
+  LOW_CREDITS,
+  PACKS,
+  PLANS,
+  type PlanId,
+  SUPPORT_EMAIL,
+} from '@cuttingfloor/plans';
 import {
   IMAGE,
   KEYS,
@@ -17,16 +24,14 @@ export const dynamic = 'force-static';
 
 export function GET() {
   const body = {
-    schema: 'cuttingfloor.pricing/2',
+    schema: 'cuttingfloor.pricing/3',
     url: `${SITE_URL}/pricing`,
     markdown: `${SITE_URL}/pricing.md`,
     currency: 'USD',
     units: {
-      price_month: 'US dollars a month',
-      price_year: 'US dollars a year (ten months)',
+      price: 'US dollars, paid once for a pack; nothing renews',
       credits:
-        'one credit is one minute of a job running (export, import, transcript, graphics, voiceover, cutout), per period',
-      period: 'once (free credits, no time limit), or a month',
+        'one credit is one minute of a job running (export, import, transcript, graphics, voiceover, cutout); bought credits never expire',
       jobs: 'jobs that run at once; more wait their turn',
       short_side_px: 'largest export, as its short side in pixels (1080 is 1080p, 2160 is 4K)',
       storage_gb: 'gigabytes held on the server at once',
@@ -35,9 +40,14 @@ export function GET() {
     },
     credit: CREDIT,
     every_plan: EVERY_PLAN,
-    overage: 'none: at the limit new jobs wait; editing and previews keep working',
+    model: 'pay as you go: free credits to start, then credit packs; no subscription',
+    free_credits: FREE_CREDITS,
+    packs: PACKS.map((p) => ({ id: p.id, price: p.price, credits: p.credits })),
+    automatic_top_up: `optional: a chosen pack is bought on the saved card when fewer than ${LOW_CREDITS} credits are left`,
+    low_credit_email_below: LOW_CREDITS,
+    overage: 'none: at zero new jobs wait until a top-up; editing and previews keep working',
     self_hosted: {
-      price_month: 0,
+      price: 0,
       licence: LICENCE,
       image: IMAGE,
       same_image_as_hosted: true,
@@ -47,26 +57,30 @@ export function GET() {
       address: LOCAL_ADDRESS,
       docs: `${SITE_URL}/self-host`,
     },
-    plans: PRICED.map((p) => ({
-      id: p.id,
-      name: p.name,
-      price_month: p.id === 'free' ? 0 : (p.price?.month ?? null),
-      price_year: p.price?.year ?? null,
-      sold: p.sold === 'contact' ? `contact ${SUPPORT_EMAIL}` : 'self-serve',
-      ...(p.id === 'free' ? { card_required: false, expires: false } : {}),
-      period: p.id === 'free' ? 'once' : 'month',
-      // Enterprise limits are agreed on a call, so it publishes none.
-      ...(p.sold === 'contact'
-        ? { limits: 'agreed with us' }
-        : {
-            credits: p.limits.renderMinutes,
-            jobs: p.limits.jobs,
-            short_side_px: p.limits.shortSide,
-            storage_gb: p.limits.storageGb,
-            judgments_per_day: p.limits.judgmentsPerDay,
-          }),
-      note: p.note,
-    })),
+    plans: (['free', 'credits', 'enterprise'] as PlanId[])
+      .map((id) => PLANS[id])
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        sold:
+          p.sold === 'contact'
+            ? `contact ${SUPPORT_EMAIL}`
+            : p.id === 'free'
+              ? 'every new account'
+              : 'credit packs, self-serve',
+        ...(p.id === 'free' ? { credits: FREE_CREDITS, card_required: false, expires: false } : {}),
+        ...(p.id === 'credits' ? { credits: 'as bought', expires: false } : {}),
+        // Enterprise limits are agreed on a call, so it publishes none.
+        ...(p.sold === 'contact'
+          ? { limits: 'agreed with us' }
+          : {
+              jobs: p.limits.jobs,
+              short_side_px: p.limits.shortSide,
+              storage_gb: p.limits.storageGb,
+              judgments_per_day: p.limits.judgmentsPerDay,
+            }),
+        note: p.note,
+      })),
     keys: KEYS.map((k) => ({
       feature: k.feature,
       tools: k.tools,

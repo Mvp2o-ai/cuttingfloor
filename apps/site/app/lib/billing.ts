@@ -1,41 +1,13 @@
 import 'server-only';
-import {
-  fromLookupKey,
-  GRACE_DAYS,
-  type Interval,
-  lookupKey,
-  PLANS,
-  type PlanId,
-  taggedPlan,
-} from '@cuttingfloor/plans';
+import { type Pack, packOf } from '@cuttingfloor/plans';
+import type { AccountGetResult } from '@cuttingfloor/schema';
 
-// The account's plan, without a database: WorkOS holds the user (when they joined, a `plan` tag
-// for given plans, and `stripe_customer_id`), Stripe holds the subscription. The MCP server
-// decides access the same way from the same plans file (apps/hosted/src/access.ts), and counts
-// the render minutes, which the account page reads from it.
+// The account's credits, without a database: WorkOS holds the user (a `plan` tag for given plans,
+// `stripe_customer_id`, and `refill_pack` for automatic top-up), Stripe holds the packs bought.
+// The MCP server works out the balance from both and the meter (apps/hosted/src/access.ts); this
+// page reads it from there, as account.get gives it, so the two never disagree.
 
-const PAYING = new Set(['active', 'trialing', 'past_due']);
-
-export type Status =
-  | { kind: 'given'; plan: PlanId }
-  | {
-      kind: 'subscribed';
-      plan: PlanId;
-      interval: Interval;
-      status: string;
-      renews: string | null;
-      cancels: boolean;
-      /** A failed payment's last day of access. */
-      graceEnds: string | null;
-    }
-  | { kind: 'free' }
-  | { kind: 'lapsed'; ended: string };
-
-export type Usage = {
-  used_minutes: number;
-  included_minutes: number | null;
-  period: { start: string; end: string };
-};
+export type Account = AccountGetResult;
 
 function env(name: string): string {
   const value = process.env[name];
@@ -58,12 +30,17 @@ export async function workos(path: string, init: { method?: string; body?: unkno
   return json;
 }
 
-export async function stripe(path: string, body?: Record<string, string>) {
+export async function stripe(
+  path: string,
+  body?: Record<string, string>,
+  headers: Record<string, string> = {},
+) {
   const res = await fetch(`https://api.stripe.com${path}`, {
     method: body ? 'POST' : 'GET',
     headers: {
       authorization: `Bearer ${env('STRIPE_SECRET_KEY')}`,
       ...(body ? { 'content-type': 'application/x-www-form-urlencoded' } : {}),
+      ...headers,
     },
     ...(body ? { body: new URLSearchParams(body) } : {}),
     cache: 'no-store',
@@ -73,89 +50,27 @@ export async function stripe(path: string, body?: Record<string, string>) {
   return json;
 }
 
-type Sub = {
-  status: string;
-  cancel_at_period_end: boolean;
-  current_period_start?: number;
-  items: {
-    data: {
-      current_period_start?: number;
-      current_period_end?: number;
-      price: { lookup_key: string | null };
-    }[];
-  };
-};
-
-export type Account = { status: Status; metadata: Record<string, string> };
-
-export async function accountOf(userId: string): Promise<Account> {
-  const user = await workos(`/user_management/users/${encodeURIComponent(userId)}`);
-  const metadata = (user.metadata ?? {}) as Record<string, string>;
-  return { status: await statusFrom(user, metadata), metadata };
-}
-
-export async function statusOf(userId: string): Promise<Status> {
-  return (await accountOf(userId)).status;
-}
-
-async function statusFrom(
-  user: Record<string, unknown>,
-  metadata: Record<string, string>,
-): Promise<Status> {
-  const tagged = taggedPlan(metadata.plan);
-  if (tagged) return { kind: 'given', plan: tagged };
-
-  let lapsed: string | undefined;
-  if (metadata.stripe_customer_id) {
-    const subs = await stripe(
-      `/v1/subscriptions?customer=${encodeURIComponent(metadata.stripe_customer_id)}&status=all&limit=20`,
-    );
-    // As the server decides: the first paying subscription not past its grace days counts.
-    for (const sub of subs.data as Sub[]) {
-      if (!PAYING.has(sub.status)) continue;
-      const item = sub.items.data[0];
-      const named = fromLookupKey(item?.price.lookup_key) ?? { plan: 'pro', interval: 'month' };
-      const start = (item?.current_period_start ?? sub.current_period_start ?? 0) * 1000;
-      const grace = start + GRACE_DAYS * 86_400_000;
-      if (sub.status === 'past_due' && Date.now() >= grace) {
-        lapsed = new Date(grace).toISOString();
-        continue;
-      }
-      return {
-        kind: 'subscribed',
-        plan: named.plan,
-        interval: named.interval,
-        status: sub.status,
-        renews: item?.current_period_end
-          ? new Date(item.current_period_end * 1000).toISOString()
-          : null,
-        cancels: sub.cancel_at_period_end,
-        graceEnds: sub.status === 'past_due' ? new Date(grace).toISOString() : null,
-      };
-    }
-  }
-  if (lapsed) return { kind: 'lapsed', ended: lapsed };
-
-  return { kind: 'free' };
-}
-
 /**
- * Credits (render minutes) used this period, from the MCP server that counts them. Undefined when it can't
- * say (not configured, or unreachable): the page then leaves the meter out rather than guess.
+ * The account's plan and credits, from the MCP server that counts them. Undefined when it can't
+ * say (not configured, unreachable, or the email isn't verified yet): the page then leaves the
+ * credits out rather than guess. `fresh` rereads it after a change made here.
  */
-export async function usageOf(userId: string): Promise<Usage | undefined> {
+export async function accountOf(userId: string, fresh = false): Promise<Account | undefined> {
   const key = process.env.CUTTINGFLOOR_ACCOUNT_KEY;
   const server = process.env.CUTTINGFLOOR_SERVER_URL ?? 'https://api.cuttingfloor.ai';
   if (!key) return undefined;
   try {
-    const res = await fetch(`${server}/account/usage?user=${encodeURIComponent(userId)}`, {
-      headers: { authorization: `Bearer ${key}` },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(5000),
-    });
+    const res = await fetch(
+      `${server}/account/usage?user=${encodeURIComponent(userId)}${fresh ? '&fresh=1' : ''}`,
+      {
+        headers: { authorization: `Bearer ${key}` },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(5000),
+      },
+    );
     if (!res.ok) return undefined;
-    const body = (await res.json()) as Usage & { allowed: boolean };
-    return body.allowed ? body : undefined;
+    const body = (await res.json()) as { allowed: boolean; account?: Account };
+    return body.allowed ? body.account : undefined;
   } catch {
     return undefined;
   }
@@ -177,21 +92,78 @@ export async function customerFor(userId: string): Promise<string> {
   return id;
 }
 
-/** Merges fields into the user's WorkOS metadata. */
+/** Merges fields into the user's WorkOS metadata; an empty value removes the field. */
 export async function setMetadata(userId: string, patch: Record<string, string>): Promise<void> {
   const path = `/user_management/users/${encodeURIComponent(userId)}`;
   const user = await workos(path);
-  const metadata = (user.metadata ?? {}) as Record<string, string>;
-  await workos(path, { method: 'PUT', body: { metadata: { ...metadata, ...patch } } });
+  const metadata = { ...((user.metadata ?? {}) as Record<string, string>), ...patch };
+  for (const [k, v] of Object.entries(metadata)) if (v === '') delete metadata[k];
+  await workos(path, { method: 'PUT', body: { metadata } });
 }
 
-/** The Stripe price for a plan sold on the account page. */
-export async function priceFor(key: string): Promise<string> {
-  const named = fromLookupKey(key);
-  if (!named || PLANS[named.plan].sold !== 'self') throw new Error('unknown plan');
-  const lookup = lookupKey(named.plan, named.interval);
-  const prices = await stripe(`/v1/prices?active=true&lookup_keys[]=${lookup}`);
+/** The pack a form names, or an error for one that isn't ours. */
+export function packFor(id: string): Pack {
+  const pack = packOf(id);
+  if (!pack) throw new Error('unknown pack');
+  return pack;
+}
+
+/** The Stripe price for a pack, by its lookup key. */
+export async function priceFor(pack: Pack): Promise<string> {
+  const prices = await stripe(`/v1/prices?active=true&lookup_keys[]=${pack.id}`);
   const price = (prices.data as { id: string }[])[0];
-  if (!price) throw new Error(`no price ${lookup}`);
+  if (!price) throw new Error(`no price ${pack.id}`);
   return price.id;
+}
+
+/** What a payment for a pack carries: the access check counts payments with these. */
+export function packMetadata(pack: Pack, userId: string, prefix: string): Record<string, string> {
+  return {
+    [`${prefix}[app]`]: 'cuttingfloor',
+    [`${prefix}[credits]`]: String(pack.credits),
+    [`${prefix}[pack]`]: pack.id,
+    [`${prefix}[workos_user_id]`]: userId,
+  };
+}
+
+/** The customer's most recently saved card, if any. */
+export async function savedCard(
+  customer: string,
+): Promise<{ id: string; brand: string; last4: string } | undefined> {
+  const list = await stripe(
+    `/v1/payment_methods?customer=${encodeURIComponent(customer)}&type=card&limit=1`,
+  );
+  const pm = (list.data as { id: string; card?: { brand?: string; last4?: string } }[])[0];
+  return pm
+    ? { id: pm.id, brand: pm.card?.brand ?? 'card', last4: pm.card?.last4 ?? '' }
+    : undefined;
+}
+
+/**
+ * One click: charges a pack to the saved card with the person here. True when it went through;
+ * false when the card needs them (a bank check, a decline), and Checkout takes over.
+ */
+export async function buyOnSavedCard(userId: string, customer: string, pack: Pack, nonce: string) {
+  const card = await savedCard(customer);
+  if (!card) return false;
+  try {
+    const pi = await stripe(
+      '/v1/payment_intents',
+      {
+        amount: String(Math.round(pack.price * 100)),
+        currency: 'usd',
+        customer,
+        payment_method: card.id,
+        confirm: 'true',
+        off_session: 'true',
+        description: `cuttingfloor: ${pack.credits} credits`,
+        ...packMetadata(pack, userId, 'metadata'),
+        'metadata[reason]': 'one click',
+      },
+      { 'idempotency-key': `${userId}:buy:${nonce}` },
+    );
+    return pi.status === 'succeeded';
+  } catch {
+    return false;
+  }
 }

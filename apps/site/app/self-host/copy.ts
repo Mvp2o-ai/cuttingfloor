@@ -92,7 +92,7 @@ export const COMPARE: { row: string; hosted: string; self: string }[] = [
   },
   {
     row: 'Cost',
-    hosted: `${FREE_CREDITS} free credits to start, then a monthly plan. Editing is free; a credit is a minute of a job running.`,
+    hosted: `${FREE_CREDITS} free credits to start, then credit packs that never expire, no subscription. Editing is free; a credit is a minute of a job running.`,
     self: 'Free. You pay for your own computer, and for any key you choose to add.',
   },
 ];

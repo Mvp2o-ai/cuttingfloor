@@ -57,7 +57,10 @@ export const AGENTS: Agent[] = [
         q: 'What can Kazi do to my video?',
         a: 'The same as any agent on cuttingfloor: cut by what you said, remove pauses and restarts, cut to the beat, add captions and titles, music and voiceover, remove a background, steady shaky footage, and export for Reels, TikTok, Shorts or YouTube.',
       },
-      { q: 'What does it cost?', a: `${TRIAL} After that, plans are on the pricing page.` },
+      {
+        q: 'What does it cost?',
+        a: `${TRIAL} After that, pay as you go: credit packs are on the pricing page.`,
+      },
     ],
   },
   {
@@ -89,7 +92,10 @@ export const AGENTS: Agent[] = [
         q: 'Can Claude add captions to a video?',
         a: 'Yes. It transcribes your video with the time of every word, then adds captions that can highlight each word as you say it. It can also hand you the captions as an SRT or VTT file.',
       },
-      { q: 'What does it cost?', a: `${TRIAL} After that, plans are on the pricing page.` },
+      {
+        q: 'What does it cost?',
+        a: `${TRIAL} After that, pay as you go: credit packs are on the pricing page.`,
+      },
     ],
   },
   {
@@ -121,7 +127,10 @@ export const AGENTS: Agent[] = [
         q: 'Does it work in the ChatGPT app on my phone?',
         a: 'Yes, once it’s added. You add plugins on the web or the desktop app, and they work on your phone too.',
       },
-      { q: 'What does it cost?', a: `${TRIAL} After that, plans are on the pricing page.` },
+      {
+        q: 'What does it cost?',
+        a: `${TRIAL} After that, pay as you go: credit packs are on the pricing page.`,
+      },
     ],
   },
 ];

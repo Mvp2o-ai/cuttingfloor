@@ -7,14 +7,11 @@ import { DESKTOP_TOOLS, TOOLKIT_HEADLINE, TOOLKIT_LEDE, TOOLKIT_LINE } from '../
 import { ConnectNow } from './connect-now.tsx';
 import { TryKazi } from './kazi.tsx';
 import { LiveCard } from './live-card.tsx';
-import { PLANS } from './pricing.ts';
+import { FROM_PACK } from './pricing.ts';
 import { Prompts } from './prompts.tsx';
 import { FAQS, structuredData } from './seo.ts';
 import { Session } from './session/session.tsx';
 import { Check, Footer, JsonLd, Nav, SIGN_UP } from './shell.tsx';
-
-// The cheapest paid plan, for the pricing line.
-const FROM_PRICE = `$${Math.min(...PLANS.flatMap((p) => (p.amount ? [p.amount] : [])))}`;
 
 // The home page's Markdown version is /index.md; layout.tsx has the rest of its metadata.
 export const metadata: Metadata = {
@@ -238,15 +235,16 @@ export default function Home() {
           <div className="head">
             <span className="label">06 / Pricing</span>
             <div>
-              <h2 className="display">Every tool on every plan. Start free.</h2>
+              <h2 className="display">Pay as you go. Start free.</h2>
               <p className="compare-lede">
-                {FREE_CREDITS} free credits, no card, no time limit. Then plans from {FROM_PRICE} a
-                month. Run it yourself and it is all free.
+                {FREE_CREDITS} free credits, no card. Then buy credits when you need them, from{' '}
+                {FROM_PACK}: they never expire, and there is no subscription. Run it yourself and it
+                is all free.
               </p>
             </div>
           </div>
           <p className="wt-links">
-            <a href="/pricing">See the plans</a> · <a href="/self-host">Run it yourself</a>
+            <a href="/pricing">See the prices</a> · <a href="/self-host">Run it yourself</a>
           </p>
         </section>
 
