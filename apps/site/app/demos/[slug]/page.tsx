@@ -14,6 +14,7 @@ import { AgentBlock } from '../../agents/block.tsx';
 import { demoPlace, TryKazi } from '../../kazi.tsx';
 import { LiveCard } from '../../live-card.tsx';
 import { Breadcrumbs, Footer, JsonLd, Nav } from '../../shell.tsx';
+import { AddToYourApp } from '../add.tsx';
 import { AgentDemo } from '../demo.tsx';
 import { BeforeAfter } from '../pair.tsx';
 import { Seek } from '../seek.tsx';
@@ -107,6 +108,8 @@ export default async function DemoPage({ params }: Props) {
             </nav>
           </div>
         </section>
+
+        <AddToYourApp />
 
         <section className="cell dm-act" id="before">
           <div className="head">

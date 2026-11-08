@@ -214,7 +214,9 @@ html:not([data-from="claude"]) [data-only-from="claude"] {
 }
 /* The visitor's own app first in the connect box, in the accent. */
 html[data-from="chatgpt"] .connect-now-apps [data-app="chatgpt"],
-html[data-from="claude"] .connect-now-apps [data-app="claude"] {
+html[data-from="claude"] .connect-now-apps [data-app="claude"],
+html[data-from="chatgpt"] .dm-add-apps [data-app="chatgpt"],
+html[data-from="claude"] .dm-add-apps [data-app="claude"] {
   order: -1;
 }
 html[data-from="chatgpt"] .connect-now-apps [data-app="chatgpt"] a,
@@ -3884,4 +3886,67 @@ table.pr-grid td {
 .top-up .meter-note {
   flex-basis: 100%;
   margin: 0;
+}
+
+/* ---------- a demo's "do this with your own video": the steps in each app ---------- */
+
+.dm-add .mcp-address {
+  max-width: 640px;
+  margin: 8px 0 24px;
+}
+.dm-add-apps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 28px 36px;
+}
+.dm-add-apps > li {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dm-add-apps h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-weight: 800;
+  font-variation-settings: "wdth" 72;
+  font-size: clamp(24px, 2.4vw, 32px);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.dm-add-apps h3 svg,
+.dm-add-apps h3 img {
+  width: 1em;
+  height: 1em;
+  flex: none;
+  display: block;
+}
+.dm-add-apps .kazi-word {
+  color: var(--key);
+}
+.dm-add-apps .dm-steps {
+  margin: 0;
+}
+.dm-add-apps .link-big {
+  margin-top: auto;
+}
+html[data-from="chatgpt"] .dm-add-apps [data-app="chatgpt"] h3,
+html[data-from="claude"] .dm-add-apps [data-app="claude"] h3 {
+  color: var(--key);
+}
+.dm-add-apps .link-big {
+  align-self: flex-start;
+  font-size: clamp(18px, 1.6vw, 22px);
+}
+.dm-add-apps .dm-steps {
+  font-size: clamp(16px, 1.3vw, 18px);
+}
+.dm-add-one {
+  margin: 0;
+  font-size: clamp(16px, 1.3vw, 18px);
+  max-width: 40ch;
 }
