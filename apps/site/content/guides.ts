@@ -48,15 +48,19 @@ export type Guide = {
 
 const MUSIC_PROMPTS = [
   {
-    label: 'Cut your video to the music',
+    label: 'All it takes',
+    text: 'Sync this video to this song.',
+  },
+  {
+    label: 'Or say more: cut to the music',
     text: 'Cut these clips into a vertical Short synced to this song: change shots on the beat and end on the last hit.',
   },
   {
-    label: 'Fit the music to your video',
+    label: 'Or say more: fit the music to your video',
     text: 'Fit this song to my video: trim it to the video’s length, end on a beat, and fade it out.',
   },
   {
-    label: 'Music under your voice',
+    label: 'Or say more: music under your voice',
     text: 'Put this music under my talking video and turn it down while I speak.',
   },
 ];
@@ -122,12 +126,12 @@ export const GUIDES: Guide[] = [
         body: 'In ChatGPT, attach them in the chat. In Claude or Kazi, your AI gives you a link to send them from your phone or computer.',
       },
       {
-        title: 'Say what you want',
-        body: 'Cut to the beat, fit the song to the video, or both. Say how fast the shots should change and how long it should be.',
+        title: 'Ask it to sync them',
+        body: '“Sync this video to this song.” That’s it. Add details only if you want them: how fast the shots change, how long it runs.',
       },
       {
         title: 'Watch it, then ask for another',
-        body: 'Your AI checks the cuts against the beats before it hands it over. Ask for changes in words (“change shots every two bars”, “start at the chorus”) and get the MP4.',
+        body: 'Ask for changes in your own words (“change shots every two bars”, “start at the chorus”) and get the MP4.',
       },
     ],
     prompt: MUSIC_PROMPTS[0]?.text ?? '',
