@@ -254,7 +254,7 @@ export class MediaLibrary {
   async resolvePath(path: string): Promise<string> {
     if (!this.config.roots.length) {
       throw new CfError('path_not_allowed', 'Path imports are not available on this server', {
-        hint: 'Import from a URL instead',
+        hint: "For a file on the user's phone or computer, call media.upload and give the user its link to pick the file, then media.import its upload_id; or import from an http(s) URL",
       });
     }
     let real: string;
@@ -288,7 +288,7 @@ export class MediaLibrary {
       }
     }
     throw new CfError('path_not_allowed', `${path} is outside the media roots`, {
-      hint: `Allowed: ${this.config.roots.join(', ')}`,
+      hint: `Paths must be under ${this.config.roots.join(', ')}. For a file elsewhere on the user's phone or computer, call media.upload and give the user its link`,
     });
   }
 

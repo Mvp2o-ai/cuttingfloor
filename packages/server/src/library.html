@@ -253,7 +253,7 @@
     root.innerHTML = `
     <div class="card">
       <div class="head">
-        <div class="brand"><span class="marker" aria-hidden="true"></span><span class="wm">cuttingfloor<b>ai</b></span><span class="sub">On the floor</span></div>
+        <div class="brand"><span class="marker" aria-hidden="true"></span><span class="wm">cuttingfloor<b>ai</b></span><span class="sub">Your files</span></div>
         <div class="grow"></div>
         <div class="store" id="store"></div>
         <button class="ibtn" id="refresh" type="button" title="List again" aria-label="List again" hidden>${ICON.refresh}</button>
@@ -264,7 +264,7 @@
         <input class="find" id="find" type="search" placeholder="Find by name" aria-label="Find by name">
       </div>
       <div class="body">
-        <div class="list" id="list" role="listbox" aria-label="Media on the floor"></div>
+        <div class="list" id="list" role="listbox" aria-label="Your files"></div>
         <aside class="preview" id="preview"></aside>
       </div>
       <div class="foot" id="foot"></div>
@@ -333,7 +333,7 @@
     if (S.error) { list.innerHTML = `<div class="empty"><b>The list did not load</b>${esc(S.error)}</div>`; return; }
     if (!S.data) { list.innerHTML = '<div class="empty"><div class="dots" style="justify-content:center"><i></i><i></i><i></i></div></div>'; return; }
     if (!S.items.length) {
-      list.innerHTML = '<div class="empty"><b>Nothing on the floor yet</b>Ask your agent to import a video, a song or a logo, or make something new. It shows up here.</div>';
+      list.innerHTML = '<div class="empty"><b>Nothing here yet</b>Ask in the chat to bring in a video, a song or a logo, or to make something new. It shows up here.</div>';
       return;
     }
     const shown = S.items.filter((m) => (S.filter === 'all' || groupOf(m) === S.filter) && (!S.query || m.name.toLowerCase().includes(S.query)));
@@ -371,7 +371,7 @@
     if (got && !(got instanceof Promise)) { box.innerHTML = `${stageHtml(m, got)}${infoHtml(m, got)}`; afterStage(m, got); return; }
     box.innerHTML = `<div class="stage"><div class="dots"><i></i><i></i><i></i></div></div>${infoHtml(m, null)}`;
     if (!host.caps.serverTools) {
-      box.querySelector('.stage').innerHTML = '<div class="msg"><b>No preview in this chat app</b>It does not let the view open files. Ask the agent for media.get on it to play it.</div>';
+      box.querySelector('.stage').innerHTML = '<div class="msg"><b>No preview in this chat app</b>It does not let the view open files. Ask in the chat for a link to play it.</div>';
       return;
     }
     if (!got) {
@@ -393,7 +393,7 @@
     if (m.kind === 'audio') return `<div class="stage"><div class="sound">${ICON.audio}<audio controls preload="metadata"></audio></div>${tag}</div>`;
     if (m.kind === 'image') return `<div class="stage"><img alt="${esc(m.name)}"></div>`;
     if (m.kind === 'font') return `<div class="stage"><div class="glyphs" id="glyphs">The quick brown fox<small>ABCDEFGHIJKLM 0123456789</small></div>${tag}</div>`;
-    return `<div class="stage"><div class="msg"><b>A colour LUT</b>It has no picture of its own. Put it on a clip with filter.add to see what it does.</div>${tag}</div>`;
+    return `<div class="stage"><div class="msg"><b>A colour LUT</b>It has no picture of its own. Ask in the chat to put it on a clip to see what it does.</div>${tag}</div>`;
   }
   function afterStage(m, d) {
     if (!d.url || d.error) return;
@@ -452,12 +452,12 @@
     } else if (b.dataset.act === 'chat') {
       // The one thing that starts a turn: a message from the person, naming what they picked.
       const text = m.upload_id
-        ? `Import “${m.name}” from the cutting floor (upload_id ${id}).`
-        : `Use “${m.name}” from the cutting floor (media_id ${id}).`;
+        ? `Import “${m.name}” from my cuttingfloor files (upload_id ${id}).`
+        : `Use “${m.name}” from my cuttingfloor files (media_id ${id}).`;
       try {
         const r = await request('ui/message', { role: 'user', content: [{ type: 'text', text }] });
         if (r?.isError) throw new Error('refused');
-        toast('Sent to your agent');
+        toast('Sent to the chat');
       } catch {
         toast('The chat app did not take the message. Copy the id instead.');
       }

@@ -532,6 +532,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       description: [
         "Import the user's own video, audio, image or font to edit with or place as is: probe, fingerprint, conform if needed (VFR, rotation, HDR → BT.709), 540p proxy and integrated loudness. A reference image to recreate needs no import: rebuild it with create.motion or create.still.",
         'Long-running: returns a task, or {job_id, media_id} for job.get. The media_id is usable in edits as soon as the job reports processing, so with many files, start every import first and edit while they finish.',
+        "For a file on the user's phone or computer, the easiest way in is media.upload: give the user its link; they open it on their phone or computer and pick the file, then import its upload_id.",
         `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL (Dropbox and Google Drive share links work as they are), {upload: {name, bytes}} for a file you send yourself (the answer is the new media with upload.url: PUT the file there, curl --fail -T file '<url>', and it imports once the last byte arrives, with no base64 in a message; a broken PUT resumes as media.upload says), the upload_id of a file sent through media.upload, a small file as a data: URI (up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB, with its sha256 so a garbled copy is refused), the job_id of a completed export.video (its render becomes media), or still: one frame of a video (media_id) or of an edit (timeline_id) as a PNG still at full size, to place as a picture, cut out or reuse. A URL is fetched once, when the import starts: it only has to work until then (a short-lived signed link from the user's own storage is enough), and the copy stays here 7 days after last use. A file the user attached in the chat comes as file, when the client passes it.`,
         'Importing the same file again returns the same media_id.',
       ].join(' '),
@@ -698,9 +699,8 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Upload media',
       description: [
-        "A signed URL to send one of the user's files to this server, for files on their machine that the server can't read: PUT the file there (curl --fail -T interview.mp4 '<url>'), then media.import {source: {upload_id}}. The URL needs no other credentials and works for a day.",
-        'A broken upload resumes: HEAD the url for Upload-Offset (the bytes received), then PUT the rest with Content-Range: bytes <offset>-<last>/<total>. Large files can go in parts the same way.',
-        'Without a way to send it yourself, give the user the url: opened in a browser it is a page to drop the file on, which sends it and resumes on its own. media.import says whether the file is all in yet.',
+        "A link to send one of the user's files to this server, for files on their phone or computer that the server can't read, including a file attached in the chat that the chat app doesn't hand you. Give the user the url: they open it on their phone or computer and pick the file; the page sends it and resumes on its own. Then media.import {source: {upload_id}}; media.import says whether the file is all in yet. The URL needs no other credentials and works for a day.",
+        "If you can send the file yourself, PUT it there instead (curl --fail -T interview.mp4 '<url>'). A broken upload resumes: HEAD the url for Upload-Offset (the bytes received), then PUT the rest with Content-Range: bytes <offset>-<last>/<total>. Large files can go in parts the same way.",
       ].join(' '),
       inputSchema: MediaUploadInput,
       outputSchema: MediaUploadResult,
@@ -722,7 +722,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       );
       return ok({
         ...upload,
-        how: `curl --fail -T ${shellQuote(args.name)} '${upload.url}' (or the user opens the url in a browser and drops the file), then media.import {source: {upload_id: "${upload.upload_id}"}}`,
+        how: `Give the user this link: ${upload.url} — they open it on their phone or computer and pick the file. (If you can send the file yourself: curl --fail -T ${shellQuote(args.name)} '${upload.url}'.) Then media.import {source: {upload_id: "${upload.upload_id}"}}`,
       });
     }),
   );
@@ -732,7 +732,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'List media',
       description: [
-        "What the user has here: imported and created media, and files they sent that aren't imported yet (through media.upload, or dropped on their account page at cuttingfloor.ai/account), with names, sizes and when each expires, plus the account's storage used and its cap.",
+        "What the user has here: imported and created media, and files they sent that aren't imported yet (through media.upload's link, or dropped on the cuttingfloor site), with names, sizes and when each expires, plus this account's storage used and how much it holds.",
         'When the user mentions a file they sent or dropped ("the interview I uploaded"), find it here by name and media.import {source: {upload_id}} it; complete says it is all in. Listing does not count as a use, so nothing here lasts longer for being listed.',
       ].join(' '),
       inputSchema: MediaListInput,
@@ -754,7 +754,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Delete media',
       description: [
-        'Delete a media for good, so an old or wrong version stops turning up: its file here, proxy, mezzanine and media.analyze results go, and its room comes back to the storage cap. A path import leaves the original in its folder; exports made from it stay.',
+        'Delete a media for good, so an old or wrong version stops turning up: its file here, proxy, mezzanine and media.analyze results go, and its room comes back to this account’s storage. A path import leaves the original in its folder; exports made from it stay.',
         'Timelines that use it keep their ids and edits but no longer render (media_offline names it, as for expired media): replace those clips with clip.replace. Importing the same file again makes a new media_id.',
       ].join(' '),
       inputSchema: MediaDeleteInput,

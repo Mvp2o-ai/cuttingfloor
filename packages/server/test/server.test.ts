@@ -1,4 +1,5 @@
 import { installedFonts } from '@cuttingfloor/engine';
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { BatchResult, CfError, EditResult, QaCheckResult, withJob } from '@cuttingfloor/schema';
 import { TASKS_EXTENSION_ID_V2 } from '@modelcontextprotocol/ext-tasks/core/v2';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -47,6 +48,28 @@ describe('protocol surface', () => {
     const client = await connect(env.runtime);
     expect(client.getServerCapabilities()?.extensions).toHaveProperty(TASKS_EXTENSION_ID_V2);
     expect(client.getInstructions()).toMatch(/timeline_id/);
+  });
+
+  it('builds its instructions from the config: samples only where they are, credits only hosted', async () => {
+    const local = (await connect(env.runtime)).getInstructions() ?? '';
+    expect(local).not.toContain('/samples');
+    expect(local).toContain(`a path under ${env.mediaDir}`);
+    expect(local).toContain("doesn't hand it to you, call media.upload and give the user its link");
+    expect(local).toContain('tell the user to download the files they want to keep');
+    expect(local).toContain('Links to files work for 1 hour (');
+    expect(local).not.toContain('Credits:');
+
+    const withSamples = await testRuntime({ mediaRoots: ['/media', '/samples'] });
+    expect((await connect(withSamples.runtime)).getInstructions()).toContain('/samples/sample.mp4');
+
+    const hosted = await testRuntime({ mode: 'hosted', mediaRoots: [], exportsDir: null });
+    const text = (await connect(hosted.runtime)).getInstructions() ?? '';
+    expect(text).not.toContain('a path under');
+    expect(text).not.toContain('/samples');
+    expect(text).toContain(`starts with ${FREE_CREDITS} free credits`);
+    expect(text).toContain('runs one job at a time');
+    expect(text).toContain("won't start until there are credits again");
+    expect(text).not.toContain('/account');
   });
 
   it('advertises an open output schema on every tool, so clients can chain calls and added fields never break cached clients', async () => {
@@ -627,6 +650,8 @@ describe('media and jobs without engines', () => {
     const client = await connect(env.runtime);
     const res = await call(client, 'media.import', { source: { path: '/etc/passwd' } });
     expect(res.structured).toMatchObject({ code: 'path_not_allowed' });
+    expect(String(res.structured.hint)).toContain(`Paths must be under ${env.mediaDir}`);
+    expect(String(res.structured.hint)).toContain('media.upload');
     expect((await ok<{ jobs: unknown[] }>(client, 'job.list', {})).jobs).toHaveLength(0);
   });
 

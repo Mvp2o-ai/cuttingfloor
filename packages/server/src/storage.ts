@@ -44,7 +44,7 @@ export async function storageOf(
 }
 
 /**
- * The bytes the owner may still add under their plan's storage, or undefined without a cap.
+ * The bytes the owner may still add within their account's storage, or undefined without a cap.
  * Refuses when there is no room, or less than `need`.
  */
 export async function storageRoom(
@@ -64,7 +64,7 @@ export async function storageRoom(
       ? `The file is ${gb(need)}; the account's storage has ${gb(room)} left of ${gb(cap)}`
       : `The account's storage is full: ${gb(used)} of ${gb(cap)}`,
     {
-      hint: `Files expire on their own: uploads a day after they were sent, media and exports 7 days after last use. media.delete removes media you no longer need, or wait for older files to go${limits?.account ? ` (how much room each plan gives: ${limits.account})` : ''}`,
+      hint: `Files expire on their own: uploads a day after they were sent, media and exports 7 days after last use. media.delete removes media you no longer need, or wait for older files to go${limits?.account ? ` (storage sizes: ${limits.account})` : ''}`,
       detail: {
         used_bytes: used,
         max_bytes: cap,

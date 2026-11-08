@@ -441,7 +441,16 @@
     const acts = el('div', { class: 'acts' });
     const shareUrl = data.page_url || data.url;
     if (shareUrl) {
-      const copy = el('button', { class: 'act narrow-hide', title: 'Copy a link anyone can open' }, icon('link'), el('span', { class: 'lbl' }, 'Copy link'));
+      // The link is signed for a while (24 hours by default); say how long, from its own expiry.
+      let lasts = 'for a while';
+      try {
+        const exp = Number(new URL(shareUrl).searchParams.get('exp'));
+        if (exp > Date.now()) {
+          const h = Math.max(1, Math.round((exp - Date.now()) / 3_600_000));
+          lasts = `for ${h} ${h === 1 ? 'hour' : 'hours'}`;
+        }
+      } catch {}
+      const copy = el('button', { class: 'act narrow-hide', title: `Copy a link anyone can open ${lasts}. Download the file to keep it.` }, icon('link'), el('span', { class: 'lbl' }, 'Copy link'));
       copy.addEventListener('click', async () => {
         let ok = false;
         try { await navigator.clipboard.writeText(shareUrl); ok = true; } catch {
@@ -451,8 +460,8 @@
           ta.remove();
         }
         if (!ok) return openLink(shareUrl);
-        setIcon(copy, 'check'); copy.classList.add('done'); copy.querySelector('.lbl').textContent = 'Copied';
-        setTimeout(() => { setIcon(copy, 'link'); copy.classList.remove('done'); copy.querySelector('.lbl').textContent = 'Copy link'; }, 1600);
+        setIcon(copy, 'check'); copy.classList.add('done'); copy.querySelector('.lbl').textContent = `Copied: works ${lasts}`;
+        setTimeout(() => { setIcon(copy, 'link'); copy.classList.remove('done'); copy.querySelector('.lbl').textContent = 'Copy link'; }, 2600);
       });
       acts.append(copy);
     }

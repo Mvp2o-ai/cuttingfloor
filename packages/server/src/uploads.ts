@@ -232,8 +232,8 @@ export class Uploads {
       const limit = meta.max_bytes ?? this.maxBytes;
       const tooBig =
         meta.max_bytes === undefined
-          ? `uploads take up to ${limit} bytes`
-          : `the account's storage has room for ${limit} more bytes; let older files expire`;
+          ? `This file is too big: uploads take up to ${readableSize(limit)}`
+          : `This file is too big: the account's storage has room for ${readableSize(limit)} more. Older files expire on their own, or ask in the chat to delete some`;
       if ((total ?? 0) > limit || start + (request.length ?? 0) > limit) {
         throw new UploadRefused(413, tooBig, received);
       }
@@ -377,4 +377,12 @@ export class Uploads {
       .update(`upload\n${path}\n${exp}`)
       .digest('base64url');
   }
+}
+
+/** A size as a person reads it: KB under a megabyte, MB under a gigabyte, GB from there. */
+export function readableSize(bytes: number): string {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+  if (bytes < 1e6) return `${Math.max(1, Math.round(bytes / 1e3))} KB`;
+  const mb = bytes / 1e6;
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
 }
