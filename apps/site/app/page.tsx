@@ -26,9 +26,6 @@ const HOME_DEMOS = ['dance', 'product', 'interview'].flatMap((id) =>
   DEMOS.filter((d) => d.id === id),
 );
 
-// The lead feature's page: the hero's headline is about it.
-const MUSIC = '/guides/sync-video-to-music';
-
 // Linking here plays the session from the top.
 const SESSION_ID = 'session';
 
@@ -87,23 +84,23 @@ export default function Home() {
             <span>the video editing MCP for creators</span>
           </h1>
           <p className="display title rise d1">
-            Sync video
+            Video editing,
             <br />
-            to music.
+            solved.
             <Check />
-          </p>
-          <p className="lede hero-lede rise d1">
-            Your AI can’t hear the beat. cuttingfloor can.{' '}
-            <em>
-              Ask ChatGPT, Claude or Kazi to cut your clips on the beat, or fit a song to your
-              video, and get back a real MP4.
-            </em>
           </p>
           <div className="rise d2">
             <ConnectNow />
           </div>
           <div className="hero-row">
             <div className="rise d2">
+              <p className="lede">
+                One MCP connection.{' '}
+                <em>
+                  Your AI assistant cuts, captions and mixes — then hands back a file a human editor
+                  can finish.
+                </em>
+              </p>
               <div className="works-in">
                 <span className="label">An MCP server for</span>
                 <ul>
@@ -118,12 +115,11 @@ export default function Home() {
                 <a className="link-big" href={SIGN_UP}>
                   Start free — {FREE_CREDITS} credits
                 </a>
-                <a className="link-big quiet" href={MUSIC} data-track="Home hero: sync to music">
-                  How syncing to music works
+                <a className="link-big quiet" href="/demos">
+                  Watch it edit
                 </a>
               </div>
               <p>
-                It does the rest of the edit too: <a href="/features">captions, cuts, the mix</a>.
                 Open source ({LICENCE}): <a href="/self-host">run it yourself, free</a>.
               </p>
             </div>
