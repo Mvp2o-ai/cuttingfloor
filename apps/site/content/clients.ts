@@ -79,7 +79,7 @@ export const CLIENTS: Client[] = [
     name: 'Claude',
     where: 'claude.ai on the web and the desktop app',
     steps: [
-      'Open Customize → Connectors, click +, then Add custom connector.',
+      'Open Customize → Connectors, click + Add, then Add custom connector.',
       `Name it cuttingfloor and paste ${MCP_URL} as the URL. Click Continue.`,
       'Choose Sign in now (or Sign in when needed). For the OAuth client, keep Use Claude’s published identity.',
       'Click Add, and sign in on the page that opens.',
@@ -150,7 +150,7 @@ export const CLIENTS: Client[] = [
       'Click +, then Add custom MCP server.',
       `Name it cuttingfloor. Under Connection, paste ${MCP_URL} as the Server URL.`,
       'Set Authentication to OAuth.',
-      'Accept the warning, click Create as a plugin, check the tools and click Install. Sign in when asked.',
+      'Click I understand and want to continue, then Create as a plugin. Check the tools and click Install, and sign in when asked.',
       'In a chat, type @cuttingfloor and say what you want.',
     ],
     snippets: [{ label: 'The Server URL', code: MCP_URL }],
