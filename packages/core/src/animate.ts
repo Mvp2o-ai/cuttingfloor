@@ -8,6 +8,7 @@ import {
   type StoredAnimatable,
   type StoredAnimation,
   type StoredClip,
+  type StoredCorners,
   type StoredMask,
   type StoredPoints,
   TRANSFORM_DEFAULTS,
@@ -323,6 +324,35 @@ export function pointsAt(points: StoredPoints | undefined, t: number): Array<[nu
     }
   }
   return ks[ks.length - 1]?.points ?? [];
+}
+
+/** The clip's four corners at source tick `t`: each corner eased between the keyframes around it. */
+export function cornersAt(clip: StoredClip, t: number): Array<[number, number]> {
+  const corners = clip.transform?.corners;
+  if (!corners) return [];
+  if (Array.isArray(corners)) return corners;
+  const first = corners.keyframes[0];
+  if (!first) return [];
+  if (t <= first.t) return first.corners;
+  for (let i = 0; i < corners.keyframes.length - 1; i++) {
+    const a = corners.keyframes[i];
+    const b = corners.keyframes[i + 1];
+    if (!a || !b) break;
+    if (t < b.t) {
+      const p = easeFn(a.ease)((t - a.t) / Math.max(1, b.t - a.t));
+      return a.corners.map(([x, y], j) => {
+        const [bx, by] = b.corners[j] ?? [x, y];
+        return [x + (bx - x) * p, y + (by - y) * p] as [number, number];
+      });
+    }
+  }
+  return corners.keyframes[corners.keyframes.length - 1]?.corners ?? [];
+}
+
+/** The clip's quad moves over time: more than one keyframe of corners. */
+export function cornersAnimates(clip: StoredClip): boolean {
+  const corners = clip.transform?.corners;
+  return corners !== undefined && !Array.isArray(corners) && corners.keyframes.length > 1;
 }
 
 export function maskAnimates(clip: StoredClip): boolean {
