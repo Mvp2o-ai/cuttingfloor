@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Workspace } from '@cuttingfloor/core';
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EmailError, type EmailProvider, type OutboundEmail } from '../src/email.ts';
 import {
@@ -136,13 +137,14 @@ describe('welcome', () => {
     expect(mail?.headers['List-Unsubscribe']).toBe(`<${unsubscribe}>`);
     expect(mail?.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
     expect(mail?.text).not.toContain('{{');
+    expect(mail?.text).toContain(`You start with ${FREE_CREDITS} free credits`);
 
     const [entry] = await logEntries(ws);
     expect(entry).toMatchObject({
       subscriber: id,
       message: 'welcome',
       template: 'welcome',
-      template_version: '1',
+      template_version: '2',
       provider_message_id: 'msg_1',
       outcome: 'sent',
     });
@@ -373,8 +375,12 @@ describe('templates and configuration', () => {
   });
 
   it('every bundled template loads', async () => {
-    for (const name of ['welcome', 'follow-up-no-edit', 'follow-up-first-edit'] as const)
+    for (const name of ['follow-up-no-edit', 'follow-up-first-edit'] as const)
       expect((await loadTemplate(TEMPLATES, name)).version).toBe('1');
+    // Version 2 says a new account's free credits from the plans, not a number of its own.
+    const welcome = await loadTemplate(TEMPLATES, 'welcome');
+    expect(welcome.version).toBe('2');
+    expect(welcome.body).toContain('You start with {{free_credits}} free credits');
   });
 
   it('refuses a noreply sender or reply-to', async () => {

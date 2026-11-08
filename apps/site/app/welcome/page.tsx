@@ -71,7 +71,7 @@ export default async function Welcome() {
             }}
           />
           <p className="account-help">
-            Plans, usage and billing are on <a href="/account">your account page</a>.
+            Your credits and billing are on <a href="/account">your account page</a>.
           </p>
         </section>
       </main>

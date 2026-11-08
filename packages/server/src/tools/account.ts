@@ -23,7 +23,7 @@ export function registerAccountTools(server: McpServer, deps: ServerDeps): void 
     {
       title: 'Get account',
       description:
-        "The signed-in account's plan and credits: credits left and used, free and bought, the emails sent as they run low, automatic top-up, the packs on sale, the plan's limits, and the account page where the user tops up. A credit is one minute of a job running (export, import, analysis, create.*); editing and previews are free. At 0 credits new jobs wait until the user tops up on the account page.",
+        "The signed-in account's plan and credits: credits left and used, free and bought, the emails sent as they run low, automatic top-up, the packs on sale, the plan's limits, and the account page where the user tops up. A credit is one minute of a job running (export, import, analysis, create.*); editing and previews are free. At 0 credits new jobs won't start until the user tops up on the account page.",
       inputSchema: AccountGetInput,
       outputSchema: AccountGetResult,
       annotations: {

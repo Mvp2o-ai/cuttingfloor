@@ -45,7 +45,7 @@ export function GET() {
     packs: PACKS.map((p) => ({ id: p.id, price: p.price, credits: p.credits })),
     automatic_top_up: `optional: a chosen pack is bought on the saved card when fewer than ${LOW_CREDITS} credits are left`,
     low_credit_email_below: LOW_CREDITS,
-    overage: 'none: at zero new jobs wait until a top-up; editing and previews keep working',
+    overage: 'none: at zero new jobs are refused until a top-up; editing and previews keep working',
     self_hosted: {
       price: 0,
       licence: LICENCE,

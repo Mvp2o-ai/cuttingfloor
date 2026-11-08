@@ -83,10 +83,8 @@ export class AccessCheck {
   async require(owner: string): Promise<Access & { allowed: true }> {
     const access = await this.get(owner);
     if (access.allowed) return access;
-    const account = this.#o.accountUrl;
     throw new CfError('email_unverified', `${access.email} is not verified yet`, {
-      hint: `Open the verification email from cuttingfloor (or sign in at ${account} to get a new one), then call the tool again`,
-      detail: { account },
+      hint: 'Open the verification email from cuttingfloor (check spam too), then call the tool again',
     });
   }
 
@@ -115,7 +113,7 @@ export class AccessCheck {
           ? `This month's ${balance.per_month} credits are used`
           : 'This account has no credits left',
         {
-          hint: `${monthly ? `They renew on ${balance.renews?.slice(0, 10)}. ` : ''}A credit is one minute of a job running. Editing the timeline and previews still work; only new jobs (exports, imports, analysis, create.*) wait. How credits work: ${plans}`,
+          hint: `${monthly ? `They renew on ${balance.renews?.slice(0, 10)}. ` : ''}New jobs (exports, imports, analysis, create.*) won't start until there are credits again; editing the timeline and previews still work. Ask again after. A credit is one minute of a job running. How credits work: ${plans}`,
           detail: {
             credits_left: balance.left,
             credits_used: balance.used,

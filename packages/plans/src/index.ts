@@ -4,8 +4,8 @@
 // counts as a render minute. Editing the timeline and inline previews are free.
 //
 // There are no subscriptions. Every account starts with free credits and buys more in packs when
-// it wants them (pay as you go); bought credits never expire. At zero new jobs wait; editing and
-// previews keep working. A few accounts are given a plan instead (staff, lifetime, enterprise),
+// it wants them (pay as you go); bought credits never expire. At zero new jobs are refused; editing
+// and previews keep working. A few accounts are given a plan instead (staff, lifetime, enterprise),
 // with credits that renew each month. Costs behind the numbers: plans/pricing.md.
 
 export type PlanId = 'free' | 'credits' | 'enterprise' | 'lifetime' | 'staff';

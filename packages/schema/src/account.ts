@@ -16,7 +16,7 @@ export const AccountGetResult = z.object({
   plan_name: z.string(),
   credits: z.object({
     left: nullableCount.describe(
-      'Credits left; null when there is no cap. At 0, new jobs wait; editing and previews keep working',
+      'Credits left; null when there is no cap. At 0, new jobs are refused; editing and previews keep working',
     ),
     used: z
       .number()
