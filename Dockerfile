@@ -350,22 +350,10 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prefer-offline 
 # the model; the server re-embeds any skill whose text no longer matches its stored hash.
 RUN node packages/skills/scripts/write-vectors.ts
 
-# Test-only: the tiny whisper model and the Kokoro voice model, fetched once (checksummed) so test
-# runs don't download them. A stage of its own so a source change doesn't fetch them again.
-FROM base AS testmodels
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
- && rm -rf /var/lib/apt/lists/* \
- && mkdir -p /opt/models \
- && curl -fsSL -o /opt/models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin \
- && echo "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21  /opt/models/ggml-tiny.bin" | sha256sum -c - \
- && curl -fsSL -o /tmp/kokoro.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2 \
- && echo "60703707bc05ccd48d60e1eb723f38b07d6e474795a0b6a588d7220400e0f7a4  /tmp/kokoro.tar.bz2" | sha256sum -c - \
- && tar -xjf /tmp/kokoro.tar.bz2 -C /opt/models --no-same-owner && rm /tmp/kokoro.tar.bz2 \
- # An audience laughing then clapping for the sounds tests: "approx 800 laughter and clapter" by
- # lonemonk (freesound.org/s/72844), CC BY 3.0, from Wikimedia Commons.
- && mkdir -p /opt/models/fixtures \
- && curl -fsSL -A cuttingfloor-tests -o /opt/models/fixtures/laughter.wav https://upload.wikimedia.org/wikipedia/commons/e/e5/72844_lonemonk_approx-800-laughter-and-clapter-1.wav \
- && echo "8b928e6307f7db0ce5542ae827075f24ada80f007f3a4fdb415559ec9c4e4055  /opt/models/fixtures/laughter.wav" | sha256sum -c -
+# Test-only: the tiny whisper model, the Kokoro voice model and a laughter recording, from our own
+# image (tools/testmodels), pinned by digest. Fetching them from Hugging Face, GitHub releases and
+# Wikimedia on every build failed the build whenever a 350 MB download dropped.
+FROM ghcr.io/mvp2o-ai/cuttingfloor:testmodels-v1@sha256:e27d273a4c28b4246e6bf5d399da135a04c18a039348e496236976647e6c5e97 AS testmodels
 
 # Test-only: espeak-ng speaks the transcript fixtures.
 FROM build AS testenv

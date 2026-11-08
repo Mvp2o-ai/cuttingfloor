@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 // Sounds end to end, in the image: media.analyze sounds, media.listen and create.stems on real
 // audio. The audience clip is "approx 800 laughter and clapter" by lonemonk (freesound.org/s/72844,
-// CC BY 3.0, via Wikimedia Commons), fetched once by the Dockerfile's testmodels stage; the
+// CC BY 3.0, via Wikimedia Commons), in the testmodels image (tools/testmodels); the
 // speech is espeak-ng and the music FFmpeg's own tones.
 
 const exec = promisify(execFile);
