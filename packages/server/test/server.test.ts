@@ -96,7 +96,6 @@ describe('protocol surface', () => {
         'audio.set_master',
         'audio.set_pan',
         'caption.add',
-        'account.get',
         'adjustment.add',
         'clip.add',
         'clip.freeze',
@@ -189,7 +188,6 @@ describe('protocol surface', () => {
         .sort();
     expect(where('readOnlyHint')).toEqual(
       [
-        'account.get',
         'job.get',
         'job.list',
         'judge.ask',

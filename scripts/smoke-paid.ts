@@ -4,7 +4,7 @@
 //   ssh root@<server> 'cd /opt/cuttingfloor && docker compose exec -T cuttingfloor node scripts/smoke-paid.ts'
 //
 // Makes a throwaway account linked to a Stripe customer as checkout links it, and a script key for
-// it on the server. Checks through /mcp (account.get) and /account/usage that a new account has its
+// it on the server. Checks through /mcp and /account/usage that a new account has its
 // free credits and the packs, that turning on automatic top-up shows at once, that a pack's
 // Checkout opens as the site opens it (expired before anyone could pay), and the access rules
 // with a clock moved on. Moves no money: a real purchase is checked by hand (plans/README.md).
@@ -152,27 +152,18 @@ try {
 
   step('a new account');
   expect((await works()) === 'works', 'a tool call works');
-  const got = await mcp('tools/call', { name: 'account.get', arguments: {} }, ++calls);
-  const tool = got?.result?.structuredContent as AccountGetResult | undefined;
-  expect(
-    tool?.plan === 'free' &&
-      tool.credits.left === FREE_CREDITS &&
-      tool.credits.free === FREE_CREDITS,
-    `account.get: free, ${FREE_CREDITS} credits left (${JSON.stringify(tool?.credits)})`,
-  );
-  expect(
-    tool?.packs?.length === PACKS.length && tool.top_up?.card_saved === false,
-    `it lists the ${PACKS.length} packs, no card saved yet`,
-  );
-  expect(
-    tool?.warnings?.some((w) => w.kind === 'low' && !w.emailed),
-    'the low-credit email is armed, not sent',
-  );
-  expect(tool?.account_url === accountUrl, `it links the account page (${tool?.account_url})`);
   const page = await account();
   expect(
     page?.credits?.left === FREE_CREDITS && page.plan === 'free',
     'the account page reads the same credits',
+  );
+  expect(
+    page?.packs?.length === PACKS.length && page.top_up?.card_saved === false,
+    `it lists the ${PACKS.length} packs, no card saved yet`,
+  );
+  expect(
+    page?.warnings?.some((w) => w.kind === 'low' && !w.emailed),
+    'the low-credit email is armed, not sent',
   );
   const later = await at(90).resolve(userId);
   expect(

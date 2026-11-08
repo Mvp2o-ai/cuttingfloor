@@ -212,5 +212,4 @@ export const LINES: Record<string, Line> = {
   'job.cancel': { group: 'basics', say: 'Stop a running job.' },
   'skills.search': { group: 'basics', say: 'Find step-by-step instructions for a common job.' },
   'skills.get': { group: 'basics', say: 'Read one skill in full.' },
-  'account.get': { group: 'basics', say: 'See how many credits are left and where to top up.' },
 };
