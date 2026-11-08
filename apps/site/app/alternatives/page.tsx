@@ -266,7 +266,7 @@ export default function Alternatives() {
           <ol className="wt-hub dm-hub">
             {shown.map((d) => (
               <li key={d.slug}>
-                <a href={`/demos/${d.slug}`}>
+                <a href={`/demos/${d.slug}`} data-track={`Demo: ${d.title}`}>
                   <span className="dm-ba">
                     <Poster v={d.raw} tag="Before" />
                     <span className="dm-arrow" aria-hidden="true">

@@ -64,7 +64,7 @@ export default function ConnectPage() {
           <ul className="cl-index">
             {CLIENTS.map((c) => (
               <li key={c.slug}>
-                <a href={`#${c.slug}`}>
+                <a href={`#${c.slug}`} data-track={`Connect app: ${c.name}`}>
                   <LogoSlot client={c} />
                   <span className="cl-where">{c.where}</span>
                 </a>
