@@ -47,6 +47,13 @@ export default async function AccountPage({
           <span className="label">Account</span>
           <h1 className="display account-head">{headline(account)}</h1>
           <p className="lede">{explain(account, bought)}</p>
+          {account && fresh(account) ? (
+            <p className="account-next">
+              <a className="link-big" href="#connect" data-track="Account: connect first">
+                Start: connect your agent ↓
+              </a>
+            </p>
+          ) : null}
           {account ? <Meter account={account} /> : null}
           {account?.top_up ? <TopUp account={account} /> : null}
         </section>
@@ -64,7 +71,7 @@ export default async function AccountPage({
           </section>
         ) : null}
 
-        <section className="cell">
+        <section className="cell" id="connect">
           <div className="head">
             <span className="label">Connect</span>
             <p className="lede">
@@ -132,9 +139,18 @@ function explain(a: Account | undefined, bought: string | undefined): string {
   if (a.credits.renews)
     return `${a.plan_name}: ${credits(a.credits.per_month ?? 0)} credits a month, renewing ${day(a.credits.renews)}. Nothing to pay.`;
   const left = a.credits.left ?? 0;
+  const gift =
+    a.plan === 'free' && !a.credits.bought
+      ? `Your first ${credits(a.credits.free)} credits are free, on us: no card needed. `
+      : '';
   if (left <= 0)
     return `${thanks}Your credits are used up. New jobs wait until you top up; editing and previews still work. Credits never expire.`;
-  return `${thanks}A credit is one minute of our servers working: an export, an import, a transcript. Editing and previews are free. A short video takes less than one.`;
+  return `${thanks}${gift}A credit is one minute of our servers working: an export, an import, a transcript. Editing and previews are free. A short video takes less than one.`;
+}
+
+/** A new account that hasn't used anything yet: connecting comes before buying. */
+function fresh(a: Account): boolean {
+  return a.plan === 'free' && !a.credits.bought && a.credits.used === 0;
 }
 
 function Meter({ account: a }: { account: Account }) {
@@ -173,6 +189,7 @@ function TopUp({ account: a }: { account: Account }) {
   const nonce = crypto.randomUUID();
   return (
     <>
+      <span className="label account-more">When you need more: credit packs</span>
       <div className="plans">
         {PACKS.map((p) => (
           <div className="plan" key={p.id}>
