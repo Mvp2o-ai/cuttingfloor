@@ -1,5 +1,6 @@
 import { LEGAL_NAME, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import cli from '../../cli/package.json' with { type: 'json' };
+import { NOT_FROM_AGENT, onlyFrom } from './from.tsx';
 import { kaziUrl } from './kazi.tsx';
 import { DOCS_URL, SITE_URL } from './seo.ts';
 
@@ -47,7 +48,13 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
           {cta}
         </a>
       </div>
-      <a className="live-strip" href={LIVE_DEMO} rel="noopener" data-track="Live demo: strip">
+      <a
+        className="live-strip"
+        href={LIVE_DEMO}
+        rel="noopener"
+        data-track="Live demo: strip"
+        {...NOT_FROM_AGENT}
+      >
         <b>
           Watch it live now <span aria-hidden="true">→</span>
         </b>
@@ -55,6 +62,28 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
           Kazi gives Big Buck Bunny a happy ending. Free, no sign-up. Then connect your own AI over
           MCP.
         </small>
+      </a>
+      <a
+        className="live-strip"
+        href="/connect#chatgpt"
+        data-track="From ChatGPT: strip"
+        {...onlyFrom('chatgpt')}
+      >
+        <b>
+          Add cuttingfloor to ChatGPT <span aria-hidden="true">→</span>
+        </b>
+        <small>Paste one address as a connector, then ask ChatGPT to edit your video.</small>
+      </a>
+      <a
+        className="live-strip"
+        href="/connect#claude"
+        data-track="From Claude: strip"
+        {...onlyFrom('claude')}
+      >
+        <b>
+          Add cuttingfloor to Claude <span aria-hidden="true">→</span>
+        </b>
+        <small>Paste one address as a connector, then ask Claude to edit your video.</small>
       </a>
     </header>
   );

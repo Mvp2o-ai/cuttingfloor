@@ -1,3 +1,5 @@
+import { NOT_FROM_AGENT } from './from.tsx';
+
 // Kazi's share links: one per page, so Kazi knows where a visitor came from. Each opens a guest
 // chat with a sample clip loaded and cuttingfloor editing it, then offers sign-up. Codes come from
 // Kazi and never move; what each opens is Kazi's to change.
@@ -52,7 +54,7 @@ export function TryKazi({
 }) {
   const t = TEXT[lang];
   return (
-    <div className="try-kazi">
+    <div className="try-kazi" {...NOT_FROM_AGENT}>
       <a
         className="link-big"
         href={kaziUrl(place)}

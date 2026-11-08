@@ -2,7 +2,7 @@ import { McpAddress } from './mcp-address.tsx';
 
 // Right under the headline on home and /connect: the apps people use most, the address to paste,
 // and where the steps are. Kazi's mark is ours; ChatGPT's and Claude's come from Simple Icons.
-const APPS = [
+export const APPS = [
   {
     slug: 'chatgpt',
     name: 'ChatGPT',
@@ -42,7 +42,7 @@ export function ConnectNow({ steps = '/connect' }: { steps?: string }) {
       <span className="label">Connect your agent now</span>
       <ul className="connect-now-apps">
         {APPS.map((a) => (
-          <li key={a.slug}>
+          <li key={a.slug} data-app={a.slug}>
             <a href={`/connect#${a.slug}`} data-track={`Connect now: ${a.name}`}>
               {a.mark}
               <span className={a.slug === 'kazi' ? 'kazi-word' : undefined}>{a.name}</span>
