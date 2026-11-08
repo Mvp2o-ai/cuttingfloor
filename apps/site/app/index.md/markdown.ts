@@ -29,10 +29,6 @@ export function markdown(): string {
     title: 'cuttingfloor: editing tools for the agent you already use',
     summary: DESCRIPTION,
     body: `
-## Sync video to music
-
-Your AI can’t hear the beat; cuttingfloor can. Ask ChatGPT, Claude or Kazi to cut your clips on the beat (shots change on the beat or the bar, the end lands on the last hit), fit a song to your finished video (trimmed between beats, ending on a hit, faded out), or put music under your voice, turned down while you talk. You get a real MP4. ${pageLink('Sync video to music', '/guides/sync-video-to-music')}
-
 ## What it is
 
 cuttingfloor is an open-source MCP server of video editing tools. Connect the agent you already use (Kazi, Claude, Claude Cowork, Claude Code, ChatGPT, ChatGPT Work, Codex or Cursor) and say what you want cut. It imports your footage, reads the transcript, trims, captions, mixes, makes the graphics and hands back a finished file.

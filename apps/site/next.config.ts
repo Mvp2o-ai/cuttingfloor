@@ -21,6 +21,12 @@ const config: NextConfig = {
         destination: '/walkthroughs/cut-pauses-and-restarts',
         permanent: true,
       },
+      // Syncing to music is shown by its demo, not a page of its own.
+      {
+        source: '/guides/sync-video-to-music',
+        destination: '/demos/edit-a-dance-short-to-the-beat',
+        permanent: true,
+      },
     ];
   },
 };
