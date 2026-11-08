@@ -37,7 +37,7 @@ export default function Support() {
           items={[
             'Is it down? See the status page, cuttingfloor.ai/status.',
             'Connecting an app: the steps for each one are at cuttingfloor.ai/connect.',
-            'Plans and billing: your account page, cuttingfloor.ai/account.',
+            'Credits and billing: your account page, cuttingfloor.ai/account.',
           ]}
         />
       </Part>

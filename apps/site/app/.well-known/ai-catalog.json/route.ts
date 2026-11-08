@@ -49,7 +49,7 @@ const CATALOG = {
     {
       identifier: 'urn:air:cuttingfloor.ai:pricing',
       displayName: 'Pricing',
-      description: 'The plans, their prices and limits, as JSON.',
+      description: 'Pricing as JSON: credits, packs and each option’s limits.',
       type: 'application/json',
       url: abs('/pricing.json'),
       publisher: PUBLISHER,

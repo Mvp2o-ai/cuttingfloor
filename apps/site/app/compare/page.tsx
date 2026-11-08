@@ -296,7 +296,7 @@ export default function Compare() {
                   <th scope="row" className="tier">
                     {s.name}
                   </th>
-                  <td className="note">{s.pick}</td>
+                  <td className="note pick">{s.pick}</td>
                 </tr>
               ))}
             </tbody>

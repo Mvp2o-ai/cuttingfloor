@@ -6,7 +6,21 @@
 // Logos: every app shows as a text wordmark in the same logo slot until its owner approves a
 // mark. To use an approved SVG, put it in public/logos/ and set `logo` to its path.
 
+import { PLANS } from '@cuttingfloor/plans';
+
 export const MCP_URL = 'https://api.cuttingfloor.ai/mcp';
+
+/** Credits a month for an account used through Kazi (the lifetime plan), from the plans file. */
+export const KAZI_CREDITS =
+  PLANS.lifetime.credits.kind === 'monthly' ? PLANS.lifetime.credits.perMonth : 0;
+/** One line, said the same on /connect, /agents/kazi and /pricing. */
+export const KAZI_FREE = `Free for good through Kazi: an account you connect from Kazi gets ${KAZI_CREDITS.toLocaleString('en-US')} credits a month, at no cost.`;
+
+/** OpenAI's help page on custom MCP servers in ChatGPT, and what it says about plans. */
+export const CHATGPT_HELP =
+  'https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt';
+export const CHATGPT_PLANS =
+  'As of 8 November 2026, OpenAI’s help page lists custom MCP servers for ChatGPT Business, Enterprise and Edu, on the web. It doesn’t say whether Free, Plus or Pro can add one: if Add custom MCP server shows under + on your Plugins page, your account can.';
 
 /** When the steps below were last checked against each vendor's docs. */
 export const CLIENTS_CHECKED = '2026-11-01';
@@ -49,27 +63,32 @@ const json = (v: unknown) => JSON.stringify(v, null, 2);
 
 const cursorConfig = btoa(JSON.stringify({ url: MCP_URL }));
 
-export const CLIENTS: Client[] = [
+/** How the video gets in, said at the end of every app's steps. */
+export const VIDEO_IN_CHAT = 'Attach your video in the chat. ChatGPT hands it to cuttingfloor.';
+export const VIDEO_IN_LINK =
+  'Your AI gives you a link to send the video from your phone or computer.';
+
+const APPS: Client[] = [
   {
     slug: 'kazi',
     name: 'Kazi',
     ours: true,
     where: 'Web, phone, text and meetings',
     steps: [
-      'In Kazi (app.apifunnel.ai), open Servers and add your own server.',
-      'Paste the address and choose Connect.',
-      'Sign in when the cuttingfloor page opens.',
-      'Or skip the menus: ask Kazi to connect the cuttingfloor MCP server at the address.',
+      'Open Kazi at app.apifunnel.ai.',
+      'Ask Kazi: “Connect the cuttingfloor MCP server at https://api.cuttingfloor.ai/mcp”.',
+      'Sign in when the cuttingfloor page opens. Kazi can now edit.',
+      'If Kazi doesn’t connect it, open Servers, add your own server, paste the address and choose Connect.',
     ],
     snippets: [
+      { label: 'Say to Kazi', code: `Connect the cuttingfloor MCP server at ${MCP_URL}` },
       { label: 'Server address', code: MCP_URL },
-      { label: 'Or say to Kazi', code: `Connect the cuttingfloor MCP server at ${MCP_URL}` },
     ],
-    notes: ['Free through Kazi: an account connected from Kazi gets cuttingfloor for good.'],
+    notes: [KAZI_FREE],
     docs: 'https://kazi.apifunnel.ai',
-    docsLabel: 'Meet Kazi at kazi.apifunnel.ai',
+    docsLabel: 'About Kazi',
     home: {
-      how: 'In Kazi (app.apifunnel.ai), open Servers and add your own server. Paste the address, Connect, then sign in.',
+      how: 'In Kazi (app.apifunnel.ai), ask it to connect the cuttingfloor MCP server at this address, then sign in.',
       line: MCP_URL,
     },
   },
@@ -81,7 +100,7 @@ export const CLIENTS: Client[] = [
     steps: [
       'Open Customize → Connectors, click + Add, then Add custom connector.',
       `Name it cuttingfloor and paste ${MCP_URL} as the URL. Click Continue.`,
-      'Choose Sign in now (or Sign in when needed). For the OAuth client, keep Use Claude’s published identity.',
+      'Choose Sign in now (or Sign in when needed). If it asks about the OAuth client (how Claude signs in), keep Use Claude’s published identity.',
       'Click Add, and sign in on the page that opens.',
       'In a chat, open + → Connectors and turn cuttingfloor on.',
     ],
@@ -149,19 +168,19 @@ export const CLIENTS: Client[] = [
       'Open chatgpt.com/plugins.',
       'Click +, then Add custom MCP server.',
       `Name it cuttingfloor. Under Connection, paste ${MCP_URL} as the Server URL.`,
-      'Set Authentication to OAuth.',
+      'Set Authentication to OAuth: the option that makes ChatGPT open the cuttingfloor sign-in page.',
       'Click I understand and want to continue, then Create as a plugin. Check the tools and click Install, and sign in when asked.',
       'In a chat, type @cuttingfloor and say what you want.',
     ],
     snippets: [{ label: 'The Server URL', code: MCP_URL }],
     notes: [
-      'Which plans can add a custom MCP server is up to OpenAI and your plan.',
-      'On Business, only admins and owners can create plugins with MCP servers. On Enterprise and Edu, plugins are off until an admin allows them.',
-      'Plugins you install work in ChatGPT on your phone too, but you add them on the web or desktop.',
+      CHATGPT_PLANS,
+      'On Business, only admins and owners can add a custom MCP server. On Enterprise and Edu, admins and owners can, and an admin can let other members.',
+      'Add it on chatgpt.com in a browser: OpenAI’s help page says custom MCP servers are web only.',
     ],
-    docs: 'https://developers.openai.com/apps-sdk/deploy/connect-chatgpt',
+    docs: CHATGPT_HELP,
     home: {
-      how: 'chatgpt.com/plugins → + → Add custom MCP server. Paste the address, authentication OAuth.',
+      how: 'chatgpt.com/plugins → + → Add custom MCP server. Paste the address, set Authentication to OAuth (so ChatGPT opens our sign-in).',
       line: MCP_URL,
     },
   },
@@ -350,6 +369,12 @@ export const CLIENTS: Client[] = [
     ],
   },
 ];
+
+/** Every app, its steps ending with how the video gets in. */
+export const CLIENTS: Client[] = APPS.map((c) => ({
+  ...c,
+  steps: [...c.steps, c.slug.startsWith('chatgpt') ? VIDEO_IN_CHAT : VIDEO_IN_LINK],
+}));
 
 /** The ones on the home page's Connect box, in order. */
 export const HOME_CLIENTS = CLIENTS.filter(

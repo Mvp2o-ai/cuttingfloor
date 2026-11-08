@@ -1,4 +1,5 @@
 import { MCP_URL } from '../../content/clients.ts';
+import { KEEP_FILES } from '../pricing.ts';
 
 // The words on /connect that aren't one app's steps, shared by the page, its FAQPage data and
 // its Markdown twin so the three never disagree.
@@ -22,16 +23,20 @@ export const HOW = [
     title: 'Every edit comes back with a preview.',
     text: 'Each edit returns a new version of the timeline and a picture of it, so your agent sees what it made and fixes what’s off. Earlier versions stay. When it’s right, it exports an MP4 and gives you the link.',
   },
+  {
+    title: 'You keep what you want.',
+    text: KEEP_FILES,
+  },
 ] as const;
 
 export const CONNECT_FAQS = [
   {
     q: 'How do I use Claude to edit video?',
-    a: `Add cuttingfloor as a custom connector: in Claude, open Customize → Connectors, click +, choose Add custom connector, paste ${MCP_URL} and sign in. Then ask for the edit in a chat or a Cowork task. In Claude Code, run claude mcp add --transport http cuttingfloor ${MCP_URL}, then /mcp to sign in.`,
+    a: `Add cuttingfloor as a custom connector: in Claude, open Customize → Connectors, click + Add, choose Add custom connector, paste ${MCP_URL} and sign in. Then ask for the edit in a chat or a Cowork task. In Claude Code, run claude mcp add --transport http cuttingfloor ${MCP_URL}, then /mcp to sign in.`,
   },
   {
     q: 'Can ChatGPT edit video?',
-    a: `Yes, with cuttingfloor added as a plugin. Open chatgpt.com/plugins, click +, choose Add custom MCP server, paste ${MCP_URL} and set authentication to OAuth. Then type @cuttingfloor in a chat or a ChatGPT Work task.`,
+    a: `Yes, with cuttingfloor added as a plugin. Open chatgpt.com/plugins, click +, choose Add custom MCP server, paste ${MCP_URL} and set Authentication to OAuth, so ChatGPT opens the cuttingfloor sign-in page. Then type @cuttingfloor in a chat or a ChatGPT Work task.`,
   },
   {
     q: 'Is there a video editing MCP server for Codex?',

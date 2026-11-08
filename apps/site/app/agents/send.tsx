@@ -13,25 +13,25 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cuttingfloor.ai';
 const TEXT = {
   en: {
     lead: (app?: string) =>
-      `On your phone? ${app ?? 'Most apps'} ${app ? 'adds' : 'add'} servers on a computer.`,
+      `On your phone? ${app ?? 'Most apps'} ${app ? 'adds' : 'add'} cuttingfloor on a computer.`,
     kazi: 'Try it now in Kazi, free',
     kaziHow:
       'Kazi works on your phone and opens with a sample clip, edited on cuttingfloor while you watch.',
     later: 'Or set it up later:',
     button: 'Send me the setup',
     subject: 'Set up cuttingfloor',
-    body: 'Connect cuttingfloor to Kazi, Claude or ChatGPT:',
+    body: 'Connect cuttingfloor to ChatGPT, Claude or Kazi:',
   },
   es: {
     lead: (app?: string) =>
-      `¿Estás en el teléfono? ${app ?? 'Casi todas las apps'} ${app ? 'agrega' : 'agregan'} servidores desde la computadora.`,
+      `¿Estás en el teléfono? ${app ?? 'Casi todas las apps'} ${app ? 'agrega' : 'agregan'} cuttingfloor desde la computadora.`,
     kazi: 'Pruébalo ya en Kazi, gratis',
     kaziHow:
       'Kazi funciona en el teléfono y abre con un clip de muestra, editado con cuttingfloor mientras miras.',
     later: 'O configúralo después:',
     button: 'Mandarme las instrucciones',
     subject: 'Configurar cuttingfloor',
-    body: 'Conecta cuttingfloor a Kazi, Claude o ChatGPT:',
+    body: 'Conecta cuttingfloor a ChatGPT, Claude o Kazi:',
   },
 };
 

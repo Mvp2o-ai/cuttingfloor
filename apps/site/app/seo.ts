@@ -33,15 +33,15 @@ export const FAQS = [
   },
   {
     q: 'Can Claude edit videos?',
-    a: 'Yes, with cuttingfloor connected. Claude (web, desktop and Claude Code) calls its tools to import your footage, transcribe it, cut on words, add captions, mix the sound and export an MP4. In Claude, add it under Settings → Connectors; in Claude Code, run claude mcp add.',
+    a: 'Yes, with cuttingfloor connected. Claude (web, desktop and Claude Code) calls its tools to import your footage, transcribe it, cut on words, add captions, mix the sound and export an MP4. In Claude, open Customize → Connectors, click + Add, then Add custom connector; in Claude Code, run claude mcp add.',
   },
   {
     q: 'Can ChatGPT edit videos?',
-    a: 'Yes. In ChatGPT, open Plugins, choose Add custom MCP server, paste the cuttingfloor address and sign in. Then ask for the cut you want, in a chat or a ChatGPT Work task.',
+    a: 'Yes. In ChatGPT, open Plugins, click +, choose Add custom MCP server, paste the cuttingfloor address, set Authentication to OAuth (so ChatGPT opens the sign-in page) and sign in. Then ask for the cut you want, in a chat or a ChatGPT Work task.',
   },
   {
     q: 'Is there a video editor app for ChatGPT?',
-    a: `Yes: cuttingfloor connects to ChatGPT as an MCP app. Open Plugins, choose Add custom MCP server, paste ${MCP_ADDRESS} and sign in. Then ask ChatGPT to cut, caption or mix your video, and it hands back a real MP4.`,
+    a: `Yes: cuttingfloor connects to ChatGPT as an MCP app. Open Plugins, click +, choose Add custom MCP server, paste ${MCP_ADDRESS}, set Authentication to OAuth and sign in. Then ask ChatGPT to cut, caption or mix your video, and it hands back a real MP4.`,
   },
   {
     q: 'How do I add a video editing MCP server to Cursor?',
@@ -65,11 +65,11 @@ export const FAQS = [
   },
   {
     q: 'How is cuttingfloor different from other video MCPs?',
-    a: 'The other hosted video editing MCPs are editor apps with their own AI inside (invideo, Vidova, CutClip, Tella, OpusClip, Descript): their MCP is a way into their app. cuttingfloor has no AI of its own and no app to open. It is the editing tools, for the agent you already use, and it is open source, so you can run the same server yourself. The compare page has the details.',
+    a: 'The other hosted video editing MCPs are editor apps with their own AI inside (invideo, Vidova, CutClip, Tella, OpusClip, Descript): their MCP is a way into their app. cuttingfloor has no chat assistant of its own and no app to open: your AI does the talking and decides the edit, and cuttingfloor gives it the editing tools, plus Jev, its own vision model, to check frames. And it is open source, so you can run the same server yourself. The compare page has the details.',
   },
   {
     q: 'Is cuttingfloor an editor with an AI inside?',
-    a: 'No. It is the editing tools, without an editor around them. Your own agent (Claude, ChatGPT, Codex, Cursor, Kazi) makes every cut with them, so the intelligence is the agent you already chose, and the edit stays a timeline you can change, not a finished render.',
+    a: 'No. It has no chat assistant of its own: your own AI (ChatGPT, Claude, Kazi, Codex, Cursor) does the talking and makes every cut with cuttingfloor’s editing tools. cuttingfloor does use its own vision model, Jev, to check frames when your AI asks. The edit stays a timeline you can change, not a finished render.',
   },
   {
     q: 'Can Codex edit videos?',
@@ -85,7 +85,7 @@ export const FAQS = [
   },
   {
     q: 'Where does my footage go?',
-    a: 'To our servers, for as long as you work on it. Media and renders expire after seven days, timelines after a day without use. No one else can see them.',
+    a: 'To our servers, for as long as you work on it. Media and renders are deleted seven days after you last use them, timelines after a day without use, and download links last a day, so download what you want to keep. No one else can see them.',
   },
   {
     q: 'What happens when my credits run out?',
@@ -97,7 +97,7 @@ export const FAQS = [
   },
   {
     q: 'Do I need my own AI keys?',
-    a: 'Only for lip-sync, which uses your own sync. labs key. Transcripts, voiceover, background removal, stems, stabilizing and graphics run inside cuttingfloor with no key. Self-hosted, the visual judgment tools (judge.ask, look and media.seek) also need a TypeSafe key; hosted plans include them.',
+    a: 'Only for lip-sync, which uses your own sync. labs key. Transcripts, voiceover, background removal, stems, stabilizing and graphics run inside cuttingfloor with no key. Self-hosted, the visual judgment tools (judge.ask, look and media.seek) also need a TypeSafe key; hosted, they are included.',
   },
 ];
 

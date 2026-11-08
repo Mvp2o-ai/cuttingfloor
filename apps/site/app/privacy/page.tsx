@@ -32,10 +32,10 @@ export default function Privacy() {
         <Items
           items={[
             'Your account: email, name and how you sign in. WorkOS holds it for us, for as long as you have an account.',
-            'Billing: your plan and payment history. Stripe holds it; we never see your card number.',
+            'Billing: your credits, the packs you bought and your payment history. Stripe holds it; we never see your card number.',
             'Uploads, imported media and exports: 7 days after they are made.',
             'Timelines (the edits themselves): 24 hours after they were last used.',
-            'Render-minute records (which job ran, for how long): 13 months, to count your plan and for billing questions.',
+            'Job records (which job ran, for how long): 13 months, to count your credits and for billing questions.',
             'Account records: which app you first connected from and when you first edited and exported, kept with your account, to see which apps people use and to send the right account emails.',
             'Keys you save: a provider key (your sync. labs key) is kept encrypted in your account, and only its last four characters are ever shown. Keys you make for scripts are kept as long as they last.',
             'Sign-in steps: when an app asks this server how to sign in, we note the time and the app’s name (no address): 13 months, to see where people stop while connecting.',

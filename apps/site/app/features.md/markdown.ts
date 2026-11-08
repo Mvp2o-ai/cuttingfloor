@@ -47,7 +47,7 @@ export function markdown(): string {
     '',
     ...NO_KEY.map((n) => `- ${n}`),
     '',
-    `Plans and what they include: ${SITE_URL}/pricing`,
+    `Pricing, credits and what every account gets: ${SITE_URL}/pricing`,
     '',
     `## All ${TOOL_COUNT} tools`,
     '',

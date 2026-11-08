@@ -34,7 +34,7 @@ export default function AcceptableUse() {
       <Part title="Don't misuse the service">
         <Items
           items={[
-            'Break into, probe or overload our servers, or try to get around plan limits.',
+            'Break into, probe or overload our servers, or try to get around account limits.',
             'Use the code sandbox to mine, scan networks, send spam or attack anyone.',
             'Share an account, or open extra accounts to collect more free credits.',
             'Resell the hosted service without an agreement with us.',

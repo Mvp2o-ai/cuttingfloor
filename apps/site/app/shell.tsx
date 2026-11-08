@@ -22,6 +22,7 @@ export function Check() {
 
 // The live demo, on every page: the menu link, and a strip under the nav that phones see too.
 const LIVE_DEMO = kaziUrl('demos');
+const PHONE_KAZI = kaziUrl('phone');
 
 /** cta: the button's words. Pages for creators say "Get started", without trial language. */
 export function Nav({ cta = 'Start free' }: { cta?: string }) {
@@ -59,12 +60,12 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
           Watch it live now <span aria-hidden="true">→</span>
         </b>
         <small>
-          Kazi gives Big Buck Bunny a happy ending. Free, no sign-up. Then connect your own AI over
-          MCP.
+          Kazi gives Big Buck Bunny a happy ending. Free, no sign-up. Then add it to your ChatGPT,
+          Claude or Kazi.
         </small>
       </a>
       <a
-        className="live-strip"
+        className="live-strip on-computer"
         href="/connect#chatgpt"
         data-track="From ChatGPT: strip"
         {...onlyFrom('chatgpt')}
@@ -75,7 +76,7 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
         <small>Paste one address as a connector, then ask ChatGPT to edit your video.</small>
       </a>
       <a
-        className="live-strip"
+        className="live-strip on-computer"
         href="/connect#claude"
         data-track="From Claude: strip"
         {...onlyFrom('claude')}
@@ -85,6 +86,22 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
         </b>
         <small>Paste one address as a connector, then ask Claude to edit your video.</small>
       </a>
+      {/* ChatGPT and Claude add servers only on a computer; Kazi works on this phone. */}
+      {(['ChatGPT', 'Claude'] as const).map((name) => (
+        <a
+          key={name}
+          className="live-strip on-phone"
+          href={PHONE_KAZI}
+          rel="noopener"
+          data-track={`From ${name}: phone strip`}
+          {...onlyFrom(name === 'ChatGPT' ? 'chatgpt' : 'claude')}
+        >
+          <b>
+            Try it on this phone in Kazi <span aria-hidden="true">→</span>
+          </b>
+          <small>Free. {name} adds cuttingfloor on a computer; Kazi works right here.</small>
+        </a>
+      ))}
     </header>
   );
 }
