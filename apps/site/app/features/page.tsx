@@ -57,7 +57,8 @@ export default function Features() {
             or Kazi and your agent gets {TOOL_COUNT} editing tools. It cuts by what was said,
             captions, mixes and levels the sound, makes graphics and voiceovers, checks its own work
             and exports an MP4 or the edit for your editing app.{' '}
-            <em>Here is all of it, in plain words first and tool names second.</em>
+            <em>Here is all of it, in plain words first and tool names second.</em> New here? Start
+            with <a href="/guides/sync-video-to-music">sync video to music</a>.
           </p>
           <LiveCard />
           <nav className="ft-jump" aria-label="Feature groups">

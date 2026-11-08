@@ -27,9 +27,138 @@ export type Guide = {
   /** Demos that show the job, by slug. */
   demos: string[];
   faqs: { q: string; a: string }[];
+  /**
+   * A feature page rather than a how-to: it opens on a demo's before and after, says what the
+   * feature does and why an agent can't do it alone, and gives a prompt per job.
+   */
+  feature?: {
+    /** The feature's one name, shown above the H1. */
+    name: string;
+    /** The demo whose before and after is the proof, by id. */
+    proof: string;
+    does: { title: string; body: string }[];
+    whyHead: string;
+    why: { title: string; body: string }[];
+    /** Said after the reasons. */
+    whyNote: string;
+    /** One prompt per job; the first is also `prompt`. */
+    prompts: { label: string; text: string }[];
+  };
 };
 
+const MUSIC_PROMPTS = [
+  {
+    label: 'Cut your video to the music',
+    text: 'Cut these clips into a vertical Short synced to this song: change shots on the beat and end on the last hit.',
+  },
+  {
+    label: 'Fit the music to your video',
+    text: 'Fit this song to my video: trim it to the video’s length, end on a beat, and fade it out.',
+  },
+  {
+    label: 'Music under your voice',
+    text: 'Put this music under my talking video and turn it down while I speak.',
+  },
+];
+
 export const GUIDES: Guide[] = [
+  {
+    // The lead feature: both outside users so far synced video and music. Every claim holds for
+    // the server as it is: media.analyze beats gives the tempo, every beat, likely bar starts and
+    // each beat's strength; cuts are frames; audio.set_gain keyframes duck under speech spans;
+    // export.video audio_wav_48k gives the song alone. Nothing here clears music rights.
+    slug: 'sync-video-to-music',
+    lang: 'en',
+    title: 'Sync your video to music with AI',
+    metaTitle: 'Sync video to music with AI: cut to the beat, fit the song | cuttingfloor',
+    metaDescription:
+      'Ask ChatGPT, Claude or Kazi to cut your clips on the beat, fit a song to your video’s length, or turn the music down while you talk. cuttingfloor finds the beats and makes the real cut.',
+    answer:
+      'Connect cuttingfloor to Kazi, Claude or ChatGPT and ask for an edit to music. It finds every beat in your song, then your AI cuts your clips so the shots change on the beat and the video ends on the last hit, or trims the song to fit your video and ends it on a beat. You get a real MP4.',
+    updated: '2026-11-08',
+    feature: {
+      name: 'Sync video to music',
+      proof: 'dance',
+      does: [
+        {
+          title: 'Cut your video to the music',
+          body: 'Shots change on the beat or the bar, the big move lands on the drop, and the video ends on the last hit. Every cut is placed to the exact frame.',
+        },
+        {
+          title: 'Fit the music to your video',
+          body: 'Already have a finished video? The song is trimmed to its length between beats, so it never jumps, then ends on a hit and fades out. Get the video, or just the song as a WAV.',
+        },
+        {
+          title: 'Keep the music under your voice',
+          body: 'When someone talks, the music goes down, and it comes back up when they stop. The words stay clear and the song still carries the video.',
+        },
+      ],
+      whyHead: 'Why your AI can’t do it alone.',
+      why: [
+        {
+          title: 'It can’t hear the beat',
+          body: 'ChatGPT and Claude can’t hear where the beats in a song fall. cuttingfloor measures them: the tempo, every beat and how hard each one hits.',
+        },
+        {
+          title: 'It can’t cut your real footage',
+          body: 'On its own, your AI can’t cut full-quality video to the exact frame. We gave ChatGPT four dance takes and a song by itself, and it couldn’t make the video. cuttingfloor makes the cuts and renders the MP4.',
+        },
+        {
+          title: 'It can’t keep the edit',
+          body: 'With cuttingfloor every change is a new version, so “change shots every two bars” or “go back to the last one” is one sentence, not starting over.',
+        },
+      ],
+      whyNote:
+        'Your AI still makes the choices: which shot goes where and how it should feel. cuttingfloor gives it the beats and the tools.',
+      prompts: MUSIC_PROMPTS,
+    },
+    steps: [
+      {
+        title: 'Connect your AI once',
+        body: 'Add cuttingfloor to Kazi, Claude or ChatGPT (below). Kazi works on your phone; ChatGPT and Claude add it on a computer.',
+      },
+      {
+        title: 'Give it your video and your song',
+        body: 'In ChatGPT, attach them in the chat. In Claude or Kazi, your AI gives you a link to send them from your phone or computer.',
+      },
+      {
+        title: 'Say what you want',
+        body: 'Cut to the beat, fit the song to the video, or both. Say how fast the shots should change and how long it should be.',
+      },
+      {
+        title: 'Watch it, then ask for another',
+        body: 'Your AI checks the cuts against the beats before it hands it over. Ask for changes in words (“change shots every two bars”, “start at the chorus”) and get the MP4.',
+      },
+    ],
+    prompt: MUSIC_PROMPTS[0]?.text ?? '',
+    demos: ['edit-a-dance-short-to-the-beat', 'edit-a-product-review-short'],
+    faqs: [
+      {
+        q: 'Can I use any song?',
+        a: 'Use music you own or have a licence for. cuttingfloor edits the song you give it; it doesn’t clear the rights, and TikTok, Instagram or YouTube can mute or claim a song you don’t have the rights to. Want something of your own? In the dance video above, Kazi made an original beat first, so there was nothing to claim.',
+      },
+      {
+        q: 'Does it find the beats by itself?',
+        a: 'Yes. cuttingfloor measures the song’s tempo, every beat and where each bar likely starts, and your AI puts the cuts on those exact frames. It works best on music with a steady beat; with free-flowing music, the cuts follow the strongest hits instead.',
+      },
+      {
+        q: 'Can I get just the song, fitted to my video?',
+        a: 'Yes. Ask for the music on its own and you get a WAV file the length of your video, ending on a beat, ready to drop into CapCut or any editor.',
+      },
+      {
+        q: 'What files work?',
+        a: 'The ones you already have: MP4 or MOV video from your phone or camera, and MP3, WAV or M4A music, or a song inside a video. Vertical or wide.',
+      },
+      {
+        q: 'Does it work on a phone?',
+        a: 'Yes, in Kazi: connect cuttingfloor there and send your clips from your phone. ChatGPT and Claude add cuttingfloor on a computer.',
+      },
+      {
+        q: 'What does it cost?',
+        a: `Start free with ${FREE_CREDITS} credits, no card and no time limit. After that, pay as you go: credit packs that never expire, on the pricing page.`,
+      },
+    ],
+  },
   {
     slug: 'add-captions-to-a-video',
     lang: 'en',

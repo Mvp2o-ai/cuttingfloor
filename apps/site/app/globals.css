@@ -2786,6 +2786,40 @@ button.link-big {
   }
 }
 
+/* A feature guide (guides/guide.tsx) opens like a watch page: the before and after beside the
+   headline, then a link to the demo's every step, and a prompt per job further down. */
+.gd-proof {
+  margin: 18px 0 0;
+  font-family: var(--font-mono), monospace;
+  font-size: 14px;
+}
+.gd-proof a {
+  color: var(--key);
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+}
+.gd-hero .live-card,
+.gd-hero .from-card {
+  margin-top: clamp(20px, 3vw, 28px);
+}
+.gd-prompts {
+  display: grid;
+  gap: 28px;
+}
+@media (min-width: 1100px) {
+  .gd-prompts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+  }
+  .gd-prompts .wt-prompt {
+    display: flex;
+    flex-direction: column;
+  }
+  .gd-prompts .wt-prompt pre {
+    flex: 1;
+  }
+}
+
 /* The acts are below the fold, so the hero links down to the whole story and to each act. */
 .dm-jump {
   margin-top: clamp(24px, 3vw, 36px);

@@ -10,7 +10,7 @@ import { WALKTHROUGHS } from '../content/walkthroughs.ts';
 export type Route = { path: string; title: string; updated: string };
 
 export const ROUTES: Route[] = [
-  { path: '/', title: 'cuttingfloor: the video editing MCP server', updated: '2026-11-01' },
+  { path: '/', title: 'cuttingfloor: the video editing MCP server', updated: '2026-11-08' },
   {
     path: '/demos',
     title: 'Demos',

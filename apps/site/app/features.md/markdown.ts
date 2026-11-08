@@ -24,7 +24,7 @@ export function markdown(): string {
     '',
     `Canonical: ${SITE_URL}/features · Updated ${UPDATED}`,
     '',
-    `cuttingfloor is an open-source video editing MCP server: connect Claude, ChatGPT, Cursor or Kazi and your agent gets ${TOOL_COUNT} editing tools. It cuts by what was said, captions, mixes and levels the sound, makes graphics and voiceovers, checks its own work and exports an MP4 or the edit for your editing app.`,
+    `cuttingfloor is an open-source video editing MCP server: connect Claude, ChatGPT, Cursor or Kazi and your agent gets ${TOOL_COUNT} editing tools. It cuts by what was said, captions, mixes and levels the sound, makes graphics and voiceovers, checks its own work and exports an MP4 or the edit for your editing app. New here? Start with [sync video to music](${SITE_URL}/guides/sync-video-to-music).`,
     '',
     ...GROUPS.flatMap((g) => [
       `## ${g.name}`,
