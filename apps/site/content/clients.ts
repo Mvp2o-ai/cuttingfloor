@@ -63,7 +63,12 @@ const json = (v: unknown) => JSON.stringify(v, null, 2);
 
 const cursorConfig = btoa(JSON.stringify({ url: MCP_URL }));
 
-export const CLIENTS: Client[] = [
+/** How the video gets in, said at the end of every app's steps. */
+export const VIDEO_IN_CHAT = 'Attach your video in the chat. ChatGPT hands it to cuttingfloor.';
+export const VIDEO_IN_LINK =
+  'Your AI gives you a link to send the video from your phone or computer.';
+
+const APPS: Client[] = [
   {
     slug: 'kazi',
     name: 'Kazi',
@@ -364,6 +369,12 @@ export const CLIENTS: Client[] = [
     ],
   },
 ];
+
+/** Every app, its steps ending with how the video gets in. */
+export const CLIENTS: Client[] = APPS.map((c) => ({
+  ...c,
+  steps: [...c.steps, c.slug.startsWith('chatgpt') ? VIDEO_IN_CHAT : VIDEO_IN_LINK],
+}));
 
 /** The ones on the home page's Connect box, in order. */
 export const HOME_CLIENTS = CLIENTS.filter(
