@@ -157,6 +157,26 @@ export const TRANSFORM_DEFAULTS: Record<TransformNumber, number> = {
   opacity: 1,
 };
 
+/** The picture maps onto this quad, in the fitted frame. */
+const Quad = z.array(Point).length(4);
+
+/** A quad, or the same quad eased between keyframes like the other animated fields. */
+export const StoredCorners = z.union([
+  Quad,
+  z.object({
+    keyframes: z
+      .array(
+        z.object({
+          t: z.number().int(),
+          corners: Quad,
+          ease: Ease.optional(),
+        }),
+      )
+      .min(1)
+      .max(MAX_KEYFRAMES),
+  }),
+]);
+
 export const StoredTransform = z.object({
   x: StoredAnimatable.optional(),
   y: StoredAnimatable.optional(),
@@ -168,6 +188,7 @@ export const StoredTransform = z.object({
   fit: Fit.optional(),
   flip: Flip.optional(),
   crop: Crop.optional(),
+  corners: StoredCorners.optional(),
 });
 export type StoredTransform = z.infer<typeof StoredTransform>;
 
@@ -224,7 +245,7 @@ export const MASK_DEFAULTS: Record<MaskNumber, number> = {
   rotation: 0,
 };
 
-const Point = z.tuple([z.number().min(-4).max(5), z.number().min(-4).max(5)]);
+export const Point = z.tuple([z.number().min(-4).max(5), z.number().min(-4).max(5)]);
 export const MAX_MASK_POINTS = 64;
 const Points = z.array(Point).min(3).max(MAX_MASK_POINTS);
 
