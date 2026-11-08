@@ -204,6 +204,47 @@ a {
   text-decoration: underline;
 }
 
+/* From: what leads depends on where the visitor came from (from.tsx). Every variant is in the
+   page; the script sets html[data-from] before the first paint. */
+html[data-from="chatgpt"] [data-not-from~="chatgpt"],
+html[data-from="claude"] [data-not-from~="claude"],
+html:not([data-from="chatgpt"]) [data-only-from="chatgpt"],
+html:not([data-from="claude"]) [data-only-from="claude"] {
+  display: none !important;
+}
+/* The visitor's own app first in the connect box, in the accent. */
+html[data-from="chatgpt"] .connect-now-apps [data-app="chatgpt"],
+html[data-from="claude"] .connect-now-apps [data-app="claude"] {
+  order: -1;
+}
+html[data-from="chatgpt"] .connect-now-apps [data-app="chatgpt"] a,
+html[data-from="claude"] .connect-now-apps [data-app="claude"] a {
+  color: var(--key);
+}
+.from-card .live-card {
+  margin-top: 32px;
+}
+.from-alt {
+  margin: 12px 0 0;
+  color: var(--mute);
+  font-size: 15px;
+}
+.live-card-app {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  background: #fff;
+  color: #000;
+}
+.live-card-app svg {
+  width: 20px;
+  height: 20px;
+}
+
 /* The live demo card at the top of every page (live-card.tsx). */
 .live-card {
   display: flex;

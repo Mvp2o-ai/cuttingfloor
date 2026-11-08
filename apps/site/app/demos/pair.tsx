@@ -31,7 +31,9 @@ export function Loop({ v, controls }: { v: DemoVideo; controls?: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const el = ref.current;
-    if (!el || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    // A hidden variant (from.tsx) stays a poster.
+    if (!el || el.offsetParent === null) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     el.play().catch(() => {});
   }, []);
   return (

@@ -2,6 +2,7 @@ import { Analytics } from '@vercel/analytics/next';
 import type { Metadata } from 'next';
 import { Archivo, JetBrains_Mono, Ubuntu, VT323 } from 'next/font/google';
 import { Clicks } from './clicks.tsx';
+import { FromScript } from './from.tsx';
 import { DESCRIPTION, SITE_URL, TITLE } from './seo.ts';
 import './globals.css';
 
@@ -32,7 +33,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en"
       className={`${display.variable} ${pixel.variable} ${mono.variable} ${kazi.variable}`}
+      // FromScript sets data-from before React hydrates.
+      suppressHydrationWarning
     >
+      <head>
+        <FromScript />
+      </head>
       <body>
         {children}
         {/* Page views and clicks: no cookies, no ad trackers (privacy page). */}

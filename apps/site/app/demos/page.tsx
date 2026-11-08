@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { DEMOS, finished, lengths } from '../../content/demos.ts';
 import { AgentBlock } from '../agents/block.tsx';
+import { AgentCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, JsonLd, Nav } from '../shell.tsx';
 import { LiveDemo, liveVideoObject } from './live.tsx';
 import { Poster } from './poster.tsx';
@@ -21,6 +22,9 @@ export default function Demos() {
         <section className="cell wt-head marks">
           <span className="mark-b" />
           <Breadcrumbs trail={[{ name: 'Demos', href: '/demos' }]} />
+          {/* A visitor from ChatGPT or Claude already has an agent: adding it leads. */}
+          <AgentCard source="chatgpt" />
+          <AgentCard source="claude" />
           <LiveDemo />
         </section>
         <section className="cell">
