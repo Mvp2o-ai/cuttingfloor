@@ -1,15 +1,15 @@
 import {
   type Animatable,
   CfError,
-  EASES,
   type Ease,
+  EASES,
   type EditArgsOf,
   type EditTool,
-  EFFECTS,
-  type EffectSpec,
   effectNamesText,
   effectParamsSchema,
   effectParamsText,
+  EFFECTS,
+  type EffectSpec,
   MASK_DEFAULTS,
   MASK_LIMITS,
   MASK_NUMBERS,
@@ -19,6 +19,7 @@ import {
   type StoredAnimatable,
   type StoredAnimation,
   type StoredClip,
+  type StoredCorners,
   type StoredEffect,
   type StoredMask,
   type StoredMaskShape,
@@ -29,13 +30,13 @@ import {
   type StoredTransition,
   type TextSpan,
   type TextStyle,
+  textWords,
   TICKS_PER_SECOND,
   type TimelineDoc,
+  type TrackKind,
   TRANSFORM_DEFAULTS,
   TRANSFORM_LIMITS,
   TRANSFORM_NUMBERS,
-  type TrackKind,
-  textWords,
 } from '@cuttingfloor/schema';
 import { checkKeyframes, loopPlays, sample, toStoredAnim, toViewAnim } from './animate.ts';
 import { extended, frameSource, inBetween, meanRate, ratePoints, span, subclip } from './speed.ts';
@@ -2266,6 +2267,16 @@ function clipSetTransform(doc: TimelineDoc, a: EditArgsOf<'clip.set_transform'>)
     if (c === null || (!c.left && !c.right && !c.top && !c.bottom)) delete t.crop;
     else t.crop = c;
   }
+  if (a.corners !== undefined) {
+    // Corners and the affine fields both say where the picture goes; composing them would make
+    // the result depend on an order the caller cannot see, so corners say it outright.
+    for (const key of TRANSFORM_NUMBERS) delete t[key];
+    delete t.fit;
+    delete t.flip;
+    delete t.crop;
+    if (a.corners === null) delete t.corners;
+    else t.corners = storedCorners(a.corners, clip, tpf);
+  }
   if (Object.keys(t).length) clip.transform = t;
   else delete clip.transform;
   return ok(clip.start, { clip_id: clip.id });
@@ -2378,6 +2389,30 @@ function storedShape(
 }
 
 type ToolPoints = ToolShape['points'];
+
+type ToolCorners = NonNullable<EditArgsOf<'clip.set_transform'>['corners']>;
+
+/** Corner quad in stored form: keyframe frames become source ticks, as other keyframes do. */
+function storedCorners(q: ToolCorners, clip: StoredClip, tpf: number): StoredCorners {
+  if (Array.isArray(q)) return q;
+  checkKeyframes('corners', { keyframes: q.keyframes.map((k) => ({ frame: k.frame, value: 0 })) });
+  const unknown = q.keyframes.find((k) => k.ease && !(EASES as readonly string[]).includes(k.ease));
+  if (unknown) {
+    throw new CfError('bad_request', `corners: unknown ease ${unknown.ease}`, {
+      hint: `Use one of ${EASES.join(', ')}`,
+    });
+  }
+  const sorted = [...q.keyframes].sort((a, b) => a.frame - b.frame);
+  const only = sorted[0];
+  if (sorted.length === 1 && only) return only.corners;
+  return {
+    keyframes: sorted.map((k) => ({
+      t: clip.in + k.frame * tpf,
+      corners: k.corners,
+      ...(k.ease ? { ease: k.ease as Ease } : {}),
+    })),
+  };
+}
 
 /** Polygon corners in stored form: keyframe frames become source ticks, as other keyframes do. */
 function storedPoints(p: NonNullable<ToolPoints>, clip: StoredClip, tpf: number): StoredPoints {
