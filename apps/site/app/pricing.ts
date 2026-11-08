@@ -13,7 +13,7 @@ import { TOOL_COUNT } from '../content/tools.ts';
 // unit is a credit: one minute of a job running (export, import, transcript, motion graphics,
 // voiceover, cutout). Editing the timeline is free. There are no subscriptions: an account starts
 // with free credits and buys packs when it wants more (pay as you go); bought credits never
-// expire. At zero new jobs wait; nothing is billed but the packs bought. Every plan has every tool.
+// expire. At zero new jobs don't start; nothing is billed but the packs bought. Every plan has every tool.
 
 /** The ways to use the hosted service, in order. */
 const SOLD: PlanId[] = ['free', 'credits', 'enterprise'];
@@ -282,7 +282,7 @@ export const CREDIT = [
   'Planning and editing the timeline cost nothing, and so do previews.',
   `A new account gets ${FREE_CREDITS} free credits, with no card and no time limit. A short video export of about 30 seconds takes well under one credit.`,
   `After that, buy credits in packs when you need them, from ${FROM_PACK}. They never expire, and there is no subscription.`,
-  `When credits run out, new jobs wait until you top up; editing and previews keep working. We email you when you have fewer than ${LOW_CREDITS} left, and you can turn on automatic top-up so a pack is bought for you.`,
+  `When credits run out, new jobs (exports, imports, analysis) won’t start until you have credits again; editing and previews keep working. Ask again after. We email you when you have fewer than ${LOW_CREDITS} left, and you can turn on automatic top-up so a pack is bought for you.`,
   'Self-hosted has no credits at all: it runs on your own machine.',
 ] as const;
 
@@ -304,7 +304,7 @@ export const PRICING_FAQS = [
   },
   {
     q: 'What happens when credits run out?',
-    a: `Editing and previews keep working. New jobs such as exports and imports wait until you buy more credits on your account page. You are never charged for anything but the packs you buy. We email you when you have fewer than ${LOW_CREDITS} credits left; turn on automatic top-up and a pack of your choice is bought for you instead.`,
+    a: `Editing and previews keep working. New jobs such as exports, imports and analysis won’t start until you have credits again; buy more on your account page, then ask again. You are never charged for anything but the packs you buy. We email you when you have fewer than ${LOW_CREDITS} credits left; turn on automatic top-up and a pack of your choice is bought for you instead.`,
   },
   {
     q: 'How much do credits cost?',

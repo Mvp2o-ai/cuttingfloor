@@ -1,16 +1,16 @@
-version: 1
+version: 2
 subject: You're in - start with one clip
 ---
 Hi,
 
-You're set up: your cuttingfloor account works, and your agent can edit video as soon as it's connected.
+You're set up: your cuttingfloor account works, and your AI can edit video as soon as it's connected.
 
-You start with 100 free credits: no card, no time limit, every tool. A credit is a minute of our servers working (an export, a transcript); editing itself is free.
+You start with {{free_credits}} free credits: no card, no time limit, every tool. A credit is a minute of our servers working (an export, a transcript); editing itself is free.
 
-The fastest first step: hand your agent one clip and describe the edit in plain English, the way you'd brief a person. For example: "Cut the pauses and ums out of this and add captions."
+The fastest first step: hand your AI one clip and describe the edit in plain English, the way you'd brief a person. For example: "Cut the pauses and ums out of this and add captions."
 
-Quickstart (connect your agent, then that first edit): https://cuttingfloor.ai/welcome
-Docs for each agent: https://cuttingfloor.ai/connect
+Quickstart (connect your AI, then that first edit): https://cuttingfloor.ai/welcome
+How to connect each AI app: https://cuttingfloor.ai/connect
 
 Two honest notes:
 - It's early software. Some edits will go wrong, and when they do I want to hear about it.

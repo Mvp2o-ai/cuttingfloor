@@ -179,15 +179,21 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       assertOnline(offline);
       // Checks the preset fits the sequence and the overrides fit the preset, before any job.
       const { spec, width, height } = resolvePreset(args.preset, doc.sequence, args.overrides);
-      const cap = (await deps.limits?.())?.shortSide;
+      const limits = await deps.limits?.();
+      const cap = limits?.shortSide;
       if (cap && !spec.audioOnly && Math.min(width, height) > cap) {
         const fit = width >= height ? `{height: ${cap}}` : `{width: ${cap}}`;
         throw new CfError(
           'limit_exceeded',
-          `This export would be ${width}x${height}; your plan exports up to ${cap}p`,
+          `This export would be ${width}x${height}; this account exports up to ${cap}p`,
           {
-            hint: `Pass overrides ${fit} to export at ${cap}p, or move to a plan with larger exports`,
-            detail: { width, height, short_side_limit: cap },
+            hint: `Pass overrides ${fit} to export at ${cap}p${limits?.account ? `. Export sizes: ${limits.account}` : ''}`,
+            detail: {
+              width,
+              height,
+              short_side_limit: cap,
+              ...(limits?.account ? { pricing: limits.account } : {}),
+            },
           },
         );
       }

@@ -166,8 +166,8 @@ export class Lifecycle {
           ? 'Your agent has used all its credits.'
           : `Your agent has ${left} credits left. A credit is one minute of a job running (an export, an import, a transcript).`,
         out
-          ? 'Editing still works, and so do previews. New jobs (exports, imports, motion graphics, voiceovers) wait until you top up.'
-          : 'At zero, new jobs wait. Editing and previews keep working.',
+          ? 'Editing still works, and so do previews. New jobs (exports, imports, motion graphics, voiceovers) won’t start until you top up; then ask again.'
+          : 'At zero, new jobs won’t start until you top up. Editing and previews keep working.',
         `Top up on your account page: packs start at $${PACKS[0]?.price} for ${PACKS[0]?.credits} credits, and they never expire. Turn on automatic top-up there and this won't stop you again.`,
       ],
       action: { label: 'Top up', url: `${this.#o.accountUrl}#credits` },
@@ -235,7 +235,7 @@ export class Lifecycle {
         subject: 'This month’s credits are used up',
         lines: [
           `Your agent has used all ${included} credits for this month.`,
-          'Editing still works, and so do previews. New jobs (exports, imports, motion graphics, voiceovers) wait until the credits renew.',
+          'Editing still works, and so do previews. New jobs (exports, imports, motion graphics, voiceovers) won’t start until the credits renew; then ask again.',
           `They renew on ${renews}.`,
         ],
         action: { label: 'Open your account', url: this.#o.accountUrl },
@@ -246,7 +246,7 @@ export class Lifecycle {
         subject: `You've used ${Math.floor(share * 100)}% of this month’s credits`,
         lines: [
           `Your agent has used ${balance.used} of ${included} credits this month; they renew on ${renews}.`,
-          'At the limit, new jobs wait. Editing and previews keep working.',
+          'At the limit, new jobs won’t start until the credits renew. Editing and previews keep working.',
         ],
         action: { label: 'See your credits', url: this.#o.accountUrl },
       });

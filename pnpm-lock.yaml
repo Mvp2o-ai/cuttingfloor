@@ -222,6 +222,9 @@ importers:
       '@cuttingfloor/jobs':
         specifier: workspace:*
         version: link:../jobs
+      '@cuttingfloor/plans':
+        specifier: workspace:*
+        version: link:../plans
       '@cuttingfloor/schema':
         specifier: workspace:*
         version: link:../schema

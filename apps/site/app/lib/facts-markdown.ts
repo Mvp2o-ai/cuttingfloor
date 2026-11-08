@@ -13,7 +13,7 @@ import { list, table } from './markdown.ts';
 // The product facts as Markdown, for every twin and llms.txt that states them.
 
 export const CREDIT_TEXT =
-  'A credit is one minute of a job running on the hosted servers (export, import, transcript, motion graphics, voiceover, cutout). Planning and editing the timeline are free. Everyone has every tool. Pay as you go: buy credit packs when you need them; they never expire and nothing renews. At zero, new jobs wait until you top up; nothing is ever billed but the packs you buy.';
+  'A credit is one minute of a job running on the hosted servers (export, import, transcript, motion graphics, voiceover, cutout). Planning and editing the timeline are free. Everyone has every tool. Pay as you go: buy credit packs when you need them; they never expire and nothing renews. At zero, new jobs won’t start until you top up; nothing is ever billed but the packs you buy.';
 
 /** "From $5 for 25 credits", "$0, no card", "Talk to us". */
 export const priceText = (p: Plan) =>

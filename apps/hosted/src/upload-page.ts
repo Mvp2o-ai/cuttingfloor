@@ -36,8 +36,8 @@ export function uploadPage(uploadId: string): string {
 <body>
 <main>
   <h1>Send a file</h1>
-  <p>Your agent asked for this file. Drop it here; it goes straight to your cuttingfloor workspace.</p>
-  <label id="drop">Drop a video, audio file or image, or click to choose one<input id="pick" type="file"></label>
+  <p>Your AI asked for this file. Pick it here and it goes straight to cuttingfloor.</p>
+  <label id="drop">Drop a video, audio file or image here, or tap or click to choose one<input id="pick" type="file"></label>
   <div class="bar" hidden><div></div></div>
   <div id="status" role="status" aria-live="polite"></div>
 </main>
@@ -94,7 +94,7 @@ export function uploadPage(uploadId: string): string {
         }
       }
       fill.style.width = '100%';
-      say('Sent. Tell your agent the file is in (upload ' + id + ').', true);
+      say('Sent. Go back to the chat and say it’s in. (Upload ' + id + ')', true);
       drop.hidden = true;
     } catch (error) {
       say(error.message || String(error));
@@ -113,7 +113,7 @@ export function uploadPage(uploadId: string): string {
     if (file) send(file);
   });
   offset().then(({ complete }) => {
-    if (complete) { drop.hidden = true; say('This file is already here. Tell your agent it is in.', true); }
+    if (complete) { drop.hidden = true; say('This file is already here. Go back to the chat and say it’s in. (Upload ' + id + ')', true); }
   }, (error) => say(error.message));
 })();
 </script>

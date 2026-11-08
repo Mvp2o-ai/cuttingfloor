@@ -103,6 +103,7 @@ describe('HTTP face', () => {
       arguments: { source: { path: '/media/x.mp4' } },
     })) as { structuredContent: { code: string } };
     expect(imp.structuredContent.code).toBe('path_not_allowed');
+    expect(JSON.stringify(imp.structuredContent)).toContain('media.upload');
     await alice.close();
     await bob.close();
   });
@@ -271,6 +272,7 @@ describe('HTTP face', () => {
     };
     expect(up.upload_id).toMatch(/^u_/);
     expect(up.max_bytes).toBe(1024);
+    expect(up.how).toMatch(/^Give the user this link: /);
     expect(up.how).toContain(`curl --fail -T clip.mp4 '${up.url}'`);
     const url = new URL(up.url);
     expect(
@@ -326,6 +328,10 @@ describe('HTTP face', () => {
     };
     const refused = await fetch(over.url, { method: 'PUT', body: Buffer.alloc(2048) });
     expect(refused.status).toBe(413);
+    // In sizes a person reads, not a count of bytes.
+    expect(((await refused.json()) as { error: string }).error).toBe(
+      'This file is too big: uploads take up to 1 KB',
+    );
     await alice.close();
     await bob.close();
   });

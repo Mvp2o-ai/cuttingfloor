@@ -1,4 +1,6 @@
 import type { CredentialStore } from '@cuttingfloor/credentials';
+import { MEDIA_TTL_MS } from '@cuttingfloor/engine';
+import { FREE_CREDITS, PLANS } from '@cuttingfloor/plans';
 import type { AccountGetResult } from '@cuttingfloor/schema';
 import { McpServer } from '@modelcontextprotocol/server';
 import { registerCatalogs } from './catalog.ts';
@@ -40,10 +42,33 @@ export interface ServerDeps {
   account?: () => Promise<AccountGetResult>;
 }
 
-const INSTRUCTIONS = `cuttingfloor is a headless video editor. It makes video two ways, often both at once:
-- Make new: create.motion (animated HTML), create.still, create.matte and create.voiceover build media from nothing. An image, mockup or page the user shows you is a reference for you to look at and rebuild in HTML, not a file to import.
-- Edit what the user has: media.import their footage, music or logo (a path under the media roots, a URL, a file on the user's machine sent with media.upload or dropped on its page, a file the user dropped on their account page (media.list shows those by name), or a small file as a data: URI; to try it, /samples/sample.mp4 and /samples/card.png where available).
-The tools are granular primitives that do exactly what their arguments say; you compose them. edit.batch applies a planned sequence as one change.
+/**
+ * The server's instructions, from its own config: path imports and the samples only where this
+ * server has media roots, credits only on the hosted service (numbers from the plans).
+ */
+function instructions(config: Runtime['config']): string {
+  const roots = config.mediaRoots;
+  const hosted = config.mode === 'hosted';
+  const samples = roots.includes('/samples')
+    ? '; to try it, /samples/sample.mp4 and /samples/card.png'
+    : '';
+  const linkHours = Math.round(config.outputUrlTtlMs / 3_600_000);
+  const keepDays = Math.round(MEDIA_TTL_MS / 86_400_000);
+  const jobs = PLANS.free.limits.jobs;
+  const credits = hosted
+    ? `
+Credits: a job (export, import, analysis, create.*) spends credits, one a minute of it running; editing and previews are free. A new account starts with ${FREE_CREDITS} free credits, and a free account runs ${jobs === 1 ? 'one job' : `${jobs} jobs`} at a time (more wait their turn). At 0 credits new jobs are refused (quota_exceeded): tell the user that new jobs (exports, imports, analysis) won't start until there are credits again, that editing and previews still work, and to ask again after.`
+    : '';
+  return `${INSTRUCTIONS_HEAD}
+- Edit what the user has: media.import their footage, music or logo: a file on the user's phone or computer through media.upload (give the user its link; they open it and pick the file), a URL, ${roots.length ? `a path under ${roots.join(', ')}, ` : ''}a file the user already sent (media.list shows those by name), or a small file as a data: URI${samples}. If the user attaches a file in the chat and the chat app doesn't hand it to you, call media.upload and give the user its link.
+${INSTRUCTIONS_BODY}
+Links to files work for ${linkHours} ${linkHours === 1 ? 'hour' : 'hours'} (reading the media or job again gives fresh ones) and files are deleted ${keepDays} days after last use, so tell the user to download the files they want to keep.${credits}`;
+}
+
+const INSTRUCTIONS_HEAD = `cuttingfloor is a headless video editor. It makes video two ways, often both at once:
+- Make new: create.motion (animated HTML), create.still, create.matte and create.voiceover build media from nothing. An image, mockup or page the user shows you is a reference for you to look at and rebuild in HTML, not a file to import.`;
+
+const INSTRUCTIONS_BODY = `The tools are granular primitives that do exactly what their arguments say; you compose them. edit.batch applies a planned sequence as one change.
 Typical flow:
 1. Get media: create.* for new material, media.import for the user's own files (both long-running: a task, or a job_id whose status job.get reads; job.get wait_seconds waits for it to move). Edits, previews and render.frames take the media_id once status is processing; media.analyze, media.seek, judge.ask and create.* need it ready, and export.video waits for ready.
 2. timeline.create with a sequence ({width, height, fps:{num,den}}), then edit: clip.add, clip.trim, clip.split, clip.move, clip.remove, track.* — or edit.batch for many edits at once.
@@ -60,14 +85,13 @@ Typical flow:
 4. Look at the result with preview: "inline" on an edit, or render.frames (stills). To watch it play, with motion, timing and sound, when you or your client take video in: export.video a range with preset review_h264; its result links the file (video://jobs/{job_id}/output) and gives a signed url, fps and duration.
 5. qa.check, then export.video (long-running) for a signed download URL and a page_url to give the user, which plays it in any browser: presets for web, masters, 9:16 social, AV1, GIF and audio, with size/fps/bitrate overrides (video://catalog/presets). export.timeline hands the edit to another editor (FCPXML, OTIO, EDL) or writes captions (SRT, VTT).
 Skills: step-by-step instructions for common jobs, such as cutting the pauses and ums out of a talking video. Before composing one yourself, skills.search in the user's words, then skills.get and follow its steps.
-Time is integer frames at the sequence rate; ranges are end-exclusive. Keeping work: the server keeps nothing for long. Timelines expire 24 h after last use; media and exports 7 days after last use. You keep what lasts: for work longer than a day, save the timeline.get document of the latest timeline on your side and timeline.load it to carry on; save the files you want to keep from their download url (media.get, export.video) and bring them back with media.import. media.delete removes a media you no longer want, so an old version stops turning up.
-Credits: on the hosted service a job (export, import, analysis, create.*) spends credits, one a minute of it running; editing and previews are free.`;
+Time is integer frames at the sequence rate; ranges are end-exclusive. Keeping work: the server keeps nothing for long. Timelines expire 24 h after last use; media and exports 7 days after last use. You keep what lasts: for work longer than a day, save the timeline.get document of the latest timeline on your side and timeline.load it to carry on; save the files you want to keep from their download url (media.get, export.video) and bring them back with media.import. media.delete removes a media you no longer want, so an old version stops turning up.`;
 
 /** Builds one MCP server instance over the shared runtime. Transports live in apps/. */
 export function createServer(deps: ServerDeps): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
-    { instructions: INSTRUCTIONS },
+    { instructions: instructions(deps.runtime.config) },
   );
   compactSchemas(server);
   allowTaskReplies(server);

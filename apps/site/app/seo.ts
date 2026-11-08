@@ -89,7 +89,7 @@ export const FAQS = [
   },
   {
     q: 'What happens when my credits run out?',
-    a: 'Editing and previews keep working; new jobs such as exports and imports wait until you buy more credits on your account page. Packs never expire, nothing renews, and you are never charged for anything else. We email you when you are running low, and automatic top-up can buy a pack for you.',
+    a: 'Editing and previews keep working; new jobs such as exports and imports won’t start until you buy more credits on your account page. Packs never expire, nothing renews, and you are never charged for anything else. We email you when you are running low, and automatic top-up can buy a pack for you.',
   },
   {
     q: 'Can I run it myself for free?',

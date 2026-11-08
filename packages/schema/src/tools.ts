@@ -1132,7 +1132,7 @@ export const MediaOrigin = z
       .enum(['media.upload', 'account_page', 'data_uri'])
       .optional()
       .describe(
-        'upload: sent through a media.upload link, dropped on the account page, or a data: URI',
+        'upload: sent through a media.upload link, dropped on the cuttingfloor site, or a data: URI',
       ),
     job_id: JobId.optional().describe('render: the export.video job; created: the create.* job'),
     timeline_id: TimelineId.optional().describe(
@@ -1381,12 +1381,15 @@ export const MediaListResult = z.object({
       }),
     )
     .describe(
-      `Files sent to the server and not imported yet, newest first (up to ${MEDIA_LIST_LIMIT}): through media.upload, or dropped on the account page by the user`,
+      `Files sent to the server and not imported yet, newest first (up to ${MEDIA_LIST_LIMIT}): through media.upload, or dropped on the cuttingfloor site by the user`,
     ),
   upload_count: z.number().int(),
   storage: z.object({
     used_bytes: z.number().describe('Everything held: uploads, media with its proxies, exports'),
-    max_bytes: z.number().nullable().describe("The plan's cap; null for none"),
+    max_bytes: z
+      .number()
+      .nullable()
+      .describe("This account's storage, in bytes; null for no limit"),
   }),
 });
 
@@ -1400,7 +1403,10 @@ export const MediaDeleteResult = z.object({
     .describe('What it held here: the file, its proxy and mezzanine, and its analyses'),
   storage: z.object({
     used_bytes: z.number(),
-    max_bytes: z.number().nullable().describe("The plan's cap; null for none"),
+    max_bytes: z
+      .number()
+      .nullable()
+      .describe("This account's storage, in bytes; null for no limit"),
   }),
 });
 

@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import type { Workspace } from '@cuttingfloor/core';
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { EmailError, type EmailProvider } from './email.ts';
 
 // The sign-up sequence: a welcome within a minute of signing up, then exactly one follow-up a
@@ -70,7 +71,7 @@ const FOLLOW_UP_WINDOW_MS = 2 * 86_400_000;
 // Follow-ups are due by the hour, not the second: looked for less often than welcomes.
 const FOLLOW_UP_SCAN_MS = 10 * 60_000;
 const LOG_TTL_MS = 400 * 86_400_000;
-const PLACEHOLDERS = new Set(['signer', 'unsubscribe_url']);
+const PLACEHOLDERS = new Set(['signer', 'unsubscribe_url', 'free_credits']);
 
 interface Claim {
   slot: Slot;
@@ -189,7 +190,11 @@ export class Sequence {
           to: state.email,
           replyTo: this.#o.replyTo,
           subject: template.subject,
-          text: render(template.body, { signer: this.#o.signer, unsubscribe_url: unsubscribe }),
+          text: render(template.body, {
+            signer: this.#o.signer,
+            unsubscribe_url: unsubscribe,
+            free_credits: String(FREE_CREDITS),
+          }),
           headers: {
             'List-Unsubscribe': `<${unsubscribe}>`,
             'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
@@ -343,7 +348,8 @@ export interface Template {
 
 /**
  * A template file: `version:` and `subject:` lines, a `---` line, then the plain-text body. The
- * body may use `{{signer}}` and must carry `{{unsubscribe_url}}`.
+ * body may use `{{signer}}` and `{{free_credits}}` (a new account's, from the plans) and must carry
+ * `{{unsubscribe_url}}`.
  */
 export async function loadTemplate(dir: string, name: TemplateName): Promise<Template> {
   const text = (await readFile(join(dir, `${name}.txt`), 'utf8')).replaceAll('\r\n', '\n');

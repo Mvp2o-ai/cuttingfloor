@@ -113,7 +113,10 @@ describe('plan limits', () => {
   });
 
   it('caps the export size at the plan’s, and says how to fit it', async () => {
-    const client = await connectWith('hd-only', async () => ({ shortSide: 1080 }));
+    const client = await connectWith('hd-only', async () => ({
+      shortSide: 1080,
+      account: 'https://cuttingfloor.ai/pricing',
+    }));
     const timeline = await titled(client, { width: 3840, height: 2160, fps: { num: 25, den: 1 } });
     const big = await call(client, 'export.video', {
       timeline_id: timeline,
@@ -123,7 +126,10 @@ describe('plan limits', () => {
       code: 'limit_exceeded',
       detail: { width: 3840, height: 2160, short_side_limit: 1080 },
     });
+    expect(String(big.structured.message)).toContain('this account exports up to 1080p');
     expect(String(big.structured.hint)).toContain('{height: 1080}');
+    expect(String(big.structured.hint)).toContain('https://cuttingfloor.ai/pricing');
+    expect(JSON.stringify(big.structured)).not.toMatch(/\bplan\b/);
     const fitted = await call(client, 'export.video', {
       timeline_id: timeline,
       preset: 'master_prores_422hq',

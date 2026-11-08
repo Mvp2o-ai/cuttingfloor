@@ -504,7 +504,7 @@
         <div class="meta" id="tlMeta"></div>
         <div class="grow"></div>
         <div class="acts">
-          <button class="pill" id="sendAgent" type="button" title="Write a note to the agent in this chat" hidden>${ICON.agent}<span>Send to agent</span></button>
+          <button class="pill" id="sendAgent" type="button" title="Write a note about this moment into the chat" hidden>${ICON.agent}<span>Send to chat</span></button>
           <button class="pill narrow-hide" id="copyLink" type="button" title="Copy a link anyone can open" disabled>${ICON.link}<span>Copy link</span></button>
           <button class="pill narrow-hide" id="openPage" type="button" title="Open the watch page" disabled>${ICON.open}<span>Open</span></button>
           <button class="pill" id="download" type="button" title="Download the file" disabled>${ICON.down}<span>Download</span></button>
@@ -527,7 +527,7 @@
             <div class="sep"></div>
             <button class="tc" id="tc" type="button" title="Switch between time and frame number"></button>
             <div class="grow"></div>
-            <span class="ctx narrow-hide" id="ctx" hidden>${ICON.agent}<span id="ctxText">Agent sees</span></span>
+            <span class="ctx narrow-hide" id="ctx" hidden>${ICON.agent}<span id="ctxText">Your AI sees</span></span>
             <button class="tbtn narrow-hide" id="loopBtn" type="button" title="Loop between I and O">${ICON.loop}</button>
             <button class="tbtn rate" id="rate" type="button" title="Playback speed">1×</button>
             <button class="tbtn" id="mute" type="button" title="Mute (M)">${ICON.vol}</button>
@@ -656,7 +656,7 @@
       media.addEventListener('click', () => togglePlay());
       media.addEventListener('error', () => {
         const expired = data.expires_at && Date.parse(data.expires_at) < Date.now();
-        stageError(expired ? 'This link expired. Run the export again, or ask job.get for a fresh link.' : 'The file did not load. The link may have expired, or the chat app blocked it.', () => stageFile(data));
+        stageError(expired ? 'This link expired. Ask in the chat for a fresh link.' : 'The file did not load. The link may have expired, or the chat app blocked it.', () => stageFile(data));
       });
       maybeMix();
     } else if (kind === 'image') {
@@ -1008,7 +1008,7 @@
     return `<div class="clip-title"><span class="sw" style="background:${colorVar(c)}"></span><div style="min-width:0"><b>${esc(nameOf(c))}</b><span class="mono">${esc(c.id)}</span></div></div>
       <dl class="kv">${rows.join('')}</dl>
       ${fx.length ? `<h4>Effects</h4>${fx.map((e) => `<div class="fx"><b>${esc(e.name)}</b>${e.fromTrack ? ' <span style="color:var(--muted)">(whole track)</span>' : ''}${e.enabled === false ? ' <span style="color:var(--muted)">off</span>' : ''}<div class="p">${esc(params(e.params))}</div></div>`).join('')}` : ''}
-      <div class="actions"><button class="pill" type="button" id="playClip">Play this clip</button><button class="pill" type="button" id="copyId">Copy clip id</button>${$('#sendAgent').hidden ? '' : `<button class="pill" type="button" id="toAgent">${ICON.agent}Send to agent</button>`}</div>`;
+      <div class="actions"><button class="pill" type="button" id="playClip">Play this clip</button><button class="pill" type="button" id="copyId">Copy clip id</button>${$('#sendAgent').hidden ? '' : `<button class="pill" type="button" id="toAgent">${ICON.agent}Send to chat</button>`}</div>`;
   }
   function wordsHtml(fr) {
     return `<div class="words">${captions.map((c) => {
@@ -1056,8 +1056,8 @@
     if (key === lastCtx) return;
     lastCtx = key;
     request('ui/update-model-context', { content: [{ type: 'text', text: contextText(c) }], structuredContent: c }).then(() => {
-      $('#ctxText').textContent = `Agent sees ${c.playhead.time}${c.selected_clip ? ` · ${c.selected_clip.name}` : ''}`;
-      $('#ctx').title = `Your agent will know this when you next write to it: ${contextText(c)}`;
+      $('#ctxText').textContent = `Your AI sees ${c.playhead.time}${c.selected_clip ? ` · ${c.selected_clip.name}` : ''}`;
+      $('#ctx').title = `Your AI will know this when you next write in the chat: ${contextText(c)}`;
       const el = $('#ctx'); el.classList.add('fresh'); setTimeout(() => el.classList.remove('fresh'), 900);
     }, () => { lastCtx = ''; });
   }
@@ -1072,7 +1072,7 @@
     const chips = [`<span class="chip mono">${c.playhead.time}</span>`];
     if (c.selected_clip) chips.push(`<span class="chip">${esc(c.selected_clip.name)}</span>`);
     if (c.loop) chips.push(`<span class="chip mono">loop ${tc(c.loop.start, false)}–${tc(c.loop.end, false)}</span>`);
-    return `<div class="compose"><h4>Send to agent</h4><div class="chips">${chips.join('')}</div>
+    return `<div class="compose"><h4>Send to the chat</h4><div class="chips">${chips.join('')}</div>
       <textarea id="note" placeholder="What should change here? For example: this cut is a beat late, or the B-roll covers my face."></textarea>
       <div class="row"><span class="hint">${host.caps.message ? 'Goes into the chat as your message, with this moment attached.' : 'This chat app does not take messages from the view, so this copies the note to paste.'}</span><div class="grow"></div><button class="pill" type="button" id="cancelNote">Cancel</button><button class="pill primary" type="button" id="sendNote">${host.caps.message ? 'Send' : 'Copy'}</button></div>
       ${S.sent.length ? `<h4 style="margin-top:6px">Sent</h4>${S.sent.map((n) => `<div class="sent"><small>${esc(n.at)}</small>${esc(n.text)}</div>`).join('')}` : ''}</div>`;
@@ -1089,7 +1089,7 @@
         const r = await request('ui/message', { role: 'user', content: [{ type: 'text', text: message }] });
         if (r?.isError) throw new Error('refused');
         S.sent.unshift({ at, text });
-        toast('Sent to your agent');
+        toast('Sent to the chat');
       } catch {
         toast('The chat app did not take the message. Try again, or copy it.');
         return;
