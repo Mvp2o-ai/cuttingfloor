@@ -1,10 +1,12 @@
 import { FREE_CREDITS } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
+import { DEMOS } from '../content/demos.ts';
 import { LICENCE } from '../content/facts.ts';
 import { HOME_SESSION } from '../content/home-session.ts';
 import { EDITING_PAINS, type Pain } from '../content/pains.ts';
 import { DESKTOP_TOOLS, TOOLKIT_HEADLINE, TOOLKIT_LEDE, TOOLKIT_LINE } from '../content/toolkit.ts';
 import { ConnectNow } from './connect-now.tsx';
+import { DemoCards } from './demos/cards.tsx';
 import { TryKazi } from './kazi.tsx';
 import { LiveCard } from './live-card.tsx';
 import { FROM_PACK } from './pricing.ts';
@@ -17,6 +19,12 @@ import { Check, Footer, JsonLd, Nav, SIGN_UP } from './shell.tsx';
 export const metadata: Metadata = {
   alternates: { canonical: '/', types: { 'text/markdown': '/index.md' } },
 };
+
+// Before and after on the home page: cutting to music first (what creators use it for most), then
+// one made in ChatGPT and one in Claude.
+const HOME_DEMOS = ['dance', 'product', 'interview'].flatMap((id) =>
+  DEMOS.filter((d) => d.id === id),
+);
 
 // Linking here plays the session from the top.
 const SESSION_ID = 'session';
@@ -51,7 +59,7 @@ function PainTable({ caption, rows }: { caption: string; rows: Pain[] }) {
               {r.pain}
             </th>
             <td>{r.answer}</td>
-            <td className="note">
+            <td className="note tools">
               {r.tools.length ? r.tools.map((t) => <code key={t}>{t} </code>) : '—'}
             </td>
           </tr>
@@ -131,9 +139,26 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="cell" id="demos" aria-label="Before and after">
+          <div className="head">
+            <span className="label">02 / Before and after</span>
+            <div>
+              <h2 className="display">Real clips, edited by asking.</h2>
+              <p className="compare-lede">
+                A creator’s own ChatGPT, Claude or Kazi, with cuttingfloor connected. Tap one to see
+                what they asked for and every step.
+              </p>
+            </div>
+          </div>
+          <DemoCards demos={HOME_DEMOS} />
+          <p className="wt-links">
+            <a href="/demos">All demos</a>
+          </p>
+        </section>
+
         <section className="cell" id="toolkit" aria-label="The toolkit">
           <div className="head">
-            <span className="label">02 / The toolkit</span>
+            <span className="label">03 / The toolkit</span>
             <div>
               <h2 className="display">{TOOLKIT_HEADLINE}</h2>
               <p className="compare-lede">
@@ -187,7 +212,7 @@ export default function Home() {
 
         <section className="cell" id={SESSION_ID} aria-label="A session">
           <div className="head">
-            <span className="label">03 / A session</span>
+            <span className="label">04 / A session</span>
             <h2 className="lede">
               AI video editing, one tool call at a time. <em>Here is one.</em>
             </h2>
@@ -201,7 +226,7 @@ export default function Home() {
 
         <section className="cell" id="problems" aria-label="Problems it solves">
           <div className="head">
-            <span className="label">04 / Solved</span>
+            <span className="label">05 / Solved</span>
             <div>
               <h2 className="display">The jobs that eat your week.</h2>
               <p className="compare-lede">
@@ -219,7 +244,7 @@ export default function Home() {
 
         <section className="cell" aria-label="Things to ask for">
           <div className="head">
-            <span className="label">05 / Ask for</span>
+            <span className="label">06 / Ask for</span>
             <div>
               <h2 className="display">Say it like you’d say it to an editor.</h2>
               <p className="compare-lede">
@@ -233,7 +258,7 @@ export default function Home() {
 
         <section className="cell" id="pricing">
           <div className="head">
-            <span className="label">06 / Pricing</span>
+            <span className="label">07 / Pricing</span>
             <div>
               <h2 className="display">Pay as you go. Start free.</h2>
               <p className="compare-lede">
@@ -250,7 +275,7 @@ export default function Home() {
 
         <section className="cell">
           <div className="head">
-            <span className="label">07 / Questions</span>
+            <span className="label">08 / Questions</span>
             <h2 className="display">Asked.</h2>
           </div>
           <div className="faq">

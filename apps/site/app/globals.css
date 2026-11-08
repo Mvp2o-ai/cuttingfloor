@@ -226,6 +226,44 @@ html[data-from="claude"] .connect-now-apps [data-app="claude"] a {
 .from-card .live-card {
   margin-top: 32px;
 }
+/* Phone or computer: ChatGPT and Claude add servers only on a computer, so a touch screen gets the
+   phone way in (Kazi here, or the setup sent for later) in place of computer-only steps. Same test
+   as .send-later. */
+@media (pointer: coarse) {
+  .on-computer {
+    display: none !important;
+  }
+}
+@media not all and (pointer: coarse) {
+  .on-phone {
+    display: none !important;
+  }
+}
+.from-phone .live-card {
+  margin-top: 24px;
+}
+.from-phone .send-later {
+  margin-top: 8px;
+}
+/* A 9:16 clip in the card: a narrow upright shot beside the words. */
+.live-card.tall .live-card-shot {
+  width: 104px;
+  aspect-ratio: 9 / 16;
+}
+.hero-live .live-card.tall {
+  flex-direction: row;
+  align-items: center;
+  padding: 12px 22px 12px 12px;
+}
+.hero-live .live-card.tall .live-card-shot {
+  width: 34%;
+  max-width: 160px;
+}
+@media (max-width: 520px) {
+  .live-card.tall .live-card-shot {
+    width: 128px;
+  }
+}
 .from-alt {
   margin: 12px 0 0;
   color: var(--mute);
@@ -1370,6 +1408,25 @@ h2.lede {
   margin: 0;
   color: var(--mute);
 }
+/* The agent block (agents/block.tsx): each app with its mark. */
+.ledger h3.agent-app {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.agent-app svg,
+.agent-app img {
+  width: 0.9em;
+  height: 0.9em;
+  flex: none;
+  display: block;
+}
+.agent-app .kazi-word {
+  color: var(--key);
+}
+.mcp-address + .ledger {
+  margin-top: 24px;
+}
 /* /fixes: the answer, the prompt and a link stack in the ledger's last column. */
 .fix-body {
   display: grid;
@@ -1697,8 +1754,12 @@ h2.lede {
     border: 0;
     padding: 0;
   }
-  .compare-table td.note::before {
+  /* The column heads are hidden here, so each cell names its own. */
+  .compare-table td.pick::before {
     content: "Pick it when ";
+  }
+  .compare-table td.tools::before {
+    content: "Tools: ";
   }
 }
 
