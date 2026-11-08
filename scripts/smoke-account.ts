@@ -6,15 +6,16 @@
 // automation bypass secret (Settings → Deployment Protection; VERCEL_BYPASS in the env file).
 //
 // Keys come from deploy/hetzner/cuttingfloor.env. Makes a throwaway WorkOS user, signs in on the
-// site through AuthKit, checks the account page shows the free plan, drops a file on its drop zone, opens Stripe Checkout for Pro
-// (stopping before payment), then checks the MCP server's access rules: free (no time limit),
-// subscribed (a $0 trialing subscription with no card), and lifetime. Deletes everything after.
+// site through AuthKit, checks the account page shows the free credits, drops a file on its drop
+// zone, opens Stripe Checkout for the smallest pack (stopping before payment), then checks the MCP
+// server's access rules: free (no time limit), unverified, and lifetime. Deletes everything after.
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { AccessCheck } from '../apps/hosted/src/access.ts';
+import { FREE_CREDITS, PACKS } from '../packages/plans/src/index.ts';
 
 const site = (process.argv[2] ?? 'https://cuttingfloor-site.vercel.app').replace(/\/$/, '');
 const chrome = process.env.CHROME_PATH;
@@ -68,7 +69,7 @@ step(`a throwaway user (${userId})`);
 const browser = await puppeteer.launch({ executablePath: chrome, headless: true });
 
 try {
-  step('signs in on the site and sees the free plan');
+  step('signs in on the site and sees the free credits');
   const page = await browser.newPage();
   await page.setViewport({ width: 1440, height: 900 });
   if (bypass)
@@ -89,7 +90,11 @@ try {
     await new Promise((r) => setTimeout(r, 1000));
   const text = await page.evaluate(() => document.body.innerText);
   expect(page.url().startsWith(`${site}/account`), `back on the account page (${page.url()})`);
-  expect(text.includes('On the free plan.'), 'the page says the free plan is on');
+  expect(
+    text.includes(`${FREE_CREDITS} credits left.`),
+    `the page says ${FREE_CREDITS} credits left`,
+  );
+  expect(text.includes('Upload your files'), 'the uploads come right after the credits');
   expect(text.includes(email), 'the page names the user');
   if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });
 
@@ -124,15 +129,19 @@ try {
   expect(welcome.includes('Waiting for your agent'), 'it waits for the first call');
   await page.goto(`${site}/account`, { waitUntil: 'networkidle2' });
 
-  step('Pro opens Stripe Checkout (stopping before payment)');
-  const [pro] = await page.$$('xpath/.//button[contains(., "$99 / month")]');
-  if (!pro) throw new Error('no Pro button');
-  await Promise.all([page.waitForNavigation({ timeout: 60_000 }), pro.click()]);
-  await page.waitForFunction(() => document.body.innerText.includes('Pro'), { timeout: 30_000 });
+  const pack = PACKS[0];
+  if (!pack) throw new Error('no packs');
+  step(`the $${pack.price} pack opens Stripe Checkout (stopping before payment)`);
+  const [buy] = await page.$$(`xpath/.//button[normalize-space(.)="$${pack.price}"]`);
+  if (!buy) throw new Error(`no $${pack.price} button`);
+  await Promise.all([page.waitForNavigation({ timeout: 60_000 }), buy.click()]);
+  await page.waitForFunction(() => document.body.innerText.includes('credits'), {
+    timeout: 30_000,
+  });
   const checkout = await page.evaluate(() => document.body.innerText);
   expect(page.url().startsWith('https://checkout.stripe.com/'), `on Stripe Checkout`);
-  expect(/cuttingfloor Pro/.test(checkout), 'it sells cuttingfloor Pro');
-  expect(/\$99(\.00)?/.test(checkout), 'at $99');
+  expect(checkout.includes(`${pack.credits} credits`), `it sells ${pack.credits} credits`);
+  expect(new RegExp(`\\$${pack.price}(\\.00)?`).test(checkout), `at $${pack.price}`);
   const linked = (await workos(`/user_management/users/${userId}`)).metadata as Record<
     string,
     string
@@ -154,10 +163,10 @@ try {
     limits.jobs === 1 && limits.shortSide === 1080 && !limits.refuseJobs,
     `the free plan runs one job at a time, up to 1080p (${JSON.stringify(limits)})`,
   );
-  const usage = await at(0).usage(userId);
+  const balance = await at(0).balance(userId);
   expect(
-    usage.plan === 'free' && usage.included_minutes === 100 && usage.used_minutes === 0,
-    `the free plan has 100 credits, none used (${JSON.stringify(usage)})`,
+    balance.plan === 'free' && balance.left === FREE_CREDITS && balance.used === 0,
+    `a new account has ${FREE_CREDITS} credits, none used (${JSON.stringify(balance)})`,
   );
   const outage = await new AccessCheck({
     workosKey: 'sk_test_not_a_key',
@@ -189,29 +198,11 @@ try {
     'ninety days later it still works: free credits have no time limit',
   );
 
-  const prices = await stripe('/v1/prices?active=true&lookup_keys[]=cf_pro_month');
-  const price = (prices.data as { id: string }[])[0]?.id ?? '';
-  const sub = await stripe('/v1/subscriptions', {
-    customer,
-    'items[0][price]': price,
-    trial_period_days: '1',
-    'trial_settings[end_behavior][missing_payment_method]': 'cancel',
-    'metadata[app]': 'cuttingfloor',
-    'metadata[smoke]': 'true',
-  });
-  expect(sub.status === 'trialing', `a $0 subscription with no card (${sub.status})`);
-  const subscribed = await at(4).resolve(userId);
-  expect(
-    subscribed.allowed && subscribed.plan === 'pro',
-    `subscribed counts as Pro (${JSON.stringify(subscribed)})`,
-  );
-  await stripe(`/v1/subscriptions/${sub.id}`, undefined, 'DELETE');
-
   await workos(`/user_management/users/${userId}`, {
     method: 'PUT',
     body: { metadata: { ...linked, plan: 'lifetime' } },
   });
-  const lifetime = await at(4).resolve(userId);
+  const lifetime = await at(0).resolve(userId);
   expect(lifetime.allowed && lifetime.plan === 'lifetime', 'lifetime counts as lifetime');
 
   await stripe(`/v1/customers/${customer}`, undefined, 'DELETE');

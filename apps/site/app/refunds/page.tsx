@@ -5,7 +5,7 @@ import { Items, LegalPage, P, Part } from '../legal.tsx';
 export const metadata: Metadata = {
   title: 'Refunds — cuttingfloor',
   description:
-    'When cuttingfloor refunds a payment: yearly plans within 14 days, billing mistakes always. Cancel any time from your account.',
+    'When cuttingfloor refunds a payment: unused credits from a pack bought in the last 14 days, and billing mistakes always.',
   alternates: { canonical: '/refunds', types: { 'text/markdown': '/refunds.md' } },
 };
 
@@ -19,22 +19,23 @@ export default function Refunds() {
       title="Refunds."
       lede={`Try it free first with ${FREE_CREDITS} credits, no card. If you pay and it isn't working out, here's what we refund.`}
     >
-      <Part title="Yearly plans">
+      <Part title="Credit packs">
         <P>
-          Within 14 days of buying or renewing a yearly plan, you can ask for a refund of the unused
-          part: the months you haven't started yet.
+          Within 14 days of buying a pack, you can ask for a refund of the credits you haven't used.
+          Credits you have used aren't refunded. A refunded pack's credits come off your balance.
         </P>
       </Part>
-      <Part title="Monthly plans">
+      <Part title="Automatic top-up">
         <P>
-          Monthly payments aren't refunded. Cancel any time from your account page and the plan
-          stops at the end of the month you paid for.
+          Automatic top-up is off unless you turn it on, and you can turn it off any time on your
+          account page. A top-up you didn't want is a pack like any other: ask within 14 days and we
+          refund the credits you haven't used.
         </P>
       </Part>
       <Part title="Mistakes">
         <Items
           items={[
-            'Charged twice, or charged after you cancelled: we refund it in full.',
+            'Charged twice, or topped up after you turned automatic top-up off: we refund it in full.',
             'A long outage on our side: write to us and we make it right.',
           ]}
         />

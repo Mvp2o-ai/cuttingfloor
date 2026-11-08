@@ -1,10 +1,13 @@
 'use client';
 
+import { track } from '@vercel/analytics';
 import { useRef, useState } from 'react';
 import type { Files, Started } from '../lib/files.ts';
 
 // Drop files from this computer for the agent to use. Each file goes up in parts straight to the
 // server's signed URL and resumes after a dropped connection; the agent then finds it by name.
+// Each upload is counted (Upload started, Upload, Upload failed) with its kind of file, never
+// its name.
 
 const PART = 16 * 1024 * 1024;
 
@@ -23,6 +26,9 @@ const size = (n: number) =>
     : n >= 1e6
       ? `${(n / 1e6).toFixed(1)} MB`
       : `${Math.max(1, Math.round(n / 1e3))} KB`;
+
+/** The kind of file, for counting uploads: video, audio, image or other. */
+const kind = (file: File) => /^(video|audio|image)\//.exec(file.type)?.[1] ?? 'other';
 
 const day = (iso: string) =>
   new Date(iso).toLocaleString('en-US', {
@@ -49,6 +55,7 @@ export function FilesPanel({ initial }: { initial: Files }) {
   };
 
   async function send(file: File, key: string) {
+    track('Upload started', { kind: kind(file) });
     try {
       const res = await fetch('/api/uploads', {
         method: 'POST',
@@ -96,9 +103,11 @@ export function FilesPanel({ initial }: { initial: Files }) {
         }
       }
       update(key, { sent: file.size, state: 'done', note: '' });
+      track('Upload', { kind: kind(file), mb: Math.round(file.size / 1e6) });
       await refresh();
     } catch (error) {
       update(key, { state: 'failed', note: (error as Error).message || String(error) });
+      track('Upload failed', { kind: kind(file) });
     }
   }
 

@@ -1,4 +1,5 @@
 import type { CredentialStore } from '@cuttingfloor/credentials';
+import type { AccountGetResult } from '@cuttingfloor/schema';
 import { McpServer } from '@modelcontextprotocol/server';
 import { registerCatalogs } from './catalog.ts';
 import { registerEditor } from './editor.ts';
@@ -9,6 +10,7 @@ import { registerResources } from './resources.ts';
 import { toErrorResult } from './result.ts';
 import type { Runtime } from './runtime.ts';
 import { registerTasks } from './tasks.ts';
+import { registerAccountTools } from './tools/account.ts';
 import { registerCreateTools } from './tools/create.ts';
 import { registerInterchangeTools } from './tools/interchange.ts';
 import { registerJudgeTools } from './tools/judge.ts';
@@ -35,6 +37,8 @@ export interface ServerDeps {
    * judgments a day), and a refusal when no job may start. Absent locally: no limits.
    */
   limits?: () => Promise<OwnerLimits>;
+  /** Hosted: the owner's plan and credits, for account.get. Absent locally: no plan. */
+  account?: () => Promise<AccountGetResult>;
 }
 
 const INSTRUCTIONS = `cuttingfloor is a headless video editor. It makes video two ways, often both at once:
@@ -57,7 +61,8 @@ Typical flow:
 4. Look at the result with preview: "inline" on an edit, or render.frames (stills). To watch it play, with motion, timing and sound, when you or your client take video in: export.video a range with preset review_h264; its result links the file (video://jobs/{job_id}/output) and gives a signed url, fps and duration.
 5. qa.check, then export.video (long-running) for a signed download URL and a page_url to give the user, which plays it in any browser: presets for web, masters, 9:16 social, AV1, GIF and audio, with size/fps/bitrate overrides (video://catalog/presets). export.timeline hands the edit to another editor (FCPXML, OTIO, EDL) or writes captions (SRT, VTT).
 Skills: step-by-step instructions for common jobs, such as cutting the pauses and ums out of a talking video. Before composing one yourself, skills.search in the user's words, then skills.get and follow its steps.
-Time is integer frames at the sequence rate; ranges are end-exclusive. Keeping work: the server keeps nothing for long. Timelines expire 24 h after last use; media and exports 7 days after last use. You keep what lasts: for work longer than a day, save the timeline.get document of the latest timeline on your side and timeline.load it to carry on; save the files you want to keep from their download url (media.get, export.video) and bring them back with media.import. media.delete removes a media you no longer want, so an old version stops turning up.`;
+Time is integer frames at the sequence rate; ranges are end-exclusive. Keeping work: the server keeps nothing for long. Timelines expire 24 h after last use; media and exports 7 days after last use. You keep what lasts: for work longer than a day, save the timeline.get document of the latest timeline on your side and timeline.load it to carry on; save the files you want to keep from their download url (media.get, export.video) and bring them back with media.import. media.delete removes a media you no longer want, so an old version stops turning up.
+Credits: on the hosted service a job (export, import, analysis, create.*) spends credits, one a minute of it running; editing and previews are free. account.get says how many are left and where the user tops up.`;
 
 /** Builds one MCP server instance over the shared runtime. Transports live in apps/. */
 export function createServer(deps: ServerDeps): McpServer {
@@ -83,6 +88,7 @@ export function createServer(deps: ServerDeps): McpServer {
   registerRenderTools(server, deps);
   registerInterchangeTools(server, deps);
   registerSkillTools(server);
+  registerAccountTools(server, deps);
   return server;
 }
 

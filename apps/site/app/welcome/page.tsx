@@ -1,9 +1,8 @@
-import { PLANS } from '@cuttingfloor/plans';
 import { withAuth } from '@workos-inc/authkit-nextjs';
 import { AccountNav } from '../account/chrome.tsx';
 import { Connect } from '../connect.tsx';
 import { TryKazi } from '../kazi.tsx';
-import { accountOf } from '../lib/billing.ts';
+import { accountOf, workos } from '../lib/billing.ts';
 import { FirstCall, Prompt } from './live.tsx';
 
 export const dynamic = 'force-dynamic';
@@ -15,8 +14,12 @@ const FIRST_PROMPT =
 // After sign-up: connect the agent, paste a first prompt, and see the first call arrive.
 export default async function Welcome() {
   const { user } = await withAuth({ ensureSignedIn: true });
-  const { status, metadata } = await accountOf(user.id);
-  const free = status.kind === 'free';
+  const [account, found] = await Promise.all([
+    accountOf(user.id),
+    workos(`/user_management/users/${encodeURIComponent(user.id)}`),
+  ]);
+  const metadata = (found.metadata ?? {}) as Record<string, string>;
+  const left = account?.plan === 'free' ? account.credits.left : null;
 
   return (
     <>
@@ -27,8 +30,8 @@ export default async function Welcome() {
           <span className="label">Welcome{user.firstName ? `, ${user.firstName}` : ''}</span>
           <h1 className="display account-head">Connect your agent.</h1>
           <p className="lede">
-            {free
-              ? `You have ${PLANS.free.limits.renderMinutes} free credits: every tool, no card, no time limit. `
+            {left !== null
+              ? `You have ${left} free credits: every tool, no card. A short video takes less than one. `
               : ''}
             Three steps, about a minute.
           </p>

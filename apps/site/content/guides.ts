@@ -89,7 +89,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: 'What does it cost?',
-        a: `Start free with ${FREE_CREDITS} credits, no card and no time limit. After that, plans are on the pricing page.`,
+        a: `Start free with ${FREE_CREDITS} credits, no card and no time limit. After that, pay as you go: credit packs that never expire, on the pricing page.`,
       },
     ],
   },
@@ -152,7 +152,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: '¿Cuánto cuesta?',
-        a: `Empieza gratis con ${FREE_CREDITS} créditos, sin tarjeta y sin límite de tiempo. Después, los planes están en la página de precios (en inglés).`,
+        a: `Empieza gratis con ${FREE_CREDITS} créditos, sin tarjeta y sin límite de tiempo. Después, pagas solo lo que usas: paquetes de créditos que no caducan, en la página de precios (en inglés).`,
       },
     ],
   },
@@ -210,7 +210,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: '¿Cuánto cuesta?',
-        a: `Empieza gratis con ${FREE_CREDITS} créditos, sin tarjeta y sin límite de tiempo. Después, los planes están en la página de precios (en inglés).`,
+        a: `Empieza gratis con ${FREE_CREDITS} créditos, sin tarjeta y sin límite de tiempo. Después, pagas solo lo que usas: paquetes de créditos que no caducan, en la página de precios (en inglés).`,
       },
     ],
   },

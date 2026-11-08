@@ -1,4 +1,4 @@
-import { PLANS, SUPPORT_EMAIL } from '@cuttingfloor/plans';
+import { FREE_CREDITS, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import {
   IMAGE,
@@ -13,9 +13,11 @@ import {
   CREDIT,
   EVERY_PLAN,
   EVERY_PLAN_LEAD,
+  FROM_PACK,
   KEPT,
   markWord,
   OPTIONS,
+  PACK_ROWS,
   PRICING_FAQS,
   ROWS,
   SELF_HOSTED,
@@ -26,11 +28,9 @@ import { Breadcrumbs, Footer, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
 // /pricing: every fact a person or an agent needs to choose, in the server-rendered HTML. The same
 // data builds /pricing.md and /pricing.json.
 
-const CREATOR = PLANS.creator.price?.month;
-const PRO = PLANS.pro.price?.month;
-const FREE = PLANS.free.limits.renderMinutes;
-const TITLE = `Pricing: ${FREE} free credits, every tool on every plan, from $${CREATOR} a month`;
-const DESCRIPTION = `cuttingfloor, the video editing MCP server: start with ${FREE} free credits, no card and no time limit. Every plan has every tool. Creator $${CREATOR} a month, Pro $${PRO} a month, Enterprise by agreement; free to self-host (open source, ${LICENCE}). A credit is a minute of our servers working; editing and previews are free.`;
+const FREE = FREE_CREDITS;
+const TITLE = `Pricing: pay as you go, ${FREE} free credits, every tool, no subscription`;
+const DESCRIPTION = `cuttingfloor, the video editing MCP server: start with ${FREE} free credits, no card. Then pay as you go: credit packs from ${FROM_PACK}, which never expire, with no subscription. Every tool for everyone. Enterprise by agreement; free to self-host (open source, ${LICENCE}). A credit is a minute of our servers working; editing and previews are free.`;
 
 export const metadata: Metadata = {
   title: `${TITLE} | cuttingfloor`,
@@ -67,7 +67,6 @@ function structuredData() {
                 '@type': 'UnitPriceSpecification',
                 price: String(o.amount),
                 priceCurrency: 'USD',
-                ...(o.id === 'free' ? {} : { billingDuration: 'P1M' }),
               },
             }),
       })),
@@ -94,12 +93,12 @@ export default function Pricing() {
           <span className="mark-b" />
           <Breadcrumbs trail={[{ name: 'Pricing', href: '/pricing' }]} />
           <span className="label">Pricing</span>
-          <h1 className="display">Start free. Every tool, every plan.</h1>
+          <h1 className="display">Pay as you go. Start free.</h1>
           <p className="lede wt-answer">
-            {FREE} free credits, no card, no time limit.{' '}
+            {FREE} free credits, no card. Then buy credits when you need them, from {FROM_PACK}.{' '}
             <em>
-              Then Creator at ${CREATOR} a month or Pro at ${PRO}. A credit is a minute of our
-              servers working; editing and previews are free. Or run it yourself, free.
+              They never expire and there is no subscription. A credit is a minute of our servers
+              working; editing and previews are free. Or run it yourself, free.
             </em>
           </p>
           <LiveCard />
@@ -113,9 +112,40 @@ export default function Pricing() {
           </div>
         </section>
 
+        <section className="cell" id="packs">
+          <div className="head">
+            <span className="label">01 / Credits</span>
+            <div>
+              <h2 className="display">Buy what you use.</h2>
+              <p className="compare-lede">
+                Packs, bought on your account page. Bigger packs cost less a credit. Turn on
+                automatic top-up and you never run out.
+              </p>
+            </div>
+          </div>
+          <table className="price-table">
+            <thead>
+              <tr>
+                <th>Pack</th>
+                <th>Credits</th>
+                <th>A credit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {PACK_ROWS.map((p) => (
+                <tr key={p.id}>
+                  <td className="amount">${p.price}</td>
+                  <td className="tier">{p.credits.toLocaleString('en-US')} credits</td>
+                  <td className="note">{p.per_credit}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
         <section className="cell" id="plans">
           <div className="head">
-            <span className="label">01 / Plans</span>
+            <span className="label">02 / Ways to run it</span>
             <h2 className="display">Pick one.</h2>
           </div>
           <table className="price-table">
@@ -133,7 +163,6 @@ export default function Pricing() {
                   <td className="tier">{o.name}</td>
                   <td className="amount">
                     {o.price} {o.per ? <small>{o.per}</small> : null}
-                    {o.yearly ? <small className="pr-year">or ${o.yearly} a year</small> : null}
                   </td>
                   <td className="note">{o.note}</td>
                   <td>
@@ -147,7 +176,7 @@ export default function Pricing() {
 
         <section className="cell" id="every-plan">
           <div className="head">
-            <span className="label">02 / Every plan</span>
+            <span className="label">03 / Everyone</span>
             <div>
               <h2 className="display">What you get.</h2>
               <p className="compare-lede">{EVERY_PLAN_LEAD}</p>
@@ -167,11 +196,12 @@ export default function Pricing() {
 
         <section className="cell" id="compare">
           <div className="head">
-            <span className="label">03 / Limits</span>
+            <span className="label">04 / Limits</span>
             <div>
-              <h2 className="display">Where plans differ.</h2>
+              <h2 className="display">What differs.</h2>
               <p className="compare-lede">
-                Credits, speed, size and storage. Prices in US dollars.
+                Credits, speed, size and storage. Your first pack lifts the free limits. Prices in
+                US dollars.
               </p>
             </div>
           </div>
@@ -211,14 +241,14 @@ export default function Pricing() {
             </table>
           </div>
           <p className="price-foot">
-            {KEPT} Payments by Stripe; cancel any time. <a href="/terms">Terms</a> ·{' '}
+            {KEPT} Payments by Stripe; nothing renews. <a href="/terms">Terms</a> ·{' '}
             <a href="/refunds">Refunds</a>
           </p>
         </section>
 
         <section className="cell" id="credits">
           <div className="head">
-            <span className="label">04 / Credits</span>
+            <span className="label">05 / Credits</span>
             <h2 className="display">What a credit is.</h2>
           </div>
           <ol className="ledger">
@@ -233,7 +263,7 @@ export default function Pricing() {
 
         <section className="cell" id="keys">
           <div className="head">
-            <span className="label">05 / Keys</span>
+            <span className="label">06 / Keys</span>
             <div>
               <h2 className="display">What needs your own key.</h2>
               <p className="compare-lede">
@@ -273,7 +303,7 @@ export default function Pricing() {
         <section className="cell paper" id="self-host">
           <div className="wt-prose">
             <section>
-              <span className="label">06 / Self-hosted</span>
+              <span className="label">07 / Self-hosted</span>
               <h2>Self-hosted · Free</h2>
               <p>
                 cuttingfloor is open source under {LICENCE}. It runs in one Docker image ({IMAGE}),
@@ -295,7 +325,7 @@ export default function Pricing() {
 
         <section className="cell" id="faq">
           <div className="head">
-            <span className="label">07 / Questions</span>
+            <span className="label">08 / Questions</span>
             <h2 className="display">Asked.</h2>
           </div>
           <div className="faq">

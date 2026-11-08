@@ -134,7 +134,7 @@ describe('Markdown twins and discovery files', () => {
   it('keeps the policy pages’ sections and links', async () => {
     const { markdown } = await import('../app/terms.md/markdown.ts');
     const md = markdown();
-    expect(md).toContain('## Payments and cancelling');
+    expect(md).toContain('## Payments');
     expect(md).toContain('[refunds page](https://cuttingfloor.ai/refunds)');
     expect(md).toMatch(/- Every new account gets \d+ free credits/);
   });

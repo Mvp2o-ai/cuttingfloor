@@ -1,23 +1,25 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Job } from '@cuttingfloor/jobs';
-import { PLANS } from '@cuttingfloor/plans';
-import { CfError, MediaUploadInput } from '@cuttingfloor/schema';
+import { FREE_CREDITS, LOW_CREDITS, PACKS, PLANS } from '@cuttingfloor/plans';
+import { type AccountGetResult, CfError, MediaUploadInput } from '@cuttingfloor/schema';
 import { listHeld, type MeterEntry, type Runtime, startUpload } from '@cuttingfloor/server';
-import type { Access, AccessCheck } from './access.ts';
+import type { Access, AccessCheck, Balance } from './access.ts';
 import type { Mailer } from './email.ts';
 import type { ScriptKeys } from './keys.ts';
 import { type ProviderKeys, SAVABLE } from './provider-keys.ts';
+import { chargePack, savedCard } from './purchase.ts';
 
 // What happens around an account as it is used, still without a database:
 // - WorkOS metadata records the first tool call, the first export (the site's welcome page
 //   waits on the first, the funnel counts both), the first export that succeeded (the sign-up
 //   sequence's first edit, sequence.ts) and the app the first tool call came from.
-// - Email goes out at 80% and 100% of a free account's or a period's credits (render minutes),
-//   and when a payment fails. The welcome is the sign-up sequence's; this sends it only while the
+// - Email goes out when an account's credits run low and when they run out (for a given plan, at
+//   80% and 100% of the month's). An account that turned on automatic top-up instead buys its
+//   pack on its saved card when it runs low, once per purchase, and is sent the receipt. The welcome is the sign-up sequence's; this sends it only while the
 //   sequence is off. A notice file under the owner's data claims each message once, across
 //   servers (`owners/{owner}/notices/{name}.json`, kept 400 days).
-// - Stripe's webhook tells the access check a subscription changed, so it shows at once.
+// - Stripe's webhook tells the access check credits were bought, so they show at once.
 // - An account first used through a client that grants lifetime (Kazi) is tagged lifetime in its
 //   WorkOS metadata, with the reason and date (`plan_reason`, `plan_since`), so exactly those
 //   accounts can be found and the tag taken off again.
@@ -41,7 +43,8 @@ export interface LifecycleOptions {
   /** Signs Stripe's webhook calls (whsec_…). Without it the webhook is refused. */
   stripeWebhookSecret?: string;
   /**
-   * Lets the site act for a signed-in account: read its usage (`GET /account/usage`) and its files
+   * Lets the site act for a signed-in account: read its plan and credits (`GET /account/usage`,
+   * as account.get gives them) and its files
    * (`GET /account/media`), start an upload (`POST /account/uploads`), and list, make and revoke
    * its script keys (`/account/keys`).
    */
@@ -60,8 +63,8 @@ export function lifetimeFor(
   access: Access,
 ): 'give' | 'tagged' | 'paying' {
   if (metadata.plan) return 'tagged';
-  // A subscription keeps billing whatever the tag says; that stays the account owner's to end.
-  if (access.allowed ? access.plan !== 'free' : access.reason === 'payment_failed') return 'paying';
+  // An account that bought credits keeps them; giving it a plan would set them aside.
+  if (access.allowed && access.plan !== 'free') return 'paying';
   return 'give';
 }
 
@@ -143,38 +146,165 @@ export class Lifecycle {
     }
     const access = await this.#o.access.get(owner);
     if (!access.allowed) return;
-    const usage = await this.#o.access.usage(owner, access);
-    if (usage.included_minutes === null) return;
-    const share = usage.used_minutes / usage.included_minutes;
-    const period = usage.period.start.slice(0, 10);
-    const renews = day(usage.period.end);
-    const free = usage.plan === 'free';
-    if (share >= 1) {
-      await this.#notify(owner, `minutes-${period}-100`, {
+    const balance = await this.#o.access.balance(owner, access);
+    if (balance.left === null) return;
+    if (balance.renews === null) await this.#runningLow(owner, access, balance);
+    else await this.#monthUsed(owner, access, balance);
+  }
+
+  /** A balance below LOW_CREDITS: tops up on its own when turned on, else says so by email. */
+  async #runningLow(owner: string, access: Access & { allowed: true }, balance: Balance) {
+    const left = balance.left ?? 0;
+    if (left >= LOW_CREDITS) return;
+    if (access.refill && access.customer && (await this.#topUp(owner, access, balance))) return;
+    const out = left <= 0;
+    await this.#notify(owner, warningName(balance, out ? 'out' : 'low'), {
+      to: access.email,
+      subject: out ? 'Your credits are used up' : `You have ${left} credits left`,
+      lines: [
+        out
+          ? 'Your agent has used all its credits.'
+          : `Your agent has ${left} credits left. A credit is one minute of a job running (an export, an import, a transcript).`,
+        out
+          ? 'Editing still works, and so do previews. New jobs (exports, imports, motion graphics, voiceovers) wait until you top up.'
+          : 'At zero, new jobs wait. Editing and previews keep working.',
+        `Top up on your account page: packs start at $${PACKS[0]?.price} for ${PACKS[0]?.credits} credits, and they never expire. Turn on automatic top-up there and this won't stop you again.`,
+      ],
+      action: { label: 'Top up', url: `${this.#o.accountUrl}#credits` },
+    });
+  }
+
+  /**
+   * Buys the account's top-up pack on its saved card, claimed once per purchase so servers and
+   * retries never charge twice. True when the credits are in.
+   */
+  async #topUp(owner: string, access: Access & { allowed: true }, balance: Balance) {
+    const pack = access.refill;
+    const customer = access.customer;
+    if (!pack || !customer) return false;
+    const ws = this.#o.runtime.ws;
+    const claim = ws.ownerDir(owner, 'notices', `top-up-${balance.purchases}.json`);
+    if (!(await ws.writeJson(claim, { at: new Date().toISOString() }, { exclusive: true })))
+      return true;
+    const card = await savedCard(this.#o.stripeKey, customer).catch(() => undefined);
+    const paid = card
+      ? await chargePack(this.#o.stripeKey, {
+          customer,
+          owner,
+          pack,
+          card,
+          key: `${owner}:top-up:${balance.purchases}`,
+          reason: 'automatic top-up',
+        })
+      : { ok: false as const, message: 'no card is saved' };
+    this.#o.access.forget(owner);
+    if (paid.ok) {
+      await this.#notify(owner, `top-up-${paid.id}`, {
         to: access.email,
-        subject: free ? 'Your free credits are used up' : 'Your credits are used up',
+        subject: `Topped up: ${pack.credits} credits`,
         lines: [
-          `Your agent has used all ${usage.included_minutes} ${free ? 'free credits' : 'credits for this period'}.`,
-          free
-            ? 'Editing still works, and so do previews. New jobs (exports, imports, motion graphics, voiceovers) wait until you pick a plan.'
-            : 'Editing still works, and so do previews. New jobs (exports, imports, motion graphics, voiceovers) wait until the credits renew.',
-          free
-            ? 'Pick a plan to keep going. Your media and exports carry over.'
-            : `They renew on ${renews}. For more now, move to a bigger plan.`,
+          `Your credits were running low, so we bought ${pack.credits} credits for $${pack.price} on your ${card?.brand} ending ${card?.last4}, as you asked.`,
+          'Your agent keeps working. Change or turn off automatic top-up on your account page.',
         ],
-        action: { label: free ? 'Pick a plan' : 'Open your account', url: this.#o.accountUrl },
+        action: { label: 'Open your account', url: `${this.#o.accountUrl}#credits` },
       });
-    } else if (share >= 0.8) {
-      await this.#notify(owner, `minutes-${period}-80`, {
+      return true;
+    }
+    process.stderr.write(`lifecycle: ${owner}: top-up: ${paid.message}\n`);
+    await this.#notify(owner, `top-up-failed-${balance.purchases}`, {
+      to: access.email,
+      subject: 'We couldn’t top up your credits',
+      lines: [
+        `Your credits are running low, and the automatic top-up of ${pack.credits} credits for $${pack.price} didn’t go through (${paid.message}).`,
+        'Top up on your account page to keep your agent working; it saves the card for next time.',
+      ],
+      action: { label: 'Top up', url: `${this.#o.accountUrl}#credits` },
+    });
+    return false;
+  }
+
+  /** A given plan's month: email at 80% and 100% of its credits. */
+  async #monthUsed(owner: string, access: Access & { allowed: true }, balance: Balance) {
+    const included = balance.per_month;
+    if (!included) return;
+    const share = balance.used / included;
+    const renews = day(balance.renews ?? balance.since);
+    if (share >= 1)
+      await this.#notify(owner, warningName(balance, 'out'), {
         to: access.email,
-        subject: `You've used ${Math.floor(share * 100)}% of your ${free ? 'free ' : ''}credits`,
+        subject: 'This month’s credits are used up',
         lines: [
-          `Your agent has used ${usage.used_minutes} of ${usage.included_minutes} ${free ? 'free credits' : `credits this period; they renew on ${renews}`}.`,
+          `Your agent has used all ${included} credits for this month.`,
+          'Editing still works, and so do previews. New jobs (exports, imports, motion graphics, voiceovers) wait until the credits renew.',
+          `They renew on ${renews}.`,
+        ],
+        action: { label: 'Open your account', url: this.#o.accountUrl },
+      });
+    else if (share >= 0.8)
+      await this.#notify(owner, warningName(balance, 'low'), {
+        to: access.email,
+        subject: `You've used ${Math.floor(share * 100)}% of this month’s credits`,
+        lines: [
+          `Your agent has used ${balance.used} of ${included} credits this month; they renew on ${renews}.`,
           'At the limit, new jobs wait. Editing and previews keep working.',
         ],
-        action: { label: 'See your usage', url: this.#o.accountUrl },
+        action: { label: 'See your credits', url: this.#o.accountUrl },
       });
+  }
+
+  /** The signed-in account's plan and credits, for account.get and the account page. */
+  async account(owner: string): Promise<AccountGetResult> {
+    const access = await this.#o.access.require(owner);
+    const balance = await this.#o.access.balance(owner, access);
+    const plan = PLANS[access.plan];
+    const bought = plan.credits.kind === 'balance';
+    const card =
+      bought && access.customer
+        ? await savedCard(this.#o.stripeKey, access.customer).catch(() => undefined)
+        : undefined;
+    const ws = this.#o.runtime.ws;
+    const sent = async (kind: 'low' | 'out') =>
+      Boolean(
+        await ws.readJson(ws.ownerDir(owner, 'notices', `${warningName(balance, kind)}.json`)),
+      );
+    const warnings: AccountGetResult['warnings'] = [];
+    if (balance.left !== null) {
+      const lowAt = bought ? LOW_CREDITS : Math.round((balance.per_month ?? 0) * 0.2 * 10) / 10;
+      warnings.push({ at_credits: lowAt, kind: 'low', emailed: await sent('low') });
+      warnings.push({ at_credits: 0, kind: 'out', emailed: await sent('out') });
     }
+    const l = plan.limits;
+    return {
+      plan: access.plan,
+      plan_name: plan.name,
+      credits: {
+        left: balance.left,
+        used: balance.used,
+        free: balance.free,
+        bought: balance.bought,
+        per_month: balance.per_month,
+        renews: balance.renews,
+      },
+      warnings,
+      top_up: bought
+        ? {
+            automatic: Boolean(access.refill),
+            pack: access.refill
+              ? { price_usd: access.refill.price, credits: access.refill.credits }
+              : null,
+            below: LOW_CREDITS,
+            card_saved: Boolean(card),
+          }
+        : null,
+      packs: bought ? PACKS.map((p) => ({ price_usd: p.price, credits: p.credits })) : [],
+      limits: {
+        jobs: l.jobs,
+        export_short_side: l.shortSide,
+        judgments_per_day: l.judgmentsPerDay,
+        storage_gb: l.storageGb,
+      },
+      account_url: this.#o.accountUrl,
+    };
   }
 
   /**
@@ -199,7 +329,7 @@ export class Lifecycle {
           lines: [
             'Your agent can edit video now. Add cuttingfloor to it once: the welcome page has the step for Claude, Claude Code, Cursor, Codex, ChatGPT and Kazi.',
             `The address is ${welcome.serverUrl}/mcp. Your agent opens a sign-in the first time; use this same account.`,
-            `Then ask it for an edit, for example: "Import my video and cut out the pauses and ums." You start with ${PLANS.free.limits.renderMinutes} free credits: a credit is one minute of our servers working (an export, a transcript), and editing itself is free. No card, no time limit.`,
+            `Then ask it for an edit, for example: "Import my video and cut out the pauses and ums." You start with ${FREE_CREDITS} free credits: a credit is one minute of our servers working (an export, a transcript), and editing itself is free. No card, no time limit.`,
           ],
           action: { label: 'Connect your agent', url: welcome.url },
         });
@@ -465,15 +595,12 @@ export class Lifecycle {
     if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
     const owner = url.searchParams.get('user') ?? '';
     if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+    // fresh=1 after the account changed on the site (credits bought, top-up set): read it again.
+    if (url.searchParams.get('fresh') === '1') this.#o.access.forget(owner);
     try {
       const access = await this.#o.access.get(owner);
       if (!access.allowed) return json(res, 200, { allowed: false, reason: access.reason });
-      const usage = await this.#o.access.usage(owner, access);
-      return json(res, 200, {
-        allowed: true,
-        ...usage,
-        ...(access.grace_ends ? { grace_ends: access.grace_ends } : {}),
-      });
+      return json(res, 200, { allowed: true, account: await this.account(owner) });
     } catch {
       return json(res, 503, { error: 'account check unavailable' });
     }
@@ -499,18 +626,6 @@ export class Lifecycle {
       const owner = meta.workos_user_id;
       if (meta.app !== 'cuttingfloor' || !owner) return json(res, 200, { ignored: true });
       this.#o.access.forget(owner);
-      if (event.type === 'invoice.payment_failed') {
-        const to = String(object.customer_email ?? customer.email ?? '');
-        await this.#notify(owner, `payment-failed-${object.id}-${object.attempt_count ?? 1}`, {
-          to,
-          subject: 'Your cuttingfloor payment didn’t go through',
-          lines: [
-            'We couldn’t take your last payment for cuttingfloor. Stripe will try the card again over the next few days.',
-            'Your agent keeps working for 7 days. Update the card before then to keep it that way.',
-          ],
-          action: { label: 'Update your card', url: this.#o.accountUrl },
-        });
-      }
       return json(res, 200, { received: true });
     } catch (error) {
       process.stderr.write(`stripe webhook ${event.id}: ${(error as Error).message}\n`);
@@ -560,6 +675,16 @@ export function clientName(app: string | undefined): string | undefined {
     .trim()
     .slice(0, 80);
   return name || undefined;
+}
+
+/**
+ * The notice a credit warning is claimed under: once per balance (its free and bought credits, so
+ * a top-up arms it again), or once per month of a given plan.
+ */
+function warningName(balance: Balance, kind: 'low' | 'out'): string {
+  return balance.renews === null
+    ? `credits-${balance.free + balance.bought}-${kind}`
+    : `minutes-${balance.since.slice(0, 10)}-${kind === 'low' ? 80 : 100}`;
 }
 
 const isUser = (owner: string) => /^user_[0-9A-Z]{26}$/.test(owner);

@@ -1,11 +1,20 @@
-import { fromLookupKey, GRACE_DAYS, PLANS, type PlanId, taggedPlan } from '@cuttingfloor/plans';
+import {
+  freeCreditsFor,
+  type Pack,
+  PLANS,
+  type PlanId,
+  packOf,
+  taggedPlan,
+} from '@cuttingfloor/plans';
 import { CfError } from '@cuttingfloor/schema';
 import { meteredSeconds, type OwnerLimits, type Runtime } from '@cuttingfloor/server';
 
-// Who may work on the hosted server, decided without a database: WorkOS holds the account (when
-// it began, whether its email is verified, a `plan` tag for given plans), Stripe holds the
-// subscription. They are linked by the user's `stripe_customer_id` metadata, which the site
-// writes at checkout. Render time comes from the meter files under the data root.
+// Who may work on the hosted server, and how many credits they have, decided without a database:
+// WorkOS holds the account (when it began, whether its email is verified, a `plan` tag for given
+// plans, the pack it tops up with), Stripe holds the credit packs it bought. They are linked by
+// the user's `stripe_customer_id` metadata, which the site writes at checkout. Credits used come
+// from the meter files under the data root. A balance is the free credits, plus the packs bought,
+// less what was used since the account began; a given plan's credits renew each calendar month.
 //
 // It fails closed: when WorkOS or Stripe can't be reached the call is refused as retryable,
 // never let through. Paying people meet at most a short retry; nobody gets a free pass.
@@ -14,39 +23,49 @@ export type Access =
   | {
       allowed: true;
       plan: PlanId;
-      /** The span credits count over: a free account's whole life, the billing period, or the month. */
-      period: { start: string; end: string };
       email: string;
-      /** Set while a failed payment is in its grace days: when access stops. */
-      grace_ends?: string;
+      /** When the account began: a balance counts credits used from here. */
+      created_at: string;
+      /** The account's Stripe customer, once it has been to checkout. */
+      customer?: string;
+      /** Credits from packs bought, after refunds, and how many purchases made them. */
+      bought: { credits: number; purchases: number };
+      /** The pack bought on its own when the balance runs low; unset when that is off. */
+      refill?: Pack;
     }
-  | {
-      allowed: false;
-      reason: 'payment_failed' | 'email_unverified';
-      /** When the grace days ended. */
-      ended?: string;
-      email: string;
-    };
+  | { allowed: false; reason: 'email_unverified'; email: string };
 
-export interface Usage {
+/** An account's credits: left, used, and where they came from. */
+export interface Balance {
   plan: PlanId;
-  period: { start: string; end: string };
-  used_minutes: number;
-  included_minutes: number | null;
+  /** Credits left; null when the plan has no cap. */
+  left: number | null;
+  /** Credits used: since the account began (a balance), or this month (a given plan). */
+  used: number;
+  /** Free credits the account started with (a balance; 0 otherwise). */
+  free: number;
+  /** Credits bought in packs, after refunds (a balance; 0 otherwise). */
+  bought: number;
+  /** A given plan's credits each month; null for a balance or no cap. */
+  per_month: number | null;
+  /** When a given plan's credits renew; null for a balance, which never renews or expires. */
+  renews: string | null;
+  /** Purchases so far, so each top-up is claimed once. */
+  purchases: number;
+  /** Where credits used are counted from: the account's start, or this month's. */
+  since: string;
 }
 
 export interface AccessOptions {
   workosKey: string;
   stripeKey: string;
-  /** Where people subscribe and manage billing; named in refusals. */
+  /** Where people buy credits and see their balance; named in refusals. */
   accountUrl: string;
-  /** The data root's workspace, for render time used. Without it, minutes are not capped. */
+  /** The data root's workspace, for credits used. Without it, credits are not counted. */
   ws?: Runtime['ws'];
   now?: () => number;
 }
 
-// Statuses that keep access; past_due only for its grace days.
-const PAYING = new Set(['active', 'trialing', 'past_due']);
 const ALLOWED_TTL = 5 * 60_000;
 const DENIED_TTL = 20_000;
 const USAGE_TTL = 15_000;
@@ -65,22 +84,13 @@ export class AccessCheck {
     const access = await this.get(owner);
     if (access.allowed) return access;
     const account = this.#o.accountUrl;
-    if (access.reason === 'email_unverified')
-      throw new CfError('email_unverified', `${access.email} is not verified yet`, {
-        hint: `Open the verification email from cuttingfloor (or sign in at ${account} to get a new one), then call the tool again`,
-        detail: { account },
-      });
-    throw new CfError(
-      'subscription_required',
-      `The last payment failed and the ${GRACE_DAYS} days to fix it ended on ${day(access.ended)}`,
-      {
-        hint: `Update the card at ${account} (sign in with the same account), then call the tool again. Media and exports are kept 7 days, timelines 24 hours after last use`,
-        detail: { reason: access.reason, ended: access.ended, account },
-      },
-    );
+    throw new CfError('email_unverified', `${access.email} is not verified yet`, {
+      hint: `Open the verification email from cuttingfloor (or sign in at ${account} to get a new one), then call the tool again`,
+      detail: { account },
+    });
   }
 
-  /** The owner's plan as limits on the work they start, with a refusal once the credits are used. */
+  /** The owner's plan as limits on the work they start, with a refusal once no credits are left. */
   async limits(owner: string): Promise<OwnerLimits> {
     const access = await this.require(owner);
     const limits = PLANS[access.plan].limits;
@@ -93,24 +103,21 @@ export class AccessCheck {
         ? { account: this.#o.accountUrl }
         : {}),
     };
-    const usage = await this.usage(owner, access);
-    if (usage.included_minutes !== null && usage.used_minutes >= usage.included_minutes) {
+    const balance = await this.balance(owner, access);
+    if (balance.left !== null && balance.left <= 0) {
       const account = this.#o.accountUrl;
-      const free = access.plan === 'free';
-      // The plans page only describes them: ChatGPT's plugin rules allow pointing to plans, not
-      // to where they are bought.
-      const plans = new URL('/pricing', account);
+      const monthly = balance.renews !== null;
       out.refuseJobs = new CfError(
         'quota_exceeded',
-        free
-          ? `This account's ${usage.included_minutes} free credits are used`
-          : `This period's ${usage.included_minutes} credits are used`,
+        monthly
+          ? `This month's ${balance.per_month} credits are used`
+          : 'This account has no credits left',
         {
-          hint: `${free ? 'Free credits do not renew; the plans' : `They renew on ${day(usage.period.end)}; the plans`} are described at ${plans}. A credit is one minute of a job running. Editing the timeline and previews still work; only new jobs (exports, imports, analysis, create.*) wait`,
+          hint: `${monthly ? `They renew on ${balance.renews?.slice(0, 10)}.` : 'Credits are bought in packs on the account page, and never expire.'} The user signs in at ${account} to see and top up their credits. A credit is one minute of a job running. Editing the timeline and previews still work; only new jobs (exports, imports, analysis, create.*) wait`,
           detail: {
-            used_minutes: usage.used_minutes,
-            included_minutes: usage.included_minutes,
-            ...(free ? {} : { renews: usage.period.end }),
+            credits_left: balance.left,
+            credits_used: balance.used,
+            ...(monthly ? { renews: balance.renews } : {}),
             account,
           },
         },
@@ -119,29 +126,46 @@ export class AccessCheck {
     return out;
   }
 
-  /** Credits (render minutes) used this period against the plan's. */
-  async usage(owner: string, known?: Access & { allowed: true }): Promise<Usage> {
+  /** The owner's credits: left, used, and where they came from. */
+  async balance(owner: string, known?: Access & { allowed: true }): Promise<Balance> {
     const access = known ?? (await this.require(owner));
-    const included = PLANS[access.plan].limits.renderMinutes;
-    let seconds = 0;
-    if (this.#o.ws) {
-      const hit = this.#usage.get(owner);
-      if (hit && hit.since === access.period.start && this.#o.now() - hit.at < USAGE_TTL)
-        seconds = hit.seconds;
-      else {
-        seconds = await meteredSeconds(this.#o.ws, owner, new Date(access.period.start));
-        this.#usage.set(owner, { at: this.#o.now(), seconds, since: access.period.start });
-      }
-    }
+    const credits = PLANS[access.plan].credits;
+    const now = this.#o.now();
+    const since = credits.kind === 'balance' ? access.created_at : month(now).start;
+    const used = Math.round(((await this.#seconds(owner, since)) / 60) * 10) / 10;
+    const base = { plan: access.plan, used, purchases: access.bought.purchases, since };
+    if (credits.kind === 'none')
+      return { ...base, left: null, free: 0, bought: 0, per_month: null, renews: null };
+    if (credits.kind === 'monthly')
+      return {
+        ...base,
+        left: round(credits.perMonth - used),
+        free: 0,
+        bought: 0,
+        per_month: credits.perMonth,
+        renews: month(now).end,
+      };
+    const free = freeCreditsFor(access.created_at);
     return {
-      plan: access.plan,
-      period: access.period,
-      used_minutes: Math.round((seconds / 60) * 10) / 10,
-      included_minutes: included,
+      ...base,
+      left: round(free + access.bought.credits - used),
+      free,
+      bought: access.bought.credits,
+      per_month: null,
+      renews: null,
     };
   }
 
-  /** Forgets what is cached for an owner (a subscription changed). */
+  async #seconds(owner: string, since: string): Promise<number> {
+    if (!this.#o.ws) return 0;
+    const hit = this.#usage.get(owner);
+    if (hit && hit.since === since && this.#o.now() - hit.at < USAGE_TTL) return hit.seconds;
+    const seconds = await meteredSeconds(this.#o.ws, owner, new Date(since));
+    this.#usage.set(owner, { at: this.#o.now(), seconds, since });
+    return seconds;
+  }
+
+  /** Forgets what is cached for an owner (credits bought, a setting changed). */
   forget(owner: string): void {
     this.#cache.delete(owner);
     this.#usage.delete(owner);
@@ -153,7 +177,7 @@ export class AccessCheck {
     if (hit) hit.seconds += seconds;
   }
 
-  /** The owner's access, cached briefly; a refusal is rechecked soon so a new subscription shows. */
+  /** The owner's access, cached briefly; a refusal is rechecked soon so a change shows. */
   async get(owner: string): Promise<Access> {
     const hit = this.#cache.get(owner);
     if (hit && this.#o.now() - hit.at < (hit.value.allowed ? ALLOWED_TTL : DENIED_TTL))
@@ -176,55 +200,52 @@ export class AccessCheck {
 
   /** Works out access from WorkOS and Stripe, uncached. Throws when either can't answer. */
   async resolve(owner: string): Promise<Access> {
-    const now = this.#o.now();
     const user = await this.#workos(`/user_management/users/${encodeURIComponent(owner)}`);
     const email = String(user.email ?? '');
     const metadata = (user.metadata ?? {}) as Record<string, string>;
+    const created_at = new Date(Date.parse(String(user.created_at))).toISOString();
+    const customer = metadata.stripe_customer_id || undefined;
     const tagged = taggedPlan(metadata.plan);
-    if (tagged) return { allowed: true, plan: tagged, period: month(now), email };
-
-    const customer = metadata.stripe_customer_id;
-    let lapsed: string | undefined;
-    if (customer) {
-      const subs = await this.#stripe(
-        `/v1/subscriptions?customer=${encodeURIComponent(customer)}&status=all&limit=20`,
-      );
-      for (const sub of (subs.data ?? []) as StripeSubscription[]) {
-        if (!PAYING.has(sub.status)) continue;
-        const item = sub.items?.data?.[0];
-        const named = fromLookupKey(item?.price?.lookup_key);
-        const plan = named?.plan ?? 'pro';
-        const start = (item?.current_period_start ?? sub.current_period_start ?? now / 1000) * 1000;
-        const end = (item?.current_period_end ?? sub.current_period_end ?? now / 1000) * 1000;
-        // Minutes are a month's however the plan is billed: a yearly one counts each month of its year.
-        const period =
-          (named?.interval ?? item?.price?.recurring?.interval) === 'year'
-            ? monthOfYear(start, end, now)
-            : { start: new Date(start).toISOString(), end: new Date(end).toISOString() };
-        if (sub.status !== 'past_due') return { allowed: true, plan, period, email };
-        // A failed renewal keeps working while Stripe retries the card, for GRACE_DAYS.
-        const grace = start + GRACE_DAYS * 86_400_000;
-        if (now < grace)
-          return { allowed: true, plan, period, email, grace_ends: new Date(grace).toISOString() };
-        lapsed = new Date(grace).toISOString();
-      }
-    }
-    if (lapsed) return { allowed: false, reason: 'payment_failed', ended: lapsed, email };
-    // Checked after the subscription: a paying account is never held back for its email.
-    if (user.email_verified === false) return { allowed: false, reason: 'email_unverified', email };
-
-    // Free credits count from sign-up and never renew. The meter keeps 13 months, so the period
-    // ends then: credits used before it are no longer counted.
-    const began = Date.parse(String(user.created_at));
+    const bought =
+      customer && !tagged ? await this.#bought(customer) : { credits: 0, purchases: 0 };
+    // Checked after purchases: an account that paid is never held back for its email.
+    if (!tagged && !bought.purchases && user.email_verified === false)
+      return { allowed: false, reason: 'email_unverified', email };
+    const refill = packOf(metadata.refill_pack);
     return {
       allowed: true,
-      plan: 'free',
-      period: {
-        start: new Date(began).toISOString(),
-        end: new Date(addMonths(began, 13)).toISOString(),
-      },
+      plan: tagged ?? (bought.purchases ? 'credits' : 'free'),
       email,
+      created_at,
+      ...(customer ? { customer } : {}),
+      bought,
+      ...(refill && !tagged ? { refill } : {}),
     };
+  }
+
+  /** Credits from the customer's paid packs, less any refunded share. */
+  async #bought(customer: string): Promise<{ credits: number; purchases: number }> {
+    let credits = 0;
+    let purchases = 0;
+    let after: string | undefined;
+    for (let page = 0; page < 20; page++) {
+      const list = (await this.#stripe(
+        `/v1/payment_intents?customer=${encodeURIComponent(customer)}&limit=100&expand[]=data.latest_charge${after ? `&starting_after=${after}` : ''}`,
+      )) as { data?: StripePaymentIntent[]; has_more?: boolean };
+      const data = list.data ?? [];
+      for (const pi of data) {
+        const pack = Number(pi.metadata?.credits);
+        if (pi.status !== 'succeeded' || pi.metadata?.app !== 'cuttingfloor' || !(pack > 0))
+          continue;
+        purchases++;
+        const charge = typeof pi.latest_charge === 'object' ? pi.latest_charge : undefined;
+        const refunded = charge?.amount ? (charge.amount_refunded ?? 0) / charge.amount : 0;
+        credits += pack * (1 - Math.min(1, refunded));
+      }
+      after = data.at(-1)?.id;
+      if (!list.has_more || !after) break;
+    }
+    return { credits: round(credits), purchases };
   }
 
   async #workos(path: string): Promise<Record<string, unknown>> {
@@ -236,17 +257,17 @@ export class AccessCheck {
     return (await res.json()) as Record<string, unknown>;
   }
 
-  async #stripe(path: string): Promise<{ data?: unknown[] }> {
+  async #stripe(path: string): Promise<unknown> {
     const res = await fetch(`https://api.stripe.com${path}`, {
       headers: { authorization: `Bearer ${this.#o.stripeKey}` },
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) throw new Error(`Stripe ${res.status}`);
-    return (await res.json()) as { data?: unknown[] };
+    return res.json();
   }
 }
 
-/** The calendar month (UTC) `now` falls in: the period for plans that aren't billed by Stripe. */
+/** The calendar month (UTC) `now` falls in: the period a given plan's credits count over. */
 function month(now: number): { start: string; end: string } {
   const d = new Date(now);
   return {
@@ -255,40 +276,11 @@ function month(now: number): { start: string; end: string } {
   };
 }
 
-/** The month of a yearly billing period that `now` falls in, on the period's own day of the month. */
-function monthOfYear(start: number, end: number, now: number): { start: string; end: string } {
-  let k = 0;
-  while (k < 11 && now >= addMonths(start, k + 1)) k++;
-  return {
-    start: new Date(addMonths(start, k)).toISOString(),
-    end: new Date(Math.min(addMonths(start, k + 1), end)).toISOString(),
-  };
-}
+const round = (n: number) => Math.round(n * 10) / 10;
 
-/** `t` moved on `k` calendar months (UTC), kept to the last day of a shorter month. */
-function addMonths(t: number, k: number): number {
-  const d = new Date(t);
-  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + k + 1, 0)).getUTCDate();
-  const moved = new Date(d);
-  moved.setUTCDate(1);
-  moved.setUTCMonth(d.getUTCMonth() + k);
-  moved.setUTCDate(Math.min(d.getUTCDate(), last));
-  return moved.getTime();
-}
-
-function day(iso: string | undefined): string {
-  return iso ? iso.slice(0, 10) : 'an earlier date';
-}
-
-interface StripeSubscription {
+interface StripePaymentIntent {
+  id: string;
   status: string;
-  current_period_start?: number;
-  current_period_end?: number;
-  items?: {
-    data?: {
-      current_period_start?: number;
-      current_period_end?: number;
-      price?: { lookup_key?: string | null; recurring?: { interval?: string } | null };
-    }[];
-  };
+  metadata?: Record<string, string>;
+  latest_charge?: string | { amount?: number; amount_refunded?: number } | null;
 }

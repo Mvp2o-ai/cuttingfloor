@@ -3806,3 +3806,41 @@ table.pr-grid td {
     align-items: center;
   }
 }
+
+/* account: credit packs and automatic top-up */
+.plans:has(> .plan:nth-child(4)) {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 1100px) {
+  .plans:has(> .plan:nth-child(4)) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .plans:has(> .plan:nth-child(4)) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.top-up {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin-top: 28px;
+  max-width: 720px;
+}
+.top-up p,
+.top-up label {
+  margin: 0;
+}
+.top-up select {
+  font: inherit;
+  padding: 6px 8px;
+  background: var(--bg-2);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+}
+.top-up .meter-note {
+  flex-basis: 100%;
+  margin: 0;
+}

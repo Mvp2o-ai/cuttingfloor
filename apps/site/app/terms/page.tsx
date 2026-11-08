@@ -1,11 +1,11 @@
-import { FREE_CREDITS, GRACE_DAYS, LEGAL_NAME, PLANS, SUPPORT_EMAIL } from '@cuttingfloor/plans';
+import { FREE_CREDITS, LEGAL_NAME, PLANS, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { Items, LegalPage, P, Part } from '../legal.tsx';
 
 export const metadata: Metadata = {
   title: 'Terms — cuttingfloor',
   description:
-    'The terms for using cuttingfloor, the hosted video editing server for AI agents: free credits, plans and credits, cancelling, your content and ours.',
+    'The terms for using cuttingfloor, the hosted video editing server for AI agents: free credits, credit packs, automatic top-up, your content and ours.',
   alternates: { canonical: '/terms', types: { 'text/markdown': '/terms.md' } },
 };
 
@@ -39,28 +39,28 @@ export default function Terms() {
           live.
         </P>
       </Part>
-      <Part title="Free credits and plans">
+      <Part title="Free credits and credit packs">
         <Items
           items={[
             `Every new account gets ${FREE_CREDITS} free credits, with no card. They don't expire and don't renew.`,
-            `Paid plans (${PLANS.creator.name} and ${PLANS.pro.name}) are billed monthly or yearly, in advance, through Stripe. The prices are on the pricing page.`,
-            'Each paid plan includes a number of credits per billing period. A credit is one minute of a job running on our servers (an export, an import, a transcript, motion graphics, a voiceover, a cutout). Editing the timeline and previews are free.',
-            'When the credits run out, new jobs stop until they renew or you move to a bigger plan. We never charge for going over.',
+            'After that, you buy credits in packs, paid once through Stripe. There is no subscription and nothing renews. The prices are on the pricing page.',
+            'A credit is one minute of a job running on our servers (an export, an import, a transcript, motion graphics, a voiceover, a cutout). Editing the timeline and previews are free.',
+            'Credits you buy never expire. When your credits run out, new jobs stop until you buy more. We never charge for going over.',
+            'If you turn on automatic top-up, we buy the pack you chose on your saved card whenever your credits run low, and email you a receipt each time. Turn it off any time on your account page.',
             `${PLANS.enterprise.name} is arranged with us directly: write to ${SUPPORT_EMAIL}.`,
-            'We may change prices or plans. A change to what you pay starts at your next renewal, and we tell you by email first.',
+            'We may change pack prices. A change applies to packs bought after it; credits you already have keep working.',
           ]}
         />
       </Part>
-      <Part title="Payments and cancelling">
+      <Part title="Payments">
         <P>
-          Stripe takes the payments; we never see your card number. You can cancel any time from
-          your account page. Your plan keeps working until the end of the period you paid for, then
-          stops renewing.
+          Stripe takes the payments; we never see your card number. Your card is saved with Stripe
+          when you first buy, so later packs take one click; you can change or remove it from your
+          account page.
         </P>
         <P>
-          If a payment fails, Stripe tries again and we email you. Your agent keeps working for{' '}
-          {GRACE_DAYS} days; after that, calls are paused until the card is updated. Refunds are
-          covered on the <a href="/refunds">refunds page</a>.
+          If an automatic top-up fails, we email you and nothing else is charged; buy a pack on your
+          account page to carry on. Refunds are covered on the <a href="/refunds">refunds page</a>.
         </P>
       </Part>
       <Part title="Your content">

@@ -5,9 +5,10 @@ import type { CfError } from '@cuttingfloor/schema';
 
 // Render time: how long each job ran, from leaving the queue to its end. One file per job under
 // the owner's month (`owners/{owner}/meter/{yyyy-mm}/{job_id}.json`), so jobs ending together on
-// any server never lose a count, and a month is its files' sum. Kept 13 months.
+// any server never lose a count, and a month is its files' sum. Kept 5 years: bought credits never
+// expire, so what used them is counted against them for as long as an account plausibly lasts.
 
-export const METER_TTL_MS = 400 * 24 * 3_600_000;
+export const METER_TTL_MS = 5 * 366 * 24 * 3_600_000;
 
 export interface MeterEntry {
   job_id: string;

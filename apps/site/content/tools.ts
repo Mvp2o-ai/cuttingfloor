@@ -444,6 +444,12 @@ export const TOOLS: ToolEntry[] = [
     readOnly: true,
     longRunning: 'never',
   },
+  {
+    name: 'account.get',
+    title: 'Get account',
+    readOnly: true,
+    longRunning: 'never',
+  },
 ];
 
 /** How many tools the server lists: say this number instead of writing one. */

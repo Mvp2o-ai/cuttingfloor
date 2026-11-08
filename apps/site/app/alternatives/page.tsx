@@ -94,7 +94,7 @@ const FAQS = [
   },
   {
     q: 'What does it cost?',
-    a: `Start free with ${FREE_CREDITS} credits, no card and no time limit; a credit is a minute of a job running. After that, plans have a price you never go over. See the pricing page.`,
+    a: `Start free with ${FREE_CREDITS} credits, no card and no time limit; a credit is a minute of a job running. After that, pay as you go: buy credit packs that never expire, with no subscription. See the pricing page.`,
   },
 ];
 

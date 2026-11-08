@@ -1,23 +1,35 @@
-import { PLANS as ALL, type PlanId, PRICED, SUPPORT_EMAIL } from '@cuttingfloor/plans';
+import {
+  PLANS as ALL,
+  FREE_CREDITS,
+  LOW_CREDITS,
+  PACKS,
+  type PlanId,
+  SUPPORT_EMAIL,
+} from '@cuttingfloor/plans';
 import { KEYS, LICENCE, LOCAL_ADDRESS } from '../content/facts.ts';
 import { TOOL_COUNT } from '../content/tools.ts';
 
-// The pricing table, worded from the one plans file the server enforces (packages/plans). The
-// billable unit is a credit: one minute of a job running (export, import, transcript, motion
-// graphics, voiceover, cutout). Editing the timeline is free. At a plan's credits new jobs wait
-// for the renewal or a bigger plan; nothing is billed past the price. Every plan has every tool.
+// The pricing, worded from the one plans file the server enforces (packages/plans). The billable
+// unit is a credit: one minute of a job running (export, import, transcript, motion graphics,
+// voiceover, cutout). Editing the timeline is free. There are no subscriptions: an account starts
+// with free credits and buys packs when it wants more (pay as you go); bought credits never
+// expire. At zero new jobs wait; nothing is billed but the packs bought. Every plan has every tool.
+
+/** The ways to use the hosted service, in order. */
+const SOLD: PlanId[] = ['free', 'credits', 'enterprise'];
+
 export type Plan = {
   id: PlanId;
   name: string;
   price: string;
   per: string;
-  /** Dollars a month, for structured data; absent when the price is agreed with us. */
+  /** Dollars, for structured data: the smallest pack, or $0; absent when agreed with us. */
   amount?: number;
   included: string;
   limits: string;
   note: string;
   pick?: boolean;
-  /** Where the plan is bought or asked for. */
+  /** Where the plan is started or asked for. */
   href: string;
 };
 
@@ -27,23 +39,37 @@ const storage = (gb: number | null) =>
   gb === null ? 'unlimited storage' : gb >= 1000 ? `${gb / 1000} TB storage` : `${gb} GB storage`;
 const jobs = (n: number | null) =>
   n === null ? 'no job limit' : n === 1 ? 'one job at a time' : `${n} jobs at once`;
+const num = (n: number) => n.toLocaleString('en-US');
+/** "$0.20", "$0.14": a pack's price a credit. */
+export const perCredit = (price: number, credits: number) => `$${(price / credits).toFixed(2)}`;
 
-export const PLANS: Plan[] = PRICED.map((p) => {
+const SMALLEST = PACKS[0];
+const LARGEST = PACKS.at(-1);
+/** "$5 for 25 credits". */
+export const FROM_PACK = SMALLEST ? `$${SMALLEST.price} for ${SMALLEST.credits} credits` : '';
+
+/** The packs on sale, with each one's price a credit. */
+export const PACK_ROWS = PACKS.map((p) => ({
+  ...p,
+  per_credit: perCredit(p.price, p.credits),
+}));
+
+export const PLANS: Plan[] = SOLD.map((id) => {
+  const p = ALL[id];
   const l = p.limits;
   const common = {
-    id: p.id,
+    id,
     name: p.name,
     note: p.note,
     limits: `${jobs(l.jobs)[0]?.toUpperCase()}${jobs(l.jobs).slice(1)}, ${resolution(l.shortSide)}, ${storage(l.storageGb)}`,
-    ...(p.id === 'pro' ? { pick: true } : {}),
   };
-  if (p.id === 'free')
+  if (id === 'free')
     return {
       ...common,
       price: '$0',
-      per: 'no time limit',
+      per: 'no card',
       amount: 0,
-      included: `${l.renderMinutes} free credits`,
+      included: `${FREE_CREDITS} free credits`,
       href: '/start',
     };
   if (p.sold === 'contact')
@@ -52,23 +78,19 @@ export const PLANS: Plan[] = PRICED.map((p) => {
       price: 'Talk to us',
       per: '',
       included: 'Credits and limits agreed on a call',
-      limits: 'Start on any plan now; move up when we have talked',
+      limits: 'Start free now; move up when we have talked',
       href: `mailto:${SUPPORT_EMAIL}?subject=cuttingfloor%20Enterprise`,
     };
   return {
     ...common,
-    price: `$${p.price?.month}`,
-    per: '/ month',
-    amount: p.price?.month ?? 0,
-    included: `${l.renderMinutes} credits a month`,
+    price: `From $${SMALLEST?.price}`,
+    per: `for ${SMALLEST?.credits} credits`,
+    ...(SMALLEST ? { amount: SMALLEST.price } : {}),
+    included: `Packs of ${PACKS.map((k) => num(k.credits)).join(', ')} credits, never expire`,
+    pick: true,
     href: '/start',
   };
 });
-
-/** A plan's prices for the account page's buttons. */
-export function prices(id: PlanId): { month: number; year: number } | undefined {
-  return ALL[id].price;
-}
 
 // ---------- the /pricing page, /pricing.md and /pricing.json ----------
 // One set of facts for the three, from the plans file and content/facts.ts, so they never disagree.
@@ -79,18 +101,14 @@ export type Option = {
   name: string;
   price: string;
   per: string;
-  /** Dollars, for structured data: a month, or $0 for the free plan. Absent when agreed with us. */
+  /** Dollars, for structured data: the smallest pack, or $0. Absent when agreed with us. */
   amount?: number;
-  /** Dollars a year, for plans sold by the year too. */
-  yearly?: number;
   hosted: boolean;
   note: string;
   href: string;
   cta: string;
   pick?: boolean;
 };
-
-const sold = (id: PlanId) => PLANS.find((p) => p.id === id);
 
 export const SELF_HOSTED: Option = {
   id: 'self-hosted',
@@ -106,28 +124,20 @@ export const SELF_HOSTED: Option = {
 
 export const OPTIONS: Option[] = [
   SELF_HOSTED,
-  ...PRICED.map((p): Option => {
-    const shown = sold(p.id);
-    const base = {
+  ...PLANS.map(
+    (p): Option => ({
       id: p.id,
       name: p.name,
+      price: p.price,
+      per: p.per,
+      ...(p.amount !== undefined ? { amount: p.amount } : {}),
       hosted: true,
       note: p.note,
-      href: shown?.href ?? '/start',
-      ...(p.id === 'pro' ? { pick: true } : {}),
-    };
-    if (p.id === 'free')
-      return { ...base, price: '$0', per: 'no time limit', amount: 0, cta: 'Start free' };
-    if (!p.price) return { ...base, price: 'Talk to us', per: '', cta: 'Email us' };
-    return {
-      ...base,
-      price: `$${p.price.month}`,
-      per: 'a month',
-      amount: p.price.month,
-      yearly: p.price.year,
-      cta: 'Start free',
-    };
-  }),
+      href: p.href,
+      cta: p.id === 'enterprise' ? 'Email us' : 'Start free',
+      ...(p.pick ? { pick: true } : {}),
+    }),
+  ),
 ];
 
 /** included: the plan has it; not: it doesn't; key: it works with a key of your own; value: a number. */
@@ -147,19 +157,18 @@ const yes = (text: string): Cell => ({ mark: 'included', text });
 const no = (text: string): Cell => ({ mark: 'not', text });
 const key = (text: string): Cell => ({ mark: 'key', text });
 const val = (text: string): Cell => ({ mark: 'value', text });
-const per = (id: PlanId) => (id === 'free' ? 'to start, no time limit' : 'a month');
-const num = (n: number) => n.toLocaleString('en-US');
+type Limits = (typeof ALL)[PlanId]['limits'];
 
 /** One row of hosted cells, from a plan's limits. */
-function hosted(cell: (l: (typeof PRICED)[number]['limits'], id: PlanId) => Cell) {
-  return Object.fromEntries(PRICED.map((p) => [p.id, cell(p.limits, p.id)])) as Record<
+function hosted(cell: (l: Limits, id: PlanId) => Cell) {
+  return Object.fromEntries(SOLD.map((id) => [id, cell(ALL[id].limits, id)])) as Record<
     PlanId,
     Cell
   >;
 }
 
 /** A limit row: Enterprise limits are agreed on a call, so the table shows no number for them. */
-function limit(cell: (l: (typeof PRICED)[number]['limits'], id: PlanId) => Cell) {
+function limit(cell: (l: Limits, id: PlanId) => Cell) {
   return hosted((l, id) => (id === 'enterprise' ? val('Agreed with us') : cell(l, id)));
 }
 
@@ -174,20 +183,23 @@ export const ROWS: Row[] = [
     cells: {
       'self-hosted': val('Free'),
       ...hosted((_, id) => {
-        const p = ALL[id];
         if (id === 'free') return val('$0, no card');
-        if (!p.price) return val('Agreed with us');
-        return val(`$${p.price.month} a month, or $${p.price.year} a year`);
+        if (id === 'enterprise') return val('Agreed with us');
+        return val(
+          `Packs from ${FROM_PACK}${LARGEST ? ` to $${LARGEST.price} for ${num(LARGEST.credits)}` : ''}. No subscription`,
+        );
       }),
     },
   },
   {
-    label: 'Credits included',
+    label: 'Credits',
     cells: {
       'self-hosted': val('No limit: it runs on your machine'),
-      ...limit((l, id) =>
-        l.renderMinutes === null ? val('No limit') : val(`${num(l.renderMinutes)} ${per(id)}`),
-      ),
+      ...hosted((_, id) => {
+        if (id === 'free') return val(`${FREE_CREDITS} to start, no time limit`);
+        if (id === 'enterprise') return val('Agreed with us');
+        return val('As many as you buy; they never expire');
+      }),
     },
   },
   {
@@ -262,14 +274,15 @@ export const EVERY_PLAN = [
   'Previews and frame checks, so your agent sees its own work',
   'Export to MP4, or hand off to Premiere, Final Cut or Resolve',
 ] as const;
-export const EVERY_PLAN_LEAD = `Every plan, free included, has all ${TOOL_COUNT} tools. Plans differ only in credits, speed, video size and storage.`;
+export const EVERY_PLAN_LEAD = `Every account, free included, has all ${TOOL_COUNT} tools. You pay only for the credits you use.`;
 
 /** What a credit is: the pricing page's ledger, said as separate facts. */
 export const CREDIT = [
   'A credit is one minute of our servers working for you: an export, an import, a transcript, graphics, a voiceover or a cutout.',
   'Planning and editing the timeline cost nothing, and so do previews.',
-  `A new account gets ${ALL.free.limits.renderMinutes} free credits, with no card and no time limit. Paid plans add credits every month.`,
-  'When credits are used, new jobs wait until they renew or you move up. There is no overage charge: you are never charged more than the price. We email you at 80% and at 100%.',
+  `A new account gets ${FREE_CREDITS} free credits, with no card and no time limit. A short video export of about 30 seconds takes well under one credit.`,
+  `After that, buy credits in packs when you need them, from ${FROM_PACK}. They never expire, and there is no subscription.`,
+  `When credits run out, new jobs wait until you top up; editing and previews keep working. We email you when you have fewer than ${LOW_CREDITS} left, and you can turn on automatic top-up so a pack is bought for you.`,
   'Self-hosted has no credits at all: it runs on your own machine.',
 ] as const;
 
@@ -291,18 +304,22 @@ export const PRICING_FAQS = [
   },
   {
     q: 'What happens when credits run out?',
-    a: 'Editing and previews keep working. New jobs such as exports and imports wait until your credits renew, or until you move to a bigger plan. There is no overage charge: you are never charged more than the plan price. We email you at 80% and at 100%.',
+    a: `Editing and previews keep working. New jobs such as exports and imports wait until you buy more credits on your account page. You are never charged for anything but the packs you buy. We email you when you have fewer than ${LOW_CREDITS} credits left; turn on automatic top-up and a pack of your choice is bought for you instead.`,
+  },
+  {
+    q: 'How much do credits cost?',
+    a: `${PACK_ROWS.map((p) => `$${p.price} for ${num(p.credits)} credits (${p.per_credit} each)`).join(', ')}. Bigger packs cost less a credit. Bought credits never expire.`,
   },
   {
     q: 'What is a credit?',
     a: 'One minute of our servers working for you: an export, an import, a transcript, graphics, a voiceover or a cutout. Editing the timeline and previews are free.',
   },
   {
-    q: 'Can I cancel?',
-    a: 'Yes, any time, from your account page. A monthly plan stops at the end of the month you paid for. Within 14 days of buying or renewing a yearly plan you can ask for a refund of the months you haven’t started. Payments are by Stripe.',
+    q: 'Is there a subscription to cancel?',
+    a: 'No. You buy credits in packs when you want them, and nothing renews. Automatic top-up is off unless you turn it on, and you can turn it off any time on your account page. Unused credits from a pack bought in the last 14 days are refunded on request. Payments are by Stripe.',
   },
   {
     q: 'Is it free to try?',
-    a: `Yes. Every new account gets ${free.renderMinutes} free credits, with no card and no time limit: about 10 hours of your agent editing. It has every tool, one job at a time, exports up to ${free.shortSide}p and ${free.storageGb} GB of storage. Or watch the live demo first, with no sign-up.`,
+    a: `Yes. Every new account gets ${FREE_CREDITS} free credits, with no card and no time limit: enough for a dozen or more short videos. It has every tool, one job at a time, exports up to ${free.shortSide}p and ${free.storageGb} GB of storage. Or watch the live demo first, with no sign-up.`,
   },
 ];

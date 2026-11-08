@@ -1,16 +1,18 @@
-// End-to-end check that paying accounts are let in, on the live server with real WorkOS and Stripe.
-// Run it on the server, inside the image, so it uses production's keys (they never leave there):
+// End-to-end check of credits on the live server with real WorkOS and Stripe. Run it on the
+// server, inside the image, so it uses production's keys (they never leave there):
 //
 //   ssh root@<server> 'cd /opt/cuttingfloor && docker compose exec -T cuttingfloor node scripts/smoke-paid.ts'
 //
-// Makes a throwaway account linked to a Stripe customer as checkout links it, and a script key
-// for it on the server. Real subscriptions are paid with a 100%-off coupon, so the invoices are
-// real, paid and $0: no card, no charge. Checks through /mcp and /account/usage that the free plan
-// works, that Creator (monthly) and Pro (yearly) are honoured with their own limits, that a
-// yearly plan's minutes count per month, that Stripe's webhook reaches the server, and that
-// cancelling returns it to the free plan. Later days run the server's own access rules with a
-// clock moved on. Deletes everything after.
+// Makes a throwaway account linked to a Stripe customer as checkout links it, and a script key for
+// it on the server. Checks through /mcp (account.get) and /account/usage that a new account has its
+// free credits and the packs, that turning on automatic top-up shows at once, that a pack's
+// Checkout opens as the site opens it (expired before anyone could pay), and the access rules
+// with a clock moved on. Moves no money: a real purchase is checked by hand (plans/README.md).
+// Deletes everything after.
+
 import { AccessCheck } from '../apps/hosted/src/access.ts';
+import { FREE_CREDITS, PACKS } from '../packages/plans/src/index.ts';
+import type { AccountGetResult } from '../packages/schema/src/index.ts';
 
 const need = (name: string) => {
   const value = process.env[name];
@@ -32,7 +34,6 @@ function expect(ok: boolean, label: string) {
   process.stdout.write(`  ${ok ? '✓' : '✗'} ${label}\n`);
   if (!ok) failures.push(label);
 }
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const DAY = 86_400_000;
 
 async function workos(path: string, init: { method?: string; body?: unknown } = {}) {
@@ -77,7 +78,6 @@ const user = await workos('/user_management/users', {
 const userId = user.id as string;
 step(`a throwaway account (${userId})`);
 let customer = '';
-let coupon = '';
 let keyId = '';
 
 try {
@@ -95,15 +95,6 @@ try {
     method: 'PUT',
     body: { metadata: { stripe_customer_id: customer } },
   });
-  coupon = (
-    await stripe('/v1/coupons', {
-      percent_off: '100',
-      duration: 'forever',
-      name: 'smoke-paid',
-      'metadata[app]': 'cuttingfloor',
-      'metadata[smoke]': 'true',
-    })
-  ).id as string;
   const made = await site('/account/keys', { user: userId, label: 'smoke-paid' });
   const key = String(made.key ?? '');
   keyId = String(made.key_id ?? '');
@@ -152,123 +143,112 @@ try {
       ? `refused: ${JSON.stringify(res.result.structuredContent ?? res.result.content)}`
       : 'works';
   };
-  const usage = async () => site(`/account/usage?user=${userId}`);
+  const account = async (fresh = false) =>
+    (await site(`/account/usage?user=${userId}${fresh ? '&fresh=1' : ''}`)).account as
+      | AccountGetResult
+      | undefined;
   const at = (days: number) =>
     new AccessCheck({ workosKey, stripeKey, accountUrl, now: () => Date.now() + days * DAY });
-  const prices = await stripe(
-    '/v1/prices?active=true&lookup_keys[]=cf_creator_month&lookup_keys[]=cf_pro_year',
-  );
-  const price = (lookup: string) =>
-    (prices.data as { id: string; lookup_key: string }[]).find((p) => p.lookup_key === lookup)
-      ?.id ?? '';
-  const subscribe = async (lookup: string) => {
-    const sub = await stripe('/v1/subscriptions', {
-      customer,
-      'items[0][price]': price(lookup),
-      'discounts[0][coupon]': coupon,
-      'metadata[app]': 'cuttingfloor',
-      'metadata[smoke]': 'true',
-    });
-    // Stripe's webhook tells the server; give it a moment to arrive.
-    await wait(8000);
-    return sub;
-  };
 
-  step('on the free plan');
+  step('a new account');
   expect((await works()) === 'works', 'a tool call works');
-  const free = await usage();
-  expect(free.plan === 'free', `the server counts it as the free plan (${free.plan})`);
-  const unpaid = await at(4).resolve(userId);
-  expect(unpaid.allowed && unpaid.plan === 'free', 'four days on, unpaid, it still works (free)');
-
-  step('subscribed to Creator, monthly (a real, paid $0 invoice)');
-  const creator = await subscribe('cf_creator_month');
-  const invoice = await stripe(`/v1/invoices/${creator.latest_invoice}`);
+  const got = await mcp('tools/call', { name: 'account.get', arguments: {} }, ++calls);
+  const tool = got?.result?.structuredContent as AccountGetResult | undefined;
   expect(
-    creator.status === 'active' && invoice.status === 'paid',
-    `Stripe has it active, its invoice paid (${creator.status}, ${invoice.status})`,
+    tool?.plan === 'free' &&
+      tool.credits.left === FREE_CREDITS &&
+      tool.credits.free === FREE_CREDITS,
+    `account.get: free, ${FREE_CREDITS} credits left (${JSON.stringify(tool?.credits)})`,
   );
-  const events = await stripe(`/v1/events?type=customer.subscription.created&limit=20`);
-  const ours = (events.data as { data: { object: { id: string } }; pending_webhooks: number }[])
-    .filter((e) => e.data.object.id === creator.id)
-    .at(0);
   expect(
-    ours?.pending_webhooks === 0,
-    `the webhook reached the server (${ours ? `${ours.pending_webhooks} pending` : 'no event'})`,
+    tool?.packs?.length === PACKS.length && tool.top_up?.card_saved === false,
+    `it lists the ${PACKS.length} packs, no card saved yet`,
   );
-  expect((await works()) === 'works', 'a tool call works');
-  const monthly = await usage();
   expect(
-    monthly.plan === 'creator' && monthly.included_minutes === 300,
-    `the server counts Creator, 300 minutes (${monthly.plan}, ${monthly.included_minutes})`,
+    tool?.warnings?.some((w) => w.kind === 'low' && !w.emailed),
+    'the low-credit email is armed, not sent',
   );
-  const paid = await at(4).resolve(userId);
-  expect(paid.allowed && paid.plan === 'creator', 'four days on, it is Creator');
-  const limits = await at(4).limits(userId);
+  expect(tool?.account_url === accountUrl, `it links the account page (${tool?.account_url})`);
+  const page = await account();
+  expect(
+    page?.credits?.left === FREE_CREDITS && page.plan === 'free',
+    'the account page reads the same credits',
+  );
+  const later = await at(90).resolve(userId);
+  expect(
+    later.allowed && later.plan === 'free',
+    'ninety days on it still works: credits never expire',
+  );
+  const limits = await at(0).limits(userId);
   expect(
     limits.jobs === 1 && limits.shortSide === 1080 && !limits.refuseJobs,
-    `with Creator's limits, nothing refused (${JSON.stringify({ ...limits, refuseJobs: !!limits.refuseJobs })})`,
+    `free limits: one job, 1080p, nothing refused (${JSON.stringify({ ...limits, refuseJobs: !!limits.refuseJobs })})`,
   );
-  // WorkOS won't unverify an email, so a second, unverified account on the same subscription.
+
+  step('automatic top-up');
+  const pack = PACKS[1];
+  if (!pack) throw new Error('no second pack');
+  const user = await workos(`/user_management/users/${userId}`);
+  await workos(`/user_management/users/${userId}`, {
+    method: 'PUT',
+    body: { metadata: { ...(user.metadata as object), refill_pack: pack.id } },
+  });
+  const on = await account(true);
+  expect(
+    on?.top_up?.automatic === true && on.top_up.pack?.credits === pack.credits,
+    `turned on, the server shows it at once (${JSON.stringify(on?.top_up)})`,
+  );
+
+  step("a pack's Checkout, as the site opens it");
+  for (const p of PACKS) {
+    const prices = await stripe(`/v1/prices?active=true&lookup_keys[]=${p.id}`);
+    const price = (prices.data as { id: string; unit_amount: number }[])[0];
+    expect(
+      price?.unit_amount === p.price * 100,
+      `${p.id} is on sale at $${p.price} (${price ? price.unit_amount / 100 : 'missing'})`,
+    );
+  }
+  const first = PACKS[0];
+  const prices = await stripe(`/v1/prices?active=true&lookup_keys[]=${first?.id}`);
+  const checkout = await stripe('/v1/checkout/sessions', {
+    mode: 'payment',
+    customer,
+    client_reference_id: userId,
+    'line_items[0][price]': (prices.data as { id: string }[])[0]?.id ?? '',
+    'line_items[0][quantity]': '1',
+    'payment_intent_data[metadata][app]': 'cuttingfloor',
+    'payment_intent_data[metadata][credits]': String(first?.credits),
+    'payment_intent_data[metadata][pack]': String(first?.id),
+    'payment_intent_data[metadata][workos_user_id]': userId,
+    'payment_intent_data[metadata][smoke]': 'true',
+    'payment_intent_data[setup_future_usage]': 'off_session',
+    allow_promotion_codes: 'true',
+    success_url: `${accountUrl}?bought=${first?.credits}#credits`,
+    cancel_url: `${accountUrl}#credits`,
+  });
+  expect(
+    String(checkout.url).startsWith('https://checkout.stripe.com/') &&
+      checkout.amount_total === (first?.price ?? 0) * 100,
+    `Checkout opens for $${first?.price} (${checkout.amount_total})`,
+  );
+  await stripe(`/v1/checkout/sessions/${checkout.id}/expire`, {});
+  const still = await account(true);
+  expect(still?.credits?.bought === 0, 'an unpaid checkout adds no credits');
+
+  step('an unverified email');
   const pending = await workos('/user_management/users', {
     method: 'POST',
-    body: {
-      email: `unverified-${email}`,
-      email_verified: false,
-      metadata: { stripe_customer_id: customer },
-    },
+    body: { email: `unverified-${email}`, email_verified: false },
   });
   const unverified = await at(0)
     .resolve(pending.id as string)
     .finally(() => workos(`/user_management/users/${pending.id}`, { method: 'DELETE' }));
-  expect(
-    unverified.allowed,
-    `a paying account whose email shows unverified still works (${unverified.allowed ? 'works' : unverified.reason})`,
-  );
-  await stripe(`/v1/subscriptions/${creator.id}`, undefined, 'DELETE');
-
-  step('moved to Pro, yearly');
-  const pro = await subscribe('cf_pro_year');
-  expect(pro.status === 'active', `Stripe has it active (${pro.status})`);
-  expect((await works()) === 'works', 'a tool call works');
-  const yearly = await usage();
-  const span = (p: unknown) => {
-    const { start, end } = p as { start: string; end: string };
-    return (Date.parse(end) - Date.parse(start)) / DAY;
-  };
-  expect(
-    yearly.plan === 'pro' && yearly.included_minutes === 900,
-    `the server counts Pro, 900 minutes (${yearly.plan}, ${yearly.included_minutes})`,
-  );
-  expect(
-    span(yearly.period) >= 28 && span(yearly.period) <= 31,
-    `the minutes renew monthly, not once a year (${span(yearly.period)} days)`,
-  );
-  const later = await at(45).resolve(userId);
-  expect(
-    later.allowed &&
-      Date.parse(later.period.start) > Date.now() + 27 * DAY &&
-      span(later.period) <= 31,
-    `45 days on, it is the second month's minutes (${later.allowed ? later.period.start : 'refused'})`,
-  );
-  const proLimits = await at(4).limits(userId);
-  expect(
-    proLimits.jobs === 2 && proLimits.shortSide === 2160 && !proLimits.refuseJobs,
-    `with Pro's limits (${JSON.stringify({ ...proLimits, refuseJobs: !!proLimits.refuseJobs })})`,
-  );
-
-  step('cancelled');
-  await stripe(`/v1/subscriptions/${pro.id}`, undefined, 'DELETE');
-  const ended = await at(4).resolve(userId);
-  expect(ended.allowed && ended.plan === 'free', 'cancelled, it is back on the free plan');
-  await wait(8000);
-  expect((await usage()).plan === 'free', 'the server is back to the free plan at once (webhook)');
+  expect(!unverified.allowed, 'is refused until it is verified');
 } finally {
   if (keyId) await site('/account/keys/revoke', { user: userId, key_id: keyId }).catch(() => {});
   if (customer) await stripe(`/v1/customers/${customer}`, undefined, 'DELETE').catch(() => {});
-  if (coupon) await stripe(`/v1/coupons/${coupon}`, undefined, 'DELETE').catch(() => {});
   await workos(`/user_management/users/${userId}`, { method: 'DELETE' });
-  step('deleted the throwaway account, its key, its Stripe customer and the coupon');
+  step('deleted the throwaway account, its key and its Stripe customer');
 }
 
 if (failures.length) {

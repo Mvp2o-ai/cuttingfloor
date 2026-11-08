@@ -66,7 +66,7 @@ if (oauth && issuer)
 const runtime = new Runtime(config);
 await runtime.start();
 
-// Plan checks for signed-in users: WorkOS holds the account, Stripe the subscription.
+// Plan checks for signed-in users: WorkOS holds the account, Stripe the credits bought.
 // Signing in without them would let everyone in, so hosted mode won't start that way.
 const workosKey = process.env.WORKOS_API_KEY;
 const stripeKey = process.env.STRIPE_SECRET_KEY;
@@ -229,6 +229,7 @@ const server = createHttpServer({
     ? {
         onCall: (owner: string, client?: string) => lifecycle.called(owner, client),
         onApp: (owner: string, app: string) => lifecycle.usedFrom(owner, app),
+        account: (owner: string) => lifecycle.account(owner),
         route: async (req, res, url) =>
           (await sequence?.route(req, res, url)) || lifecycle.route(req, res, url),
       }
