@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.37.1
+
+### Patch Changes
+
+- b5eb247: While the ChatGPT plugin is in review, `account.get` is off the tool list, and refusals about credits or a plan's room link the pricing page instead of the account page where credits are bought.
+
 ## 0.37.0
 
 ### Minor Changes

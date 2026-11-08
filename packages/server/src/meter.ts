@@ -68,7 +68,7 @@ export interface OwnerLimits {
   judgmentsPerDay?: number;
   /** Bytes the owner may keep on the server at once (uploads, media, exports). */
   storageBytes?: number;
-  /** Where the owner moves to a bigger plan, for refusals that a bigger plan lifts. */
+  /** The pricing page (information only), for refusals that a plan's limits cause. */
   account?: string;
   /** Why no new job may start now (the plan's credits are used up). */
   refuseJobs?: CfError;

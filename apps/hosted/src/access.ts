@@ -100,12 +100,14 @@ export class AccessCheck {
       ...(limits.judgmentsPerDay !== null ? { judgmentsPerDay: limits.judgmentsPerDay } : {}),
       ...(limits.storageGb !== null ? { storageBytes: limits.storageGb * 1e9 } : {}),
       ...(access.plan !== 'staff' && access.plan !== 'enterprise'
-        ? { account: this.#o.accountUrl }
+        ? { account: new URL('/pricing', this.#o.accountUrl).href }
         : {}),
     };
     const balance = await this.balance(owner, access);
     if (balance.left !== null && balance.left <= 0) {
-      const account = this.#o.accountUrl;
+      // Information only (ChatGPT's plugin rules): say what stopped and link the pricing page,
+      // never the account page where credits are bought.
+      const plans = new URL('/pricing', this.#o.accountUrl).href;
       const monthly = balance.renews !== null;
       out.refuseJobs = new CfError(
         'quota_exceeded',
@@ -113,12 +115,12 @@ export class AccessCheck {
           ? `This month's ${balance.per_month} credits are used`
           : 'This account has no credits left',
         {
-          hint: `${monthly ? `They renew on ${balance.renews?.slice(0, 10)}.` : 'Credits are bought in packs on the account page, and never expire.'} The user signs in at ${account} to see and top up their credits. A credit is one minute of a job running. Editing the timeline and previews still work; only new jobs (exports, imports, analysis, create.*) wait`,
+          hint: `${monthly ? `They renew on ${balance.renews?.slice(0, 10)}. ` : ''}A credit is one minute of a job running. Editing the timeline and previews still work; only new jobs (exports, imports, analysis, create.*) wait. How credits work: ${plans}`,
           detail: {
             credits_left: balance.left,
             credits_used: balance.used,
             ...(monthly ? { renews: balance.renews } : {}),
-            account,
+            plans,
           },
         },
       );
