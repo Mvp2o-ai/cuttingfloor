@@ -17,6 +17,7 @@ export const KAZI_LINKS = {
   'demo-tips': 'pOzd50YORY',
   'demo-jev': 'CV5zUYdD9T',
   'demo-memory': 'YILSUsgTRG',
+  'demo-explainer': 'sNyWwyygY9',
 } as const satisfies Record<string, string>;
 
 export type KaziPlace = keyof typeof KAZI_LINKS;

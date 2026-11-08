@@ -66,7 +66,7 @@ export default async function DemoPage({ params }: Props) {
       <JsonLd data={videoObject(d)} />
       <Nav />
       <main className="frame wt">
-        <section className="cell wt-head dm-hero marks">
+        <section className={`cell wt-head dm-hero marks${v.wide ? ' dm-hero-wide' : ''}`}>
           <span className="mark-b" />
           <div className="dm-hero-head">
             <Breadcrumbs

@@ -2684,8 +2684,9 @@ button.link-big {
   color: var(--key);
 }
 /* A watch page opens on the result: the finished video first and bigger, the raw clip beside it
-   (16:9 or 9:16; every finished demo is 9:16). Phone: title, then the pair, then the description,
-   so the pair is on the first screen. Wide: the title and description left, the pair right. */
+   (16:9 or 9:16). Phone: title, then the pair, then the description, so the pair is on the first
+   screen. Wide: the title and description left, the pair right; a 16:9 finished video takes the
+   full width under the title instead (dm-hero-wide). */
 .dm-hero {
   display: grid;
   grid-template-areas: "head" "pair" "lede";
@@ -2782,6 +2783,18 @@ button.link-big {
   /* A 16:9 clip in, sized by its width so it sits beside the finished video. */
   .dm-pair-before video.wide {
     width: min(24vw, 360px);
+    height: auto;
+  }
+  .dm-hero.dm-hero-wide {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "head" "pair" "lede";
+  }
+  .dm-hero-wide .dm-pair {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+  }
+  .dm-hero-wide .dm-pair-after video,
+  .dm-hero-wide .dm-pair-before video.wide {
+    width: 100%;
     height: auto;
   }
 }
