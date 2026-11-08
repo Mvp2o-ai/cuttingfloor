@@ -32,7 +32,7 @@ export default function Walkthroughs() {
           <ol className="wt-hub">
             {WALKTHROUGHS.map((w, i) => (
               <li key={w.slug}>
-                <a href={`/walkthroughs/${w.slug}`}>
+                <a href={`/walkthroughs/${w.slug}`} data-track={`Walkthrough: ${w.title}`}>
                   <span className="label">{String(i + 1).padStart(2, '0')}</span>
                   <h2>{w.title}</h2>
                   <p>{w.oneLiner}</p>

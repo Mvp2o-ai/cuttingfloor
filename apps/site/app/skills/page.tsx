@@ -32,7 +32,7 @@ export default function Skills() {
           <ol className="wt-hub">
             {SKILLS.map((s, i) => (
               <li key={s.slug}>
-                <a href={`/skills/${s.slug}`}>
+                <a href={`/skills/${s.slug}`} data-track={`Skill: ${s.title}`}>
                   <span className="label">{String(i + 1).padStart(2, '0')}</span>
                   <h2>{s.title}</h2>
                   <p>{s.description}</p>
