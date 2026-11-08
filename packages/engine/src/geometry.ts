@@ -30,6 +30,8 @@ export interface ClipPlacement {
   visible: PixelBox | null;
   /** The part of the source picture that shows there, in source pixels (before rotation). */
   source: PixelBox | null;
+  /** The four corners a warped picture maps onto, in frame pixels; absent when not warped. */
+  corners?: Array<{ x: number; y: number }>;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -49,7 +51,8 @@ function placementAt(
   frame: { width: number; height: number },
 ): ClipPlacement {
   const s = transformAt(clip, tpf, i, n);
-  const [rx = 0, ry = 0, rw = 0, rh = 0] = rectFor(clip, s, src, frame);
+  const quad = cornersAt(clip, frameSource(clip, tpf, i));
+  const [rx = 0, ry = 0, rw = 0, rh = 0] = rectFor(clip, s, src, frame, quad);
   // The window left by crop and mask, in fractions of the fitted frame (then of the picture).
   const crop = clip.transform?.crop;
   let fx0 = crop?.left ?? 0;
@@ -133,6 +136,9 @@ function placementAt(
   return {
     frame: i,
     picture: box(rx, ry, rx + rw, ry + rh),
+    ...(quad.length === 4
+      ? { corners: quad.map(([x, y]) => ({ x: r2(x * frame.width), y: r2(y * frame.height) })) }
+      : {}),
     rotation: r2(s.rotation),
     opacity: Math.round(s.opacity * 1000) / 1000,
     visible: shown ? box(vx0, vy0, vx1, vy1) : null,
