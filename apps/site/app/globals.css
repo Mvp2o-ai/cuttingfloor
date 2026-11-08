@@ -3950,3 +3950,13 @@ html[data-from="claude"] .dm-add-apps [data-app="claude"] h3 {
   font-size: clamp(16px, 1.3vw, 18px);
   max-width: 40ch;
 }
+.account-next {
+  margin: 24px 0 8px;
+}
+.account-more {
+  display: block;
+  margin: 40px 0 14px;
+}
+.account-more + .plans {
+  margin-top: 0;
+}
