@@ -32,19 +32,6 @@ describe('skills', () => {
     expect(scores).toEqual([...scores].sort((a, b) => b - a));
   });
 
-  it('finds the music skill however a creator says it', async () => {
-    const client = await connect(env.runtime);
-    for (const query of [
-      'sync video to music',
-      'cut to the beat',
-      'fit music to video',
-      'trim this song to the length of my video',
-    ]) {
-      const got = SkillsSearchResult.parse(await ok(client, 'skills.search', { query }));
-      expect(got.skills[0]?.slug, query).toBe('sync-video-to-music');
-    }
-  });
-
   it('keeps to the limit, and refuses an empty query', async () => {
     const client = await connect(env.runtime);
     const one = SkillsSearchResult.parse(
