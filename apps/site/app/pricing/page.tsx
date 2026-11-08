@@ -1,5 +1,6 @@
 import { FREE_CREDITS, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
+import { KAZI_FREE } from '../../content/clients.ts';
 import {
   IMAGE,
   KEYS,
@@ -14,6 +15,7 @@ import {
   EVERY_PLAN,
   EVERY_PLAN_LEAD,
   FROM_PACK,
+  KEEP_FILES,
   KEPT,
   markWord,
   OPTIONS,
@@ -83,6 +85,11 @@ function structuredData() {
   ];
 }
 
+const CAPTION = 'What each option includes. Self-hosted is free; hosted prices in USD.';
+
+/** On a phone the comparison stacks, one option at a time: the hosted ones people start with first. */
+const PHONE_ORDER = [...OPTIONS.filter((o) => o.hosted), ...OPTIONS.filter((o) => !o.hosted)];
+
 export default function Pricing() {
   return (
     <>
@@ -95,7 +102,8 @@ export default function Pricing() {
           <span className="label">Pricing</span>
           <h1 className="display">Pay as you go. Start free.</h1>
           <p className="lede wt-answer">
-            {FREE} free credits, no card. Then buy credits when you need them, from {FROM_PACK}.{' '}
+            {FREE} free credits, no card: enough to edit and export several short videos. Then buy
+            credits when you need them, from {FROM_PACK}.{' '}
             <em>
               They never expire and there is no subscription. A credit is a minute of our servers
               working; editing and previews are free. Or run it yourself, free.
@@ -151,7 +159,7 @@ export default function Pricing() {
           <table className="price-table">
             <thead>
               <tr>
-                <th>Plan</th>
+                <th>Option</th>
                 <th>Price</th>
                 <th>For</th>
                 <th>Start</th>
@@ -172,6 +180,9 @@ export default function Pricing() {
               ))}
             </tbody>
           </table>
+          <p className="price-foot">
+            {KAZI_FREE} <a href="/agents/kazi">Edit with Kazi</a>
+          </p>
         </section>
 
         <section className="cell" id="every-plan">
@@ -190,7 +201,7 @@ export default function Pricing() {
             ))}
           </ul>
           <p className="price-foot">
-            All of it, tool by tool: <a href="/features">Features</a>
+            {KEEP_FILES} All of it, tool by tool: <a href="/features">Features</a>
           </p>
         </section>
 
@@ -207,9 +218,7 @@ export default function Pricing() {
           </div>
           <div className="pr-scroll">
             <table className="pr-grid">
-              <caption className="pr-caption">
-                Included and not included, by plan. Self-hosted is free; hosted prices in USD.
-              </caption>
+              <caption className="pr-caption">{CAPTION}</caption>
               <thead>
                 <tr>
                   <th scope="col">Feature</th>
@@ -239,6 +248,30 @@ export default function Pricing() {
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="pr-cards">
+            {PHONE_ORDER.map((o) => (
+              <section key={o.id} className={o.pick ? 'pr-card pick' : 'pr-card'}>
+                <h3>{o.name}</h3>
+                <dl>
+                  {ROWS.map((r) => {
+                    const c = r.cells[o.id];
+                    return (
+                      <div key={r.label} data-mark={c.mark}>
+                        <dt>{r.label}</dt>
+                        <dd>
+                          {c.mark === 'value' ? null : (
+                            <span className="pr-mark">{markWord(c.mark)}</span>
+                          )}
+                          {c.text}
+                        </dd>
+                      </div>
+                    );
+                  })}
+                </dl>
+              </section>
+            ))}
+            <p className="pr-caption">{CAPTION}</p>
           </div>
           <p className="price-foot">
             {KEPT} Payments by Stripe; nothing renews. <a href="/terms">Terms</a> ·{' '}

@@ -1956,6 +1956,10 @@ button.link-big {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.wt-prompt figcaption .label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .wt-prompt figcaption {
   display: flex;
   justify-content: space-between;
@@ -3162,6 +3166,64 @@ table.pr-grid td {
 .pr-grid td[data-mark="key"] .pr-mark {
   color: var(--ink);
 }
+/* The comparison as one card per option on phones, so no column hides off-screen. */
+.pr-cards {
+  display: none;
+}
+@media (max-width: 760px) {
+  .pr-scroll {
+    display: none;
+  }
+  .pr-cards {
+    display: grid;
+    gap: 20px;
+  }
+}
+.pr-card {
+  border: 1px solid var(--rule);
+  padding: 18px 18px 6px;
+}
+.pr-card.pick {
+  border-color: var(--key);
+}
+.pr-card h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-pixel), monospace;
+  font-weight: 400;
+  font-size: 22px;
+  text-transform: uppercase;
+}
+.pr-card.pick h3 {
+  color: var(--key);
+}
+.pr-card dl {
+  margin: 0;
+}
+.pr-card dl > div {
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
+}
+.pr-card dt {
+  font-weight: 700;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.pr-card dd {
+  margin: 4px 0 0;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.pr-card [data-mark="not"] dd,
+.pr-card [data-mark="not"] .pr-mark {
+  color: var(--mute);
+}
+.pr-card [data-mark="key"] .pr-mark {
+  color: var(--ink);
+}
+.pr-cards .pr-caption {
+  margin: 0;
+  padding: 0;
+}
 .ledger .pr-ledger-p {
   grid-column: 2 / -1;
   color: var(--ink);
@@ -3285,6 +3347,7 @@ table.pr-grid td {
 }
 .cl-snippets {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
 }
 .cl-snippets .wt-prompt pre {
