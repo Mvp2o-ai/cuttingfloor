@@ -1,5 +1,5 @@
 import { FREE_CREDITS } from '@cuttingfloor/plans';
-import { CLIENTS, type Client } from './clients.ts';
+import { CHATGPT_PLANS, CLIENTS, type Client, KAZI_CREDITS } from './clients.ts';
 import { DEMOS, type Demo } from './demos.ts';
 
 // One page per agent people edit from: /agents/<slug>. Kazi, Claude and ChatGPT stand side by side
@@ -29,7 +29,7 @@ export type Agent = {
   faqs: { q: string; a: string }[];
 };
 
-const TRIAL = `Start free with ${FREE_CREDITS} credits: no card, no time limit, every tool.`;
+const TRIAL = `Start free with ${FREE_CREDITS} credits: no card, no time limit, every tool. That’s enough to edit and export several short videos.`;
 
 export const AGENTS: Agent[] = [
   {
@@ -47,7 +47,7 @@ export const AGENTS: Agent[] = [
     faqs: [
       {
         q: 'How do I connect cuttingfloor to Kazi?',
-        a: 'Ask Kazi to connect the cuttingfloor MCP server at https://api.cuttingfloor.ai/mcp, or add it under Servers in Kazi. Sign in when the cuttingfloor page opens, and Kazi can edit.',
+        a: 'In Kazi (app.apifunnel.ai), ask: “Connect the cuttingfloor MCP server at https://api.cuttingfloor.ai/mcp”. Sign in when the cuttingfloor page opens, and Kazi can edit. If Kazi doesn’t connect it, open Servers, add your own server and paste the address.',
       },
       {
         q: 'Can I edit from my phone?',
@@ -59,7 +59,7 @@ export const AGENTS: Agent[] = [
       },
       {
         q: 'What does it cost?',
-        a: `${TRIAL} After that, pay as you go: credit packs are on the pricing page.`,
+        a: `Nothing: an account you connect from Kazi is free for good, with ${KAZI_CREDITS.toLocaleString('en-US')} credits a month.`,
       },
     ],
   },
@@ -121,11 +121,11 @@ export const AGENTS: Agent[] = [
       },
       {
         q: 'Which ChatGPT plans can add it?',
-        a: 'Adding a custom MCP server is up to OpenAI and your plan. On Business, only admins and owners can create plugins with MCP servers; on Enterprise and Edu, an admin has to allow them first.',
+        a: `${CHATGPT_PLANS} On Business, only admins and owners can add one; on Enterprise and Edu, admins and owners can, and an admin can let other members.`,
       },
       {
         q: 'Does it work in the ChatGPT app on my phone?',
-        a: 'Yes, once it’s added. You add plugins on the web or the desktop app, and they work on your phone too.',
+        a: 'Yes, once it’s added. You add it on chatgpt.com in a browser (OpenAI says custom MCP servers are added on the web only), and it works on your phone too.',
       },
       {
         q: 'What does it cost?',

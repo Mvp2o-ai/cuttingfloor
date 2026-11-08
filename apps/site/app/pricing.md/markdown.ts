@@ -1,4 +1,5 @@
 import { SUPPORT_EMAIL } from '@cuttingfloor/plans';
+import { KAZI_FREE } from '../../content/clients.ts';
 import {
   IMAGE,
   KEYS,
@@ -13,6 +14,7 @@ import {
   CREDIT,
   EVERY_PLAN,
   EVERY_PLAN_LEAD,
+  KEEP_FILES,
   KEPT,
   markWord,
   OPTIONS,
@@ -47,11 +49,15 @@ export function markdown(): string {
         `- **${o.name}**: ${[o.price, o.per].filter(Boolean).join(' ')}. ${o.note} ${new URL(o.href, SITE_URL).toString()}`,
     ),
     '',
+    KAZI_FREE,
+    '',
     '## Everyone gets',
     '',
     EVERY_PLAN_LEAD,
     '',
     ...EVERY_PLAN.map((f) => `- ${f}`),
+    '',
+    KEEP_FILES,
     '',
     '## What differs',
     '',

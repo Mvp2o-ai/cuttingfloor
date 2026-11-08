@@ -95,7 +95,7 @@ export const AGENT_PAINS: Pain[] = [
   {
     pain: 'Credits that burn on every retry',
     answer:
-      'Planning and editing are free; only rendering counts, and nothing is billed past the plan. Or run it yourself for free.',
+      'Planning, editing and previews are free; only jobs such as exports use credits, and nothing is billed but the packs you buy. Or run it yourself for free.',
     tools: [],
   },
   {

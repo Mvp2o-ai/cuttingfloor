@@ -42,7 +42,8 @@ export default function Mcp() {
           ]}
         />
         <P>
-          That’s {TOOL_COUNT} tools, all on every plan. <a href="/features">See them all</a>.
+          That’s {TOOL_COUNT} tools, every one on every account, free included.{' '}
+          <a href="/features">See them all</a>.
         </P>
       </Part>
       <Part title="How to connect">

@@ -50,7 +50,8 @@ export const SERVERS: ServerRow[] = [
         'Gain and pan keyframes, fades, EQ, compressor, voice denoise, master limiter, stems, voiceover with timed words, lip-sync',
       keys: 'Only for lip-sync (your sync. labs key). Self-hosted, the visual-judgment tools also need a TypeSafe key',
       export: 'FCPXML, OTIO and EDL, plus SRT and VTT captions',
-      price: 'Render minute. Editing the timeline is free. Self-hosting is free',
+      price:
+        'Credits: one minute of a job running. Editing the timeline is free. Self-hosting is free',
     },
     pick: 'you want your agent to do the whole edit on your own footage, check its own work, and leave you an edit you can still change or open in your editing app.',
   },

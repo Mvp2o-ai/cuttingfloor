@@ -10,6 +10,7 @@ import {
 import { ClientSection } from '../../connect/client-section.tsx';
 import { DemoCards } from '../../demos/cards.tsx';
 import { LiveCard } from '../../live-card.tsx';
+import { KEEP_FILES } from '../../pricing.ts';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../../shell.tsx';
 import { Copy } from '../../walkthroughs/copy.tsx';
 
@@ -101,6 +102,7 @@ export default async function AgentPage({ params }: Props) {
               <Copy text={a.prompt} />
             </figcaption>
           </figure>
+          <p className="price-foot">{KEEP_FILES}</p>
         </section>
 
         {demos.length > 0 && (

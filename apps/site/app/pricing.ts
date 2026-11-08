@@ -6,6 +6,7 @@ import {
   type PlanId,
   SUPPORT_EMAIL,
 } from '@cuttingfloor/plans';
+import { KAZI_CREDITS } from '../content/clients.ts';
 import { KEYS, LICENCE, LOCAL_ADDRESS } from '../content/facts.ts';
 import { TOOL_COUNT } from '../content/tools.ts';
 
@@ -13,7 +14,7 @@ import { TOOL_COUNT } from '../content/tools.ts';
 // unit is a credit: one minute of a job running (export, import, transcript, motion graphics,
 // voiceover, cutout). Editing the timeline is free. There are no subscriptions: an account starts
 // with free credits and buys packs when it wants more (pay as you go); bought credits never
-// expire. At zero new jobs don't start; nothing is billed but the packs bought. Every plan has every tool.
+// expire. At zero new jobs don't start; nothing is billed but the packs bought. Every account has every tool.
 
 /** The ways to use the hosted service, in order. */
 const SOLD: PlanId[] = ['free', 'credits', 'enterprise'];
@@ -276,11 +277,15 @@ export const EVERY_PLAN = [
 ] as const;
 export const EVERY_PLAN_LEAD = `Every account, free included, has all ${TOOL_COUNT} tools. You pay only for the credits you use.`;
 
+/** What the free credits come to, said conservatively: a 30-second export took 23.5 s (plans/pricing.md). */
+export const FREE_GOES =
+  'Enough to edit and export several short videos: a 30-second export takes well under one credit.';
+
 /** What a credit is: the pricing page's ledger, said as separate facts. */
 export const CREDIT = [
   'A credit is one minute of our servers working for you: an export, an import, a transcript, graphics, a voiceover or a cutout.',
   'Planning and editing the timeline cost nothing, and so do previews.',
-  `A new account gets ${FREE_CREDITS} free credits, with no card and no time limit. A short video export of about 30 seconds takes well under one credit.`,
+  `A new account gets ${FREE_CREDITS} free credits, with no card and no time limit. ${FREE_GOES}`,
   `After that, buy credits in packs when you need them, from ${FROM_PACK}. They never expire, and there is no subscription.`,
   `When credits run out, new jobs (exports, imports, analysis) won’t start until you have credits again; editing and previews keep working. Ask again after. We email you when you have fewer than ${LOW_CREDITS} left, and you can turn on automatic top-up so a pack is bought for you.`,
   'Self-hosted has no credits at all: it runs on your own machine.',
@@ -289,18 +294,24 @@ export const CREDIT = [
 /** Hosted: how long things are kept (the server's media TTL, and a timeline's after last use). */
 export const KEPT_DAYS = 7;
 export const TIMELINE_HOURS = 24;
+/** Where people export or keep files: the deletion rule, said plainly. */
+export const KEEP_FILES = `Download what you want to keep: download links last a day, and files are kept ${KEPT_DAYS} days after you last use them.`;
 export const KEPT = `On the hosted server, media and exports are kept ${KEPT_DAYS} days, timelines ${TIMELINE_HOURS} hours after last use.`;
 
 const free = ALL.free.limits;
 
 export const PRICING_FAQS = [
   {
+    q: 'Is it free through Kazi?',
+    a: `Yes. An account you connect from Kazi is free for good, with ${KAZI_CREDITS.toLocaleString('en-US')} credits a month instead of packs. If that account has already bought credits, it keeps them and stays pay as you go.`,
+  },
+  {
     q: 'Can I self-host for free?',
     a: `Yes. cuttingfloor is open source under ${LICENCE} and runs in one Docker image, the same image the hosted service runs. Clone the repository and run docker compose up -d; your agent connects to ${LOCAL_ADDRESS}. There are no credit limits on your own machine. Lip-sync needs your own sync. labs key and visual judgment needs a TypeSafe key; everything else runs in the image with no key.`,
   },
   {
     q: 'Do I need my own AI keys?',
-    a: 'On the hosted plans, only for lip-sync (create.lipsync), which uses your own sync. labs key: save it on your account page, where only its last four characters are shown, and sync. labs bills you per second. Transcripts, voiceover, cutouts, graphics and visual judgment are included. Self-hosted, lip-sync needs SYNC_API_KEY and visual judgment (judge.ask, media.analyze look, media.seek) needs TYPESAFE_API_KEY.',
+    a: 'Hosted, only for lip-sync (create.lipsync), which uses your own sync. labs key: save it on your account page, where only its last four characters are shown, and sync. labs bills you per second. Transcripts, voiceover, cutouts, graphics and visual judgment are included. Self-hosted, lip-sync needs SYNC_API_KEY and visual judgment (judge.ask, media.analyze look, media.seek) needs TYPESAFE_API_KEY.',
   },
   {
     q: 'What happens when credits run out?',
@@ -320,6 +331,6 @@ export const PRICING_FAQS = [
   },
   {
     q: 'Is it free to try?',
-    a: `Yes. Every new account gets ${FREE_CREDITS} free credits, with no card and no time limit: enough for a dozen or more short videos. It has every tool, one job at a time, exports up to ${free.shortSide}p and ${free.storageGb} GB of storage. Or watch the live demo first, with no sign-up.`,
+    a: `Yes. Every new account gets ${FREE_CREDITS} free credits, with no card and no time limit: enough to edit and export several short videos, since a 30-second export takes well under one credit. It has every tool, one job at a time, exports up to ${free.shortSide}p and ${free.storageGb} GB of storage. Or watch the live demo first, with no sign-up.`,
   },
 ];

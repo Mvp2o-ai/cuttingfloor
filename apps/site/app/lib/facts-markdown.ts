@@ -22,7 +22,7 @@ export const priceText = (p: Plan) =>
 /** One row per plan, self-hosted first. */
 export function plansTable(): string {
   return table(
-    ['Plan', 'Price', 'Included', 'Runs', 'For'],
+    ['Option', 'Price', 'Included', 'Runs', 'For'],
     [
       [
         'Self-hosted',

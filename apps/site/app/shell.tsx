@@ -60,8 +60,8 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
           Watch it live now <span aria-hidden="true">→</span>
         </b>
         <small>
-          Kazi gives Big Buck Bunny a happy ending. Free, no sign-up. Then connect your own AI over
-          MCP.
+          Kazi gives Big Buck Bunny a happy ending. Free, no sign-up. Then add it to your ChatGPT,
+          Claude or Kazi.
         </small>
       </a>
       <a

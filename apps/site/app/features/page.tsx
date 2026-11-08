@@ -109,7 +109,7 @@ export default function Features() {
               <h2 className="display">What needs your own key.</h2>
               <p className="compare-lede">
                 Almost nothing. Your agent is whatever you already use, and the rest runs on the
-                server. <a href="/pricing">See pricing</a> for what a plan includes.
+                server. <a href="/pricing">See pricing</a> for credits and what every account gets.
               </p>
             </div>
           </div>
