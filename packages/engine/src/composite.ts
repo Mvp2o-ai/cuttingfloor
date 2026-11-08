@@ -1,4 +1,5 @@
 import {
+  cornersAt,
   frameSource,
   type MaskState,
   maskAnimates,
@@ -62,6 +63,7 @@ export function rectFor(
   s: TransformState,
   src: SourceSize,
   out: Frame,
+  corners?: Array<[number, number]>,
 ): number[] {
   const W = out.width;
   const H = out.height;
@@ -88,6 +90,18 @@ export function rectFor(
   const cx = s.x * W;
   const cy = s.y * H;
   const rect = [r2(cx - dw / 2), r2(cy - dh / 2), r2(dw), r2(dh), r4(s.opacity)];
+  if (corners && corners.length === 4) {
+    // A warped picture covers its quad, so the box is the quad's bounds: the readback and the
+    // qtblend rect report where the picture actually is, not where an unwarped one would be.
+    const xs = corners.map(([x]) => x * W);
+    const ys = corners.map(([, y]) => y * H);
+    const left = Math.min(...xs);
+    const top = Math.min(...ys);
+    rect[0] = r2(left);
+    rect[1] = r2(top);
+    rect[2] = r2(Math.max(...xs) - left);
+    rect[3] = r2(Math.max(...ys) - top);
+  }
   return fillsFrame(rect, out) ? [...rect.slice(0, 4), FULL_FRAME_OPACITY] : rect;
 }
 
@@ -159,7 +173,7 @@ export function compositeFor(
   if (!transformAnimates(clip) && !adjust) {
     const s = transformAt(clip, tpf, 0, n);
     return {
-      rect: rectFor(clip, s, src, out).join(' '),
+      rect: rectFor(clip, s, src, out, cornersAt(clip, frameSource(clip, tpf, 0))).join(' '),
       rotation: s.rotation ? String(r2(s.rotation)) : null,
       compositing,
     };
@@ -171,7 +185,7 @@ export function compositeFor(
     adjust?.(i, s);
     s.opacity = Math.min(1, Math.max(0, s.opacity));
     const j = i + span.head;
-    rects.push([j, ...rectFor(clip, s, src, out)]);
+    rects.push([j, ...rectFor(clip, s, src, out, cornersAt(clip, frameSource(clip, tpf, i)))]);
     rots.push([j, r2(s.rotation)]);
   }
   const first = rots[0]?.[1] ?? 0;
