@@ -92,18 +92,18 @@ export default function Home() {
             to music.
             <Check />
           </p>
-          <p className="lede hero-lede rise d1">
-            Your AI can’t hear the beat. cuttingfloor can.{' '}
-            <em>
-              Ask ChatGPT, Claude or Kazi to cut your clips on the beat, or fit a song to your
-              video, and get back a real MP4.
-            </em>
-          </p>
           <div className="rise d2">
             <ConnectNow />
           </div>
           <div className="hero-row">
             <div className="rise d2">
+              <p className="lede">
+                Your AI can’t hear the beat. cuttingfloor can.{' '}
+                <em>
+                  Ask ChatGPT, Claude or Kazi to cut your clips on the beat, or fit a song to your
+                  video, and get back a real MP4.
+                </em>
+              </p>
               <div className="works-in">
                 <span className="label">An MCP server for</span>
                 <ul>
