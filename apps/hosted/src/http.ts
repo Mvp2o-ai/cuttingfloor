@@ -14,6 +14,7 @@ import {
   SavedCredentialStore,
   type SavedKeys,
 } from '@cuttingfloor/credentials';
+import type { AccountGetResult } from '@cuttingfloor/schema';
 import {
   createServer,
   importSent,
@@ -60,6 +61,8 @@ export interface HttpOptions {
   access?: (owner: string) => Promise<void>;
   /** Hosted: a signed-in owner's plan as limits on the work they start (not maintenance keys). */
   limits?: (owner: string) => Promise<OwnerLimits>;
+  /** Hosted: a signed-in owner's plan and credits, for account.get (not maintenance keys). */
+  account?: (owner: string) => Promise<AccountGetResult>;
   /**
    * Told of each signed-in owner's MCP request, with the OAuth client it came through (first-call
    * records, lifetime for some clients); awaited, so what it changes counts for this request.
@@ -168,6 +171,7 @@ export function createHttpServer(options: HttpOptions): Server {
       const anonymous = via === 'anonymous';
       const gate = signedIn ? options.access : undefined;
       const limits = signedIn ? options.limits : undefined;
+      const account = signedIn ? options.account : undefined;
       // Hosted, provider keys come with each request (X-Cuttingfloor-Key-<Provider>) and live
       // only as long as it, or the job it starts; locally they come from env and secrets.
       const headers = runtime.config.mode === 'hosted' ? ctx.requestInfo?.headers : undefined;
@@ -184,6 +188,7 @@ export function createHttpServer(options: HttpOptions): Server {
           ? { access: () => Promise.reject(new Error('Sign in to cuttingfloor first')) }
           : {}),
         ...(limits ? { limits: () => limits(owner) } : {}),
+        ...(account ? { account: () => account(owner) } : {}),
       });
     },
     { onerror: (error) => process.stderr.write(`mcp: ${error.message}\n`) },

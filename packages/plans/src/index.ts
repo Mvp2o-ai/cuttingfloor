@@ -1,15 +1,16 @@
-// The hosted plans, in one place: the site's pricing table, checkout and account page, and the
-// hosted server's access checks read this file. The billable unit is a credit: one minute of a job
+// The hosted plans, in one place: the site's pricing, checkout and account pages and the hosted
+// server's access checks read this file. The billable unit is a credit: one minute of a job
 // running (export, import, transcript, motion graphics, voiceover, cutout, code), which the meter
-// counts as a render minute. Editing the timeline and inline previews are free. Every plan has
-// every tool; plans differ in credits and the limits below. Costs behind the numbers:
-// plans/pricing.md.
+// counts as a render minute. Editing the timeline and inline previews are free.
+//
+// There are no subscriptions. Every account starts with free credits and buys more in packs when
+// it wants them (pay as you go); bought credits never expire. At zero new jobs wait; editing and
+// previews keep working. A few accounts are given a plan instead (staff, lifetime, enterprise),
+// with credits that renew each month. Costs behind the numbers: plans/pricing.md.
 
-export type PlanId = 'free' | 'creator' | 'pro' | 'enterprise' | 'lifetime' | 'staff';
+export type PlanId = 'free' | 'credits' | 'enterprise' | 'lifetime' | 'staff';
 
 export interface Limits {
-  /** Credits (render minutes) in a period (a free account's lifetime, or a month); null for no cap. */
-  renderMinutes: number | null;
   /** Jobs that run at once for one account; more wait their turn. null for no cap. */
   jobs: number | null;
   /** Largest export, as its short side in pixels (1080 is 1080p, 2160 is 4K); null for any. */
@@ -24,20 +25,26 @@ export interface Limits {
   storageGb: number | null;
 }
 
+/**
+ * How an account's credits work: a balance (free credits plus packs bought, less what was used),
+ * an allowance that renews each calendar month, or no cap.
+ */
+export type Credits =
+  | { kind: 'balance' }
+  | { kind: 'monthly'; perMonth: number }
+  | { kind: 'none' };
+
 export interface Plan {
   id: PlanId;
   name: string;
+  credits: Credits;
   limits: Limits;
-  /** Dollars. Annual is ten months. Absent for plans not sold at a list price. */
-  price?: { month: number; year: number };
-  /** self: bought on the account page. contact: through support. none: given, not sold. */
+  /** self: credits bought on the account page. contact: through support. none: given, not sold. */
   sold: 'self' | 'contact' | 'none';
-  /** One line for the pricing table. */
+  /** One line for the pricing page. */
   note: string;
 }
 
-/** Days a subscription whose payment failed keeps working while Stripe retries the card. */
-export const GRACE_DAYS = 7;
 export const SUPPORT_EMAIL = 'support@cuttingfloor.ai';
 export const LEGAL_NAME = 'mvp2o';
 
@@ -46,83 +53,87 @@ export const PLANS: Record<PlanId, Plan> = {
     id: 'free',
     name: 'Free',
     sold: 'none',
-    limits: { renderMinutes: 100, jobs: 1, shortSide: 1080, judgmentsPerDay: 300, storageGb: 5 },
-    note: 'Every tool, no card, no time limit. About 10 hours of an agent editing.',
+    credits: { kind: 'balance' },
+    limits: { jobs: 1, shortSide: 1080, judgmentsPerDay: 300, storageGb: 5 },
+    note: 'Every tool, no card. Exports up to 1080p until your first pack.',
   },
-  creator: {
-    id: 'creator',
-    name: 'Creator',
+  credits: {
+    id: 'credits',
+    name: 'Pay as you go',
     sold: 'self',
-    price: { month: 49, year: 490 },
-    limits: { renderMinutes: 300, jobs: 1, shortSide: 1080, judgmentsPerDay: 1500, storageGb: 50 },
-    note: 'About 30 hours of an agent editing a month. One job at a time, up to 1080p.',
-  },
-  pro: {
-    id: 'pro',
-    name: 'Pro',
-    sold: 'self',
-    price: { month: 99, year: 990 },
-    limits: { renderMinutes: 900, jobs: 2, shortSide: 2160, judgmentsPerDay: 5000, storageGb: 200 },
-    note: 'Agents editing most days. Two jobs at once, up to 4K.',
+    credits: { kind: 'balance' },
+    limits: { jobs: 2, shortSide: 2160, judgmentsPerDay: 5000, storageGb: 50 },
+    note: 'Buy credits when you need them. They never expire.',
   },
   enterprise: {
     id: 'enterprise',
     name: 'Enterprise',
     sold: 'contact',
-    limits: {
-      renderMinutes: 5000,
-      jobs: 4,
-      shortSide: 2160,
-      judgmentsPerDay: 20000,
-      storageGb: 1000,
-    },
+    credits: { kind: 'monthly', perMonth: 5000 },
+    limits: { jobs: 4, shortSide: 2160, judgmentsPerDay: 20000, storageGb: 1000 },
     note: 'Agents editing all day, for a team. Credits, seats and dedicated servers to suit.',
   },
   lifetime: {
     id: 'lifetime',
     name: 'Lifetime',
     sold: 'none',
-    limits: { renderMinutes: 900, jobs: 2, shortSide: 2160, judgmentsPerDay: 5000, storageGb: 200 },
-    note: 'Pro, for good.',
+    credits: { kind: 'monthly', perMonth: 900 },
+    limits: { jobs: 2, shortSide: 2160, judgmentsPerDay: 5000, storageGb: 200 },
+    note: 'Given for good.',
   },
   staff: {
     id: 'staff',
     name: 'Staff',
     sold: 'none',
-    limits: {
-      renderMinutes: null,
-      jobs: null,
-      shortSide: null,
-      judgmentsPerDay: null,
-      storageGb: null,
-    },
+    credits: { kind: 'none' },
+    limits: { jobs: null, shortSide: null, judgmentsPerDay: null, storageGb: null },
     note: 'The team running cuttingfloor.',
   },
 };
 
-/** The plans on the pricing table, in order. */
-export const PRICED: Plan[] = [PLANS.free, PLANS.creator, PLANS.pro, PLANS.enterprise];
-
-export type Interval = 'month' | 'year';
-
-/** The Stripe price lookup key for a plan sold on the account page. */
-export function lookupKey(plan: PlanId, interval: Interval): string {
-  return `cf_${plan}_${interval}`;
+export interface Pack {
+  /** The Stripe price lookup key, and the id the account page posts. */
+  id: string;
+  /** Dollars. */
+  price: number;
+  credits: number;
 }
 
-/** The plan and interval a Stripe price lookup key names, if it is one of ours. */
-export function fromLookupKey(
-  key: string | null | undefined,
-): { plan: PlanId; interval: Interval } | undefined {
-  const m = /^cf_([a-z]+)_(month|year)$/.exec(key ?? '');
-  const plan = m?.[1] as PlanId | undefined;
-  if (!m || !plan || !(plan in PLANS) || PLANS[plan].sold === 'none') return undefined;
-  return { plan, interval: m[2] as Interval };
+/** Credit packs, smallest first. Bigger packs cost less a credit. */
+export const PACKS: Pack[] = [
+  { id: 'cf_credits_5', price: 5, credits: 25 },
+  { id: 'cf_credits_10', price: 10, credits: 55 },
+  { id: 'cf_credits_25', price: 25, credits: 150 },
+  { id: 'cf_credits_100', price: 100, credits: 700 },
+];
+
+/** The pack a lookup key or id names, if it is one of ours. */
+export function packOf(id: string | null | undefined): Pack | undefined {
+  return PACKS.find((p) => p.id === id);
+}
+
+/** Credits a new account starts with: no card, no time limit. */
+export const FREE_CREDITS = 10;
+
+/** Accounts made before this kept the free credits they signed up with. */
+export const GRANDFATHERED = { before: '2026-11-08T00:00:00Z', credits: 100 };
+
+/** The free credits an account made at `createdAt` starts with. */
+export function freeCreditsFor(createdAt: string): number {
+  return Date.parse(createdAt) < Date.parse(GRANDFATHERED.before)
+    ? GRANDFATHERED.credits
+    : FREE_CREDITS;
 }
 
 /**
+ * Below this many credits left the account is told it is running low, and an account that turned
+ * on automatic top-up buys its pack.
+ */
+export const LOW_CREDITS = 5;
+
+/**
  * The plan an account is given rather than buys, from its WorkOS `plan` metadata: `admin` is the
- * team's own accounts (shown as Staff), `lifetime` a customer given Pro for good, `enterprise` a
+ * team's own accounts (shown as Staff), `lifetime` a customer given it for good, `enterprise` a
  * team on a contract arranged through support.
  */
 export function taggedPlan(tag: string | null | undefined): PlanId | undefined {
@@ -131,6 +142,3 @@ export function taggedPlan(tag: string | null | undefined): PlanId | undefined {
   if (tag === 'enterprise') return 'enterprise';
   return undefined;
 }
-
-/** Credits a new account starts with: no card, no time limit. */
-export const FREE_CREDITS = PLANS.free.limits.renderMinutes ?? 0;
