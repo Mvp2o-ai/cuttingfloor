@@ -1,0 +1,37 @@
+WEBVTT
+
+00:00:00.600 --> 00:00:03.020
+Most AI assistants take notes with a tool.
+
+00:00:03.340 --> 00:00:07.600
+Mid-answer, the model stops, calls the tool, waits for the result, then starts again.
+
+00:00:07.960 --> 00:00:10.240
+Every note costs a full extra round trip.
+
+00:00:10.600 --> 00:00:13.220
+Fine in a demo. At scale, you feel it.
+
+00:00:13.620 --> 00:00:16.160
+So don't give it a tool. Give it a convention.
+
+00:00:16.560 --> 00:00:21.220
+The model writes its notes inline, inside the answer it's already writing, between two tags.
+
+00:00:21.540 --> 00:00:23.420
+A tiny parser watches the stream.
+
+00:00:23.880 --> 00:00:26.780
+Open tag: start recording. Close tag: done.
+
+00:00:27.260 --> 00:00:31.460
+No tool call. No round trip. The model never breaks stride.
+
+00:00:31.760 --> 00:00:35.120
+And the notes land in the chat history, right where the reasoning happens.
+
+00:00:35.420 --> 00:00:36.820
+Working memory, for free.
+
+00:00:37.080 --> 00:00:38.560
+Tip one: tag your own notes.

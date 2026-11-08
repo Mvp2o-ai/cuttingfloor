@@ -777,7 +777,118 @@ const MEMORY: Demo = {
   ],
 };
 
-export const DEMOS: Demo[] = [DANCE, INTERVIEW, PRODUCT, LISTING, TIPS, JEV, MEMORY];
+// The same Tip 1, rebuilt from a static slide into motion graphics with a new voiceover
+// (every frame a real cuttingfloor render; the sound effects Claude made from scratch).
+const EXPLAINER: Demo = {
+  id: 'explainer',
+  slug: 'make-a-motion-graphics-explainer-video',
+  title: 'Make a motion graphics explainer video from your script',
+  description:
+    'A creator asks Claude to turn a 2-minute explainer that is one static slide into real motion graphics. cuttingfloor tightens the script to 40 seconds, reads it in a British voice, boards nine beats on the words and animates each one with camera moves, timed builds and sound effects.',
+  steps: [
+    'Followed two skills: storyboard first, then motion graphics like a pro.',
+    'Cut the 2:11 script to 38 seconds, one idea per beat.',
+    'Read it in a British voice, with every word timed.',
+    'Gave each of nine beats a job (hook, problem, cost, turn, fix, how, payoff, close) and its exact frames.',
+    'Built each beat as its own animated scene: things overshoot as they land, arrive one after another, and the camera always moves.',
+    'Showed the idea instead of a slide: the answer stops for a tool call, then notes ride the stream between two tags.',
+    'Checked every scene frame by frame and fixed five layout slips before the final render.',
+    'Laid the scenes on the voice, with whooshes, pops and ticks on the hits and no music.',
+    'Checked for gaps and black frames and made it loud and clear.',
+  ],
+  uploaded: '2026-11-08',
+  skill: 'make-motion-graphics',
+  moments: [
+    { name: 'How assistants take notes', start: 0, end: 7.8 },
+    { name: 'Every note is a round trip', start: 7.8, end: 13.5 },
+    { name: 'Give it a convention', start: 13.5, end: 16.4 },
+    { name: 'Notes go inline', start: 16.4, end: 21.4 },
+    { name: 'A tiny parser', start: 21.4, end: 27 },
+    { name: 'Never breaks stride', start: 27, end: 31.6 },
+    { name: 'Working memory, for free', start: 31.6, end: 36.9 },
+    { name: 'Tag your own notes', start: 36.9, end: 40.5 },
+  ],
+  agent: 'Claude',
+  raw: {
+    src: '/demo/memory/raw.mp4',
+    poster: '/demo/memory/raw.jpg',
+    label: 'memory-explainer.mp4 · 2:11',
+    seconds: 131.8,
+    wide: true,
+  },
+  transcript: [
+    {
+      text: 'Most people give their assistant a notepad tool. The model stops mid-turn, emits a tool call, waits, then keeps going.',
+    },
+    {
+      text: 'We don’t give the assistant a tool. We give it a convention: it writes its notes inline, inside the response it’s already generating.',
+    },
+    { text: 'The notes ride the response stream. No tool call, no round trip.' },
+    {
+      text: 'A small state machine flips to recording on the open sentinel and done on the close.',
+    },
+    { text: 'That’s working memory.' },
+    { text: 'Persistence happens later, at eviction.', cut: 0 },
+    { text: '…three details that matter. Start there.', cut: 0 },
+  ],
+  turns: [
+    {
+      prompt:
+        'This explainer is one slide for two minutes. Turn tip one into real motion graphics: under a minute, British voice.',
+      reply:
+        'I’ll tighten the script to about 40 seconds, record it in a British voice, then board it beat by beat on the words before animating anything.',
+      calls: [
+        { fn: 'skills.get', note: 'storyboard before animate' },
+        { fn: 'skills.get', note: 'make motion graphics' },
+        { fn: 'media.get', note: 'read the old script' },
+        { fn: 'create.voiceover', note: 'British voice, 38 s, every word timed' },
+        { fn: 'media.import', note: 'Inter and JetBrains Mono' },
+        { fn: 'create.motion', note: 'nine beats, one scene each' },
+        { fn: 'render.frames', note: 'checked every beat' },
+        { fn: 'media.import', note: 'a style frame of each beat' },
+        { fn: 'edit.batch', note: 'the board, timed to the voice' },
+        { fn: 'export.video', note: 'animatic, 0:40' },
+      ],
+      status: 'Boarding it on the voice…',
+      done: 'Here’s the board: nine beats, each held for its exact frames under the new voice, from the tool call that stalls the answer to “Tag your own notes”. Want it animated with sound?',
+      video: {
+        src: '/demo/explainer/animatic.mp4',
+        poster: '/demo/explainer/animatic.jpg',
+        label: 'tip-1-animatic.mp4 · 0:40',
+        seconds: 40.5,
+        captions: '/demo/explainer/animatic.vtt',
+        wide: true,
+      },
+    },
+    {
+      prompt: 'Animate it. Sound effects on the hits, no music, and make the voice loud.',
+      reply:
+        'I’ll lay the nine scenes on the voice at their storyboard frames, put a whoosh, pop or tick on every hit, and bring the voice up front.',
+      calls: [
+        { fn: 'timeline.create', note: 'widescreen, 30 fps' },
+        { fn: 'edit.batch', note: 'nine scenes at their frames' },
+        { fn: 'media.import', note: 'whooshes and pops Claude made' },
+        { fn: 'edit.batch', note: '31 effects on the hits' },
+        { fn: 'qa.check', note: 'no gaps, no black frames' },
+        { fn: 'audio.set_gain', note: 'voice up front' },
+        { fn: 'audio.set_master', note: 'loud, no clipping' },
+        { fn: 'export.video', note: 'widescreen, 0:40' },
+      ],
+      status: 'Animating the beats…',
+      done: 'Your 40-second explainer is ready: every beat moves on its word, the voice sits up front and the effects land on the hits. Want a vertical cut for Shorts?',
+      video: {
+        src: '/demo/explainer/master.mp4',
+        poster: '/demo/explainer/master.jpg',
+        label: 'tip-1-motion-graphics.mp4 · 0:40',
+        seconds: 40.5,
+        captions: '/demo/explainer/master.vtt',
+        wide: true,
+      },
+    },
+  ],
+};
+
+export const DEMOS: Demo[] = [DANCE, EXPLAINER, INTERVIEW, PRODUCT, LISTING, TIPS, JEV, MEMORY];
 
 export function demo(slug: string): Demo | undefined {
   return DEMOS.find((d) => d.slug === slug);
