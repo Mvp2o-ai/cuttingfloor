@@ -4381,3 +4381,7 @@ html[data-from="claude"] .dm-add-apps [data-app="claude"] h3 {
   line-height: 1;
   margin: 0 0 14px;
 }
+.hero-lede {
+  max-width: 34ch;
+  margin: clamp(16px, 2vw, 28px) 0 0;
+}
