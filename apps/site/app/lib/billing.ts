@@ -51,14 +51,18 @@ export async function stripe(
 }
 
 /**
- * The account's plan and credits, from the MCP server that counts them. Undefined when it can't
- * say (not configured, unreachable, or the email isn't verified yet): the page then leaves the
- * credits out rather than guess. `fresh` rereads it after a change made here.
+ * The account's plan and credits, from the MCP server that counts them, or why it can't say:
+ * `refused` is the server's reason (such as `email_unverified`), so the page can say what to do;
+ * neither field means the server isn't configured or didn't answer. `fresh` rereads it after a
+ * change made here.
  */
-export async function accountOf(userId: string, fresh = false): Promise<Account | undefined> {
+export async function accountStatus(
+  userId: string,
+  fresh = false,
+): Promise<{ account?: Account; refused?: string }> {
   const key = process.env.CUTTINGFLOOR_ACCOUNT_KEY;
   const server = process.env.CUTTINGFLOOR_SERVER_URL ?? 'https://api.cuttingfloor.ai';
-  if (!key) return undefined;
+  if (!key) return {};
   try {
     const res = await fetch(
       `${server}/account/usage?user=${encodeURIComponent(userId)}${fresh ? '&fresh=1' : ''}`,
@@ -68,12 +72,17 @@ export async function accountOf(userId: string, fresh = false): Promise<Account 
         signal: AbortSignal.timeout(5000),
       },
     );
-    if (!res.ok) return undefined;
-    const body = (await res.json()) as { allowed: boolean; account?: Account };
-    return body.allowed ? body.account : undefined;
+    if (!res.ok) return {};
+    const body = (await res.json()) as { allowed: boolean; account?: Account; reason?: string };
+    return body.allowed ? { account: body.account } : { refused: body.reason ?? 'refused' };
   } catch {
-    return undefined;
+    return {};
   }
+}
+
+/** The account's plan and credits, or undefined when the server can't say (accountStatus). */
+export async function accountOf(userId: string, fresh = false): Promise<Account | undefined> {
+  return (await accountStatus(userId, fresh)).account;
 }
 
 /** The user's Stripe customer, made on first checkout and remembered on the WorkOS user. */
