@@ -58,6 +58,8 @@ const OtherTracks = z
 const anim = (limits: readonly [number, number], text: string) =>
   AnimatableValue.optional().describe(`${text}; ${limits[0]} to ${limits[1]}`);
 
+const CornerPoints = z.array(Point).length(4).meta({ id: 'CornerPoints' });
+
 export const TransformArgs = z.object({
   x: anim(TRANSFORM_LIMITS.x, 'Centre x, 0 = left edge, 1 = right edge (default 0.5)'),
   y: anim(TRANSFORM_LIMITS.y, 'Centre y, 0 = top, 1 = bottom (default 0.5)'),
@@ -69,6 +71,27 @@ export const TransformArgs = z.object({
   fit: Fit.nullable().optional(),
   flip: Flip.nullable().optional(),
   crop: Crop.nullable().optional(),
+  corners: z
+    .union([
+      CornerPoints,
+      z.object({
+        keyframes: z
+          .array(
+            z.object({
+              frame: z.number().int().min(-1_000_000).max(100_000_000),
+              corners: CornerPoints,
+              ease: z.string().optional(),
+            }),
+          )
+          .min(1)
+          .max(1000),
+      }),
+    ])
+    .nullable()
+    .optional()
+    .describe(
+      'Four [x, y] corners in the fitted frame, 0-1, in the order top left, top right, bottom right, bottom left: the picture maps onto them. Or {keyframes: [{frame, corners, ease}]}. Setting corners replaces the affine placement (x, y, scale, scale_x, scale_y, rotation, fit, flip, crop); null removes them',
+    ),
 });
 
 const MaskPoints = z
@@ -96,6 +119,7 @@ const MaskShapeFields = {
   points: z
     .union([
       MaskPoints,
+  Point,
       z.object({
         keyframes: z
           .array(
