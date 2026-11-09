@@ -1,4 +1,4 @@
-import { MCP_URL } from '../../content/clients.ts';
+import { API_URL, MCP_URL } from '../../content/clients.ts';
 import { KEEP_FILES } from '../pricing.ts';
 
 // The words on /connect that aren't one app's steps, shared by the page, its FAQPage data and
@@ -49,5 +49,9 @@ export const CONNECT_FAQS = [
   {
     q: 'Can a script use it without a browser sign-in?',
     a: 'Yes. Make a key on your account page (it starts with cf_) and have the script send it as Authorization: Bearer cf_… to the same address.',
+  },
+  {
+    q: 'Is there a REST API and an OpenAPI spec?',
+    a: `Yes. Every tool is also plain HTTP: POST ${API_URL}/v1/<tool> with its arguments as JSON and a key from your account page as Authorization: Bearer cf_…. The OpenAPI spec at ${API_URL}/openapi.json describes every tool, so code generators and API clients can read it.`,
   },
 ] as const;

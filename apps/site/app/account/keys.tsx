@@ -59,7 +59,8 @@ export function KeysPanel({ initial, server }: { initial: ScriptKey[]; server: s
       {made ? (
         <p className="meter-note">
           Your new key, shown only now: <code>{made}</code>. A script sends it as{' '}
-          <code>Authorization: Bearer {made.slice(0, 7)}…</code> to <code>{server}/mcp</code>.
+          <code>Authorization: Bearer {made.slice(0, 7)}…</code> to <code>{server}/mcp</code>, or to{' '}
+          <code>{server}/v1/&lt;tool&gt;</code> as plain HTTP.
         </p>
       ) : null}
       {note ? <p className="meter-note">{note}</p> : null}

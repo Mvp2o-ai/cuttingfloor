@@ -8,7 +8,9 @@
 
 import { PLANS } from '@cuttingfloor/plans';
 
-export const MCP_URL = 'https://api.cuttingfloor.ai/mcp';
+/** Where the server answers: MCP at /mcp, the same tools as plain HTTP at /v1/<tool>. */
+export const API_URL = 'https://api.cuttingfloor.ai';
+export const MCP_URL = `${API_URL}/mcp`;
 
 /** Credits a month for an account used through Kazi (the lifetime plan), from the plans file. */
 export const KAZI_CREDITS =
@@ -352,6 +354,7 @@ const APPS: Client[] = [
       `Add a remote server at ${MCP_URL}. It speaks Streamable HTTP.`,
       'Your app opens the cuttingfloor sign-in page (OAuth). Sign in, and it’s connected.',
       'For a script with no browser, make a key on your account page (it starts with cf_) and send it as a header instead.',
+      `Code that doesn’t speak MCP calls the same tools as plain HTTP with the same key: POST ${API_URL}/v1/<tool>, every tool described at ${API_URL}/openapi.json.`,
     ],
     snippets: [
       {
@@ -365,6 +368,12 @@ const APPS: Client[] = [
             cuttingfloor: { url: MCP_URL, headers: { Authorization: 'Bearer cf_…' } },
           },
         }),
+      },
+      {
+        label: 'Plain HTTP, with the same key',
+        code: `curl ${API_URL}/v1/timeline.create \\
+  -H 'Authorization: Bearer cf_…' -H 'Content-Type: application/json' \\
+  -d '{"name": "First edit", "sequence": {"width": 1080, "height": 1920, "fps": {"num": 30, "den": 1}}}'`,
       },
     ],
   },
