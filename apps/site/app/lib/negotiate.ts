@@ -18,6 +18,7 @@ export const TOP_TWINS = [
   'pricing',
   'features',
   'connect',
+  'how-to-connect',
   'self-host',
   'compare',
   'agents',
