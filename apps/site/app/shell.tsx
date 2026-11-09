@@ -30,7 +30,17 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
     <header className="nav">
       <div className="nav-inner">
         <a className="wordmark" href="/">
-          <span className="marker" aria-hidden="true" />
+          <svg
+            className="marker"
+            viewBox="0 0 32 32"
+            width="18"
+            height="18"
+            fill="#00B140"
+            aria-hidden="true"
+          >
+            <path d="M4.4 4.4H24.4L4.4 24.4Z" />
+            <path d="M27.6 7.6V27.6H7.6Z" />
+          </svg>
           cuttingfloor
         </a>
         <nav className="nav-links" aria-label="Sections">

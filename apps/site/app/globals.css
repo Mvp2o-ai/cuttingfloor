@@ -144,11 +144,9 @@ a {
   gap: 10px;
 }
 .marker {
-  width: 14px;
-  height: 14px;
-  background:
-    linear-gradient(var(--key), var(--key)) center / 3px 100% no-repeat,
-    linear-gradient(var(--key), var(--key)) center / 100% 3px no-repeat;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
 }
 .nav-links {
   display: flex;
