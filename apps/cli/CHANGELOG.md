@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.39.0
+
+### Minor Changes
+
+- 0a02b63: New accounts start with 25 free credits (was 10), and sign-up buttons say what that buys: about 30 minutes of footage.
+
 ## 0.38.2
 
 ### Patch Changes
