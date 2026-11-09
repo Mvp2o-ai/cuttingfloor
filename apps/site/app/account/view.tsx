@@ -114,15 +114,15 @@ export function AccountView(p: AccountProps) {
       ) : null}
 
       {p.keys ? (
-        <section className="cell">
+        <section className="cell" id="api-keys">
           <div className="head">
-            <span className="label">Keys for scripts</span>
+            <span className="label">API keys</span>
             <p className="lede">
-              A script that calls cuttingfloor on its own, with no browser to sign in, uses a key.
-              It acts as this account, uses its credits, and works for a year or until you revoke
-              it. Code can use it over MCP or as plain HTTP (
-              <code>POST {p.server}/v1/&lt;tool&gt;</code>, described at{' '}
-              <code>{p.server}/openapi.json</code>).
+              For your own code or agent, with no browser to sign in. One key works with the REST
+              API (<code>POST {p.server}/v1/&lt;tool&gt;</code>, every tool in the{' '}
+              <a href={`${p.server}/openapi.json`}>OpenAPI spec</a>) and with MCP. It acts as this
+              account, uses its credits, and works for a year or until you revoke it.{' '}
+              <a href="/how-to-connect#builders">Ways to connect</a>
             </p>
           </div>
           <KeysPanel initial={p.keys} server={p.server} />

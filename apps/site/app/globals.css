@@ -4360,3 +4360,336 @@ html[data-from="claude"] .dm-add-apps [data-app="claude"] h3 {
   line-height: 1;
   margin: 0 0 14px;
 }
+
+/* ---------- how to connect: three ways in, one editor ---------- */
+
+.hc-h1 {
+  font-size: clamp(52px, 10vw, 148px);
+}
+.hc-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 28px 0 0;
+}
+.hc-jump a {
+  font-family: var(--font-pixel), monospace;
+  font-size: 22px;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 10px 16px;
+  border: 1px solid var(--rule);
+  color: var(--ink);
+}
+.hc-jump a:hover,
+.hc-jump a:focus-visible {
+  border-color: var(--key);
+  color: var(--key);
+}
+.hc-sublede {
+  margin-top: 20px;
+}
+
+.hc-figure {
+  margin: clamp(40px, 6vw, 72px) 0 0;
+}
+.hc-graphic {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+}
+.hc-tall {
+  display: none;
+  max-width: 420px;
+  margin: 0 auto;
+}
+@media (max-width: 720px) {
+  .hc-wide {
+    display: none;
+  }
+  .hc-tall {
+    display: block;
+  }
+}
+.hc-line {
+  fill: none;
+  stroke: var(--rule);
+  stroke-width: 2;
+}
+.hc-flow {
+  fill: none;
+  stroke: var(--key);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 8 92;
+  stroke-dashoffset: 8;
+  opacity: 0;
+}
+.hc-box {
+  fill: var(--bg-2);
+  stroke: var(--rule);
+  stroke-width: 1.5;
+}
+.hc-glyph path {
+  fill: none;
+  stroke: var(--key);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hc-title {
+  fill: var(--ink);
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 800;
+  font-size: 30px;
+  font-variation-settings: "wdth" 70;
+  letter-spacing: -0.01em;
+}
+.hc-sub {
+  fill: var(--mute);
+  font-family: var(--font-mono), monospace;
+  font-size: 16px;
+}
+.hc-tall .hc-sub {
+  font-size: 14px;
+}
+.hc-mid {
+  text-anchor: middle;
+  font-family: var(--font-pixel), monospace;
+  font-size: 22px;
+  text-transform: uppercase;
+}
+.hc-core {
+  fill: var(--bg);
+  stroke: var(--key);
+  stroke-width: 2;
+}
+.hc-core-name {
+  fill: var(--key);
+}
+.hc-track {
+  fill: var(--bg-2);
+}
+.hc-clip {
+  fill: var(--ink);
+  opacity: 0.85;
+}
+.hc-clip-sound {
+  fill: var(--key);
+  opacity: 0.7;
+}
+.hc-playhead {
+  stroke: var(--key);
+  stroke-width: 2;
+}
+.hc-phone {
+  fill: var(--bg);
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+.hc-play-ring {
+  fill: rgba(14, 13, 11, 0.55);
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+.hc-play {
+  fill: var(--ink);
+}
+.hc-bar {
+  fill: rgba(238, 232, 220, 0.25);
+}
+.hc-bar-fill {
+  fill: var(--key);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hc-flow {
+    animation: hc-flow 2.4s var(--ease) infinite;
+  }
+  .hc-flow-out {
+    animation-delay: 1.2s;
+  }
+  .hc-source .hc-box {
+    animation: hc-glow 2.4s ease-in-out infinite;
+    animation-delay: inherit;
+  }
+  .hc-clip {
+    transform-box: fill-box;
+    transform-origin: left center;
+    animation: hc-clip 4.8s var(--ease) infinite backwards;
+  }
+  .hc-playhead {
+    animation: hc-play 4.8s linear infinite;
+  }
+  .hc-bar-fill {
+    transform-box: fill-box;
+    transform-origin: left center;
+    animation: hc-fill 4.8s linear infinite;
+  }
+}
+@keyframes hc-flow {
+  0% {
+    stroke-dashoffset: 8;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -92;
+    opacity: 0;
+  }
+}
+@keyframes hc-glow {
+  0%,
+  100% {
+    stroke: var(--rule);
+  }
+  15% {
+    stroke: var(--key);
+  }
+  45% {
+    stroke: var(--rule);
+  }
+}
+@keyframes hc-clip {
+  0% {
+    transform: scaleX(0);
+  }
+  12%,
+  88% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(0);
+  }
+}
+@keyframes hc-play {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--run));
+  }
+}
+@keyframes hc-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.hc-grid {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  border-top: 1px solid var(--rule);
+  border-left: 1px solid var(--rule);
+}
+.hc-grid-two {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+}
+/* Five creator ways: one row when there is room, else Kazi on its own row over two pairs. */
+.hc-grid-five {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 640px) {
+  .hc-grid-five {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .hc-grid-five > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+@media (min-width: 1180px) {
+  .hc-grid-five {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .hc-grid-five > :first-child {
+    grid-column: auto;
+  }
+}
+.hc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: clamp(20px, 2.5vw, 32px);
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  min-width: 0;
+}
+.hc-card:target {
+  background: var(--bg-2);
+}
+.hc-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 14px;
+}
+.hc-card h3 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+  font-variation-settings: "wdth" 70;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.hc-card p {
+  margin: 0;
+  color: var(--ink);
+}
+.hc-icon {
+  flex: none;
+  color: var(--key);
+}
+.hc-kazi {
+  border-radius: 8px;
+}
+.hc-tag {
+  display: inline-block;
+  font-family: var(--font-pixel), monospace;
+  font-size: 18px;
+  line-height: 1;
+  text-transform: uppercase;
+  padding: 6px 8px;
+  border: 1px solid var(--key);
+  color: var(--key);
+}
+.hc-tag-key {
+  background: var(--key);
+  color: var(--bg);
+  margin-bottom: 20px;
+}
+.hc-snippet pre {
+  font-size: 14px;
+  padding: 18px;
+}
+.hc-snippet figcaption {
+  padding: 10px 18px;
+}
+.hc-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin-top: auto !important;
+  padding-top: 4px;
+}
+.hc-links a {
+  color: var(--mute);
+}
+.hc-links a.hc-go {
+  color: var(--key);
+  font-weight: 700;
+}
+.hc-builders {
+  background: linear-gradient(180deg, var(--bg-2), var(--bg) 60%);
+}

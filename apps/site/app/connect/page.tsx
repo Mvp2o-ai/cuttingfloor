@@ -49,6 +49,11 @@ export default function ConnectPage() {
             {CONNECT_LEAD}{' '}
             <em>One address works in every app below, and your app opens the sign-in for you.</em>
           </p>
+          <p className="hc-jump">
+            <a href="/how-to-connect" data-track="Connect: ways to connect">
+              Three ways in: apps, REST, MCP
+            </a>
+          </p>
           <LiveCard />
           <p className="wt-byline">
             Steps checked <time dateTime={CLIENTS_CHECKED}>{formatDate(CLIENTS_CHECKED)}</time>{' '}

@@ -4,6 +4,7 @@ import { FIXES_UPDATED } from '../content/fixes.ts';
 import { GUIDES, guidePath } from '../content/guides.ts';
 import { SKILLS, SKILLS_UPDATED } from '../content/skills.ts';
 import { WALKTHROUGHS } from '../content/walkthroughs.ts';
+import { WAYS_TITLE, WAYS_UPDATED } from '../content/ways.ts';
 
 // Every public page, with the date its content last changed. The sitemap, llms.txt and the
 // Markdown versions all read this list, so a new page is added in one place.
@@ -37,6 +38,7 @@ export const ROUTES: Route[] = [
     title: 'Connect cuttingfloor to Claude, ChatGPT, Codex, Cursor and more',
     updated: '2026-11-01',
   },
+  { path: '/how-to-connect', title: WAYS_TITLE, updated: WAYS_UPDATED },
   {
     path: '/self-host',
     title: 'Run cuttingfloor yourself: free and open source',
