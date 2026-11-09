@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.38.2
+
+### Patch Changes
+
+- 206a23c: The new cuttingfloor mark (two triangles, a cut) on the site, the signed-in pages and the file library widget.
+
 ## 0.38.1
 
 ### Patch Changes

@@ -23,6 +23,9 @@ importers:
       puppeteer-core:
         specifier: 25.14.0
         version: 25.14.0
+      sharp:
+        specifier: 0.34.5
+        version: 0.34.5
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -3484,7 +3487,6 @@ snapshots:
       '@img/sharp-win32-arm64': 0.34.5
       '@img/sharp-win32-ia32': 0.34.5
       '@img/sharp-win32-x64': 0.34.5
-    optional: true
 
   sharp@0.35.5(@types/node@24.19.2):
     dependencies:

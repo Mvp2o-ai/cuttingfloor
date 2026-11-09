@@ -20,6 +20,16 @@ export function Check() {
   );
 }
 
+/** The mark: two triangles, a cut. Drawn in the accent; public/logos holds the files. */
+export function Marker() {
+  return (
+    <svg className="marker" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M4.4 4.4H24.4L4.4 24.4Z" />
+      <path d="M27.6 7.6V27.6H7.6Z" />
+    </svg>
+  );
+}
+
 // The live demo, on every page: the menu link, and a strip under the nav that phones see too.
 const LIVE_DEMO = kaziUrl('demos');
 const PHONE_KAZI = kaziUrl('phone');
@@ -30,7 +40,7 @@ export function Nav({ cta = 'Start free' }: { cta?: string }) {
     <header className="nav">
       <div className="nav-inner">
         <a className="wordmark" href="/">
-          <span className="marker" aria-hidden="true" />
+          <Marker />
           cuttingfloor
         </a>
         <nav className="nav-links" aria-label="Sections">
