@@ -51,8 +51,7 @@
   /* Header: the mark and the wordmark, then what is held. */
   .head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
   .brand { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
-  .marker { width: 14px; height: 14px; flex: none;
-    background: linear-gradient(var(--key), var(--key)) center / 3px 100% no-repeat, linear-gradient(var(--key), var(--key)) center / 100% 3px no-repeat; }
+  .marker { width: 16px; height: 16px; flex: none; fill: var(--key); }
   .wm { font-weight: 800; font-size: 17px; letter-spacing: -0.02em; }
   .wm b { color: var(--key); font-weight: 800; margin-left: 4px; }
   .sub { font: 600 10.5px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--mute); padding-left: 10px; border-left: 1px solid var(--rule-2); }
@@ -253,7 +252,7 @@
     root.innerHTML = `
     <div class="card">
       <div class="head">
-        <div class="brand"><span class="marker" aria-hidden="true"></span><span class="wm">cuttingfloor<b>ai</b></span><span class="sub">Your files</span></div>
+        <div class="brand"><svg class="marker" viewBox="0 0 32 32" aria-hidden="true"><path d="M4.4 4.4H24.4L4.4 24.4Z"/><path d="M27.6 7.6V27.6H7.6Z"/></svg><span class="wm">cuttingfloor<b>ai</b></span><span class="sub">Your files</span></div>
         <div class="grow"></div>
         <div class="store" id="store"></div>
         <button class="ibtn" id="refresh" type="button" title="List again" aria-label="List again" hidden>${ICON.refresh}</button>

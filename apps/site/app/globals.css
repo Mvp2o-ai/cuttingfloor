@@ -147,6 +147,7 @@ a {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
+  fill: var(--key);
 }
 .nav-links {
   display: flex;

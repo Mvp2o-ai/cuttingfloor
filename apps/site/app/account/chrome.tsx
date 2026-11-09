@@ -1,5 +1,6 @@
 import { signOut } from '@workos-inc/authkit-nextjs';
 import { headers } from 'next/headers';
+import { Marker } from '../shell.tsx';
 
 /** The signed-in pages' nav: the wordmark, the account's email and Sign out. */
 export function AccountNav({ email }: { email: string }) {
@@ -7,7 +8,7 @@ export function AccountNav({ email }: { email: string }) {
     <header className="nav">
       <div className="nav-inner">
         <a className="wordmark" href="/">
-          <span className="marker" aria-hidden="true" />
+          <Marker />
           cuttingfloor
         </a>
         <nav className="nav-links" aria-label="Account">
