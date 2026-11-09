@@ -1,6 +1,7 @@
 import {
   PLANS as ALL,
   FREE_CREDITS,
+  FREE_FOOTAGE_MINUTES,
   LOW_CREDITS,
   PACKS,
   type PlanId,
@@ -331,6 +332,6 @@ export const PRICING_FAQS = [
   },
   {
     q: 'Is it free to try?',
-    a: `Yes. Every new account gets ${FREE_CREDITS} free credits, with no card and no time limit: enough to edit and export several short videos, since a 30-second export takes well under one credit. It has every tool, one job at a time, exports up to ${free.shortSide}p and ${free.storageGb} GB of storage. Or watch the live demo first, with no sign-up.`,
+    a: `Yes. Every new account gets ${FREE_CREDITS} free credits, with no card and no time limit: enough to edit about ${FREE_FOOTAGE_MINUTES} minutes of footage, since editing is free and a minute of exported video takes under one credit. It has every tool, one job at a time, exports up to ${free.shortSide}p and ${free.storageGb} GB of storage. Or watch the live demo first, with no sign-up.`,
   },
 ];

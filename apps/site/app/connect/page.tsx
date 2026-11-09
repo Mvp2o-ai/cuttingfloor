@@ -1,4 +1,4 @@
-import { FREE_CREDITS } from '@cuttingfloor/plans';
+import { FREE_CREDITS, FREE_FOOTAGE_MINUTES } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { CLIENTS, CLIENTS_CHECKED } from '../../content/clients.ts';
 import { ConnectNow } from '../connect-now.tsx';
@@ -115,7 +115,7 @@ export default function ConnectPage() {
 
         <section className="cell wt-end">
           <p className="wt-links">
-            <a href={SIGN_UP}>Start free: {FREE_CREDITS} credits</a> ·{' '}
+            <a href={SIGN_UP}>Start free: {FREE_FOOTAGE_MINUTES} minutes of footage</a> ·{' '}
             <a href="/self-host">Run it yourself</a> · <a href="/demos">Watch it edit</a> ·{' '}
             <a href="/skills">Skills</a>
           </p>

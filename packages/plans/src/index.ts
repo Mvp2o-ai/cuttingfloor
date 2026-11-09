@@ -112,8 +112,21 @@ export function packOf(id: string | null | undefined): Pack | undefined {
   return PACKS.find((p) => p.id === id);
 }
 
-/** Credits a new account starts with: no card, no time limit. */
-export const FREE_CREDITS = 10;
+/**
+ * Credits a new account starts with: no card, no time limit. The one value to change for the free
+ * amount: the site, the server, emails and the footage minutes below all follow it.
+ */
+export const FREE_CREDITS = 25;
+
+/**
+ * Minutes of footage one credit edits, measured on the hosted server: a transcript costs about 0.3
+ * credits a minute of footage and an export about 0.8 a minute of finished video, so a cut that
+ * keeps most of the footage takes about 1.2 minutes of it per credit (more when it becomes Shorts).
+ */
+export const FOOTAGE_MINUTES_PER_CREDIT = 1.2;
+
+/** Minutes of footage the free credits edit, to the nearest 5: what the sign-up buttons say. */
+export const FREE_FOOTAGE_MINUTES = Math.round((FREE_CREDITS * FOOTAGE_MINUTES_PER_CREDIT) / 5) * 5;
 
 /** Accounts made before this kept the free credits they signed up with. */
 export const GRANDFATHERED = { before: '2026-11-08T00:00:00Z', credits: 100 };

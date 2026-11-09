@@ -1,4 +1,4 @@
-import { FREE_CREDITS } from '@cuttingfloor/plans';
+import { FREE_CREDITS, FREE_FOOTAGE_MINUTES } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { DEMOS, finished, lengths } from '../../content/demos.ts';
 import { Connect } from '../connect.tsx';
@@ -132,7 +132,7 @@ export default function Alternatives() {
           <LiveCard />
           <div className="actions">
             <a className="link-big" href={SIGN_UP}>
-              Start free: {FREE_CREDITS} credits
+              Start free: {FREE_FOOTAGE_MINUTES} minutes of footage
             </a>
             <a className="link-big quiet" href="/demos">
               Watch it edit

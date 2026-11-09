@@ -1,4 +1,4 @@
-import { FREE_CREDITS } from '@cuttingfloor/plans';
+import { FREE_CREDITS, FREE_FOOTAGE_MINUTES } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { DEMOS } from '../content/demos.ts';
 import { LICENCE } from '../content/facts.ts';
@@ -113,7 +113,7 @@ export default function Home() {
               </div>
               <div className="actions">
                 <a className="link-big" href={SIGN_UP}>
-                  Start free — {FREE_CREDITS} credits
+                  Start free — {FREE_FOOTAGE_MINUTES} minutes of footage
                 </a>
                 <a className="link-big quiet" href="/demos">
                   Watch it edit
@@ -262,9 +262,9 @@ export default function Home() {
             <div>
               <h2 className="display">Pay as you go. Start free.</h2>
               <p className="compare-lede">
-                {FREE_CREDITS} free credits, no card. Then buy credits when you need them, from{' '}
-                {FROM_PACK}: they never expire, and there is no subscription. Run it yourself and it
-                is all free.
+                {FREE_CREDITS} free credits, enough to edit {FREE_FOOTAGE_MINUTES} minutes of
+                footage, no card. Then buy credits when you need them, from {FROM_PACK}: they never
+                expire, and there is no subscription. Run it yourself and it is all free.
               </p>
             </div>
           </div>
