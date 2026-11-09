@@ -1,4 +1,4 @@
-import { FREE_CREDITS } from '@cuttingfloor/plans';
+import { FREE_CREDITS, FREE_FOOTAGE_MINUTES } from '@cuttingfloor/plans';
 import { DEMOS, type Demo, finished, length } from '../content/demos.ts';
 import { SendToSelf } from './agents/send.tsx';
 import { APPS } from './connect-now.tsx';
@@ -66,7 +66,7 @@ export function AgentCard({ source, clip = true }: { source: AgentSource; clip?:
             </small>
             <small>It works the same in {OTHERS[source]}.</small>
             <small className="live-card-facts">
-              {FREE_CREDITS} free credits · about a minute · no card
+              {FREE_FOOTAGE_MINUTES} minutes of footage free · about a minute · no card
             </small>
           </span>
         </a>

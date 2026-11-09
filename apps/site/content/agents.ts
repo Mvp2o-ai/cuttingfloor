@@ -1,4 +1,4 @@
-import { FREE_CREDITS } from '@cuttingfloor/plans';
+import { FREE_CREDITS, FREE_FOOTAGE_MINUTES } from '@cuttingfloor/plans';
 import { CHATGPT_PLANS, CLIENTS, type Client, KAZI_CREDITS } from './clients.ts';
 import { DEMOS, type Demo } from './demos.ts';
 
@@ -29,7 +29,7 @@ export type Agent = {
   faqs: { q: string; a: string }[];
 };
 
-const TRIAL = `Start free with ${FREE_CREDITS} credits: no card, no time limit, every tool. That’s enough to edit and export several short videos.`;
+const TRIAL = `Start free with ${FREE_CREDITS} credits: no card, no time limit, every tool. That’s enough to edit about ${FREE_FOOTAGE_MINUTES} minutes of footage.`;
 
 export const AGENTS: Agent[] = [
   {

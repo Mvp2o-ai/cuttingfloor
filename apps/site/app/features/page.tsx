@@ -1,4 +1,4 @@
-import { FREE_CREDITS } from '@cuttingfloor/plans';
+import { FREE_CREDITS, FREE_FOOTAGE_MINUTES } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { KEYS, LICENCE, NO_KEY } from '../../content/facts.ts';
 import { TOOL_COUNT } from '../../content/tools.ts';
@@ -191,7 +191,7 @@ export default function Features() {
           </table>
           <div className="actions">
             <a className="link-big" href={SIGN_UP}>
-              Start free: {FREE_CREDITS} credits
+              Start free: {FREE_FOOTAGE_MINUTES} minutes of footage
             </a>
             <a className="link-big quiet" href="/demos">
               Watch it edit
