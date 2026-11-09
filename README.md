@@ -12,6 +12,14 @@ A headless video editor for agents, as an MCP server. An agent imports footage, 
 
 Sign up at [cuttingfloor.ai](https://cuttingfloor.ai) (three days free), then add `https://api.cuttingfloor.ai/mcp` as a remote MCP server in Claude, ChatGPT, Cursor, Kazi or any client that takes one. The client opens the sign-in itself (OAuth). Nothing to install; transcription, voiceover, cutouts and rendering run on our servers. The [official MCP Registry entry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.Mvp2o-ai%2Fcuttingfloor/versions/latest) lists the same address.
 
+Code that doesn't speak MCP calls the same tools as plain HTTP with a key from your account page (`cf_…`): `POST https://api.cuttingfloor.ai/v1/<tool>` with the tool's arguments as a JSON object answers its result, and [`/openapi.json`](https://api.cuttingfloor.ai/openapi.json) describes every tool (OpenAPI 3.1). Refusals come back as HTTP error statuses with `{code, message, hint}`.
+
+```sh
+curl https://api.cuttingfloor.ai/v1/timeline.create \
+  -H 'Authorization: Bearer cf_…' -H 'Content-Type: application/json' \
+  -d '{"name": "First edit", "sequence": {"width": 1080, "height": 1920, "fps": {"num": 30, "den": 1}}}'
+```
+
 ## Run it yourself
 
 ```sh

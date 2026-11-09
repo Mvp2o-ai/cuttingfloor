@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.38.0
+
+### Minor Changes
+
+- 729d365: Every tool is now plain HTTP too: `POST /v1/<tool>` with the tool's arguments as JSON and an account key (`cf_…`) answers its result, through the same server as `/mcp`, and `/openapi.json` describes every tool as OpenAPI 3.1.
+
 ## 0.37.4
 
 ### Patch Changes

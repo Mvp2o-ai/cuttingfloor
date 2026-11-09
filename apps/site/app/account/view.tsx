@@ -120,7 +120,9 @@ export function AccountView(p: AccountProps) {
             <p className="lede">
               A script that calls cuttingfloor on its own, with no browser to sign in, uses a key.
               It acts as this account, uses its credits, and works for a year or until you revoke
-              it.
+              it. Code can use it over MCP or as plain HTTP (
+              <code>POST {p.server}/v1/&lt;tool&gt;</code>, described at{' '}
+              <code>{p.server}/openapi.json</code>).
             </p>
           </div>
           <KeysPanel initial={p.keys} server={p.server} />

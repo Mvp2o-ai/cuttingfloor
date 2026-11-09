@@ -32,6 +32,7 @@ import {
   requireBearerAuth,
 } from '@modelcontextprotocol/server';
 import type { JwtTokenVerifier } from './oauth.ts';
+import { RestApi } from './rest.ts';
 import { aiCatalog, CARD_TYPE, sendDiscovery, serverCard } from './server-card.ts';
 import { uploadPage } from './upload-page.ts';
 import { watchPage } from './watch-page.ts';
@@ -156,43 +157,49 @@ async function isDiscovery(request: Request): Promise<boolean> {
 }
 
 /**
- * The HTTP face: Streamable HTTP MCP at /mcp (2026-07-28, with stateless 2025 fallback),
- * signed output downloads at /outputs/… (and the page that plays one at /watch/…), signed uploads
+ * The HTTP face: Streamable HTTP MCP at /mcp (2026-07-28, with stateless 2025 fallback), the
+ * same tools as plain HTTP at /v1/<tool> (described at /openapi.json), signed output downloads at /outputs/… (and the page that plays one at /watch/…), signed uploads
  * at /uploads/…, and /healthz.
  */
 export function createHttpServer(options: HttpOptions): Server {
   const { runtime, credentials, oauth } = options;
+  /** One MCP server for one request, as `owner` signed in `via`; /mcp and /v1 both use it. */
+  const serverFor = (owner: string, via: unknown, requestHeaders?: Headers) => {
+    const signedIn = via === 'oauth' || via === 'script';
+    // Before sign-in only discovery reaches a server; refuse any tool all the same.
+    const anonymous = via === 'anonymous';
+    const gate = signedIn ? options.access : undefined;
+    const limits = signedIn ? options.limits : undefined;
+    const account = signedIn ? options.account : undefined;
+    // Hosted, provider keys come with each request (X-Cuttingfloor-Key-<Provider>) and live
+    // only as long as it, or the job it starts; locally they come from env and secrets.
+    const headers = runtime.config.mode === 'hosted' ? requestHeaders : undefined;
+    // Then the keys the account saved on its page (none for maintenance keys).
+    const saved = options.savedKeys
+      ? new SavedCredentialStore(credentials, options.savedKeys)
+      : credentials;
+    return createServer({
+      runtime,
+      credentials: headers ? new RequestCredentialStore(saved, headers) : saved,
+      owner: () => owner,
+      ...(gate ? { access: () => gate(owner) } : {}),
+      ...(anonymous
+        ? { access: () => Promise.reject(new Error('Sign in to cuttingfloor first')) }
+        : {}),
+      ...(limits ? { limits: () => limits(owner) } : {}),
+      ...(account ? { account: () => account(owner) } : {}),
+    });
+  };
   const handler = createMcpHandler(
-    (ctx) => {
-      const owner = ctx.authInfo?.clientId ?? 'local';
-      const via = ctx.authInfo?.extra?.via;
-      const signedIn = via === 'oauth' || via === 'script';
-      // Before sign-in only discovery reaches a server; refuse any tool all the same.
-      const anonymous = via === 'anonymous';
-      const gate = signedIn ? options.access : undefined;
-      const limits = signedIn ? options.limits : undefined;
-      const account = signedIn ? options.account : undefined;
-      // Hosted, provider keys come with each request (X-Cuttingfloor-Key-<Provider>) and live
-      // only as long as it, or the job it starts; locally they come from env and secrets.
-      const headers = runtime.config.mode === 'hosted' ? ctx.requestInfo?.headers : undefined;
-      // Then the keys the account saved on its page (none for maintenance keys).
-      const saved = options.savedKeys
-        ? new SavedCredentialStore(credentials, options.savedKeys)
-        : credentials;
-      return createServer({
-        runtime,
-        credentials: headers ? new RequestCredentialStore(saved, headers) : saved,
-        owner: () => owner,
-        ...(gate ? { access: () => gate(owner) } : {}),
-        ...(anonymous
-          ? { access: () => Promise.reject(new Error('Sign in to cuttingfloor first')) }
-          : {}),
-        ...(limits ? { limits: () => limits(owner) } : {}),
-        ...(account ? { account: () => account(owner) } : {}),
-      });
-    },
+    (ctx) =>
+      serverFor(
+        ctx.authInfo?.clientId ?? 'local',
+        ctx.authInfo?.extra?.via,
+        ctx.requestInfo?.headers,
+      ),
     { onerror: (error) => process.stderr.write(`mcp: ${error.message}\n`) },
   );
+  const rest = new RestApi(runtime, (owner, via, headers) => serverFor(owner, via, headers));
   const hashedKeys = [...(options.apiKeys ?? new Map()).entries()].map(([key, owner]) => ({
     digest: createHash('sha256').update(key).digest(),
     owner,
@@ -213,6 +220,72 @@ export function createHttpServer(options: HttpOptions): Server {
     if (!token || !hashedKeys.length) return undefined;
     const digest = createHash('sha256').update(token).digest();
     return hashedKeys.find((k) => timingSafeEqual(k.digest, digest))?.owner;
+  }
+
+  /**
+   * Who a request acts as: a maintenance key, a script key, a sign-in token, or (for discovery
+   * only) nobody yet. Undefined once the request has been answered: refused or challenged.
+   */
+  async function authenticate(
+    req: IncomingMessage,
+    res: ServerResponse,
+    request: Request,
+    discovery: () => Promise<boolean>,
+  ): Promise<{ owner: string; via: string } | undefined> {
+    if (hashedKeys.length || requireToken || options.scriptKeys) {
+      const keyOwner = apiKeyOwner(req);
+      const bearer = /^Bearer (cf_\S+)$/i.exec(req.headers.authorization ?? '')?.[1];
+      const scriptOwner = !keyOwner && bearer ? await options.scriptKeys?.owner(bearer) : undefined;
+      if (keyOwner) return { owner: keyOwner, via: 'key' };
+      if (scriptOwner) {
+        await options.onCall?.(scriptOwner);
+        return { owner: scriptOwner, via: 'script' };
+      }
+      if (bearer && options.scriptKeys) {
+        res
+          .writeHead(401, {
+            'content-type': 'application/json',
+            'www-authenticate': 'Bearer error="invalid_token"',
+          })
+          .end(
+            JSON.stringify({
+              error: 'invalid_token',
+              error_description:
+                'This script key was revoked or has expired; make a new one on your account page',
+            }),
+          );
+        return undefined;
+      }
+      if (!req.headers.authorization && (await discovery()))
+        return { owner: 'anonymous', via: 'anonymous' };
+      if (requireToken) {
+        const auth = await requireToken(request);
+        if (auth instanceof Response) {
+          if (!req.headers.authorization)
+            options.onSignInStep?.('challenged', req.headers['user-agent'] ?? '');
+          await sendResponse(res, auth);
+          return undefined;
+        }
+        const owner = String(auth.extra?.sub);
+        await options.onCall?.(owner, auth.clientId);
+        return { owner, via: 'oauth' };
+      }
+      res.writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' }).end(
+        JSON.stringify({
+          error: 'invalid_token',
+          error_description: 'Send Authorization: Bearer <api key>',
+        }),
+      );
+      return undefined;
+    }
+    // Local mode: refuse DNS-rebinding and cross-site browser requests.
+    const host = (req.headers.host ?? '').replace(/:\d+$/, '');
+    const origin = req.headers.origin;
+    if (!LOCAL_HOSTS.has(host) || (origin && !LOCAL_HOSTS.has(new URL(origin).hostname))) {
+      res.writeHead(403, { 'content-type': 'text/plain' }).end('forbidden host');
+      return undefined;
+    }
+    return { owner: 'local', via: 'local' };
   }
 
   const server = createNodeServer(async (req, res) => {
@@ -304,82 +377,34 @@ export function createHttpServer(options: HttpOptions): Server {
         return;
       }
       if (options.route && (await options.route(req, res, url))) return;
+      // The same tools as plain HTTP: POST /v1/<tool>, described at /openapi.json.
+      if (rest.handles(url)) {
+        await rest.serve(req, res, url, async (request) => {
+          const caller = await authenticate(req, res, request, async () => false);
+          if (caller && (caller.via === 'script' || caller.via === 'oauth'))
+            options.onApp?.(caller.owner, 'rest');
+          return caller;
+        });
+        return;
+      }
       if (url.pathname !== '/mcp') {
         res.writeHead(404, { 'content-type': 'text/plain' }).end('not found');
         return;
       }
-      let owner = 'local';
-      let via = 'local';
       const request = await toWebRequest(req as IncomingMessage & { method: string; url: string });
-      const tellApp = async (who: string) => {
-        if (!options.onApp) return;
+      const caller = await authenticate(req, res, request, () => isDiscovery(request));
+      if (!caller) return;
+      if (options.onApp && (caller.via === 'script' || caller.via === 'oauth')) {
         const app = await appName(request);
-        if (app) options.onApp(who, app);
-      };
-      if (hashedKeys.length || requireToken || options.scriptKeys) {
-        const keyOwner = apiKeyOwner(req);
-        const bearer = /^Bearer (cf_\S+)$/i.exec(req.headers.authorization ?? '')?.[1];
-        const scriptOwner =
-          !keyOwner && bearer ? await options.scriptKeys?.owner(bearer) : undefined;
-        if (keyOwner) {
-          owner = keyOwner;
-          via = 'key';
-        } else if (scriptOwner) {
-          owner = scriptOwner;
-          via = 'script';
-          await options.onCall?.(owner);
-          await tellApp(owner);
-        } else if (bearer && options.scriptKeys) {
-          res
-            .writeHead(401, {
-              'content-type': 'application/json',
-              'www-authenticate': 'Bearer error="invalid_token"',
-            })
-            .end(
-              JSON.stringify({
-                error: 'invalid_token',
-                error_description:
-                  'This script key was revoked or has expired; make a new one on your account page',
-              }),
-            );
-          return;
-        } else if (!req.headers.authorization && (await isDiscovery(request))) {
-          owner = 'anonymous';
-          via = 'anonymous';
-        } else if (requireToken) {
-          const auth = await requireToken(request);
-          if (auth instanceof Response) {
-            if (!req.headers.authorization)
-              options.onSignInStep?.('challenged', req.headers['user-agent'] ?? '');
-            await sendResponse(res, auth);
-            return;
-          }
-          owner = String(auth.extra?.sub);
-          via = 'oauth';
-          await options.onCall?.(owner, auth.clientId);
-          await tellApp(owner);
-        } else {
-          res
-            .writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' })
-            .end(
-              JSON.stringify({
-                error: 'invalid_token',
-                error_description: 'Send Authorization: Bearer <api key>',
-              }),
-            );
-          return;
-        }
-      } else {
-        // Local mode: refuse DNS-rebinding and cross-site browser requests.
-        const host = (req.headers.host ?? '').replace(/:\d+$/, '');
-        const origin = req.headers.origin;
-        if (!LOCAL_HOSTS.has(host) || (origin && !LOCAL_HOSTS.has(new URL(origin).hostname))) {
-          res.writeHead(403, { 'content-type': 'text/plain' }).end('forbidden host');
-          return;
-        }
+        if (app) options.onApp(caller.owner, app);
       }
       const response = await handler.fetch(request, {
-        authInfo: { token: 'redacted', clientId: owner, scopes: [], extra: { via } },
+        authInfo: {
+          token: 'redacted',
+          clientId: caller.owner,
+          scopes: [],
+          extra: { via: caller.via },
+        },
       });
       await sendResponse(res, response);
     } catch (error) {

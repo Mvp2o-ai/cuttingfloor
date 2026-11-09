@@ -14,7 +14,8 @@
     "@cuttingfloor/schema": "workspace:*",
     "@cuttingfloor/plans": "workspace:*",
     "@cuttingfloor/jobs": "workspace:*",
-    "@cuttingfloor/core": "workspace:*"
+    "@cuttingfloor/core": "workspace:*",
+    "@modelcontextprotocol/client": "2.3.1"
   },
   "scripts": {
     "start": "node src/main.ts"
@@ -25,7 +26,6 @@
   },
   "devDependencies": {
     "@cuttingfloor/motion": "workspace:*",
-    "@modelcontextprotocol/client": "2.3.1",
     "@modelcontextprotocol/ext-tasks": "0.2.2"
   }
 }
