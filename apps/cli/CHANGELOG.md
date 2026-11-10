@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.40.1
+
+### Patch Changes
+
+- 1c3556d: Importing a file that is already in the account (the same URL fetched again, the same upload sent twice) no longer conforms and proxies it again: the new media shares the first one's files, previews and analyses, takes no extra storage, and either can be deleted on its own.
+
 ## 0.40.0
 
 ### Minor Changes

@@ -1,8 +1,10 @@
 // Bugs blind tests found (MVP-254), each pinned through the SDK client with real engines. Skips
 // on hosts without FFmpeg and MLT; the Docker test target runs it.
 import { execFile } from 'node:child_process';
-import { chmod, readFile, writeFile } from 'node:fs/promises';
+import { chmod, readFile, stat, writeFile } from 'node:fs/promises';
+import { createServer as createHttpServer } from 'node:http';
 import { createRequire } from 'node:module';
+import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -809,6 +811,61 @@ describe.skipIf(!engines)('blind-test regressions', () => {
       expect(shown.isError, JSON.stringify(shown.structured)).toBe(false);
     }
   }, 120_000);
+
+  it('a URL fetched again shares the first import instead of being imported twice', async () => {
+    // A user's agent re-imported the same stock clips by URL for each cut, paying for every
+    // conform and proxy again.
+    const body = await readFile(join(env.mediaDir, 'game.mp4'));
+    const site = createHttpServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'video/mp4', 'content-length': body.length });
+      res.end(body);
+    });
+    await new Promise<void>((done) => site.listen(0, '127.0.0.1', done));
+    const { port } = site.address() as AddressInfo;
+    const fetchClip = async (): Promise<Record<string, unknown> & { media_id: string }> => {
+      const started = await ok<{ job_id: string }>(client, 'media.import', {
+        source: { url: `http://127.0.0.1:${port}/clip.mp4?sig=${Math.random()}` },
+      });
+      const done = await settled<{ result?: Record<string, unknown>; error?: unknown }>(
+        client,
+        started.job_id,
+        240_000,
+      );
+      if (done.error) throw new Error(`import failed: ${JSON.stringify(done.error)}`);
+      return done.result as Record<string, unknown> & { media_id: string };
+    };
+    try {
+      const first = await fetchClip();
+      const again = await fetchClip();
+      expect(again.media_id).not.toBe(first.media_id);
+      expect(again.status).toBe('ready');
+      expect(again.fingerprint).toBe(first.fingerprint);
+      // One copy on disk: the second media's preview is the first's file.
+      const owner = env.runtime.ws.ownerDir('local', 'media');
+      const proxy = (id: string) => stat(join(owner, id, 'proxy.mov'));
+      expect((await proxy(again.media_id)).ino).toBe((await proxy(first.media_id)).ino);
+      // Either goes on its own: the second still edits and draws once the first is deleted.
+      await ok(client, 'media.delete', { media_id: first.media_id });
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        sequence: { width: 640, height: 360, fps: { num: 24, den: 1 } },
+        tracks: { video: 1, audio: 1 },
+      });
+      const placed = await ok<{ timeline_id: string }>(client, 'clip.add', {
+        timeline_id,
+        track_id: 't1',
+        media_id: again.media_id,
+        source: { in: 0, out: 48 },
+        preview: 'none',
+      });
+      const shown = await call(client, 'render.frames', {
+        timeline_id: placed.timeline_id,
+        frames: [12],
+      });
+      expect(shown.isError, JSON.stringify(shown.structured)).toBe(false);
+    } finally {
+      site.close();
+    }
+  }, 300_000);
 });
 
 describe('media not ready yet', () => {
