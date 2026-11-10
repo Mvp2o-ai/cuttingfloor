@@ -198,10 +198,16 @@ export class Lifecycle {
     const ws = this.#o.runtime.ws;
     const marker = ws.ownerDir(owner, 'ledger-spent', `${entry.job_id}.json`);
     if (await ws.readJson(marker)) return;
+    const credits = Math.round((entry.seconds / 60) * 1000) / 1000;
+    // A job too short to round to a thousandth of a credit costs nothing (the ledger takes none).
+    if (!(credits > 0)) {
+      await ws.writeJson(marker, { at: new Date().toISOString() });
+      return;
+    }
     const spent = await this.#o.ledger.usage({
       account_id: link.account_id,
       job_id: entry.job_id,
-      credits: Math.round((entry.seconds / 60) * 1000) / 1000,
+      credits,
       tool: entry.tool,
       finished_at: entry.ended_at,
     });

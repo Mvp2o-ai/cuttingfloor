@@ -324,6 +324,7 @@ describe('credits in the ledger', () => {
 
   it('spends a job that ends after the link once, and never one from before', async () => {
     await ran(OLD, 'job_after', 120, new Date());
+    await ran(OLD, 'job_blink', 0.02, new Date());
     await lifecycle.sweep();
     await lifecycle.sweep();
     expect(usage().map((c) => c.body)).toEqual([
