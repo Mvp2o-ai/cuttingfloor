@@ -19,6 +19,7 @@ import {
   type StoredAnimatable,
   type StoredAnimation,
   type StoredClip,
+  type StoredCorners,
   type StoredEffect,
   type StoredMask,
   type StoredMaskShape,
@@ -2250,6 +2251,17 @@ function clipSetTransform(doc: TimelineDoc, a: EditArgsOf<'clip.set_transform'>)
   const { clip } = videoClip(doc, a.clip_id, 'clip.set_transform');
   const tpf = ticksPerFrame(doc.sequence.fps);
   const t: StoredTransform = { ...clip.transform };
+  // A corner pin and the box fields both say where the picture goes, so each replaces the other.
+  const placed = PLACEMENT.filter((k) => a[k] !== undefined);
+  if (a.corners && placed.length) {
+    throw new CfError('bad_request', `corners and ${placed.join(', ')} both place the picture`, {
+      hint: 'Send corners alone, or the box fields without corners',
+    });
+  }
+  if (a.corners) {
+    for (const k of PLACEMENT) delete t[k];
+    t.corners = storedCorners(a.corners, clip, tpf);
+  } else if (a.corners === null || placed.length) delete t.corners;
   for (const key of TRANSFORM_NUMBERS) {
     setAnimatable(t, key, a[key], TRANSFORM_DEFAULTS[key], clip, tpf, TRANSFORM_LIMITS[key]);
   }
@@ -2379,18 +2391,43 @@ function storedShape(
 
 type ToolPoints = ToolShape['points'];
 
+/** The transform fields a corner pin replaces. */
+const PLACEMENT = ['x', 'y', 'scale', 'scale_x', 'scale_y', 'rotation', 'fit'] as const;
+
+/** A corner pin in stored form, checked and keyed as polygon corners are. */
+function storedCorners(
+  c: NonNullable<EditArgsOf<'clip.set_transform'>['corners']>,
+  clip: StoredClip,
+  tpf: number,
+): StoredCorners {
+  if (Array.isArray(c)) return c;
+  const p = storedPoints(
+    { keyframes: c.keyframes.map(({ corners, ...k }) => ({ ...k, points: corners })) },
+    clip,
+    tpf,
+    'corners',
+  );
+  if (Array.isArray(p)) return p;
+  return { keyframes: p.keyframes.map(({ points, ...k }) => ({ ...k, corners: points })) };
+}
+
 /** Polygon corners in stored form: keyframe frames become source ticks, as other keyframes do. */
-function storedPoints(p: NonNullable<ToolPoints>, clip: StoredClip, tpf: number): StoredPoints {
+function storedPoints(
+  p: NonNullable<ToolPoints>,
+  clip: StoredClip,
+  tpf: number,
+  field = 'points',
+): StoredPoints {
   if (Array.isArray(p)) return p;
   const frames = p.keyframes.map((k) => k.frame);
   if (new Set(frames).size !== frames.length) {
-    throw new CfError('bad_request', 'points: two keyframes share a frame', {
+    throw new CfError('bad_request', `${field}: two keyframes share a frame`, {
       hint: 'Give each keyframe its own frame',
     });
   }
   const unknown = p.keyframes.find((k) => k.ease && !(EASES as readonly string[]).includes(k.ease));
   if (unknown) {
-    throw new CfError('bad_request', `points: unknown ease ${unknown.ease}`, {
+    throw new CfError('bad_request', `${field}: unknown ease ${unknown.ease}`, {
       hint: `Use one of ${EASES.join(', ')}`,
     });
   }

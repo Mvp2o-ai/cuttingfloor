@@ -309,6 +309,130 @@ describe.skipIf(!engines)('blind-test regressions', () => {
     expect(await look(outer.timeline_id, 60, 1920, points)).toEqual(alone);
   }, 240_000);
 
+  it('pins a picture to four corners: warped onto the quad, clear outside, cropped first, keyframable', async () => {
+    const { timeline_id: blank } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      name: 'pin',
+      sequence: { width: 1920, height: 1080, fps: { num: 24, den: 1 } },
+      tracks: { video: 2, audio: 0 },
+    });
+    const quad = [
+      [0.1, 0.1],
+      [0.6, 0.2],
+      [0.55, 0.9],
+      [0.15, 0.8],
+    ];
+    const pinned = await ok<{
+      timeline_id: string;
+      placements: Array<{
+        clip_id: string;
+        frames: Array<{ corners?: unknown; picture: unknown }>;
+      }>;
+    }>(client, 'edit.batch', {
+      timeline_id: blank,
+      preview: 'none',
+      ops: [
+        {
+          tool: 'clip.add',
+          args: { track_id: 't1', media_id: ids.blue, source: { in: 0, out: 96 } },
+        },
+        {
+          tool: 'clip.add',
+          args: {
+            track_id: 't2',
+            media_id: ids.face,
+            av: 'video',
+            at_frame: 0,
+            source: { in: 0, out: 96 },
+          },
+        },
+        {
+          tool: 'clip.set_transform',
+          args: { clip_id: { $ref: 'ops[1].clip_id' }, corners: quad },
+        },
+      ],
+    });
+    // The portrait picture fills the quad whatever its shape; the frame outside stays below.
+    expect(
+      await look(pinned.timeline_id, 12, 1920, [
+        [672, 540], // inside
+        [1536, 540], // right of the quad
+        [96, 54], // above its top left
+        [230, 920], // below its bottom left
+      ]),
+    ).toEqual(['red', 'blue', 'blue', 'blue']);
+    const clip = (
+      await ok<{ tracks: Array<{ clips: Array<{ id: string; transform?: unknown }> }> }>(
+        client,
+        'timeline.get',
+        { timeline_id: pinned.timeline_id },
+      )
+    ).tracks
+      .flatMap((t) => t.clips)
+      .find((c) => c.transform);
+    expect(clip?.transform).toEqual({ corners: quad });
+    const id = clip?.id as string;
+    const frame = pinned.placements.find((p) => p.clip_id === id)?.frames[0];
+    expect(frame?.corners).toEqual([
+      { x: 192, y: 108 },
+      { x: 1152, y: 216 },
+      { x: 1056, y: 972 },
+      { x: 288, y: 864 },
+    ]);
+    expect(frame?.picture).toEqual({ x: 192, y: 108, w: 960, h: 864 });
+
+    // Crop cuts the picture before the warp: its left half goes, on the quad's left side.
+    const cropped = await ok<{ timeline_id: string }>(client, 'clip.set_transform', {
+      timeline_id: pinned.timeline_id,
+      clip_id: id,
+      crop: { left: 0.5 },
+      preview: 'none',
+    });
+    expect(
+      await look(cropped.timeline_id, 12, 1920, [
+        [413, 508],
+        [931, 572],
+      ]),
+    ).toEqual(['blue', 'red']);
+
+    // Box fields with corners are refused; alone, they replace the pin.
+    const both = await call(client, 'clip.set_transform', {
+      timeline_id: pinned.timeline_id,
+      clip_id: id,
+      corners: quad,
+      x: 0.5,
+    });
+    expect(both.isError).toBe(true);
+    expect(JSON.stringify(both.structured)).toMatch(/corners and x both place the picture/);
+
+    // Keyframed corners slide the quad from the left half to the right half.
+    const left = [
+      [0.05, 0.1],
+      [0.45, 0.1],
+      [0.45, 0.9],
+      [0.05, 0.9],
+    ];
+    const right = left.map(([x, y]) => [(x as number) + 0.5, y]);
+    const moving = await ok<{ timeline_id: string }>(client, 'clip.set_transform', {
+      timeline_id: pinned.timeline_id,
+      clip_id: id,
+      corners: {
+        keyframes: [
+          { frame: 0, corners: left },
+          { frame: 48, corners: right },
+        ],
+      },
+      preview: 'none',
+    });
+    const points: Array<[number, number]> = [
+      [480, 540],
+      [960, 540],
+      [1440, 540],
+    ];
+    expect(await look(moving.timeline_id, 0, 1920, points)).toEqual(['red', 'blue', 'blue']);
+    expect(await look(moving.timeline_id, 24, 1920, points)).toEqual(['blue', 'red', 'blue']);
+    expect(await look(moving.timeline_id, 60, 1920, points)).toEqual(['blue', 'blue', 'red']);
+  }, 240_000);
+
   it('conforms a file whose rates drift apart to a constant rate, so every frame number is true', async () => {
     // Like a game recorder's file: nominally 20 fps, but a few frames come early, so the average
     // rate (about 20.13) and the frame times drift from the nominal grid.

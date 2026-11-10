@@ -1,4 +1,6 @@
 export {
+  cornersAnimate,
+  cornersAt,
   easeFn,
   isAnimated,
   type MaskState,

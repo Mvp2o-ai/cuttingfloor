@@ -1,4 +1,6 @@
 import {
+  cornersAnimate,
+  cornersAt,
   frameSource,
   maskAnimates,
   maskAtTick,
@@ -24,6 +26,8 @@ export interface ClipPlacement {
   frame: number;
   /** The whole picture's box (before crop and mask), unrotated. */
   picture: PixelBox;
+  /** Corner pin: where the picture's corners land (top left, top right, bottom right, bottom left). */
+  corners?: Array<{ x: number; y: number }>;
   rotation: number;
   opacity: number;
   /** The part of the frame the clip shows: crop and mask applied, rotated, inside the frame. */
@@ -93,6 +97,11 @@ function placementAt(
     fy1 = toPicY(fy1);
   }
   const empty = fx1 <= fx0 || fy1 <= fy0;
+  const quad = cornersAt(clip.transform?.corners, frameSource(clip, tpf, i)).map(
+    ([x, y]) => [x * frame.width, y * frame.height] as [number, number],
+  );
+  if (quad.length === 4)
+    return pinnedAt(i, s.opacity, quad, [fx0, fy0, fx1, fy1], empty, clip, src, frame);
   // Corners in sequence pixels, rotated about the picture's centre (qtblend rotate_center).
   const cx = rx + rw / 2;
   const cy = ry + rh / 2;
@@ -142,7 +151,80 @@ function placementAt(
   };
 }
 
+/**
+ * Where the unit square's (u, v) lands on a quad (top left, top right, bottom right, bottom
+ * left): the projective map a corner pin draws with.
+ */
+function squareToQuad(q: Array<[number, number]>): (u: number, v: number) => [number, number] {
+  const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = q as [
+    [number, number],
+    [number, number],
+    [number, number],
+    [number, number],
+  ];
+  const sx = x0 - x1 + x2 - x3;
+  const sy = y0 - y1 + y2 - y3;
+  const dx1 = x1 - x2;
+  const dx2 = x3 - x2;
+  const dy1 = y1 - y2;
+  const dy2 = y3 - y2;
+  const den = dx1 * dy2 - dx2 * dy1 || 1;
+  const g = (sx * dy2 - dx2 * sy) / den;
+  const h = (dx1 * sy - sx * dy1) / den;
+  const a = x1 - x0 + g * x1;
+  const b = x3 - x0 + h * x3;
+  const d = y1 - y0 + g * y1;
+  const e = y3 - y0 + h * y3;
+  return (u, v) => {
+    const w = g * u + h * v + 1;
+    return [(a * u + b * v + x0) / w, (d * u + e * v + y0) / w];
+  };
+}
+
+/** Placement of a corner-pinned clip: the window left by crop and mask, warped onto the quad. */
+function pinnedAt(
+  i: number,
+  opacity: number,
+  quad: Array<[number, number]>,
+  [fx0, fy0, fx1, fy1]: number[],
+  empty: boolean,
+  clip: StoredClip,
+  src: SourceSize,
+  frame: { width: number; height: number },
+): ClipPlacement {
+  const map = squareToQuad(quad);
+  const pts = [
+    map(fx0 as number, fy0 as number),
+    map(fx1 as number, fy0 as number),
+    map(fx1 as number, fy1 as number),
+    map(fx0 as number, fy1 as number),
+  ];
+  const vx0 = Math.max(0, Math.min(...pts.map((p) => p[0])));
+  const vy0 = Math.max(0, Math.min(...pts.map((p) => p[1])));
+  const vx1 = Math.min(frame.width, Math.max(...pts.map((p) => p[0])));
+  const vy1 = Math.min(frame.height, Math.max(...pts.map((p) => p[1])));
+  const shown = !empty && vx1 > vx0 && vy1 > vy0;
+  let [sx0, sy0, sx1, sy1] = [fx0, fy0, fx1, fy1] as [number, number, number, number];
+  const flip = clip.transform?.flip ?? 'none';
+  if (flip === 'horizontal' || flip === 'both') [sx0, sx1] = [1 - sx1, 1 - sx0];
+  if (flip === 'vertical' || flip === 'both') [sy0, sy1] = [1 - sy1, 1 - sy0];
+  const xs = quad.map((p) => p[0]);
+  const ys = quad.map((p) => p[1]);
+  return {
+    frame: i,
+    picture: box(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)),
+    corners: quad.map(([x, y]) => ({ x: r2(x), y: r2(y) })),
+    rotation: 0,
+    opacity: Math.round(opacity * 1000) / 1000,
+    visible: shown ? box(vx0, vy0, vx1, vy1) : null,
+    source: shown
+      ? box(sx0 * src.width, sy0 * src.height, sx1 * src.width, sy1 * src.height)
+      : null,
+  };
+}
+
 const numbers = (p: ClipPlacement) => [
+  ...(p.corners ?? []).flatMap((c) => [c.x, c.y]),
   p.picture.x,
   p.picture.y,
   p.picture.w,
@@ -169,7 +251,7 @@ export function clipPlacements(
   max = 60,
 ): { frames: ClipPlacement[]; complete: boolean } {
   if (n <= 0) return { frames: [], complete: true };
-  if (!transformAnimates(clip) && !maskAnimates(clip)) {
+  if (!transformAnimates(clip) && !maskAnimates(clip) && !cornersAnimate(clip)) {
     return { frames: [placementAt(clip, tpf, 0, n, src, frame)], complete: true };
   }
   const all: ClipPlacement[] = [];

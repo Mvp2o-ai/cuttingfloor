@@ -157,6 +157,29 @@ export const TRANSFORM_DEFAULTS: Record<TransformNumber, number> = {
   opacity: 1,
 };
 
+/**
+ * Corner pin: where the picture's top left, top right, bottom right and bottom left corners
+ * land, in fractions of the frame. -1 to 2 is what the renderer's warp reaches.
+ */
+export const CORNER_LIMITS = [-1, 2] as const;
+export const Corner = z.tuple([
+  z.number().min(CORNER_LIMITS[0]).max(CORNER_LIMITS[1]),
+  z.number().min(CORNER_LIMITS[0]).max(CORNER_LIMITS[1]),
+]);
+export const Corners = z.array(Corner).length(4);
+
+/** A quad, or quads eased between keyframes like the other animated fields. */
+export const StoredCorners = z.union([
+  Corners,
+  z.object({
+    keyframes: z
+      .array(z.object({ t: z.number().int(), corners: Corners, ease: Ease.optional() }))
+      .min(1)
+      .max(MAX_KEYFRAMES),
+  }),
+]);
+export type StoredCorners = z.infer<typeof StoredCorners>;
+
 export const StoredTransform = z.object({
   x: StoredAnimatable.optional(),
   y: StoredAnimatable.optional(),
@@ -168,6 +191,7 @@ export const StoredTransform = z.object({
   fit: Fit.optional(),
   flip: Flip.optional(),
   crop: Crop.optional(),
+  corners: StoredCorners.optional(),
 });
 export type StoredTransform = z.infer<typeof StoredTransform>;
 

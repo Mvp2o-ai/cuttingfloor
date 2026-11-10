@@ -15,7 +15,13 @@ import {
   TICKS_PER_SECOND,
   type TimelineDoc,
 } from '@cuttingfloor/schema';
-import { compositeFor, type RenderSpan, rotoFilters, type SourceSize } from './composite.ts';
+import {
+  compositeFor,
+  cornerParams,
+  type RenderSpan,
+  rotoFilters,
+  type SourceSize,
+} from './composite.ts';
 import { effectFilters, keysOutColour } from './effects.ts';
 import { faceKey, loadFace, type Measure } from './fontmetrics.ts';
 import { sourceKey } from './sourcepass.ts';
@@ -537,7 +543,7 @@ function masterFilters(doc: TimelineDoc): string {
   return gain + limit;
 }
 
-/** Flip, crop, mask and transition-reveal filters on a clip's playlist entry. */
+/** Flip, crop, mask, transition-reveal and corner-pin filters on a clip's playlist entry. */
 function clipFilters(
   c: StoredClip,
   tpf: number,
@@ -557,6 +563,14 @@ function clipFilters(
   for (const f of rotoFilters(c, tpf, n, src, out, span, keyBase, reveal)) {
     parts.push(
       `<filter>${prop('mlt_service', 'rotoscoping')}${prop('mode', 'alpha')}${prop('alpha_operation', f.operation)}${prop('invert', f.invert ? 1 : 0)}${prop('feather', f.feather)}${prop('feather_passes', 2)}${prop('spline', f.spline)}</filter>`,
+    );
+  }
+  // Last, so crop and mask cut the picture before it is warped: "12" keeps the frame outside
+  // the quad clear, and "14" 0.5 (min) keeps the picture's own alpha instead of replacing it.
+  const corners = cornerParams(c, tpf, n, span, keyBase);
+  if (corners) {
+    parts.push(
+      `<filter>${prop('mlt_service', 'frei0r.c0rners')}${corners.map((v, i) => prop(String(i), v)).join('')}${prop('12', 1)}${prop('14', 0.5)}</filter>`,
     );
   }
   return parts.join('');
