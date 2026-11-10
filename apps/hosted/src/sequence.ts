@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { Workspace } from '@cuttingfloor/core';
 import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { EmailError, type EmailProvider } from './email.ts';
+import { madeByPartner } from './lifecycle.ts';
 
 // The sign-up sequence: a welcome within a minute of signing up, then exactly one follow-up a
 // configured time later, chosen by whether the account has finished a first edit. Two sends per
@@ -397,11 +398,19 @@ export class WorkosSubscribers implements Subscribers {
       });
       const res = await this.#get(`/user_management/users?${query}`);
       const list = (await res.json()) as {
-        data?: { id: string; email: string; email_verified?: boolean; created_at: string }[];
+        data?: {
+          id: string;
+          email: string;
+          email_verified?: boolean;
+          created_at: string;
+          metadata?: Record<string, string>;
+        }[];
         list_metadata?: { after?: string | null };
       };
       for (const user of list.data ?? []) {
         if (Date.parse(user.created_at) < since) return;
+        // A partner's users hear from the partner; its app is what they signed up for.
+        if (madeByPartner(user.metadata)) continue;
         yield {
           id: user.id,
           email: user.email,

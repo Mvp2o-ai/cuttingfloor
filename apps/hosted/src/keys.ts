@@ -27,6 +27,8 @@ export interface ScriptKeyView {
 interface KeyFile extends ScriptKeyView {
   owner: string;
   sha256: string;
+  /** A key a partner got for its user (`POST /partner/keys`): the partner, its user id's SHA-256. */
+  partner?: { name: string; sub: string };
 }
 
 const digest = (key: string) => createHash('sha256').update(key).digest('hex');
@@ -43,6 +45,36 @@ export class ScriptKeys {
     if ((await this.list(owner)).length >= SCRIPT_KEYS_MAX) {
       throw new Error(`An account holds up to ${SCRIPT_KEYS_MAX} keys; revoke one first`);
     }
+    return this.#make(owner, label);
+  }
+
+  /**
+   * A partner's key for its user: a new one each time, and the partner's earlier key for this
+   * account stops working. Refused when the account's key from this partner is another user's.
+   */
+  async rotate(
+    owner: string,
+    partner: { name: string; sub: string },
+  ): Promise<ScriptKeyView & { key: string }> {
+    const mine = { name: partner.name, sub: digest(partner.sub) };
+    const files = await this.#files(owner);
+    const earlier = files.filter((file) => file.partner?.name === partner.name);
+    if (earlier.some((file) => file.partner?.sub !== mine.sub)) {
+      throw new Error(`This account's ${partner.name} key belongs to another user`);
+    }
+    if (files.length - earlier.length >= SCRIPT_KEYS_MAX) {
+      throw new Error(`An account holds up to ${SCRIPT_KEYS_MAX} keys; revoke one first`);
+    }
+    const made = await this.#make(owner, partner.name, mine);
+    for (const file of earlier) await this.revoke(owner, file.key_id);
+    return made;
+  }
+
+  async #make(
+    owner: string,
+    label: string,
+    partner?: { name: string; sub: string },
+  ): Promise<ScriptKeyView & { key: string }> {
     const key = `${SCRIPT_KEY_PREFIX}${randomBytes(32).toString('base64url')}`;
     const now = Date.now();
     const file: KeyFile = {
@@ -53,6 +85,7 @@ export class ScriptKeys {
       expires_at: new Date(now + SCRIPT_KEY_TTL_MS).toISOString(),
       owner,
       sha256: digest(key),
+      ...(partner ? { partner } : {}),
     };
     await this.#ws.writeJson(this.#byHash(file.sha256), file, { exclusive: true });
     await this.#ws.writeJson(this.#byOwner(owner, file.key_id), file);
@@ -61,13 +94,19 @@ export class ScriptKeys {
 
   /** The owner's keys still working, newest first. */
   async list(owner: string): Promise<ScriptKeyView[]> {
+    return (await this.#files(owner))
+      .map(view)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+
+  async #files(owner: string): Promise<KeyFile[]> {
     const dir = this.#ws.ownerDir(owner, 'keys');
-    const out: ScriptKeyView[] = [];
+    const out: KeyFile[] = [];
     for (const name of await this.#ws.list(dir)) {
       const file = await this.#ws.readJson<KeyFile>(join(dir, name)).catch(() => undefined);
-      if (file && Date.parse(file.expires_at) > Date.now()) out.push(view(file));
+      if (file && Date.parse(file.expires_at) > Date.now()) out.push(file);
     }
-    return out.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return out;
   }
 
   /** Stops a key working at once. False when the owner has no such key. */
