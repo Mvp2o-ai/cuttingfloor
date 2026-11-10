@@ -1,5 +1,13 @@
 # cuttingfloor
 
+## 0.42.0
+
+### Minor Changes
+
+- 08c9fbe: A week after signing up, an account with credits left gets "Your cuttingfloor credits are waiting": its balance, the AI app it connected to pick up in (or Kazi, for accounts with no AI app of their own), and the MCP and OpenAPI routes for engineers.
+- 751865e: Lifetime for Kazi members comes from the shared ledger: an account Kazi calls unmetered (Kazi lifetime or staff) has cuttingfloor's lifetime, 900 credits a month, and never spends from the ledger. Using cuttingfloor through Kazi, or a key Kazi's app asks for, no longer gives lifetime by itself; accounts tagged before keep it. `CUTTINGFLOOR_LIFETIME_CLIENTS` is no longer read.
+- 13cc62c: Credits are shared with Kazi: one balance in Kazi's credit ledger, bought and spent on either product. Each account carries over the balance it had, every job is spent there once, and automatic top-up runs in the ledger.
+
 ## 0.41.0
 
 ### Minor Changes
