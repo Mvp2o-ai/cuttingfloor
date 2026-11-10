@@ -313,7 +313,7 @@ describe.skipIf(!engines)('blind-test regressions', () => {
     const { timeline_id: blank } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
       name: 'pin',
       sequence: { width: 1920, height: 1080, fps: { num: 24, den: 1 } },
-      tracks: { video: 2 },
+      tracks: { video: 2, audio: 0 },
     });
     const quad = [
       [0.1, 0.1],
@@ -323,7 +323,10 @@ describe.skipIf(!engines)('blind-test regressions', () => {
     ];
     const pinned = await ok<{
       timeline_id: string;
-      placements: Array<{ frames: Array<{ corners?: unknown; picture: unknown }> }>;
+      placements: Array<{
+        clip_id: string;
+        frames: Array<{ corners?: unknown; picture: unknown }>;
+      }>;
     }>(client, 'edit.batch', {
       timeline_id: blank,
       preview: 'none',
@@ -357,14 +360,6 @@ describe.skipIf(!engines)('blind-test regressions', () => {
         [230, 920], // below its bottom left
       ]),
     ).toEqual(['red', 'blue', 'blue', 'blue']);
-    const frame = pinned.placements[0]?.frames[0];
-    expect(frame?.corners).toEqual([
-      { x: 192, y: 108 },
-      { x: 1152, y: 216 },
-      { x: 1056, y: 972 },
-      { x: 288, y: 864 },
-    ]);
-    expect(frame?.picture).toEqual({ x: 192, y: 108, w: 960, h: 864 });
     const clip = (
       await ok<{ tracks: Array<{ clips: Array<{ id: string; transform?: unknown }> }> }>(
         client,
@@ -376,6 +371,14 @@ describe.skipIf(!engines)('blind-test regressions', () => {
       .find((c) => c.transform);
     expect(clip?.transform).toEqual({ corners: quad });
     const id = clip?.id as string;
+    const frame = pinned.placements.find((p) => p.clip_id === id)?.frames[0];
+    expect(frame?.corners).toEqual([
+      { x: 192, y: 108 },
+      { x: 1152, y: 216 },
+      { x: 1056, y: 972 },
+      { x: 288, y: 864 },
+    ]);
+    expect(frame?.picture).toEqual({ x: 192, y: 108, w: 960, h: 864 });
 
     // Crop cuts the picture before the warp: its left half goes, on the quad's left side.
     const cropped = await ok<{ timeline_id: string }>(client, 'clip.set_transform', {

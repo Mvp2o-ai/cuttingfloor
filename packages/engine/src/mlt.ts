@@ -565,11 +565,12 @@ function clipFilters(
       `<filter>${prop('mlt_service', 'rotoscoping')}${prop('mode', 'alpha')}${prop('alpha_operation', f.operation)}${prop('invert', f.invert ? 1 : 0)}${prop('feather', f.feather)}${prop('feather_passes', 2)}${prop('spline', f.spline)}</filter>`,
     );
   }
-  // Last, so crop and mask cut the picture before it is warped; "12" keeps the rest clear.
+  // Last, so crop and mask cut the picture before it is warped: "12" keeps the frame outside
+  // the quad clear, and "14" 0.5 (min) keeps the picture's own alpha instead of replacing it.
   const corners = cornerParams(c, tpf, n, span, keyBase);
   if (corners) {
     parts.push(
-      `<filter>${prop('mlt_service', 'frei0r.c0rners')}${corners.map((v, i) => prop(String(i), v)).join('')}${prop('12', 1)}</filter>`,
+      `<filter>${prop('mlt_service', 'frei0r.c0rners')}${corners.map((v, i) => prop(String(i), v)).join('')}${prop('12', 1)}${prop('14', 0.5)}</filter>`,
     );
   }
   return parts.join('');
