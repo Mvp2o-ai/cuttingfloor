@@ -1,4 +1,4 @@
-import { copyFile, mkdir, open, readdir, realpath, rename, stat } from 'node:fs/promises';
+import { copyFile, link, mkdir, open, readdir, realpath, rename, rm, stat } from 'node:fs/promises';
 import { basename, extname, join, sep } from 'node:path';
 import { ownerKey, randomId, secondsToTicks, type Workspace } from '@cuttingfloor/core';
 import {
@@ -428,6 +428,12 @@ export class MediaLibrary {
       let file = record.file;
       record.size = (await stat(file)).size;
       record.fingerprint = await fingerprint(file);
+      // The same bytes imported before (a URL fetched again, an upload sent twice): share that
+      // media's files and facts rather than conform and proxy them again.
+      const known = await this.findByFingerprint(owner, record.fingerprint);
+      if (known && known.media_id !== record.media_id && known.status === 'ready') {
+        return await this.#share(owner, record, known, progress);
+      }
       // A web font (WOFF, WOFF2) is used as the TrueType or OpenType font it packs.
       const unpacked = await unwrapWebFont(file, dir);
       if (unpacked) record.file = file = unpacked;
@@ -492,6 +498,54 @@ export class MediaLibrary {
       await this.save(owner, record);
       throw error;
     }
+  }
+
+  /**
+   * Makes a record the same file as `known`, which is ready: its server-held files are hard
+   * links to known's (no bytes or encoding twice; either can go on its own) and its analyses
+   * copies of known's.
+   */
+  async #share(
+    owner: string,
+    record: MediaRecord,
+    known: MediaRecord,
+    progress: Progress,
+  ): Promise<MediaRecord> {
+    progress(0.5, `same file as ${known.media_id}, already imported`);
+    const dir = this.dir(owner, record.media_id);
+    const from = this.dir(owner, known.media_id);
+    const held = (path: string | null): path is string => !!path && path.startsWith(from + sep);
+    const linked = async (path: string) => {
+      const dest = join(dir, basename(path));
+      await rm(dest, { force: true });
+      await link(path, dest).catch(() => copyFile(path, dest));
+      return dest;
+    };
+    // A downloaded or sent copy gives way to known's; the user's own file in place stays.
+    if (record.file?.startsWith(dir + sep) && held(known.file)) {
+      await rm(record.file, { force: true });
+      record.file = await linked(known.file);
+    }
+    record.size = known.size;
+    record.probe = known.probe;
+    record.conform = known.conform;
+    record.mezzanine = held(known.mezzanine) ? await linked(known.mezzanine) : null;
+    record.proxy = held(known.proxy) ? await linked(known.proxy) : null;
+    record.analysis = known.analysis;
+    const analyses = join(from, 'analyses');
+    for (const name of await this.#ws.list(analyses)) {
+      if (!name.endsWith('.json')) continue;
+      await mkdir(join(dir, 'analyses'), { recursive: true });
+      await copyFile(join(analyses, name), join(dir, 'analyses', name)).catch(() => undefined);
+    }
+    record.status = 'ready';
+    await this.save(owner, record);
+    await this.#ws.writeJson(
+      this.#ws.ownerDir(owner, 'media-index', `${record.fingerprint}.json`),
+      { media_id: record.media_id },
+    );
+    progress(1, 'ready');
+    return record;
   }
 
   /** Every media the owner has, newest use first, with when each expires. Doesn't count as a use. */
@@ -571,8 +625,9 @@ async function folderBytes(dir: string): Promise<number> {
   const entries = await readdir(dir, { recursive: true, withFileTypes: true }).catch(() => []);
   for (const e of entries) {
     if (!e.isFile()) continue;
+    // A file another media shares (a hard link) stays on disk with it.
     total += await stat(join(e.parentPath, e.name)).then(
-      (x) => x.size,
+      (x) => (x.nlink > 1 ? 0 : x.size),
       () => 0,
     );
   }

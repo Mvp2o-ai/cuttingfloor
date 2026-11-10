@@ -8,7 +8,7 @@ import type { OwnerLimits } from './meter.ts';
 import type { Runtime } from './runtime.ts';
 import type { UploadVia } from './uploads.ts';
 
-/** Bytes an owner keeps on the server: every file under their folder. */
+/** Bytes an owner keeps on the server: every file under their folder, a shared one once. */
 export async function storedBytes(ws: Workspace, owner: string): Promise<number> {
   const root = ws.ownerDir(owner);
   let entries: { name: string; parentPath: string; isFile(): boolean }[];
@@ -19,11 +19,18 @@ export async function storedBytes(ws: Workspace, owner: string): Promise<number>
     throw error;
   }
   let total = 0;
+  // Media that share a file (the same bytes imported twice) hold it once.
+  const seen = new Set<number>();
   for (const e of entries) {
     if (!e.isFile()) continue;
     // A file swept between the listing and its stat no longer counts.
     total += await stat(join(e.parentPath, e.name)).then(
-      (s) => s.size,
+      (s) => {
+        if (s.nlink < 2) return s.size;
+        if (seen.has(s.ino)) return 0;
+        seen.add(s.ino);
+        return s.size;
+      },
       () => 0,
     );
   }
