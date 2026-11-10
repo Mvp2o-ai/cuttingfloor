@@ -5,7 +5,7 @@ Hi,
 
 Thanks for trying cuttingfloor. You still have {{credits_left}} credits, so come back and finish an edit whenever you're ready.
 
-Pick up where you left off in Kazi, which edits for you in a chat. This link opens a new chat that connects your cuttingfloor account and carries on from there: https://app.apifunnel.ai/agent-kits/cowork-enterprise/app?offer=cuttingfloor&utm_source=cuttingfloor&utm_medium=email&utm_campaign=credits-drip&utm_content=kazi
+Pick up where you left off in Kazi, which edits for you in a chat. This link opens a new chat; send it a message and Kazi connects your cuttingfloor account and carries on from there: https://app.apifunnel.ai/agent-kits/cowork-enterprise/app?offer=cuttingfloor&utm_source=cuttingfloor&utm_medium=email&utm_campaign=credits-drip&utm_content=kazi
 
 Your account, credits and files: https://cuttingfloor.ai/account?utm_source=cuttingfloor&utm_medium=email&utm_campaign=credits-drip&utm_content=kazi
 
