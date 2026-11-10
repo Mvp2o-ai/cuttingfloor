@@ -202,7 +202,11 @@ if (lifecycle && access && workosKey && publicUrl) {
         unsubscribeSecret: env.CUTTINGFLOOR_UNSUBSCRIBE_SECRET,
         followUpAfterMs: followUpHours * 3_600_000,
         creditsAfterMs: creditsHours * 3_600_000,
-        creditsLeft: async (owner) => (await access.balance(owner)).left,
+        creditsLeft: async (owner) => {
+          const balance = await access.balance(owner);
+          // A plan given by the month (lifetime, enterprise) renews; only a balance waits.
+          return balance.renews === null ? balance.left : null;
+        },
         pollMs: pollSeconds * 1000,
         templatesDir:
           process.env.CUTTINGFLOOR_EMAIL_TEMPLATES ??

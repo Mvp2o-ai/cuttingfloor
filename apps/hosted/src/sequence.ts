@@ -15,7 +15,7 @@ import { madeByPartner } from './lifecycle.ts';
 //   share one slot, so an account can never get both, and so do both credits reminders. These
 //   records have no TTL: one of each, ever.
 // - A follow-up or a credits reminder goes only to an account whose welcome went out; the
-//   reminder only while at least one whole credit is left.
+//   reminder only to an account on a balance (free and bought credits) with a whole credit left.
 // - The reminder sends people back where they edited: the app they connected (`first_client`),
 //   or Kazi for those with no AI app of their own (the site, the REST API, Kazi itself).
 // - Whether to send is decided at dispatch, not when the account is found: a deleted account,
@@ -76,7 +76,10 @@ export interface SequenceOptions {
   followUpAfterMs: number;
   /** How long after signing up the credits reminder goes. */
   creditsAfterMs: number;
-  /** Whole and partial credits the account has left; null when its plan has no cap. */
+  /**
+   * Credits the account's balance has left (free and bought, never expiring); null for a plan given
+   * by the month or with no cap, whose credits aren't waiting in the same way.
+   */
   creditsLeft(owner: string): Promise<number | null>;
   /** How often new accounts are looked for; a welcome goes out within about this. */
   pollMs: number;
@@ -203,7 +206,7 @@ export class Sequence {
         (slot !== 'credits'
           ? undefined
           : left === null
-            ? 'no_credit_cap'
+            ? 'no_balance'
             : left < 1
               ? 'no_credits_left'
               : undefined);

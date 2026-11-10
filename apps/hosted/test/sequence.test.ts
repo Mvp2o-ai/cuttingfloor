@@ -316,7 +316,7 @@ describe('credits reminder', () => {
     }
   });
 
-  it('goes to nobody with less than one credit left or no cap, and only after a welcome', async () => {
+  it('goes to nobody with less than one credit left or no balance, and only after a welcome', async () => {
     const { ws, accounts, provider, sequence } = await setup();
     const spent = accounts.add(1, T0);
     const capless = accounts.add(2, T0);
@@ -332,7 +332,7 @@ describe('credits reminder', () => {
     });
     expect(await ws.readJson(ws.ownerDir(capless, 'email', 'credits.json'))).toMatchObject({
       outcome: 'suppressed',
-      reason: 'no_credit_cap',
+      reason: 'no_balance',
     });
   });
 
