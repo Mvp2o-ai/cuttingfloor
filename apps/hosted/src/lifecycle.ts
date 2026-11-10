@@ -13,7 +13,7 @@ import {
 import { type Access, type AccessCheck, type Balance, type Link, linkPath } from './access.ts';
 import type { Mailer } from './email.ts';
 import type { ScriptKeys } from './keys.ts';
-import type { Ledger } from './ledger.ts';
+import type { Ledger, LedgerUsage } from './ledger.ts';
 import { type ProviderKeys, SAVABLE } from './provider-keys.ts';
 import { savedCard } from './purchase.ts';
 
@@ -189,34 +189,49 @@ export class Lifecycle {
   /**
    * Spends a job's credits on the ledger, once (a marker file remembers it was taken, and the
    * ledger ignores a job it has), then emails what the spend crossed: running low, out, or what
-   * the ledger's automatic top-up did there. A job that ended before the account was linked is
-   * in the balance it carried over.
+   * the ledger's automatic top-up did there. The marker keeps the ledger's answer until the email
+   * is sent, so a server that stops in between sends it on the sweep. A job that ended before the
+   * account was linked is in the balance it carried over.
    */
   async #spend(owner: string, access: Access & { allowed: true }, entry: MeterEntry) {
     const link = access.ledger;
     if (!link || entry.ended_at < link.since) return;
     const ws = this.#o.runtime.ws;
     const marker = ws.ownerDir(owner, 'ledger-spent', `${entry.job_id}.json`);
-    if (await ws.readJson(marker)) return;
-    const credits = Math.round((entry.seconds / 60) * 1000) / 1000;
-    // A job too short to round to a thousandth of a credit costs nothing (the ledger takes none).
-    if (!(credits > 0)) {
-      await ws.writeJson(marker, { at: new Date().toISOString() });
-      return;
+    let mark = await ws.readJson<Spent>(marker);
+    if (!mark) {
+      const credits = Math.round((entry.seconds / 60) * 1000) / 1000;
+      // A job too short to round to a thousandth of a credit costs nothing (the ledger takes none).
+      if (!(credits > 0)) {
+        await ws.writeJson(marker, { at: new Date().toISOString(), told: true });
+        return;
+      }
+      const spent = await this.#o.ledger.usage({
+        account_id: link.account_id,
+        job_id: entry.job_id,
+        credits,
+        tool: entry.tool,
+        finished_at: entry.ended_at,
+      });
+      this.#o.access.spent(owner, spent.balance);
+      mark = {
+        at: new Date().toISOString(),
+        told: spent.duplicate || (!spent.crossed && !spent.top_up),
+        crossed: spent.crossed,
+        top_up: spent.top_up,
+      };
+      await ws.writeJson(marker, mark);
     }
-    const spent = await this.#o.ledger.usage({
-      account_id: link.account_id,
-      job_id: entry.job_id,
-      credits,
-      tool: entry.tool,
-      finished_at: entry.ended_at,
-    });
-    await ws.writeJson(marker, { at: new Date().toISOString(), balance: spent.balance });
-    this.#o.access.spent(owner, spent.balance);
-    if (spent.duplicate) return;
-    const top = spent.top_up;
+    if (mark.told) return;
+    await this.#tell(owner, access, entry.job_id, mark);
+    await ws.writeJson(marker, { ...mark, told: true });
+  }
+
+  /** Emails what a spend crossed, and what automatic top-up did there. */
+  async #tell(owner: string, access: Access & { allowed: true }, jobId: string, mark: Spent) {
+    const top = mark.top_up;
     if (top?.ok) {
-      await this.#notify(owner, `top-up-${entry.job_id}`, {
+      await this.#notify(owner, `top-up-${jobId}`, {
         to: access.email,
         subject: `Topped up: ${top.credits} credits`,
         lines: [
@@ -229,7 +244,7 @@ export class Lifecycle {
     }
     if (top) {
       process.stderr.write(`lifecycle: ${owner}: top-up: ${top.message}\n`);
-      await this.#notify(owner, `top-up-failed-${entry.job_id}`, {
+      await this.#notify(owner, `top-up-failed-${jobId}`, {
         to: access.email,
         subject: 'We couldn’t top up your credits',
         lines: [
@@ -239,7 +254,7 @@ export class Lifecycle {
         action: { label: 'Top up', url: `${this.#o.accountUrl}#credits` },
       });
     }
-    if (spent.crossed) await this.#runningLow(owner, access, spent.crossed);
+    if (mark.crossed) await this.#runningLow(owner, access, mark.crossed);
   }
 
   /** The balance just fell below LOW_CREDITS, or to zero: says so by email. */
@@ -271,12 +286,15 @@ export class Lifecycle {
     const ws = this.#o.runtime.ws;
     await ws.sweep(ws.path('owners', key, 'ledger-spent'), SPENT_TTL_MS);
     if (!isUser(key)) return;
-    const link = await ws.readJson<Link>(linkPath(ws, key));
-    if (!link) return;
+    const link = await ws.readJson<Partial<Link>>(linkPath(ws, key));
+    if (!link?.account_id || !link.since) return;
     const from = new Date(Math.max(Date.parse(link.since), now - SPEND_RETRY_MS));
     let access: (Access & { allowed: true }) | undefined;
     for await (const entry of meterEntries(ws, key, from)) {
-      if (await ws.readJson(ws.ownerDir(key, 'ledger-spent', `${entry.job_id}.json`))) continue;
+      const mark = await ws.readJson<Spent>(
+        ws.ownerDir(key, 'ledger-spent', `${entry.job_id}.json`),
+      );
+      if (mark?.told) continue;
       access ??= await this.#o.access.require(key);
       await this.#spend(key, access as Access & { allowed: true }, entry);
     }
@@ -878,6 +896,14 @@ function warningName(balance: Balance, kind: 'low' | 'out'): string {
   return balance.renews === null
     ? `credits-${balance.free + balance.bought}-${kind}`
     : `minutes-${balance.since.slice(0, 10)}-${kind === 'low' ? 80 : 100}`;
+}
+
+/** A job spent on the ledger: its answer, kept until the email it calls for is sent. */
+interface Spent {
+  at: string;
+  told: boolean;
+  crossed?: LedgerUsage['crossed'];
+  top_up?: LedgerUsage['top_up'];
 }
 
 interface WorkosUser {

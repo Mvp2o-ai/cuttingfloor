@@ -23,6 +23,7 @@ const LEDGER_KEY = 'ledger-key-0123456789abcdef';
 const OLD = 'user_01OLDACCOUNT00000000000001';
 const LIFETIME = 'user_01LIFETIME0000000000000001';
 const TAKEN = 'user_01TAKENEMAIL00000000000001';
+const CRASHED = 'user_01CRASHED00000000000000001';
 const DOWN = 'user_01LEDGERDOWN00000000000001';
 let base: string;
 let server: Server;
@@ -53,6 +54,7 @@ const users = new Map<
     },
   ],
   [TAKEN, { email: 'taken@example.com', created_at: '2026-11-09T00:00:00.000Z', metadata: {} }],
+  [CRASHED, { email: 'crashed@example.com', created_at: '2026-11-09T00:00:00.000Z', metadata: {} }],
   [DOWN, { email: 'down@example.com', created_at: '2026-11-09T00:00:00.000Z', metadata: {} }],
 ]);
 
@@ -417,5 +419,50 @@ describe('credits in the ledger', () => {
     expect(down.code).toBe('service_unavailable');
     expect(down.detail).toMatchObject({ retry: true });
     ledgerDown = false;
+  });
+
+  it('links from the moment it claimed, after a server stopped between claiming and linking', async () => {
+    const ws = runtime.ws;
+    const since = new Date(Date.now() - 3_600_000).toISOString();
+    await ws.writeJson(linkPath(ws, CRASHED), { since, used_before: 1 });
+    await ran(CRASHED, 'job_gap', 60, new Date(Date.now() - 1_800_000));
+    await account(CRASHED);
+    const link = calls.filter((c) => c.path === '/api/credits/account').at(-1);
+    expect(link?.body).toMatchObject({
+      workos_user_id: CRASHED,
+      opening: { credits: -1, purchases: [] },
+    });
+    expect(await ws.readJson(linkPath(ws, CRASHED))).toMatchObject({
+      since,
+      used_before: 1,
+      account_id: expect.any(String),
+    });
+    // The job that ended after the claim, before the link, is spent.
+    await lifecycle.sweep();
+    expect(usage().at(-1)?.body).toMatchObject({ job_id: 'job_gap', credits: 1 });
+  });
+
+  it('sends the email a spend called for when a server stopped before sending it', async () => {
+    const ws = runtime.ws;
+    await ran(CRASHED, 'job_untold', 60, new Date());
+    await ws.writeJson(ws.ownerDir(CRASHED, 'ledger-spent', 'job_untold.json'), {
+      at: new Date().toISOString(),
+      told: false,
+      crossed: 'low',
+      top_up: null,
+    });
+    mail.length = 0;
+    const before = usage().length;
+    await lifecycle.sweep();
+    expect(usage()).toHaveLength(before);
+    expect(mail).toEqual([
+      expect.objectContaining({
+        to: 'crashed@example.com',
+        subject: expect.stringMatching(/credits left/),
+      }),
+    ]);
+    expect(
+      await ws.readJson(ws.ownerDir(CRASHED, 'ledger-spent', 'job_untold.json')),
+    ).toMatchObject({ told: true });
   });
 });

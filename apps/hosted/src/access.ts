@@ -289,6 +289,10 @@ export class AccessCheck {
   /**
    * The owner's ledger link, made the first time with the balance it had here (and told the
    * ledger about a Stripe customer made since). Answers the ledger account when it called it.
+   *
+   * The moment it counts from is claimed first, in the link file, and the carry-over is worked
+   * out from that file, so a retry after a crash, or another server linking at the same time,
+   * sends the same carry-over and reports jobs from the same moment: none is in both, or neither.
    */
   async #link(
     owner: string,
@@ -298,25 +302,33 @@ export class AccessCheck {
   ): Promise<{ link: Link; account?: LedgerAccount }> {
     const ws = this.#o.ws;
     const file = linkPath(ws, owner);
-    const known = await ws.readJson<Link>(file);
-    if (known && customer && known.customer !== customer) {
+    let known = await ws.readJson<Partial<Link> & Pick<Link, 'since' | 'used_before'>>(file);
+    if (known?.account_id) {
+      const link = known as Link;
+      if (!customer || link.customer === customer) return { link };
       const account = await this.#o.ledger.account({
         email,
         workos_user_id: owner,
         stripe_customer_id: customer,
       });
-      const link = { ...known, customer };
-      await ws.writeJson(file, link);
-      return { link, account };
+      await ws.writeJson(file, { ...link, customer });
+      return { link: { ...link, customer }, account };
     }
-    if (known) return { link: known };
-    const since = new Date(this.#o.now());
-    const used_before = round3((await meteredSeconds(ws, owner, new Date(created_at), since)) / 60);
-    const purchases = customer ? await this.#purchases(customer) : [];
+    if (!known) {
+      const since = new Date(this.#o.now());
+      const claim = {
+        since: since.toISOString(),
+        used_before: round3((await meteredSeconds(ws, owner, new Date(created_at), since)) / 60),
+      };
+      // Another server may have claimed it at the same moment; the first claim stands.
+      await ws.writeJson(file, claim, { exclusive: true });
+      known = (await ws.readJson<typeof claim>(file)) ?? claim;
+    }
+    const { since, used_before } = known;
     // The ledger grants its own free credits once per person, so the carry-over leaves them out.
     const opening = {
       credits: round3(freeCreditsFor(created_at) - used_before - FREE_CREDITS),
-      purchases,
+      purchases: customer ? await this.#purchases(customer) : [],
     };
     const account = await this.#o.ledger.account({
       email,
@@ -326,13 +338,11 @@ export class AccessCheck {
     });
     const link: Link = {
       account_id: account.account_id,
-      since: since.toISOString(),
+      since,
       used_before,
       ...(customer ? { customer } : {}),
     };
-    // Another server may have linked it at the same moment; the first link stands.
-    if (!(await ws.writeJson(file, link, { exclusive: true })))
-      return { link: (await ws.readJson<Link>(file)) ?? link };
+    await ws.writeJson(file, link);
     return { link, account };
   }
 
