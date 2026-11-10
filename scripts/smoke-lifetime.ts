@@ -5,10 +5,12 @@
 // Keys come from deploy/hetzner/cuttingfloor.env. Makes throwaway WorkOS users, has the server's
 // own Lifecycle see a call from each through a client, and checks what their metadata and access
 // say afterwards. Deletes the users after.
+
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AccessCheck } from '../apps/hosted/src/access.ts';
+import { Ledger } from '../apps/hosted/src/ledger.ts';
 import { Lifecycle } from '../apps/hosted/src/lifecycle.ts';
 import { Runtime } from '../packages/server/src/index.ts';
 
@@ -52,10 +54,12 @@ const runtime = new Runtime({
   motionUrl: null,
 });
 const accountUrl = 'https://cuttingfloor.ai/account';
-const access = new AccessCheck({ workosKey, stripeKey, accountUrl });
+const ledger = new Ledger(read('KAZI_CREDITS_URL'), read('KAZI_CREDITS_KEY'));
+const access = new AccessCheck({ workosKey, stripeKey, ledger, accountUrl, ws: runtime.ws });
 const lifecycle = new Lifecycle({
   runtime,
   access,
+  ledger,
   workosKey,
   stripeKey,
   accountUrl,
@@ -87,7 +91,7 @@ try {
   const now = await access.get(kazi);
   expect(now.allowed && now.plan === 'lifetime', 'access says lifetime at once');
   await new Lifecycle({
-    ...{ runtime, access, workosKey, stripeKey, accountUrl },
+    ...{ runtime, access, ledger, workosKey, stripeKey, accountUrl },
     lifetimeClients: new Map([[KAZI, 'Kazi']]),
   }).called(kazi, KAZI);
   expect((await metadataOf(kazi)).plan_since === tagged.plan_since, 'a later call changes nothing');

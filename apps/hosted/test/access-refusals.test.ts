@@ -1,8 +1,10 @@
+import { Workspace } from '@cuttingfloor/core';
 import type { CfError } from '@cuttingfloor/schema';
 import { describe, expect, it } from 'vitest';
 import { type Access, AccessCheck, type Balance } from '../src/access.ts';
+import { Ledger } from '../src/ledger.ts';
 
-// What a refusal tells the AI, with WorkOS and Stripe answered here: text a ChatGPT user may read
+// What a refusal tells the AI, with WorkOS and the ledger answered here: text a ChatGPT user may read
 // says what stopped and links the pricing page at most, never the account page where credits
 // are bought.
 
@@ -12,7 +14,13 @@ class Fixed extends AccessCheck {
   #access: Access;
   #balance: Partial<Balance>;
   constructor(access: Access, balance: Partial<Balance> = {}) {
-    super({ workosKey: 'sk_test_none', stripeKey: 'sk_test_none', accountUrl: ACCOUNT });
+    super({
+      workosKey: 'sk_test_none',
+      stripeKey: 'sk_test_none',
+      ledger: new Ledger('http://127.0.0.1:9', 'none'),
+      accountUrl: ACCOUNT,
+      ws: new Workspace('/nonexistent'),
+    });
     this.#access = access;
     this.#balance = balance;
   }
@@ -28,7 +36,7 @@ class Fixed extends AccessCheck {
       bought: 0,
       per_month: null,
       renews: null,
-      purchases: 0,
+      refill: null,
       since: '2026-11-08T00:00:00Z',
       ...this.#balance,
     };
@@ -40,7 +48,6 @@ const allowed: Access = {
   plan: 'free',
   email: 'a@example.com',
   created_at: '2026-11-08T00:00:00Z',
-  bought: { credits: 0, purchases: 0 },
 };
 
 describe('access refusals', () => {

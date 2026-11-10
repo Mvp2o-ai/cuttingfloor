@@ -6,6 +6,7 @@
 // with a throwaway partner secret, asks it for keys for a new email and for an existing account,
 // checks what WorkOS and the account's access say and that each key calls /v1, then deletes the
 // throwaway users.
+
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
@@ -14,6 +15,7 @@ import { join } from 'node:path';
 import { AccessCheck } from '../apps/hosted/src/access.ts';
 import { createHttpServer } from '../apps/hosted/src/http.ts';
 import { ScriptKeys } from '../apps/hosted/src/keys.ts';
+import { Ledger } from '../apps/hosted/src/ledger.ts';
 import { Lifecycle, madeByPartner } from '../apps/hosted/src/lifecycle.ts';
 import { WorkosSubscribers } from '../apps/hosted/src/sequence.ts';
 import { LocalCredentialStore } from '../packages/credentials/src/index.ts';
@@ -58,11 +60,13 @@ const runtime = new Runtime({
 });
 await runtime.start({ sweep: false });
 const accountUrl = 'https://cuttingfloor.ai/account';
-const access = new AccessCheck({ workosKey, stripeKey, accountUrl });
+const ledger = new Ledger(read('KAZI_CREDITS_URL'), read('KAZI_CREDITS_KEY'));
+const access = new AccessCheck({ workosKey, stripeKey, ledger, accountUrl, ws: runtime.ws });
 const keys = new ScriptKeys(runtime.ws);
 const lifecycle = new Lifecycle({
   runtime,
   access,
+  ledger,
   workosKey,
   stripeKey,
   accountUrl,

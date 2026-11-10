@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AccessCheck } from '../src/access.ts';
 import { createHttpServer } from '../src/http.ts';
 import { ScriptKeys } from '../src/keys.ts';
+import { Ledger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
 import { WorkosSubscribers } from '../src/sequence.ts';
 
@@ -90,11 +91,11 @@ beforeAll(async () => {
     plan: 'free',
     email: '',
     created_at: '2026-10-01T00:00:00.000Z',
-    bought: { credits: 0, purchases: 0 },
   };
   const lifecycle = new Lifecycle({
     runtime,
     access: { get: async () => free, forget: () => undefined } as unknown as AccessCheck,
+    ledger: new Ledger('http://127.0.0.1:9', 'none'),
     workosKey: 'sk_test_none',
     stripeKey: 'sk_test_none',
     accountUrl: 'https://cuttingfloor.ai/account',

@@ -32,7 +32,7 @@ export default function Privacy() {
         <Items
           items={[
             'Your account: email, name and how you sign in. WorkOS holds it for us, for as long as you have an account.',
-            'Billing: your credits, the packs you bought and your payment history. Stripe holds it; we never see your card number.',
+            'Billing: your payment history is held by Stripe; we never see your card number. Your credits (the free ones, the packs you bought and what your jobs used) are kept in the credit ledger we share with Kazi, so credits bought on either work on both.',
             'Uploads, imported media and exports: 7 days after they are made.',
             'Timelines (the edits themselves): 24 hours after they were last used.',
             'Job records (which job ran, for how long): 13 months, to count your credits and for billing questions.',
@@ -79,6 +79,7 @@ export default function Privacy() {
           items={[
             'WorkOS: sign-in and accounts.',
             'Stripe: payments and invoices.',
+            'Kazi: the credit ledger, which keeps your balance by your email and account.',
             'Hetzner: the servers that run the editor and hold your media.',
             'Vercel: this website.',
             'TypeSafe: answers to judge.ask and look questions.',

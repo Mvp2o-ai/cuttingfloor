@@ -1,22 +1,26 @@
 import {
+  FREE_CREDITS,
   freeCreditsFor,
-  type Pack,
   PLANS,
   type PlanId,
-  packOf,
+  SUPPORT_EMAIL,
   taggedPlan,
 } from '@cuttingfloor/plans';
 import { CfError } from '@cuttingfloor/schema';
 import { meteredSeconds, type OwnerLimits, type Runtime } from '@cuttingfloor/server';
+import { type Ledger, type LedgerAccount, LedgerConflict, LedgerMissing } from './ledger.ts';
 
 // Who may work on the hosted server, and how many credits they have, decided without a database:
 // WorkOS holds the account (when it began, whether its email is verified, a `plan` tag for given
-// plans, the pack it tops up with), Stripe holds the credit packs it bought. They are linked by
-// the user's `stripe_customer_id` metadata, which the site writes at checkout. Credits used come
-// from the meter files under the data root. A balance is the free credits, plus the packs bought,
-// less what was used since the account began; a given plan's credits renew each calendar month.
+// plans, its Stripe customer), and Kazi's credit ledger holds the balance, shared by both products:
+// credits bought on either site spend on either. An account is linked to the ledger the first time
+// it is checked, carrying over the balance it had here (its free credits less what it used, and
+// each pack it bought) and keeping when it was linked (`owners/{owner}/ledger/link.json`); every
+// job that ends after that is reported to the ledger (lifecycle.ts). A given plan (staff, lifetime,
+// enterprise) never touches the ledger: its credits renew each calendar month and are counted
+// from the meter files under the data root.
 //
-// It fails closed: when WorkOS or Stripe can't be reached the call is refused as retryable,
+// It fails closed: when WorkOS or the ledger can't be reached the call is refused as retryable,
 // never let through. Paying people meet at most a short retry; nobody gets a free pass.
 
 export type Access =
@@ -28,12 +32,21 @@ export type Access =
       created_at: string;
       /** The account's Stripe customer, once it has been to checkout. */
       customer?: string;
-      /** Credits from packs bought, after refunds, and how many purchases made them. */
-      bought: { credits: number; purchases: number };
-      /** The pack bought on its own when the balance runs low; unset when that is off. */
-      refill?: Pack;
+      /** The ledger account, for every account without a given plan. */
+      ledger?: Link;
     }
   | { allowed: false; reason: 'email_unverified'; email: string };
+
+/** An account's link to the ledger, kept with its data. */
+export interface Link {
+  account_id: string;
+  /** When it was linked: jobs that ended from here on are reported to the ledger. */
+  since: string;
+  /** Credits it used here before it was linked, so what it has used shows in full. */
+  used_before: number;
+  /** The Stripe customer the ledger was last told about. */
+  customer?: string;
+}
 
 /** An account's credits: left, used, and where they came from. */
 export interface Balance {
@@ -50,19 +63,21 @@ export interface Balance {
   per_month: number | null;
   /** When a given plan's credits renew; null for a balance, which never renews or expires. */
   renews: string | null;
-  /** Purchases so far, so each top-up is claimed once. */
-  purchases: number;
   /** Where credits used are counted from: the account's start, or this month's. */
   since: string;
+  /** The pack the ledger buys on its own when the balance runs low (a balance; else null). */
+  refill: string | null;
 }
 
 export interface AccessOptions {
   workosKey: string;
   stripeKey: string;
+  /** Kazi's credit ledger, where every account without a given plan keeps its balance. */
+  ledger: Ledger;
   /** Where people buy credits and see their balance; named in refusals. */
   accountUrl: string;
-  /** The data root's workspace, for credits used. Without it, credits are not counted. */
-  ws?: Runtime['ws'];
+  /** The data root's workspace: ledger links, and credits used on a given plan. */
+  ws: Runtime['ws'];
   now?: () => number;
 }
 
@@ -70,10 +85,15 @@ const ALLOWED_TTL = 5 * 60_000;
 const DENIED_TTL = 20_000;
 const USAGE_TTL = 15_000;
 
+/** Where an owner's ledger link is kept. */
+export const linkPath = (ws: Runtime['ws'], owner: string) =>
+  ws.ownerDir(owner, 'ledger', 'link.json');
+
 export class AccessCheck {
   #o: AccessOptions & { now: () => number };
   #cache = new Map<string, { at: number; value: Access }>();
   #usage = new Map<string, { at: number; seconds: number; since: string }>();
+  #accounts = new Map<string, { at: number; account: LedgerAccount }>();
 
   constructor(options: AccessOptions) {
     this.#o = { now: Date.now, ...options };
@@ -129,35 +149,69 @@ export class AccessCheck {
   /** The owner's credits: left, used, and where they came from. */
   async balance(owner: string, known?: Access & { allowed: true }): Promise<Balance> {
     const access = known ?? (await this.require(owner));
+    if (access.ledger) {
+      const link = access.ledger;
+      const account = await this.#account(owner, link);
+      // The ledger counts from the link; what was used here before it shows too, and the free
+      // credits are what make the sum come out: free + bought - used = left.
+      const used = round(account.used_total + link.used_before);
+      return {
+        plan: access.plan,
+        left: round(account.balance),
+        used,
+        free: round(account.granted_total + account.opening_total + link.used_before),
+        bought: round(account.bought_total),
+        per_month: null,
+        renews: null,
+        since: access.created_at,
+        refill: account.refill?.pack ?? null,
+      };
+    }
     const credits = PLANS[access.plan].credits;
     const now = this.#o.now();
-    const since = credits.kind === 'balance' ? access.created_at : month(now).start;
-    const used = Math.round(((await this.#seconds(owner, since)) / 60) * 10) / 10;
-    const base = { plan: access.plan, used, purchases: access.bought.purchases, since };
-    if (credits.kind === 'none')
-      return { ...base, left: null, free: 0, bought: 0, per_month: null, renews: null };
+    const since = credits.kind === 'monthly' ? month(now).start : access.created_at;
+    const used = round((await this.#seconds(owner, since)) / 60);
+    const base = { plan: access.plan, used, since, free: 0, bought: 0, refill: null };
     if (credits.kind === 'monthly')
       return {
         ...base,
         left: round(credits.perMonth - used),
-        free: 0,
-        bought: 0,
         per_month: credits.perMonth,
         renews: month(now).end,
       };
-    const free = freeCreditsFor(access.created_at);
-    return {
-      ...base,
-      left: round(free + access.bought.credits - used),
-      free,
-      bought: access.bought.credits,
-      per_month: null,
-      renews: null,
-    };
+    return { ...base, left: null, per_month: null, renews: null };
+  }
+
+  /** Sets the pack the ledger buys on its own when the balance runs low, or null for off. */
+  async setRefill(owner: string, pack: string | null): Promise<void> {
+    const access = await this.require(owner);
+    if (!access.ledger) throw new Error('a given plan has no top-up');
+    const account = await this.#o.ledger.refill(access.ledger.account_id, pack);
+    this.#accounts.set(owner, { at: this.#o.now(), account });
+  }
+
+  /** The ledger account, read again after a short while (spending on Kazi moves it too). */
+  async #account(owner: string, link: Link): Promise<LedgerAccount> {
+    const hit = this.#accounts.get(owner);
+    if (hit && hit.account.account_id === link.account_id && this.#o.now() - hit.at < USAGE_TTL)
+      return hit.account;
+    let account: LedgerAccount;
+    try {
+      account = await this.#o.ledger.balance(link.account_id);
+    } catch (error) {
+      if (!(error instanceof LedgerMissing)) throw error;
+      // The ledger lost it (removed by hand): link again, from now.
+      await this.#o.ws.remove(linkPath(this.#o.ws, owner)).catch(() => undefined);
+      this.#cache.delete(owner);
+      const access = await this.require(owner);
+      if (!access.ledger) throw error;
+      return this.#account(owner, access.ledger);
+    }
+    this.#accounts.set(owner, { at: this.#o.now(), account });
+    return account;
   }
 
   async #seconds(owner: string, since: string): Promise<number> {
-    if (!this.#o.ws) return 0;
     const hit = this.#usage.get(owner);
     if (hit && hit.since === since && this.#o.now() - hit.at < USAGE_TTL) return hit.seconds;
     const seconds = await meteredSeconds(this.#o.ws, owner, new Date(since));
@@ -169,12 +223,19 @@ export class AccessCheck {
   forget(owner: string): void {
     this.#cache.delete(owner);
     this.#usage.delete(owner);
+    this.#accounts.delete(owner);
   }
 
   /** Counts a job that just ended against the cached usage, so a cap shows without a reread. */
   addSeconds(owner: string, seconds: number): void {
     const hit = this.#usage.get(owner);
     if (hit) hit.seconds += seconds;
+  }
+
+  /** The ledger's balance after a job was spent, so a cap shows without a reread. */
+  spent(owner: string, balance: number): void {
+    const hit = this.#accounts.get(owner);
+    if (hit) hit.account = { ...hit.account, balance };
   }
 
   /** The owner's access, cached briefly; a refusal is rechecked soon so a change shows. */
@@ -187,6 +248,11 @@ export class AccessCheck {
       value = await this.resolve(owner);
     } catch (error) {
       process.stderr.write(`access: ${owner}: ${(error as Error).message}\n`);
+      if (error instanceof LedgerConflict)
+        throw new CfError('service_unavailable', 'This account’s credits could not be found', {
+          hint: `Its email already has credits with another cuttingfloor account. Write to ${SUPPORT_EMAIL} to join them`,
+          detail: { retry: false },
+        });
       // Someone already let in keeps working through a short outage; nobody new gets in.
       if (hit?.value.allowed && this.#o.now() - hit.at < 30 * 60_000) return hit.value;
       throw new CfError('service_unavailable', 'Your account could not be checked just now', {
@@ -198,7 +264,7 @@ export class AccessCheck {
     return value;
   }
 
-  /** Works out access from WorkOS and Stripe, uncached. Throws when either can't answer. */
+  /** Works out access from WorkOS and the ledger, uncached. Throws when either can't answer. */
   async resolve(owner: string): Promise<Access> {
     const user = await this.#workos(`/user_management/users/${encodeURIComponent(owner)}`);
     const email = String(user.email ?? '');
@@ -206,27 +272,73 @@ export class AccessCheck {
     const created_at = new Date(Date.parse(String(user.created_at))).toISOString();
     const customer = metadata.stripe_customer_id || undefined;
     const tagged = taggedPlan(metadata.plan);
-    const bought =
-      customer && !tagged ? await this.#bought(customer) : { credits: 0, purchases: 0 };
-    // Checked after purchases: an account that paid is never held back for its email.
-    if (!tagged && !bought.purchases && user.email_verified === false)
-      return { allowed: false, reason: 'email_unverified', email };
-    const refill = packOf(metadata.refill_pack);
+    const base = { allowed: true as const, email, created_at, ...(customer ? { customer } : {}) };
+    if (tagged) return { ...base, plan: tagged };
+    // Only a verified email joins a ledger account (the ledger matches people by it).
+    if (user.email_verified === false) return { allowed: false, reason: 'email_unverified', email };
+    const link = await this.#link(owner, email, created_at, customer);
+    const account = link.account ?? (await this.#account(owner, link.link));
+    if (link.account) this.#accounts.set(owner, { at: this.#o.now(), account: link.account });
     return {
-      allowed: true,
-      plan: tagged ?? (bought.purchases ? 'credits' : 'free'),
-      email,
-      created_at,
-      ...(customer ? { customer } : {}),
-      bought,
-      ...(refill && !tagged ? { refill } : {}),
+      ...base,
+      plan: account.bought_total > 0 ? 'credits' : 'free',
+      ledger: link.link,
     };
   }
 
-  /** Credits from the customer's paid packs, less any refunded share. */
-  async #bought(customer: string): Promise<{ credits: number; purchases: number }> {
-    let credits = 0;
-    let purchases = 0;
+  /**
+   * The owner's ledger link, made the first time with the balance it had here (and told the
+   * ledger about a Stripe customer made since). Answers the ledger account when it called it.
+   */
+  async #link(
+    owner: string,
+    email: string,
+    created_at: string,
+    customer: string | undefined,
+  ): Promise<{ link: Link; account?: LedgerAccount }> {
+    const ws = this.#o.ws;
+    const file = linkPath(ws, owner);
+    const known = await ws.readJson<Link>(file);
+    if (known && customer && known.customer !== customer) {
+      const account = await this.#o.ledger.account({
+        email,
+        workos_user_id: owner,
+        stripe_customer_id: customer,
+      });
+      const link = { ...known, customer };
+      await ws.writeJson(file, link);
+      return { link, account };
+    }
+    if (known) return { link: known };
+    const since = new Date(this.#o.now());
+    const used_before = round3((await meteredSeconds(ws, owner, new Date(created_at), since)) / 60);
+    const purchases = customer ? await this.#purchases(customer) : [];
+    // The ledger grants its own free credits once per person, so the carry-over leaves them out.
+    const opening = {
+      credits: round3(freeCreditsFor(created_at) - used_before - FREE_CREDITS),
+      purchases,
+    };
+    const account = await this.#o.ledger.account({
+      email,
+      workos_user_id: owner,
+      ...(customer ? { stripe_customer_id: customer } : {}),
+      opening,
+    });
+    const link: Link = {
+      account_id: account.account_id,
+      since: since.toISOString(),
+      used_before,
+      ...(customer ? { customer } : {}),
+    };
+    // Another server may have linked it at the same moment; the first link stands.
+    if (!(await ws.writeJson(file, link, { exclusive: true })))
+      return { link: (await ws.readJson<Link>(file)) ?? link };
+    return { link, account };
+  }
+
+  /** The customer's paid packs, each less any refunded share. */
+  async #purchases(customer: string): Promise<{ payment_intent: string; credits: number }[]> {
+    const out: { payment_intent: string; credits: number }[] = [];
     let after: string | undefined;
     for (let page = 0; page < 20; page++) {
       const list = (await this.#stripe(
@@ -237,15 +349,15 @@ export class AccessCheck {
         const pack = Number(pi.metadata?.credits);
         if (pi.status !== 'succeeded' || pi.metadata?.app !== 'cuttingfloor' || !(pack > 0))
           continue;
-        purchases++;
         const charge = typeof pi.latest_charge === 'object' ? pi.latest_charge : undefined;
         const refunded = charge?.amount ? (charge.amount_refunded ?? 0) / charge.amount : 0;
-        credits += pack * (1 - Math.min(1, refunded));
+        const credits = round3(pack * (1 - Math.min(1, refunded)));
+        if (credits > 0) out.push({ payment_intent: pi.id, credits });
       }
       after = data.at(-1)?.id;
       if (!list.has_more || !after) break;
     }
-    return { credits: round(credits), purchases };
+    return out;
   }
 
   async #workos(path: string): Promise<Record<string, unknown>> {
@@ -277,6 +389,7 @@ function month(now: number): { start: string; end: string } {
 }
 
 const round = (n: number) => Math.round(n * 10) / 10;
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
 interface StripePaymentIntent {
   id: string;

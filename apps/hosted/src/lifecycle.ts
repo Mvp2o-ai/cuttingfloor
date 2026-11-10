@@ -1,24 +1,34 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Job } from '@cuttingfloor/jobs';
-import { FREE_CREDITS, LOW_CREDITS, PACKS, PLANS } from '@cuttingfloor/plans';
+import { FREE_CREDITS, LOW_CREDITS, PACKS, PLANS, packOf } from '@cuttingfloor/plans';
 import { type AccountGetResult, CfError, MediaUploadInput } from '@cuttingfloor/schema';
-import { listHeld, type MeterEntry, type Runtime, startUpload } from '@cuttingfloor/server';
-import type { Access, AccessCheck, Balance } from './access.ts';
+import {
+  listHeld,
+  type MeterEntry,
+  meterEntries,
+  type Runtime,
+  startUpload,
+} from '@cuttingfloor/server';
+import { type Access, type AccessCheck, type Balance, type Link, linkPath } from './access.ts';
 import type { Mailer } from './email.ts';
 import type { ScriptKeys } from './keys.ts';
+import type { Ledger } from './ledger.ts';
 import { type ProviderKeys, SAVABLE } from './provider-keys.ts';
-import { chargePack, savedCard } from './purchase.ts';
+import { savedCard } from './purchase.ts';
 
 // What happens around an account as it is used, still without a database:
 // - WorkOS metadata records the first tool call, the first export (the site's welcome page
 //   waits on the first, the funnel counts both), the first export that succeeded (the sign-up
 //   sequence's first edit, sequence.ts) and the app the first tool call came from.
-// - Email goes out when an account's credits run low and when they run out (for a given plan, at
-//   80% and 100% of the month's). An account that turned on automatic top-up instead buys its
-//   pack on its saved card when it runs low, once per purchase, and is sent the receipt. The welcome is the sign-up sequence's; this sends it only while the
-//   sequence is off. A notice file under the owner's data claims each message once, across
-//   servers (`owners/{owner}/notices/{name}.json`, kept 400 days).
+// - Each job that ends is spent on Kazi's credit ledger (access.ts), once: a marker file
+//   (`owners/{owner}/ledger-spent/{job_id}.json`) says it was taken, and the sweep spends any job
+//   a server missed. Given plans are counted from the meter instead.
+// - Email goes out when the ledger says a spend took the balance low or to zero (for a given plan,
+//   at 80% and 100% of the month's), and with what the ledger's automatic top-up did there, when
+//   the account turned it on (`POST /account/top-up`). The welcome is the sign-up sequence's;
+//   this sends it only while the sequence is off. A notice file under the owner's data claims
+//   each message once, across servers (`owners/{owner}/notices/{name}.json`, kept 400 days).
 // - Stripe's webhook tells the access check credits were bought, so they show at once.
 // - An account first used through a client that grants lifetime (Kazi) is tagged lifetime in its
 //   WorkOS metadata, with the reason and date (`plan_reason`, `plan_since`), so exactly those
@@ -30,12 +40,17 @@ import { chargePack, savedCard } from './purchase.ts';
 //   moves to another email or account.
 
 const NOTICE_TTL_MS = 400 * 24 * 3_600_000;
+// A job's spend is retried for this long after it ended; its marker outlives that.
+const SPEND_RETRY_MS = 30 * 24 * 3_600_000;
+const SPENT_TTL_MS = 60 * 24 * 3_600_000;
 // How often new accounts are looked at: a fallback welcome arrives within this of signing up.
 const SWEEP_MS = 10 * 60_000;
 
 export interface LifecycleOptions {
   runtime: Runtime;
   access: AccessCheck;
+  /** Kazi's credit ledger, where jobs on an account without a given plan are spent. */
+  ledger: Ledger;
   workosKey: string;
   stripeKey: string;
   accountUrl: string;
@@ -166,19 +181,67 @@ export class Lifecycle {
     }
     const access = await this.#o.access.get(owner);
     if (!access.allowed) return;
+    if (access.ledger) return this.#spend(owner, access, entry);
     const balance = await this.#o.access.balance(owner, access);
-    if (balance.left === null) return;
-    if (balance.renews === null) await this.#runningLow(owner, access, balance);
-    else await this.#monthUsed(owner, access, balance);
+    if (balance.left !== null) await this.#monthUsed(owner, access, balance);
   }
 
-  /** A balance below LOW_CREDITS: tops up on its own when turned on, else says so by email. */
-  async #runningLow(owner: string, access: Access & { allowed: true }, balance: Balance) {
+  /**
+   * Spends a job's credits on the ledger, once (a marker file remembers it was taken, and the
+   * ledger ignores a job it has), then emails what the spend crossed: running low, out, or what
+   * the ledger's automatic top-up did there. A job that ended before the account was linked is
+   * in the balance it carried over.
+   */
+  async #spend(owner: string, access: Access & { allowed: true }, entry: MeterEntry) {
+    const link = access.ledger;
+    if (!link || entry.ended_at < link.since) return;
+    const ws = this.#o.runtime.ws;
+    const marker = ws.ownerDir(owner, 'ledger-spent', `${entry.job_id}.json`);
+    if (await ws.readJson(marker)) return;
+    const spent = await this.#o.ledger.usage({
+      account_id: link.account_id,
+      job_id: entry.job_id,
+      credits: Math.round((entry.seconds / 60) * 1000) / 1000,
+      tool: entry.tool,
+      finished_at: entry.ended_at,
+    });
+    await ws.writeJson(marker, { at: new Date().toISOString(), balance: spent.balance });
+    this.#o.access.spent(owner, spent.balance);
+    if (spent.duplicate) return;
+    const top = spent.top_up;
+    if (top?.ok) {
+      await this.#notify(owner, `top-up-${entry.job_id}`, {
+        to: access.email,
+        subject: `Topped up: ${top.credits} credits`,
+        lines: [
+          `Your credits were running low, so we bought ${top.credits} credits for $${top.price} on your ${top.card.brand} ending ${top.card.last4}, as you asked.`,
+          'Your agent keeps working. Change or turn off automatic top-up on your account page.',
+        ],
+        action: { label: 'Open your account', url: `${this.#o.accountUrl}#credits` },
+      });
+      return;
+    }
+    if (top) {
+      process.stderr.write(`lifecycle: ${owner}: top-up: ${top.message}\n`);
+      await this.#notify(owner, `top-up-failed-${entry.job_id}`, {
+        to: access.email,
+        subject: 'We couldn’t top up your credits',
+        lines: [
+          `Your credits are running low, and the automatic top-up of ${top.credits} credits for $${top.price} didn’t go through (${top.message}).`,
+          'Top up on your account page to keep your agent working; it saves the card for next time.',
+        ],
+        action: { label: 'Top up', url: `${this.#o.accountUrl}#credits` },
+      });
+    }
+    if (spent.crossed) await this.#runningLow(owner, access, spent.crossed);
+  }
+
+  /** The balance just fell below LOW_CREDITS, or to zero: says so by email. */
+  async #runningLow(owner: string, access: Access & { allowed: true }, kind: 'low' | 'out') {
+    const balance = await this.#o.access.balance(owner, access);
     const left = balance.left ?? 0;
-    if (left >= LOW_CREDITS) return;
-    if (access.refill && access.customer && (await this.#topUp(owner, access, balance))) return;
-    const out = left <= 0;
-    await this.#notify(owner, warningName(balance, out ? 'out' : 'low'), {
+    const out = kind === 'out';
+    await this.#notify(owner, warningName(balance, kind), {
       to: access.email,
       subject: out ? 'Your credits are used up' : `You have ${left} credits left`,
       lines: [
@@ -195,52 +258,22 @@ export class Lifecycle {
   }
 
   /**
-   * Buys the account's top-up pack on its saved card, claimed once per purchase so servers and
-   * retries never charge twice. True when the credits are in.
+   * Spends the jobs a server could not report when they ended (the ledger was down, the server
+   * restarted): every linked account's jobs of the last SPEND_RETRY_MS without a marker.
    */
-  async #topUp(owner: string, access: Access & { allowed: true }, balance: Balance) {
-    const pack = access.refill;
-    const customer = access.customer;
-    if (!pack || !customer) return false;
+  async #spendMissed(key: string, now: number): Promise<void> {
     const ws = this.#o.runtime.ws;
-    const claim = ws.ownerDir(owner, 'notices', `top-up-${balance.purchases}.json`);
-    if (!(await ws.writeJson(claim, { at: new Date().toISOString() }, { exclusive: true })))
-      return true;
-    const card = await savedCard(this.#o.stripeKey, customer).catch(() => undefined);
-    const paid = card
-      ? await chargePack(this.#o.stripeKey, {
-          customer,
-          owner,
-          pack,
-          card,
-          key: `${owner}:top-up:${balance.purchases}`,
-          reason: 'automatic top-up',
-        })
-      : { ok: false as const, message: 'no card is saved' };
-    this.#o.access.forget(owner);
-    if (paid.ok) {
-      await this.#notify(owner, `top-up-${paid.id}`, {
-        to: access.email,
-        subject: `Topped up: ${pack.credits} credits`,
-        lines: [
-          `Your credits were running low, so we bought ${pack.credits} credits for $${pack.price} on your ${card?.brand} ending ${card?.last4}, as you asked.`,
-          'Your agent keeps working. Change or turn off automatic top-up on your account page.',
-        ],
-        action: { label: 'Open your account', url: `${this.#o.accountUrl}#credits` },
-      });
-      return true;
+    await ws.sweep(ws.path('owners', key, 'ledger-spent'), SPENT_TTL_MS);
+    if (!isUser(key)) return;
+    const link = await ws.readJson<Link>(linkPath(ws, key));
+    if (!link) return;
+    const from = new Date(Math.max(Date.parse(link.since), now - SPEND_RETRY_MS));
+    let access: (Access & { allowed: true }) | undefined;
+    for await (const entry of meterEntries(ws, key, from)) {
+      if (await ws.readJson(ws.ownerDir(key, 'ledger-spent', `${entry.job_id}.json`))) continue;
+      access ??= await this.#o.access.require(key);
+      await this.#spend(key, access as Access & { allowed: true }, entry);
     }
-    process.stderr.write(`lifecycle: ${owner}: top-up: ${paid.message}\n`);
-    await this.#notify(owner, `top-up-failed-${balance.purchases}`, {
-      to: access.email,
-      subject: 'We couldn’t top up your credits',
-      lines: [
-        `Your credits are running low, and the automatic top-up of ${pack.credits} credits for $${pack.price} didn’t go through (${paid.message}).`,
-        'Top up on your account page to keep your agent working; it saves the card for next time.',
-      ],
-      action: { label: 'Top up', url: `${this.#o.accountUrl}#credits` },
-    });
-    return false;
   }
 
   /** A given plan's month: email at 80% and 100% of its credits. */
@@ -278,6 +311,7 @@ export class Lifecycle {
     const balance = await this.#o.access.balance(owner, access);
     const plan = PLANS[access.plan];
     const bought = plan.credits.kind === 'balance';
+    const refill = packOf(balance.refill);
     const card =
       bought && access.customer
         ? await savedCard(this.#o.stripeKey, access.customer).catch(() => undefined)
@@ -308,10 +342,8 @@ export class Lifecycle {
       warnings,
       top_up: bought
         ? {
-            automatic: Boolean(access.refill),
-            pack: access.refill
-              ? { price_usd: access.refill.price, credits: access.refill.credits }
-              : null,
+            automatic: Boolean(refill),
+            pack: refill ? { price_usd: refill.price, credits: refill.credits } : null,
             below: LOW_CREDITS,
             card_saved: Boolean(card),
           }
@@ -335,6 +367,9 @@ export class Lifecycle {
     const ws = this.#o.runtime.ws;
     for (const key of await ws.owners()) {
       await ws.sweep(ws.path('owners', key, 'notices'), NOTICE_TTL_MS);
+      await this.#spendMissed(key, now).catch((error: Error) =>
+        process.stderr.write(`lifecycle: ${key}: spend: ${error.message}\n`),
+      );
     }
     for (const name of await ws.list(ws.path('partners'))) {
       await ws.sweep(ws.path('partners', name), PARTNER_LINK_TTL_MS);
@@ -444,7 +479,7 @@ export class Lifecycle {
 
   /**
    * The routes the site and Stripe call: `POST /stripe/webhook`, `GET /account/usage`,
-   * `GET /account/media`, `POST /account/uploads`, and `GET`/`POST /account/keys` and
+   * `POST /account/top-up`, `GET /account/media`, `POST /account/uploads`, and `GET`/`POST /account/keys` and
    * `POST /account/keys/revoke`, and partners' `POST /partner/keys`. Returns false for any other
    * path.
    */
@@ -476,11 +511,40 @@ export class Lifecycle {
       await this.#providerKeysRoute(req, res, url);
       return true;
     }
+    if (url.pathname === '/account/top-up' && req.method === 'POST') {
+      await this.#topUpRoute(req, res);
+      return true;
+    }
     if (url.pathname === '/account/keys' || url.pathname === '/account/keys/revoke') {
       await this.#keysRoute(req, res, url);
       return true;
     }
     return false;
+  }
+
+  /**
+   * Automatic top-up, set on the account page: POST {user, pack} with a pack's id, or pack null
+   * for off. The ledger keeps it and buys the pack when the balance runs low.
+   */
+  async #topUpRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
+    let body: { user?: unknown; pack?: unknown };
+    try {
+      body = JSON.parse(await readBody(req, 16 * 1024));
+    } catch {
+      return json(res, 400, { error: 'body must be JSON: {user, pack}' });
+    }
+    const owner = typeof body.user === 'string' ? body.user : '';
+    if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+    const pack = body.pack === null ? null : packOf(typeof body.pack === 'string' ? body.pack : '');
+    if (pack === undefined) return json(res, 400, { error: 'pack must be a pack id or null' });
+    try {
+      await this.#o.access.setRefill(owner, pack?.id ?? null);
+    } catch (error) {
+      process.stderr.write(`lifecycle: ${owner}: top-up: ${(error as Error).message}\n`);
+      return json(res, 503, { error: 'top-up could not be set just now' });
+    }
+    return json(res, 200, { account: await this.account(owner) });
   }
 
   /**
