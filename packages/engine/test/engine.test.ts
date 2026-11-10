@@ -279,6 +279,45 @@ describe('MLT compiler', () => {
     expect(cover).toContain('<property name="rect">0 -60 640 480 1</property>');
   });
 
+  it('pins corners with frei0r c0rners over a full-frame rect, keyed only where the pin bends', () => {
+    const quad = (dx: number) => [
+      [0.1 + dx, 0.1],
+      [0.5 + dx, 0.1],
+      [0.5 + dx, 0.9],
+      [0.1 + dx, 0.9],
+    ];
+    const still = compile(
+      edit([{ tool: 'clip.set_transform', args: { clip_id: 'c4', corners: quad(0) } }]),
+    );
+    expect(still).toContain('<property name="rect">0 0 640 360 0.9999</property>');
+    // c0rners reads -1 to 2 as 0 to 1: 0.1 is 0.3667, 0.5 is 0.5.
+    expect(still).toMatch(
+      /frei0r\.c0rners<\/property><property name="0">0\.3667<\/property><property name="1">0\.3667<\/property><property name="2">0\.5<\/property>/,
+    );
+    expect(still).toContain('<property name="12">1</property>');
+    const moving = compile(
+      edit([
+        {
+          tool: 'clip.set_transform',
+          args: {
+            clip_id: 'c4',
+            corners: {
+              keyframes: [
+                { frame: 0, corners: quad(0) },
+                { frame: 10, corners: quad(0.3) },
+              ],
+            },
+          },
+        },
+      ]),
+    );
+    // A straight slide keeps its ends and the hold after it; y never moves.
+    expect(moving).toMatch(
+      /<property name="0">(\d+)=0\.3667;(\d+)=0\.4667;(\d+)=0\.4667<\/property>/,
+    );
+    expect(moving).toMatch(/<property name="1">\d+=0\.3667;\d+=0\.3667;\d+=0\.3667<\/property>/);
+  });
+
   it('maps blend modes to qtblend composition modes', () => {
     const xml = compile(
       edit([{ tool: 'clip.set_blend', args: { clip_id: 'c4', mode: 'screen' } }]),

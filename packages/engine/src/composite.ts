@@ -1,4 +1,6 @@
 import {
+  cornersAnimate,
+  cornersAt,
   frameSource,
   type MaskState,
   maskAnimates,
@@ -22,6 +24,9 @@ import type { BlendMode, StoredClip, StoredMask } from '@cuttingfloor/schema';
 // - rotoscoping keyframes are positions in the source (the producer's frame numbers), and
 //   alpha_operation=min treats a frame without an alpha channel as fully transparent, so the
 //   first spline uses `clear` unless the source carries alpha.
+// - frei0r.c0rners warps the picture it is given onto four corners in fractions of that picture,
+//   scaled so 0–1 covers -1 to 2, leaving the rest transparent. A pinned clip goes to qtblend as
+//   the whole frame, so fractions of the picture are fractions of the frame.
 
 /** QPainter composition modes used by qtblend. */
 const COMPOSITING: Record<BlendMode, number> = {
@@ -65,6 +70,11 @@ export function rectFor(
 ): number[] {
   const W = out.width;
   const H = out.height;
+  if (clip.transform?.corners) {
+    // A pinned picture is drawn over the whole frame; its warp (cornerParams) places it.
+    const rect = [0, 0, W, H, r4(s.opacity)];
+    return fillsFrame(rect, out) ? [...rect.slice(0, 4), FULL_FRAME_OPACITY] : rect;
+  }
   // Size of the picture fitted with `contain`, then the fit mode, then scale.
   const k0 = Math.min(W / src.width, H / src.height);
   const bw = src.width * k0;
@@ -156,8 +166,10 @@ export function compositeFor(
   adjust?: (i: number, s: TransformState) => void,
 ): ClipComposite {
   const compositing = COMPOSITING[clip.blend ?? 'normal'];
+  const pinned = Boolean(clip.transform?.corners);
   if (!transformAnimates(clip) && !adjust) {
     const s = transformAt(clip, tpf, 0, n);
+    if (pinned) s.rotation = 0;
     return {
       rect: rectFor(clip, s, src, out).join(' '),
       rotation: s.rotation ? String(r2(s.rotation)) : null,
@@ -169,6 +181,7 @@ export function compositeFor(
   for (let i = -span.head; i < n + span.tail; i++) {
     const s = transformAt(clip, tpf, i, n);
     adjust?.(i, s);
+    if (pinned) s.rotation = 0;
     s.opacity = Math.min(1, Math.max(0, s.opacity));
     const j = i + span.head;
     rects.push([j, ...rectFor(clip, s, src, out)]);
@@ -189,6 +202,31 @@ export function compositeFor(
           .join(';'),
     compositing,
   };
+}
+
+/**
+ * frei0r.c0rners parameters "0" to "7" (x then y of top left, top right, bottom right, bottom
+ * left) for a pinned clip, keyed by producer position when the pin moves; null when not pinned.
+ */
+export function cornerParams(
+  clip: StoredClip,
+  tpf: number,
+  n: number,
+  span: RenderSpan = { head: 0, tail: 0 },
+  keyBase = 0,
+): string[] | null {
+  const corners = clip.transform?.corners;
+  if (!corners) return null;
+  const at = (i: number) =>
+    cornersAt(corners, frameSource(clip, tpf, i)).flatMap(([x, y]) => [
+      r4((x + 1) / 3),
+      r4((y + 1) / 3),
+    ]);
+  if (!cornersAnimate(clip)) return at(0).map(String);
+  const pts: number[][] = [];
+  for (let i = -span.head; i < n + span.tail; i++) pts.push([keyBase + i, ...at(i)]);
+  const kept = prune(pts, 0.0002);
+  return Array.from({ length: 8 }, (_, j) => kept.map((p) => `${p[0]}=${p[j + 1]}`).join(';'));
 }
 
 // ---------------------------------------------------------------------------------- masks

@@ -100,7 +100,7 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
     };
   }
   if (c.transform) {
-    const { fit, flip, crop } = c.transform;
+    const { fit, flip, crop, corners } = c.transform;
     const t: NonNullable<ClipView['transform']> = {};
     for (const k of TRANSFORM_NUMBERS) {
       const v = c.transform[k];
@@ -111,6 +111,19 @@ function propsView(c: StoredClip, tpf: number): Partial<ClipView> {
       ...(fit ? { fit } : {}),
       ...(flip ? { flip } : {}),
       ...(crop ? { crop } : {}),
+      ...(corners
+        ? {
+            corners: Array.isArray(corners)
+              ? corners
+              : {
+                  keyframes: corners.keyframes.map((k) => ({
+                    frame: Math.round((k.t - c.in) / tpf),
+                    corners: k.corners,
+                    ...(k.ease ? { ease: k.ease } : {}),
+                  })),
+                },
+          }
+        : {}),
     };
   }
   if (c.blend) out.blend = c.blend;

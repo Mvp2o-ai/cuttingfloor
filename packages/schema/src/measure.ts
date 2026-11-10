@@ -118,7 +118,16 @@ export const ClipPlacementSchema = z.object({
   frames: z.array(
     z.object({
       frame: z.number().describe('From the clip start'),
-      picture: PixelBox.describe('The whole picture, before crop and mask and rotation'),
+      picture: PixelBox.describe(
+        'The whole picture, before crop and mask and rotation; for a corner pin, the box around its corners',
+      ),
+      corners: z
+        .array(z.object({ x: z.number(), y: z.number() }))
+        .length(4)
+        .optional()
+        .describe(
+          'Corner pin: where the picture corners land, top left, top right, bottom right, bottom left',
+        ),
       rotation: z.number(),
       opacity: z.number(),
       visible: PixelBox.nullable().describe(

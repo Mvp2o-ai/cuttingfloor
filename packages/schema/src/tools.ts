@@ -2,6 +2,7 @@ import * as z from 'zod/v4';
 import {
   AnimatableValue,
   BlendMode,
+  CORNER_LIMITS,
   Crop,
   Fit,
   Flip,
@@ -58,6 +59,16 @@ const OtherTracks = z
 const anim = (limits: readonly [number, number], text: string) =>
   AnimatableValue.optional().describe(`${text}; ${limits[0]} to ${limits[1]}`);
 
+const CornerPoints = z
+  .array(
+    z.tuple([
+      z.number().min(CORNER_LIMITS[0]).max(CORNER_LIMITS[1]),
+      z.number().min(CORNER_LIMITS[0]).max(CORNER_LIMITS[1]),
+    ]),
+  )
+  .length(4)
+  .meta({ id: 'CornerPoints' });
+
 export const TransformArgs = z.object({
   x: anim(TRANSFORM_LIMITS.x, 'Centre x, 0 = left edge, 1 = right edge (default 0.5)'),
   y: anim(TRANSFORM_LIMITS.y, 'Centre y, 0 = top, 1 = bottom (default 0.5)'),
@@ -69,6 +80,27 @@ export const TransformArgs = z.object({
   fit: Fit.nullable().optional(),
   flip: Flip.nullable().optional(),
   crop: Crop.nullable().optional(),
+  corners: z
+    .union([
+      CornerPoints,
+      z.object({
+        keyframes: z
+          .array(
+            z.object({
+              frame: z.number().int().min(-1_000_000).max(100_000_000),
+              corners: CornerPoints,
+              ease: z.string().optional(),
+            }),
+          )
+          .min(1)
+          .max(1000),
+      }),
+    ])
+    .nullable()
+    .optional()
+    .describe(
+      `Corner pin: where the picture's four corners land, as [x, y] in fractions of the frame (${CORNER_LIMITS[0]} to ${CORNER_LIMITS[1]}), in the order top left, top right, bottom right, bottom left; or {keyframes: [{frame, corners, ease}]}. Replaces x, y, scale, scale_x, scale_y, rotation and fit; null removes it`,
+    ),
 });
 
 const MaskPoints = z

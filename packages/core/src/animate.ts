@@ -8,6 +8,7 @@ import {
   type StoredAnimatable,
   type StoredAnimation,
   type StoredClip,
+  type StoredCorners,
   type StoredMask,
   type StoredPoints,
   TRANSFORM_DEFAULTS,
@@ -323,6 +324,20 @@ export function pointsAt(points: StoredPoints | undefined, t: number): Array<[nu
     }
   }
   return ks[ks.length - 1]?.points ?? [];
+}
+
+/** A corner pin at source tick `t`, eased as polygon corners are; empty when there is none. */
+export function cornersAt(corners: StoredCorners | undefined, t: number): Array<[number, number]> {
+  if (!corners || Array.isArray(corners)) return corners ?? [];
+  return pointsAt(
+    { keyframes: corners.keyframes.map(({ corners: points, ...k }) => ({ ...k, points })) },
+    t,
+  );
+}
+
+export function cornersAnimate(clip: StoredClip): boolean {
+  const c = clip.transform?.corners;
+  return c !== undefined && !Array.isArray(c) && c.keyframes.length > 1;
 }
 
 export function maskAnimates(clip: StoredClip): boolean {
