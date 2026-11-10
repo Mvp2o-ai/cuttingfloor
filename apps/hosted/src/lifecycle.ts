@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Job } from '@cuttingfloor/jobs';
 import { FREE_CREDITS, LOW_CREDITS, PACKS, PLANS } from '@cuttingfloor/plans';
@@ -23,6 +23,11 @@ import { chargePack, savedCard } from './purchase.ts';
 // - An account first used through a client that grants lifetime (Kazi) is tagged lifetime in its
 //   WorkOS metadata, with the reason and date (`plan_reason`, `plan_since`), so exactly those
 //   accounts can be found and the tag taken off again.
+// - A partner whose users never sign in here (the Cutting Floor AI app, through one-mcp) gets a
+//   script key for each of them (`POST /partner/keys`). The account is the one with that email,
+//   made when there is none; one the partner made gets no welcome email from us. The partner's
+//   user id is kept with the key and in `partners/{name}/{sha256(sub)}.json`, so a user id never
+//   moves to another email or account.
 
 const NOTICE_TTL_MS = 400 * 24 * 3_600_000;
 // How often new accounts are looked at: a fallback welcome arrives within this of signing up.
@@ -55,6 +60,21 @@ export interface LifecycleOptions {
   providerKeys?: ProviderKeys;
   /** OAuth client ids whose users get lifetime, each with the name its reason records. */
   lifetimeClients?: Map<string, string>;
+  /**
+   * Partners that get script keys for their users (`POST /partner/keys`), each by the SHA-256 of
+   * its secret, with its name. A partner named among `lifetimeClients`' names gives lifetime.
+   */
+  partners?: Map<string, string>;
+}
+
+/** How long a partner's user id stays tied to its account after its last key. */
+const PARTNER_LINK_TTL_MS = 400 * 24 * 3_600_000;
+/** The plan reason on an account a partner made, so we never send it our own welcome. */
+const MADE_BY = 'made by ';
+
+/** Whether a partner made this account (its users hear from the partner, not from us). */
+export function madeByPartner(metadata: Record<string, string> | undefined): boolean {
+  return Boolean(metadata?.plan_reason?.startsWith(MADE_BY));
 }
 
 /** What to do with an account used through a lifetime client. */
@@ -316,13 +336,16 @@ export class Lifecycle {
     for (const key of await ws.owners()) {
       await ws.sweep(ws.path('owners', key, 'notices'), NOTICE_TTL_MS);
     }
+    for (const name of await ws.list(ws.path('partners'))) {
+      await ws.sweep(ws.path('partners', name), PARTNER_LINK_TTL_MS);
+    }
     await this.#o.keys?.sweep();
     const welcome = this.#o.welcome;
     if (!this.#o.mailer || !welcome) return;
     const oldest = now - 86_400_000;
     for await (const user of this.#users(oldest)) {
       const created = Date.parse(user.created_at);
-      if (now - created < 86_400_000) {
+      if (now - created < 86_400_000 && !madeByPartner(user.metadata)) {
         await this.#notify(user.id, 'welcome', {
           to: user.email,
           subject: 'Welcome to cuttingfloor',
@@ -338,7 +361,7 @@ export class Lifecycle {
   }
 
   /** WorkOS users, newest first, back to `oldest`. */
-  async *#users(oldest: number): AsyncGenerator<{ id: string; email: string; created_at: string }> {
+  async *#users(oldest: number): AsyncGenerator<WorkosUser> {
     let after: string | undefined;
     for (let page = 0; page < 50; page++) {
       const query = new URLSearchParams({
@@ -347,7 +370,7 @@ export class Lifecycle {
         ...(after ? { after } : {}),
       });
       const list = (await this.#workos(`/user_management/users?${query}`)) as {
-        data?: { id: string; email: string; created_at: string }[];
+        data?: WorkosUser[];
         list_metadata?: { after?: string | null };
       };
       for (const user of list.data ?? []) {
@@ -422,9 +445,14 @@ export class Lifecycle {
   /**
    * The routes the site and Stripe call: `POST /stripe/webhook`, `GET /account/usage`,
    * `GET /account/media`, `POST /account/uploads`, and `GET`/`POST /account/keys` and
-   * `POST /account/keys/revoke`. Returns false for any other path.
+   * `POST /account/keys/revoke`, and partners' `POST /partner/keys`. Returns false for any other
+   * path.
    */
   async route(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+    if (url.pathname === '/partner/keys') {
+      await this.#partnerRoute(req, res);
+      return true;
+    }
     if (url.pathname === '/stripe/webhook' && req.method === 'POST') {
       await this.#webhook(req, res);
       return true;
@@ -486,6 +514,101 @@ export class Lifecycle {
       return json(res, 200, made);
     } catch (error) {
       return json(res, 409, { error: (error as Error).message });
+    }
+  }
+
+  /**
+   * A partner's key for its user: POST {email, sub} with the partner's secret as the bearer.
+   * Finds the account with that email, or makes it (email verified: the partner proved it), and
+   * answers with a new script key for it; the partner's earlier key for the account stops working.
+   */
+  async #partnerRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const given = /^Bearer (\S+)$/i.exec(req.headers.authorization ?? '')?.[1];
+    const partner = given ? this.#o.partners?.get(sha256(given)) : undefined;
+    if (!partner) return json(res, 401, { error: 'unauthorized' });
+    if (req.method !== 'POST') return json(res, 405, { error: 'POST' });
+    const keys = this.#o.keys;
+    if (!keys) return json(res, 503, { error: 'script keys are off on this server' });
+    let body: { email?: unknown; sub?: unknown };
+    try {
+      body = JSON.parse(await readBody(req, 16 * 1024));
+    } catch {
+      return json(res, 400, { error: 'body must be JSON: {email, sub}' });
+    }
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const sub = typeof body.sub === 'string' ? body.sub.trim() : '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 320)
+      return json(res, 400, { error: 'email must be an email address' });
+    if (!sub || sub.length > 200) return json(res, 400, { error: 'sub must be the user id' });
+    const ws = this.#o.runtime.ws;
+    const link = ws.path('partners', partner, `${sha256(sub)}.json`);
+    const linked = await ws.readJson<{ email: string; owner: string }>(link);
+    if (linked && linked.email !== email)
+      return json(res, 409, {
+        error: `This ${partner} user is tied to another email; ask for its key with that one`,
+      });
+    const lifetime = [...(this.#o.lifetimeClients?.values() ?? [])].includes(partner);
+    let account: { owner: string; created: boolean };
+    try {
+      account = await this.#accountFor(email, partner, lifetime);
+      if (!account.created && lifetime) await this.#giveLifetime(account.owner, partner);
+    } catch (error) {
+      process.stderr.write(`partner ${partner}: ${(error as Error).message}\n`);
+      return json(res, 503, { error: 'accounts could not be read or made just now' });
+    }
+    try {
+      const made = await keys.rotate(account.owner, { name: partner, sub });
+      await ws.writeJson(link, { email, owner: account.owner });
+      process.stderr.write(
+        `partner ${partner}: key ${made.key_id} for ${account.owner}${account.created ? ' (new)' : ''}\n`,
+      );
+      return json(res, 200, {
+        key: made.key,
+        key_id: made.key_id,
+        owner: account.owner,
+        expires_at: made.expires_at,
+        created: account.created,
+      });
+    } catch (error) {
+      return json(res, 409, { error: (error as Error).message });
+    }
+  }
+
+  /** The WorkOS user with this email, made (verified, lifetime when it applies) when none is. */
+  async #accountFor(
+    email: string,
+    partner: string,
+    lifetime: boolean,
+  ): Promise<{ owner: string; created: boolean }> {
+    const find = async () => {
+      const list = (await this.#workos(
+        `/user_management/users?${new URLSearchParams({ email })}`,
+      )) as { data?: WorkosUser[] };
+      return list.data?.find((user) => user.email.toLowerCase() === email)?.id;
+    };
+    const found = await find();
+    if (found) return { owner: found, created: false };
+    try {
+      const user = await this.#workos('/user_management/users', {
+        method: 'POST',
+        body: {
+          email,
+          email_verified: true,
+          metadata: lifetime
+            ? {
+                plan: 'lifetime',
+                plan_reason: `${MADE_BY}${partner}`,
+                plan_since: new Date().toISOString(),
+              }
+            : {},
+        },
+      });
+      return { owner: String(user.id), created: true };
+    } catch (error) {
+      // Made by a call at the same moment: that one is the account.
+      const raced = await find();
+      if (raced) return { owner: raced, created: false };
+      throw error;
     }
   }
 
@@ -686,6 +809,15 @@ function warningName(balance: Balance, kind: 'low' | 'out'): string {
     ? `credits-${balance.free + balance.bought}-${kind}`
     : `minutes-${balance.since.slice(0, 10)}-${kind === 'low' ? 80 : 100}`;
 }
+
+interface WorkosUser {
+  id: string;
+  email: string;
+  created_at: string;
+  metadata?: Record<string, string>;
+}
+
+const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
 const isUser = (owner: string) => /^user_[0-9A-Z]{26}$/.test(owner);
 

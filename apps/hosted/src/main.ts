@@ -95,6 +95,18 @@ const lifetimeClients = new Map(
     })
     .filter(([id, name]) => id && name),
 );
+// Partners that get keys for their users: `<name>=<sha256 of its secret>`, comma-separated.
+const partners = new Map(
+  (process.env.CUTTINGFLOOR_PARTNER_KEYS ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const at = entry.lastIndexOf('=');
+      return [entry.slice(at + 1).toLowerCase(), entry.slice(0, at)] as [string, string];
+    })
+    .filter(([hash, name]) => /^[0-9a-f]{64}$/.test(hash) && name),
+);
 // Provider keys users save on the account page, encrypted with this server-only secret.
 const keySecret = process.env.CUTTINGFLOOR_KEY_SECRET;
 const providerKeys =
@@ -158,6 +170,7 @@ const lifecycle =
           ? { accountKey: process.env.CUTTINGFLOOR_ACCOUNT_KEY }
           : {}),
         ...(lifetimeClients.size ? { lifetimeClients } : {}),
+        ...(partners.size ? { partners } : {}),
         ...(providerKeys ? { providerKeys } : {}),
       })
     : undefined;

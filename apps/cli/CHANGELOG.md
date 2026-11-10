@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.41.0
+
+### Minor Changes
+
+- 68eb90f: Partners can get a key for each of their users (`POST /partner/keys`): the Cutting Floor AI app reaches cuttingfloor through the user's own account, found by email or made for them, without a separate sign-in.
+
 ## 0.40.1
 
 ### Patch Changes
