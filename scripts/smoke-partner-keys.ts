@@ -4,7 +4,7 @@
 //
 // Keys come from deploy/hetzner/cuttingfloor.env. Runs the hosted HTTP server in this process
 // with a throwaway partner secret, asks it for keys for a new email and for an existing account,
-// checks what WorkOS and the account's access say and that each key calls /v1, then deletes the
+// checks what WorkOS says and that each key calls /v1, then deletes the
 // throwaway users.
 
 import { createHash } from 'node:crypto';
@@ -71,7 +71,6 @@ const lifecycle = new Lifecycle({
   stripeKey,
   accountUrl,
   keys,
-  lifetimeClients: new Map([['https://kazi.example/client', 'Kazi']]),
   partners: new Map([[createHash('sha256').update(SECRET).digest('hex'), 'Kazi']]),
 });
 const server = createHttpServer({
@@ -113,9 +112,7 @@ try {
   const user = await workos(`/user_management/users/${owner}`);
   const metadata = (user.metadata ?? {}) as Record<string, string>;
   expect(user.email === email && user.email_verified === true, 'with the email, verified');
-  expect(metadata.plan === 'lifetime' && madeByPartner(metadata), 'lifetime, made by Kazi');
-  const now = await access.get(owner);
-  expect(now.allowed && now.plan === 'lifetime', 'access says lifetime');
+  expect(!metadata.plan && madeByPartner(metadata), 'made by Kazi, with no plan given');
   expect((await v1(String(made.body.key))) === 200, 'the key calls /v1');
   const welcomed: string[] = [];
   for await (const s of new WorkosSubscribers(workosKey).createdSince(Date.now() - 600_000))
@@ -141,7 +138,7 @@ try {
     string,
     string
   >;
-  expect(tagged.plan === 'lifetime' && tagged.plan_reason === 'via Kazi', 'lifetime via Kazi');
+  expect(!tagged.plan && !tagged.plan_reason, 'left as it was');
   const second = await provision(String(existing.email), sub);
   expect((await v1(String(first.body.key))) === 401, 'a second call revokes the first key');
   expect((await v1(String(second.body.key))) === 200, 'and its key works');

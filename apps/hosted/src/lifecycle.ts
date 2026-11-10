@@ -30,12 +30,12 @@ import { savedCard } from './purchase.ts';
 //   this sends it only while the sequence is off. A notice file under the owner's data claims
 //   each message once, across servers (`owners/{owner}/notices/{name}.json`, kept 400 days).
 // - Stripe's webhook tells the access check credits were bought, so they show at once.
-// - An account first used through a client that grants lifetime (Kazi) is tagged lifetime in its
-//   WorkOS metadata, with the reason and date (`plan_reason`, `plan_since`), so exactly those
-//   accounts can be found and the tag taken off again.
+// - Lifetime is not given for using a client any more: a Kazi member with lifetime has it here
+//   because the ledger says so (access.ts). Accounts tagged before keep their tag.
 // - A partner whose users never sign in here (the Cutting Floor AI app, through one-mcp) gets a
 //   script key for each of them (`POST /partner/keys`). The account is the one with that email,
-//   made when there is none; one the partner made gets no welcome email from us. The partner's
+//   made when there is none; one the partner made (`plan_reason: made by <partner>`, with no plan)
+//   gets no welcome email from us. The partner's
 //   user id is kept with the key and in `partners/{name}/{sha256(sub)}.json`, so a user id never
 //   moves to another email or account.
 
@@ -73,11 +73,9 @@ export interface LifecycleOptions {
   keys?: ScriptKeys;
   /** Provider keys the account saves on its page (its sync. labs key), kept encrypted in WorkOS. */
   providerKeys?: ProviderKeys;
-  /** OAuth client ids whose users get lifetime, each with the name its reason records. */
-  lifetimeClients?: Map<string, string>;
   /**
    * Partners that get script keys for their users (`POST /partner/keys`), each by the SHA-256 of
-   * its secret, with its name. A partner named among `lifetimeClients`' names gives lifetime.
+   * its secret, with its name.
    */
   partners?: Map<string, string>;
 }
@@ -92,22 +90,10 @@ export function madeByPartner(metadata: Record<string, string> | undefined): boo
   return Boolean(metadata?.plan_reason?.startsWith(MADE_BY));
 }
 
-/** What to do with an account used through a lifetime client. */
-export function lifetimeFor(
-  metadata: Record<string, string>,
-  access: Access,
-): 'give' | 'tagged' | 'paying' {
-  if (metadata.plan) return 'tagged';
-  // An account that bought credits keeps them; giving it a plan would set them aside.
-  if (access.allowed && access.plan !== 'free') return 'paying';
-  return 'give';
-}
-
 export class Lifecycle {
   #o: LifecycleOptions;
   #seen = new Set<string>();
   #apps = new Set<string>();
-  #lifetime = new Set<string>();
   #timer: NodeJS.Timeout | undefined;
 
   constructor(options: LifecycleOptions) {
@@ -134,20 +120,8 @@ export class Lifecycle {
     if (this.#timer) clearInterval(this.#timer);
   }
 
-  /**
-   * A signed-in owner made a tool call: records the first one on their account, and first gives
-   * lifetime to an account used through a client that grants it, so this call already counts it.
-   */
-  async called(owner: string, client?: string): Promise<void> {
-    const via = client ? this.#o.lifetimeClients?.get(client) : undefined;
-    if (via && !this.#lifetime.has(owner)) {
-      try {
-        await this.#giveLifetime(owner, via);
-        this.#lifetime.add(owner);
-      } catch (error) {
-        process.stderr.write(`lifecycle: ${owner}: lifetime: ${(error as Error).message}\n`);
-      }
-    }
+  /** A signed-in owner made a tool call: records the first one on their account. */
+  async called(owner: string): Promise<void> {
     if (this.#seen.has(owner)) return;
     this.#seen.add(owner);
     void this.#markOnce(owner, 'first_call_at').catch((error: Error) => {
@@ -295,8 +269,16 @@ export class Lifecycle {
         ws.ownerDir(key, 'ledger-spent', `${entry.job_id}.json`),
       );
       if (mark?.told) continue;
-      access ??= await this.#o.access.require(key);
-      await this.#spend(key, access as Access & { allowed: true }, entry);
+      const known = access ?? (await this.#o.access.require(key));
+      access = known;
+      // Lifetime from the ledger (a Kazi member) runs on a given plan: its jobs are never spent,
+      // even if it ends later.
+      if (!known.ledger)
+        await ws.writeJson(ws.ownerDir(key, 'ledger-spent', `${entry.job_id}.json`), {
+          at: new Date().toISOString(),
+          told: true,
+        });
+      else await this.#spend(key, known, entry);
     }
   }
 
@@ -463,31 +445,6 @@ export class Lifecycle {
     }
   }
 
-  /** Tags an account lifetime, recording why and when, unless it has a plan given or bought. */
-  async #giveLifetime(owner: string, via: string): Promise<void> {
-    if (!isUser(owner)) return;
-    const path = `/user_management/users/${encodeURIComponent(owner)}`;
-    const user = await this.#workos(path);
-    const metadata = (user.metadata ?? {}) as Record<string, string>;
-    const decision = lifetimeFor(metadata, await this.#o.access.get(owner));
-    if (decision === 'paying')
-      process.stderr.write(`lifecycle: ${owner} used ${via} while on a paid plan; left on it\n`);
-    if (decision !== 'give') return;
-    await this.#workos(path, {
-      method: 'PUT',
-      body: {
-        metadata: {
-          ...metadata,
-          plan: 'lifetime',
-          plan_reason: `via ${via}`,
-          plan_since: new Date().toISOString(),
-        },
-      },
-    });
-    this.#o.access.forget(owner);
-    process.stderr.write(`lifecycle: ${owner}: lifetime via ${via}\n`);
-  }
-
   /** Sets a field in the user's WorkOS metadata (the time, by default), if it isn't set yet. */
   async #markOnce(owner: string, field: string, value = new Date().toISOString()): Promise<void> {
     if (!isUser(owner)) return;
@@ -635,11 +592,9 @@ export class Lifecycle {
       return json(res, 409, {
         error: `This ${partner} user is tied to another email; ask for its key with that one`,
       });
-    const lifetime = [...(this.#o.lifetimeClients?.values() ?? [])].includes(partner);
     let account: { owner: string; created: boolean };
     try {
-      account = await this.#accountFor(email, partner, lifetime);
-      if (!account.created && lifetime) await this.#giveLifetime(account.owner, partner);
+      account = await this.#accountFor(email, partner);
     } catch (error) {
       process.stderr.write(`partner ${partner}: ${(error as Error).message}\n`);
       return json(res, 503, { error: 'accounts could not be read or made just now' });
@@ -662,12 +617,8 @@ export class Lifecycle {
     }
   }
 
-  /** The WorkOS user with this email, made (verified, lifetime when it applies) when none is. */
-  async #accountFor(
-    email: string,
-    partner: string,
-    lifetime: boolean,
-  ): Promise<{ owner: string; created: boolean }> {
+  /** The WorkOS user with this email, made (verified, marked as the partner's) when none is. */
+  async #accountFor(email: string, partner: string): Promise<{ owner: string; created: boolean }> {
     const find = async () => {
       const list = (await this.#workos(
         `/user_management/users?${new URLSearchParams({ email })}`,
@@ -682,13 +633,7 @@ export class Lifecycle {
         body: {
           email,
           email_verified: true,
-          metadata: lifetime
-            ? {
-                plan: 'lifetime',
-                plan_reason: `${MADE_BY}${partner}`,
-                plan_since: new Date().toISOString(),
-              }
-            : {},
+          metadata: { plan_reason: `${MADE_BY}${partner}` },
         },
       });
       return { owner: String(user.id), created: true };

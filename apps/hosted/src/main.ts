@@ -88,18 +88,6 @@ const access =
     : undefined;
 // Keys users make on the account page for scripts: only where accounts are checked.
 const scriptKeys = access ? new ScriptKeys(runtime.ws) : undefined;
-// OAuth clients whose users get lifetime: `<client_id>=<name>`, comma-separated (Kazi's two).
-const lifetimeClients = new Map(
-  (process.env.CUTTINGFLOOR_LIFETIME_CLIENTS ?? '')
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => {
-      const at = entry.lastIndexOf('=');
-      return [entry.slice(0, at), entry.slice(at + 1)] as [string, string];
-    })
-    .filter(([id, name]) => id && name),
-);
 // Partners that get keys for their users: `<name>=<sha256 of its secret>`, comma-separated.
 const partners = new Map(
   (process.env.CUTTINGFLOOR_PARTNER_KEYS ?? '')
@@ -176,7 +164,6 @@ const lifecycle =
         ...(process.env.CUTTINGFLOOR_ACCOUNT_KEY
           ? { accountKey: process.env.CUTTINGFLOOR_ACCOUNT_KEY }
           : {}),
-        ...(lifetimeClients.size ? { lifetimeClients } : {}),
         ...(partners.size ? { partners } : {}),
         ...(providerKeys ? { providerKeys } : {}),
       })
@@ -253,7 +240,7 @@ const server = createHttpServer({
     : {}),
   ...(lifecycle
     ? {
-        onCall: (owner: string, client?: string) => lifecycle.called(owner, client),
+        onCall: (owner: string) => lifecycle.called(owner),
         onApp: (owner: string, app: string) => lifecycle.usedFrom(owner, app),
         account: (owner: string) => lifecycle.account(owner),
         route: async (req, res, url) =>

@@ -25,6 +25,7 @@ const LIFETIME = 'user_01LIFETIME0000000000000001';
 const TAKEN = 'user_01TAKENEMAIL00000000000001';
 const CRASHED = 'user_01CRASHED00000000000000001';
 const DOWN = 'user_01LEDGERDOWN00000000000001';
+const MEMBER = 'user_01KAZIMEMBER00000000000001';
 let base: string;
 let server: Server;
 let runtime: Runtime;
@@ -56,6 +57,7 @@ const users = new Map<
   [TAKEN, { email: 'taken@example.com', created_at: '2026-11-09T00:00:00.000Z', metadata: {} }],
   [CRASHED, { email: 'crashed@example.com', created_at: '2026-11-09T00:00:00.000Z', metadata: {} }],
   [DOWN, { email: 'down@example.com', created_at: '2026-11-09T00:00:00.000Z', metadata: {} }],
+  [MEMBER, { email: 'member@example.com', created_at: '2026-11-09T00:00:00.000Z', metadata: {} }],
 ]);
 
 // The stand-in Stripe: the old account's payments. A cuttingfloor pack, one refunded by half, and
@@ -91,8 +93,10 @@ const payments = [
 interface Account {
   account_id: string;
   email: string;
-  workos_user_id: string;
+  /** Unset on a Kazi account nobody has linked yet. */
+  workos_user_id?: string;
   stripe_customer_id?: string;
+  unmetered?: boolean;
   rows: { kind: string; credits: number; ref: string }[];
   refill: { pack: string } | null;
 }
@@ -111,7 +115,7 @@ const body = (a: Account) => ({
   opening_total: sum(a, 'opening'),
   bought_total: sum(a, 'purchase'),
   used_total: -sum(a, 'usage'),
-  unmetered: false,
+  unmetered: a.unmetered ?? false,
   refill: a.refill,
 });
 
@@ -133,9 +137,10 @@ async function ledger(url: URL, init?: RequestInit): Promise<Response> {
     let a = [...accounts.values()].find((x) => x.workos_user_id === b.workos_user_id);
     if (!a) {
       const byEmail = [...accounts.values()].find((x) => x.email === b.email);
-      if (byEmail)
+      if (byEmail?.workos_user_id)
         return reply({ error: `${b.email} is linked to another cuttingfloor account` }, 409);
-      a = {
+      if (byEmail) byEmail.workos_user_id = b.workos_user_id;
+      a = byEmail ?? {
         account_id: `ca_${accounts.size + 1}`,
         email: b.email,
         workos_user_id: b.workos_user_id,
@@ -402,6 +407,35 @@ describe('credits in the ledger', () => {
     expect((await account(LIFETIME)).account.credits).toMatchObject({ per_month: 900 });
     await lifecycle.sweep();
     expect(calls.length).toBe(before);
+  });
+
+  it('gives lifetime to a Kazi member the ledger calls unmetered, and never spends its jobs', async () => {
+    accounts.set('ca_member', {
+      account_id: 'ca_member',
+      email: 'member@example.com',
+      rows: [{ kind: 'grant', credits: 25, ref: 'grant' }],
+      refill: null,
+      unmetered: true,
+    });
+    const got = (await account(MEMBER)).account as unknown as {
+      plan: string;
+      credits: Record<string, number | null>;
+    };
+    expect(got.plan).toBe('lifetime');
+    expect(got.credits).toMatchObject({ per_month: 900, used: 0, left: 900 });
+    expect(accounts.get('ca_member')?.workos_user_id).toBe(MEMBER);
+    const before = usage().length;
+    await ran(MEMBER, 'job_member', 120, new Date());
+    await lifecycle.sweep();
+    await lifecycle.sweep();
+    expect(usage()).toHaveLength(before);
+    expect(sum(accounts.get('ca_member') as Account)).toBe(25);
+    expect((await account(MEMBER)).account.credits).toMatchObject({ used: 2, left: 898 });
+    // The job is marked, so it is never spent if the membership ends.
+    const ws = runtime.ws;
+    expect(await ws.readJson(ws.ownerDir(MEMBER, 'ledger-spent', 'job_member.json'))).toMatchObject(
+      { told: true },
+    );
   });
 
   it('refuses when the email has credits with another account, and when the ledger is down', async () => {

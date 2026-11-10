@@ -13,7 +13,7 @@ export interface LedgerAccount {
   opening_total: number;
   bought_total: number;
   used_total: number;
-  /** Kazi's own, for Kazi usage only; cuttingfloor ignores it. */
+  /** A Kazi member with lifetime or staff: cuttingfloor gives it lifetime instead of a balance. */
   unmetered: boolean;
   refill: { pack: string } | null;
 }

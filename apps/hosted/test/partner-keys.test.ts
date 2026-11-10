@@ -101,7 +101,6 @@ beforeAll(async () => {
     accountUrl: 'https://cuttingfloor.ai/account',
     accountKey: ACCOUNT_KEY,
     keys,
-    lifetimeClients: new Map([['https://kazi.example/client', 'Kazi']]),
     partners: new Map([[createHash('sha256').update(SECRET).digest('hex'), 'Kazi']]),
   });
   server = createHttpServer({
@@ -149,7 +148,7 @@ describe('partner keys', () => {
     expect(created).toHaveLength(0);
   });
 
-  it('make a verified lifetime account for a new email, and a key that calls /mcp and /v1', async () => {
+  it('make a verified account for a new email, made for the partner, and a key that calls /mcp and /v1', async () => {
     const res = await provision({ email: 'New.Person@Example.com', sub: 'platform-1' });
     expect(res.status).toBe(200);
     const got = (await res.json()) as Provisioned;
@@ -159,7 +158,7 @@ describe('partner keys', () => {
       {
         email: 'new.person@example.com',
         email_verified: true,
-        metadata: expect.objectContaining({ plan: 'lifetime', plan_reason: 'made by Kazi' }),
+        metadata: { plan_reason: 'made by Kazi' },
       },
     ]);
     expect(users.get(got.owner)?.email).toBe('new.person@example.com');
@@ -197,16 +196,14 @@ describe('partner keys', () => {
     }
   });
 
-  it('use the account an email already has, giving it lifetime', async () => {
+  it('use the account an email already has, as it is', async () => {
     const got = (await (
       await provision({ email: 'has-an-account@example.com', sub: 'platform-2' })
     ).json()) as Provisioned;
     expect(got).toMatchObject({ owner: EXISTING, created: false });
     expect(created).toHaveLength(1);
-    expect(users.get(EXISTING)?.metadata).toMatchObject({
-      plan: 'lifetime',
-      plan_reason: 'via Kazi',
-    });
+    // Lifetime comes from the ledger (a Kazi member), never from the partner.
+    expect(users.get(EXISTING)?.metadata).toEqual({});
   });
 
   it('rotate: a second call makes a new key and the first stops working', async () => {

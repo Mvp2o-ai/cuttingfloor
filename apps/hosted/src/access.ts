@@ -18,7 +18,8 @@ import { type Ledger, type LedgerAccount, LedgerConflict, LedgerMissing } from '
 // each pack it bought) and keeping when it was linked (`owners/{owner}/ledger/link.json`); every
 // job that ends after that is reported to the ledger (lifecycle.ts). A given plan (staff, lifetime,
 // enterprise) never touches the ledger: its credits renew each calendar month and are counted
-// from the meter files under the data root.
+// from the meter files under the data root. A Kazi member the ledger calls unmetered (Kazi's
+// lifetime or staff) has lifetime here, read from the ledger on each check.
 //
 // It fails closed: when WorkOS or the ledger can't be reached the call is refused as retryable,
 // never let through. Paying people meet at most a short retry; nobody gets a free pass.
@@ -279,6 +280,9 @@ export class AccessCheck {
     const link = await this.#link(owner, email, created_at, customer);
     const account = link.account ?? (await this.#account(owner, link.link));
     if (link.account) this.#accounts.set(owner, { at: this.#o.now(), account: link.account });
+    // A Kazi member with lifetime (or staff) has cuttingfloor's lifetime: its credits renew each
+    // month here and never touch the ledger. It follows the ledger's flag, so it never drifts.
+    if (account.unmetered) return { ...base, plan: 'lifetime' };
     return {
       ...base,
       plan: account.bought_total > 0 ? 'credits' : 'free',

@@ -64,11 +64,8 @@ export interface HttpOptions {
   limits?: (owner: string) => Promise<OwnerLimits>;
   /** Hosted: a signed-in owner's plan and credits, for account.get (not maintenance keys). */
   account?: (owner: string) => Promise<AccountGetResult>;
-  /**
-   * Told of each signed-in owner's MCP request, with the OAuth client it came through (first-call
-   * records, lifetime for some clients); awaited, so what it changes counts for this request.
-   */
-  onCall?: (owner: string, client?: string) => void | Promise<void>;
+  /** Told of each signed-in owner's MCP request (first-call records). */
+  onCall?: (owner: string) => void | Promise<void>;
   /** Told the app a signed-in owner's request came from, by its MCP clientInfo name. */
   onApp?: (owner: string, app: string) => void;
   /** Provider keys signed-in users saved on their account page, after any in the request. */
@@ -267,7 +264,7 @@ export function createHttpServer(options: HttpOptions): Server {
           return undefined;
         }
         const owner = String(auth.extra?.sub);
-        await options.onCall?.(owner, auth.clientId);
+        await options.onCall?.(owner);
         return { owner, via: 'oauth' };
       }
       res.writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' }).end(
