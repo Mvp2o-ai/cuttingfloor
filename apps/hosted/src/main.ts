@@ -122,10 +122,11 @@ const sequenceEnv = {
   CUTTINGFLOOR_UNSUBSCRIBE_SECRET: process.env.CUTTINGFLOOR_UNSUBSCRIBE_SECRET,
 };
 const followUpHours = Number(process.env.CUTTINGFLOOR_FOLLOW_UP_AFTER_HOURS ?? 72);
+const creditsHours = Number(process.env.CUTTINGFLOOR_CREDITS_AFTER_HOURS ?? 168);
 const pollSeconds = Number(process.env.CUTTINGFLOOR_SEQUENCE_POLL_SECONDS ?? 30);
-if (!(followUpHours > 0) || !(pollSeconds > 0)) {
+if (!(followUpHours > 0) || !(creditsHours > 0) || !(pollSeconds > 0)) {
   process.stderr.write(
-    'CUTTINGFLOOR_FOLLOW_UP_AFTER_HOURS and CUTTINGFLOOR_SEQUENCE_POLL_SECONDS must be positive numbers\n',
+    'CUTTINGFLOOR_FOLLOW_UP_AFTER_HOURS, CUTTINGFLOOR_CREDITS_AFTER_HOURS and CUTTINGFLOOR_SEQUENCE_POLL_SECONDS must be positive numbers\n',
   );
   process.exit(1);
 }
@@ -185,7 +186,7 @@ if (lifecycle) {
     if (!set) process.stderr.write(`lifecycle: ${name} unset; that part is off\n`);
 }
 let sequence: Sequence | undefined;
-if (lifecycle && workosKey && publicUrl) {
+if (lifecycle && access && workosKey && publicUrl) {
   const env = sequenceEnv as Record<keyof typeof sequenceEnv, string>;
   if (unset.length) process.stderr.write(`sequence: off; set ${unset.join(', ')}\n`);
   else {
@@ -200,6 +201,8 @@ if (lifecycle && workosKey && publicUrl) {
         publicUrl,
         unsubscribeSecret: env.CUTTINGFLOOR_UNSUBSCRIBE_SECRET,
         followUpAfterMs: followUpHours * 3_600_000,
+        creditsAfterMs: creditsHours * 3_600_000,
+        creditsLeft: async (owner) => (await access.balance(owner)).left,
         pollMs: pollSeconds * 1000,
         templatesDir:
           process.env.CUTTINGFLOOR_EMAIL_TEMPLATES ??
