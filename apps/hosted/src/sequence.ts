@@ -7,13 +7,17 @@ import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { EmailError, type EmailProvider } from './email.ts';
 import { madeByPartner } from './lifecycle.ts';
 
-// The sign-up sequence: a welcome within a minute of signing up, then exactly one follow-up a
-// configured time later, chosen by whether the account has finished a first edit. Two sends per
-// person, never three:
-// - Each send first claims `owners/{owner}/email/{welcome|follow-up}.json` with an exclusive
-//   create: the data layer's unique constraint on (owner, message). Both follow-ups share one
-//   slot, so an account can never get both. These records have no TTL: one welcome, ever.
-// - A follow-up goes only to an account whose welcome went out.
+// The sign-up sequence: a welcome within a minute of signing up, exactly one follow-up a
+// configured time later, chosen by whether the account has finished a first edit, and later a
+// reminder of the credits still left with where to pick up again. Three sends per person at most:
+// - Each send first claims `owners/{owner}/email/{welcome|follow-up|credits}.json` with an
+//   exclusive create: the data layer's unique constraint on (owner, message). Both follow-ups
+//   share one slot, so an account can never get both, and so do both credits reminders. These
+//   records have no TTL: one of each, ever.
+// - A follow-up or a credits reminder goes only to an account whose welcome went out; the
+//   reminder only to an account on a balance (free and bought credits) with a whole credit left.
+// - The reminder sends people back where they edited: the app they connected (`first_client`),
+//   or Kazi for those with no AI app of their own (the site, the REST API, Kazi itself).
 // - Whether to send is decided at dispatch, not when the account is found: a deleted account,
 //   an unsubscribe, a bounced or complained address, or a message already received stops it.
 // - Bodies are versioned text files (apps/hosted/email, or CUTTINGFLOOR_EMAIL_TEMPLATES), read
@@ -24,8 +28,13 @@ import { madeByPartner } from './lifecycle.ts';
 //   `POST /email/events` takes Resend's bounces and complaints and suppresses the address.
 
 /** An account's message in the sequence; the follow-up is one slot whichever variant it is. */
-export type Slot = 'welcome' | 'follow-up';
-export type TemplateName = 'welcome' | 'follow-up-no-edit' | 'follow-up-first-edit';
+export type Slot = 'welcome' | 'follow-up' | 'credits';
+export type TemplateName =
+  | 'welcome'
+  | 'follow-up-no-edit'
+  | 'follow-up-first-edit'
+  | 'credits-app'
+  | 'credits-kazi';
 
 export interface Subscriber {
   id: string;
@@ -39,7 +48,14 @@ export interface Subscribers {
   /** Accounts made at or after `since` (ms since the epoch), newest first. */
   createdSince(since: number): AsyncIterable<Subscriber>;
   /** The account as it is now, or undefined once it is deleted. */
-  current(id: string): Promise<{ email: string; firstEditAt?: string } | undefined>;
+  current(id: string): Promise<SubscriberState | undefined>;
+}
+
+export interface SubscriberState {
+  email: string;
+  firstEditAt?: string;
+  /** The app the account's first tool call came from (`first_client`). */
+  firstClient?: string;
 }
 
 export interface SequenceOptions {
@@ -58,6 +74,13 @@ export interface SequenceOptions {
   unsubscribeSecret: string;
   /** How long after signing up the follow-up goes. */
   followUpAfterMs: number;
+  /** How long after signing up the credits reminder goes. */
+  creditsAfterMs: number;
+  /**
+   * Credits the account's balance has left (free and bought, never expiring); null for a plan given
+   * by the month or with no cap, whose credits aren't waiting in the same way.
+   */
+  creditsLeft(owner: string): Promise<number | null>;
   /** How often new accounts are looked for; a welcome goes out within about this. */
   pollMs: number;
   templatesDir: string;
@@ -72,7 +95,7 @@ const FOLLOW_UP_WINDOW_MS = 2 * 86_400_000;
 // Follow-ups are due by the hour, not the second: looked for less often than welcomes.
 const FOLLOW_UP_SCAN_MS = 10 * 60_000;
 const LOG_TTL_MS = 400 * 86_400_000;
-const PLACEHOLDERS = new Set(['signer', 'unsubscribe_url', 'free_credits']);
+const PLACEHOLDERS = new Set(['signer', 'unsubscribe_url', 'free_credits', 'credits_left', 'app']);
 
 interface Claim {
   slot: Slot;
@@ -86,7 +109,7 @@ interface Claim {
 
 export class Sequence {
   #o: SequenceOptions;
-  #followUpsAt = Number.NEGATIVE_INFINITY;
+  #laterAt = Number.NEGATIVE_INFINITY;
   #running = false;
   #timer: NodeJS.Timeout | undefined;
 
@@ -115,18 +138,23 @@ export class Sequence {
     if (this.#timer) clearInterval(this.#timer);
   }
 
-  /** Sends what is due: welcomes every time, follow-ups every ten minutes. */
+  /** Sends what is due: welcomes every time, follow-ups and credits reminders every ten minutes. */
   async tick(now = Date.now()): Promise<void> {
     const { subscribers } = this.#o;
     for await (const user of subscribers.createdSince(now - WELCOME_WINDOW_MS)) {
       // An address nobody has confirmed yet gets nothing; its welcome goes once it is.
       if (user.verified) await this.#dispatchLogged(user.id, 'welcome');
     }
-    if (now - this.#followUpsAt < FOLLOW_UP_SCAN_MS) return;
-    this.#followUpsAt = now;
-    const due = now - this.#o.followUpAfterMs;
-    for await (const user of subscribers.createdSince(due - FOLLOW_UP_WINDOW_MS)) {
-      if (Date.parse(user.createdAt) <= due) await this.#dispatchLogged(user.id, 'follow-up');
+    if (now - this.#laterAt < FOLLOW_UP_SCAN_MS) return;
+    this.#laterAt = now;
+    for (const [slot, after] of [
+      ['follow-up', this.#o.followUpAfterMs],
+      ['credits', this.#o.creditsAfterMs],
+    ] as const) {
+      const due = now - after;
+      for await (const user of subscribers.createdSince(due - FOLLOW_UP_WINDOW_MS)) {
+        if (Date.parse(user.createdAt) <= due) await this.#dispatchLogged(user.id, slot);
+      }
     }
     const ws = this.#o.ws;
     await ws.sweep(ws.path('email-log'), LOG_TTL_MS);
@@ -161,7 +189,7 @@ export class Sequence {
 
   async #dispatch(owner: string, slot: Slot): Promise<void> {
     const { ws } = this.#o;
-    if (slot === 'follow-up') {
+    if (slot !== 'welcome') {
       const welcome = await ws.readJson<Claim>(ws.ownerDir(owner, 'email', 'welcome.json'));
       if (welcome?.outcome !== 'sent') return;
     }
@@ -172,16 +200,31 @@ export class Sequence {
     try {
       const state = await this.#o.subscribers.current(owner);
       const reason = state ? await this.#suppressed(owner, slot, state.email) : 'account_deleted';
-      if (!state || reason) {
-        await this.#settle(owner, file, { ...claim, outcome: 'suppressed', reason: reason ?? '' });
+      const left = state && slot === 'credits' ? await this.#o.creditsLeft(owner) : null;
+      const why =
+        reason ??
+        (slot !== 'credits'
+          ? undefined
+          : left === null
+            ? 'no_balance'
+            : left < 1
+              ? 'no_credits_left'
+              : undefined);
+      if (!state || why) {
+        await this.#settle(owner, file, { ...claim, outcome: 'suppressed', reason: why ?? '' });
         return;
       }
+      const app = appName(state.firstClient);
       const name: TemplateName =
         slot === 'welcome'
           ? 'welcome'
-          : state.firstEditAt
-            ? 'follow-up-first-edit'
-            : 'follow-up-no-edit';
+          : slot === 'credits'
+            ? app
+              ? 'credits-app'
+              : 'credits-kazi'
+            : state.firstEditAt
+              ? 'follow-up-first-edit'
+              : 'follow-up-no-edit';
       const template = await loadTemplate(this.#o.templatesDir, name);
       const unsubscribe = this.unsubscribeUrl(owner);
       const sending = { ...claim, template: name, template_version: template.version };
@@ -195,6 +238,8 @@ export class Sequence {
             signer: this.#o.signer,
             unsubscribe_url: unsubscribe,
             free_credits: String(FREE_CREDITS),
+            credits_left: String(Math.floor(left ?? 0)),
+            app: app ?? '',
           }),
           headers: {
             'List-Unsubscribe': `<${unsubscribe}>`,
@@ -349,7 +394,8 @@ export interface Template {
 
 /**
  * A template file: `version:` and `subject:` lines, a `---` line, then the plain-text body. The
- * body may use `{{signer}}` and `{{free_credits}}` (a new account's, from the plans) and must carry
+ * body may use `{{signer}}`, `{{free_credits}}` (a new account's, from the plans), and in a credits
+ * reminder `{{credits_left}}` (whole credits) and `{{app}}` (the AI app it edits from); it must carry
  * `{{unsubscribe_url}}`.
  */
 export async function loadTemplate(dir: string, name: TemplateName): Promise<Template> {
@@ -423,12 +469,17 @@ export class WorkosSubscribers implements Subscribers {
     }
   }
 
-  async current(id: string): Promise<{ email: string; firstEditAt?: string } | undefined> {
+  async current(id: string): Promise<SubscriberState | undefined> {
     const res = await this.#get(`/user_management/users/${encodeURIComponent(id)}`, [404]);
     if (res.status === 404) return undefined;
     const user = (await res.json()) as { email: string; metadata?: Record<string, string> };
     const firstEditAt = user.metadata?.first_edit_at;
-    return { email: user.email, ...(firstEditAt ? { firstEditAt } : {}) };
+    const firstClient = user.metadata?.first_client;
+    return {
+      email: user.email,
+      ...(firstEditAt ? { firstEditAt } : {}),
+      ...(firstClient ? { firstClient } : {}),
+    };
   }
 
   async #get(path: string, allowed: number[] = []): Promise<Response> {
@@ -440,6 +491,21 @@ export class WorkosSubscribers implements Subscribers {
       throw new Error(`WorkOS ${path.split('?')[0]}: ${res.status}`);
     return res;
   }
+}
+
+/**
+ * The AI app an account edits from, named for an email, from its first tool call's app
+ * (`first_client`); undefined when it has none of its own: no call yet, the REST API, or Kazi,
+ * which is where those accounts are sent instead.
+ */
+export function appName(firstClient: string | undefined): string | undefined {
+  const name = firstClient?.trim().toLowerCase();
+  if (!name || name === 'rest' || name.includes('kazi')) return undefined;
+  if (name.includes('codex')) return 'Codex';
+  if (name.includes('openai') || name.includes('chatgpt')) return 'ChatGPT';
+  if (name.includes('claude') || name.includes('anthropic')) return 'Claude';
+  if (name.includes('cursor')) return 'Cursor';
+  return 'your AI app';
 }
 
 /** Checks a Svix-signed webhook (Resend's): v1 signatures, five minutes' tolerance. */

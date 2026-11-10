@@ -40,18 +40,34 @@ export async function meterJob(ws: Workspace, job: Job): Promise<MeterEntry | un
   return entry;
 }
 
-/** Seconds of jobs that ended at or after `since`. */
-export async function meteredSeconds(ws: Workspace, owner: string, since: Date): Promise<number> {
+/** The owner's meter entries that ended at or after `since`, oldest month first. */
+export async function* meterEntries(
+  ws: Workspace,
+  owner: string,
+  since: Date,
+): AsyncGenerator<MeterEntry> {
   const from = since.toISOString();
-  let total = 0;
-  for (const name of await ws.list(ws.ownerDir(owner, 'meter'))) {
+  for (const name of (await ws.list(ws.ownerDir(owner, 'meter'))).sort()) {
     if (name < month(from)) continue;
     const dir = ws.ownerDir(owner, 'meter', name);
     for (const file of await ws.list(dir)) {
       const entry = await ws.readJson<MeterEntry>(join(dir, file));
-      if (entry && entry.ended_at >= from) total += entry.seconds;
+      if (entry && entry.ended_at >= from) yield entry;
     }
   }
+}
+
+/** Seconds of jobs that ended at or after `since`, and before `until` when it is given. */
+export async function meteredSeconds(
+  ws: Workspace,
+  owner: string,
+  since: Date,
+  until?: Date,
+): Promise<number> {
+  const to = until?.toISOString();
+  let total = 0;
+  for await (const entry of meterEntries(ws, owner, since))
+    if (!to || entry.ended_at < to) total += entry.seconds;
   return Math.round(total * 1000) / 1000;
 }
 

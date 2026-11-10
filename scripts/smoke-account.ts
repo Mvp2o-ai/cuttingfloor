@@ -9,12 +9,15 @@
 // site through AuthKit, checks the account page shows the free credits, drops a file on its drop
 // zone, opens Stripe Checkout for the smallest pack (stopping before payment), then checks the MCP
 // server's access rules: free (no time limit), unverified, and lifetime. Deletes everything after.
+
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { AccessCheck } from '../apps/hosted/src/access.ts';
+import { Ledger } from '../apps/hosted/src/ledger.ts';
+import { Workspace } from '../packages/core/src/index.ts';
 import { FREE_CREDITS, PACKS } from '../packages/plans/src/index.ts';
 
 const site = (process.argv[2] ?? 'https://cuttingfloor-site.vercel.app').replace(/\/$/, '');
@@ -23,6 +26,8 @@ if (!chrome) throw new Error('Set CHROME_PATH to a Chrome or Chromium binary');
 const env = await readFile(new URL('../deploy/hetzner/cuttingfloor.env', import.meta.url), 'utf8');
 const read = (name: string) => new RegExp(`^${name}=(\\S+)`, 'm').exec(env)?.[1] ?? '';
 const workosKey = read('WORKOS_API_KEY');
+const ledger = new Ledger(read('KAZI_CREDITS_URL'), read('KAZI_CREDITS_KEY'));
+const ws = new Workspace(await mkdtemp(join(tmpdir(), 'cf-smoke-account-')));
 const stripeKey = read('STRIPE_SECRET_KEY');
 const bypass = process.env.VERCEL_BYPASS ?? read('VERCEL_BYPASS');
 
@@ -154,6 +159,8 @@ try {
     new AccessCheck({
       workosKey,
       stripeKey,
+      ledger,
+      ws,
       accountUrl: `${site}/account`,
       now: () => Date.now() + offsetDays * 86_400_000,
     });
@@ -171,6 +178,8 @@ try {
   const outage = await new AccessCheck({
     workosKey: 'sk_test_not_a_key',
     stripeKey,
+    ledger,
+    ws,
     accountUrl: `${site}/account`,
   })
     .require(userId)

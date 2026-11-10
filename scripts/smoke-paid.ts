@@ -10,7 +10,12 @@
 // with a clock moved on. Moves no money: a real purchase is checked by hand (plans/README.md).
 // Deletes everything after.
 
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AccessCheck } from '../apps/hosted/src/access.ts';
+import { Ledger } from '../apps/hosted/src/ledger.ts';
+import { Workspace } from '../packages/core/src/index.ts';
 import { FREE_CREDITS, PACKS } from '../packages/plans/src/index.ts';
 import type { AccountGetResult } from '../packages/schema/src/index.ts';
 
@@ -27,6 +32,8 @@ const server = (process.env.CUTTINGFLOOR_PUBLIC_URL ?? 'https://api.cuttingfloor
   '',
 );
 const accountUrl = process.env.CUTTINGFLOOR_ACCOUNT_URL ?? 'https://cuttingfloor.ai/account';
+const ledger = new Ledger(need('KAZI_CREDITS_URL'), need('KAZI_CREDITS_KEY'));
+const ws = new Workspace(await mkdtemp(join(tmpdir(), 'cf-smoke-paid-')));
 
 const step = (label: string) => process.stdout.write(`• ${label}\n`);
 const failures: string[] = [];
@@ -148,7 +155,14 @@ try {
       | AccountGetResult
       | undefined;
   const at = (days: number) =>
-    new AccessCheck({ workosKey, stripeKey, accountUrl, now: () => Date.now() + days * DAY });
+    new AccessCheck({
+      workosKey,
+      stripeKey,
+      ledger,
+      accountUrl,
+      ws,
+      now: () => Date.now() + days * DAY,
+    });
 
   step('a new account');
   expect((await works()) === 'works', 'a tool call works');
@@ -179,11 +193,7 @@ try {
   step('automatic top-up');
   const pack = PACKS[1];
   if (!pack) throw new Error('no second pack');
-  const user = await workos(`/user_management/users/${userId}`);
-  await workos(`/user_management/users/${userId}`, {
-    method: 'PUT',
-    body: { metadata: { ...(user.metadata as object), refill_pack: pack.id } },
-  });
+  await site('/account/top-up', { user: userId, pack: pack.id });
   const on = await account(true);
   expect(
     on?.top_up?.automatic === true && on.top_up.pack?.credits === pack.credits,

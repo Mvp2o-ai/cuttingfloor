@@ -4,8 +4,9 @@
 //
 // Keys come from deploy/hetzner/cuttingfloor.env. Runs the hosted HTTP server in this process
 // with a throwaway partner secret, asks it for keys for a new email and for an existing account,
-// checks what WorkOS and the account's access say and that each key calls /v1, then deletes the
+// checks what WorkOS says and that each key calls /v1, then deletes the
 // throwaway users.
+
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
@@ -14,6 +15,7 @@ import { join } from 'node:path';
 import { AccessCheck } from '../apps/hosted/src/access.ts';
 import { createHttpServer } from '../apps/hosted/src/http.ts';
 import { ScriptKeys } from '../apps/hosted/src/keys.ts';
+import { Ledger } from '../apps/hosted/src/ledger.ts';
 import { Lifecycle, madeByPartner } from '../apps/hosted/src/lifecycle.ts';
 import { WorkosSubscribers } from '../apps/hosted/src/sequence.ts';
 import { LocalCredentialStore } from '../packages/credentials/src/index.ts';
@@ -58,16 +60,17 @@ const runtime = new Runtime({
 });
 await runtime.start({ sweep: false });
 const accountUrl = 'https://cuttingfloor.ai/account';
-const access = new AccessCheck({ workosKey, stripeKey, accountUrl });
+const ledger = new Ledger(read('KAZI_CREDITS_URL'), read('KAZI_CREDITS_KEY'));
+const access = new AccessCheck({ workosKey, stripeKey, ledger, accountUrl, ws: runtime.ws });
 const keys = new ScriptKeys(runtime.ws);
 const lifecycle = new Lifecycle({
   runtime,
   access,
+  ledger,
   workosKey,
   stripeKey,
   accountUrl,
   keys,
-  lifetimeClients: new Map([['https://kazi.example/client', 'Kazi']]),
   partners: new Map([[createHash('sha256').update(SECRET).digest('hex'), 'Kazi']]),
 });
 const server = createHttpServer({
@@ -109,9 +112,7 @@ try {
   const user = await workos(`/user_management/users/${owner}`);
   const metadata = (user.metadata ?? {}) as Record<string, string>;
   expect(user.email === email && user.email_verified === true, 'with the email, verified');
-  expect(metadata.plan === 'lifetime' && madeByPartner(metadata), 'lifetime, made by Kazi');
-  const now = await access.get(owner);
-  expect(now.allowed && now.plan === 'lifetime', 'access says lifetime');
+  expect(!metadata.plan && madeByPartner(metadata), 'made by Kazi, with no plan given');
   expect((await v1(String(made.body.key))) === 200, 'the key calls /v1');
   const welcomed: string[] = [];
   for await (const s of new WorkosSubscribers(workosKey).createdSince(Date.now() - 600_000))
@@ -137,7 +138,7 @@ try {
     string,
     string
   >;
-  expect(tagged.plan === 'lifetime' && tagged.plan_reason === 'via Kazi', 'lifetime via Kazi');
+  expect(!tagged.plan && !tagged.plan_reason, 'left as it was');
   const second = await provision(String(existing.email), sub);
   expect((await v1(String(first.body.key))) === 401, 'a second call revokes the first key');
   expect((await v1(String(second.body.key))) === 200, 'and its key works');

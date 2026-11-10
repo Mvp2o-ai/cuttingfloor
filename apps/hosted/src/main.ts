@@ -7,6 +7,7 @@ import { Mailer, ResendProvider } from './email.ts';
 import { recordSignInStep } from './funnel.ts';
 import { createHttpServer, parseApiKeys } from './http.ts';
 import { ScriptKeys } from './keys.ts';
+import { Ledger } from './ledger.ts';
 import { Lifecycle } from './lifecycle.ts';
 import { discoverAuthorizationServer, JwtTokenVerifier } from './oauth.ts';
 import { ProviderKeys } from './provider-keys.ts';
@@ -66,35 +67,27 @@ if (oauth && issuer)
 const runtime = new Runtime(config);
 await runtime.start();
 
-// Plan checks for signed-in users: WorkOS holds the account, Stripe the credits bought.
-// Signing in without them would let everyone in, so hosted mode won't start that way.
+// Plan checks for signed-in users: WorkOS holds the account, Kazi's credit ledger the balance
+// (Stripe the packs an account bought before it was linked). Signing in without them would let
+// everyone in, so hosted mode won't start that way.
 const workosKey = process.env.WORKOS_API_KEY;
 const stripeKey = process.env.STRIPE_SECRET_KEY;
-if (oauth && (!workosKey || !stripeKey)) {
+const ledgerUrl = process.env.KAZI_CREDITS_URL;
+const ledgerKey = process.env.KAZI_CREDITS_KEY;
+if (oauth && (!workosKey || !stripeKey || !ledgerUrl || !ledgerKey)) {
   process.stderr.write(
-    "OAuth sign-in needs WORKOS_API_KEY and STRIPE_SECRET_KEY, to check each account's plan\n",
+    "OAuth sign-in needs WORKOS_API_KEY, STRIPE_SECRET_KEY, KAZI_CREDITS_URL and KAZI_CREDITS_KEY, to check each account's plan and credits\n",
   );
   process.exit(1);
 }
 const accountUrl = process.env.CUTTINGFLOOR_ACCOUNT_URL ?? 'https://cuttingfloor.ai/account';
+const ledger = ledgerUrl && ledgerKey ? new Ledger(ledgerUrl, ledgerKey) : undefined;
 const access =
-  oauth && workosKey && stripeKey
-    ? new AccessCheck({ workosKey, stripeKey, accountUrl, ws: runtime.ws })
+  oauth && workosKey && stripeKey && ledger
+    ? new AccessCheck({ workosKey, stripeKey, ledger, accountUrl, ws: runtime.ws })
     : undefined;
 // Keys users make on the account page for scripts: only where accounts are checked.
 const scriptKeys = access ? new ScriptKeys(runtime.ws) : undefined;
-// OAuth clients whose users get lifetime: `<client_id>=<name>`, comma-separated (Kazi's two).
-const lifetimeClients = new Map(
-  (process.env.CUTTINGFLOOR_LIFETIME_CLIENTS ?? '')
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => {
-      const at = entry.lastIndexOf('=');
-      return [entry.slice(0, at), entry.slice(at + 1)] as [string, string];
-    })
-    .filter(([id, name]) => id && name),
-);
 // Partners that get keys for their users: `<name>=<sha256 of its secret>`, comma-separated.
 const partners = new Map(
   (process.env.CUTTINGFLOOR_PARTNER_KEYS ?? '')
@@ -122,10 +115,11 @@ const sequenceEnv = {
   CUTTINGFLOOR_UNSUBSCRIBE_SECRET: process.env.CUTTINGFLOOR_UNSUBSCRIBE_SECRET,
 };
 const followUpHours = Number(process.env.CUTTINGFLOOR_FOLLOW_UP_AFTER_HOURS ?? 72);
+const creditsHours = Number(process.env.CUTTINGFLOOR_CREDITS_AFTER_HOURS ?? 168);
 const pollSeconds = Number(process.env.CUTTINGFLOOR_SEQUENCE_POLL_SECONDS ?? 30);
-if (!(followUpHours > 0) || !(pollSeconds > 0)) {
+if (!(followUpHours > 0) || !(creditsHours > 0) || !(pollSeconds > 0)) {
   process.stderr.write(
-    'CUTTINGFLOOR_FOLLOW_UP_AFTER_HOURS and CUTTINGFLOOR_SEQUENCE_POLL_SECONDS must be positive numbers\n',
+    'CUTTINGFLOOR_FOLLOW_UP_AFTER_HOURS, CUTTINGFLOOR_CREDITS_AFTER_HOURS and CUTTINGFLOOR_SEQUENCE_POLL_SECONDS must be positive numbers\n',
   );
   process.exit(1);
 }
@@ -134,10 +128,11 @@ const unset = Object.entries(sequenceEnv)
   .map(([name]) => name);
 const sequenceOn = !unset.length && Boolean(publicUrl);
 const lifecycle =
-  access && workosKey && stripeKey
+  access && ledger && workosKey && stripeKey
     ? new Lifecycle({
         runtime,
         access,
+        ledger,
         workosKey,
         stripeKey,
         accountUrl,
@@ -169,7 +164,6 @@ const lifecycle =
         ...(process.env.CUTTINGFLOOR_ACCOUNT_KEY
           ? { accountKey: process.env.CUTTINGFLOOR_ACCOUNT_KEY }
           : {}),
-        ...(lifetimeClients.size ? { lifetimeClients } : {}),
         ...(partners.size ? { partners } : {}),
         ...(providerKeys ? { providerKeys } : {}),
       })
@@ -185,7 +179,7 @@ if (lifecycle) {
     if (!set) process.stderr.write(`lifecycle: ${name} unset; that part is off\n`);
 }
 let sequence: Sequence | undefined;
-if (lifecycle && workosKey && publicUrl) {
+if (lifecycle && access && workosKey && publicUrl) {
   const env = sequenceEnv as Record<keyof typeof sequenceEnv, string>;
   if (unset.length) process.stderr.write(`sequence: off; set ${unset.join(', ')}\n`);
   else {
@@ -200,6 +194,12 @@ if (lifecycle && workosKey && publicUrl) {
         publicUrl,
         unsubscribeSecret: env.CUTTINGFLOOR_UNSUBSCRIBE_SECRET,
         followUpAfterMs: followUpHours * 3_600_000,
+        creditsAfterMs: creditsHours * 3_600_000,
+        creditsLeft: async (owner) => {
+          const balance = await access.balance(owner);
+          // A plan given by the month (lifetime, enterprise) renews; only a balance waits.
+          return balance.renews === null ? balance.left : null;
+        },
         pollMs: pollSeconds * 1000,
         templatesDir:
           process.env.CUTTINGFLOOR_EMAIL_TEMPLATES ??
@@ -240,7 +240,7 @@ const server = createHttpServer({
     : {}),
   ...(lifecycle
     ? {
-        onCall: (owner: string, client?: string) => lifecycle.called(owner, client),
+        onCall: (owner: string) => lifecycle.called(owner),
         onApp: (owner: string, app: string) => lifecycle.usedFrom(owner, app),
         account: (owner: string) => lifecycle.account(owner),
         route: async (req, res, url) =>

@@ -9,6 +9,7 @@ import { Runtime } from '@cuttingfloor/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessCheck } from '../src/access.ts';
 import { createHttpServer } from '../src/http.ts';
+import { Ledger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
 
 // The routes the site and Stripe call. Only what needs no live account is checked here: who may
@@ -37,10 +38,17 @@ beforeAll(async () => {
   });
   await runtime.start({ sweep: false });
   const options = { workosKey: 'sk_test_none', stripeKey: 'sk_test_none' };
-  const access = new AccessCheck({ ...options, accountUrl: 'https://cuttingfloor.ai/account' });
+  const ledger = new Ledger('http://127.0.0.1:9', 'none');
+  const access = new AccessCheck({
+    ...options,
+    ledger,
+    ws: runtime.ws,
+    accountUrl: 'https://cuttingfloor.ai/account',
+  });
   const lifecycle = new Lifecycle({
     runtime,
     access,
+    ledger,
     ...options,
     accountUrl: 'https://cuttingfloor.ai/account',
     stripeWebhookSecret: SECRET,

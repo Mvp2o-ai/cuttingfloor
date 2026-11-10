@@ -10,6 +10,7 @@ import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EmailError, type EmailProvider, type OutboundEmail } from '../src/email.ts';
 import {
+  appName,
   isNoReply,
   loadTemplate,
   Sequence,
@@ -28,9 +29,17 @@ const EVENTS_SECRET = `whsec_${Buffer.from('events-secret-0123456789').toString(
 const T0 = Date.parse('2026-11-01T12:00:00Z');
 
 class FakeAccounts implements Subscribers {
-  users = new Map<string, Subscriber & { firstEditAt?: string; deleted?: boolean }>();
+  users = new Map<
+    string,
+    Subscriber & { firstEditAt?: string; firstClient?: string; deleted?: boolean }
+  >();
+  credits = new Map<string, number | null>();
 
-  add(n: number, createdAt: number, extra: { verified?: boolean; firstEditAt?: string } = {}) {
+  add(
+    n: number,
+    createdAt: number,
+    extra: { verified?: boolean; firstEditAt?: string; firstClient?: string } = {},
+  ) {
     const id = `user_${String(n).padStart(26, '0')}`;
     this.users.set(id, {
       id,
@@ -38,6 +47,7 @@ class FakeAccounts implements Subscribers {
       createdAt: new Date(createdAt).toISOString(),
       verified: extra.verified ?? true,
       ...(extra.firstEditAt ? { firstEditAt: extra.firstEditAt } : {}),
+      ...(extra.firstClient ? { firstClient: extra.firstClient } : {}),
     });
     return id;
   }
@@ -54,7 +64,11 @@ class FakeAccounts implements Subscribers {
   async current(id: string) {
     const u = this.users.get(id);
     if (!u || u.deleted) return undefined;
-    return { email: u.email, ...(u.firstEditAt ? { firstEditAt: u.firstEditAt } : {}) };
+    return {
+      email: u.email,
+      ...(u.firstEditAt ? { firstEditAt: u.firstEditAt } : {}),
+      ...(u.firstClient ? { firstClient: u.firstClient } : {}),
+    };
   }
 }
 
@@ -83,6 +97,11 @@ async function setup(overrides: Partial<SequenceOptions> = {}) {
     publicUrl: 'https://api.cuttingfloor.ai',
     unsubscribeSecret: 'unsubscribe-secret',
     followUpAfterMs: 3 * DAY,
+    creditsAfterMs: 7 * DAY,
+    creditsLeft: async (owner) => {
+      const left = accounts.credits.get(owner);
+      return left === undefined ? 23.1 : left;
+    },
     pollMs: 30_000,
     templatesDir: TEMPLATES,
     eventsSecret: EVENTS_SECRET,
@@ -254,6 +273,81 @@ describe('follow-up', () => {
   });
 });
 
+describe('credits reminder', () => {
+  const subject = 'Your cuttingfloor credits are waiting';
+
+  it('goes once, a week in, with the whole credits left and the app the account edits from', async () => {
+    const { ws, accounts, provider, options } = await setup();
+    const id = accounts.add(1, T0, { firstClient: 'openai-mcp' });
+    await new Sequence(options).tick(T0 + 1000);
+    await new Sequence(options).tick(T0 + 7 * DAY - HOUR);
+    expect(provider.sent.map((m) => m.subject)).not.toContain(subject);
+    await new Sequence(options).tick(T0 + 7 * DAY + 60_000);
+    await new Sequence(options).tick(T0 + 8 * DAY);
+    const reminders = provider.sent.filter((m) => m.subject === subject);
+    expect(reminders).toHaveLength(1);
+    const text = reminders[0]?.text ?? '';
+    expect(text).toContain('You still have 23 credits');
+    expect(text).toContain('Pick up where you left off in ChatGPT');
+    expect(text).not.toContain('apifunnel');
+    expect(text).toContain('https://api.cuttingfloor.ai/openapi.json');
+    expect(text).toContain(new Sequence(options).unsubscribeUrl(id));
+    const claim = await ws.readJson(ws.ownerDir(id, 'email', 'credits.json'));
+    expect(claim).toMatchObject({ outcome: 'sent', template: 'credits-app' });
+  });
+
+  it('sends an account with no AI app of its own to Kazi, tagged for attribution', async () => {
+    const { accounts, provider, sequence } = await setup();
+    for (const [n, client] of [
+      [1, undefined],
+      [2, 'rest'],
+      [3, 'kazi'],
+    ] as const)
+      accounts.add(n, T0, client ? { firstClient: client } : {});
+    await sequence.tick(T0 + 1000);
+    await sequence.tick(T0 + 7 * DAY + 60_000);
+    const reminders = provider.sent.filter((m) => m.subject === subject);
+    expect(reminders).toHaveLength(3);
+    for (const mail of reminders) {
+      expect(mail.text).toContain('Pick up where you left off in Kazi');
+      expect(mail.text).toMatch(
+        /https:\/\/app\.apifunnel\.ai\/\S*offer=cuttingfloor\S*utm_campaign=credits-drip/,
+      );
+    }
+  });
+
+  it('goes to nobody with less than one credit left or no balance, and only after a welcome', async () => {
+    const { ws, accounts, provider, sequence } = await setup();
+    const spent = accounts.add(1, T0);
+    const capless = accounts.add(2, T0);
+    accounts.credits.set(spent, 0.4);
+    accounts.credits.set(capless, null);
+    accounts.add(3, T0 - 7 * DAY - HOUR);
+    await sequence.tick(T0 + 1000);
+    await sequence.tick(T0 + 7 * DAY + 60_000);
+    expect(provider.sent.filter((m) => m.subject === subject)).toHaveLength(0);
+    expect(await ws.readJson(ws.ownerDir(spent, 'email', 'credits.json'))).toMatchObject({
+      outcome: 'suppressed',
+      reason: 'no_credits_left',
+    });
+    expect(await ws.readJson(ws.ownerDir(capless, 'email', 'credits.json'))).toMatchObject({
+      outcome: 'suppressed',
+      reason: 'no_balance',
+    });
+  });
+
+  it('names the app from its first tool call', () => {
+    expect(appName('openai-mcp')).toBe('ChatGPT');
+    expect(appName('codex-mcp-client')).toBe('Codex');
+    expect(appName('claude-code')).toBe('Claude');
+    expect(appName('Anthropic/Toolbox')).toBe('Claude');
+    expect(appName('instinct-video-pilot')).toBe('your AI app');
+    expect(appName('rest')).toBeUndefined();
+    expect(appName('kazi')).toBeUndefined();
+    expect(appName(undefined)).toBeUndefined();
+  });
+});
+
 describe('suppression, at the moment of sending', () => {
   it('honours the unsubscribe link at once, and a mail client’s one-click POST', async () => {
     const { ws, accounts, provider, sequence } = await setup();
@@ -375,7 +469,12 @@ describe('templates and configuration', () => {
   });
 
   it('every bundled template loads', async () => {
-    for (const name of ['follow-up-no-edit', 'follow-up-first-edit'] as const)
+    for (const name of [
+      'follow-up-no-edit',
+      'follow-up-first-edit',
+      'credits-app',
+      'credits-kazi',
+    ] as const)
       expect((await loadTemplate(TEMPLATES, name)).version).toBe('1');
     // Version 2 says a new account's free credits from the plans, not a number of its own.
     const welcome = await loadTemplate(TEMPLATES, 'welcome');

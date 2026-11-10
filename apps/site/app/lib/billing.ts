@@ -3,9 +3,10 @@ import { type Pack, packOf } from '@cuttingfloor/plans';
 import type { AccountGetResult } from '@cuttingfloor/schema';
 
 // The account's credits, without a database: WorkOS holds the user (a `plan` tag for given plans,
-// `stripe_customer_id`, and `refill_pack` for automatic top-up), Stripe holds the packs bought.
-// The MCP server works out the balance from both and the meter (apps/hosted/src/access.ts); this
-// page reads it from there, as account.get gives it, so the two never disagree.
+// `stripe_customer_id`), Kazi's credit ledger holds the balance and automatic top-up, and Stripe
+// the payments that reach the ledger. The MCP server reads the ledger (apps/hosted/src/access.ts);
+// this page reads and sets it through the server, as account.get gives it, so the two never
+// disagree and the site never calls the ledger itself.
 
 export type Account = AccountGetResult;
 
@@ -80,6 +81,20 @@ export async function accountStatus(
   }
 }
 
+/** Sets automatic top-up (a pack's id, or null for off) through the MCP server. */
+export async function setTopUp(userId: string, pack: string | null): Promise<void> {
+  const key = env('CUTTINGFLOOR_ACCOUNT_KEY');
+  const server = process.env.CUTTINGFLOOR_SERVER_URL ?? 'https://api.cuttingfloor.ai';
+  const res = await fetch(`${server}/account/top-up`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ user: userId, pack }),
+    cache: 'no-store',
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`top-up: ${res.status}`);
+}
+
 /** The account's plan and credits, or undefined when the server can't say (accountStatus). */
 export async function accountOf(userId: string, fresh = false): Promise<Account | undefined> {
   return (await accountStatus(userId, fresh)).account;
@@ -125,7 +140,7 @@ export async function priceFor(pack: Pack): Promise<string> {
   return price.id;
 }
 
-/** What a payment for a pack carries: the access check counts payments with these. */
+/** What a payment for a pack carries: the ledger credits the account named by its WorkOS id. */
 export function packMetadata(pack: Pack, userId: string, prefix: string): Record<string, string> {
   return {
     [`${prefix}[app]`]: 'cuttingfloor',
