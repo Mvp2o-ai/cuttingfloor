@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.40.0
+
+### Minor Changes
+
+- f9cb24a: clip.set_transform takes `corners`: pin a picture's four corners to four points in the frame (a screen, sign or page seen at an angle), keyframable like the other fields. Crop, masks, flip and opacity still apply, and the result's placements report the corners.
+
 ## 0.39.0
 
 ### Minor Changes
