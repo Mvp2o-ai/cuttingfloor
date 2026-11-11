@@ -11,6 +11,7 @@ import {
   watchRenderQueue,
 } from '@cuttingfloor/engine';
 import { FileJobStore, type Job, JobRunner } from '@cuttingfloor/jobs';
+import { CALLS_TTL_MS, type CallEntry, jobEnd, recordCall } from './calls.ts';
 import { METER_TTL_MS, type MeterEntry, meterJob } from './meter.ts';
 import { Uploads } from './uploads.ts';
 
@@ -141,6 +142,7 @@ export class Runtime {
   #secret: Buffer | undefined;
   #sweeper: NodeJS.Timeout | undefined;
   #reaper: NodeJS.Timeout | undefined;
+  #calls: Promise<void> = Promise.resolve();
   #onMetered = new Set<(job: Job, entry: MeterEntry) => void>();
 
   constructor(config: RuntimeConfig) {
@@ -162,13 +164,15 @@ export class Runtime {
       ...(config.stallSeconds ? { stallMs: config.stallSeconds * 1000 } : {}),
       ...(config.shortJobs !== undefined ? { shortSlots: config.shortJobs } : {}),
       ...(config.shortJobSeconds !== undefined ? { shortSeconds: config.shortJobSeconds } : {}),
-      onEnd: (job) =>
+      onEnd: (job) => {
+        this.logCall(job.owner, jobEnd(job));
         void meterJob(this.ws, job).then(
           (entry) => {
             if (entry) for (const listener of this.#onMetered) listener(job, entry);
           },
           (error: Error) => process.stderr.write(`meter: ${job.id}: ${error.message}\n`),
-        ),
+        );
+      },
       // A job whose render waits for a slot says so, and where it stands.
       around: (ctx, work) =>
         watchRenderQueue(
@@ -224,6 +228,14 @@ export class Runtime {
     return () => this.#onMetered.delete(listener);
   }
 
+  /** Adds a line to the owner's call log (calls.ts); a failed write never fails the call. */
+  logCall(owner: string, entry: CallEntry): void {
+    // One write at a time, so lines land in the order the calls ended.
+    this.#calls = this.#calls
+      .then(() => recordCall(this.ws, this.config.node ?? 'local', owner, entry))
+      .catch((error: Error) => void process.stderr.write(`calls: ${error.message}\n`));
+  }
+
   stop(): void {
     if (this.#sweeper) clearInterval(this.#sweeper);
     if (this.#reaper) clearInterval(this.#reaper);
@@ -245,6 +257,7 @@ export class Runtime {
     for (const owner of await this.ws.owners()) {
       await this.ws.sweep(this.ws.path('owners', owner, 'usage'), 2 * 24 * 3_600_000);
       await this.ws.sweep(this.ws.path('owners', owner, 'meter'), METER_TTL_MS);
+      await this.ws.sweep(this.ws.path('owners', owner, 'calls'), CALLS_TTL_MS);
     }
     await this.ws.sweep(this.ws.path('cache', 'frames'), 24 * 3_600_000);
     // Hosted sign-in steps (apps/hosted funnel.ts), one folder per day.
