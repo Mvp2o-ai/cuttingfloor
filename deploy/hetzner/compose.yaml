@@ -7,6 +7,9 @@ services:
     restart: unless-stopped
     networks: [default, motion]
     env_file: [cuttingfloor.env]
+    # To the host's journal, so the logs outlive a deploy that replaces the container
+    # (`docker logs` and `journalctl CONTAINER_NAME=cuttingfloor` both read them).
+    logging: { driver: journald }
     environment:
       CUTTINGFLOOR_MODE: hosted
       CUTTINGFLOOR_MEDIA_ROOTS: ""
@@ -23,6 +26,7 @@ services:
     command: ["cuttingfloor", "motion-worker"]
     runtime: runsc
     restart: unless-stopped
+    logging: { driver: journald }
     networks: [motion]
     environment:
       PORT: "8790"
