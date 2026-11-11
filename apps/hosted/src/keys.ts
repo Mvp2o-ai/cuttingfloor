@@ -120,6 +120,20 @@ export class ScriptKeys {
     return true;
   }
 
+  /**
+   * Stops every key the owner holds, partners' and expired ones too, and removes their files (the
+   * account is being deleted). Looks through every key, so one whose listing a crash never wrote
+   * goes as well.
+   */
+  async removeAll(owner: string): Promise<void> {
+    for (const name of await this.#ws.list(this.#ws.path('keys'))) {
+      const path = this.#ws.path('keys', name);
+      const file = await this.#ws.readJson<KeyFile>(path).catch(() => undefined);
+      if (file?.owner === owner) await this.#ws.remove(path);
+    }
+    await this.#ws.remove(this.#ws.ownerDir(owner, 'keys'));
+  }
+
   /** Whose key this is, or undefined for one never made, revoked or expired. */
   async owner(key: string): Promise<string | undefined> {
     if (!key.startsWith(SCRIPT_KEY_PREFIX)) return undefined;

@@ -4,8 +4,8 @@
 //
 // Keys come from deploy/hetzner/cuttingfloor.env. Runs the hosted HTTP server in this process
 // with a throwaway partner secret, asks it for keys for a new email and for an existing account,
-// checks what WorkOS says and that each key calls /v1, then deletes the
-// throwaway users.
+// checks what WorkOS says and that each key calls /v1, then deletes the throwaway users through
+// DELETE /partner/users and checks WorkOS no longer has them.
 
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile } from 'node:fs/promises';
@@ -92,6 +92,14 @@ const provision = async (email: string, sub: string) => {
   });
   return { status: res.status, body: (await res.json()) as Record<string, unknown> };
 };
+const remove = async (email: string, sub: string) => {
+  const res = await fetch(`${base}/partner/users`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${SECRET}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ email, sub }),
+  });
+  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+};
 const v1 = async (key: string) =>
   (
     await fetch(`${base}/v1/media.list`, {
@@ -105,7 +113,8 @@ const users = new Set<string>();
 try {
   process.stdout.write('• a new email\n');
   const email = `smoke-partner-new-${Date.now()}@cuttingfloor-smoke.dev`;
-  const made = await provision(email, `smoke-sub-${Date.now()}`);
+  const newSub = `smoke-sub-${Date.now()}`;
+  const made = await provision(email, newSub);
   const owner = String(made.body.owner ?? '');
   if (owner) users.add(owner);
   expect(made.status === 200 && made.body.created === true, `made an account (${made.status})`);
@@ -144,9 +153,34 @@ try {
   expect((await v1(String(second.body.key))) === 200, 'and its key works');
   const moved = await provision(`elsewhere-${Date.now()}@cuttingfloor-smoke.dev`, sub);
   expect(moved.status === 409, 'the user id with another email is refused');
+
+  process.stdout.write('• deleting them as the partner\n');
+  for (const [address, userSub, id, key] of [
+    [email, newSub, owner, String(made.body.key)],
+    [String(existing.email), sub, String(existing.id), String(second.body.key)],
+  ]) {
+    const gone = await remove(address, userSub);
+    expect(
+      gone.status === 200 && gone.body.deleted === true,
+      `deleted ${address} (${gone.status})`,
+    );
+    const left = await fetch(`https://api.workos.com/user_management/users/${id}`, {
+      headers: { authorization: `Bearer ${workosKey}` },
+    });
+    expect(left.status === 404, `WorkOS no longer has it (${left.status})`);
+    expect((await v1(key)) === 401, 'its key stops');
+    const again = await remove(address, userSub);
+    expect(again.status === 404 && again.body.error === 'account_not_found', 'a repeat is a 404');
+  }
 } finally {
-  for (const id of users) await workos(`/user_management/users/${id}`, { method: 'DELETE' });
-  process.stdout.write(`• deleted ${users.size} throwaway users\n`);
+  for (const id of users) {
+    const res = await fetch(`https://api.workos.com/user_management/users/${id}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${workosKey}` },
+    });
+    if (!res.ok && res.status !== 404) process.stdout.write(`  ✗ could not delete ${id}\n`);
+  }
+  process.stdout.write(`• no throwaway user left (${users.size} made)\n`);
   server.close();
   runtime.stop();
 }

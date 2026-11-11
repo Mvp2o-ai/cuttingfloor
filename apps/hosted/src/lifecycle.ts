@@ -1,5 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { join } from 'node:path';
 import type { Job } from '@cuttingfloor/jobs';
 import { FREE_CREDITS, LOW_CREDITS, PACKS, PLANS, packOf } from '@cuttingfloor/plans';
 import { type AccountGetResult, CfError, MediaUploadInput } from '@cuttingfloor/schema';
@@ -16,6 +17,7 @@ import type { ScriptKeys } from './keys.ts';
 import type { Ledger, LedgerUsage } from './ledger.ts';
 import { type ProviderKeys, SAVABLE } from './provider-keys.ts';
 import { savedCard } from './purchase.ts';
+import { forgetRecipient } from './sequence.ts';
 
 // What happens around an account as it is used, still without a database:
 // - WorkOS metadata records the first tool call, the first export (the site's welcome page
@@ -38,6 +40,13 @@ import { savedCard } from './purchase.ts';
 //   gets no welcome email from us. The partner's
 //   user id is kept with the key and in `partners/{name}/{sha256(sub)}.json`, so a user id never
 //   moves to another email or account.
+// - The same partner deletes its user's account here when the person deletes theirs there
+//   (`DELETE /partner/users`): the login is shared, so it is the account with that email (or the
+//   one tied to the partner's user id), however it was made. Everything kept for it goes: its
+//   folder (timelines, media, jobs, outputs, uploads, meter, call log, notices, ledger link), its
+//   script keys, partner links, cached frames of its timelines, its lines in the email log, its
+//   address's suppression, and last its WorkOS user, so a retry still finds what a failure left.
+//   The credit ledger is the partner's to delete; Stripe keeps its payments.
 
 const NOTICE_TTL_MS = 400 * 24 * 3_600_000;
 // A job's spend is retried for this long after it ended; its marker outlives that.
@@ -461,12 +470,16 @@ export class Lifecycle {
   /**
    * The routes the site and Stripe call: `POST /stripe/webhook`, `GET /account/usage`,
    * `POST /account/top-up`, `GET /account/media`, `POST /account/uploads`, and `GET`/`POST /account/keys` and
-   * `POST /account/keys/revoke`, and partners' `POST /partner/keys`. Returns false for any other
-   * path.
+   * `POST /account/keys/revoke`, and partners' `POST /partner/keys` and `DELETE /partner/users`.
+   * Returns false for any other path.
    */
   async route(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     if (url.pathname === '/partner/keys') {
       await this.#partnerRoute(req, res);
+      return true;
+    }
+    if (url.pathname === '/partner/users') {
+      await this.#partnerDeleteRoute(req, res);
       return true;
     }
     if (url.pathname === '/stripe/webhook' && req.method === 'POST') {
@@ -568,23 +581,14 @@ export class Lifecycle {
    * answers with a new script key for it; the partner's earlier key for the account stops working.
    */
   async #partnerRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const given = /^Bearer (\S+)$/i.exec(req.headers.authorization ?? '')?.[1];
-    const partner = given ? this.#o.partners?.get(sha256(given)) : undefined;
+    const partner = this.#partner(req);
     if (!partner) return json(res, 401, { error: 'unauthorized' });
     if (req.method !== 'POST') return json(res, 405, { error: 'POST' });
     const keys = this.#o.keys;
     if (!keys) return json(res, 503, { error: 'script keys are off on this server' });
-    let body: { email?: unknown; sub?: unknown };
-    try {
-      body = JSON.parse(await readBody(req, 16 * 1024));
-    } catch {
-      return json(res, 400, { error: 'body must be JSON: {email, sub}' });
-    }
-    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-    const sub = typeof body.sub === 'string' ? body.sub.trim() : '';
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 320)
-      return json(res, 400, { error: 'email must be an email address' });
-    if (!sub || sub.length > 200) return json(res, 400, { error: 'sub must be the user id' });
+    const user = await partnerUser(req);
+    if ('error' in user) return json(res, 400, user);
+    const { email, sub } = user;
     const ws = this.#o.runtime.ws;
     const link = ws.path('partners', partner, `${sha256(sub)}.json`);
     const linked = await ws.readJson<{ email: string; owner: string }>(link);
@@ -615,6 +619,133 @@ export class Lifecycle {
     } catch (error) {
       return json(res, 409, { error: (error as Error).message });
     }
+  }
+
+  /** The partner whose secret the call carries as its bearer, if any. */
+  #partner(req: IncomingMessage): string | undefined {
+    const given = /^Bearer (\S+)$/i.exec(req.headers.authorization ?? '')?.[1];
+    return given ? this.#o.partners?.get(sha256(given)) : undefined;
+  }
+
+  /**
+   * The partner's user deleted their account there: DELETE {email, sub} with the partner's secret
+   * as the bearer deletes the account with that email, and the one tied to that user id, here.
+   * Answers `{deleted: true}`, or 404 `{error: 'account_not_found'}` when there is none (so a
+   * repeat is a 404). Any other answer means part of it is still here; calling again finishes it.
+   */
+  async #partnerDeleteRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const partner = this.#partner(req);
+    if (!partner) return json(res, 401, { error: 'unauthorized' });
+    if (req.method !== 'DELETE') return json(res, 405, { error: 'DELETE' });
+    const user = await partnerUser(req);
+    if ('error' in user) return json(res, 400, user);
+    const { email, sub } = user;
+    const ws = this.#o.runtime.ws;
+    const link = ws.path('partners', partner, `${sha256(sub)}.json`);
+    // Each account to delete, and whether WorkOS still has its user.
+    let accounts: { id: string; email: string; user: boolean }[];
+    let linked: { owner?: string } | undefined;
+    try {
+      accounts = (await this.#usersWith(email)).map((u) => ({ id: u.id, email, user: true }));
+      linked = await ws.readJson<{ owner?: string }>(link);
+      const tied = linked?.owner;
+      if (tied && isUser(tied) && !accounts.some((a) => a.id === tied)) {
+        const found = await this.#workosUser(tied);
+        // A link whose user is already gone still has files to remove.
+        accounts.push({ id: tied, email: found?.email.toLowerCase() ?? '', user: Boolean(found) });
+      }
+    } catch (error) {
+      process.stderr.write(`partner ${partner}: delete: ${(error as Error).message}\n`);
+      return json(res, 503, { error: 'accounts could not be read just now' });
+    }
+    if (!accounts.length && !linked) return json(res, 404, { error: 'account_not_found' });
+    try {
+      for (const account of accounts) await this.#erase(account.id, account.email);
+      await this.#unlink(new Set(accounts.map((a) => a.id)), email);
+      await ws.remove(link);
+      // Last: while the WorkOS user is there, a retry finds the account and finishes the rest.
+      for (const account of accounts) if (account.user) await this.#deleteUser(account.id);
+    } catch (error) {
+      process.stderr.write(`partner ${partner}: delete: ${(error as Error).message}\n`);
+      return json(res, 503, { error: 'the account could not be deleted just now; call again' });
+    }
+    process.stderr.write(
+      `partner ${partner}: deleted ${accounts.map((a) => a.id).join(', ') || 'a stale link'}\n`,
+    );
+    return json(res, 200, { deleted: true });
+  }
+
+  /**
+   * Removes everything kept here for an owner except its WorkOS user: its running jobs stop first
+   * (so none writes into its folder after it goes), then its script keys, cached frames of its
+   * timelines, its email log lines and suppression, and its folder.
+   */
+  async #erase(owner: string, email: string): Promise<void> {
+    if (!isUser(owner)) return;
+    const runtime = this.#o.runtime;
+    const ws = runtime.ws;
+    const working = await runtime.jobs.store.list(owner, {
+      status: 'working',
+      limit: Number.POSITIVE_INFINITY,
+    });
+    for (const job of working) await runtime.jobs.cancel(job.id, owner);
+    await this.#o.keys?.removeAll(owner);
+    const timelines = new Set(
+      (await ws.list(ws.ownerDir(owner, 'timelines'))).map((name) => name.replace(/\.json$/, '')),
+    );
+    if (timelines.size) {
+      const frames = ws.path('cache', 'frames');
+      for (const name of await ws.list(frames))
+        if (timelines.has(name.slice(0, name.indexOf('-')))) await ws.remove(join(frames, name));
+    }
+    await forgetRecipient(ws, owner, email);
+    await ws.remove(ws.ownerDir(owner));
+    this.#o.access.forget(owner);
+    this.#seen.delete(owner);
+    this.#apps.delete(owner);
+  }
+
+  /** Removes every partner's link to these accounts or this email. */
+  async #unlink(owners: Set<string>, email: string): Promise<void> {
+    const ws = this.#o.runtime.ws;
+    for (const name of await ws.list(ws.path('partners'))) {
+      for (const file of await ws.list(ws.path('partners', name))) {
+        const path = ws.path('partners', name, file);
+        const link = await ws
+          .readJson<{ email?: string; owner?: string }>(path)
+          .catch(() => undefined);
+        if (link?.email === email || (link?.owner && owners.has(link.owner))) await ws.remove(path);
+      }
+    }
+  }
+
+  /** The WorkOS users with this email. */
+  async #usersWith(email: string): Promise<WorkosUser[]> {
+    const list = (await this.#workos(
+      `/user_management/users?${new URLSearchParams({ email })}`,
+    )) as {
+      data?: WorkosUser[];
+    };
+    return (list.data ?? []).filter(
+      (user) => user.email.toLowerCase() === email && isUser(user.id),
+    );
+  }
+
+  /** The WorkOS user with this id, or undefined when there is none. */
+  async #workosUser(id: string): Promise<WorkosUser | undefined> {
+    const res = await this.#workosCall(`/user_management/users/${encodeURIComponent(id)}`);
+    if (res.status === 404) return undefined;
+    if (!res.ok) throw new Error(`WorkOS user: ${res.status}`);
+    return (await res.json()) as WorkosUser;
+  }
+
+  /** Deletes a WorkOS user (its sign-in, sessions and metadata); one already gone is fine. */
+  async #deleteUser(id: string): Promise<void> {
+    const res = await this.#workosCall(
+      `/user_management/users/${encodeURIComponent(id)}`,
+      'DELETE',
+    );
+    if (!res.ok && res.status !== 404) throw new Error(`WorkOS delete user: ${res.status}`);
   }
 
   /** The WorkOS user with this email, made (verified, marked as the partner's) when none is. */
@@ -791,17 +922,21 @@ export class Lifecycle {
   }
 
   async #workos(path: string, init: { method?: string; body?: unknown } = {}) {
-    const res = await fetch(`https://api.workos.com${path}`, {
-      method: init.method ?? 'GET',
+    const res = await this.#workosCall(path, init.method, init.body);
+    if (!res.ok) throw new Error(`WorkOS ${path.split('?')[0]}: ${res.status}`);
+    return (await res.json()) as Record<string, unknown>;
+  }
+
+  #workosCall(path: string, method = 'GET', body?: unknown): Promise<Response> {
+    return fetch(`https://api.workos.com${path}`, {
+      method,
       headers: {
         authorization: `Bearer ${this.#o.workosKey}`,
         'content-type': 'application/json',
       },
-      ...(init.body ? { body: JSON.stringify(init.body) } : {}),
+      ...(body ? { body: JSON.stringify(body) } : {}),
       signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) throw new Error(`WorkOS ${path.split('?')[0]}: ${res.status}`);
-    return (await res.json()) as Record<string, unknown>;
   }
 
   async #stripe(path: string) {
@@ -856,6 +991,24 @@ interface WorkosUser {
   email: string;
   created_at: string;
   metadata?: Record<string, string>;
+}
+
+/** A partner's call naming its user: {email, sub}, the email lowercased. */
+async function partnerUser(
+  req: IncomingMessage,
+): Promise<{ email: string; sub: string } | { error: string }> {
+  let body: { email?: unknown; sub?: unknown };
+  try {
+    body = JSON.parse(await readBody(req, 16 * 1024));
+  } catch {
+    return { error: 'body must be JSON: {email, sub}' };
+  }
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const sub = typeof body.sub === 'string' ? body.sub.trim() : '';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 320)
+    return { error: 'email must be an email address' };
+  if (!sub || sub.length > 200) return { error: 'sub must be the user id' };
+  return { email, sub };
 }
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');

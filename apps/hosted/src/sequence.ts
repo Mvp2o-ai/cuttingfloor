@@ -533,6 +533,22 @@ export function isNoReply(address: string): boolean {
   return /^(no-?reply|do-?not-?reply)([+.@-]|$)/i.test(mailbox.trim());
 }
 
+/**
+ * Forgets what the email side keeps about a deleted account: its lines in the send log and its
+ * address's suppression. Its claims and unsubscribe live in its own folder, which goes with it.
+ */
+export async function forgetRecipient(ws: Workspace, owner: string, email: string): Promise<void> {
+  if (email) await ws.remove(suppressionFile(ws, email));
+  const log = ws.path('email-log');
+  for (const day of await ws.list(log)) {
+    for (const name of await ws.list(join(log, day))) {
+      const path = join(log, day, name);
+      const entry = await ws.readJson<{ subscriber?: string }>(path).catch(() => undefined);
+      if (entry?.subscriber === owner) await ws.remove(path);
+    }
+  }
+}
+
 /** A suppressed address, kept by its hash rather than the address itself. */
 function suppressionFile(ws: Workspace, email: string): string {
   const hash = createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
