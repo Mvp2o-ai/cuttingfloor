@@ -6,7 +6,7 @@ import { HOME_SESSION } from '../content/home-session.ts';
 import { EDITING_PAINS, type Pain } from '../content/pains.ts';
 import { DESKTOP_TOOLS, TOOLKIT_HEADLINE, TOOLKIT_LEDE, TOOLKIT_LINE } from '../content/toolkit.ts';
 import { ConnectNow } from './connect-now.tsx';
-import { DemoCards } from './demos/cards.tsx';
+import { DemoCards, DemoThumbs } from './demos/cards.tsx';
 import { TryKazi } from './kazi.tsx';
 import { LiveCard } from './live-card.tsx';
 import { FROM_PACK } from './pricing.ts';
@@ -20,11 +20,9 @@ export const metadata: Metadata = {
   alternates: { canonical: '/', types: { 'text/markdown': '/index.md' } },
 };
 
-// Before and after on the home page: cutting to music first (what creators use it for most), then
-// one made in ChatGPT and one in Claude.
-const HOME_DEMOS = ['dance', 'product', 'interview'].flatMap((id) =>
-  DEMOS.filter((d) => d.id === id),
-);
+// Before and after on the home page: the strongest three, then a thumbnail for each of the rest.
+const HOME_DEMOS = DEMOS.slice(0, 3);
+const MORE_DEMOS = DEMOS.slice(3);
 
 // Linking here plays the session from the top.
 const SESSION_ID = 'session';
@@ -151,6 +149,7 @@ export default function Home() {
             </div>
           </div>
           <DemoCards demos={HOME_DEMOS} />
+          <DemoThumbs demos={MORE_DEMOS} />
           <p className="wt-links">
             <a href="/demos">All demos</a>
           </p>

@@ -26,3 +26,25 @@ export function DemoCards({ demos }: { demos: Demo[] }) {
     </ol>
   );
 }
+
+/** A row of small thumbnails, the finished video's poster and title, each linking to its watch page. */
+export function DemoThumbs({ demos }: { demos: Demo[] }) {
+  return (
+    <ol className="dm-thumbs">
+      {demos.map((d) => {
+        const v = finished(d);
+        return (
+          <li key={d.slug}>
+            <a href={`/demos/${d.slug}`} data-track={`Demo: ${d.title}`}>
+              {v.poster && (
+                // biome-ignore lint/performance/noImgElement: a fixed-size poster, no layout shift
+                <img src={v.poster} alt="" width={160} height={160} loading="lazy" />
+              )}
+              <span>{d.title}</span>
+            </a>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
