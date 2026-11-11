@@ -3,6 +3,7 @@ import { MEDIA_TTL_MS } from '@cuttingfloor/engine';
 import { FREE_CREDITS, PLANS } from '@cuttingfloor/plans';
 import type { AccountGetResult } from '@cuttingfloor/schema';
 import { McpServer } from '@modelcontextprotocol/server';
+import { logToolCalls } from './calls.ts';
 import { registerCatalogs } from './catalog.ts';
 import { registerEditor } from './editor.ts';
 import { registerLibrary } from './library.ts';
@@ -93,6 +94,7 @@ export function createServer(deps: ServerDeps): McpServer {
     { name: SERVER_NAME, version: SERVER_VERSION },
     { instructions: instructions(deps.runtime.config) },
   );
+  logToolCalls(server, (entry) => deps.runtime.logCall(deps.owner(), entry));
   compactSchemas(server);
   allowTaskReplies(server);
   if (deps.access) gateTools(server, deps.access);

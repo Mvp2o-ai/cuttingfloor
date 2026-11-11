@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
  *   owners/{owner}/media/{media_id}/…             7 d after last use
  *   owners/{owner}/jobs/{job_id}.json             7 d after finishing
  *   owners/{owner}/outputs/{job_id}/…             7 d
+ *   owners/{owner}/calls/{day}.{node}.jsonl       30 d (what each call did, no arguments)
  *   cache/…                                       derived, disposable
  *
  * Hosted mode swaps the filesystem for object storage behind the same keys.
