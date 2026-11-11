@@ -51,4 +51,14 @@ describe('call log', () => {
     expect(typeof log[0]?.ms).toBe('number');
     expect(JSON.stringify(log)).not.toMatch(/Private name|No sequence/);
   });
+
+  it("is not counted as the owner's storage", async () => {
+    const client = await connect(env.runtime, 'counted');
+    const used = async () =>
+      (await ok<{ storage: { used_bytes: number } }>(client, 'media.list', {})).storage.used_bytes;
+    const before = await used();
+    await call(client, 'timeline.create', { name: 'No sequence' });
+    await lines('counted', 2);
+    expect(await used()).toBe(before);
+  });
 });
