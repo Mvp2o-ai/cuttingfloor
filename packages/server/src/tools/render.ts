@@ -147,7 +147,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         rt.config.exportsDir
           ? `and the file in the exports folder (${rt.config.exportsDir}).`
           : '.',
-        'The server keeps the file 7 days: to keep it longer, save it from the url, and media.import it to use it again.',
+        'The server keeps the file 7 days, as a working copy: when the user has a finished piece to keep, offer to save it from the url where they keep their files, and media.import it to use it again.',
         'qa.check measures a render (gaps, frames, loudness) before you export. sha256 and fingerprint tell two renders apart without downloading them (fingerprint matches media.get of the file once imported).',
       ].join(' '),
       inputSchema: ExportVideoInput,

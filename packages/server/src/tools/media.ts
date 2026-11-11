@@ -733,7 +733,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       title: 'List media',
       description: [
         "What the user has here: imported and created media, and files they sent that aren't imported yet (through media.upload's link, or dropped on the cuttingfloor site), with names, sizes and when each expires, plus this account's storage used and how much it holds.",
-        'When the user mentions a file they sent or dropped ("the interview I uploaded"), find it here by name and media.import {source: {upload_id}} it; complete says it is all in. Listing does not count as a use, so nothing here lasts longer for being listed.',
+        'When the user mentions a file they sent or dropped ("the interview I uploaded"), find it here by name and media.import {source: {upload_id}} it; complete says it is all in. Listing does not count as a use, so nothing here lasts longer for being listed. This is a place to work, not storage: when the user counts on something here staying, tell them it goes on its own and offer to save it where they keep their files.',
       ].join(' '),
       inputSchema: MediaListInput,
       outputSchema: MediaListResult,
