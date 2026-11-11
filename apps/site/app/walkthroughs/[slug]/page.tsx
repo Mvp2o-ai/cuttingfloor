@@ -157,7 +157,7 @@ export default async function WalkthroughPage({ params }: Props) {
           </dl>
           <p className="wt-links">
             Footage in, editing out. <a href="/walkthroughs">More walkthroughs</a> ·{' '}
-            <a href="/#how">How it works</a>
+            <a href="/#session">How it works</a>
           </p>
         </section>
         <Footer />
