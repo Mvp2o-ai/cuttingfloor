@@ -1,4 +1,4 @@
-version: 1
+version: 2
 subject: How was the first edit?
 ---
 Hi,
@@ -9,6 +9,8 @@ You've finished your first edit with cuttingfloor. Two blunt questions:
 2. What was the first moment you thought "this doesn't work"?
 
 Just reply to this email, however short. I read every reply.
+
+You have {{credits}} left for the next one.
 
 {{signer}}
 cuttingfloor

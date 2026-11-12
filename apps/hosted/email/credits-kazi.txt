@@ -1,9 +1,9 @@
-version: 1
+version: 2
 subject: Your cuttingfloor credits are waiting
 ---
 Hi,
 
-Thanks for trying cuttingfloor. You still have {{credits_left}} credits, so come back and finish an edit whenever you're ready.
+Thanks for trying cuttingfloor. You still have {{credits}}, so come back and finish an edit whenever you're ready.
 
 Pick up where you left off in Kazi, which edits for you in a chat. This link opens a new chat; send it a message and Kazi connects your cuttingfloor account and carries on from there: https://app.apifunnel.ai/agent-kits/cowork-enterprise/app?offer=cuttingfloor&utm_source=cuttingfloor&utm_medium=email&utm_campaign=credits-drip&utm_content=kazi
 

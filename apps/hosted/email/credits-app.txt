@@ -1,9 +1,9 @@
-version: 1
+version: 2
 subject: Your cuttingfloor credits are waiting
 ---
 Hi,
 
-Thanks for trying cuttingfloor. You still have {{credits_left}} credits, so come back and finish an edit whenever you're ready.
+Thanks for trying cuttingfloor. You still have {{credits}}, so come back and finish an edit whenever you're ready.
 
 Pick up where you left off in {{app}}: cuttingfloor is already connected there, so just ask it to edit a video. If it isn't, add https://api.cuttingfloor.ai/mcp as a connector.
 
