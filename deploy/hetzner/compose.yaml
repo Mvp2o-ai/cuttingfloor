@@ -1,4 +1,4 @@
-# One hosted cuttingfloor server: the node, its sandbox under gVisor, and Caddy for TLS.
+# One hosted cuttingfloor server: the node, its sandboxes under gVisor, and Caddy for TLS.
 #   docker compose up -d        (up.sh runs this on the server)
 services:
   cuttingfloor:
@@ -14,48 +14,44 @@ services:
       CUTTINGFLOOR_MODE: hosted
       CUTTINGFLOOR_MEDIA_ROOTS: ""
       CUTTINGFLOOR_MOTION_URL: http://motion:8790
+      # Exports, imports and analysis at once (plus one slot kept for short jobs): 5 in all.
+      CUTTINGFLOOR_MAX_JOBS: "4"
     volumes:
       - /var/lib/cuttingfloor:/data
       # The sign-up sequence's email copy, editable here without a deploy (CUTTINGFLOOR_EMAIL_TEMPLATES).
       - ./email:/etc/cuttingfloor/email:ro
 
-  # The sandbox, as locally, plus gVisor: agent-written pages render on a user-space kernel.
+  # The sandboxes: a fresh one per render. The launcher answers the main server as one sandbox
+  # did, and behind each render starts a new motion-worker container under gVisor (no route out,
+  # no data volume, no secrets, nothing writable but a tmpfs, no capabilities, its own CPU,
+  # memory and process caps) and removes it after, as many at once as the machine holds. It is
+  # the one container with the Docker socket, and it is on the internal network only.
   motion:
     image: ${CUTTINGFLOOR_IMAGE:-ghcr.io/mvp2o-ai/cuttingfloor:latest}
     container_name: cuttingfloor-motion
-    command: ["cuttingfloor", "motion-worker"]
-    runtime: runsc
+    command: ["cuttingfloor", "motion-launcher"]
     restart: unless-stopped
     logging: { driver: journald }
     networks: [motion]
+    user: root
     environment:
       PORT: "8790"
-      HOME: /tmp
-      TMPDIR: /tmp
-      # Browsers per create.motion render, about one per two CPUs. Set here because gVisor
-      # may not show the container its CPU limit.
+      CUTTINGFLOOR_SANDBOX_IMAGE: ${CUTTINGFLOOR_IMAGE:-ghcr.io/mvp2o-ai/cuttingfloor:latest}
+      CUTTINGFLOOR_SANDBOX_NETWORK: cuttingfloor_motion
+      CUTTINGFLOOR_SANDBOX_RUNTIME: runsc
+      CUTTINGFLOOR_SANDBOX_SECCOMP: /etc/cuttingfloor/seccomp.json
+      # Browsers per render, about one per two CPUs of a render alone. Set here because gVisor
+      # may not show a sandbox its CPU limit.
       CUTTINGFLOOR_MOTION_WORKERS: ${CUTTINGFLOOR_MOTION_WORKERS:-3}
-    user: node
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./seccomp.json:/etc/cuttingfloor/seccomp.json:ro
     read_only: true
-    tmpfs:
-      - /tmp:rw,nosuid,nodev,size=2g
-      - /data:rw,noexec,nosuid,nodev,size=64k
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-      - seccomp=./seccomp.json
     init: true
-    cpus: ${CUTTINGFLOOR_MOTION_CPUS:-6}
-    mem_limit: 6g
-    memswap_limit: 6g
-    # Under gVisor (systrap) every guest thread costs host threads too, and a clone the host
-    # refuses panics the whole sandbox, failing every job in it. So the host limit is only a
-    # backstop; the real cap is nproc inside the sandbox, where a fork bomb fails its own job.
-    # A three-browser 1080x1920 render peaks near 400 threads.
-    pids_limit: 8192
-    ulimits:
-      nproc: 1024
-    shm_size: 1g
+    mem_limit: 512m
 
   caddy:
     image: caddy:2.10.2
@@ -70,6 +66,8 @@ services:
 
 networks:
   motion:
+    # Named, so the launcher can put each sandbox on it.
+    name: cuttingfloor_motion
     internal: true
 
 volumes:
