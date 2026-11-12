@@ -365,7 +365,6 @@ export class Lifecycle {
         : null,
       packs: bought ? PACKS.map((p) => ({ price_usd: p.price, credits: p.credits })) : [],
       limits: {
-        jobs: l.jobs,
         export_short_side: l.shortSide,
         judgments_per_day: l.judgmentsPerDay,
         storage_gb: l.storageGb,

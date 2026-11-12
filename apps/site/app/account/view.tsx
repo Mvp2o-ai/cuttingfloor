@@ -270,8 +270,8 @@ function Balance({ account: a }: { account: Account }) {
           <div>
             <dt>Limits</dt>
             <dd>
-              Exports up to {height(a.limits.export_short_side)}, one job at a time. Any pack
-              unlocks {height(paid.shortSide)} and {paid.jobs} at once.
+              Exports up to {height(a.limits.export_short_side)}. Any pack unlocks{' '}
+              {height(paid.shortSide)}.
             </dd>
           </div>
         ) : null}

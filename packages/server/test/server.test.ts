@@ -67,7 +67,6 @@ describe('protocol surface', () => {
     expect(text).not.toContain('a path under');
     expect(text).not.toContain('/samples');
     expect(text).toContain(`starts with ${FREE_CREDITS} free credits`);
-    expect(text).toContain('runs one job at a time');
     expect(text).toContain("won't start until there are credits again");
     expect(text).not.toContain('/account');
   });

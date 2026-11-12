@@ -73,10 +73,10 @@ export async function meteredSeconds(
 
 /**
  * The owner's plan, as limits on the work they start (hosted). The numbers are the deployment's,
- * never a tool's: a plan's jobs at once, its largest export, its judgments a day.
+ * never a tool's: jobs at once, a plan's largest export, its judgments a day.
  */
 export interface OwnerLimits {
-  /** The owner's jobs that run at once; more wait their turn. */
+  /** The owner's jobs that run at once (the server's fairness cap, not a plan's); more wait their turn. */
   jobs?: number;
   /** Largest export's short side in pixels. */
   shortSide?: number;

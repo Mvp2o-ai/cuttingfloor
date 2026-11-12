@@ -39,8 +39,6 @@ const resolution = (side: number | null) =>
   side === null ? 'any size' : side >= 2160 ? '4K' : `${side}p`;
 const storage = (gb: number | null) =>
   gb === null ? 'unlimited storage' : gb >= 1000 ? `${gb / 1000} TB storage` : `${gb} GB storage`;
-const jobs = (n: number | null) =>
-  n === null ? 'no job limit' : n === 1 ? 'one job at a time' : `${n} jobs at once`;
 const num = (n: number) => n.toLocaleString('en-US');
 /** "$0.20", "$0.14": a pack's price a credit. */
 export const perCredit = (price: number, credits: number) => `$${(price / credits).toFixed(2)}`;
@@ -63,7 +61,7 @@ export const PLANS: Plan[] = SOLD.map((id) => {
     id,
     name: p.name,
     note: p.note,
-    limits: `${jobs(l.jobs)[0]?.toUpperCase()}${jobs(l.jobs).slice(1)}, ${resolution(l.shortSide)}, ${storage(l.storageGb)}`,
+    limits: `${resolution(l.shortSide)[0]?.toUpperCase()}${resolution(l.shortSide).slice(1)} exports, ${storage(l.storageGb)}`,
   };
   if (id === 'free')
     return {
@@ -205,15 +203,6 @@ export const ROWS: Row[] = [
     },
   },
   {
-    label: 'Jobs at once',
-    cells: {
-      'self-hosted': val('As many as your machine runs (you set it)'),
-      ...limit((l) =>
-        val(l.jobs === null ? 'No limit' : l.jobs === 1 ? '1 at a time' : `${l.jobs} at once`),
-      ),
-    },
-  },
-  {
     label: 'Largest export',
     cells: {
       'self-hosted': yes('Any size, including 4K'),
@@ -332,6 +321,6 @@ export const PRICING_FAQS = [
   },
   {
     q: 'Is it free to try?',
-    a: `Yes. Every new account gets ${FREE_CREDITS} free credits, with no card and no time limit: enough to edit about ${FREE_FOOTAGE_MINUTES} minutes of footage, since editing is free and a minute of exported video takes under one credit. It has every tool, one job at a time, exports up to ${free.shortSide}p and ${free.storageGb} GB of storage. Or watch the live demo first, with no sign-up.`,
+    a: `Yes. Every new account gets ${FREE_CREDITS} free credits, with no card and no time limit: enough to edit about ${FREE_FOOTAGE_MINUTES} minutes of footage, since editing is free and a minute of exported video takes under one credit. It has every tool, exports up to ${free.shortSide}p and ${free.storageGb} GB of storage. Or watch the live demo first, with no sign-up.`,
   },
 ];

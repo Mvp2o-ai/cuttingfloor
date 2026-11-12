@@ -1,6 +1,6 @@
 import type { CredentialStore } from '@cuttingfloor/credentials';
 import { MEDIA_TTL_MS } from '@cuttingfloor/engine';
-import { FREE_CREDITS, PLANS } from '@cuttingfloor/plans';
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 import type { AccountGetResult } from '@cuttingfloor/schema';
 import { McpServer } from '@modelcontextprotocol/server';
 import { logToolCalls } from './calls.ts';
@@ -55,10 +55,9 @@ function instructions(config: Runtime['config']): string {
     : '';
   const linkHours = Math.round(config.outputUrlTtlMs / 3_600_000);
   const keepDays = Math.round(MEDIA_TTL_MS / 86_400_000);
-  const jobs = PLANS.free.limits.jobs;
   const credits = hosted
     ? `
-Credits: a job (export, import, analysis, create.*) spends credits, one a minute of it running; editing and previews are free. A new account starts with ${FREE_CREDITS} free credits, and a free account runs ${jobs === 1 ? 'one job' : `${jobs} jobs`} at a time (more wait their turn). At 0 credits new jobs are refused (quota_exceeded): tell the user that new jobs (exports, imports, analysis) won't start until there are credits again, that editing and previews still work, and to ask again after.`
+Credits: a job (export, import, analysis, create.*) spends credits, one a minute of it running; editing and previews are free. A new account starts with ${FREE_CREDITS} free credits. At 0 credits new jobs are refused (quota_exceeded): tell the user that new jobs (exports, imports, analysis) won't start until there are credits again, that editing and previews still work, and to ask again after.`
     : '';
   return `${INSTRUCTIONS_HEAD}
 - Edit what the user has: media.import their footage, music or logo: a file on the user's phone or computer through media.upload (give the user its link; they open it and pick the file), a URL, ${roots.length ? `a path under ${roots.join(', ')}, ` : ''}a file the user already sent (media.list shows those by name), or a small file as a data: URI${samples}. If the user attaches a file in the chat and the chat app doesn't hand it to you, call media.upload and give the user its link.
