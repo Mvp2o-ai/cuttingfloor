@@ -901,6 +901,37 @@ describe('media not ready yet', () => {
       /job\.get \{job_id: "j_a+", wait_seconds: 30\} answers when it is done/,
     );
     expect(String(edit.structured.hint)).not.toMatch(/media\.import/);
+    expect(String(edit.structured.hint)).toMatch(/take it once its job completes/);
+
+    // An edit naming several media not in yet names them all, so one wait covers them.
+    const both = await call(c, 'edit.batch', {
+      timeline_id,
+      ops: [
+        { tool: 'clip.add', args: { track_id: 't1', media_id: made.media_id } },
+        { tool: 'clip.add', args: { track_id: 't1', media_id: imported.media_id } },
+      ],
+      preview: 'none',
+    });
+    expect(both.structured).toMatchObject({
+      code: 'media_not_ready',
+      detail: {
+        media: [
+          {
+            media_id: made.media_id,
+            tool: 'create.motion',
+            job_id: 'j_aaaaaaaaaaaaaaaaaaaaaaaaaa',
+          },
+          {
+            media_id: imported.media_id,
+            tool: 'media.import',
+            job_id: 'j_bbbbbbbbbbbbbbbbbbbbbbbbbb',
+          },
+        ],
+      },
+    });
+    expect(String(both.structured.hint)).toContain(
+      'job.get {job_ids: ["j_aaaaaaaaaaaaaaaaaaaaaaaaaa","j_bbbbbbbbbbbbbbbbbbbbbbbbbb"], wait_seconds: 30}',
+    );
 
     const frames = await call(c, 'render.frames', { media_id: imported.media_id, frames: [0] });
     expect(frames.structured).toMatchObject({
