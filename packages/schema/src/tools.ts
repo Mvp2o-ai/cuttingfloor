@@ -2064,7 +2064,9 @@ export const JobHandle = z.object({
   job_id: JobId,
   status: JobStatus,
   status_uri: z.string(),
-  media_id: MediaId.optional().describe('The media it is making; usable in edits once processing'),
+  media_id: MediaId.optional().describe(
+    'The media it is making: an import is usable in edits once its status is processing, a created media once this job completes',
+  ),
   hint: z.string(),
 });
 

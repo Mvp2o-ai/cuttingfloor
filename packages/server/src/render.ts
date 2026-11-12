@@ -11,7 +11,9 @@ import {
   installedFonts,
   lengthFrames,
   type MatteSource,
+  type MediaRecord,
   type MltSource,
+  makingJob,
   mediaRef,
   notReady,
   passedAudio,
@@ -329,11 +331,15 @@ export async function mediaResolver(
   ids: Iterable<string>,
 ): Promise<Map<string, MediaRef>> {
   const out = new Map<string, MediaRef>();
+  const unready: MediaRecord[] = [];
   for (const id of new Set(ids)) {
     if (!/^m_[0-9a-z]{26}$/.test(id)) continue;
     const record = await rt.media.find(owner, id);
     if (!record) continue;
-    if (record.status === 'importing') throw notReady(record, null);
+    if (record.status === 'importing') {
+      unready.push(record);
+      continue;
+    }
     if (record.status === 'failed') {
       throw new CfError(
         'bad_request',
@@ -343,7 +349,24 @@ export async function mediaResolver(
     const ref = mediaRef(record);
     if (ref) out.set(id, ref);
   }
+  if (unready.length) throw notReadyAll(unready);
   return out;
+}
+
+/** media_not_ready for every media an edit names that is not in yet, so one wait covers them all. */
+function notReadyAll(records: MediaRecord[]): CfError {
+  const [first] = records;
+  if (records.length === 1 && first) return notReady(first, null);
+  const jobs = records.map((r) => ({ media_id: r.media_id, ...makingJob(r) }));
+  const ids = jobs.flatMap((j) => (j.job_id ? [j.job_id] : []));
+  return new CfError(
+    'media_not_ready',
+    `${records.length} media are not in yet: ${jobs.map((j) => `${j.media_id} (${j.tool}${j.job_id ? ` job ${j.job_id}` : ''})`).join(', ')}`,
+    {
+      hint: `Edits and render.frames take an import once it is processing, a created media once its job completes. ${ids.length ? `job.get {job_ids: ${JSON.stringify(ids)}, wait_seconds: 30} answers as each one finishes;` : 'media.get says each status;'} call again once all are done`,
+      detail: { media: jobs },
+    },
+  );
 }
 
 /** Loads the stored timelines an edit nests, so the synchronous edit math can resolve them. */
