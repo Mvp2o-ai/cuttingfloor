@@ -409,7 +409,7 @@ describe('credits in the ledger', () => {
     expect(calls.length).toBe(before);
   });
 
-  it('gives lifetime to a Kazi member the ledger calls unmetered, and never spends its jobs', async () => {
+  it('does not give lifetime to a Kazi member the ledger calls unmetered: it has a balance like anyone', async () => {
     accounts.set('ca_member', {
       account_id: 'ca_member',
       email: 'member@example.com',
@@ -421,21 +421,14 @@ describe('credits in the ledger', () => {
       plan: string;
       credits: Record<string, number | null>;
     };
-    expect(got.plan).toBe('lifetime');
-    expect(got.credits).toMatchObject({ per_month: 900, used: 0, left: 900 });
+    expect(got.plan).toBe('free');
+    expect(got.credits).toMatchObject({ per_month: null, left: 25 });
     expect(accounts.get('ca_member')?.workos_user_id).toBe(MEMBER);
     const before = usage().length;
     await ran(MEMBER, 'job_member', 120, new Date());
     await lifecycle.sweep();
-    await lifecycle.sweep();
-    expect(usage()).toHaveLength(before);
-    expect(sum(accounts.get('ca_member') as Account)).toBe(25);
-    expect((await account(MEMBER)).account.credits).toMatchObject({ used: 2, left: 898 });
-    // The job is marked, so it is never spent if the membership ends.
-    const ws = runtime.ws;
-    expect(await ws.readJson(ws.ownerDir(MEMBER, 'ledger-spent', 'job_member.json'))).toMatchObject(
-      { told: true },
-    );
+    expect(usage().length).toBe(before + 1);
+    expect((await account(MEMBER)).account.credits).toMatchObject({ used: 2, left: 23 });
   });
 
   it('refuses when the email has credits with another account, and when the ledger is down', async () => {

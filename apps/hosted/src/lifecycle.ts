@@ -32,8 +32,8 @@ import { forgetRecipient } from './sequence.ts';
 //   this sends it only while the sequence is off. A notice file under the owner's data claims
 //   each message once, across servers (`owners/{owner}/notices/{name}.json`, kept 400 days).
 // - Stripe's webhook tells the access check credits were bought, so they show at once.
-// - Lifetime is not given for using a client any more: a Kazi member with lifetime has it here
-//   because the ledger says so (access.ts). Accounts tagged before keep their tag.
+// - Lifetime is not given for using a client, or for being a Kazi member: only the `plan` tag gives
+//   it (access.ts).
 // - A partner whose users never sign in here (the Cutting Floor AI app, through one-mcp) gets a
 //   script key for each of them (`POST /partner/keys`). The account is the one with that email,
 //   made when there is none; one the partner made (`plan_reason: made by <partner>`, with no plan)
@@ -280,8 +280,7 @@ export class Lifecycle {
       if (mark?.told) continue;
       const known = access ?? (await this.#o.access.require(key));
       access = known;
-      // Lifetime from the ledger (a Kazi member) runs on a given plan: its jobs are never spent,
-      // even if it ends later.
+      // A given plan has no ledger link: its jobs are never spent, even if it ends later.
       if (!known.ledger)
         await ws.writeJson(ws.ownerDir(key, 'ledger-spent', `${entry.job_id}.json`), {
           at: new Date().toISOString(),

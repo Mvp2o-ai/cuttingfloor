@@ -13,7 +13,7 @@ export interface LedgerAccount {
   opening_total: number;
   bought_total: number;
   used_total: number;
-  /** A Kazi member with lifetime or staff: cuttingfloor gives it lifetime instead of a balance. */
+  /** The ledger's own flag for a member with no cap in Kazi. cuttingfloor does not follow it: a balance is a balance here. */
   unmetered: boolean;
   refill: { pack: string } | null;
 }
