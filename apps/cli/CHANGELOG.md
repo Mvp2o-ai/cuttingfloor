@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.45.3
+
+### Patch Changes
+
+- 80db4f6: Being a Kazi member no longer gives lifetime on cuttingfloor: a Kazi account starts with the same free credits as any other. Accounts that carry the lifetime plan tag keep it.
+
 ## 0.45.2
 
 ### Patch Changes
