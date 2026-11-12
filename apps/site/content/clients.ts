@@ -6,17 +6,9 @@
 // Logos: every app shows as a text wordmark in the same logo slot until its owner approves a
 // mark. To use an approved SVG, put it in public/logos/ and set `logo` to its path.
 
-import { PLANS } from '@cuttingfloor/plans';
-
 /** Where the server answers: MCP at /mcp, the same tools as plain HTTP at /v1/<tool>. */
 export const API_URL = 'https://api.cuttingfloor.ai';
 export const MCP_URL = `${API_URL}/mcp`;
-
-/** Credits a month for an account used through Kazi (the lifetime plan), from the plans file. */
-export const KAZI_CREDITS =
-  PLANS.lifetime.credits.kind === 'monthly' ? PLANS.lifetime.credits.perMonth : 0;
-/** One line, said the same on /connect, /agents/kazi and /pricing. */
-export const KAZI_FREE = `Free for good through Kazi: an account you connect from Kazi gets ${KAZI_CREDITS.toLocaleString('en-US')} credits a month, at no cost.`;
 
 /** OpenAI's help page on custom MCP servers in ChatGPT, and what it says about plans. */
 export const CHATGPT_HELP =
@@ -86,7 +78,6 @@ const APPS: Client[] = [
       { label: 'Say to Kazi', code: `Connect the cuttingfloor MCP server at ${MCP_URL}` },
       { label: 'Server address', code: MCP_URL },
     ],
-    notes: [KAZI_FREE],
     docs: 'https://kazi.apifunnel.ai',
     docsLabel: 'About Kazi',
     home: {

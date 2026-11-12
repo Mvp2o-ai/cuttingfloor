@@ -1,5 +1,5 @@
 import { FREE_CREDITS, FREE_FOOTAGE_MINUTES } from '@cuttingfloor/plans';
-import { CHATGPT_PLANS, CLIENTS, type Client, KAZI_CREDITS } from './clients.ts';
+import { CHATGPT_PLANS, CLIENTS, type Client } from './clients.ts';
 import { DEMOS, type Demo } from './demos.ts';
 
 // One page per agent people edit from: /agents/<slug>. Kazi, Claude and ChatGPT stand side by side
@@ -59,7 +59,7 @@ export const AGENTS: Agent[] = [
       },
       {
         q: 'What does it cost?',
-        a: `Nothing: an account you connect from Kazi is free for good, with ${KAZI_CREDITS.toLocaleString('en-US')} credits a month.`,
+        a: `Nothing to start: a new account gets ${FREE_CREDITS} free credits, with no card and no time limit. After that you buy credits in packs when you need them.`,
       },
     ],
   },

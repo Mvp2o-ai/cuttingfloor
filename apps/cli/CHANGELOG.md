@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.45.2
+
+### Patch Changes
+
+- acdb403: The pricing, connect and Kazi pages no longer say an account connected from Kazi is free for good, and free accounts can export in 4K like any other (the 1080p cap is gone).
+
 ## 0.45.1
 
 ### Patch Changes

@@ -1,5 +1,4 @@
 import { SUPPORT_EMAIL } from '@cuttingfloor/plans';
-import { KAZI_FREE } from '../../content/clients.ts';
 import {
   IMAGE,
   KEYS,
@@ -48,8 +47,6 @@ export function markdown(): string {
       (o) =>
         `- **${o.name}**: ${[o.price, o.per].filter(Boolean).join(' ')}. ${o.note} ${new URL(o.href, SITE_URL).toString()}`,
     ),
-    '',
-    KAZI_FREE,
     '',
     '## Everyone gets',
     '',

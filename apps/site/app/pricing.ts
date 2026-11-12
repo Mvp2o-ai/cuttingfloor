@@ -7,7 +7,6 @@ import {
   type PlanId,
   SUPPORT_EMAIL,
 } from '@cuttingfloor/plans';
-import { KAZI_CREDITS } from '../content/clients.ts';
 import { KEYS, LICENCE, LOCAL_ADDRESS } from '../content/facts.ts';
 import { TOOL_COUNT } from '../content/tools.ts';
 
@@ -291,10 +290,6 @@ export const KEPT = `On the hosted server, media and exports are kept ${KEPT_DAY
 const free = ALL.free.limits;
 
 export const PRICING_FAQS = [
-  {
-    q: 'Is it free through Kazi?',
-    a: `Yes. An account you connect from Kazi is free for good, with ${KAZI_CREDITS.toLocaleString('en-US')} credits a month instead of packs. If that account has already bought credits, it keeps them and stays pay as you go.`,
-  },
   {
     q: 'Can I self-host for free?',
     a: `Yes. cuttingfloor is open source under ${LICENCE} and runs in one Docker image, the same image the hosted service runs. Clone the repository and run docker compose up -d; your agent connects to ${LOCAL_ADDRESS}. There are no credit limits on your own machine. Lip-sync needs your own sync. labs key and visual judgment needs a TypeSafe key; everything else runs in the image with no key.`,
