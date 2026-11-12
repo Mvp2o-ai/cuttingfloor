@@ -3,13 +3,13 @@ import { readFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import type { Workspace } from '@cuttingfloor/core';
-import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { EmailError, type EmailProvider } from './email.ts';
 import { madeByPartner } from './lifecycle.ts';
 
 // The sign-up sequence: a welcome within a minute of signing up, exactly one follow-up a
 // configured time later, chosen by whether the account has finished a first edit, and later a
-// reminder of the credits still left with where to pick up again. Three sends per person at most:
+// reminder of the credits still left with where to pick up again. Each one says the account's
+// credits as they stand at the send. Three sends per person at most:
 // - Each send first claims `owners/{owner}/email/{welcome|follow-up|credits}.json` with an
 //   exclusive create: the data layer's unique constraint on (owner, message). Both follow-ups
 //   share one slot, so an account can never get both, and so do both credits reminders. These
@@ -26,6 +26,16 @@ import { madeByPartner } from './lifecycle.ts';
 //   `email-log/{yyyy-mm-dd}/…` (kept 400 days).
 // - `GET`/`POST /email/unsubscribe` is the signed one-click unsubscribe (RFC 8058 for the POST);
 //   `POST /email/events` takes Resend's bounces and complaints and suppresses the address.
+
+/** An account's credits as the emails name them. */
+export interface Credits {
+  /** Credits left; null when the plan has no cap. */
+  left: number | null;
+  /** A plan given by the month (lifetime, enterprise): its credits each month; null for a balance. */
+  perMonth: number | null;
+  /** Credits bought in packs; a balance with none is all free credits. */
+  bought: number;
+}
 
 /** An account's message in the sequence; the follow-up is one slot whichever variant it is. */
 export type Slot = 'welcome' | 'follow-up' | 'credits';
@@ -76,11 +86,8 @@ export interface SequenceOptions {
   followUpAfterMs: number;
   /** How long after signing up the credits reminder goes. */
   creditsAfterMs: number;
-  /**
-   * Credits the account's balance has left (free and bought, never expiring); null for a plan given
-   * by the month or with no cap, whose credits aren't waiting in the same way.
-   */
-  creditsLeft(owner: string): Promise<number | null>;
+  /** The account's credits now, read at every send. */
+  credits(owner: string): Promise<Credits>;
   /** How often new accounts are looked for; a welcome goes out within about this. */
   pollMs: number;
   templatesDir: string;
@@ -95,7 +102,7 @@ const FOLLOW_UP_WINDOW_MS = 2 * 86_400_000;
 // Follow-ups are due by the hour, not the second: looked for less often than welcomes.
 const FOLLOW_UP_SCAN_MS = 10 * 60_000;
 const LOG_TTL_MS = 400 * 86_400_000;
-const PLACEHOLDERS = new Set(['signer', 'unsubscribe_url', 'free_credits', 'credits_left', 'app']);
+const PLACEHOLDERS = new Set(['signer', 'unsubscribe_url', 'credits', 'app']);
 
 interface Claim {
   slot: Slot;
@@ -200,17 +207,18 @@ export class Sequence {
     try {
       const state = await this.#o.subscribers.current(owner);
       const reason = state ? await this.#suppressed(owner, slot, state.email) : 'account_deleted';
-      const left = state && slot === 'credits' ? await this.#o.creditsLeft(owner) : null;
+      const credits = state && !reason ? await this.#o.credits(owner) : undefined;
+      // Only a balance (free and bought, never expiring) waits; a plan given by the month renews.
       const why =
         reason ??
-        (slot !== 'credits'
+        (slot !== 'credits' || !credits
           ? undefined
-          : left === null
+          : credits.left === null || credits.perMonth !== null
             ? 'no_balance'
-            : left < 1
+            : credits.left < 1
               ? 'no_credits_left'
               : undefined);
-      if (!state || why) {
+      if (!state || !credits || why) {
         await this.#settle(owner, file, { ...claim, outcome: 'suppressed', reason: why ?? '' });
         return;
       }
@@ -237,8 +245,7 @@ export class Sequence {
           text: render(template.body, {
             signer: this.#o.signer,
             unsubscribe_url: unsubscribe,
-            free_credits: String(FREE_CREDITS),
-            credits_left: String(Math.floor(left ?? 0)),
+            credits: creditsPhrase(credits),
             app: app ?? '',
           }),
           headers: {
@@ -394,8 +401,8 @@ export interface Template {
 
 /**
  * A template file: `version:` and `subject:` lines, a `---` line, then the plain-text body. The
- * body may use `{{signer}}`, `{{free_credits}}` (a new account's, from the plans), and in a credits
- * reminder `{{credits_left}}` (whole credits) and `{{app}}` (the AI app it edits from); it must carry
+ * body may use `{{signer}}`, `{{credits}}` (the account's credits now, as `creditsPhrase` words them)
+ * and in a credits reminder `{{app}}` (the AI app it edits from); it must carry
  * `{{unsubscribe_url}}`.
  */
 export async function loadTemplate(dir: string, name: TemplateName): Promise<Template> {
@@ -420,6 +427,17 @@ export async function loadTemplate(dir: string, name: TemplateName): Promise<Tem
   if (!/\{\{\s*unsubscribe_url\s*\}\}/.test(body))
     throw new Error(`template ${name}: must carry {{unsubscribe_url}}`);
   return { version, subject, body };
+}
+
+/**
+ * The account's credits as a phrase that reads after "You have": "20 free credits", "12 credits"
+ * (some bought), "899 of this month's 900 credits", "unlimited credits". Whole credits only.
+ */
+export function creditsPhrase(credits: Credits): string {
+  if (credits.left === null) return 'unlimited credits';
+  const left = Math.max(0, Math.floor(credits.left));
+  if (credits.perMonth !== null) return `${left} of this month's ${credits.perMonth} credits`;
+  return `${left} ${credits.bought > 0 ? '' : 'free '}credit${left === 1 ? '' : 's'}`;
 }
 
 function render(body: string, values: Record<string, string>): string {

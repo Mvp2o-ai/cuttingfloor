@@ -1,4 +1,4 @@
-version: 1
+version: 2
 subject: Did it work?
 ---
 Hi,
@@ -11,7 +11,7 @@ Later - you haven't got to it yet.
 Broken - you got in and something didn't work.
 Unclear - you couldn't tell what to do first.
 
-When you want to pick it back up, this is the shortest way in: https://cuttingfloor.ai/welcome
+You have {{credits}} left, waiting for you. When you want to pick it back up, this is the shortest way in: https://cuttingfloor.ai/welcome
 
 {{signer}}
 cuttingfloor
