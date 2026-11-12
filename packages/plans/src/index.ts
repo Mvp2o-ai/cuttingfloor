@@ -52,8 +52,8 @@ export const PLANS: Record<PlanId, Plan> = {
     name: 'Free',
     sold: 'none',
     credits: { kind: 'balance' },
-    limits: { shortSide: 1080, judgmentsPerDay: 300, storageGb: 5 },
-    note: 'Every tool, no card. Exports up to 1080p until your first pack.',
+    limits: { shortSide: 2160, judgmentsPerDay: 300, storageGb: 5 },
+    note: 'Every tool, no card.',
   },
   credits: {
     id: 'credits',

@@ -266,7 +266,7 @@ function Balance({ account: a }: { account: Account }) {
           <dt>Free</dt>
           <dd>Editing and previews, always.</dd>
         </div>
-        {a.plan === 'free' ? (
+        {a.plan === 'free' && a.limits.export_short_side !== paid.shortSide ? (
           <div>
             <dt>Limits</dt>
             <dd>

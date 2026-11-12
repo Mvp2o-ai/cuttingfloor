@@ -1,6 +1,5 @@
 import { FREE_CREDITS, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
-import { KAZI_FREE } from '../../content/clients.ts';
 import {
   IMAGE,
   KEYS,
@@ -180,9 +179,6 @@ export default function Pricing() {
               ))}
             </tbody>
           </table>
-          <p className="price-foot">
-            {KAZI_FREE} <a href="/agents/kazi">Edit with Kazi</a>
-          </p>
         </section>
 
         <section className="cell" id="every-plan">

@@ -20,7 +20,7 @@ function free(over: Partial<Account['credits']> = {}): Account {
     warnings: [{ at_credits: 5, kind: 'low', emailed: false }],
     top_up: { automatic: false, pack: null, below: 5, card_saved: false },
     packs,
-    limits: { export_short_side: 1080, judgments_per_day: 300, storage_gb: 5 },
+    limits: { export_short_side: 2160, judgments_per_day: 300, storage_gb: 5 },
     account_url: 'https://cuttingfloor.ai/account',
   };
 }
