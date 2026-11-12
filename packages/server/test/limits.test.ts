@@ -139,7 +139,7 @@ describe('plan limits', () => {
     await call(client, 'job.cancel', { job_id: fitted.structured.job_id });
   });
 
-  it('runs an owner’s jobs one at a time on a one-job plan, and meters each as it ends', async () => {
+  it('runs an owner’s jobs one at a time under a one-job cap, and meters each as it ends', async () => {
     const metered: MeterEntry[] = [];
     const off = env.runtime.onMetered((job, entry) => {
       if (job.owner === 'one-job') metered.push(entry);

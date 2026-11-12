@@ -11,8 +11,6 @@
 export type PlanId = 'free' | 'credits' | 'enterprise' | 'lifetime' | 'staff';
 
 export interface Limits {
-  /** Jobs that run at once for one account; more wait their turn. null for no cap. */
-  jobs: number | null;
   /** Largest export, as its short side in pixels (1080 is 1080p, 2160 is 4K); null for any. */
   shortSide: number | null;
   /** judge.ask and media.analyze look judgments a day; null for the server's own limit. */
@@ -54,7 +52,7 @@ export const PLANS: Record<PlanId, Plan> = {
     name: 'Free',
     sold: 'none',
     credits: { kind: 'balance' },
-    limits: { jobs: 1, shortSide: 1080, judgmentsPerDay: 300, storageGb: 5 },
+    limits: { shortSide: 1080, judgmentsPerDay: 300, storageGb: 5 },
     note: 'Every tool, no card. Exports up to 1080p until your first pack.',
   },
   credits: {
@@ -62,7 +60,7 @@ export const PLANS: Record<PlanId, Plan> = {
     name: 'Pay as you go',
     sold: 'self',
     credits: { kind: 'balance' },
-    limits: { jobs: 2, shortSide: 2160, judgmentsPerDay: 5000, storageGb: 50 },
+    limits: { shortSide: 2160, judgmentsPerDay: 5000, storageGb: 50 },
     note: 'Buy credits when you need them. They never expire.',
   },
   enterprise: {
@@ -70,7 +68,7 @@ export const PLANS: Record<PlanId, Plan> = {
     name: 'Enterprise',
     sold: 'contact',
     credits: { kind: 'monthly', perMonth: 5000 },
-    limits: { jobs: 4, shortSide: 2160, judgmentsPerDay: 20000, storageGb: 1000 },
+    limits: { shortSide: 2160, judgmentsPerDay: 20000, storageGb: 1000 },
     note: 'Agents editing all day, for a team. Credits, seats and dedicated servers to suit.',
   },
   lifetime: {
@@ -78,7 +76,7 @@ export const PLANS: Record<PlanId, Plan> = {
     name: 'Lifetime',
     sold: 'none',
     credits: { kind: 'monthly', perMonth: 900 },
-    limits: { jobs: 2, shortSide: 2160, judgmentsPerDay: 5000, storageGb: 200 },
+    limits: { shortSide: 2160, judgmentsPerDay: 5000, storageGb: 200 },
     note: 'Given for good.',
   },
   staff: {
@@ -86,7 +84,7 @@ export const PLANS: Record<PlanId, Plan> = {
     name: 'Staff',
     sold: 'none',
     credits: { kind: 'none' },
-    limits: { jobs: null, shortSide: null, judgmentsPerDay: null, storageGb: null },
+    limits: { shortSide: null, judgmentsPerDay: null, storageGb: null },
     note: 'The team running cuttingfloor.',
   },
 };

@@ -70,7 +70,7 @@ export const COMPARE: { row: string; hosted: string; self: string }[] = [
   {
     row: 'Render limits',
     hosted:
-      'Free credits to start and credit packs after, plus jobs at once, video size and storage. When credits run out, new jobs won’t start until you have more; you’re never charged for anything but the packs you buy.',
+      'Free credits to start and credit packs after, plus video size and storage. When credits run out, new jobs won’t start until you have more; you’re never charged for anything but the packs you buy.',
     self: 'None but your machine. How many jobs run at once follows your computer’s cores, and you can change it.',
   },
   {

@@ -10,6 +10,13 @@ import { CfError } from '@cuttingfloor/schema';
 import { meteredSeconds, type OwnerLimits, type Runtime } from '@cuttingfloor/server';
 import { type Ledger, type LedgerAccount, LedgerConflict, LedgerMissing } from './ledger.ts';
 
+/**
+ * Jobs one account runs at once on a server, whatever its plan; more wait their turn before they
+ * queue for the server's slots. Not a plan feature: it keeps one account's burst from filling the
+ * queues everyone shares (the server's own slots cap the load).
+ */
+const OWNER_JOBS = 4;
+
 // Who may work on the hosted server, and how many credits they have, decided without a database:
 // WorkOS holds the account (when it began, whether its email is verified, a `plan` tag for given
 // plans, its Stripe customer), and Kazi's credit ledger holds the balance, shared by both products:
@@ -114,7 +121,7 @@ export class AccessCheck {
     const access = await this.require(owner);
     const limits = PLANS[access.plan].limits;
     const out: OwnerLimits = {
-      ...(limits.jobs !== null ? { jobs: limits.jobs } : {}),
+      jobs: OWNER_JOBS,
       ...(limits.shortSide !== null ? { shortSide: limits.shortSide } : {}),
       ...(limits.judgmentsPerDay !== null ? { judgmentsPerDay: limits.judgmentsPerDay } : {}),
       ...(limits.storageGb !== null ? { storageBytes: limits.storageGb * 1e9 } : {}),

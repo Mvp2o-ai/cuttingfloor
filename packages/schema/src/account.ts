@@ -62,7 +62,6 @@ export const AccountGetResult = z.object({
     .array(z.object({ price_usd: z.number(), credits: z.number() }))
     .describe('Credit packs on sale, smallest first; empty when credits are not bought'),
   limits: z.object({
-    jobs: nullableCount.describe('Jobs that run at once; more wait. null for no cap'),
     export_short_side: nullableCount.describe(
       'Largest export, its short side in pixels; null for any',
     ),

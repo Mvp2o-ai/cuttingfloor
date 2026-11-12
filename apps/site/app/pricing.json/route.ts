@@ -74,7 +74,6 @@ export function GET() {
         ...(p.sold === 'contact'
           ? { limits: 'agreed with us' }
           : {
-              jobs: p.limits.jobs,
               short_side_px: p.limits.shortSide,
               storage_gb: p.limits.storageGb,
               judgments_per_day: p.limits.judgmentsPerDay,

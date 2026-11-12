@@ -191,7 +191,7 @@ describe('JobRunner', () => {
     for (const job of [a, b]) runner.start(job, forever, { ownerLimit: 1 });
     runner.start(c, forever, { ownerLimit: 1 });
     expect(await messageOf(store, b.id, /your own jobs/)).toBe(
-      'queued: waiting for one of your own jobs to finish (1 at once on your plan)',
+      'queued: waiting for one of your own jobs to finish (1 at once per account)',
     );
     // Another owner's job runs at once, even on the same limit.
     for (let i = 0; i < 100 && !(await store.get(c.id, 'p'))?.startedAt; i++)

@@ -790,7 +790,7 @@ export class JobRunner {
       slots.queue.push(entry);
       const ahead = slots.queue.length - 1;
       void save({
-        statusMessage: `queued: waiting for one of your own jobs to finish (${limit} at once on your plan${ahead ? `; ${ahead} of yours ahead` : ''})`,
+        statusMessage: `queued: waiting for one of your own jobs to finish (${limit} at once per account${ahead ? `; ${ahead} of yours ahead` : ''})`,
       }).catch(() => undefined);
       controller.signal.addEventListener(
         'abort',
