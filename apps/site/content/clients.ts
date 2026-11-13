@@ -52,26 +52,19 @@ export type Client = {
   /** The home page's Connect box: one line of how, and the one thing to copy. */
   home?: { how: string; line: string };
   /**
-   * Finishes sign-in on the person's own computer (a 127.0.0.1 address), so the sign-in page
-   * warns about it before Allow access. The setup says so first, with a link to ALLOW_ACCESS.
+   * A desktop or terminal app that finishes sign-in on the person's own computer, so the sign-in
+   * page warns about it before Allow access. Its setup says so first, with a link to
+   * ALLOW_ACCESS. Apps added on the web never see the warning and never show the note.
    */
   localSignIn?: boolean;
 };
 
-/** Where /connect explains the sign-in page's warning about an app on your computer. */
-export const ALLOW_ACCESS = '/connect#allow-access';
+/** The page that explains the sign-in page's warning about an app on your computer. */
+export const ALLOW_ACCESS = '/sign-in-warning';
 
 /** What the sign-in page will say for an app that finishes sign-in on your computer. */
 export const allowAccessNote = (name: string) =>
   `The sign-in page will warn that it’s sending you back to an app on your computer. That’s ${name} finishing the sign-in: click Allow access.`;
-
-/** What the warning means, for /connect and its Markdown twin. */
-export const ALLOW_ACCESS_TITLE = 'Why sign-in says “This is a security risk”';
-export const ALLOW_ACCESS_TEXT = [
-  'Apps that run on your computer, like Codex and Claude Code, finish signing in by sending your browser back to an address on your own machine. It looks like 127.0.0.1 and a number. The sign-in page can’t see what’s listening there, so before it lets an app on your computer in, it warns you. Every service that signs these apps in this way shows a warning like it.',
-  'If you just started the sign-in from Codex or Claude Code, it’s yours: click Allow access and you’re connected. If you didn’t start a sign-in yourself, click Cancel.',
-  'ChatGPT, Claude and Kazi finish signing in on their own websites, so they don’t show it.',
-];
 
 const json = (v: unknown) => JSON.stringify(v, null, 2);
 
@@ -248,6 +241,7 @@ const APPS: Client[] = [
   },
   {
     slug: 'cursor',
+    localSignIn: true,
     name: 'Cursor',
     where: 'Desktop editor',
     steps: [
@@ -273,6 +267,7 @@ const APPS: Client[] = [
   },
   {
     slug: 'vs-code',
+    localSignIn: true,
     name: 'VS Code / GitHub Copilot',
     where: 'VS Code with Copilot',
     steps: [
@@ -297,6 +292,7 @@ const APPS: Client[] = [
   },
   {
     slug: 'antigravity',
+    localSignIn: true,
     name: 'Antigravity CLI (Gemini)',
     where: 'Terminal and the Antigravity editor',
     steps: [
@@ -315,6 +311,7 @@ const APPS: Client[] = [
   },
   {
     slug: 'zed',
+    localSignIn: true,
     name: 'Zed',
     where: 'Desktop editor',
     steps: [
@@ -332,6 +329,7 @@ const APPS: Client[] = [
   },
   {
     slug: 'goose',
+    localSignIn: true,
     name: 'Goose',
     where: 'Desktop app and CLI',
     steps: [

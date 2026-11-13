@@ -14,6 +14,7 @@ export const TOP_TWINS = [
   'privacy',
   'refunds',
   'support',
+  'sign-in-warning',
   'acceptable-use',
   'pricing',
   'features',

@@ -103,20 +103,6 @@ export default function ConnectPage() {
           <ClientSection key={c.slug} client={c} n={i + 1} />
         ))}
 
-        <section className="cell" id="allow-access">
-          <div className="head">
-            <span className="label">Signing in</span>
-            <h2 className="display">{ALLOW_ACCESS_TITLE}</h2>
-          </div>
-          <div className="cl-body">
-            <div>
-              {ALLOW_ACCESS_TEXT.map((t) => (
-                <p key={t}>{t}</p>
-              ))}
-            </div>
-          </div>
-        </section>
-
         <section className="cell" id="questions">
           <div className="head">
             <span className="label">Questions</span>
