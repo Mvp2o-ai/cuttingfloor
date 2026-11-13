@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.45.4
+
+### Patch Changes
+
+- e19475c: An account's first-use marks no longer erase each other: an app's first request recorded its name and the first call at once, and one could wipe the other, leaving the welcome page waiting on an account that had connected. The first tool call that runs is now recorded on its own (`first_tool_at`).
+
 ## 0.45.3
 
 ### Patch Changes

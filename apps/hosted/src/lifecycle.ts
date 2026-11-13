@@ -15,14 +15,16 @@ import { type Access, type AccessCheck, type Balance, type Link, linkPath } from
 import type { Mailer } from './email.ts';
 import type { ScriptKeys } from './keys.ts';
 import type { Ledger, LedgerUsage } from './ledger.ts';
+import { oneWriteAtATime } from './metadata.ts';
 import { type ProviderKeys, SAVABLE } from './provider-keys.ts';
 import { savedCard } from './purchase.ts';
 import { forgetRecipient } from './sequence.ts';
 
 // What happens around an account as it is used, still without a database:
-// - WorkOS metadata records the first tool call, the first export (the site's welcome page
-//   waits on the first, the funnel counts both), the first export that succeeded (the sign-up
-//   sequence's first edit, sequence.ts) and the app the first tool call came from.
+// - WorkOS metadata records the first signed-in request (`first_call_at`: connecting counts; the
+//   site's welcome page waits on it), the first tool call that ran (`first_tool_at`), the first
+//   export, the first export that succeeded (the sign-up sequence's first edit, sequence.ts) and
+//   the app the first request came from. Writes go one at a time per user (metadata.ts).
 // - Each job that ends is spent on Kazi's credit ledger (access.ts), once: a marker file
 //   (`owners/{owner}/ledger-spent/{job_id}.json`) says it was taken, and the sweep spends any job
 //   a server missed. Given plans are counted from the meter instead.
@@ -103,6 +105,7 @@ export class Lifecycle {
   #o: LifecycleOptions;
   #seen = new Set<string>();
   #apps = new Set<string>();
+  #tools = new Set<string>();
   #timer: NodeJS.Timeout | undefined;
 
   constructor(options: LifecycleOptions) {
@@ -111,6 +114,7 @@ export class Lifecycle {
 
   /** Meters into usage email and first-export records; sweeps new accounts. */
   start(): void {
+    this.#o.runtime.onToolCall((owner) => this.#toolCalled(owner));
     this.#o.runtime.onMetered((job, entry) => {
       void this.#metered(job, entry).catch((error: Error) =>
         process.stderr.write(`lifecycle: ${job.owner}: ${error.message}\n`),
@@ -129,12 +133,25 @@ export class Lifecycle {
     if (this.#timer) clearInterval(this.#timer);
   }
 
-  /** A signed-in owner made a tool call: records the first one on their account. */
+  /**
+   * A signed-in owner's request reached the server (any request: connecting counts): records the
+   * first one on their account (`first_call_at`), which the welcome page waits on.
+   */
   async called(owner: string): Promise<void> {
     if (this.#seen.has(owner)) return;
     this.#seen.add(owner);
     void this.#markOnce(owner, 'first_call_at').catch((error: Error) => {
       this.#seen.delete(owner);
+      process.stderr.write(`lifecycle: ${owner}: ${error.message}\n`);
+    });
+  }
+
+  /** An owner's tool call ran (not just a sign-in or a tool list): records the first one. */
+  #toolCalled(owner: string): void {
+    if (!isUser(owner) || this.#tools.has(owner)) return;
+    this.#tools.add(owner);
+    void this.#markOnce(owner, 'first_tool_at').catch((error: Error) => {
+      this.#tools.delete(owner);
       process.stderr.write(`lifecycle: ${owner}: ${error.message}\n`);
     });
   }
@@ -456,12 +473,14 @@ export class Lifecycle {
   async #markOnce(owner: string, field: string, value = new Date().toISOString()): Promise<void> {
     if (!isUser(owner)) return;
     const path = `/user_management/users/${encodeURIComponent(owner)}`;
-    const user = await this.#workos(path);
-    const metadata = (user.metadata ?? {}) as Record<string, string>;
-    if (metadata[field]) return;
-    await this.#workos(path, {
-      method: 'PUT',
-      body: { metadata: { ...metadata, [field]: value } },
+    await oneWriteAtATime(owner, async () => {
+      const user = await this.#workos(path);
+      const metadata = (user.metadata ?? {}) as Record<string, string>;
+      if (metadata[field]) return;
+      await this.#workos(path, {
+        method: 'PUT',
+        body: { metadata: { ...metadata, [field]: value } },
+      });
     });
   }
 
