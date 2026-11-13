@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import type { ProviderId, SavedKeys } from '@cuttingfloor/credentials';
+import { oneWriteAtATime } from './metadata.ts';
 
 // Provider keys a user saves on the account page (their sync. labs key, for create.lipsync), kept
 // without a database and never on this server's disk: each one is encrypted (AES-256-GCM, bound
@@ -82,10 +83,13 @@ export class ProviderKeys implements SavedKeys {
   async #write(owner: string, provider: ProviderId, sealed: string | null): Promise<void> {
     if (!SAVABLE.includes(provider)) throw new Error(`No key can be saved for ${provider}`);
     const path = `/user_management/users/${encodeURIComponent(owner)}`;
-    const metadata = { ...(((await this.#workos(path)).metadata ?? {}) as Record<string, string>) };
-    if (sealed) metadata[`key_${provider}`] = sealed;
-    else delete metadata[`key_${provider}`];
-    await this.#workos(path, { method: 'PUT', body: { metadata } });
+    await oneWriteAtATime(owner, async () => {
+      const read = (await this.#workos(path)).metadata ?? {};
+      const metadata = { ...(read as Record<string, string>) };
+      if (sealed) metadata[`key_${provider}`] = sealed;
+      else delete metadata[`key_${provider}`];
+      await this.#workos(path, { method: 'PUT', body: { metadata } });
+    });
     this.#cache.delete(owner);
   }
 

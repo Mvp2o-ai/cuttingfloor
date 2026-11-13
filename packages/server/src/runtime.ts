@@ -144,6 +144,7 @@ export class Runtime {
   #reaper: NodeJS.Timeout | undefined;
   #calls: Promise<void> = Promise.resolve();
   #onMetered = new Set<(job: Job, entry: MeterEntry) => void>();
+  #onToolCall = new Set<(owner: string, entry: CallEntry) => void>();
 
   constructor(config: RuntimeConfig) {
     this.config = config;
@@ -228,8 +229,15 @@ export class Runtime {
     return () => this.#onMetered.delete(listener);
   }
 
+  /** Tells `listener` about each tool call this server answers (not job ends), as it is logged. */
+  onToolCall(listener: (owner: string, entry: CallEntry) => void): () => void {
+    this.#onToolCall.add(listener);
+    return () => this.#onToolCall.delete(listener);
+  }
+
   /** Adds a line to the owner's call log (calls.ts); a failed write never fails the call. */
   logCall(owner: string, entry: CallEntry): void {
+    if (entry.ms !== undefined) for (const listener of this.#onToolCall) listener(owner, entry);
     // One write at a time, so lines land in the order the calls ended.
     this.#calls = this.#calls
       .then(() => recordCall(this.ws, this.config.node ?? 'local', owner, entry))
