@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.45.5
+
+### Patch Changes
+
+- 55da0d3: The Codex and Claude Code setup now says up front that the sign-in page warns about an app on your computer, and that clicking Allow access is expected, with a "What does this mean?" link to an explainer on /connect. Codex's copy line now runs the sign-in too.
+
 ## 0.45.4
 
 ### Patch Changes
