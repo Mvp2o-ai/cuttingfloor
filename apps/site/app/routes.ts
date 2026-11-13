@@ -73,5 +73,10 @@ export const ROUTES: Route[] = [
   { path: '/privacy', title: 'Privacy', updated: '2026-10-20' },
   { path: '/refunds', title: 'Refunds', updated: '2026-10-20' },
   { path: '/support', title: 'Support', updated: '2026-11-05' },
+  {
+    path: '/sign-in-warning',
+    title: 'Why sign-in says “This is a security risk”',
+    updated: '2026-11-13',
+  },
   { path: '/acceptable-use', title: 'Acceptable use', updated: '2026-10-20' },
 ];

@@ -1,6 +1,5 @@
 import {
-  ALLOW_ACCESS_TEXT,
-  ALLOW_ACCESS_TITLE,
+  ALLOW_ACCESS,
   allowAccessNote,
   CLIENTS,
   CLIENTS_CHECKED,
@@ -47,7 +46,7 @@ export function markdown(): string {
       ...(c.notes || c.localSignIn
         ? [
             ...(c.localSignIn
-              ? [`- ${allowAccessNote(c.name)} (See “${ALLOW_ACCESS_TITLE}” below.)`]
+              ? [`- ${allowAccessNote(c.name)} What it means: ${SITE_URL}${ALLOW_ACCESS}`]
               : []),
             ...(c.notes ?? []).map((n) => `- ${n}`),
             '',
@@ -55,9 +54,6 @@ export function markdown(): string {
         : []),
       ...(c.docs ? [`${c.docsLabel ?? `${c.name}'s own help page`}: ${c.docs}`, ''] : []),
     ]),
-    `## ${ALLOW_ACCESS_TITLE}`,
-    '',
-    ...ALLOW_ACCESS_TEXT.flatMap((t) => [t, '']),
     '## Questions',
     '',
     ...CONNECT_FAQS.flatMap((f) => [`### ${f.q}`, '', f.a, '']),
