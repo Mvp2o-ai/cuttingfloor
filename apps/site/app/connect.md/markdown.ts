@@ -1,4 +1,11 @@
-import { CLIENTS, CLIENTS_CHECKED, MCP_URL } from '../../content/clients.ts';
+import {
+  ALLOW_ACCESS_TEXT,
+  ALLOW_ACCESS_TITLE,
+  allowAccessNote,
+  CLIENTS,
+  CLIENTS_CHECKED,
+  MCP_URL,
+} from '../../content/clients.ts';
 import {
   CONNECT_DESCRIPTION,
   CONNECT_FAQS,
@@ -37,9 +44,20 @@ export function markdown(): string {
       '',
       ...(c.install ? [`[${c.install.label}](${c.install.href})`, ''] : []),
       ...c.snippets.flatMap((s) => [`${s.label}:`, '', '```', s.code, '```', '']),
-      ...(c.notes ? [...c.notes.map((n) => `- ${n}`), ''] : []),
+      ...(c.notes || c.localSignIn
+        ? [
+            ...(c.localSignIn
+              ? [`- ${allowAccessNote(c.name)} (See “${ALLOW_ACCESS_TITLE}” below.)`]
+              : []),
+            ...(c.notes ?? []).map((n) => `- ${n}`),
+            '',
+          ]
+        : []),
       ...(c.docs ? [`${c.docsLabel ?? `${c.name}'s own help page`}: ${c.docs}`, ''] : []),
     ]),
+    `## ${ALLOW_ACCESS_TITLE}`,
+    '',
+    ...ALLOW_ACCESS_TEXT.flatMap((t) => [t, '']),
     '## Questions',
     '',
     ...CONNECT_FAQS.flatMap((f) => [`### ${f.q}`, '', f.a, '']),

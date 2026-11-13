@@ -1,6 +1,11 @@
 import { FREE_CREDITS, FREE_FOOTAGE_MINUTES } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
-import { CLIENTS, CLIENTS_CHECKED } from '../../content/clients.ts';
+import {
+  ALLOW_ACCESS_TEXT,
+  ALLOW_ACCESS_TITLE,
+  CLIENTS,
+  CLIENTS_CHECKED,
+} from '../../content/clients.ts';
 import { ConnectNow } from '../connect-now.tsx';
 import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
@@ -97,6 +102,20 @@ export default function ConnectPage() {
         {CLIENTS.map((c, i) => (
           <ClientSection key={c.slug} client={c} n={i + 1} />
         ))}
+
+        <section className="cell" id="allow-access">
+          <div className="head">
+            <span className="label">Signing in</span>
+            <h2 className="display">{ALLOW_ACCESS_TITLE}</h2>
+          </div>
+          <div className="cl-body">
+            <div>
+              {ALLOW_ACCESS_TEXT.map((t) => (
+                <p key={t}>{t}</p>
+              ))}
+            </div>
+          </div>
+        </section>
 
         <section className="cell" id="questions">
           <div className="head">
