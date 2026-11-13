@@ -51,7 +51,27 @@ export type Client = {
   computerOnly?: boolean;
   /** The home page's Connect box: one line of how, and the one thing to copy. */
   home?: { how: string; line: string };
+  /**
+   * Finishes sign-in on the person's own computer (a 127.0.0.1 address), so the sign-in page
+   * warns about it before Allow access. The setup says so first, with a link to ALLOW_ACCESS.
+   */
+  localSignIn?: boolean;
 };
+
+/** Where /connect explains the sign-in page's warning about an app on your computer. */
+export const ALLOW_ACCESS = '/connect#allow-access';
+
+/** What the sign-in page will say for an app that finishes sign-in on your computer. */
+export const allowAccessNote = (name: string) =>
+  `The sign-in page will warn that it’s sending you back to an app on your computer. That’s ${name} finishing the sign-in: click Allow access.`;
+
+/** What the warning means, for /connect and its Markdown twin. */
+export const ALLOW_ACCESS_TITLE = 'Why sign-in says “This is a security risk”';
+export const ALLOW_ACCESS_TEXT = [
+  'Apps that run on your computer, like Codex and Claude Code, finish signing in by sending your browser back to an address on your own machine. It looks like 127.0.0.1 and a number. The sign-in page can’t see what’s listening there, so before it lets an app on your computer in, it warns you. Every service that signs these apps in this way shows a warning like it.',
+  'If you just started the sign-in from Codex or Claude Code, it’s yours: click Allow access and you’re connected. If you didn’t start a sign-in yourself, click Cancel.',
+  'ChatGPT, Claude and Kazi finish signing in on their own websites, so they don’t show it.',
+];
 
 const json = (v: unknown) => JSON.stringify(v, null, 2);
 
@@ -129,6 +149,7 @@ const APPS: Client[] = [
     slug: 'claude-code',
     name: 'Claude Code',
     where: 'Terminal',
+    localSignIn: true,
     steps: [
       'Run the command below.',
       'Inside Claude Code, type /mcp and sign in on the page that opens.',
@@ -199,6 +220,7 @@ const APPS: Client[] = [
     slug: 'codex',
     name: 'Codex',
     where: 'CLI, IDE extension and the ChatGPT desktop app',
+    localSignIn: true,
     steps: [
       'Run the first command below to add cuttingfloor.',
       'Run codex mcp login cuttingfloor and sign in in your browser.',
@@ -220,8 +242,8 @@ const APPS: Client[] = [
     ],
     docs: 'https://learn.chatgpt.com/docs/extend/mcp',
     home: {
-      how: 'Run this, then codex mcp login cuttingfloor to sign in.',
-      line: `codex mcp add cuttingfloor --url ${MCP_URL}`,
+      how: 'Run this in a terminal. It adds cuttingfloor and opens the sign-in.',
+      line: `codex mcp add cuttingfloor --url ${MCP_URL} && codex mcp login cuttingfloor`,
     },
   },
   {

@@ -1,4 +1,4 @@
-import type { Client } from '../../content/clients.ts';
+import { ALLOW_ACCESS, allowAccessNote, type Client } from '../../content/clients.ts';
 import { SendToSelf } from '../agents/send.tsx';
 import { Copy } from '../walkthroughs/copy.tsx';
 import { LogoSlot } from './logo.tsx';
@@ -30,9 +30,14 @@ export function ClientSection({ client: c, n }: { client: Client; n: number }) {
               </a>
             </p>
           )}
-          {c.notes && (
+          {(c.notes || c.localSignIn) && (
             <ul className="cl-notes">
-              {c.notes.map((note) => (
+              {c.localSignIn && (
+                <li>
+                  {allowAccessNote(c.name)} <a href={ALLOW_ACCESS}>What does this mean?</a>
+                </li>
+              )}
+              {c.notes?.map((note) => (
                 <li key={note}>{note}</li>
               ))}
             </ul>
