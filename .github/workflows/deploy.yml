@@ -56,7 +56,8 @@ jobs:
           echo "$TOKEN" | ssh "root@$HOST" docker login ghcr.io -u "$ACTOR" --password-stdin
           # .env pins the image for compose, so a reboot or a later `compose up` keeps this one.
           ssh "root@$HOST" "cd /opt/cuttingfloor && echo CUTTINGFLOOR_IMAGE=$image > .env \
-            && docker compose pull cuttingfloor motion && docker compose up -d && docker logout ghcr.io \
+            && docker compose pull cuttingfloor motion && docker compose up -d \
+            && docker exec caddy caddy reload --config /etc/caddy/Caddyfile && docker logout ghcr.io \
             && docker image prune -f >/dev/null"
           echo "Deployed $image"
       - name: Check
