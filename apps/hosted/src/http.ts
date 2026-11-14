@@ -412,6 +412,12 @@ export function createHttpServer(options: HttpOptions): Server {
           extra: { via: caller.via },
         },
       });
+      // The SDK logs why it refused a request but not who sent it: name the app, so a real
+      // client failing to connect can be told from a scanner.
+      if (response.status === 400 || response.status === 406 || response.status === 415)
+        process.stderr.write(
+          `mcp: refused ${response.status} from ${req.headers['user-agent'] ?? 'unknown'} (${caller.via})\n`,
+        );
       await sendResponse(res, response);
     } catch (error) {
       process.stderr.write(`http: ${(error as Error).stack ?? error}\n`);
