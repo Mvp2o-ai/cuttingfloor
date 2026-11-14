@@ -1,10 +1,12 @@
 import { join } from 'node:path';
 import type { Workspace } from '@cuttingfloor/core';
 import type { Job, StartOptions } from '@cuttingfloor/jobs';
+import { JUDGMENTS_PER_CREDIT } from '@cuttingfloor/plans';
 import type { CfError } from '@cuttingfloor/schema';
 
-// Render time: how long each job ran, from leaving the queue to its end. One file per job under
-// the owner's month (`owners/{owner}/meter/{yyyy-mm}/{job_id}.json`), so jobs ending together on
+// Render time: how long each job ran, from leaving the queue to its end, and the judgments a call
+// asked of Jev (billed at JUDGMENTS_PER_CREDIT, as seconds of a credit's minute). One file per job
+// or judging call under the owner's month (`owners/{owner}/meter/{yyyy-mm}/{job_id}.json`), so jobs ending together on
 // any server never lose a count, and a month is its files' sum. Kept 5 years: bought credits never
 // expire, so what used them is counted against them for as long as an account plausibly lasts.
 
@@ -15,7 +17,38 @@ export interface MeterEntry {
   tool: string;
   started_at: string;
   ended_at: string;
+  /** How long it ran. */
   seconds: number;
+  /** Judgments asked of Jev, billed on top of the running time. */
+  judgments?: number;
+}
+
+/** What an entry costs, as seconds of a credit's minute: its running time plus its judgments. */
+export function billedSeconds(entry: MeterEntry): number {
+  return entry.seconds + ((entry.judgments ?? 0) * 60) / JUDGMENTS_PER_CREDIT;
+}
+
+/** Records judgments asked of Jev, under an id of their own (a judging job's id plus `-judgments`). */
+export async function meterJudgments(
+  ws: Workspace,
+  owner: string,
+  id: string,
+  tool: string,
+  judgments: number,
+): Promise<MeterEntry> {
+  const now = new Date().toISOString();
+  const entry: MeterEntry = {
+    job_id: id,
+    tool,
+    started_at: now,
+    ended_at: now,
+    seconds: 0,
+    judgments,
+  };
+  await ws.writeJson(ws.ownerDir(owner, 'meter', month(now), `${id}.json`), entry, {
+    exclusive: true,
+  });
+  return entry;
 }
 
 const month = (iso: string) => iso.slice(0, 7);
@@ -57,7 +90,7 @@ export async function* meterEntries(
   }
 }
 
-/** Seconds of jobs that ended at or after `since`, and before `until` when it is given. */
+/** Billed seconds (billedSeconds) of entries that ended at or after `since`, and before `until`. */
 export async function meteredSeconds(
   ws: Workspace,
   owner: string,
@@ -67,26 +100,24 @@ export async function meteredSeconds(
   const to = until?.toISOString();
   let total = 0;
   for await (const entry of meterEntries(ws, owner, since))
-    if (!to || entry.ended_at < to) total += entry.seconds;
+    if (!to || entry.ended_at < to) total += billedSeconds(entry);
   return Math.round(total * 1000) / 1000;
 }
 
 /**
  * The owner's plan, as limits on the work they start (hosted). The numbers are the deployment's,
- * never a tool's: jobs at once, a plan's largest export, its judgments a day.
+ * never a tool's: jobs at once, a plan's largest export, its storage.
  */
 export interface OwnerLimits {
   /** The owner's jobs that run at once (the server's fairness cap, not a plan's); more wait their turn. */
   jobs?: number;
   /** Largest export's short side in pixels. */
   shortSide?: number;
-  /** Judgments a day on the server's key (judge.ask, media.analyze look). */
-  judgmentsPerDay?: number;
   /** Bytes the owner may keep on the server at once (uploads, media, exports). */
   storageBytes?: number;
   /** The pricing page (information only), for refusals that a plan's limits cause. */
   account?: string;
-  /** Why no new job may start now (the plan's credits are used up). */
+  /** Why no new job or judgment may start now (the plan's credits are used up). */
   refuseJobs?: CfError;
 }
 

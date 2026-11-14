@@ -2,6 +2,7 @@ import {
   PLANS as ALL,
   FREE_CREDITS,
   FREE_FOOTAGE_MINUTES,
+  JUDGMENTS_PER_CREDIT,
   LOW_CREDITS,
   PACKS,
   type PlanId,
@@ -173,7 +174,7 @@ function limit(cell: (l: Limits, id: PlanId) => Cell) {
 
 const lipsync = KEYS.find((k) => k.tools.includes('create.lipsync'));
 const judgment = KEYS.find((k) => k.tools.includes('judge.ask'));
-/** The judgment tools, as the key table names them, for the daily-limit row. */
+/** The judgment tools, as the key table names them, for the judgments row. */
 export const JUDGMENT_TOOLS = judgment?.tools ?? [];
 
 export const ROWS: Row[] = [
@@ -230,14 +231,10 @@ export const ROWS: Row[] = [
     },
   },
   {
-    label: `Visual judgments a day (${JUDGMENT_TOOLS.join(', ')})`,
+    label: `Visual judgments (${JUDGMENT_TOOLS.join(', ')})`,
     cells: {
       'self-hosted': key(judgment?.selfHosted ?? ''),
-      ...limit((l) =>
-        yes(
-          l.judgmentsPerDay === null ? 'No daily limit' : `${num(l.judgmentsPerDay)} a day, no key`,
-        ),
-      ),
+      ...hosted(() => yes(`${num(JUDGMENTS_PER_CREDIT)} for a credit, no key`)),
     },
   },
   {
@@ -272,7 +269,7 @@ export const FREE_GOES =
 
 /** What a credit is: the pricing page's ledger, said as separate facts. */
 export const CREDIT = [
-  'A credit is one minute of our servers working for you: an export, an import, a transcript, graphics, a voiceover or a cutout.',
+  `A credit is one minute of our servers working for you: an export, an import, a transcript, graphics, a voiceover or a cutout. It also pays for ${JUDGMENTS_PER_CREDIT} visual judgments, where a model looks at a frame for your agent.`,
   'Planning and editing the timeline cost nothing, and so do previews.',
   `A new account gets ${FREE_CREDITS} free credits, with no card and no time limit. ${FREE_GOES}`,
   `After that, buy credits in packs when you need them, from ${FROM_PACK}. They never expire, and there is no subscription.`,

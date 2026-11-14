@@ -2,7 +2,7 @@ import { CfError, JUDGE_LIMITS, type JudgeAnswer } from '@cuttingfloor/schema';
 import { askJev } from './jev.ts';
 
 // Frames judged one by one: media.analyze look asks its questions of them, media.seek its
-// criteria. Both sample the same way, send the same pictures and share the daily budget.
+// criteria. Both sample the same way, send the same pictures and are billed the same, a judgment a frame.
 
 /** State names filled on every frame, which a caller's own entries may not take. */
 export const FRAME_NAMES = ['frame', 'previous', 'seconds_between'];

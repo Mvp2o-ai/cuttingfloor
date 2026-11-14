@@ -31,8 +31,7 @@ import { assertOnline, sourcesFor } from '../render.ts';
 import { jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 import type { Sound } from '../sound.ts';
-import { addUsage, checkQuota } from '../usage.ts';
-import { JUDGMENTS, PICTURE } from './judge.ts';
+import { PICTURE } from './judge.ts';
 
 // The measured facts of media.analyze kept apart from media.ts: speakers and voice on a sound,
 // colour and picture on a picture, and every picture kind on a timeline as it renders.
@@ -301,17 +300,6 @@ export async function analyzeTimelinePicture(
     const s = sampleTimes(duration, args, 'timeline');
     times = s.times;
     if (args.kind === 'look') {
-      await checkQuota(
-        rt.ws,
-        owner,
-        JUDGMENTS,
-        s.asked,
-        (await deps.limits?.())?.judgmentsPerDay ?? rt.config.judgmentsPerDay,
-        {
-          unit: 'judgments (one a frame)',
-          hint: 'Sample fewer frames (a larger every_seconds, or at_seconds around the moments you need)',
-        },
-      );
     }
   }
   if (args.kind === 'track') {
@@ -422,7 +410,7 @@ export async function analyzeTimelinePicture(
           onFrame: (done, of) =>
             progress(0.3 + (0.7 * done) / of, `look: asked ${done} of ${of} frames`),
         });
-        await addUsage(rt.ws, owner, JUDGMENTS, job.id, frames.length);
+        await rt.meterJudgments(owner, `${job.id}-judgments`, 'media.analyze', frames.length);
         const run = {
           id: job.id,
           model: JEV_MODEL,

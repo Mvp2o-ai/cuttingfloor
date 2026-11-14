@@ -1,7 +1,8 @@
 // The hosted plans, in one place: the site's pricing, checkout and account pages and the hosted
 // server's access checks read this file. The billable unit is a credit: one minute of a job
 // running (export, import, transcript, motion graphics, voiceover, cutout, code), which the meter
-// counts as a render minute. Editing the timeline and inline previews are free.
+// counts as a render minute, or JUDGMENTS_PER_CREDIT visual judgments. Editing the timeline and
+// inline previews are free.
 //
 // There are no subscriptions. Every account starts with free credits and buys more in packs when
 // it wants them (pay as you go); bought credits never expire. At zero new jobs are refused; editing
@@ -13,8 +14,6 @@ export type PlanId = 'free' | 'credits' | 'enterprise' | 'lifetime' | 'staff';
 export interface Limits {
   /** Largest export, as its short side in pixels (1080 is 1080p, 2160 is 4K); null for any. */
   shortSide: number | null;
-  /** judge.ask and media.analyze look judgments a day; null for the server's own limit. */
-  judgmentsPerDay: number | null;
   /**
    * Gigabytes the account may keep on the server at once: uploads, imported media and its proxies,
    * exports. Everything still expires on its own clock; this caps what is held meanwhile. null
@@ -52,7 +51,7 @@ export const PLANS: Record<PlanId, Plan> = {
     name: 'Free',
     sold: 'none',
     credits: { kind: 'balance' },
-    limits: { shortSide: 2160, judgmentsPerDay: 300, storageGb: 5 },
+    limits: { shortSide: 2160, storageGb: 5 },
     note: 'Every tool, no card.',
   },
   credits: {
@@ -60,7 +59,7 @@ export const PLANS: Record<PlanId, Plan> = {
     name: 'Pay as you go',
     sold: 'self',
     credits: { kind: 'balance' },
-    limits: { shortSide: 2160, judgmentsPerDay: 5000, storageGb: 50 },
+    limits: { shortSide: 2160, storageGb: 50 },
     note: 'Buy credits when you need them. They never expire.',
   },
   enterprise: {
@@ -68,7 +67,7 @@ export const PLANS: Record<PlanId, Plan> = {
     name: 'Enterprise',
     sold: 'contact',
     credits: { kind: 'monthly', perMonth: 5000 },
-    limits: { shortSide: 2160, judgmentsPerDay: 20000, storageGb: 1000 },
+    limits: { shortSide: 2160, storageGb: 1000 },
     note: 'Agents editing all day, for a team. Credits, seats and dedicated servers to suit.',
   },
   lifetime: {
@@ -76,7 +75,7 @@ export const PLANS: Record<PlanId, Plan> = {
     name: 'Lifetime',
     sold: 'none',
     credits: { kind: 'monthly', perMonth: 900 },
-    limits: { shortSide: 2160, judgmentsPerDay: 5000, storageGb: 200 },
+    limits: { shortSide: 2160, storageGb: 200 },
     note: 'Given for good.',
   },
   staff: {
@@ -84,7 +83,7 @@ export const PLANS: Record<PlanId, Plan> = {
     name: 'Staff',
     sold: 'none',
     credits: { kind: 'none' },
-    limits: { shortSide: null, judgmentsPerDay: null, storageGb: null },
+    limits: { shortSide: null, storageGb: null },
     note: 'The team running cuttingfloor.',
   },
 };
@@ -115,6 +114,13 @@ export function packOf(id: string | null | undefined): Pack | undefined {
  * amount: the site, the server, emails and the footage minutes below all follow it.
  */
 export const FREE_CREDITS = 25;
+
+/**
+ * Judgments a credit pays for (judge.ask, media.seek and media.analyze look ask Jev, one a
+ * picture). Jev costs ~$0.000088 a judgment; a credit nets ~$0.132 on the biggest pack after
+ * Stripe, so 200 a credit is $0.0176 of it, an 87% margin (render time is 97%).
+ */
+export const JUDGMENTS_PER_CREDIT = 200;
 
 /**
  * Minutes of footage one credit edits, measured on the hosted server: a transcript costs about 0.3

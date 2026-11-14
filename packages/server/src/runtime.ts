@@ -12,7 +12,7 @@ import {
 } from '@cuttingfloor/engine';
 import { FileJobStore, type Job, JobRunner } from '@cuttingfloor/jobs';
 import { CALLS_TTL_MS, type CallEntry, jobEnd, recordCall } from './calls.ts';
-import { METER_TTL_MS, type MeterEntry, meterJob } from './meter.ts';
+import { METER_TTL_MS, type MeterEntry, meterJob, meterJudgments } from './meter.ts';
 import { Uploads } from './uploads.ts';
 
 /**
@@ -59,12 +59,6 @@ export interface RuntimeConfig {
   motionUrl: string | null;
   /** This server's name in job records, so servers sharing a data root know whose jobs are whose. */
   node?: string;
-  /**
-   * Jev judgments each owner may ask a day on the server's key, shared by media.analyze look (one
-   * a frame) and judge.ask (one a call, plus one per picture past the first); unset means no limit
-   * (local mode).
-   */
-  judgmentsPerDay?: number;
   /** TypeSafe's API, for judge.ask and media.analyze look. Default: api.typesafe.ai. */
   typesafeUrl?: string;
   /** sync. labs' API, for create.lipsync. Default: api.sync.so. */
@@ -84,7 +78,6 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
       .map((s) => s.trim())
       .filter(Boolean);
   // The look-only name from before judge.ask still sets the shared budget.
-  const perDay = env.CUTTINGFLOOR_JUDGMENTS_PER_DAY ?? env.CUTTINGFLOOR_LOOK_FRAMES_PER_DAY;
   return {
     dataDir: env.CUTTINGFLOOR_DATA ?? '/data',
     mode,
@@ -113,7 +106,6 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     ...(env.CUTTINGFLOOR_MODELS ? { modelsDir: env.CUTTINGFLOOR_MODELS } : {}),
     motionUrl: env.CUTTINGFLOOR_MOTION_URL?.replace(/\/$/, '') || null,
     node: env.CUTTINGFLOOR_NODE ?? (mode === 'local' ? 'local' : hostname()),
-    ...(perDay || mode === 'hosted' ? { judgmentsPerDay: Number(perDay || 5000) } : {}),
     ...(env.CUTTINGFLOOR_TYPESAFE_URL
       ? { typesafeUrl: env.CUTTINGFLOOR_TYPESAFE_URL.replace(/\/$/, '') }
       : {}),
@@ -143,7 +135,7 @@ export class Runtime {
   #sweeper: NodeJS.Timeout | undefined;
   #reaper: NodeJS.Timeout | undefined;
   #calls: Promise<void> = Promise.resolve();
-  #onMetered = new Set<(job: Job, entry: MeterEntry) => void>();
+  #onMetered = new Set<(owner: string, entry: MeterEntry, job?: Job) => void>();
   #onToolCall = new Set<(owner: string, entry: CallEntry) => void>();
 
   constructor(config: RuntimeConfig) {
@@ -169,7 +161,7 @@ export class Runtime {
         this.logCall(job.owner, jobEnd(job));
         void meterJob(this.ws, job).then(
           (entry) => {
-            if (entry) for (const listener of this.#onMetered) listener(job, entry);
+            if (entry) for (const listener of this.#onMetered) listener(job.owner, entry, job);
           },
           (error: Error) => process.stderr.write(`meter: ${job.id}: ${error.message}\n`),
         );
@@ -223,10 +215,20 @@ export class Runtime {
     }
   }
 
-  /** Tells `listener` about each job this server meters, once its time is recorded. */
-  onMetered(listener: (job: Job, entry: MeterEntry) => void): () => void {
+  /**
+   * Tells `listener` about each job this server meters, once its time is recorded, and each
+   * call's judgments (no job: judge.ask; or a judging job's, under their own id).
+   */
+  onMetered(listener: (owner: string, entry: MeterEntry, job?: Job) => void): () => void {
     this.#onMetered.add(listener);
     return () => this.#onMetered.delete(listener);
+  }
+
+  /** Records judgments an owner asked of Jev, billed with their jobs. */
+  async meterJudgments(owner: string, id: string, tool: string, judgments: number): Promise<void> {
+    if (!(judgments > 0)) return;
+    const entry = await meterJudgments(this.ws, owner, id, tool, judgments);
+    for (const listener of this.#onMetered) listener(owner, entry);
   }
 
   /** Tells `listener` about each tool call this server answers (not job ends), as it is logged. */

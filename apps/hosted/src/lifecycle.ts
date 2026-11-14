@@ -2,9 +2,17 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import type { Job } from '@cuttingfloor/jobs';
-import { FREE_CREDITS, LOW_CREDITS, PACKS, PLANS, packOf } from '@cuttingfloor/plans';
+import {
+  FREE_CREDITS,
+  JUDGMENTS_PER_CREDIT,
+  LOW_CREDITS,
+  PACKS,
+  PLANS,
+  packOf,
+} from '@cuttingfloor/plans';
 import { type AccountGetResult, CfError, MediaUploadInput } from '@cuttingfloor/schema';
 import {
+  billedSeconds,
   listHeld,
   type MeterEntry,
   meterEntries,
@@ -115,9 +123,9 @@ export class Lifecycle {
   /** Meters into usage email and first-export records; sweeps new accounts. */
   start(): void {
     this.#o.runtime.onToolCall((owner) => this.#toolCalled(owner));
-    this.#o.runtime.onMetered((job, entry) => {
-      void this.#metered(job, entry).catch((error: Error) =>
-        process.stderr.write(`lifecycle: ${job.owner}: ${error.message}\n`),
+    this.#o.runtime.onMetered((owner, entry, job) => {
+      void this.#metered(owner, entry, job).catch((error: Error) =>
+        process.stderr.write(`lifecycle: ${owner}: ${error.message}\n`),
       );
     });
     const sweep = () =>
@@ -170,11 +178,10 @@ export class Lifecycle {
     });
   }
 
-  async #metered(job: Job, entry: MeterEntry): Promise<void> {
-    const owner = job.owner;
+  async #metered(owner: string, entry: MeterEntry, job?: Job): Promise<void> {
     if (!isUser(owner)) return;
-    this.#o.access.addSeconds(owner, entry.seconds);
-    if (job.tool === 'export.video') {
+    this.#o.access.addSeconds(owner, billedSeconds(entry));
+    if (job?.tool === 'export.video') {
       await this.#markOnce(owner, 'first_export_at');
       if (job.status === 'completed' && !job.result?.isError)
         await this.#markOnce(owner, 'first_edit_at');
@@ -200,7 +207,7 @@ export class Lifecycle {
     const marker = ws.ownerDir(owner, 'ledger-spent', `${entry.job_id}.json`);
     let mark = await ws.readJson<Spent>(marker);
     if (!mark) {
-      const credits = Math.round((entry.seconds / 60) * 1000) / 1000;
+      const credits = Math.round((billedSeconds(entry) / 60) * 1000) / 1000;
       // A job too short to round to a thousandth of a credit costs nothing (the ledger takes none).
       if (!(credits > 0)) {
         await ws.writeJson(marker, { at: new Date().toISOString(), told: true });
@@ -268,7 +275,7 @@ export class Lifecycle {
       lines: [
         out
           ? 'Your agent has used all its credits.'
-          : `Your agent has ${left} credits left. A credit is one minute of a job running (an export, an import, a transcript).`,
+          : `Your agent has ${left} credits left. A credit is one minute of a job running (an export, an import, a transcript), or ${JUDGMENTS_PER_CREDIT} visual judgments.`,
         out
           ? 'Editing still works, and so do previews. New jobs (exports, imports, motion graphics, voiceovers) won’t start until you top up; then ask again.'
           : 'At zero, new jobs won’t start until you top up. Editing and previews keep working.',
@@ -382,7 +389,6 @@ export class Lifecycle {
       packs: bought ? PACKS.map((p) => ({ price_usd: p.price, credits: p.credits })) : [],
       limits: {
         export_short_side: l.shortSide,
-        judgments_per_day: l.judgmentsPerDay,
         storage_gb: l.storageGb,
       },
       account_url: this.#o.accountUrl,

@@ -67,15 +67,7 @@ import { guard, jobReply, jobView, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 import { checkSound, type Sound, withSound } from '../sound.ts';
 import { listHeld, startUpload, storageOf, storageRoom } from '../storage.ts';
-import { addUsage, checkQuota } from '../usage.ts';
-import {
-  checkQuestions,
-  checkText,
-  JUDGMENTS,
-  jevKeyRequired,
-  PICTURE,
-  pictureSize,
-} from './judge.ts';
+import { checkQuestions, checkText, jevKeyRequired, PICTURE, pictureSize } from './judge.ts';
 import { soundLabelIndexes, soundsReport } from './listen.ts';
 import {
   analyzeTimelinePicture,
@@ -937,17 +929,6 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         const sampled = sampleTimes(p?.kind === 'image' ? 0 : (p?.duration ?? 0), args);
         times = sampled.times;
         const asked = sampled.asked;
-        await checkQuota(
-          rt.ws,
-          owner,
-          JUDGMENTS,
-          asked,
-          (await deps.limits?.())?.judgmentsPerDay ?? rt.config.judgmentsPerDay,
-          {
-            unit: 'judgments (one a frame)',
-            hint: 'Sample fewer frames (a larger every_seconds, or at_seconds around the moments you need)',
-          },
-        );
       }
       if (args.kind === 'colour') {
         times = sampleTimes(p?.kind === 'image' ? 0 : (p?.duration ?? 0), args).times;
@@ -1071,7 +1052,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
                 frames,
               };
               await rt.media.saveAnalysis(owner, mediaId, 'look', run);
-              await addUsage(rt.ws, owner, JUDGMENTS, job.id, frames.length);
+              await rt.meterJudgments(owner, `${job.id}-judgments`, 'media.analyze', frames.length);
               return ok({
                 media_id: mediaId,
                 kind: args.kind,

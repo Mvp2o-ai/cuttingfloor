@@ -1,4 +1,10 @@
-import { FREE_CREDITS, LEGAL_NAME, PLANS, SUPPORT_EMAIL } from '@cuttingfloor/plans';
+import {
+  FREE_CREDITS,
+  JUDGMENTS_PER_CREDIT,
+  LEGAL_NAME,
+  PLANS,
+  SUPPORT_EMAIL,
+} from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { Items, LegalPage, P, Part } from '../legal.tsx';
 
@@ -44,7 +50,7 @@ export default function Terms() {
           items={[
             `Every new account gets ${FREE_CREDITS} free credits, with no card. They don't expire and don't renew.`,
             'After that, you buy credits in packs, paid once through Stripe. There is no subscription and nothing renews. The prices are on the pricing page.',
-            'A credit is one minute of a job running on our servers (an export, an import, a transcript, motion graphics, a voiceover, a cutout). Editing the timeline and previews are free.',
+            `A credit is one minute of a job running on our servers (an export, an import, a transcript, motion graphics, a voiceover, a cutout), or ${JUDGMENTS_PER_CREDIT} visual judgments (a model looking at a frame). Editing the timeline and previews are free.`,
             'Credits you buy never expire. When your credits run out, new jobs stop until you buy more. We never charge for going over.',
             'If you turn on automatic top-up, we buy the pack you chose on your saved card whenever your credits run low, and email you a receipt each time. Turn it off any time on your account page.',
             `${PLANS.enterprise.name} is arranged with us directly: write to ${SUPPORT_EMAIL}.`,

@@ -22,8 +22,7 @@ import { admitJob } from '../meter.ts';
 import { assertOnline, framesUri, sourcesFor } from '../render.ts';
 import { guard, jobReply, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
-import { addUsage, checkQuota } from '../usage.ts';
-import { checkText, JUDGMENTS, jevKeyRequired, PICTURE, pictureSize } from './judge.ts';
+import { checkText, jevKeyRequired, PICTURE, pictureSize } from './judge.ts';
 
 // media.seek: plain-language criteria, each asked of sampled frames as a Jev noul, and the runs
 // of time where each holds. It finds moments; media.analyze look measures every frame.
@@ -211,17 +210,6 @@ export function registerSeekTools(server: McpServer, deps: ServerDeps): void {
       }
 
       const { times, asked } = sampleTimes(duration, args, args.timeline_id ? 'timeline' : 'media');
-      await checkQuota(
-        rt.ws,
-        owner,
-        JUDGMENTS,
-        asked,
-        (await deps.limits?.())?.judgmentsPerDay ?? rt.config.judgmentsPerDay,
-        {
-          unit: 'judgments (one a frame)',
-          hint: 'Sample fewer frames (a larger every_seconds, or at_seconds around the moments you need)',
-        },
-      );
       const names = ['frame', 'previous', ...Object.keys(args.state ?? {})];
       const questions = Object.fromEntries(
         Object.entries(args.criteria).map(([id, c]) => [id, seekQuestion(c, names)]),
@@ -265,7 +253,7 @@ export function registerSeekTools(server: McpServer, deps: ServerDeps): void {
             onFrame: (done, of) =>
               progress(0.3 + (0.7 * done) / of, `seek: judged ${done} of ${of} frames`),
           });
-          await addUsage(rt.ws, owner, JUDGMENTS, job.id, frames.length);
+          await rt.meterJudgments(owner, `${job.id}-judgments`, 'media.seek', frames.length);
           const ids = Object.keys(questions);
           return ok({
             ...target,
