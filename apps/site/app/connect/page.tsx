@@ -1,11 +1,6 @@
 import { FREE_CREDITS, FREE_FOOTAGE_MINUTES } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
-import {
-  ALLOW_ACCESS_TEXT,
-  ALLOW_ACCESS_TITLE,
-  CLIENTS,
-  CLIENTS_CHECKED,
-} from '../../content/clients.ts';
+import { CLIENTS, CLIENTS_CHECKED } from '../../content/clients.ts';
 import { ConnectNow } from '../connect-now.tsx';
 import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
