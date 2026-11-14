@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.45.9
+
+### Patch Changes
+
+- a6e8a34: On a phone, the Connect box on the welcome and account pages now says which apps are added on a computer and offers Kazi or "Send me the setup" under each, as /connect does, instead of only computer steps and terminal commands.
+
 ## 0.45.8
 
 ### Patch Changes
