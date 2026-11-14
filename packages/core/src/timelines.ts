@@ -1,3 +1,5 @@
+import { stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   CfError,
   EditArgs,
@@ -16,6 +18,9 @@ import { timelineIdOf } from './hash.ts';
 import type { Workspace } from './workspace.ts';
 
 export const TIMELINE_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** How long the server remembers that a timeline expired, so a later lookup can say so. */
+const GONE_DAYS = 30;
 
 /** Immutable, content-addressed timelines with a sliding TTL. */
 export class TimelineStore {
@@ -41,12 +46,25 @@ export class TimelineStore {
 
   async get(owner: string, id: string): Promise<TimelineDoc> {
     const doc = await this.find(owner, id);
-    if (!doc) {
-      throw new CfError('expired', `Timeline ${id} is not available`, {
-        hint: 'Timelines expire 24 hours after last use. Pass the JSON from an earlier timeline.get to timeline.load to bring it back',
-      });
+    if (doc) return doc;
+    const gone = await this.#ws.readJson<{ at: string }>(
+      this.#ws.ownerDir(owner, 'timelines-gone', `${id}.json`),
+    );
+    if (gone) {
+      throw new CfError(
+        'expired',
+        `Timeline ${id} expired at ${gone.at}, 24 hours after its last use`,
+        {
+          hint: 'Pass the JSON from an earlier timeline.get to timeline.load to bring it back',
+          detail: { timeline_id: id, at: gone.at },
+        },
+      );
     }
-    return doc;
+    // Not expired: an id this account never had (mistyped, made up, or another account's).
+    throw new CfError('not_found', `No timeline ${id}`, {
+      hint: `This account has had no timeline with this id in the last ${GONE_DAYS} days. Pass a timeline_id exactly as a result returned it (timeline.create, timeline.load or an edit); timeline.load brings one back from its JSON`,
+      detail: { timeline_id: id },
+    });
   }
 
   async find(owner: string, id: string): Promise<TimelineDoc | undefined> {
@@ -59,7 +77,21 @@ export class TimelineStore {
   async sweep(ttlMs = TIMELINE_TTL_MS): Promise<number> {
     let n = 0;
     for (const owner of await this.#ws.owners()) {
-      n += await this.#ws.sweep(this.#ws.path('owners', owner, 'timelines'), ttlMs);
+      const base = this.#ws.path('owners', owner, 'timelines');
+      for (const name of await this.#ws.list(base)) {
+        const s = await stat(join(base, name)).catch(() => undefined);
+        if (!s || s.mtimeMs >= Date.now() - ttlMs) continue;
+        await this.#ws.remove(join(base, name));
+        if (/^tl_[0-9a-f]{32}\.json$/.test(name)) {
+          const gone = this.#ws.path('owners', owner, 'timelines-gone', name);
+          await this.#ws.writeJson(gone, { at: new Date().toISOString() });
+        }
+        n += 1;
+      }
+      await this.#ws.sweep(
+        this.#ws.path('owners', owner, 'timelines-gone'),
+        GONE_DAYS * 86_400_000,
+      );
     }
     return n;
   }

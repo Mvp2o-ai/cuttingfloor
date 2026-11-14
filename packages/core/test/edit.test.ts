@@ -2209,11 +2209,16 @@ describe('TimelineStore', () => {
     const id = await store.put('local', doc);
     expect(await store.put('local', doc)).toBe(id);
     expect(await store.get('local', id)).toEqual(doc);
-    await expect(store.get('someone-else', id)).rejects.toThrow(/not available/);
+    await expect(store.get('someone-else', id)).rejects.toMatchObject({ code: 'not_found' });
     expect(await store.sweep(-1)).toBe(1);
     await expect(store.get('local', id)).rejects.toMatchObject({
       code: 'expired',
       hint: expect.stringMatching(/timeline.load/),
+    });
+    // An id it never held is not called expired: it was mistyped or made up.
+    await expect(store.get('local', `tl_${'0'.repeat(32)}`)).rejects.toMatchObject({
+      code: 'not_found',
+      hint: expect.stringMatching(/exactly as a result returned it/),
     });
   });
 });

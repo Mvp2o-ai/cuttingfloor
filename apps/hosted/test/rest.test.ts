@@ -140,10 +140,10 @@ describe('REST', () => {
   });
 
   it('answers a refusal with its status and {code, message, hint}', async () => {
-    // An id the server doesn't hold any more: timelines expire a day after last use.
+    // An id the server never held.
     const gone = await post('timeline.get', { timeline_id: 'tl_00000000000000000000000000000000' });
-    expect(gone.status).toBe(410);
-    expect(await gone.json()).toMatchObject({ code: 'expired', message: expect.any(String) });
+    expect(gone.status).toBe(404);
+    expect(await gone.json()).toMatchObject({ code: 'not_found', message: expect.any(String) });
 
     const wrong = await post('timeline.create', { name: 'no sequence' });
     expect(wrong.status).toBe(400);
