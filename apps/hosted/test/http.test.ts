@@ -518,6 +518,19 @@ describe('HTTP face', () => {
     expect(await challenge.text()).toBe('token-123');
     // The two steps toward sign-in this server sees; a bad token is not one of them.
     expect(steps).toEqual(['challenged openai-mcp/1.0.0', 'metadata node']);
+    // A person who opens the address in a browser gets the same challenge, with a page to read.
+    const opened = await fetch(`${base}/mcp`, {
+      headers: { accept: 'text/html,application/xhtml+xml', 'user-agent': 'Mozilla/5.0' },
+    });
+    expect(opened.status).toBe(401);
+    expect(opened.headers.get('www-authenticate')).toContain(`resource_metadata="${prmUrl}"`);
+    expect(opened.headers.get('content-type')).toBe('text/html; charset=utf-8');
+    const page = await opened.text();
+    expect(page).toContain(`${base}/mcp`);
+    expect(page).toContain('https://cuttingfloor.ai/connect');
+    // An app's stream request still gets JSON.
+    const stream = await fetch(`${base}/mcp`, { headers: { accept: 'text/event-stream' } });
+    expect(stream.headers.get('content-type')).toBe('application/json');
     const asMeta = (await (
       await fetch(`${base}/.well-known/oauth-authorization-server`)
     ).json()) as { issuer: string };

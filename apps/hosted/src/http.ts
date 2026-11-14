@@ -31,6 +31,7 @@ import {
   oauthMetadataResponse,
   requireBearerAuth,
 } from '@modelcontextprotocol/server';
+import { addressPage, wantsPage } from './address-page.ts';
 import type { JwtTokenVerifier } from './oauth.ts';
 import { RestApi } from './rest.ts';
 import { aiCatalog, CARD_TYPE, sendDiscovery, serverCard } from './server-card.ts';
@@ -260,6 +261,14 @@ export function createHttpServer(options: HttpOptions): Server {
         if (auth instanceof Response) {
           if (!req.headers.authorization)
             options.onSignInStep?.('challenged', req.headers['user-agent'] ?? '');
+          if (!req.headers.authorization && wantsPage(req.method, req.headers.accept)) {
+            // A person opened the address in a browser: the same challenge, with a page to read.
+            const { 'content-length': _, ...headers } = Object.fromEntries(auth.headers);
+            res
+              .writeHead(auth.status, { ...headers, 'content-type': 'text/html; charset=utf-8' })
+              .end(addressPage(options.oauth?.resource.href ?? `${runtime.config.publicUrl}/mcp`));
+            return undefined;
+          }
           await sendResponse(res, auth);
           return undefined;
         }

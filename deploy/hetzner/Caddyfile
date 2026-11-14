@@ -3,6 +3,10 @@
 	encode zstd gzip
 	reverse_proxy cuttingfloor:8787 {
 		flush_interval -1
+		# A deploy recreates the server; requests arriving meanwhile wait for it instead of
+		# failing (retried only when the connection was never made, so nothing runs twice).
+		lb_try_duration 30s
+		lb_try_interval 250ms
 	}
 }
 
