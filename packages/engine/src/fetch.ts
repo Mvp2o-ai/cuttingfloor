@@ -10,8 +10,11 @@ import { CfError } from '@cuttingfloor/schema';
 
 export interface DownloadOptions {
   maxBytes: number;
-  /** What to do about a file over maxBytes, when the limit isn't simply the server's. */
-  tooBigHint?: string;
+  /**
+   * A cap tighter than the server's file limit (the account's storage left): what it is, named
+   * in the refusal, and what to do about it.
+   */
+  tooBig?: { limit: string; hint: string };
   timeoutMs: number;
   signal?: AbortSignal;
   /** Tests only: allow loopback and private addresses. */
@@ -85,23 +88,13 @@ export async function download(
     const total = Number(response.headers['content-length'] ?? Number.NaN);
     if (total > options.maxBytes) {
       response.destroy();
-      throw new CfError(
-        'limit_exceeded',
-        `The file is larger than the ${options.maxBytes} byte import limit`,
-        options.tooBigHint ? { hint: options.tooBigHint } : undefined,
-      );
+      throw new CfError('limit_exceeded', ...tooBig(options));
     }
     let bytes = 0;
     response.on('data', (chunk: Buffer) => {
       bytes += chunk.length;
       if (bytes > options.maxBytes) {
-        response.destroy(
-          new CfError(
-            'limit_exceeded',
-            `The file is larger than the ${options.maxBytes} byte import limit`,
-            options.tooBigHint ? { hint: options.tooBigHint } : undefined,
-          ),
-        );
+        response.destroy(new CfError('limit_exceeded', ...tooBig(options)));
       }
       options.onProgress?.(bytes, Number.isFinite(total) ? total : null);
     });
@@ -213,4 +206,23 @@ export function isBlockedAddress(address: string): boolean {
     v6.startsWith('64:ff9b') ||
     v6.startsWith('2001:db8')
   );
+}
+
+/** The refusal for a file over the cap: the cap in words a person reads, and what to do. */
+function tooBig(options: DownloadOptions): [string, { hint: string }] {
+  const size = readableSize(options.maxBytes);
+  return options.tooBig
+    ? [`The file is larger than ${options.tooBig.limit} (${size})`, { hint: options.tooBig.hint }]
+    : [
+        `The file is larger than the ${size} a file can be`,
+        { hint: 'Trim it or export it at a lower bitrate or resolution, then import that' },
+      ];
+}
+
+/** A size as a person reads it: KB under a megabyte, MB under a gigabyte, GB from there. */
+export function readableSize(bytes: number): string {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+  if (bytes < 1e6) return `${Math.max(1, Math.round(bytes / 1e3))} KB`;
+  const mb = bytes / 1e6;
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
 }

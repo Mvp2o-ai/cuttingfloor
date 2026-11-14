@@ -384,7 +384,7 @@ export class MediaLibrary {
     progress: Progress,
     signal: AbortSignal,
     /** A tighter cap on a download than the server's (the account's storage left), and why. */
-    options: { maxBytes?: number; tooBigHint?: string } = {},
+    options: { maxBytes?: number; tooBig?: { limit: string; hint: string } } = {},
   ): Promise<MediaRecord> {
     const dir = this.dir(owner, record.media_id);
     try {
@@ -399,8 +399,8 @@ export class MediaLibrary {
           maxBytes: Math.min(this.config.maxDownloadBytes, options.maxBytes ?? Infinity),
           ...(options.maxBytes !== undefined &&
           options.maxBytes < this.config.maxDownloadBytes &&
-          options.tooBigHint
-            ? { tooBigHint: options.tooBigHint }
+          options.tooBig
+            ? { tooBig: options.tooBig }
             : {}),
           timeoutMs: this.config.downloadTimeoutMs,
           allowPrivate: this.config.allowPrivateUrls,

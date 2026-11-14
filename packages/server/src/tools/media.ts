@@ -1442,8 +1442,10 @@ async function startIngest(
           ? {}
           : {
               maxBytes: room,
-              tooBigHint:
-                "That is more than the account's storage has left. Files expire on their own (uploads after a day, media and exports 7 days after last use); media.list shows what is held and media.delete frees room",
+              tooBig: {
+                limit: "the account's storage has left",
+                hint: 'Files expire on their own (uploads after a day, media and exports 7 days after last use); media.list shows what is held and media.delete frees room',
+              },
             },
       );
       return ok(mediaInfo(done)) as never;
