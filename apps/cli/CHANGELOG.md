@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.45.7
+
+### Patch Changes
+
+- 8889171: Phones keep the Connect and Account links on the signed-in pages. They were hidden below 900px, so the only way between the two pages was through the home page.
+
 ## 0.45.6
 
 ### Patch Changes

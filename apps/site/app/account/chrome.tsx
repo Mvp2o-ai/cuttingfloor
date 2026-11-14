@@ -11,12 +11,13 @@ export function AccountNav({ email }: { email: string }) {
           <Marker />
           cuttingfloor
         </a>
-        <nav className="nav-links" aria-label="Account">
+        <nav className="nav-links account-links" aria-label="Account">
           <a href="/welcome">Connect</a>
           <a href="/account">Account</a>
           <span className="account-email">{email}</span>
         </nav>
         <form
+          className="account-out"
           action={async () => {
             'use server';
             // WorkOS returns only to an absolute address on its list: this site's own home page.
