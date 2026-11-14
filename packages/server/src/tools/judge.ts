@@ -19,16 +19,15 @@ import {
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { askJev, JEV_URL, type JevImage } from '../jev.ts';
+import { admitJob } from '../meter.ts';
 import { assertOnline, sourcesFor } from '../render.ts';
 import { guard, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
-import { addUsage, checkQuota } from '../usage.ts';
 
 // judge.ask: one Jev call about a state you give, entry by entry: text, JSON and pictures (an
 // image, or a video frame). media.analyze look uses the same questions, key and limits per frame.
 
 /** Daily usage on the server's own TypeSafe key: one shared budget for judge.ask and look. */
-export const JUDGMENTS = 'judgments';
 
 /** How pictures are sent: the same size for a look frame and a judge.ask picture. */
 export const PICTURE = { longEdge: 512, minEdge: 280 } as const;
@@ -200,17 +199,8 @@ export function registerJudgeTools(server: McpServer, deps: ServerDeps): void {
       }
       checkText(text);
       const units = judgeUnits(Object.keys(args.questions).length, refs.length + frames.length);
-      await checkQuota(
-        rt.ws,
-        owner,
-        JUDGMENTS,
-        units,
-        (await deps.limits?.())?.judgmentsPerDay ?? rt.config.judgmentsPerDay,
-        {
-          unit: 'judgments (one per 32 questions a call, plus one for each picture past the first)',
-          hint: 'Ask fewer pictures a call, or keep all your questions about one state in one call',
-        },
-      );
+      // Out of credits: refused, as a job would be.
+      await admitJob(deps.limits);
       const signal =
         (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal ??
         new AbortController().signal;
@@ -235,7 +225,7 @@ export function registerJudgeTools(server: McpServer, deps: ServerDeps): void {
         questions: args.questions as Record<string, JudgeQuestion>,
         signal,
       });
-      await addUsage(rt.ws, owner, JUDGMENTS, `ja_${randomUUID()}`, units);
+      await rt.meterJudgments(owner, `ja_${randomUUID()}`, 'judge.ask', units);
       return ok(reply);
     }),
   );

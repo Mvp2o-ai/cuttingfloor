@@ -20,10 +20,14 @@ beforeAll(async () => {
   env = await testRuntime();
 });
 
-async function connectWith(owner: string, limits: () => Promise<OwnerLimits>): Promise<Client> {
+async function connectWith(
+  owner: string,
+  limits: () => Promise<OwnerLimits>,
+  keys: NodeJS.ProcessEnv = {},
+): Promise<Client> {
   const server = createServer({
     runtime: env.runtime,
-    credentials: new LocalCredentialStore({}, false),
+    credentials: new LocalCredentialStore(keys, false),
     owner: () => owner,
     limits,
   });
@@ -110,6 +114,15 @@ describe('plan limits', () => {
     expect(exported.structured).toMatchObject({ code: 'quota_exceeded' });
     const checked = await call(client, 'qa.check', { timeline_id: timeline });
     expect(checked.structured).toMatchObject({ code: 'quota_exceeded' });
+    // Judgments are paid in credits too: refused before Jev is asked.
+    const judging = await connectWith('used-up', async () => ({ refuseJobs: refusal }), {
+      TYPESAFE_API_KEY: 'k',
+    });
+    const judged = await call(judging, 'judge.ask', {
+      state: { passage: 'So basically' },
+      questions: { ok: { type: 'noul', instructions: 'Is `passage` filler?' } },
+    });
+    expect(judged.structured).toMatchObject({ code: 'quota_exceeded' });
   });
 
   it('caps the export size at the plan’s, and says how to fit it', async () => {
@@ -141,8 +154,8 @@ describe('plan limits', () => {
 
   it('runs an owner’s jobs one at a time under a one-job cap, and meters each as it ends', async () => {
     const metered: MeterEntry[] = [];
-    const off = env.runtime.onMetered((job, entry) => {
-      if (job.owner === 'one-job') metered.push(entry);
+    const off = env.runtime.onMetered((owner, entry) => {
+      if (owner === 'one-job') metered.push(entry);
     });
     const client = await connectWith('one-job', async () => ({ jobs: 1 }));
     const timeline = await titled(client);

@@ -4874,18 +4874,20 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         expect.arrayContaining(twice.map((j) => j.job_id)),
       );
 
-      // A daily cap (hosted) refuses the call that would pass it, before any job; 4 used today.
-      (env.runtime.config as { judgmentsPerDay?: number }).judgmentsPerDay = 5;
-      const capped = await call(c, 'media.analyze', {
-        ...ask,
-        at_seconds: [0.5, 1.5],
-        questions: { bars: { type: 'noul', instructions: 'Does `frame` show colour bars?' } },
-      });
-      expect(capped.structured).toMatchObject({
-        code: 'quota_exceeded',
-        detail: { limit: 5, used: 4 },
-      });
-      delete (env.runtime.config as { judgmentsPerDay?: number }).judgmentsPerDay;
+      // Each look run meters its frames as judgments, apart from the job's own running time.
+      const judged = await Promise.all(
+        twice.map((j) =>
+          env.runtime.ws.readJson<{ judgments: number }>(
+            env.runtime.ws.ownerDir(
+              'local',
+              'meter',
+              new Date().toISOString().slice(0, 7),
+              `${j.job_id}-judgments.json`,
+            ),
+          ),
+        ),
+      );
+      expect(judged.map((e) => e?.judgments)).toEqual([1, 1]);
 
       // A key TypeSafe refuses ends the job with credential_invalid; no key appears anywhere.
       const bad = await keyed('ts-wrong-key');

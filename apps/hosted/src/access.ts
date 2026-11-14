@@ -1,6 +1,7 @@
 import {
   FREE_CREDITS,
   freeCreditsFor,
+  JUDGMENTS_PER_CREDIT,
   PLANS,
   type PlanId,
   SUPPORT_EMAIL,
@@ -123,7 +124,6 @@ export class AccessCheck {
     const out: OwnerLimits = {
       jobs: OWNER_JOBS,
       ...(limits.shortSide !== null ? { shortSide: limits.shortSide } : {}),
-      ...(limits.judgmentsPerDay !== null ? { judgmentsPerDay: limits.judgmentsPerDay } : {}),
       ...(limits.storageGb !== null ? { storageBytes: limits.storageGb * 1e9 } : {}),
       ...(access.plan !== 'staff' && access.plan !== 'enterprise'
         ? { account: new URL('/pricing', this.#o.accountUrl).href }
@@ -141,7 +141,7 @@ export class AccessCheck {
           ? `This month's ${balance.per_month} credits are used`
           : 'This account has no credits left',
         {
-          hint: `${monthly ? `They renew on ${balance.renews?.slice(0, 10)}. ` : ''}New jobs (exports, imports, analysis, create.*) won't start until there are credits again; editing the timeline and previews still work. Ask again after. A credit is one minute of a job running. How credits work: ${plans}`,
+          hint: `${monthly ? `They renew on ${balance.renews?.slice(0, 10)}. ` : ''}New jobs (exports, imports, analysis, create.*) and judgments (judge.ask) won't start until there are credits again; editing the timeline and previews still work. Ask again after. A credit is one minute of a job running, or ${JUDGMENTS_PER_CREDIT} visual judgments. How credits work: ${plans}`,
           detail: {
             credits_left: balance.left,
             credits_used: balance.used,

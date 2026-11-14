@@ -13,7 +13,7 @@ const LOCAL: AccountGetResult = {
   warnings: [],
   top_up: null,
   packs: [],
-  limits: { export_short_side: null, judgments_per_day: null, storage_gb: null },
+  limits: { export_short_side: null, storage_gb: null },
   account_url: null,
 };
 

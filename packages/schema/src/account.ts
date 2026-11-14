@@ -65,7 +65,6 @@ export const AccountGetResult = z.object({
     export_short_side: nullableCount.describe(
       'Largest export, its short side in pixels; null for any',
     ),
-    judgments_per_day: nullableCount,
     storage_gb: nullableCount,
   }),
   account_url: z

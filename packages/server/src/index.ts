@@ -1,5 +1,6 @@
 export {
   admitJob,
+  billedSeconds,
   type MeterEntry,
   meterEntries,
   meteredSeconds,

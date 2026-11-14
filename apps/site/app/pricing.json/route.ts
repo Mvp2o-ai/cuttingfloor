@@ -1,5 +1,6 @@
 import {
   FREE_CREDITS,
+  JUDGMENTS_PER_CREDIT,
   LOW_CREDITS,
   PACKS,
   PLANS,
@@ -30,12 +31,10 @@ export function GET() {
     currency: 'USD',
     units: {
       price: 'US dollars, paid once for a pack; nothing renews',
-      credits:
-        'one credit is one minute of a job running (export, import, transcript, graphics, voiceover, cutout); bought credits never expire',
+      credits: `one credit is one minute of a job running (export, import, transcript, graphics, voiceover, cutout), or ${JUDGMENTS_PER_CREDIT} visual judgments (${JUDGMENT_TOOLS.join(', ')}); bought credits never expire`,
       jobs: 'jobs that run at once; more wait their turn',
       short_side_px: 'largest export, as its short side in pixels (1080 is 1080p, 2160 is 4K)',
       storage_gb: 'gigabytes held on the server at once',
-      judgments_per_day: `visual judgments a day (${JUDGMENT_TOOLS.join(', ')})`,
       null: 'no limit',
     },
     credit: CREDIT,
@@ -76,7 +75,6 @@ export function GET() {
           : {
               short_side_px: p.limits.shortSide,
               storage_gb: p.limits.storageGb,
-              judgments_per_day: p.limits.judgmentsPerDay,
             }),
         note: p.note,
       })),

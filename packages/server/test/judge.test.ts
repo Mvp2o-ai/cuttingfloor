@@ -1,12 +1,12 @@
-import { readdir, readFile } from 'node:fs/promises';
 import { createServer as createPlainServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { join } from 'node:path';
+import { JUDGMENTS_PER_CREDIT } from '@cuttingfloor/plans';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { billedSeconds, type MeterEntry, meteredSeconds } from '../src/index.ts';
 import { call, connect, ok, type TestEnv, testRuntime } from './helpers.ts';
 
 // judge.ask against a stand-in for api.typesafe.ai, with no engines: text state, limits,
-// credentials, Jev's refusals, the daily budget and cancellation. Pictures (image media and video
+// credentials, Jev's refusals, metering and cancellation. Pictures (image media and video
 // frames) are checked in apps/hosted/test/e2e.test.ts, where FFmpeg is.
 
 const KEY = 'ts-judge-secret-key';
@@ -181,48 +181,32 @@ describe('judge.ask', () => {
     expect(String(invalid.structured.message)).toContain('criteria: required');
   });
 
-  it('counts each call against the daily budget it shares with look', async () => {
-    const owner = 'judge-cap';
+  it('meters each call, a judgment at 1/200 of a credit, with the owner’s jobs', async () => {
+    const owner = 'judge-meter';
     const c = await connect(env.runtime, owner, { TYPESAFE_API_KEY: KEY });
-    (env.runtime.config as { judgmentsPerDay?: number }).judgmentsPerDay = 2;
-    try {
-      const ask = { state: { passage: 'So basically' }, questions: { is_filler: filler } };
-      await ok(c, 'judge.ask', ask);
-      await ok(c, 'judge.ask', ask);
-      const capped = await call(c, 'judge.ask', ask);
-      expect(capped.structured).toMatchObject({
-        code: 'quota_exceeded',
-        detail: { limit: 2, used: 2 },
-      });
-      expect(seen).toHaveLength(2);
-      const day = new Date().toISOString().slice(0, 10);
-      const dir = env.runtime.ws.ownerDir(owner, 'usage', `judgments-${day}`);
-      const files = await readdir(dir);
-      expect(files).toHaveLength(2);
-      const counts = await Promise.all(
-        files.map(async (f) => JSON.parse(await readFile(join(dir, f), 'utf8')).count),
-      );
-      expect(counts).toEqual([1, 1]);
-    } finally {
-      delete (env.runtime.config as { judgmentsPerDay?: number }).judgmentsPerDay;
-    }
-  });
-
-  it("counts a call on look's scale: one per 32 questions", async () => {
-    const owner = 'judge-units';
-    const c = await connect(env.runtime, owner, { TYPESAFE_API_KEY: KEY });
-    (env.runtime.config as { judgmentsPerDay?: number }).judgmentsPerDay = 100;
-    try {
-      const questions = Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`w${i}`, filler]));
-      const res = await ok(c, 'judge.ask', { state: { passage: 'So basically' }, questions });
-      expect(Object.keys(res.answers as object)).toHaveLength(65);
-      const day = new Date().toISOString().slice(0, 10);
-      const dir = env.runtime.ws.ownerDir(owner, 'usage', `judgments-${day}`);
-      const [file] = await readdir(dir);
-      expect(JSON.parse(await readFile(join(dir, file as string), 'utf8')).count).toBe(3);
-    } finally {
-      delete (env.runtime.config as { judgmentsPerDay?: number }).judgmentsPerDay;
-    }
+    const since = new Date();
+    const told: MeterEntry[] = [];
+    const off = env.runtime.onMetered((o, entry) => {
+      if (o === owner) told.push(entry);
+    });
+    const ask = { state: { passage: 'So basically' }, questions: { is_filler: filler } };
+    await ok(c, 'judge.ask', ask);
+    // One per 32 questions: 65 questions are 3 judgments.
+    const questions = Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`w${i}`, filler]));
+    await ok(c, 'judge.ask', { state: { passage: 'So basically' }, questions });
+    off();
+    expect(told.map((e) => [e.tool, e.seconds, e.judgments]).sort()).toEqual([
+      ['judge.ask', 0, 1],
+      ['judge.ask', 0, 3],
+    ]);
+    expect(told.map(billedSeconds).sort()).toEqual([
+      60 / JUDGMENTS_PER_CREDIT,
+      180 / JUDGMENTS_PER_CREDIT,
+    ]);
+    expect(await meteredSeconds(env.runtime.ws, owner, since)).toBeCloseTo(
+      240 / JUDGMENTS_PER_CREDIT,
+      3,
+    );
   });
 
   it('stops asking when the call is cancelled', async () => {

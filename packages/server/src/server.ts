@@ -36,7 +36,7 @@ export interface ServerDeps {
   access?: () => Promise<void>;
   /**
    * Hosted: the owner's plan as limits on the work they start (jobs at once, largest export,
-   * judgments a day), and a refusal when no job may start. Absent locally: no limits.
+   * storage), and a refusal when no job or judgment may start. Absent locally: no limits.
    */
   limits?: () => Promise<OwnerLimits>;
   /** Hosted: the owner's plan and credits, for account.get. Absent locally: no plan. */
