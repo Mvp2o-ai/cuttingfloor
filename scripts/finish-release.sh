@@ -8,6 +8,9 @@
 set -euo pipefail
 
 worktree=${1:-}
+# The main checkout's scripts: run from the worktree being removed, this script's own folder
+# would be gone by the time it syncs.
+scripts="$(git worktree list --porcelain | awk 'NR == 1 { print $2 }')/scripts"
 git fetch -q origin main develop
 sha=$(git rev-parse origin/main)
 echo "Waiting for the runs on main ${sha:0:8}"
@@ -25,7 +28,7 @@ if grep -qv '|completed|success$' <<<"$runs"; then
   exit 1
 fi
 
-"$(dirname "$0")/merge-main-into-develop.sh"
+"$scripts/merge-main-into-develop.sh"
 
 if [ -n "$worktree" ]; then
   git fetch -q origin develop
@@ -41,4 +44,4 @@ if [ -n "$worktree" ]; then
   fi
 fi
 
-"$(dirname "$0")/sync-main-checkout.sh"
+"$scripts/sync-main-checkout.sh"
