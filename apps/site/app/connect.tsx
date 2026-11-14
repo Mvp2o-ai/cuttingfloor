@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ALLOW_ACCESS, allowAccessNote, HOME_CLIENTS, MCP_URL } from '../content/clients.ts';
+import { SendToSelf } from './agents/send.tsx';
 
 export { MCP_URL };
 
@@ -52,6 +53,8 @@ export function Connect() {
             {allowAccessNote(client.name)} <a href={ALLOW_ACCESS}>What does this mean?</a>
           </p>
         )}
+        {/* Every app here but Kazi is added on a computer: a phone gets Kazi or the setup for later. */}
+        {!client.ours && <SendToSelf app={client.name} />}
         <p className="connect-more">
           <a href={`/connect#${client.slug}`}>Full steps for {client.name}</a> ·{' '}
           <a href="/connect">Every app: Cowork, ChatGPT Work, VS Code, Zed, Goose and more</a>
