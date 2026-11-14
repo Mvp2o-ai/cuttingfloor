@@ -1,6 +1,7 @@
 import { PACKS } from '@cuttingfloor/plans';
 import { notFound } from 'next/navigation';
 import type { Account } from '../../lib/billing.ts';
+import { AccountNav } from '../chrome.tsx';
 import { type AccountProps, AccountView } from '../view.tsx';
 
 // The account page in each state, from fixtures, to look at while changing it: development only
@@ -95,19 +96,22 @@ export default async function Preview({
   const { state = 'new' } = await searchParams;
   const s = STATES[state] ?? STATES.new;
   return (
-    <AccountView
-      email="maya@example.com"
-      firstName="Maya"
-      progress={{}}
-      files={{
-        media: [],
-        media_count: 0,
-        uploads: [],
-        upload_count: 0,
-        storage: { used_bytes: 0, max_bytes: 5e9 },
-      }}
-      server="https://api.cuttingfloor.ai"
-      {...s}
-    />
+    <>
+      <AccountNav email="maya@example.com" />
+      <AccountView
+        email="maya@example.com"
+        firstName="Maya"
+        progress={{}}
+        files={{
+          media: [],
+          media_count: 0,
+          uploads: [],
+          upload_count: 0,
+          storage: { used_bytes: 0, max_bytes: 5e9 },
+        }}
+        server="https://api.cuttingfloor.ai"
+        {...s}
+      />
+    </>
   );
 }

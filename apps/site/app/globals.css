@@ -1777,6 +1777,42 @@ h2.lede {
 .account-email {
   color: var(--mute);
 }
+/* The signed-in nav keeps Connect and Account on phones: they are the only way between the two
+   pages. The email gives way instead. */
+@media (max-width: 900px) {
+  .nav-inner .account-links {
+    display: flex;
+    gap: 16px;
+  }
+  .account-email {
+    display: none;
+  }
+}
+.account-out .nav-cta {
+  white-space: nowrap;
+}
+@media (max-width: 420px) {
+  .nav-inner:has(.account-links) {
+    gap: 12px;
+  }
+  .nav-inner:has(.account-links) .wordmark {
+    font-size: 20px;
+  }
+  .nav-inner .account-links {
+    gap: 12px;
+    font-size: 14px;
+  }
+  .nav-inner .account-out .nav-cta {
+    font-size: 14px;
+    padding: 7px 10px;
+  }
+}
+/* The narrowest phones keep the mark, which still links home, and drop the name. */
+@media (max-width: 374px) {
+  .nav-inner:has(.account-links) .wordmark {
+    font-size: 0;
+  }
+}
 .account-head {
   font-size: clamp(56px, 10vw, 150px);
   margin: 20px 0 24px;
