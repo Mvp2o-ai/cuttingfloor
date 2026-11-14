@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { Runtime } from '@cuttingfloor/server';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createHttpServer, parseApiKeys } from '../src/http.ts';
 import { JwtTokenVerifier } from '../src/oauth.ts';
 
@@ -467,6 +467,30 @@ describe('HTTP face', () => {
     expect(again.status).toBe(409);
     expect(again.headers.get('upload-complete')).toBe('true');
     await client.close();
+  });
+
+  it('names the app whose MCP request it refused', async () => {
+    const base = await listen(parseApiKeys(`ken:${KEY}`));
+    const logged = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const refused = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${KEY}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-protocol-version': '2026-07-28',
+          'user-agent': 'some-client/1.2',
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+      });
+      expect(refused.status).toBe(400);
+      expect(logged.mock.calls.map(([line]) => String(line))).toContain(
+        'mcp: refused 400 from some-client/1.2 (key)\n',
+      );
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it('validates API key configuration', () => {
