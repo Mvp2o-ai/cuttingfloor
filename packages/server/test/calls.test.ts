@@ -46,7 +46,7 @@ describe('call log', () => {
       ['timeline.create', false],
       ['no.such_tool', false],
     ]);
-    expect(log[1]?.error).toMatchObject({ code: 'expired' });
+    expect(log[1]?.error).toMatchObject({ code: 'not_found' });
     expect(log[2]?.error).toMatchObject({ message: expect.stringMatching(/sequence/) });
     expect(typeof log[0]?.ms).toBe('number');
     expect(JSON.stringify(log)).not.toMatch(/Private name|No sequence/);

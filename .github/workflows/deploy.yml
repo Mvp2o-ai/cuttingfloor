@@ -55,10 +55,17 @@ jobs:
           scp -rq apps/hosted/email "root@$HOST:/opt/cuttingfloor/"
           echo "$TOKEN" | ssh "root@$HOST" docker login ghcr.io -u "$ACTOR" --password-stdin
           # .env pins the image for compose, so a reboot or a later `compose up` keeps this one.
-          ssh "root@$HOST" "cd /opt/cuttingfloor && echo CUTTINGFLOOR_IMAGE=$image > .env \
+          # Each image is about 8 GB: after the restart, every image but this one and the one it
+          # replaced (kept for a rollback) is removed, and the build cache with it, so deploys
+          # never fill the disk. Older images stay in the registry.
+          ssh "root@$HOST" "cd /opt/cuttingfloor && prev=\$(sed -n 's/^CUTTINGFLOOR_IMAGE=//p' .env 2>/dev/null || true) \
+            && echo CUTTINGFLOOR_IMAGE=$image > .env \
             && docker compose pull cuttingfloor motion && docker compose up -d \
             && docker exec caddy caddy reload --config /etc/caddy/Caddyfile && docker logout ghcr.io \
-            && docker image prune -f >/dev/null"
+            && { docker images --format '{{.Repository}}:{{.Tag}}' $IMAGE | grep -vxF -e '$image' -e \"\$prev\" \
+              | xargs -r docker rmi >/dev/null || true; } \
+            && docker image prune -f >/dev/null && docker builder prune -af >/dev/null \
+            && df -h / | tail -1"
           echo "Deployed $image"
       - name: Check
         run: |

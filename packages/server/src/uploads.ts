@@ -5,6 +5,7 @@ import { extname, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { isMissing, ownerKey, randomId, type Workspace } from '@cuttingfloor/core';
+import { readableSize } from '@cuttingfloor/engine';
 import { CfError } from '@cuttingfloor/schema';
 
 /** How long an upload URL works, and how long an unimported upload is kept. */
@@ -105,7 +106,7 @@ export class Uploads {
     if (bytes !== undefined && bytes > this.maxBytes) {
       throw new CfError(
         'bad_request',
-        `${name} is ${bytes} bytes; uploads take up to ${this.maxBytes}`,
+        `${name} is ${readableSize(bytes)}; uploads take up to ${readableSize(this.maxBytes)}`,
         {
           hint: 'Export a smaller file (lower bitrate or shorter), or import it from a URL',
         },
@@ -377,12 +378,4 @@ export class Uploads {
       .update(`upload\n${path}\n${exp}`)
       .digest('base64url');
   }
-}
-
-/** A size as a person reads it: KB under a megabyte, MB under a gigabyte, GB from there. */
-export function readableSize(bytes: number): string {
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-  if (bytes < 1e6) return `${Math.max(1, Math.round(bytes / 1e3))} KB`;
-  const mb = bytes / 1e6;
-  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
 }

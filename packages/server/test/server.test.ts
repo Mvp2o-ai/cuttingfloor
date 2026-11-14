@@ -380,7 +380,7 @@ describe('timelines', () => {
     const other = await connect(env.runtime, 'another-user');
     // Another owner cannot see it, but can load the JSON.
     expect((await call(other, 'timeline.get', { timeline_id })).structured).toMatchObject({
-      code: 'expired',
+      code: 'not_found',
     });
     const loaded = await ok<{ timeline_id: string }>(other, 'timeline.load', { timeline: view });
     expect(loaded.timeline_id).toMatch(/^tl_/);
@@ -404,8 +404,8 @@ describe('timelines', () => {
       media_id: 'm_aaaaaaaaaaaaaaaaaaaaaaaaaa',
     });
     expect(media.structured).toMatchObject({ code: 'not_found' });
-    const expired = await call(client, 'timeline.get', { timeline_id: `tl_${'0'.repeat(32)}` });
-    expect(expired.structured).toMatchObject({ code: 'expired' });
+    const unknown = await call(client, 'timeline.get', { timeline_id: `tl_${'0'.repeat(32)}` });
+    expect(unknown.structured).toMatchObject({ code: 'not_found' });
     const rate = await call(client, 'timeline.create', {
       name: 'x',
       sequence: { ...SEQ_720P25, fps: { num: 11, den: 1 } },
