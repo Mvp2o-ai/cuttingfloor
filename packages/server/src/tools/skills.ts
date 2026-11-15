@@ -1,4 +1,5 @@
 import {
+  SKILL_MATCH_MIN,
   SkillsGetInput,
   SkillsGetResult,
   SkillsSearchInput,
@@ -21,7 +22,7 @@ export function registerSkillTools(server: McpServer): void {
     {
       title: 'Find a skill',
       description:
-        "Find step-by-step instructions for a common job, written for you to follow with these tools: cutting the pauses, ums and restarts out of a talking video, for one. Search in the user's words; every skill comes back best first with its score (roughly 0 to 1). Below 0.1 is unrelated; a real fit usually scores 0.15 to 0.45, lower for a short or general ask, and an unrelated skill that shares words can score as high, so read the description of each one above 0.1 to judge the fit. Read one with skills.get, then follow its Steps.",
+        "Find step-by-step instructions for a common job, written for you to follow with these tools: cutting the pauses, ums and restarts out of a talking video, for one. Search in the user's words: the skills that fit come back, best first. When none fits, or with no query, the answer is the list of every skill, a page at a time, to choose from by description. Read one with skills.get, then follow its Steps.",
       inputSchema: SkillsSearchInput,
       outputSchema: SkillsSearchResult,
       annotations: {
@@ -34,14 +35,19 @@ export function registerSkillTools(server: McpServer): void {
     },
     guard(async (args) => {
       const { index } = await skills();
-      const found = await index.search(args.query, args.limit);
+      const all = index.list();
+      const hits = args.query
+        ? (await index.search(args.query, all.length)).filter((m) => m.score >= SKILL_MATCH_MIN)
+        : [];
+      const answer = hits.length
+        ? hits.map((m) => ({ slug: m.slug, name: m.name, description: m.description }))
+        : all;
+      const next = args.offset + args.limit;
       return ok({
-        skills: found.map((m) => ({
-          slug: m.slug,
-          name: m.name,
-          description: m.description,
-          score: Math.round(m.score * 1000) / 1000,
-        })),
+        matched: hits.length > 0,
+        skills: answer.slice(args.offset, next),
+        total: answer.length,
+        next_offset: next < answer.length ? next : null,
       });
     }),
   );

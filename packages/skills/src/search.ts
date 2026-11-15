@@ -124,6 +124,13 @@ export class SkillIndex {
     return this.#embedder !== null;
   }
 
+  /** Every skill shown, by slug: the list a search that misses falls back to. */
+  list(): Array<{ slug: string; name: string; description: string }> {
+    return this.#entries
+      .map((e) => ({ slug: e.skill.slug, name: e.skill.name, description: e.skill.description }))
+      .sort((a, b) => a.slug.localeCompare(b.slug));
+  }
+
   /** Best first, at most `limit`; empty when nothing fits. */
   async search(query: string, limit = 5): Promise<SkillMatch[]> {
     const q = query.trim();
