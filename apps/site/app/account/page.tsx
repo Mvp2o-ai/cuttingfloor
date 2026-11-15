@@ -41,6 +41,7 @@ export default async function AccountPage({
         files={files}
         keys={keys}
         providerKeys={providerKeys}
+        expiryEmails={metadata.expiry_emails !== 'off'}
         server={process.env.CUTTINGFLOOR_SERVER_URL ?? 'https://api.cuttingfloor.ai'}
       />
     </>
