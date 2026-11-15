@@ -5,9 +5,12 @@ import { MediaId } from './ids.ts';
 // positions fractions of the frame, so text lands the same at every render size.
 
 // Checked at run time rather than as a schema pattern: it repeats in every colour field.
-export const Colour = z.string().refine((v) => /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(v), {
-  message: 'a colour is #RRGGBB or #RRGGBBAA',
-});
+export const Colour = z
+  .string()
+  .refine((v) => /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(v), {
+    message: 'a colour is #RRGGBB or #RRGGBBAA',
+  })
+  .describe('#RRGGBB, or #RRGGBBAA where AA is opacity (00 clear, FF solid)');
 
 export const TEXT_REVEALS = ['none', 'typewriter', 'word_fade', 'word_pop'] as const;
 export const HIGHLIGHTS = ['none', 'fill', 'word', 'karaoke', 'pop'] as const;
@@ -18,7 +21,14 @@ export const HIGHLIGHTS = ['none', 'fill', 'word', 'karaoke', 'pop'] as const;
  */
 export const TextStyle = z
   .object({
-    font: z.string().min(1).max(100).optional().describe('video://catalog/fonts'),
+    font: z
+      .string()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe(
+        'Installed: Inter, Montserrat, Open Sans, Lato, Bebas Neue, Lobster Two, Comic Neue, Fira Code, DejaVu Sans, Serif and Mono, Noto for most scripts (video://catalog/fonts lists all); another font: font_media_id',
+      ),
     font_media_id: MediaId.optional().describe('An imported font'),
     size: z.number().min(0.005).max(1).optional().describe('Of frame height'),
     color: Colour.optional(),

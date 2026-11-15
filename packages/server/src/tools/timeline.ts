@@ -244,7 +244,7 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
     'timeline.create',
     {
       title: 'Create timeline',
-      description: `Start an empty timeline. Returns its timeline_id and its tracks (ids for track_id). Timelines are immutable: every edit returns a new timeline_id, and older ids stay valid for ${span(KEEP_MS.timeline)} after last use. For work longer than that, keep the timeline.get document on your side and restore it with timeline.load.`,
+      description: `Start an empty timeline. Returns its timeline_id and its tracks (ids for track_id). Where no clip covers the picture it is black (transparent in a nested timeline). Timelines are immutable: every edit returns a new timeline_id, and older ids stay valid for ${span(KEEP_MS.timeline)} after last use. For work longer than that, keep the timeline.get document on your side and restore it with timeline.load.`,
       inputSchema: TimelineCreateInput,
       outputSchema: TimelineCreateResult,
       annotations: { ...annotations, title: 'Create timeline' },

@@ -712,7 +712,9 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       description: [
         `Stage one file on this server: returns a url and an upload_id. A staged file is inert until imported. The url works for ${span(KEEP_MS.upload)} and takes the file from whoever holds it, with no other credentials; opened in a browser, it is a page to pick the file and send it, so it reaches files on the user's phone or computer, including one attached in a chat that isn't handed to you.`,
         ...(rt.config.uploadPage
-          ? [`Files the user drops on their upload page, ${rt.config.uploadPage}, are staged too.`]
+          ? [
+              `Files the user drops on their upload page, ${rt.config.uploadPage}, are staged too: many at once, after signing in to the same account.`,
+            ]
           : []),
       ].join(' '),
       inputSchema: MediaUploadInput,

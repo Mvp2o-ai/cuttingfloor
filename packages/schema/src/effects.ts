@@ -75,8 +75,8 @@ export const EFFECTS = {
   },
   temperature: {
     kind: 'video',
-    about: 'White balance: lower is cooler (blue), higher warmer (orange)',
-    params: { kelvin: num(1000, 40000, 6500, 'Colour temperature; 6500 is neutral') },
+    about: 'White balance: below 6500 warmer (orange), above cooler (blue)',
+    params: { kelvin: num(1000, 40000, 6500, '6500 neutral; lower warmer, higher cooler') },
   },
   hue: {
     kind: 'video',
