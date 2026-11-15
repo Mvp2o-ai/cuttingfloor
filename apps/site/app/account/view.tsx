@@ -29,6 +29,8 @@ export type AccountProps = {
   files?: Files;
   keys?: ScriptKey[];
   providerKeys?: SavedKey[];
+  /** Whether the account gets an email before its files go (on unless turned off). */
+  expiryEmails: boolean;
   server: string;
 };
 
@@ -128,6 +130,23 @@ export function AccountView(p: AccountProps) {
           <KeysPanel initial={p.keys} server={p.server} />
         </section>
       ) : null}
+
+      <section className="cell" id="notifications">
+        <div className="head">
+          <span className="label">Email</span>
+          <p className="lede">
+            {p.expiryEmails
+              ? 'File reminders are on: we email you 3 days and 1 day before your files and exports are deleted.'
+              : 'File reminders are off: we don’t email you before your files and exports are deleted.'}
+          </p>
+        </div>
+        <form action="/api/notifications" method="post" className="actions">
+          <input type="hidden" name="on" value={p.expiryEmails ? '' : '1'} />
+          <button type="submit" className="buy quiet">
+            {p.expiryEmails ? 'Turn off file reminders' : 'Turn on file reminders'}
+          </button>
+        </form>
+      </section>
 
       <section className="cell">
         <p className="account-help">

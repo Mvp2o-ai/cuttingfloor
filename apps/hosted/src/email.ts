@@ -124,7 +124,7 @@ const esc = (s: string) =>
 
 function html(message: Message): string {
   const paragraphs = message.lines
-    .map((line) => `<p style="margin:0 0 16px">${esc(line)}</p>`)
+    .map((line) => `<p style="margin:0 0 16px;white-space:pre-line">${esc(line)}</p>`)
     .join('');
   const button = message.action
     ? `<p style="margin:24px 0"><a href="${esc(message.action.url)}" style="background:#00b140;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:600">${esc(message.action.label)}</a></p>`

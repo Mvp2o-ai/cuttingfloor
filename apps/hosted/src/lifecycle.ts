@@ -21,6 +21,7 @@ import {
 } from '@cuttingfloor/server';
 import { type Access, type AccessCheck, type Balance, type Link, linkPath } from './access.ts';
 import type { Mailer } from './email.ts';
+import { dueFiles, expiryMessage, exportOf, type Going } from './expiry-notices.ts';
 import type { ScriptKeys } from './keys.ts';
 import type { Ledger, LedgerUsage } from './ledger.ts';
 import { oneWriteAtATime } from './metadata.ts';
@@ -41,6 +42,9 @@ import { forgetRecipient } from './sequence.ts';
 //   the account turned it on (`POST /account/top-up`). The welcome is the sign-up sequence's;
 //   this sends it only while the sequence is off. A notice file under the owner's data claims
 //   each message once, across servers (`owners/{owner}/notices/{name}.json`, kept 400 days).
+// - Once a day from 15:00 UTC, an account with files going in about 3 days or within a day gets
+//   one email naming them (expiry-notices.ts), unless it turned these off on its account page
+//   (`POST /account/notifications`, kept as `expiry_emails: off` in its WorkOS metadata).
 // - Stripe's webhook tells the access check credits were bought, so they show at once.
 // - Lifetime is not given for using a client, or for being a Kazi member: only the `plan` tag gives
 //   it (access.ts).
@@ -64,6 +68,8 @@ const SPEND_RETRY_MS = 30 * 24 * 3_600_000;
 const SPENT_TTL_MS = 60 * 24 * 3_600_000;
 // How often new accounts are looked at: a fallback welcome arrives within this of signing up.
 const SWEEP_MS = 10 * 60_000;
+// The hour (UTC) the day's file reminders go: afternoon in Europe, morning in the Americas.
+const EXPIRY_HOUR_UTC = 15;
 
 export interface LifecycleOptions {
   runtime: Runtime;
@@ -115,6 +121,8 @@ export class Lifecycle {
   #apps = new Set<string>();
   #tools = new Set<string>();
   #timer: NodeJS.Timeout | undefined;
+  /** The UTC day whose file reminders this server has sent. */
+  #expiryDay = '';
 
   constructor(options: LifecycleOptions) {
     this.#o = options;
@@ -411,6 +419,7 @@ export class Lifecycle {
       await ws.sweep(ws.path('partners', name), PARTNER_LINK_TTL_MS);
     }
     await this.#o.keys?.sweep();
+    await this.#expiryNotices(now);
     const welcome = this.#o.welcome;
     if (!this.#o.mailer || !welcome) return;
     const oldest = now - 86_400_000;
@@ -429,6 +438,48 @@ export class Lifecycle {
         });
       }
     }
+  }
+
+  /** The day's file reminders, once a day from EXPIRY_HOUR_UTC; each account's at most once. */
+  async #expiryNotices(now: number): Promise<void> {
+    const at = new Date(now);
+    const day = at.toISOString().slice(0, 10);
+    if (!this.#o.mailer || at.getUTCHours() < EXPIRY_HOUR_UTC || this.#expiryDay === day) return;
+    this.#expiryDay = day;
+    for (const owner of await this.#o.runtime.ws.owners()) {
+      if (!isUser(owner)) continue;
+      await this.#expiring(owner, day, now).catch((error: Error) =>
+        process.stderr.write(`lifecycle: ${owner}: expiry email: ${error.message}\n`),
+      );
+    }
+  }
+
+  async #expiring(owner: string, day: string, now: number): Promise<void> {
+    const rt = this.#o.runtime;
+    const [media, jobs] = await Promise.all([
+      rt.media.list(owner),
+      rt.jobs.store.list(owner, { status: 'completed', limit: 1000 }),
+    ]);
+    const files: Going[] = [
+      ...media.map((m) => ({ name: m.name, at: Date.parse(m.expires_at) })),
+      ...jobs.flatMap((job) => exportOf(job) ?? []),
+    ];
+    const due = dueFiles(files, now);
+    if (!due) return;
+    const user = await this.#workosUser(owner);
+    if (!user || madeByPartner(user.metadata) || user.metadata?.expiry_emails === 'off') return;
+    // Fresh download links for exports: the ones the job was made with may have run out.
+    const linked = async (list: Going[]) =>
+      Promise.all(
+        list.map(async (f) => {
+          return f.jobId ? { ...f, url: (await rt.signOutput(owner, f.jobId, f.name)).url } : f;
+        }),
+      );
+    const message = expiryMessage(
+      { soon: await linked(due.soon), later: await linked(due.later) },
+      this.#o.accountUrl,
+    );
+    await this.#notify(owner, `expiry-${day}`, { to: user.email, ...message });
   }
 
   /** WorkOS users, newest first, back to `oldest`. */
@@ -526,6 +577,10 @@ export class Lifecycle {
       url.pathname === '/account/provider-keys/remove'
     ) {
       await this.#providerKeysRoute(req, res, url);
+      return true;
+    }
+    if (url.pathname === '/account/notifications' && req.method === 'POST') {
+      await this.#notificationsRoute(req, res);
       return true;
     }
     if (url.pathname === '/account/top-up' && req.method === 'POST') {
@@ -837,6 +892,36 @@ export class Lifecycle {
       return json(res, 200, { saved: true, provider, ends: key.slice(-4) });
     } catch {
       return json(res, 503, { error: 'keys could not be read or saved just now' });
+    }
+  }
+
+  /** Turns the account's file reminders on or off: POST {user, expiry_emails: boolean}. */
+  async #notificationsRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
+    let body: { user?: unknown; expiry_emails?: unknown };
+    try {
+      body = JSON.parse(await readBody(req, 4096));
+    } catch {
+      return json(res, 400, { error: 'body must be JSON: {user, expiry_emails}' });
+    }
+    const owner = typeof body.user === 'string' ? body.user : '';
+    if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+    if (typeof body.expiry_emails !== 'boolean')
+      return json(res, 400, { error: 'expiry_emails must be true or false' });
+    const value = body.expiry_emails ? 'on' : 'off';
+    try {
+      const path = `/user_management/users/${encodeURIComponent(owner)}`;
+      await oneWriteAtATime(owner, async () => {
+        const user = await this.#workos(path);
+        const metadata = (user.metadata ?? {}) as Record<string, string>;
+        await this.#workos(path, {
+          method: 'PUT',
+          body: { metadata: { ...metadata, expiry_emails: value } },
+        });
+      });
+      return json(res, 200, { expiry_emails: body.expiry_emails });
+    } catch {
+      return json(res, 503, { error: 'The setting could not be saved just now; try again' });
     }
   }
 

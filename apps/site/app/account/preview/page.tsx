@@ -109,6 +109,7 @@ export default async function Preview({
           upload_count: 0,
           storage: { used_bytes: 0, max_bytes: 5e9 },
         }}
+        expiryEmails
         server="https://api.cuttingfloor.ai"
         {...s}
       />
