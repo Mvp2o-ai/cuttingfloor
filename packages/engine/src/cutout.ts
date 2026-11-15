@@ -3,7 +3,7 @@ import { availableParallelism, setPriority } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CfError } from '@cuttingfloor/schema';
-import { BIN, KILL_SETTLE_MS, killTree, spawnEngine } from './exec.ts';
+import { BIN, heavyThreads, KILL_SETTLE_MS, killTree, spawnEngine } from './exec.ts';
 
 // create.cutout: a subject cut out of its background. FFmpeg decodes frames at the matting size,
 // a matting model writes an 8-bit matte per frame, and a second FFmpeg scales the mattes back up
@@ -152,7 +152,7 @@ export function cutout(
               String(size.w),
               String(size.h),
               smooth,
-              String(Math.max(1, Math.floor(availableParallelism() / 2))),
+              String(heavyThreads()),
             ],
             { stdio: ['pipe', 'pipe', 'pipe'] },
           )

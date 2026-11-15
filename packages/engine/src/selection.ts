@@ -13,7 +13,7 @@ import {
   TICKS_PER_SECOND,
 } from '@cuttingfloor/schema';
 import { maskSpline } from './composite.ts';
-import { BIN, heavySlot } from './exec.ts';
+import { BIN, heavySlot, heavyThreads } from './exec.ts';
 import { probe } from './probe.ts';
 
 // Selections MLT cannot apply frame by frame, made on a clip's source picture before the render
@@ -423,7 +423,7 @@ function runPiped(
     const procs = steps.map((s) =>
       spawn(s.bin, s.args, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, OMP_NUM_THREADS: String(Math.max(1, availableParallelism() >> 1)) },
+        env: { ...process.env, OMP_NUM_THREADS: String(heavyThreads()) },
       }),
     );
     for (let i = 0; i + 1 < procs.length; i++) {

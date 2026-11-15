@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rename, rm, stat } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { CfError, VOICES } from '@cuttingfloor/schema';
-import { BIN, run } from './exec.ts';
+import { BIN, heavyThreads, run } from './exec.ts';
 import { download } from './fetch.ts';
 import { alignTranscriptWords, SPEECH_MODELS } from './speech.ts';
 import { sha256File, type Transcript, type TranscriptWord, transcribe } from './transcribe.ts';
@@ -94,7 +94,7 @@ export async function speak(
   await run(
     BIN.tts,
     [
-      `--num-threads=${Math.max(1, Math.min(4, availableParallelism()))}`,
+      `--num-threads=${heavyThreads(4)}`,
       `--kokoro-model=${join(model, 'model.onnx')}`,
       `--kokoro-voices=${join(model, 'voices.bin')}`,
       `--kokoro-tokens=${join(model, 'tokens.txt')}`,

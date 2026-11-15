@@ -601,7 +601,11 @@ export const BatchInput = z.object({
     ),
 });
 
-export const BatchResult = PlacingEditResult.extend({
+export const BatchResult = PlacingEditResult.omit({
+  clip_id: true,
+  clip_ids: true,
+  track_id: true,
+}).extend({
   results: z.array(
     z.object({
       tool: z.string(),

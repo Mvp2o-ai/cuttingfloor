@@ -63,6 +63,14 @@ export function setRenderLimit(limit: number): void {
   while (rendering < renderLimit && renderQueue.length) next();
 }
 
+/**
+ * Threads one heavy run may use: its share of the CPUs, so the runs allowed at once never ask
+ * for more cores than there are. `most` caps it for tools that gain nothing past a few.
+ */
+export function heavyThreads(most = Number.POSITIVE_INFINITY): number {
+  return Math.max(1, Math.min(most, Math.floor(availableParallelism() / renderLimit)));
+}
+
 /** Heavy runs going now, the limit, and how many wait. */
 export function renderLoad(): { running: number; limit: number; waiting: number } {
   return { running: rendering, limit: renderLimit, waiting: renderQueue.length };
