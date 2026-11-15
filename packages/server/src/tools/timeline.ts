@@ -89,7 +89,8 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   },
   'clip.split': {
     title: 'Split clip',
-    description: 'Cut a clip (and its linked clips) in two at a frame.',
+    description:
+      'Cut a clip (and its linked clips) in two at a frame. The left piece keeps its id; clip_id is the new right piece of the clip named, and clip_ids every new right piece (its linked ones too), linked together.',
   },
   'clip.link': { title: 'Link clips', description: 'Make clips move, trim and split together.' },
   'clip.unlink': { title: 'Unlink clip', description: 'Break the link group a clip belongs to.' },

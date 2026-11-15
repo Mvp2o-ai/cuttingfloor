@@ -54,7 +54,7 @@ const OtherTracks = z
   .enum(['stay', 'sync'])
   .default('stay')
   .describe(
-    "What the other tracks do when this edit moves later clips on the clip's own tracks (linked clips always move with it). stay: they don't move, and the result warns which clips there now play early or late. sync: they get the same change, so titles, overlays and sound stay in step: time taken out here comes out of them too (like range.extract), time added here opens the same gap in them (clips crossing that point are split, as insert does). Locked tracks always stay",
+    "Tracks holding neither this clip nor a clip linked to it (linked clips, such as its own sound, always change with it): what they do when this edit moves later clips. stay: they don't move, and the result warns which clips there now play early or late. sync: they get the same change, so titles, overlays and sound stay in step: time taken out here comes out of them too (like range.extract), time added here opens the same gap in them (clips crossing that point are split, as insert does). Locked tracks always stay",
   );
 
 const anim = (limits: readonly [number, number], text: string) =>
@@ -550,8 +550,14 @@ export const EditResult = z.object({
   timeline_id: TimelineId,
   parent: TimelineId,
   changed: z.array(Change),
-  clip_id: z.string().optional(),
-  clip_ids: z.array(z.string()).optional(),
+  clip_id: z
+    .string()
+    .optional()
+    .describe('The clip this edit made or acted on (each tool says which)'),
+  clip_ids: z
+    .array(z.string())
+    .optional()
+    .describe('Every clip this edit made or acted on, linked ones included (each tool says which)'),
   track_id: z.string().optional(),
   preview: PreviewRef.nullable(),
   warnings: z.array(z.string()),

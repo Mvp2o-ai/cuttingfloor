@@ -26,9 +26,22 @@ export const TextStyle = z
     italic: z.boolean().optional(),
     underline: z.boolean().optional(),
     align: z.enum(['left', 'center', 'right']).optional(),
-    x: z.number().min(-1).max(2).optional(),
-    y: z.number().min(-1).max(2).optional(),
-    anchor: z.enum(['top', 'middle', 'bottom']).optional(),
+    x: z
+      .number()
+      .min(-1)
+      .max(2)
+      .optional()
+      .describe('Of frame width, 0 = left: where the text sits, by its align side'),
+    y: z
+      .number()
+      .min(-1)
+      .max(2)
+      .optional()
+      .describe('Of frame height, 0 = top: where the anchor edge of the text sits'),
+    anchor: z
+      .enum(['top', 'middle', 'bottom'])
+      .optional()
+      .describe('Which edge of the text sits on y (titles default middle, captions bottom)'),
     max_width: z
       .number()
       .min(0.05)

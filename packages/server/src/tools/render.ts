@@ -146,7 +146,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Export video',
       description: [
-        'Render the timeline to a file. Presets: web_1080p_h264 (MP4, fits 1920x1080), master_prores_422hq (MOV, sequence size), social_9x16_h264 (9:16 sequences, 1080x1920), web_1080p_av1 (MP4, AV1/Opus), gif (640 px, 15 fps), review_h264 (MP4, fits 854x854 with sound: small and quick, to watch a cut), audio_wav_48k, audio_mp3. overrides changes size, fps, bitrate or crf (video://catalog/presets).',
+        'Render the timeline to a file. Presets: web_1080p_h264 (MP4, scaled up or down to fit 1920x1080, or 1080x1920 when tall), master_prores_422hq (MOV, sequence size), social_9x16_h264 (9:16 sequences, scaled to 1080x1920), web_1080p_av1 (MP4, AV1/Opus), gif (up to 640 px, 15 fps), review_h264 (MP4, up to 854x854 with sound: small and quick, to watch a cut), audio_wav_48k, audio_mp3. overrides changes size, fps, bitrate or crf (video://catalog/presets). Scaling up adds no detail: a picture smaller than the output is enlarged and looks soft.',
         `Long-running: returns a task, or {job_id} for job.get. The result links the file (a resource_link to video://jobs/{job_id}/output, which reads as the file, or its signed URL when large), has a signed download URL and a page_url that plays it in any browser (the link to give a person to watch or share), both working for ${Math.round(rt.config.outputUrlTtlMs / 3_600_000)} h (job.get gives fresh ones). The file itself is deleted ${span(KEEP_MS.job)} after the export finishes (kept_until, and expiry in words): save it from url to keep it`,
         rt.config.exportsDir
           ? `and the file in the exports folder (${rt.config.exportsDir}).`
