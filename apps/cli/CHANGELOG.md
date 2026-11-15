@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.51.0
+
+### Minor Changes
+
+- 4d3c5f7: skills.search returns the skills that fit (no scores), and when none clears the match line, or with no query, a paged list of every skill to choose from.
+
 ## 0.50.2
 
 ### Patch Changes

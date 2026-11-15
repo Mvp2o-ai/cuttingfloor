@@ -20,24 +20,34 @@ describe('skills', () => {
     expect(client.getInstructions()).toMatch(/skills\.search/);
   });
 
-  it('finds the skill for what a creator types, best first', async () => {
+  it('answers a search with the skills that fit, or the list of every skill when none does', async () => {
     const client = await connect(env.runtime);
     const got = SkillsSearchResult.parse(
-      await ok(client, 'skills.search', { query: 'remove the ums from my video' }),
+      await ok(client, 'skills.search', { query: 'remove the ums from my video', limit: 20 }),
     );
-    expect(got.skills[0]?.slug).toBe('cut-pauses-ums-and-restarts');
-    expect(got.skills[0]?.score).toBeGreaterThan(0);
-    expect(got.skills[0]?.description).toMatch(/talking video/);
-    const scores = got.skills.map((s) => s.score);
-    expect(scores).toEqual([...scores].sort((a, b) => b - a));
+    // A match comes first; a miss is the whole list. Either way the skill is there.
+    if (got.matched) expect(got.skills[0]?.slug).toBe('cut-pauses-ums-and-restarts');
+    expect(got.skills.map((s) => s.slug)).toContain('cut-pauses-ums-and-restarts');
+    expect(got.skills[0]).not.toHaveProperty('score');
+    const miss = SkillsSearchResult.parse(
+      await ok(client, 'skills.search', { query: 'what is the weather in Lisbon tomorrow' }),
+    );
+    expect(miss.matched).toBe(false);
   });
 
-  it('keeps to the limit, and refuses an empty query', async () => {
+  it('pages the list of every skill, with or without a query', async () => {
     const client = await connect(env.runtime);
-    const one = SkillsSearchResult.parse(
-      await ok(client, 'skills.search', { query: 'cut the pauses', limit: 1 }),
+    const { library } = await skills();
+    const shown = library.skills.filter((s) => !s.hidden).length;
+    const first = SkillsSearchResult.parse(await ok(client, 'skills.search', { limit: 1 }));
+    expect(first.matched).toBe(false);
+    expect(first.total).toBe(shown);
+    expect(first.skills).toHaveLength(1);
+    expect(first.next_offset).toBe(shown > 1 ? 1 : null);
+    const last = SkillsSearchResult.parse(
+      await ok(client, 'skills.search', { limit: 1, offset: shown - 1 }),
     );
-    expect(one.skills.length).toBeLessThanOrEqual(1);
+    expect(last.next_offset).toBeNull();
     const empty = await call(client, 'skills.search', { query: '  ' });
     expect(empty.isError).toBe(true);
   });

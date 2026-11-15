@@ -10,6 +10,12 @@ export const SKILL_LIMITS = {
   searchResults: 20,
 } as const;
 
+/**
+ * The score (0–1: 60% meaning, 40% shared words) a skill needs to count as a match. A search
+ * with none at or above it is a miss and answers with the list of every skill instead.
+ */
+export const SKILL_MATCH_MIN = 0.7;
+
 /** A skill's slug: its file name and its frontmatter name. */
 export const SkillSlug = z
   .string()
@@ -27,29 +33,40 @@ export const SkillsSearchInput = z.object({
     .trim()
     .min(1)
     .max(500)
-    .describe('What the user wants done, in their words, e.g. "remove the ums from my video"'),
+    .optional()
+    .describe(
+      'What the user wants done, in their words, e.g. "remove the ums from my video". Without it, the list of every skill',
+    ),
   limit: z
     .number()
     .int()
     .min(1)
     .max(SKILL_LIMITS.searchResults)
     .default(5)
-    .describe('Most matches to return, best first'),
+    .describe('Most skills in one answer'),
+  offset: z
+    .number()
+    .int()
+    .min(0)
+    .default(0)
+    .describe('Where a page of the list starts: the next_offset of the page before'),
 });
 
 export const SkillMatch = z.object({
   slug: SkillSlug,
   name: z.string(),
   description: z.string(),
-  score: z
-    .number()
-    .describe(
-      'Roughly 0 to 1, higher is closer; below 0.1 is unrelated, above it read the description',
-    ),
 });
 
 export const SkillsSearchResult = z.object({
-  skills: z.array(SkillMatch).describe('Best first; empty when nothing fits'),
+  matched: z
+    .boolean()
+    .describe(
+      'true: these skills fit the query, best first; false: none did, and this is a page of every skill',
+    ),
+  skills: z.array(SkillMatch),
+  total: z.number().int().describe('Skills in the whole answer, across its pages'),
+  next_offset: z.number().int().nullable().describe('offset for the next page; null on the last'),
 });
 
 export const SkillsGetInput = z.object({
