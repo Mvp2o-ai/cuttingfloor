@@ -18,6 +18,8 @@ import {
 import { inlineJobContext, type Job, type JobContext } from '@cuttingfloor/jobs';
 import {
   CfError,
+  DEPRECATED_PRESETS,
+  DEPRECATED_PRESETS_END,
   ExportResult,
   ExportVideoInput,
   expiry,
@@ -163,12 +165,14 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         openWorldHint: false,
       },
     },
-    guard(async (args, ctx) => {
+    guard(async (input, ctx) => {
       const owner = deps.owner();
       const store = rt.jobs.store;
+      const { preset, renamed } = currentPreset(input.preset);
+      const args = { ...input, preset };
       if (args.idempotency_key) {
         const existing = await store.findIdempotent(owner, 'export.video', args.idempotency_key);
-        if (existing) return jobReply(existing, ctx);
+        if (existing) return withWarning(jobReply(existing, ctx), renamed);
       }
       const doc = await rt.timelines.get(owner, args.timeline_id);
       if (!lengthFrames(doc))
@@ -307,7 +311,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
           kept: 'Copies of clips it had finished making (cleaned sound, in-between frames, fills) are kept and reused, so the new job starts from them',
         },
       );
-      return jobReply(job, ctx);
+      return withWarning(jobReply(job, ctx), renamed);
     }),
   );
 
@@ -569,4 +573,46 @@ export async function exists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+type Preset = z.infer<typeof ExportVideoInput>['preset'];
+type OldPreset = keyof typeof DEPRECATED_PRESETS;
+
+/** What an out-of-date client should hear about an old preset name. */
+function refresh(old: OldPreset): string {
+  return `Preset ${old} is an old name: use ${DEPRECATED_PRESETS[old]}. This app has an out-of-date cuttingfloor tool list; ask the user to refresh the cuttingfloor connection (or remove and add it again) to get the current tools.`;
+}
+
+/**
+ * The current name for a preset. A deprecated name runs as its format until
+ * DEPRECATED_PRESETS_END, logged so we know when nobody sends it; from then on it is refused.
+ */
+export function currentPreset(
+  preset: Preset,
+  now = new Date(),
+): { preset: Exclude<Preset, OldPreset>; renamed?: OldPreset } {
+  if (!Object.hasOwn(DEPRECATED_PRESETS, preset))
+    return { preset: preset as Exclude<Preset, OldPreset> };
+  const old = preset as OldPreset;
+  if (now.toISOString().slice(0, 10) >= DEPRECATED_PRESETS_END)
+    throw new CfError('bad_request', `Preset ${old} no longer exists`, { hint: refresh(old) });
+  process.stderr.write(`deprecated: export.video preset ${old}\n`);
+  return { preset: DEPRECATED_PRESETS[old], renamed: old };
+}
+
+/** Puts the deprecation first in the reply's hint, where the agent reads what to do next. */
+function withWarning(reply: CallToolResult, renamed: OldPreset | undefined): CallToolResult {
+  const structured = reply.structuredContent;
+  if (!renamed || !structured || reply.isError) return reply;
+  const hint =
+    `Deprecated: ${refresh(renamed)} Old names stop working on ${DEPRECATED_PRESETS_END}. ${String((structured as { hint?: string }).hint ?? '')}`.trim();
+  const text = JSON.stringify(structured);
+  const next = { ...structured, hint };
+  return {
+    ...reply,
+    structuredContent: next,
+    content: reply.content.map((c) =>
+      c.type === 'text' && c.text === text ? { type: 'text', text: JSON.stringify(next) } : c,
+    ),
+  };
 }
