@@ -16,7 +16,7 @@ import {
   TRANSFORM_LIMITS,
   TransitionKind,
 } from './compositing.ts';
-import { EFFECT_NAMES, type EffectName } from './effects.ts';
+import { EFFECT_NAMES, EFFECTS, type EffectName } from './effects.ts';
 import { ToolError } from './errors.ts';
 import { JobId, MediaId, TimelineId, UploadId } from './ids.ts';
 import { JUDGE_LIMITS, JudgeName, JudgeQuestion, JudgeText, NoulFields } from './judge.ts';
@@ -227,7 +227,9 @@ export const EditArgs = {
           ),
       ])
       .optional()
-      .describe('Source range in sequence frames, out exclusive. Default: the whole media'),
+      .describe(
+        'Where in the media to start and stop, in frames at the sequence rate (frame 48 at 24 fps is 2 s into the media), out exclusive. Default: the whole media',
+      ),
     duration_frames: z
       .number()
       .int()
@@ -445,7 +447,11 @@ export const EditArgs = {
     clip_id: z.string().optional().describe('Apply to one clip (or an adjustment clip)'),
     track_id: z.string().optional().describe('Or to every clip on a track'),
     timeline: z.boolean().optional().describe('Or true for the whole picture or mix'),
-    name: z.enum(EFFECT_NAMES as [EffectName, ...EffectName[]]),
+    name: z.enum(EFFECT_NAMES as [EffectName, ...EffectName[]]).describe(
+      `Each effect's params: ${Object.entries(EFFECTS)
+        .map(([n, e]) => `${n}(${Object.keys(e.params).join(', ')})`)
+        .join(' ')}`,
+    ),
     params: z
       .record(z.string(), z.unknown())
       .default({})
@@ -573,7 +579,9 @@ export const PlacingEditResult = EditResult.extend({
   placements: z
     .array(ClipPlacementSchema)
     .optional()
-    .describe('Where each clip the edit moved, cropped, masked or animated shows, sequence pixels'),
+    .describe(
+      'Where each clip the edit moved, cropped, masked or animated shows, sequence pixels; for a title or caption, the area it can draw in, not the text itself',
+    ),
 });
 
 export const BatchInput = z.object({
@@ -589,7 +597,7 @@ export const BatchInput = z.object({
     .min(1)
     .max(200)
     .describe(
-      'Edits applied in order as one change. An arg may be {"$ref":"ops[2].clip_id"} to use an id made by an earlier op',
+      'Edits applied in order as one change. An arg may be {"$ref":"ops[2].clip_id"} to use an id made by an earlier op; a linked clip.add\'s clip_id is its clip on track_id, and clip_ids holds the linked ones too',
     ),
 });
 
@@ -1396,9 +1404,27 @@ export const MediaListInput = z.object({
     .max(200)
     .optional()
     .describe('Part of a name, any case: only media and uploads whose name holds it'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(MEDIA_LIST_LIMIT)
+    .default(20)
+    .describe('Most media in one answer, most recently used first'),
+  offset: z
+    .number()
+    .int()
+    .min(0)
+    .default(0)
+    .describe('Where a page of media starts: the next_offset of the page before'),
 });
 
 export const MediaListResult = z.object({
+  next_offset: z
+    .number()
+    .int()
+    .nullable()
+    .describe('offset for the next page of media; null on the last'),
   media: z
     .array(
       z.object({
@@ -2341,11 +2367,6 @@ export const QaCheckResult = z.object({
         seconds: z.number(),
         speech_before: z.number().describe('Speech probability of the mix just before the cut'),
         speech_after: z.number().describe('Speech probability of the mix just after the cut'),
-        in_speech: z
-          .boolean()
-          .describe(
-            "Both at least min_probability: voice on both sides of the cut (a word, a breath or a word's tail); out_word and in_word say whether a word is cut",
-          ),
         silence_before_seconds: z
           .number()
           .describe('Seconds without speech before the cut (to the range start if none)'),

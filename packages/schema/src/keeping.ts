@@ -5,15 +5,18 @@
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
+/** How long anything stays on the cutting floor: one span for everything, links included. */
+export const KEEP = 7 * DAY;
+
 export const KEEP_MS = {
   /** A timeline, after it was last used. */
-  timeline: 24 * HOUR,
+  timeline: KEEP,
   /** Imported and created media, after it was last used (any read or edit is a use). */
-  media: 7 * DAY,
+  media: KEEP,
   /** A finished job and its output (an export), after it finished. */
-  job: 7 * DAY,
+  job: KEEP,
   /** A file sent to the server and not imported, after its upload began. */
-  upload: 7 * DAY,
+  upload: KEEP,
 } as const;
 
 /** A span in words: "24 hours", "7 days". */
@@ -27,7 +30,7 @@ export function span(ms: number): string {
 }
 
 /** The keeping policy in one sentence, for the instructions and descriptions. */
-export const KEEPING = `Nothing here is kept for good: timelines are deleted ${span(KEEP_MS.timeline)} after last use, media (imported or created) ${span(KEEP_MS.media)} after last use, exports and other job results ${span(KEEP_MS.job)} after they finish, and files sent but not imported ${span(KEEP_MS.upload)} after they were sent.`;
+export const KEEPING = `everything goes ${span(KEEP)} after last use (exports after they finish, uploads after sending; each file's details say when)`;
 
 /**
  * When a file goes, in a sentence: "Expires in 5 days, on 2026-11-19 14:00 UTC; …". `then` says

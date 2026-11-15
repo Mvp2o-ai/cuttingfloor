@@ -119,6 +119,8 @@ export async function listHeld(
   limits: OwnerLimits | undefined,
   /** Part of a name, any case: only what holds it. */
   name?: string,
+  /** A page of media, most recently used first. */
+  page: { limit: number; offset: number } = { limit: MEDIA_LIST_LIMIT, offset: 0 },
 ): Promise<z.infer<typeof MediaListResult>> {
   const [allMedia, allUploads, storage] = await Promise.all([
     rt.media.list(owner),
@@ -130,7 +132,8 @@ export async function listHeld(
   const media = allMedia.filter((r) => holds(r.name));
   const uploads = allUploads.filter((u) => holds(u.name));
   return {
-    media: media.slice(0, MEDIA_LIST_LIMIT).map((r) => ({
+    next_offset: page.offset + page.limit < media.length ? page.offset + page.limit : null,
+    media: media.slice(page.offset, page.offset + page.limit).map((r) => ({
       media_id: r.media_id,
       name: r.name,
       status: r.status,

@@ -759,7 +759,14 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         openWorldHint: false,
       },
     },
-    guard(async (args) => ok(await listHeld(rt, deps.owner(), await deps.limits?.(), args.name))),
+    guard(async (args) =>
+      ok(
+        await listHeld(rt, deps.owner(), await deps.limits?.(), args.name, {
+          limit: args.limit,
+          offset: args.offset,
+        }),
+      ),
+    ),
   );
 
   server.registerTool(

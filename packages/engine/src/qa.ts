@@ -49,7 +49,6 @@ export interface CutFact {
   speech_before: number;
   speech_after: number;
   /** Both at or above min_probability: speech runs straight through the cut. */
-  in_speech: boolean;
   /** Seconds with the speech probability under min_probability, back and on from the cut. */
   silence_before_seconds: number;
   silence_after_seconds: number;
@@ -317,7 +316,6 @@ export function cutFacts(
         seconds: round((frame * fps.den) / fps.num),
         speech_before: before,
         speech_after: after,
-        in_speech: before >= minProbability && after >= minProbability,
         silence_before_seconds: round(silenceBefore),
         silence_after_seconds: round(Math.max(0, silenceAfter)),
         edges: list,
