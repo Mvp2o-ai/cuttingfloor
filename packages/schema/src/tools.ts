@@ -54,7 +54,7 @@ const OtherTracks = z
   .enum(['stay', 'sync'])
   .default('stay')
   .describe(
-    "What the other tracks do when this edit moves later clips on the clip's own tracks (linked clips always move with it). stay: they don't move, and the result warns which clips there now play early or late. sync: they get the same change, so titles, overlays and sound stay in step: time taken out here comes out of them too (like range.extract), time added here opens the same gap in them (clips crossing that point are split, as insert does). Locked tracks always stay",
+    "Tracks holding neither this clip nor a clip linked to it (linked clips, such as its own sound, always change with it): what they do when this edit moves later clips. stay: they don't move, and the result warns which clips there now play early or late. sync: they get the same change, so titles, overlays and sound stay in step: time taken out here comes out of them too (like range.extract), time added here opens the same gap in them (clips crossing that point are split, as insert does). Locked tracks always stay",
   );
 
 const anim = (limits: readonly [number, number], text: string) =>
@@ -550,8 +550,14 @@ export const EditResult = z.object({
   timeline_id: TimelineId,
   parent: TimelineId,
   changed: z.array(Change),
-  clip_id: z.string().optional(),
-  clip_ids: z.array(z.string()).optional(),
+  clip_id: z
+    .string()
+    .optional()
+    .describe('The clip this edit made or acted on (each tool says which)'),
+  clip_ids: z
+    .array(z.string())
+    .optional()
+    .describe('Every clip this edit made or acted on, linked ones included (each tool says which)'),
   track_id: z.string().optional(),
   preview: PreviewRef.nullable(),
   warnings: z.array(z.string()),
@@ -892,6 +898,12 @@ export const COLOUR_LIMITS = { regions: 16, percentiles: 20 } as const;
 export const MediaAnalyzeInput = z
   .object({
     media_id: MediaId.optional().describe('Analyze imported media (media seconds)'),
+    file: z
+      .enum(['txt'])
+      .optional()
+      .describe(
+        'transcript: also write it as a file on the cutting floor, named for the media and the stretch it covers, with a download url like an export',
+      ),
     timeline_id: TimelineId.optional().describe(
       `Analyze an edit as it plays (timeline seconds): its mix (${TIMELINE_SOUND_ANALYSES.join(', ')}) or its picture (${TIMELINE_PICTURE_ANALYSES.join(', ')})`,
     ),
@@ -1373,7 +1385,14 @@ export type MediaGetResult = z.infer<typeof MediaGetResult>;
 /** Limits that protect the server: the most of each list one media.list returns. */
 export const MEDIA_LIST_LIMIT = 200;
 
-export const MediaListInput = z.object({});
+export const MediaListInput = z.object({
+  name: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('Part of a name, any case: only media and uploads whose name holds it'),
+});
 
 export const MediaListResult = z.object({
   media: z
@@ -1403,7 +1422,10 @@ export const MediaListResult = z.object({
       }),
     )
     .describe(`Imported and created media, most recently used first (up to ${MEDIA_LIST_LIMIT})`),
-  media_count: z.number().int().describe('All media held, including any not listed'),
+  media_count: z
+    .number()
+    .int()
+    .describe('All media held (that match name), including any not listed'),
   uploads: z
     .array(
       z.object({
@@ -1420,7 +1442,10 @@ export const MediaListResult = z.object({
     .describe(
       `Files sent to the server and not imported yet, newest first (up to ${MEDIA_LIST_LIMIT}): through media.upload, or dropped on the cuttingfloor site by the user`,
     ),
-  upload_count: z.number().int(),
+  upload_count: z
+    .number()
+    .int()
+    .describe('All uploads waiting (that match name), including any not listed'),
   storage: z.object({
     used_bytes: z.number().describe('Everything held: uploads, media with its proxies, exports'),
     max_bytes: z
@@ -1458,6 +1483,16 @@ export const MediaAnalyzeResult = z.object({
   model: z.string().optional().describe('look: the Jev model'),
   frames: z.number().optional().describe('look: frames asked about'),
   transcript: Transcript.optional(),
+  file: z
+    .object({
+      name: z.string(),
+      url: z.string().describe('Signed download url'),
+      page_url: z.string().describe('Shows the file in any browser'),
+      expires_at: z.string().describe('When the url stops working'),
+      expiry: z.string().describe('When the file goes, in words'),
+    })
+    .optional()
+    .describe('file: the written file'),
   beats: BeatsAnalysis.optional(),
   faces: FacesAnalysis.optional(),
   look: z

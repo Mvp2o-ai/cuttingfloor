@@ -257,7 +257,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
   };
 
   const sandboxNote = rt.config.motionUrl
-    ? "Runs in the sandbox: no network (inline everything, load libraries from lib/; assets are for imported files the page must show as they are, like the user's logo or a font), fixed memory and time limits. To match a reference you were shown, rebuild it in HTML/SVG; it does not need importing. The result's warnings list what went wrong in the page: uncaught errors, console errors, files blocked or not found."
+    ? "Runs in the sandbox: no network (inline everything, load libraries from lib/; assets are for imported files the page must show as they are, like the user's logo or a font), fixed memory and time limits. Fonts installed: Inter, Montserrat, Open Sans, Lato, Bebas Neue, Lobster Two, Comic Neue, Fira Code, DejaVu Sans, Serif and Mono, and Noto for most scripts (video://catalog/fonts lists every one); any other font goes in as an imported asset. To match a reference you were shown, rebuild it in HTML/SVG; it does not need importing. The result's warnings list what went wrong in the page: uncaught errors, console errors, files blocked or not found."
     : 'Needs the motion sandbox, which is not running on this server.';
 
   server.registerTool(

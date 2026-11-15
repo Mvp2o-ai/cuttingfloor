@@ -53,6 +53,13 @@ const media: Record<string, MediaRef> = {
     audio: true,
   },
   m_aaaaaaaaaaaaaaaaaaaaaaapng: { name: 'card.png', duration: null, video: true, audio: false },
+  // 50.9 frames: a voiceover whose last word ends part way into a frame.
+  m_aaaaaaaaaaaaaaaaaaaaaavo09: {
+    name: 'vo.wav',
+    duration: framesToTicks(50, fps) + Math.round(ticksPerFrame(fps) * 0.9),
+    video: false,
+    audio: true,
+  },
 };
 const resolve: MediaResolver = (id) => media[id];
 
@@ -106,6 +113,18 @@ describe('timelines', () => {
 });
 
 describe('clip.add', () => {
+  it('keeps a media whole, its last part frame counted', () => {
+    const { doc } = edit(start(), {
+      tool: 'clip.add',
+      args: { track_id: 't2', media_id: 'm_aaaaaaaaaaaaaaaaaaaaaavo09' },
+    });
+    expect(layout(doc, 1)).toEqual([[0, 51, 0]]);
+    // And no further than that frame.
+    expect(() =>
+      edit(doc, { tool: 'clip.trim', args: { clip_id: 'c3', edge: 'end', to_frame: 52 } }),
+    ).toThrow(/run past the end of its media/);
+  });
+
   it('adds a linked A/V clip on both tracks and appends by default', () => {
     let { doc, outcome } = edit(start(), {
       tool: 'clip.add',
@@ -1996,6 +2015,16 @@ describe('effects', () => {
     const next = run(loaded, { tool: 'filter.add', args: { clip_id: 'c7', name: 'sepia' } });
     const effectIds = toView('tl_x', next.doc).tracks[1]?.clips[0]?.effects?.map((e) => e.id);
     expect(new Set(effectIds).size).toBe(2);
+    // Its effects cover the whole picture: a mask that would not narrow them is refused.
+    expect(() =>
+      run(doc, {
+        tool: 'clip.set_mask',
+        args: {
+          clip_id: 'c7',
+          mask: { shape: 'ellipse', x: 0.5, y: 0.4, width: 0.3, height: 0.3 },
+        },
+      }),
+    ).toThrow(/adjustment clip/);
   });
 });
 

@@ -318,7 +318,7 @@ export function openApi(tools: ToolInfo[], publicUrl: string): Record<string, un
       license: { name: 'AGPL-3.0-only', identifier: 'AGPL-3.0-only' },
       description: `A headless video editor: the same tools as its MCP server (${publicUrl}/mcp), as plain HTTP. POST /v1/<tool> with the tool's arguments as a JSON object; the response is its result. Sign in with an API key from your account page: Authorization: Bearer cf_…
 
-Long work (imports, analysis, renders, exports) answers at once with a job_id: POST /v1/job.get {"job_id": "…", "wait_seconds": 30} answers when it moves, and a finished job gives its result and signed download links. Every edit returns a new timeline_id; keep using the latest. A refused call answers with an HTTP error status and {code, message, hint}: the hint says what to do instead.`,
+Long work (imports, analysis, renders, exports) answers at once with a job_id: POST /v1/job.get {"job_id": "…", "wait_seconds": 30} waits up to 30 s for it to finish or fail, and a finished job gives its result and signed download links. Every edit returns a new timeline_id; keep using the latest. A refused call answers with an HTTP error status and {code, message, hint}: the hint says what to do instead.`,
     },
     servers: [{ url: publicUrl }],
     security: [{ apiKey: [] }],

@@ -117,12 +117,18 @@ export async function listHeld(
   rt: Runtime,
   owner: string,
   limits: OwnerLimits | undefined,
+  /** Part of a name, any case: only what holds it. */
+  name?: string,
 ): Promise<z.infer<typeof MediaListResult>> {
-  const [media, uploads, storage] = await Promise.all([
+  const [allMedia, allUploads, storage] = await Promise.all([
     rt.media.list(owner),
     rt.uploads.list(owner),
     storageOf(rt.ws, owner, limits),
   ]);
+  const wanted = name?.toLowerCase();
+  const holds = (n: string) => !wanted || n.toLowerCase().includes(wanted);
+  const media = allMedia.filter((r) => holds(r.name));
+  const uploads = allUploads.filter((u) => holds(u.name));
   return {
     media: media.slice(0, MEDIA_LIST_LIMIT).map((r) => ({
       media_id: r.media_id,

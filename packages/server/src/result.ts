@@ -124,7 +124,7 @@ export function jobReply(job: Job, ctx: unknown): CallToolResult {
   }
   return ok({
     ...handle,
-    hint: 'Long-running: job.get {job_id, wait_seconds: 30} answers when it moves; the result comes with it once completed',
+    hint: `Running in the background.${handle.media_id ? ' The media_id works in edits once the job reports processing.' : ''} job.get reports its progress, and its result once complete.`,
   });
 }
 
