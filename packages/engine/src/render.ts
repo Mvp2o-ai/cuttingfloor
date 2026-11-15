@@ -352,7 +352,7 @@ export async function exportTimeline(
         ...consumer,
         `width=${width}`,
         `height=${height}`,
-        `frequency=${spec.audioOnly && preset === 'audio_wav_48k' ? 48000 : doc.sequence.audio_rate}`,
+        `frequency=${spec.audioOnly && preset === 'wav' ? 48000 : doc.sequence.audio_rate}`,
         `channels=${doc.sequence.channels}`,
         'real_time=-1',
         'progressive=1',

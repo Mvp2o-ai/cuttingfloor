@@ -4,15 +4,16 @@ import { CfError } from '@cuttingfloor/schema';
 // ways: as melt avformat consumer properties (the usual, single-pass export) and as FFmpeg
 // arguments (the second pass a GIF or a frame-rate change needs).
 
+// A preset names a format only. The picture comes out at the sequence's size and frame rate
+// unless the overrides ask for another; no preset decides a size.
 export const PRESET_NAMES = [
-  'web_1080p_h264',
-  'master_prores_422hq',
-  'social_9x16_h264',
-  'web_1080p_av1',
+  'mp4_h264',
+  'mp4_h264_fast',
+  'mp4_av1',
+  'mov_prores_422hq',
   'gif',
-  'review_h264',
-  'audio_wav_48k',
-  'audio_mp3',
+  'wav',
+  'mp3',
 ] as const;
 export type PresetName = (typeof PRESET_NAMES)[number];
 
@@ -43,8 +44,6 @@ export interface PresetSpec {
   crf?: { max: number };
   /** Allows `bitrate`. */
   bitrate?: boolean;
-  /** Refuses sequences it doesn't fit, with the reason. */
-  check?: (w: number, h: number) => string | undefined;
 }
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
@@ -55,19 +54,13 @@ export function fitBox(w: number, h: number, boxW: number, boxH: number) {
   return { width: even(w * scale), height: even(h * scale) };
 }
 
-/** w × h scaled (up or down) to fit a box: presets named for a size deliver that size. */
-function fitTo(w: number, h: number, boxW: number, boxH: number) {
-  const scale = Math.min(boxW / w, boxH / h);
-  return { width: even(w * scale), height: even(h * scale) };
-}
-
 const BT709 = { color_primaries: 'bt709', color_trc: 'bt709', colorspace: '709' };
 
 export const PRESETS: Record<PresetName, PresetSpec> = {
-  web_1080p_h264: {
+  mp4_h264: {
     extension: 'mp4',
     mime: 'video/mp4',
-    size: (w, h) => (w >= h ? fitTo(w, h, 1920, 1080) : fitTo(w, h, 1080, 1920)),
+    size: (w, h) => ({ width: w, height: h }),
     settings: {
       vcodec: 'libx264',
       preset: 'medium',
@@ -83,70 +76,11 @@ export const PRESETS: Record<PresetName, PresetSpec> = {
     crf: { max: 51 },
     bitrate: true,
   },
-  master_prores_422hq: {
-    extension: 'mov',
-    mime: 'video/quicktime',
+  // Quick and small, to watch a cut: sound kept, every frame kept, lower quality.
+  mp4_h264_fast: {
+    extension: 'mp4',
+    mime: 'video/mp4',
     size: (w, h) => ({ width: w, height: h }),
-    settings: {
-      vcodec: 'prores_ks',
-      vprofile: '3',
-      vendor: 'apl0',
-      pix_fmt: 'yuv422p10le',
-      acodec: 'pcm_s24le',
-      f: 'mov',
-      ...BT709,
-    },
-  },
-  social_9x16_h264: {
-    extension: 'mp4',
-    mime: 'video/mp4',
-    size: (w, h) => fitTo(w, h, 1080, 1920),
-    check: (w, h) =>
-      Math.abs(w / h - 9 / 16) > 0.01
-        ? `social_9x16_h264 needs a 9:16 sequence; this one is ${w}×${h}`
-        : undefined,
-    settings: {
-      vcodec: 'libx264',
-      preset: 'slow',
-      vprofile: 'high',
-      crf: '18',
-      maxrate: '20M',
-      bufsize: '40M',
-      pix_fmt: 'yuv420p',
-      g: '60',
-      acodec: 'aac',
-      ab: '256k',
-      f: 'mp4',
-      movflags: '+faststart',
-      ...BT709,
-    },
-    crf: { max: 51 },
-    bitrate: true,
-  },
-  web_1080p_av1: {
-    extension: 'mp4',
-    mime: 'video/mp4',
-    size: (w, h) => (w >= h ? fitTo(w, h, 1920, 1080) : fitTo(w, h, 1080, 1920)),
-    settings: {
-      vcodec: 'libsvtav1',
-      preset: '8',
-      crf: '32',
-      pix_fmt: 'yuv420p',
-      g: '240',
-      acodec: 'libopus',
-      ab: '160k',
-      f: 'mp4',
-      movflags: '+faststart',
-      ...BT709,
-    },
-    crf: { max: 63 },
-    bitrate: true,
-  },
-  // Small and quick, for a model that takes video in to watch the cut: sound kept, every frame kept.
-  review_h264: {
-    extension: 'mp4',
-    mime: 'video/mp4',
-    size: (w, h) => fitBox(w, h, 854, 854),
     settings: {
       vcodec: 'libx264',
       preset: 'veryfast',
@@ -162,21 +96,54 @@ export const PRESETS: Record<PresetName, PresetSpec> = {
     crf: { max: 51 },
     bitrate: true,
   },
+  mp4_av1: {
+    extension: 'mp4',
+    mime: 'video/mp4',
+    size: (w, h) => ({ width: w, height: h }),
+    settings: {
+      vcodec: 'libsvtav1',
+      preset: '8',
+      crf: '32',
+      pix_fmt: 'yuv420p',
+      g: '240',
+      acodec: 'libopus',
+      ab: '160k',
+      f: 'mp4',
+      movflags: '+faststart',
+      ...BT709,
+    },
+    crf: { max: 63 },
+    bitrate: true,
+  },
+  mov_prores_422hq: {
+    extension: 'mov',
+    mime: 'video/quicktime',
+    size: (w, h) => ({ width: w, height: h }),
+    settings: {
+      vcodec: 'prores_ks',
+      vprofile: '3',
+      vendor: 'apl0',
+      pix_fmt: 'yuv422p10le',
+      acodec: 'pcm_s24le',
+      f: 'mov',
+      ...BT709,
+    },
+  },
   gif: {
     extension: 'gif',
     mime: 'image/gif',
-    size: (w, h) => fitBox(w, h, 640, 640),
+    size: (w, h) => ({ width: w, height: h }),
     settings: {},
     gif: { fps: 15 },
   },
-  audio_wav_48k: {
+  wav: {
     extension: 'wav',
     mime: 'audio/wav',
     audioOnly: true,
     size: (w, h) => ({ width: w, height: h }),
     settings: { acodec: 'pcm_s24le', f: 'wav' },
   },
-  audio_mp3: {
+  mp3: {
     extension: 'mp3',
     mime: 'audio/mpeg',
     audioOnly: true,
@@ -185,19 +152,13 @@ export const PRESETS: Record<PresetName, PresetSpec> = {
   },
 };
 
-/** The preset's settings with the overrides applied, and the output size; refuses misfits. */
+/** The preset's settings with the overrides applied, and the output size. */
 export function resolvePreset(
   name: PresetName,
   seq: { width: number; height: number },
   overrides: Overrides = {},
 ): { spec: PresetSpec; settings: Record<string, string>; width: number; height: number } {
   const spec = PRESETS[name];
-  const misfit = spec.check?.(seq.width, seq.height);
-  if (misfit) {
-    throw new CfError('bad_request', misfit, {
-      hint: 'Change the sequence with timeline.set_sequence (and reframe with clip.set_transform), or use web_1080p_h264',
-    });
-  }
   const refuse = (what: string) =>
     new CfError('bad_request', `${name} does not take ${what}`, {
       hint: `Overrides each preset takes: ${presetCatalog()
@@ -269,7 +230,6 @@ export function presetCatalog() {
         ...(p.bitrate ? ['bitrate'] : []),
       ],
       ...(p.gif ? { default_fps: p.gif.fps } : {}),
-      ...(name === 'social_9x16_h264' ? { needs: '9:16 sequence' } : {}),
     };
   });
 }

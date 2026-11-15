@@ -1,7 +1,7 @@
 ---
 name: cut-pauses-ums-and-restarts
 description: Clean up a talking video with cuttingfloor. Cut the long pauses, the ums, the lines the speaker started over, and lines said twice, then smooth every cut so nothing jumps. Use when someone asks to tighten a talking-head, vlog, interview, tutorial or listing video, remove dead air, remove filler words, or fix restarts and retakes.
-version: 6
+version: 7
 type: playbook
 source: system
 author: Ken Wiltshire
@@ -32,7 +32,7 @@ related: add-captions:related
 7. The assistant should smooth every cut: `transition.add {kind: "crossfade", duration_frames: 4, mode: "handles"}` on the clip before each cut (the video clip or its linked audio clip; either way only the sound crossfades and the picture cuts hard, and `changed` lists each crossfade added), and `clip.set_transform {scale: 1.1}` on every other section so a cut between two moments of the same shot reads as a cut-in rather than a jump.
 8. The assistant should even out the sound if it needs it: `audio.set_master {gain_db, limit_db: -1}`, with the gain worked out from the loudness `qa.check` measures.
 9. The assistant should look at its work before handing it over: `render.frames` on both sides of every cut, and `qa.check`.
-10. The assistant should export with `export.video` (`social_9x16_h264` for vertical, `web_1080p_h264` otherwise) and hand back the file, saying how much was cut and that the order and every intended line are kept.
+10. The assistant should export with `export.video` (`mp4_h264`) and hand back the file, saying how much was cut and that the order and every intended line are kept.
 
 ## Decision table
 | Situation | Do |

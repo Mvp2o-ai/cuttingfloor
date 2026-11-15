@@ -133,7 +133,7 @@ if (mediaId) {
   });
   const exported = await run('export.video', {
     timeline_id: added.timeline_id,
-    preset: 'review_h264',
+    preset: 'mp4_h264_fast',
   });
   const url = exported.result?.url as string | undefined;
   expect(Boolean(url), `export.video ${JSON.stringify(exported.error ?? '')}`);

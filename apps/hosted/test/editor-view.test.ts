@@ -163,7 +163,7 @@ describe.skipIf(!engines || !browserFound)('editor view', () => {
     tracks = (await call('timeline.get', { timeline_id: id })).tracks as typeof tracks;
 
     // A client without Tasks gets a job handle: the view follows it with job.get.
-    const started = await call('export.video', { timeline_id: id, preset: 'review_h264' });
+    const started = await call('export.video', { timeline_id: id, preset: 'mp4_h264_fast' });
     exportResult = started;
     expect((await waitJob(String(started.job_id))).status).toBe('completed');
 
@@ -184,7 +184,7 @@ describe.skipIf(!engines || !browserFound)('editor view', () => {
     });
     const tallExport = await call('export.video', {
       timeline_id: tallClip.timeline_id,
-      preset: 'review_h264',
+      preset: 'mp4_h264_fast',
     });
     expect((await waitJob(String(tallExport.job_id))).status).toBe('completed');
     portrait = { timelineId: String(tallClip.timeline_id), exportResult: tallExport };
@@ -232,7 +232,7 @@ describe.skipIf(!engines || !browserFound)('editor view', () => {
         v.srcdoc = html;
       },
       caps,
-      { timeline_id: of.timelineId, preset: 'review_h264' },
+      { timeline_id: of.timelineId, preset: 'mp4_h264_fast' },
       { content: [], structuredContent: of.exportResult },
       editorHtml,
       frame ?? null,

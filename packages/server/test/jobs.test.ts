@@ -99,11 +99,11 @@ describe('jobs that stall or will not stop', () => {
     const timeline = await oneSecond(client);
     const first = await ok<View>(client, 'export.video', {
       timeline_id: timeline,
-      preset: 'review_h264',
+      preset: 'mp4_h264_fast',
     });
     const second = await ok<View>(client, 'export.video', {
       timeline_id: timeline,
-      preset: 'review_h264',
+      preset: 'mp4_h264_fast',
       filename: 'second',
     });
     // The second waits for the only slot, and names what it is for.
@@ -114,7 +114,7 @@ describe('jobs that stall or will not stop', () => {
       queued = await ok<View>(client, 'job.get', { job_id: second.job_id });
     }
     expect(queued.status_message).toMatch(/^queued: next in line/);
-    expect(queued.for).toMatchObject({ timeline_id: timeline, preset: 'review_h264' });
+    expect(queued.for).toMatchObject({ timeline_id: timeline, preset: 'mp4_h264_fast' });
     await until(async () => (await enginePids()).length >= 2);
     const [engine, helper] = await enginePids();
 
@@ -142,7 +142,7 @@ describe('jobs that stall or will not stop', () => {
     const before = (await enginePids()).length;
     const job = await ok<View>(client, 'export.video', {
       timeline_id: timeline,
-      preset: 'review_h264',
+      preset: 'mp4_h264_fast',
     });
     await until(async () => (await enginePids()).length >= before + 2);
     const [engine, helper] = (await enginePids()).slice(before);
@@ -216,7 +216,7 @@ describe('jobs that stall or will not stop', () => {
       uri: `video://jobs/${job.id}/output`,
       bytes: 10,
       frames: 25,
-      preset: 'web_1080p_h264',
+      preset: 'mp4_h264',
       mime_type: 'video/mp4',
     };
     const link = { type: 'resource_link' as const, uri: file.uri, name: 'out.mp4' };
@@ -230,7 +230,7 @@ describe('jobs that stall or will not stop', () => {
     });
     const res = await call(client, 'export.video', {
       timeline_id: `tl_${'a'.repeat(32)}`,
-      preset: 'web_1080p_h264',
+      preset: 'mp4_h264',
       idempotency_key: 'k1',
     });
     expect(res.isError).toBe(false);

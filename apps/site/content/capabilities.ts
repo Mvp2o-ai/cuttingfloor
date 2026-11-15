@@ -21,7 +21,7 @@ export const CAPS = [
       ['render.frames', '{ timeline_id: "tl_12…", frames: [0, 120, 240] }'],
       ['qa.check', '{ timeline_id: "tl_12…" }'],
       ['media.seek', '{ timeline_id: "tl_12…",\n  criteria: { dark: "faces too dark to see" } }'],
-      ['export.video', '{ timeline_id: "tl_12…", preset: "web_1080p_h264" }'],
+      ['export.video', '{ timeline_id: "tl_12…", preset: "mp4_h264" }'],
     ],
     note: 'FCPXML, OTIO, EDL out too',
   },

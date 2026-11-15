@@ -88,7 +88,7 @@ export const HOME_SESSION: SessionData = {
     {
       kind: 'call',
       fn: 'export.video',
-      args: '{ preset: "social_9x16_h264" }',
+      args: '{ preset: "mp4_h264" }',
       ret: 'teaser.mp4 · 00:00:58:12 · signed link',
       effect: { type: 'export', file: 'teaser.mp4' },
       wait: 1.8,
