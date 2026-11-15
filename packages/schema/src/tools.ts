@@ -696,7 +696,12 @@ export const MediaImportInput = z.object({
   file: AttachedFile.optional().describe(
     'A file the user attached in the chat, as the client passes it (instead of source)',
   ),
-  name: z.string().min(1).max(200).optional(),
+  name: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe("The media's desired name on the cutting floor. Default: the file's own name"),
   idempotency_key: z.string().min(1).max(200).optional(),
 });
 
@@ -2299,7 +2304,9 @@ export const QaCheckResult = z.object({
         speech_after: z.number().describe('Speech probability of the mix just after the cut'),
         in_speech: z
           .boolean()
-          .describe('Both at least min_probability: the cut lands while someone is speaking'),
+          .describe(
+            "Both at least min_probability: voice on both sides of the cut (a word, a breath or a word's tail); out_word and in_word say whether a word is cut",
+          ),
         silence_before_seconds: z
           .number()
           .describe('Seconds without speech before the cut (to the range start if none)'),

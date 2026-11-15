@@ -1762,7 +1762,20 @@ function inClipSegments(
       if (first < 0 || i < first) first = i;
       if (i > last) last = i;
     });
-    if (first < 0) return undefined;
+    if (first < 0) {
+      // Shorter than a frame (a quick "I" or "a"): the frame nearest it, if one is within a frame.
+      const mid = (from + to) / 2;
+      let near = -1;
+      times.forEach((t, i) => {
+        if (near < 0 || Math.abs(t - mid) < Math.abs((times[near] as number) - mid)) near = i;
+      });
+      const frame =
+        times.length > 1
+          ? Math.abs((times[1] as number) - (times[0] as number))
+          : tpf / TICKS_PER_SECOND;
+      if (near < 0 || Math.abs((times[near] as number) - mid) > frame) return undefined;
+      return { start_frame: start + near, end_frame: start + near + 1 };
+    }
     // Something already playing when the clip starts begins at its first frame, not a frame in
     // (a frame shows a stretch of source; the cut can fall inside it), so captions per clip meet
     // at a cut with no gap.
