@@ -6,7 +6,7 @@ import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { isMissing, ownerKey, randomId, type Workspace } from '@cuttingfloor/core';
 import { readableSize } from '@cuttingfloor/engine';
-import { CfError, KEEP_MS } from '@cuttingfloor/schema';
+import { CfError, KEEP_MS, span } from '@cuttingfloor/schema';
 
 /** How long an upload URL works, and how long an unimported upload is kept. */
 export const UPLOAD_TTL_MS = KEEP_MS.upload;
@@ -52,7 +52,7 @@ export class UploadRefused extends Error {
  * `uploads/` with its record and its bytes, reached by a signed URL that names the owner and
  * the upload: no other credentials, so any HTTP client can send it. A PUT sends the whole file,
  * or one part with `Content-Range` so a broken upload resumes where it stopped. Unimported
- * uploads go after a day; an import moves the file into the media.
+ * uploads go after `KEEP_MS.upload`; an import moves the file into the media.
  */
 export class Uploads {
   readonly #ws: Workspace;
@@ -181,9 +181,14 @@ export class Uploads {
     owner: string,
     id: string,
     body: Readable,
-    request: { length: number | null; range: { start: number; total: number | null } | null },
+    request: {
+      length: number | null;
+      range: { start: number; total: number | null } | null;
+      /** The sent file's own name (the upload page gives it), recorded over the one given. */
+      name?: string;
+    },
   ): Promise<UploadState> {
-    const meta = await this.#meta(owner, id);
+    let meta = await this.#meta(owner, id);
     if (!meta) throw new UploadRefused(404, 'no such upload, or it expired');
     if (meta.complete) {
       throw new UploadRefused(
@@ -201,6 +206,15 @@ export class Uploads {
       const start = request.range?.start ?? 0;
       if (request.range && start !== received) {
         throw new UploadRefused(409, `the upload has ${received} bytes; send from there`, received);
+      }
+      const named = request.name?.trim().slice(0, 200);
+      if (named && !/[/\\]/.test(named) && named !== meta.name) {
+        // Before any byte lands, the file also takes the sent name's extension.
+        const ext = extname(named)
+          .slice(0, 8)
+          .replace(/[^.\w]/g, '');
+        meta = { ...meta, name: named, ...(received === 0 ? { file: `data${ext}` } : {}) };
+        await this.#ws.writeJson(this.#record(owner, id), meta);
       }
       const total = request.range ? request.range.total : request.length;
       const limit = meta.max_bytes ?? this.maxBytes;
@@ -252,7 +266,7 @@ export class Uploads {
     const meta = await this.#meta(key, id);
     if (!meta) {
       throw new CfError('not_found', `Upload ${id} not found`, {
-        hint: `A staged file goes a day after staging, and each imports once.${this.#uploadPage ? ` ${this.#uploadPage} stages files too.` : ''}`,
+        hint: `A staged file goes ${span(KEEP_MS.upload)} after staging, and each imports once.${this.#uploadPage ? ` ${this.#uploadPage} stages files too.` : ''}`,
       });
     }
     if (!meta.complete) {

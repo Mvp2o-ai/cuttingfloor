@@ -76,7 +76,7 @@ export function uploadPage(uploadId: string): string {
         try {
           const r = await fetch(url, {
             method: 'PUT',
-            headers: { 'content-range': 'bytes ' + at + '-' + (end - 1) + '/' + file.size },
+            headers: { 'content-range': 'bytes ' + at + '-' + (end - 1) + '/' + file.size, 'upload-name': encodeURIComponent(file.name) },
             body: file.slice(at, end),
           });
           const body = await r.json().catch(() => ({}));

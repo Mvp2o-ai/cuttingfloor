@@ -1,5 +1,13 @@
 # cuttingfloor
 
+## 0.49.1
+
+### Patch Changes
+
+- 83834c1: Captions keep words shorter than a frame (a quick "I" or "a"), on the frame nearest them, instead of dropping them. media.import's name, a ranged transcript replacing the stored one, what media.listen hears in speech, and qa.check's in_speech are now described.
+- beb6a74: media.upload no longer needs a file name: the file the user picks on the upload page brings its own name and extension.
+- ca7e446: Files sent but not imported now stay 7 days, like imported media, and their upload links work as long.
+
 ## 0.49.0
 
 ### Minor Changes

@@ -874,7 +874,9 @@ export class Lifecycle {
     const owner = typeof body.user === 'string' ? body.user : '';
     if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
     const file = MediaUploadInput.safeParse({ name: body.name, bytes: body.bytes });
-    if (!file.success) return json(res, 400, { error: 'name must be a file name; bytes its size' });
+    // The account page always knows the file it sends.
+    if (!file.success || !file.data.name)
+      return json(res, 400, { error: 'name must be a file name; bytes its size' });
     try {
       const limits = await this.#o.access.limits(owner);
       const upload = await startUpload(

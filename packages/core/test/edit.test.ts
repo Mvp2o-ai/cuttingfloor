@@ -2055,6 +2055,37 @@ describe('transcripts', () => {
     expect(results[0]?.clip_ids).toHaveLength(2);
   });
 
+  it('keeps a word shorter than a frame, on the frame nearest it', () => {
+    // 25 fps: frames start every 0.04 s; "I" at 1.01–1.03 s holds no frame start of its own.
+    let { doc } = run(textStart(), {
+      tool: 'clip.add',
+      args: { track_id: 't1', media_id: AV, source: { in: 0, out: 100 } },
+    });
+    doc = run(doc, {
+      tool: 'caption.add',
+      args: {
+        track_id: 't2',
+        in_clip: {
+          clip_id: 'c5',
+          segments: [
+            {
+              start: 0.8,
+              end: 1.5,
+              text: 'so I knew',
+              words: [
+                { text: 'so', start: 0.8, end: 1 },
+                { text: 'I', start: 1.01, end: 1.03 },
+                { text: 'knew', start: 1.04, end: 1.5 },
+              ],
+            },
+          ],
+        },
+      },
+    }).doc;
+    const clip = toView('tl_x', doc).tracks[1]?.clips[0];
+    expect(clip?.words?.map((w) => w.text)).toEqual(['so', 'I', 'knew']);
+  });
+
   it('leaves out what does not play and trims what partly plays', () => {
     // Source 1.36–3.04 s plays: the end of w0, and the first 0.04 s of "end.".
     let { doc } = run(textStart(), {

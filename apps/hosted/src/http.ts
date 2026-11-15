@@ -440,7 +440,7 @@ function refusedLink(url: URL): string {
 const UPLOAD_CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'PUT, HEAD, GET, OPTIONS',
-  'access-control-allow-headers': 'content-type, content-range',
+  'access-control-allow-headers': 'content-type, content-range, upload-name',
   'access-control-expose-headers': 'upload-offset, upload-complete',
   'access-control-max-age': '86400',
 };
@@ -525,7 +525,15 @@ async function handleUpload(
   // A stalled client lets go of its upload after two idle minutes; it can resume later.
   req.setTimeout(120_000, () => req.destroy());
   try {
+    const sentName = req.headers['upload-name'];
+    let name: string | undefined;
+    try {
+      name = typeof sentName === 'string' ? decodeURIComponent(sentName) : undefined;
+    } catch {
+      name = undefined;
+    }
     const state = await runtime.uploads.receive(target.owner, target.id, req, {
+      ...(name ? { name } : {}),
       length,
       range: range
         ? { start: Number(range[1]), total: range[3] === '*' ? null : Number(range[3]) }
