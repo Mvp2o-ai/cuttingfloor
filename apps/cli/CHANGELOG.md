@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.54.1
+
+### Patch Changes
+
+- d6b24ba: cuttingfloor.ai/upload sends a signed-out visitor to sign in first, like the account page, instead of failing.
+
 ## 0.54.0
 
 ### Minor Changes

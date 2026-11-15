@@ -77,9 +77,9 @@ export default function Terms() {
           them except as the <a href="/privacy">privacy policy</a> says.
         </P>
         <P>
-          You must have the rights to what you upload. Uploads, media and exports are deleted 7 days
-          after they are made, and timelines 24 hours after they were last used. Keep your own
-          copies; cuttingfloor is not a place to store files.
+          You must have the rights to what you upload. Uploads, media, exports and timelines are
+          deleted 7 days after they were last used. Keep your own copies; cuttingfloor is not a
+          place to store files.
         </P>
       </Part>
       <Part title="Using it fairly">

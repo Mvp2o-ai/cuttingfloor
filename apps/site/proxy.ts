@@ -3,7 +3,7 @@ import { type NextFetchEvent, type NextRequest, NextResponse } from 'next/server
 import { markdownRoute, prefersMarkdown, sectionTwinRoute } from './app/lib/negotiate.ts';
 
 // Two jobs, and the matcher keeps both narrow so every public page stays a static file:
-// - Sessions for the signed-in pages. Signed-out visitors to /account, /welcome and the billing
+// - Sessions for the signed-in pages. Signed-out visitors to /account, /upload, /welcome and the billing
 //   routes go to the WorkOS sign-in first; /start sends them to the sign-up screen itself.
 // - Markdown for agents. A request whose Accept header names text/markdown (and likes it at least
 //   as much as HTML) gets the page's Markdown twin; /demos/<slug>.md and the like reach their twin.
@@ -14,7 +14,7 @@ const auth = authkitProxy({
   middlewareAuth: { enabled: true, unauthenticatedPaths: ['/callback', '/start'] },
 });
 
-const AUTH = /^\/(account|welcome|start|callback)$|^\/api\//;
+const AUTH = /^\/(account|upload|welcome|start|callback)$|^\/api\//;
 
 export default function proxy(request: NextRequest, event: NextFetchEvent) {
   const { pathname } = request.nextUrl;
@@ -28,13 +28,14 @@ export default function proxy(request: NextRequest, event: NextFetchEvent) {
 export const config = {
   matcher: [
     '/account',
+    '/upload',
     '/welcome',
     '/start',
     '/callback',
     '/api/:path*',
     '/:section(demos|walkthroughs|skills|agents|guides|es)/:slug.md',
     {
-      source: '/((?!_next/|api/|md/|account|welcome|start|callback|.*\\.).*)',
+      source: '/((?!_next/|api/|md/|account|upload|welcome|start|callback|.*\\.).*)',
       has: [{ type: 'header', key: 'accept', value: '.*text/(x-)?markdown.*' }],
     },
   ],

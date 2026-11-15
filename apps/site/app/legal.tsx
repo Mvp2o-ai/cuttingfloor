@@ -2,8 +2,9 @@ import type { ReactNode } from 'react';
 import { LiveCard } from './live-card.tsx';
 import { Breadcrumbs, Footer, Nav } from './shell.tsx';
 
-// The policy pages share one shape: a head with the effective date, then short sections. Plain
-// explainer pages (/mcp) use it too, without the date.
+// The policy pages share one shape: a head with the effective date, then short sections, and
+// nothing else (no live demo strip or cards: a policy page holds only the policy). Plain
+// explainer pages (/mcp) use it too, without the date, and keep the demo.
 
 export const EFFECTIVE = 'October 20, 2026';
 
@@ -25,7 +26,7 @@ export function LegalPage({
 }) {
   return (
     <>
-      <Nav />
+      <Nav strip={!dated} />
       <main className="frame wt">
         <section className="cell wt-head marks">
           <span className="mark-b" />
@@ -33,7 +34,7 @@ export function LegalPage({
           <span className="label">{label}</span>
           <h1 className="display">{title}</h1>
           <p className="lede wt-answer">{lede}</p>
-          <LiveCard />
+          {dated ? null : <LiveCard />}
           {dated ? <p className="wt-links">In effect from {EFFECTIVE}.</p> : null}
         </section>
         <section className="cell">
