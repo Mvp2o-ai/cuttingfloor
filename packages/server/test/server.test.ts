@@ -58,9 +58,9 @@ describe('protocol surface', () => {
     const local = (await connect(env.runtime)).getInstructions() ?? '';
     expect(local).not.toContain('/samples');
     expect(local).toContain(`a path under ${env.mediaDir}`);
-    expect(local).toContain("doesn't hand it to you, call media.upload and give the user its link");
-    expect(local).toContain('tell the user to download the files they want to keep');
-    expect(local).toContain('Links to files work for 1 hour (');
+    expect(local).toContain("that the chat app doesn't hand you goes the same way");
+    expect(local).toContain('Download finished or approved work');
+    expect(local).toContain('links to files work for 1 hour (');
     expect(local).not.toContain('Credits:');
 
     const withSamples = await testRuntime({ mediaRoots: ['/media', '/samples'] });
@@ -75,6 +75,21 @@ describe('protocol surface', () => {
     expect(text).not.toContain('/account');
   });
 
+  it('keeps its instructions short enough that clients read them whole', async () => {
+    // Claude's clients cut server instructions at about 4,096 characters; the rest is never read.
+    const hosted = await testRuntime({
+      mode: 'hosted',
+      mediaRoots: [],
+      exportsDir: null,
+      uploadPage: 'https://cuttingfloor.ai/account#files',
+    });
+    const local = await testRuntime({ mediaRoots: ['/media', '/samples'] });
+    for (const env of [hosted, local]) {
+      const text = (await connect(env.runtime)).getInstructions() ?? '';
+      expect(text.length).toBeLessThan(4_000);
+    }
+  });
+
   it("names the hosted upload page where the user's own files come in, and only there", async () => {
     const page = 'https://cuttingfloor.ai/account#files';
     const hosted = await testRuntime({
@@ -84,7 +99,7 @@ describe('protocol surface', () => {
       uploadPage: page,
     });
     const client = await connect(hosted.runtime);
-    expect(client.getInstructions()).toContain(`or their upload page, ${page}`);
+    expect(client.getInstructions()).toContain(`or they drop it on their upload page, ${page}`);
     const { tools } = await client.listTools();
     const described = (name: string) => tools.find((t) => t.name === name)?.description ?? '';
     for (const name of ['media.upload', 'media.list']) {
