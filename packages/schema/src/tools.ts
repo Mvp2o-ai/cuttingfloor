@@ -547,9 +547,13 @@ export const PreviewRef = z.object({
 });
 
 export const EditResult = z.object({
-  timeline_id: TimelineId,
-  parent: TimelineId,
-  changed: z.array(Change),
+  timeline_id: TimelineId.describe('The new version: edit this one next (older ids stay valid)'),
+  parent: TimelineId.describe('The version this edit started from'),
+  changed: z
+    .array(Change)
+    .describe(
+      'What the edit added, removed or modified; a clip or transition says its track and where it now sits (frames, end exclusive)',
+    ),
   clip_id: z
     .string()
     .optional()

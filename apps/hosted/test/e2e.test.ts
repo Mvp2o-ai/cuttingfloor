@@ -3119,6 +3119,10 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     }, 120_000);
 
     it('makes solid and gradient mattes, once per recipe', async () => {
+      // Made media works in edits once its job completes, not while it processes, as an import's does.
+      const fresh = await made('create.matte', { color: '#123456', width: 64, height: 64 });
+      const hint = String((fresh.started as { hint?: string }).hint);
+      expect(hint).not.toContain('reports processing');
       const gradient = { from: '#000000', to: '#ffffff', angle: 90 };
       const first = await create('create.matte', { gradient, width: 1280, height: 720 });
       expect(first).toMatchObject({ kind: 'image', width: 1280, height: 720, status: 'ready' });

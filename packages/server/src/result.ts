@@ -100,6 +100,14 @@ export function toTask(job: Job) {
   };
 }
 
+/** When the media a job makes works in edits: an import's while it processes, a made one's once done. */
+function makes(tool: string): string {
+  if (tool === 'media.import')
+    return ' The media_id works in edits once the job reports processing.';
+  if (tool.startsWith('create.')) return ' The media_id works in edits once the job is complete.';
+  return '';
+}
+
 /** How a long-running tool answers: a task when the client opted in, otherwise a job handle. */
 export function jobReply(job: Job, ctx: unknown): CallToolResult {
   if (wantsTask(ctx)) {
@@ -124,7 +132,7 @@ export function jobReply(job: Job, ctx: unknown): CallToolResult {
   }
   return ok({
     ...handle,
-    hint: `Running in the background.${handle.media_id ? ' The media_id works in edits once the job reports processing.' : ''} job.get reports its progress, and its result once complete.`,
+    hint: `Running in the background.${makes(job.tool)} job.get reports its progress, and its result once complete.`,
   });
 }
 
