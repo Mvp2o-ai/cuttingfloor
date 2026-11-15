@@ -58,9 +58,9 @@ describe('protocol surface', () => {
     const local = (await connect(env.runtime)).getInstructions() ?? '';
     expect(local).not.toContain('/samples');
     expect(local).toContain(`a path under ${env.mediaDir}`);
-    expect(local).toContain("that the chat app doesn't hand you goes the same way");
+    expect(local).toContain('attached but not handed to you: media.upload');
     expect(local).toContain('Download finished or approved work');
-    expect(local).toContain('links to files work for 1 hour (');
+    expect(local).toContain('links work 1 hour (');
     expect(local).not.toContain('Credits:');
 
     const withSamples = await testRuntime({ mediaRoots: ['/media', '/samples'] });
@@ -70,8 +70,8 @@ describe('protocol surface', () => {
     const text = (await connect(hosted.runtime)).getInstructions() ?? '';
     expect(text).not.toContain('a path under');
     expect(text).not.toContain('/samples');
-    expect(text).toContain(`starts with ${FREE_CREDITS} free credits`);
-    expect(text).toContain("won't start until there are credits again");
+    expect(text).toContain(`new accounts start with ${FREE_CREDITS}`);
+    expect(text).toContain('tell the user jobs wait for credits');
     expect(text).not.toContain('/account');
   });
 

@@ -11,6 +11,7 @@ import {
   watchRenderQueue,
 } from '@cuttingfloor/engine';
 import { FileJobStore, type Job, JobRunner } from '@cuttingfloor/jobs';
+import { KEEP } from '@cuttingfloor/schema';
 import { CALLS_TTL_MS, type CallEntry, jobEnd, recordCall } from './calls.ts';
 import { METER_TTL_MS, type MeterEntry, meterJob, meterJudgments } from './meter.ts';
 import { Uploads } from './uploads.ts';
@@ -105,7 +106,9 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
       ? { shortJobSeconds: Number(env.CUTTINGFLOOR_SHORT_JOB_SECONDS) }
       : {}),
     ...(env.CUTTINGFLOOR_MAX_RENDERS ? { maxRenders: Number(env.CUTTINGFLOOR_MAX_RENDERS) } : {}),
-    outputUrlTtlMs: Number(env.CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS ?? 24) * 3_600_000,
+    outputUrlTtlMs: env.CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS
+      ? Number(env.CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS) * 3_600_000
+      : KEEP,
     maxDownloadBytes: Number(env.CUTTINGFLOOR_MAX_DOWNLOAD_BYTES ?? 10 * 1024 ** 3),
     allowPrivateUrls: env.CUTTINGFLOOR_ALLOW_PRIVATE_URLS === '1',
     inlineMaxBytes: Number(env.CUTTINGFLOOR_INLINE_MAX_BYTES ?? 32 * 1024 ** 2),

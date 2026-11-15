@@ -452,7 +452,6 @@ describe.skipIf(!ready)('speech and sound facts', () => {
     expect(qa.isError).toBe(false);
     const cuts = qa.structured.cuts as Array<{
       frame: number;
-      in_speech: boolean;
       speech_before: number;
       silence_after_seconds: number;
       edges: Array<{ out_word: { text: string; seconds_cut: number } | null; in_word: unknown }>;

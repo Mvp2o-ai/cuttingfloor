@@ -1,6 +1,6 @@
 import type { CredentialStore } from '@cuttingfloor/credentials';
 import { FREE_CREDITS } from '@cuttingfloor/plans';
-import { type AccountGetResult, KEEP_MS, KEEPING, span } from '@cuttingfloor/schema';
+import { type AccountGetResult, KEEPING, span } from '@cuttingfloor/schema';
 import { McpServer } from '@modelcontextprotocol/server';
 import { logToolCalls } from './calls.ts';
 import { registerCatalogs } from './catalog.ts';
@@ -52,23 +52,31 @@ function instructions(config: Runtime['config']): string {
   const samples = roots.includes('/samples')
     ? '; to try it, /samples/sample.mp4 and /samples/card.png'
     : '';
-  const linkHours = Math.round(config.outputUrlTtlMs / 3_600_000);
   const credits = hosted
     ? `
-Credits: jobs (exports, imports, analysis, create.*) spend credits, one a minute of running; editing and previews are free. A new account starts with ${FREE_CREDITS} free credits. At 0, new jobs are refused (quota_exceeded): tell the user that jobs won't start until there are credits again, while editing and previews still work.`
+Credits: a job (export, import, analysis, create.*) spends one a minute; editing and previews are free; new accounts start with ${FREE_CREDITS}. At 0 jobs are refused (quota_exceeded): tell the user jobs wait for credits, while editing and previews still work.`
     : '';
-  return `cuttingfloor is a headless video editor. The cutting floor is where you work, like the cutting room floor of an edit suite: media is imported onto it before any editing, cut and finished there, and the finished piece leaves as a download. ${KEEPING} Download finished or approved work, or have the user do it; links to files work for ${linkHours} ${linkHours === 1 ? 'hour' : 'hours'} (reading the file again gives fresh ones).
-Media in: media.import brings the user's footage, music, sounds and logos onto the floor from a URL, an upload_id or a data: URI${roots.length ? `, or a path under ${roots.join(', ')}` : ''}${samples}. A file on the user's phone or computer is staged first: media.upload gives a link they open to pick it${config.uploadPage ? `, or they drop it on their upload page, ${config.uploadPage}` : ''}. A file attached in the chat that the chat app doesn't hand you goes the same way. Files already sent are in media.list. Nothing here makes music or sound effects: those come from the user's files.
-Make new: create.motion (animated HTML), create.still, create.matte and create.voiceover make media from nothing; other create.* tools remake media (cutout, stabilized, upscaled, lipsync). An image the user shows you is a reference to rebuild in HTML, not a file to import.
+  return `cuttingfloor is a headless video editor. The cutting floor is its workspace, like an edit suite's: media is imported onto it before editing, cut and finished there, and leaves as a download. Work, not storage: ${KEEPING}; links work ${span(config.outputUrlTtlMs)} (re-reading gives fresh ones). Download finished or approved work, or have the user do it; when they count on keeping something, say it is temporary. To go on later, save timeline.get's document (timeline.load) and files from their url (media.import again). media.delete drops unwanted media.
+Two ways in, often both:
+- Make new: create.motion (animated HTML, frame-exact, alpha, sandboxed), .still (HTML to PNG), .matte (solid, gradient), .voiceover (speech, timed words); a picture the user shows is a reference to rebuild in HTML, not to import. Remake: create.cutout, .stabilized, .upscaled, .lipsync (user's provider key). No music or sound effects are made: they are the user's files.
+- Edit theirs: media.import a URL${roots.length ? `, a path under ${roots.join(', ')}` : ''}, an upload_id or a small data: URI${samples}. A file on their device, or attached but not handed to you: media.upload, a link they open to pick it${config.uploadPage ? `, or they drop it on their upload page, ${config.uploadPage}` : ''}. Sent files: media.list.
 ${INSTRUCTIONS_BODY}${credits}`;
 }
 
-const INSTRUCTIONS_BODY = `Jobs: imports, analysis, create.* and exports run long and answer with a job_id; job.get reports the job and its result. Edits take a media_id once its job reports processing (a create.* media once complete); analysis needs it ready.
-Edit: timeline.create with a sequence ({width, height, fps:{num,den}}), then clip, track, text, audio, transition, filter and range tools, or edit.batch, a pipeline of edits in one call (each runs on the one before's result). Every edit returns a NEW timeline_id: keep using the latest. Older ids stay valid, so going back is using an older id, and two edits from the same id make two separate versions. Time is integer frames at the sequence rate; ranges are end-exclusive. Higher video tracks sit on top.
-Facts: media.analyze (transcript, speech, beats, faces, track, look, silence, scenes, sounds), media.listen, media.seek and judge.ask turn media into data and answers.
-Check before delivering: preview "inline" on an edit, render.frames, qa.check. export.video gives a download url and a page_url for the user; export.timeline hands the edit to another editor or writes captions.
-Skills: skills.search finds step-by-step methods for common jobs; skills.get returns one.
-Work longer than ${span(KEEP_MS.timeline)}: save the timeline.get document and timeline.load it to carry on.`;
+const INSTRUCTIONS_BODY = `Tools are granular primitives that do exactly what their arguments say; you compose them.
+1. create.* and media.import run long (a task, or a job_id for job.get, which can wait). Edits, previews and render.frames take an imported media_id once processing, a created one once complete; analysis, judge.ask and create.* need it ready; export waits for ready.
+2. timeline.create {width, height, fps:{num,den}}, then clip.*, track.*, or edit.batch, a pipeline of edits in one call. Each edit returns a NEW timeline_id: use the latest; older ones stay valid (undo).
+   Timing: set_speed (ramp, reverse), freeze, roll, slip, slide, replace; range.lift / extract cut a span from all tracks. Nest a same-shape timeline (clip.add nested_timeline_id); otherwise export and import its job.
+   transition.add at a cut: dissolve, dip, wipe, slide, push, zoom, iris, spin (linked audio crossfades).
+   Text on a video track: title.add, caption.add (segments, SRT, VTT; word timings drive highlights), text.set restyles many.
+   Audio: set_gain (keyframes), set_pan, fade, set_master (gain, limiter); inline previews measure loudness.
+   filter.add on a clip, track or timeline: colour, LUT, blur, vignette, key, glitch, denoise; EQ, compressor, noise reduction, voice cleanup, pitch. adjustment.add covers all below for a stretch.
+   Overlays: a higher video track, then set_transform, set_mask, set_blend, set_animation. Names: video://catalog/{name}; a wrong one is refused with the list.
+   Facts: media.analyze (transcript, beats, faces, track, look, silence, scenes…) to cut by words (clip.add source {words}), caption (caption.add in_clip), cut on beats, reframe, pin to a tracked object; judge.ask answers typed questions (yes/no, choice, score, box) on text, JSON and pictures, and look asks them across sampled frames; media.seek finds a moment from plain words, in a video or a rendered edit.
+3. Look: preview "inline", render.frames; to watch motion and sound, export a range with review_h264.
+4. qa.check, then export.video: a download url and a page_url that plays in a browser, for the user (presets: web, master, 9:16, AV1, GIF, audio; overrides). export.timeline: FCPXML, OTIO, EDL, SRT, VTT.
+Skills: methods for common jobs; skills.search in the user's words first, then skills.get.
+Time is frames at the sequence rate; ranges end-exclusive.`;
 
 /** Builds one MCP server instance over the shared runtime. Transports live in apps/. */
 export function createServer(deps: ServerDeps): McpServer {

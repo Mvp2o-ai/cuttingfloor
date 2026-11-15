@@ -18,11 +18,7 @@ describe('keeping', () => {
     const client = await connect(env.runtime);
     const text = client.getInstructions() ?? '';
     expect(text).toContain(KEEPING);
-    expect(KEEPING).toContain(`timelines are deleted ${span(KEEP_MS.timeline)} after last use`);
-    expect(KEEPING).toContain(`media (imported or created) ${span(KEEP_MS.media)} after last use`);
-    expect(KEEPING).toContain(
-      `exports and other job results ${span(KEEP_MS.job)} after they finish`,
-    );
+    expect(KEEPING).toContain(`everything goes ${span(KEEP_MS.media)} after last use`);
     const { tools } = await client.listTools();
     const described = (name: string) => tools.find((t) => t.name === name)?.description ?? '';
     expect(described('media.get')).toContain(`kept ${span(KEEP_MS.media)} after last use`);
