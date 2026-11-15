@@ -1,5 +1,12 @@
 # cuttingfloor
 
+## 0.50.1
+
+### Patch Changes
+
+- cc88869: edit.batch is described as what it is, a pipeline of edits in one call, and make-motion-graphics no longer asks before starting.
+- b2188b1: The act-on-part-of-the-picture skill no longer matches unrelated asks such as changing a font colour.
+
 ## 0.50.0
 
 ### Minor Changes
