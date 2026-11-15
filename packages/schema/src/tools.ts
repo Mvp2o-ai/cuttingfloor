@@ -2208,12 +2208,23 @@ export const RenderFramesResult = z.object({
   ),
 });
 
+export const CurrentPreset = z.enum([
+  'mp4_h264',
+  'mp4_h264_fast',
+  'mp4_av1',
+  'mov_prores_422hq',
+  'gif',
+  'wav',
+  'mp3',
+]);
+
 /**
- * Preset names before v0.56, still sent by clients that keep the tool list they saw when they
- * connected (ChatGPT does until the user refreshes the app). Each means its format now; the size
- * it once forced is gone. Not advertised: the published schema lists only the current names.
+ * Deprecated: preset names before v0.56, still sent by clients that keep the tool list they saw
+ * when they connected (ChatGPT does until the user refreshes the app). Until
+ * DEPRECATED_PRESETS_END each runs as its format, with a warning to refresh; from then on it is
+ * refused with the same advice. Delete these, and the branch in ExportPreset, after that date.
  */
-const LEGACY_PRESETS: Record<string, string> = {
+export const DEPRECATED_PRESETS = {
   web_1080p_h264: 'mp4_h264',
   social_9x16_h264: 'mp4_h264',
   review_h264: 'mp4_h264_fast',
@@ -2221,16 +2232,20 @@ const LEGACY_PRESETS: Record<string, string> = {
   master_prores_422hq: 'mov_prores_422hq',
   audio_wav_48k: 'wav',
   audio_mp3: 'mp3',
-};
+} as const satisfies Record<string, z.infer<typeof CurrentPreset>>;
+export const DEPRECATED_PRESETS_END = '2026-12-15';
 
-export const ExportPreset = z.preprocess(
-  (v) => (typeof v === 'string' && Object.hasOwn(LEGACY_PRESETS, v) ? LEGACY_PRESETS[v] : v),
-  z
-    .enum(['mp4_h264', 'mp4_h264_fast', 'mp4_av1', 'mov_prores_422hq', 'gif', 'wav', 'mp3'])
-    .describe(
-      'A format; the picture comes out at the sequence size unless overrides set another. video://catalog/presets lists what each takes',
-    ),
-);
+// The deprecated branch is accepted but not advertised (server.ts drops deprecated branches).
+export const ExportPreset = z
+  .union([
+    CurrentPreset,
+    z
+      .enum(Object.keys(DEPRECATED_PRESETS) as [keyof typeof DEPRECATED_PRESETS])
+      .meta({ deprecated: true }),
+  ])
+  .describe(
+    'A format; the picture comes out at the sequence size unless overrides set another. video://catalog/presets lists what each takes',
+  );
 
 export const ExportOverrides = z
   .object({
@@ -2311,7 +2326,7 @@ export const ExportResult = z.object({
   frames: z.number(),
   width: z.number().nullable().optional(),
   height: z.number().nullable().optional(),
-  preset: ExportPreset,
+  preset: CurrentPreset,
   mime_type: z.string(),
   sha256: z.string().optional().describe('SHA-256 of the whole file: equal only for equal bytes'),
   fingerprint: z

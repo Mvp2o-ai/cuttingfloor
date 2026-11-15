@@ -1,7 +1,7 @@
 import { installedFonts } from '@cuttingfloor/engine';
 import { BatchResult, CfError, EditResult, QaCheckResult, withJob } from '@cuttingfloor/schema';
 import { TASKS_EXTENSION_ID_V2 } from '@modelcontextprotocol/ext-tasks/core/v2';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import * as z from 'zod/v4';
 import { call, connect, ok, SEQ_720P25, settled, type TestEnv, testRuntime } from './helpers.ts';
 
@@ -493,8 +493,9 @@ describe('timelines', () => {
     expect(rate.isError).toBe(true);
   });
 
-  it('takes the preset names a client saved before formats replaced them, advertising only formats', async () => {
-    const client = await connect(env.runtime);
+  it('runs a deprecated preset name with a warning to refresh, refuses it after its end, and lists only formats', async () => {
+    // Its own runtime: the export job it starts stays out of other tests' job lists.
+    const client = await connect((await testRuntime()).runtime);
     const { tools } = await client.listTools();
     const schema = tools.find((t) => t.name === 'export.video')?.inputSchema;
     const properties = schema?.properties as Record<string, { enum?: string[] }> | undefined;
@@ -507,16 +508,42 @@ describe('timelines', () => {
       'wav',
       'mp3',
     ]);
-    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+    const { timeline_id: empty } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
       name: 'Old client',
       sequence: SEQ_720P25,
     });
-    // Past argument checks: the empty timeline is what stops it, not the name.
-    const legacy = await call(client, 'export.video', { timeline_id, preset: 'web_1080p_h264' });
-    expect(legacy.structured).toMatchObject({ code: 'bad_request' });
+    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'title.add', {
+      timeline_id: empty,
+      track_id: 't1',
+      text: 'One second',
+      duration_frames: 25,
+      preview: 'none',
+    });
+    const reply = await ok<{ job_id: string; hint: string }>(client, 'export.video', {
+      timeline_id,
+      preset: 'web_1080p_h264',
+    });
+    expect(reply.hint).toMatch(/^Deprecated: Preset web_1080p_h264 is an old name: use mp4_h264\./);
+    expect(reply.hint).toMatch(/refresh the cuttingfloor connection/);
+    expect(reply.hint).toMatch(/stop working on 2026-12-15/);
+    await call(client, 'job.cancel', { job_id: reply.job_id });
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-12-15T00:00:00Z'));
+    try {
+      const gone = await call(client, 'export.video', { timeline_id, preset: 'web_1080p_h264' });
+      expect(gone.structured).toMatchObject({
+        code: 'bad_request',
+        message: 'Preset web_1080p_h264 no longer exists',
+      });
+      expect(String(gone.structured.hint)).toMatch(
+        /use mp4_h264.*refresh the cuttingfloor connection/,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
     const unknown = await call(client, 'export.video', { timeline_id, preset: 'web_4k' });
     expect(unknown.isError).toBe(true);
-    expect(JSON.stringify(unknown.content)).toMatch(/preset/);
   });
 
   it('runs edit.batch atomically with $refs', async () => {

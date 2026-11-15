@@ -202,8 +202,16 @@ const SAFE = Number.MAX_SAFE_INTEGER;
 function compact(node: unknown, open: boolean): never {
   if (Array.isArray(node)) return node.map((n) => compact(n, open)) as never;
   if (!node || typeof node !== 'object') return node as never;
+  // Deprecated values are still accepted but not advertised: a branch marked deprecated goes,
+  // and a union left with one branch becomes that branch.
+  let source = node as Record<string, unknown>;
+  if (Array.isArray(source.anyOf)) {
+    const { anyOf, ...rest } = source;
+    const kept = (anyOf as Array<{ deprecated?: boolean }>).filter((b) => !b?.deprecated);
+    source = kept.length === 1 ? { ...kept[0], ...rest } : { ...rest, anyOf: kept };
+  }
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(node)) {
+  for (const [k, v] of Object.entries(source)) {
     if (k === '$schema') continue;
     if (open && k === 'additionalProperties' && v === false) continue;
     if ((k === 'minimum' && v === -SAFE) || (k === 'maximum' && v === SAFE)) continue;
