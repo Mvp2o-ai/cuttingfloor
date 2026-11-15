@@ -13,7 +13,7 @@ export const KEEP_MS = {
   /** A finished job and its output (an export), after it finished. */
   job: 7 * DAY,
   /** A file sent to the server and not imported, after its upload began. */
-  upload: 24 * HOUR,
+  upload: 7 * DAY,
 } as const;
 
 /** A span in words: "24 hours", "7 days". */

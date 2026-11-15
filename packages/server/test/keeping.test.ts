@@ -39,11 +39,11 @@ describe('keeping', () => {
       name: 'clip.mp4',
     });
     expect(up.expiry).toMatch(
-      /^Expires in 24 hours, on \d{4}-\d\d-\d\d \d\d:\d\d UTC; media\.import it before then to keep it\.$/,
+      /^Expires in 7 days, on \d{4}-\d\d-\d\d \d\d:\d\d UTC; media\.import it before then to keep it\.$/,
     );
     expect(up.expiry).toContain(up.expires_at.slice(0, 16).replace('T', ' '));
     const listed = await ok<{ uploads: Array<{ expiry: string }> }>(client, 'media.list', {});
-    expect(listed.uploads[0]?.expiry).toMatch(/^Expires in (23|24) hours/);
+    expect(listed.uploads[0]?.expiry).toMatch(/^Expires in (6|7) days/);
   });
 
   it('says a stored result’s expiry again as of now when the job is read later', async () => {

@@ -6,7 +6,7 @@ import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { isMissing, ownerKey, randomId, type Workspace } from '@cuttingfloor/core';
 import { readableSize } from '@cuttingfloor/engine';
-import { CfError, KEEP_MS } from '@cuttingfloor/schema';
+import { CfError, KEEP_MS, span } from '@cuttingfloor/schema';
 
 /** How long an upload URL works, and how long an unimported upload is kept. */
 export const UPLOAD_TTL_MS = KEEP_MS.upload;
@@ -52,7 +52,7 @@ export class UploadRefused extends Error {
  * `uploads/` with its record and its bytes, reached by a signed URL that names the owner and
  * the upload: no other credentials, so any HTTP client can send it. A PUT sends the whole file,
  * or one part with `Content-Range` so a broken upload resumes where it stopped. Unimported
- * uploads go after a day; an import moves the file into the media.
+ * uploads go after `KEEP_MS.upload`; an import moves the file into the media.
  */
 export class Uploads {
   readonly #ws: Workspace;
@@ -252,7 +252,7 @@ export class Uploads {
     const meta = await this.#meta(key, id);
     if (!meta) {
       throw new CfError('not_found', `Upload ${id} not found`, {
-        hint: `A staged file goes a day after staging, and each imports once.${this.#uploadPage ? ` ${this.#uploadPage} stages files too.` : ''}`,
+        hint: `A staged file goes ${span(KEEP_MS.upload)} after staging, and each imports once.${this.#uploadPage ? ` ${this.#uploadPage} stages files too.` : ''}`,
       });
     }
     if (!meta.complete) {
