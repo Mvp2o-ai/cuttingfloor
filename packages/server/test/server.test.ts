@@ -75,6 +75,21 @@ describe('protocol surface', () => {
     expect(text).not.toContain('/account');
   });
 
+  it('finds media and uploads by part of a name, in any case', async () => {
+    const client = await connect(env.runtime, 'finder');
+    await ok(client, 'media.upload', { name: 'Beach Day.mov' });
+    await ok(client, 'media.upload', { name: 'interview.mp4' });
+    const found = await ok<{ uploads: Array<{ name: string }>; upload_count: number }>(
+      client,
+      'media.list',
+      { name: 'beach' },
+    );
+    expect(found.uploads.map((u) => u.name)).toEqual(['Beach Day.mov']);
+    expect(found.upload_count).toBe(1);
+    const all = await ok<{ upload_count: number }>(client, 'media.list', {});
+    expect(all.upload_count).toBe(2);
+  });
+
   it('keeps its instructions short enough that clients read them whole', async () => {
     // Claude's clients cut server instructions at about 4,096 characters; the rest is never read.
     const hosted = await testRuntime({

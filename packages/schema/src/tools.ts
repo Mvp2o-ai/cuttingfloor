@@ -1379,7 +1379,14 @@ export type MediaGetResult = z.infer<typeof MediaGetResult>;
 /** Limits that protect the server: the most of each list one media.list returns. */
 export const MEDIA_LIST_LIMIT = 200;
 
-export const MediaListInput = z.object({});
+export const MediaListInput = z.object({
+  name: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('Part of a name, any case: only media and uploads whose name holds it'),
+});
 
 export const MediaListResult = z.object({
   media: z
@@ -1409,7 +1416,10 @@ export const MediaListResult = z.object({
       }),
     )
     .describe(`Imported and created media, most recently used first (up to ${MEDIA_LIST_LIMIT})`),
-  media_count: z.number().int().describe('All media held, including any not listed'),
+  media_count: z
+    .number()
+    .int()
+    .describe('All media held (that match name), including any not listed'),
   uploads: z
     .array(
       z.object({
@@ -1426,7 +1436,10 @@ export const MediaListResult = z.object({
     .describe(
       `Files sent to the server and not imported yet, newest first (up to ${MEDIA_LIST_LIMIT}): through media.upload, or dropped on the cuttingfloor site by the user`,
     ),
-  upload_count: z.number().int(),
+  upload_count: z
+    .number()
+    .int()
+    .describe('All uploads waiting (that match name), including any not listed'),
   storage: z.object({
     used_bytes: z.number().describe('Everything held: uploads, media with its proxies, exports'),
     max_bytes: z
