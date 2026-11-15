@@ -3889,7 +3889,12 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(Number(sv?.nb_read_packets)).toBe(40);
 
       // No format decides a size: the sequence's, as it is.
-      const plain = await exported({ timeline_id: timelineId, preset: 'mp4_h264' });
+      const plain = await exported({
+        timeline_id: timelineId,
+        preset: 'mp4_h264',
+        filename: 'plain',
+      });
+      expect(plain.error, JSON.stringify(plain.error)).toBeUndefined();
       expect(plain.result).toMatchObject({ width: 1280, height: 720 });
       const prores = await exported({
         timeline_id: timelineId,
