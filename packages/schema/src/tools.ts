@@ -1886,7 +1886,12 @@ export const VOICES = [
 
 export const CreateVoiceoverInput = z.object({
   text: z.string().trim().min(1).max(5000).describe('What to say, in English'),
-  voice: z.enum(VOICES).default('af_heart').describe('a/b: American/British; f/m: female/male'),
+  voice: z
+    .enum(VOICES)
+    .default('af_heart')
+    .describe(
+      'a/b: American/British; f/m: female/male; the rest is a name, not a description of the voice',
+    ),
   speed: z.number().min(0.5).max(2).default(1),
   words: z.boolean().default(true).describe('Time each word'),
   ...createCommon,
