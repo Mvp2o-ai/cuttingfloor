@@ -64,7 +64,7 @@ ${INSTRUCTIONS_BODY}${credits}`;
 }
 
 const INSTRUCTIONS_BODY = `Jobs: imports, analysis, create.* and exports run long and answer with a job_id; job.get reports the job and its result. Edits take a media_id once its job reports processing (a create.* media once complete); analysis needs it ready.
-Edit: timeline.create with a sequence ({width, height, fps:{num,den}}), then clip, track, text, audio, transition, filter and range tools, or edit.batch for a planned sequence as one change. Every edit returns a NEW timeline_id: keep using the latest. Older ids stay valid, so going back is using an older id, and two edits from the same id make two separate versions. Time is integer frames at the sequence rate; ranges are end-exclusive. Higher video tracks sit on top.
+Edit: timeline.create with a sequence ({width, height, fps:{num,den}}), then clip, track, text, audio, transition, filter and range tools, or edit.batch, a pipeline of edits in one call (each runs on the one before's result). Every edit returns a NEW timeline_id: keep using the latest. Older ids stay valid, so going back is using an older id, and two edits from the same id make two separate versions. Time is integer frames at the sequence rate; ranges are end-exclusive. Higher video tracks sit on top.
 Facts: media.analyze (transcript, speech, beats, faces, track, look, silence, scenes, sounds), media.listen, media.seek and judge.ask turn media into data and answers.
 Check before delivering: preview "inline" on an edit, render.frames, qa.check. export.video gives a download url and a page_url for the user; export.timeline hands the edit to another editor or writes captions.
 Skills: skills.search finds step-by-step methods for common jobs; skills.get returns one.

@@ -382,7 +382,7 @@ export function registerTimelineTools(server: McpServer, deps: ServerDeps): void
     {
       title: 'Batch edit',
       description:
-        'Apply many edits as one change: one new timeline_id, one preview. All apply or none do. Use {"$ref":"ops[N].clip_id"} (or track_id, clip_ids[M]) to use an id an earlier op made. Returns the edit result plus results: [{tool, clip_id?, clip_ids?, track_id?}] per op.',
+        'A pipeline of edits in one call: each op runs on the result of the one before, and a later op takes an id an earlier op made with {"$ref":"ops[N].clip_id"} (or track_id, clip_ids[M]). Unrelated edits go in one pipeline too; order matters only when one edit uses the result of another. One new timeline_id and one preview at the end; all apply or none do. Separate edit calls each start from the timeline_id they are given, so they run one after another. Returns the edit result plus results: [{tool, clip_id?, clip_ids?, track_id?}] per op.',
       inputSchema: BatchInput,
       outputSchema: BatchResult,
       annotations: { ...annotations, title: 'Batch edit' },

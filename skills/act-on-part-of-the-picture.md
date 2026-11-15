@@ -1,6 +1,6 @@
 ---
 name: act-on-part-of-the-picture
-description: Change one area or one thing in a video and leave the rest as it is, with cuttingfloor. Select the area (a shape, a box from faces, tracking or judge.ask, or a cutout of the subject), then act on the selection only - blur or pixelate it, grade it, brighten it, or hide or fill it. Use when someone asks to blur a face, a logo, a screen or a licence plate, pixelate part of a shot, brighten or recolour one thing, or remove something from the picture.
+description: Act on one area or one thing in the picture of a video and leave the rest of the frame untouched, with cuttingfloor. Select it (a shape, a box from faces, tracking or judge.ask, or a cutout of the subject), then act on that selection only - blur or pixelate it, grade it, or paint it out of the shot. Use when someone asks to blur or pixelate a face, a logo, a screen or a number plate, or to grade or paint out one object in a shot.
 version: 1
 type: playbook
 source: system
