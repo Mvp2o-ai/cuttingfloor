@@ -13,6 +13,7 @@ import {
 import { FileJobStore, type Job, JobRunner } from '@cuttingfloor/jobs';
 import { KEEP } from '@cuttingfloor/schema';
 import { CALLS_TTL_MS, type CallEntry, jobEnd, recordCall } from './calls.ts';
+import { SearchIndexer } from './indexer.ts';
 import { METER_TTL_MS, type MeterEntry, meterJob, meterJudgments } from './meter.ts';
 import { Uploads } from './uploads.ts';
 
@@ -133,6 +134,8 @@ export class Runtime {
   readonly ws: Workspace;
   readonly timelines: TimelineStore;
   readonly media: MediaLibrary;
+  /** media.search's picture index of each ready media. */
+  readonly indexer: SearchIndexer;
   readonly jobs: JobRunner;
   readonly uploads: Uploads;
   /** Downloaded models, kept across restarts (they are checksummed, not user data). */
@@ -156,7 +159,9 @@ export class Runtime {
       allowPrivateUrls: config.allowPrivateUrls,
       ...(config.mediaHostPath ? { hostFolders: { '/media/videos': config.mediaHostPath } } : {}),
       ...(config.uploadPage ? { uploadPage: config.uploadPage } : {}),
+      onReady: (owner, record) => this.indexer.enqueue(owner, record.media_id),
     });
+    this.indexer = new SearchIndexer(this.media);
     if (config.maxRenders) setRenderLimit(config.maxRenders);
     this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs, {
       ...(config.node ? { node: config.node } : {}),

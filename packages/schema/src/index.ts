@@ -8,6 +8,7 @@ export * from './keeping.ts';
 export * from './lipsync.ts';
 export * from './measure.ts';
 export * from './motion.ts';
+export * from './search.ts';
 export * from './sequence.ts';
 export * from './skills.ts';
 export * from './sounds.ts';

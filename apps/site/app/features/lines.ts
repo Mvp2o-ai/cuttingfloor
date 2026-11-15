@@ -164,6 +164,10 @@ export const LINES: Record<string, Line> = {
     group: 'analyze',
     say: 'Read footage as data: transcript, beats, faces, tracking, silences, scenes, speech, loudness, sounds.',
   },
+  'media.search': {
+    group: 'analyze',
+    say: 'Find moments across all your videos, photos and transcripts from plain words.',
+  },
   'media.seek': {
     group: 'analyze',
     say: 'Find the moments that match what you describe in plain words.',

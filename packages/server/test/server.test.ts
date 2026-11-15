@@ -232,6 +232,7 @@ describe('protocol surface', () => {
         'media.import',
         'media.list',
         'media.listen',
+        'media.search',
         'media.seek',
         'media.upload',
         'qa.check',
@@ -297,7 +298,14 @@ describe('protocol surface', () => {
       ['export.timeline', 'export.video', 'job.cancel', 'media.analyze', 'media.delete'].sort(),
     );
     expect(where('openWorldHint')).toEqual(
-      ['create.lipsync', 'judge.ask', 'media.analyze', 'media.import', 'media.seek'].sort(),
+      [
+        'create.lipsync',
+        'judge.ask',
+        'media.analyze',
+        'media.import',
+        'media.search',
+        'media.seek',
+      ].sort(),
     );
     for (const t of tools) {
       if (t.annotations?.readOnlyHint) expect(t.annotations.destructiveHint, t.name).toBe(false);
