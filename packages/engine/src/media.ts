@@ -733,8 +733,20 @@ export function mediaRef(record: MediaRecord): MediaRef | undefined {
     duration: p.duration === null ? null : secondsToTicks(p.duration),
     video: Boolean(p.video),
     audio: Boolean(p.audio),
+    ...shorter('picture', p.video ? streamSeconds(p, 'video') : null, p.duration),
+    ...shorter('sound', p.audio ? streamSeconds(p, 'audio') : null, p.duration),
     ...(p.kind === 'font' || p.kind === 'lut' ? { kind: p.kind } : {}),
   };
+}
+
+/** A stream's length in ticks, kept only when it stops before the file does. */
+function shorter(
+  key: 'picture' | 'sound',
+  seconds: number | null,
+  duration: number | null,
+): Partial<Record<'picture' | 'sound', number>> {
+  if (seconds === null || duration === null || seconds >= duration) return {};
+  return { [key]: secondsToTicks(seconds) };
 }
 
 export function mediaInfo(
@@ -842,7 +854,12 @@ export function mediaInfo(
     has_video: Boolean(p?.video),
     has_audio: Boolean(p?.audio),
     codecs: { video: p?.video?.codec ?? null, audio: p?.audio?.codec ?? null },
-    ...(p?.audio && soundSeconds(p) !== null ? { sound_seconds: soundSeconds(p) as number } : {}),
+    ...(p?.audio && streamSeconds(p, 'audio') !== null
+      ? { sound_seconds: streamSeconds(p, 'audio') as number }
+      : {}),
+    ...(p?.video && p.duration !== null && streamSeconds(p, 'video') !== null
+      ? { picture_seconds: streamSeconds(p, 'video') as number }
+      : {}),
     conform: record.conform,
     analysis: record.analysis,
     ...(analyses && Object.keys(analyses).length ? { analyses } : {}),
@@ -857,21 +874,18 @@ export function mediaInfo(
   };
 }
 
-/** How long the first sound stream runs, from the probe; null when unknown. */
-function soundSeconds(p: Probe): number | null {
-  const of = (type: string) => {
-    const s = p.raw?.streams.find((x) => x.codec_type === type);
-    if (!s) return null;
-    const tagged = (s.tags as { DURATION?: string } | undefined)?.DURATION;
-    const hms = tagged ? /^(\d+):(\d+):([\d.]+)$/.exec(tagged) : null;
-    const seconds = s.duration
-      ? Number(s.duration)
-      : hms
-        ? Number(hms[1]) * 3600 + Number(hms[2]) * 60 + Number(hms[3])
-        : Number.NaN;
-    return Number.isFinite(seconds) ? Math.round(seconds * 1000) / 1000 : null;
-  };
-  return of('audio');
+/** How long the first stream of a type runs, from the probe; null when unknown. */
+function streamSeconds(p: Probe, type: 'video' | 'audio'): number | null {
+  const s = p.raw?.streams.find((x) => x.codec_type === type);
+  if (!s) return null;
+  const tagged = (s.tags as { DURATION?: string } | undefined)?.DURATION;
+  const hms = tagged ? /^(\d+):(\d+):([\d.]+)$/.exec(tagged) : null;
+  const seconds = s.duration
+    ? Number(s.duration)
+    : hms
+      ? Number(hms[1]) * 3600 + Number(hms[2]) * 60 + Number(hms[3])
+      : Number.NaN;
+  return Number.isFinite(seconds) ? Math.round(seconds * 1000) / 1000 : null;
 }
 
 /** A transcript whose words carry the speaker whose turns overlap each most. */

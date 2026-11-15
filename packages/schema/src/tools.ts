@@ -1304,6 +1304,10 @@ export const MediaInfo = z.object({
     .number()
     .optional()
     .describe('How long the sound runs; under duration_seconds, the end is soundless'),
+  picture_seconds: z
+    .number()
+    .optional()
+    .describe('How long the picture runs; under duration_seconds, the end has no picture'),
   conform: z
     .array(z.string())
     .describe('Why a mezzanine was made (vfr, rotation, hdr, codec); empty when not needed'),

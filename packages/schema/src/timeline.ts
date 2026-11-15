@@ -24,6 +24,10 @@ export const MediaRef = z.object({
   duration: ticks.nullable(),
   video: z.boolean(),
   audio: z.boolean(),
+  /** Ticks the picture runs, when it stops before duration: later frames have no picture. */
+  picture: ticks.optional(),
+  /** Ticks the sound runs, when it stops before duration: later frames are silent. */
+  sound: ticks.optional(),
   /** Media that is not a picture or sound: fonts for text, LUTs for effects. */
   kind: z.enum(['font', 'lut']).optional(),
 });
