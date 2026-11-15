@@ -527,18 +527,13 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Import media',
       description: [
-        "Import the user's own video, audio, image or font to edit with or place as is: probe, fingerprint, conform if needed (VFR, rotation, HDR → BT.709), 540p proxy and integrated loudness. A reference image to recreate needs no import: rebuild it with create.motion or create.still.",
-        'Long-running: returns a task, or {job_id, media_id} for job.get. The media_id is usable in edits as soon as the job reports processing, so with many files, start every import first and edit while they finish.',
-        `For a file on the user's phone or computer, the easiest way in is media.upload: give the user its link; they open it on their phone or computer and pick the file, then import its upload_id.${rt.config.uploadPage ? ` Or they drop it on their upload page, ${rt.config.uploadPage} (signed in to cuttingfloor), and media.list shows it by name.` : ''}`,
-        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL (Dropbox and Google Drive share links work as they are), {upload: {name, bytes}} only for a file you send yourself from a shell or code (the answer is the new media with upload.url, an address to PUT to, not a page the user can open: curl --fail -T file '<url>', and it imports once the last byte arrives, with no base64 in a message; a broken PUT resumes as media.upload says), the upload_id of a file sent through media.upload, a small file as a data: URI (up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB, with its sha256 so a garbled copy is refused), the job_id of a completed export.video (its render becomes media), or still: one frame of a video (media_id) or of an edit (timeline_id) as a PNG still at full size, to place as a picture, cut out or reuse. A URL is fetched once, when the import starts: it only has to work until then (a short-lived signed link from the user's own storage is enough), and the copy stays here ${span(KEEP_MS.media)} after last use. A file the user attached in the chat comes as file, when the client passes it.`,
-        'Importing the same file again returns the same media_id.',
+        "Ingest the user's own video, audio, image or font into an editable media_id: probe, fingerprint, conform if needed (VFR, rotation, HDR → BT.709), 540p proxy and integrated loudness. A reference image to recreate needs no import: rebuild it with create.motion or create.still.",
+        "A file on the user's phone or computer must be staged first (media.upload).",
+        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL (Dropbox and Google Drive share links work as they are; fetched once, at the start), the upload_id of a staged file, a small file as a data: URI (up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB, with its sha256), the job_id of a completed export.video, a still (one frame of a video or an edit, as a PNG), or a file the chat attaches, as file.`,
+        `Long-running: returns a task, or {job_id, media_id}. The media_id is editable once the job reports processing, so start every import, then edit. The same file returns the same media_id; the copy stays here ${span(KEEP_MS.media)} after last use.`,
       ].join(' '),
       inputSchema: MediaImportInput,
-      // {upload} has no job until its PUT completes, so it answers with the media itself.
-      outputSchema: z.union([
-        withJob(MediaInfo),
-        MediaInfo.describe('source {upload}: the new media with upload.url; no job until the PUT'),
-      ]),
+      outputSchema: withJob(MediaInfo),
       // ChatGPT passes a file the user attached as this argument.
       _meta: { 'openai/fileParams': ['file'] },
       annotations: {
@@ -565,32 +560,6 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       const given = args.file
         ? { url: args.file.download_url }
         : (args.source as NonNullable<typeof args.source>);
-      if ('upload' in given) {
-        // Media now, its file later: the PUT that completes the upload starts the import.
-        const limits = await deps.limits?.();
-        const room = await storageRoom(rt.ws, owner, limits, given.upload.bytes);
-        const admit = await admitJob(deps.limits);
-        let record: MediaRecord | undefined;
-        const upload = await rt.uploads.createImport(
-          owner,
-          given.upload.name,
-          given.upload.bytes,
-          room,
-          async (upload_id) => {
-            record = await rt.media.create(
-              owner,
-              { upload: upload_id, file_name: given.upload.name, via: 'media.upload' },
-              args.name ?? given.upload.name,
-            );
-            return {
-              owner,
-              media_id: record.media_id,
-              ...(admit.ownerLimit === undefined ? {} : { owner_limit: admit.ownerLimit }),
-            };
-          },
-        );
-        return ok({ ...mediaInfo(record as MediaRecord), upload });
-      }
       // A frame made into a still is, like a data: URI, an upload that is already in.
       const still =
         'still' in given
@@ -700,8 +669,10 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Upload media',
       description: [
-        `A link to send one of the user's files to this server, for files on their phone or computer that the server can't read, including a file attached in the chat that the chat app doesn't hand you. Give the user the url: they open it on their phone or computer and pick the file; the page sends it and resumes on its own. Then media.import {source: {upload_id}}; media.import says whether the file is all in yet. The URL needs no other credentials and works for ${span(KEEP_MS.upload)}; a file sent through it goes then unless imported.${rt.config.uploadPage ? ` Signed in to cuttingfloor, the user can also drop files on their upload page, ${rt.config.uploadPage}, with no link to make; media.list shows them by name.` : ''}`,
-        "If you can send the file yourself, PUT it there instead (curl --fail -T interview.mp4 '<url>'). A broken upload resumes: HEAD the url for Upload-Offset (the bytes received), then PUT the rest with Content-Range: bytes <offset>-<last>/<total>. Large files can go in parts the same way.",
+        `Stage one file on this server: returns a url and an upload_id. A staged file is inert until imported. The url works for ${span(KEEP_MS.upload)} and takes the file from whoever holds it, with no other credentials; opened in a browser, it is a page to pick the file and send it, so it reaches files on the user's phone or computer, including one attached in a chat that isn't handed to you.`,
+        ...(rt.config.uploadPage
+          ? [`Files the user drops on their upload page, ${rt.config.uploadPage}, are staged too.`]
+          : []),
       ].join(' '),
       inputSchema: MediaUploadInput,
       outputSchema: MediaUploadResult,
@@ -723,7 +694,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       );
       return ok({
         ...upload,
-        how: `Give the user this link: ${upload.url} — they open it on their phone or computer and pick the file. (If you can send the file yourself: curl --fail -T ${shellQuote(args.name)} '${upload.url}'.) Then media.import {source: {upload_id: "${upload.upload_id}"}}`,
+        how: `Opened in a browser, ${upload.url} is a page to pick the file and send it.`,
       });
     }),
   );
@@ -1443,36 +1414,6 @@ async function startIngest(
     admit,
   );
   return job;
-}
-
-/**
- * After the PUT that completes an upload media.import made (source {upload}): moves the file
- * into its media and starts the import. Undefined for any other upload. `key` is the owner key
- * the upload URL names.
- */
-export async function importSent(
-  rt: ServerDeps['runtime'],
-  key: string,
-  uploadId: string,
-): Promise<{ media_id: string; job_id: string } | undefined> {
-  const sent = await rt.uploads.sent(key, uploadId);
-  if (!sent) return undefined;
-  const record = await rt.media.get(sent.owner, sent.media_id);
-  record.file = await rt.media.adopt(sent.owner, record, sent.file, { move: true });
-  await rt.media.save(sent.owner, record);
-  await rt.uploads.remove(sent.owner, uploadId);
-  const job = await startIngest(
-    rt,
-    sent.owner,
-    record,
-    sent.owner_limit === undefined ? {} : { ownerLimit: sent.owner_limit },
-  );
-  return { media_id: record.media_id, job_id: job.id };
-}
-
-/** A file name as one shell word, for the example command. */
-function shellQuote(name: string): string {
-  return /^[\w.@%+=:,/-]+$/.test(name) ? name : `'${name.replace(/'/g, "'\\''")}'`;
 }
 
 /** The MIME type a data: URI declares, or '' for none. */

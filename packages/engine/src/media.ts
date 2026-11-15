@@ -259,7 +259,7 @@ export class MediaLibrary {
   async resolvePath(path: string): Promise<string> {
     if (!this.config.roots.length) {
       throw new CfError('path_not_allowed', 'Path imports are not available on this server', {
-        hint: `${this.#fromUser()}; or import from an http(s) URL`,
+        hint: `This server imports URLs, staged files and data: URIs. ${this.#fromUser()}`,
       });
     }
     let real: string;
@@ -299,10 +299,8 @@ export class MediaLibrary {
 
   /** How a file on the user's phone or computer gets here, for hints. */
   #fromUser(): string {
-    const page = this.config.uploadPage
-      ? `, or the user drops it on their upload page, ${this.config.uploadPage}, and media.list shows it by name`
-      : '';
-    return `For a file on the user's phone or computer, call media.upload and give the user its link to pick the file, then media.import its upload_id${page}`;
+    const page = this.config.uploadPage ? ` or their upload page, ${this.config.uploadPage}` : '';
+    return `A file on the user's phone or computer must be staged first (media.upload${page})`;
   }
 
   /**
@@ -432,7 +430,7 @@ export class MediaLibrary {
           ) {
             throw new CfError(error.code, error.message, {
               ...(error.detail ? { detail: error.detail } : {}),
-              hint: `The server downloads the URL itself, so it has to open without signing in. ${this.#fromUser()}`,
+              hint: `The server downloads the URL itself, so it must open without signing in. ${this.#fromUser()}`,
             });
           }
           throw error;

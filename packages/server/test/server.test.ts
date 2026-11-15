@@ -87,11 +87,13 @@ describe('protocol surface', () => {
     expect(client.getInstructions()).toContain(`or their upload page, ${page}`);
     const { tools } = await client.listTools();
     const described = (name: string) => tools.find((t) => t.name === name)?.description ?? '';
-    for (const name of ['media.import', 'media.upload', 'media.list']) {
+    for (const name of ['media.upload', 'media.list']) {
       expect(described(name), name).toContain(page);
     }
-    // {upload} is a PUT address for an agent with a shell, never a page for the user.
-    expect(described('media.import')).toContain('only for a file you send yourself');
+    // One way to stage a file: media.upload. media.import only ingests.
+    expect(described('media.import')).toContain('must be staged first');
+    expect(described('media.import')).not.toContain('{upload');
+    for (const t of tools) expect(t.description ?? '', t.name).not.toMatch(/curl|Content-Range/);
     const path = await call(client, 'media.import', { source: { path: '/mnt/user-data/a.mp4' } });
     expect(path.structured).toMatchObject({ code: 'path_not_allowed' });
     expect(path.structured.hint).toContain(`upload page, ${page}`);

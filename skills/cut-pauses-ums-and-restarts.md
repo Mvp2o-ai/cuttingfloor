@@ -16,7 +16,7 @@ related: add-captions:related
 
 ## Prerequisites
 - The cuttingfloor MCP server is connected.
-- The video is reachable: a URL for `media.import {source: {url}}`, or a file on the user's machine sent to the upload URL `media.import {source: {upload: {name, bytes}}}` hands back.
+- The video is reachable: a URL, or a file on the user's machine staged with `media.upload`.
 
 ## Steps
 1. The assistant should import every take with `media.import`, and check them all with one `job.get {job_ids}` until each is ready. Several takes in order go on one timeline as they are; there is no need to join them first.

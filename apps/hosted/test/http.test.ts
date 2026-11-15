@@ -272,8 +272,8 @@ describe('HTTP face', () => {
     };
     expect(up.upload_id).toMatch(/^u_/);
     expect(up.max_bytes).toBe(1024);
-    expect(up.how).toMatch(/^Give the user this link: /);
-    expect(up.how).toContain(`curl --fail -T clip.mp4 '${up.url}'`);
+    expect(up.how).toContain(up.url);
+    expect(up.how).not.toContain('curl');
     const url = new URL(up.url);
     expect(
       (await fetch(url, { method: 'OPTIONS' })).headers.get('access-control-allow-origin'),
@@ -336,7 +336,7 @@ describe('HTTP face', () => {
     await bob.close();
   });
 
-  it('hands back an upload URL from media.import; the PUT that completes it starts the import', async () => {
+  it('stages with media.upload only: a sent file waits, listed, until media.import takes it', async () => {
     const base = await listen(parseApiKeys(`carol:${KEY}`));
     (runtime.config as { publicUrl: string }).publicUrl = base;
     const client = new Client({ name: 't', version: '0' });
@@ -349,54 +349,43 @@ describe('HTTP face', () => {
       (await client.callTool({ name, arguments: args })) as {
         isError?: boolean;
         structuredContent: Record<string, unknown>;
+        content: Array<{ text?: string }>;
       };
-    // Over the server's upload limit (1024 bytes here): refused before anything is made.
-    const big = await tool('media.import', {
-      source: { upload: { name: 'big.wav', bytes: 4096 } },
-    });
-    expect(big.structuredContent.code).toBe('bad_request');
+    // media.import has no staging of its own.
+    expect((await tool('media.import', { source: { upload: { name: 'a.wav' } } })).isError).toBe(
+      true,
+    );
 
-    const made = await tool('media.import', { source: { upload: { name: 'line.wav' } } });
-    expect(made.isError).toBeFalsy();
-    const media = made.structuredContent as {
-      media_id: string;
-      status: string;
-      name: string;
-      upload: { upload_id: string; url: string; max_bytes: number };
+    const up = (await tool('media.upload', { name: 'line.wav' })).structuredContent as {
+      upload_id: string;
+      url: string;
     };
-    expect(media).toMatchObject({ status: 'importing', name: 'line.wav' });
-    expect(media.upload.max_bytes).toBe(1024);
-    // It is listed once, as the media it becomes, and can't be imported a second time.
-    const held = (await tool('media.list', {})).structuredContent as {
-      media: Array<{ media_id: string }>;
-      uploads: unknown[];
-    };
-    expect(held.media.map((m) => m.media_id)).toContain(media.media_id);
-    expect(held.uploads).toEqual([]);
-    expect(
-      (await tool('media.import', { source: { upload_id: media.upload.upload_id } }))
-        .structuredContent.code,
-    ).toBe('bad_request');
-
-    // Two parts: the first only says how far it got, the last starts the import.
+    // Two parts; the last completes it and imports nothing.
     const body = Buffer.alloc(400, 3);
-    const first = await fetch(media.upload.url, {
+    await fetch(up.url, {
       method: 'PUT',
       headers: { 'content-range': 'bytes 0-199/400' },
       body: body.subarray(0, 200),
     });
-    expect(await first.json()).not.toHaveProperty('job_id');
-    const last = await fetch(media.upload.url, {
+    const last = await fetch(up.url, {
       method: 'PUT',
       headers: { 'content-range': 'bytes 200-399/400' },
       body: body.subarray(200),
     });
-    const done = (await last.json()) as { complete: boolean; media_id: string; job_id: string };
-    expect(done).toMatchObject({ complete: true, media_id: media.media_id });
-    const job = await tool('job.get', { job_id: done.job_id });
-    expect(job.structuredContent).toMatchObject({ job_id: done.job_id, tool: 'media.import' });
-    // The file moved into the media: the link has nothing left.
-    expect((await fetch(media.upload.url, { method: 'HEAD' })).status).toBe(404);
+    const done = (await last.json()) as Record<string, unknown>;
+    expect(done).toMatchObject({ complete: true, upload_id: up.upload_id });
+    expect(done).not.toHaveProperty('job_id');
+    const held = (await tool('media.list', {})).structuredContent as {
+      media: unknown[];
+      uploads: Array<{ upload_id: string; complete: boolean }>;
+    };
+    expect(held.media).toEqual([]);
+    expect(held.uploads).toEqual([
+      expect.objectContaining({ upload_id: up.upload_id, complete: true }),
+    ]);
+    const imported = await tool('media.import', { source: { upload_id: up.upload_id } });
+    expect(imported.isError).toBeFalsy();
+    expect(imported.structuredContent).toHaveProperty('job_id');
     await client.close();
   });
 
