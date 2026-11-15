@@ -223,6 +223,37 @@ describe.skipIf(!ready)('speech and sound facts', () => {
     expect(later).toHaveLength(2);
   }, 300_000);
 
+  it('answers a stretch without storing it, and writes a transcript file on request', async () => {
+    const whole = await job('media.analyze', {
+      media_id: speech,
+      kind: 'transcript',
+      model: 'tiny',
+      language: 'en',
+    });
+    const words = (whole.structured.transcript as { words: unknown[] }).words.length;
+    const part = await job('media.analyze', {
+      media_id: speech,
+      kind: 'transcript',
+      model: 'tiny',
+      language: 'en',
+      from_seconds: 0,
+      until_seconds: 1,
+      file: 'txt',
+    });
+    expect(part.isError).toBe(false);
+    expect(part.structured).toHaveProperty('transcript');
+    expect((part.structured.file as { name: string }).name).toMatch(/-transcript-0\.0-1\.0s\.txt$/);
+    // The stored transcript is still the whole media's.
+    const stored = await call(client, 'media.get', { media_id: speech, include: ['transcript'] });
+    expect((stored.structured.transcript as { words: unknown[] }).words).toHaveLength(words);
+    const beats = await call(client, 'media.analyze', {
+      media_id: speech,
+      kind: 'beats',
+      file: 'txt',
+    });
+    expect(beats.structured.code).toBe('bad_request');
+  });
+
   it('aligns transcript words to where they sound', async () => {
     const res = await job('media.analyze', {
       media_id: speech,

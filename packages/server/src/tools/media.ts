@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readdir, stat } from 'node:fs/promises';
+import { mkdir, readdir, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import {
   analyseBeats,
@@ -34,8 +34,10 @@ import { inlineJobContext, type Job, type JobContext } from '@cuttingfloor/jobs'
 import {
   CfError,
   CORRELATE_LIMITS,
+  expiry,
   JUDGE_LIMITS,
   KEEP_MS,
+  KEEP_THEN,
   MEDIA_LIMITS,
   MediaAnalyzeInput,
   MediaAnalyzeResult,
@@ -107,6 +109,41 @@ async function hearSounds(
 
 /** media.correlate reading this little from each side answers at once. */
 const CORRELATE_INLINE_SECONDS = 120;
+
+/**
+ * A transcript as a text file on the cutting floor, in the job's outputs (kept like an export),
+ * named for its media and the stretch it covers.
+ */
+async function writeTranscript(
+  rt: ServerDeps['runtime'],
+  owner: string,
+  jobId: string,
+  mediaName: string,
+  transcript: { text: string; from?: number | undefined; until?: number | null | undefined },
+): Promise<{ name: string; url: string; page_url: string; expires_at: string; expiry: string }> {
+  const base =
+    mediaName
+      .replace(/\.[^.]*$/, '')
+      .replace(/[^\w.-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'media';
+  const stretch =
+    transcript.from !== undefined || (transcript.until ?? null) !== null
+      ? `-${(transcript.from ?? 0).toFixed(1)}-${transcript.until == null ? 'end' : transcript.until.toFixed(1)}s`
+      : '';
+  const name = `${base}-transcript${stretch}.txt`;
+  const dir = rt.ws.ownerDir(owner, 'outputs', jobId);
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, name), `${transcript.text.trim()}\n`);
+  const signed = await rt.signOutput(owner, jobId, name);
+  const until = Date.now() + KEEP_MS.job;
+  return {
+    name,
+    url: signed.url,
+    page_url: signed.pageUrl,
+    expires_at: signed.expiresAt,
+    expiry: expiry(until, KEEP_THEN.job),
+  };
+}
 
 /** An analysis for the result: whole when short, or a note on how to read it in pieces. */
 function inline(mediaId: string, kind: string, data: unknown): Record<string, unknown> {
@@ -260,10 +297,14 @@ type AnalyzeArgs = {
   min_seconds?: number | undefined;
   from_seconds?: number | undefined;
   until_seconds?: number | undefined;
+  file?: string | undefined;
 };
 
 /** Checks the settings a sound measure needs, before any job exists. */
 function checkSoundArgs(args: AnalyzeArgs): void {
+  if (args.file && args.kind !== 'transcript') {
+    throw new CfError('bad_request', `file writes a transcript; ${args.kind} has none`);
+  }
   if (args.kind === 'speech' && args.min_probability === undefined) {
     throw new CfError('bad_request', 'speech needs min_probability (0–1)', {
       hint: 'Say what counts as speech, e.g. {min_probability: 0.5}; every probability is kept, so you can ask again with another',
@@ -752,7 +793,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Analyze media',
       description: [
-        "Find what is in imported media, or in the sound of an edit, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). For English the word edges are then aligned to the sound (wav2vec2 forced alignment): a word starts and ends within about 0.05 s of where its letters sound, and an end on a soft consonant (s, t, k, f) or a breath can ring on up to about 0.1 s more; timing_confidence says how clearly each word was heard. Other languages keep whisper's own times, up to about a second off. Short ums and uhs are often missing from the words, while kind speech still detects them as voice. from_seconds and until_seconds transcribe just that stretch, which then replaces the stored transcript. beats: tempo, beat and downbeat times, and strengths: each beat's onset strength, 0–1 of the strongest (the hardest hits, the drop). faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on, a box for each sampled time (found false where the subject was lost); to make a title, sticker, arrow or mask follow the subject, turn the boxes into clip.set_transform (or clip.set_mask) keyframes, no tracking of your own needed. look: your own typed questions about what is on screen, answered on every sampled frame (to find where something happens from plain words, media.seek). silence: stretches quieter than threshold_db for at least min_seconds. scenes: times the picture changes by more than threshold (0–100; hard cuts between ordinary shots score about 10 to 30, see threshold), with each cut's score. speech: the probability that someone is speaking, every 32 ms (Silero VAD), and the spans where it is at least your min_probability; it hears speech, not noise or music, so a cough or a door is not speech. loudness: integrated loudness (LUFS), true peak (dBTP), loudness range (LU), RMS level and noise floor (dBFS) over the whole media or from_seconds to until_seconds. To line up two recordings, media.correlate. sounds: what can be heard and when, every 40 ms, for 447 named sounds (video://catalog/sounds: Laughter, Applause, Cough, Sneeze, Music, Speech, Door, Footsteps, Beep…): give labels for the ones you want, or none for every sound that reaches your min_probability; you get each sound's spans and its probability in every frame (a run over the whole media is kept with it; one over from_seconds to until_seconds comes back only). To find a sound you describe in your own words, media.listen. speakers: who speaks when (pyannote and ERes2Net on the CPU, about 10 to 20 s a minute): turns numbered in the order voices are first heard; give speakers (how many) or cluster_threshold. Transcript words then carry their speaker. voice: pitch (YIN, Hz) and level (RMS dBFS) every 0.1 s, and a summary (pitch median and range, level, voiced seconds, words per second from the transcript), e.g. as judge.ask state. colour: per-channel mean and percentiles, luma, white point estimate and clipping (RGB 0–255) of the frame and regions you name, at sampled times. picture: FFmpeg signalstats of every frame over a stretch: luma, chroma, saturation, hue, and ydif, the change from the frame before (a flash or frozen frame shows there).",
+        "Find what is in imported media, or in the sound of an edit, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). For English the word edges are then aligned to the sound (wav2vec2 forced alignment): a word starts and ends within about 0.05 s of where its letters sound, and an end on a soft consonant (s, t, k, f) or a breath can ring on up to about 0.1 s more; timing_confidence says how clearly each word was heard. Other languages keep whisper's own times, up to about a second off. Short ums and uhs are often missing from the words, while kind speech still detects them as voice. from_seconds and until_seconds transcribe just that stretch: the words come back in the result and are not stored, so the stored transcript (which edits and captions read) stays the whole media's. file: txt also writes the transcript as a file on the cutting floor, with a download url. beats: tempo, beat and downbeat times, and strengths: each beat's onset strength, 0–1 of the strongest (the hardest hits, the drop). faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on, a box for each sampled time (found false where the subject was lost); to make a title, sticker, arrow or mask follow the subject, turn the boxes into clip.set_transform (or clip.set_mask) keyframes, no tracking of your own needed. look: your own typed questions about what is on screen, answered on every sampled frame (to find where something happens from plain words, media.seek). silence: stretches quieter than threshold_db for at least min_seconds. scenes: times the picture changes by more than threshold (0–100; hard cuts between ordinary shots score about 10 to 30, see threshold), with each cut's score. speech: the probability that someone is speaking, every 32 ms (Silero VAD), and the spans where it is at least your min_probability; it hears speech, not noise or music, so a cough or a door is not speech. loudness: integrated loudness (LUFS), true peak (dBTP), loudness range (LU), RMS level and noise floor (dBFS) over the whole media or from_seconds to until_seconds. To line up two recordings, media.correlate. sounds: what can be heard and when, every 40 ms, for 447 named sounds (video://catalog/sounds: Laughter, Applause, Cough, Sneeze, Music, Speech, Door, Footsteps, Beep…): give labels for the ones you want, or none for every sound that reaches your min_probability; you get each sound's spans and its probability in every frame (a run over the whole media is kept with it; one over from_seconds to until_seconds comes back only). To find a sound you describe in your own words, media.listen. speakers: who speaks when (pyannote and ERes2Net on the CPU, about 10 to 20 s a minute): turns numbered in the order voices are first heard; give speakers (how many) or cluster_threshold. Transcript words then carry their speaker. voice: pitch (YIN, Hz) and level (RMS dBFS) every 0.1 s, and a summary (pitch median and range, level, voiced seconds, words per second from the transcript), e.g. as judge.ask state. colour: per-channel mean and percentiles, luma, white point estimate and clipping (RGB 0–255) of the frame and regions you name, at sampled times. picture: FFmpeg signalstats of every frame over a stretch: luma, chroma, saturation, hue, and ydif, the change from the frame before (a flash or frozen frame shows there).",
         `With timeline_id instead of media_id, ${TIMELINE_SOUND_ANALYSES.join(', ')} measure the edit's mix and ${TIMELINE_PICTURE_ANALYSES.join(', ')} its picture as it renders (titles, effects and grades included), over from_seconds to until_seconds (timeline seconds); they come back in the result. A source or range with no sound fails with no_audio, naming it.`,
         'Times are media seconds (timeline seconds for a timeline); boxes are fractions of the picture, and a box you give takes units "pixels" too (picture_size gives the size). Results stay with the media (media.get include; the latest run of each kind) except track, silence, scenes and loudness, which come back in the result; speech over the whole media is kept (media.get include speech), so asking again with another min_probability or range answers from it. A result too long to return (a long transcript) comes back as its summary and a note: read it in pieces with media.get include and a time range or page.',
         'Long-running: returns a task, or a job_id for job.get.',
@@ -968,12 +1009,32 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
                 signal,
                 onProgress: (f, m) => progress(f, `transcript: ${m}`),
               });
+              const part = args.from_seconds !== undefined || args.until_seconds !== undefined;
+              const written = args.file
+                ? await writeTranscript(rt, owner, job.id, record.name, transcript)
+                : undefined;
+              // A stretch transcribed is an answer, not the media's transcript: it never
+              // replaces the stored one, which edits and captions read.
+              if (part) {
+                const chars = JSON.stringify(transcript).length;
+                return ok({
+                  media_id: mediaId,
+                  kind: args.kind,
+                  ...(chars <= INLINE_CHARS
+                    ? { transcript }
+                    : {
+                        note: `This stretch's transcript is ${chars} characters, too long to return here, and a stretch is not stored. A shorter stretch returns whole; the whole media's transcript is stored and read in pieces.`,
+                      }),
+                  ...(written ? { file: written } : {}),
+                }) as never;
+              }
               const latest = await keep('transcript', transcript);
               return ok({
                 media_id: mediaId,
                 kind: args.kind,
                 summary: mediaInfo(latest).analyses?.transcript,
                 ...inline(mediaId, 'transcript', transcript),
+                ...(written ? { file: written } : {}),
               }) as never;
             }
             case 'beats': {

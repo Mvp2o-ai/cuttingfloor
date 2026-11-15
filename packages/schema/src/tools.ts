@@ -898,6 +898,12 @@ export const COLOUR_LIMITS = { regions: 16, percentiles: 20 } as const;
 export const MediaAnalyzeInput = z
   .object({
     media_id: MediaId.optional().describe('Analyze imported media (media seconds)'),
+    file: z
+      .enum(['txt'])
+      .optional()
+      .describe(
+        'transcript: also write it as a file on the cutting floor, named for the media and the stretch it covers, with a download url like an export',
+      ),
     timeline_id: TimelineId.optional().describe(
       `Analyze an edit as it plays (timeline seconds): its mix (${TIMELINE_SOUND_ANALYSES.join(', ')}) or its picture (${TIMELINE_PICTURE_ANALYSES.join(', ')})`,
     ),
@@ -1477,6 +1483,16 @@ export const MediaAnalyzeResult = z.object({
   model: z.string().optional().describe('look: the Jev model'),
   frames: z.number().optional().describe('look: frames asked about'),
   transcript: Transcript.optional(),
+  file: z
+    .object({
+      name: z.string(),
+      url: z.string().describe('Signed download url'),
+      page_url: z.string().describe('Shows the file in any browser'),
+      expires_at: z.string().describe('When the url stops working'),
+      expiry: z.string().describe('When the file goes, in words'),
+    })
+    .optional()
+    .describe('file: the written file'),
   beats: BeatsAnalysis.optional(),
   faces: FacesAnalysis.optional(),
   look: z
