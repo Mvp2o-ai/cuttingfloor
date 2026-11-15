@@ -5,19 +5,22 @@ import { Items, LegalPage, P, Part } from '../legal.tsx';
 export const metadata: Metadata = {
   title: 'Privacy — cuttingfloor',
   description:
-    'What cuttingfloor keeps about you and your footage, how long, and who helps us run it. Footage is deleted after 7 days and never used to train models.',
+    'What personal data cuttingfloor collects, why, who receives it, how long it is kept and your choices. Footage is deleted after 7 days and never used to train models.',
   alternates: { canonical: '/privacy', types: { 'text/markdown': '/privacy.md' } },
 };
 
 const mail = <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>;
 
+// Laid out by what app directories check a policy for: the categories of personal data, the
+// purposes, the categories of recipients, retention, and the user's controls.
 export default function Privacy() {
   return (
     <LegalPage
       label="Privacy"
       href="/privacy"
+      effective="November 15, 2026"
       title="Privacy policy."
-      lede={`What we keep about you and your footage, for how long, and who helps us run cuttingfloor. cuttingfloor is run by ${LEGAL_NAME}.`}
+      lede={`What personal data cuttingfloor collects, why, who receives it, how long we keep it, and your choices. cuttingfloor is run by ${LEGAL_NAME}.`}
     >
       <Part title="The short version">
         <Items
@@ -28,84 +31,74 @@ export default function Privacy() {
           ]}
         />
       </Part>
-      <Part title="What we keep, and for how long">
+      <Part title="Categories of personal data we collect">
         <Items
           items={[
-            'Your account: email, name and how you sign in. WorkOS holds it for us, for as long as you have an account.',
-            'Billing: your payment history is held by Stripe; we never see your card number. Your credits (the free ones, the packs you bought and what your jobs used) are kept in the credit ledger we share with Kazi, so credits bought on either work on both.',
-            'Uploads, imported media and exports: 7 days after they are made.',
+            'Account data: your email, name and how you sign in, and the account id your app signs in with.',
+            'Billing data: your payment history (held by Stripe; we never see your card number) and your credits: the free ones, the packs you bought and what your jobs used.',
+            'Your content: the files you upload or import, the exports and timelines you make, and what your agent sends each tool: its instructions for that step and any file you attach. We never see your chat.',
+            'Data worked out from your content: transcripts, beats, scenes, where faces and speakers are, and a search index of each video’s and picture’s frames (small pictures and number summaries of what they show). Faces and voices are used only to make the edit you asked for, never to identify anyone.',
+            'Usage data: job records (which job ran, for how long), which app you first connected from and when you first edited and exported, and sign-in steps (the time and the app’s name when an app asks how to sign in, without its address).',
+            'Technical data: server logs of the IP address a request came from, its time and what it asked for; on the website, visits, pages and the links and buttons clicked, and a cookie that keeps you signed in.',
+            'Keys you save: a provider key (your sync. labs key), kept encrypted, and keys you make for scripts.',
+          ]}
+        />
+      </Part>
+      <Part title="Purposes: why we use it">
+        <Items
+          items={[
+            'To run the editor: import, analyse, search, edit, render and export your media as your agent asks.',
+            'To run your account: sign you in, keep your credits and bill you.',
+            'To send account email: welcome, credits running low, payment problems, and a reminder before your files are deleted.',
+            'To keep the service working and safe, and to see which apps people use and where they stop while connecting.',
+          ]}
+        />
+        <P>We don&apos;t use your data to train models, sell it, or use it for advertising.</P>
+      </Part>
+      <Part title="Categories of recipients">
+        <P>Each one gets only what its job needs:</P>
+        <Items
+          items={[
+            'The app you connected (ChatGPT, Claude, Kazi or another) gets tool results, under its own privacy policy: the names, sizes and details of your media, transcripts and measurements of it, timelines, previews, download links that expire, and the ids that tie one step to the next. Never your email, payment details or keys.',
+            'Hosting: Hetzner runs the editor and holds your media, in Ashburn, Virginia (USA); transcripts, voiceovers, cutouts and the search index are made there too. Vercel runs this website and its analytics.',
+            'Accounts and payments: WorkOS (sign-in and accounts), Stripe (payments and invoices), Kazi (the credit ledger, which keeps your balance by your email and account, so credits work on both).',
+            'Email: Resend sends account email.',
+            'Judgment model: TypeSafe gets the frames and text your agent asks a question about (judge.ask, media.seek, media.search, or a look through a video), only to answer it.',
+            'Lip sync, only with your own key: sync. labs gets the stretch of video and the speech your agent names, under your account with them.',
+          ]}
+        />
+      </Part>
+      <Part title="Retention: how long we keep it">
+        <Items
+          items={[
+            'Uploads, imported media, exports and what is worked out from them (transcripts, the search index): 7 days after they are made, or after last use for media.',
             'Timelines (the edits themselves): 7 days after they were last used.',
-            'Job records (which job ran, for how long): 13 months, to count your credits and for billing questions.',
-            'Account records: which app you first connected from and when you first edited and exported, kept with your account, to see which apps people use and to send the right account emails.',
-            'Keys you save: a provider key (your sync. labs key) is kept encrypted in your account, and only its last four characters are ever shown. Keys you make for scripts are kept as long as they last.',
-            'Sign-in steps: when an app asks this server how to sign in, we note the time and the app’s name (no address): 13 months, to see where people stop while connecting.',
-            'Server logs: the address a request came from, its time and what it asked for, kept a few weeks to keep the service running and safe.',
-            'What we work out from your media (transcripts, beats, scenes, where faces and speakers are): kept with the media for 7 days. Faces and voices are used only to make the edit you asked for, never to identify anyone.',
-            'Sign-in: the account id your app signs in with. We check each sign-in token and don’t keep it.',
+            'Account data and account records: for as long as you have an account.',
+            'Billing records: as long as the law asks.',
+            'Job records and sign-in steps: 13 months.',
+            'Server logs: a few weeks.',
+            'Keys you make for scripts: as long as they last. A saved provider key: until you remove it.',
           ]}
         />
       </Part>
-      <Part title="What your agent sends and gets back">
-        <P>
-          From the app you connected we get only what your agent sends each tool: its instructions
-          for that step and any file you attach to it. We never see your chat.
-        </P>
-        <P>
-          Tool results go to the app you connected (ChatGPT, Claude, Kazi or another), which handles
-          them under its own privacy policy. They hold what your agent asked for: the names, sizes
-          and details of your media, transcripts and measurements of it, timelines, previews,
-          download links that expire, and job and media ids that tie one step to the next. They
-          never hold your email, payment details or keys.
-        </P>
-      </Part>
-      <Part title="How your footage is used">
-        <P>
-          Your footage is processed on our own servers at Hetzner, in Ashburn, Virginia (USA), to
-          edit, render and export it. Transcripts, voiceovers and cutouts run on those servers too.
-        </P>
-        <P>
-          When your agent asks a question about a picture or a passage (judge.ask, or a look through
-          a video with media.analyze), the frames and text it names are sent to TypeSafe, the model
-          provider that answers. They're used only to answer that question.
-        </P>
-        <P>
-          When your agent lip-syncs a clip (create.lipsync) with your own sync. labs key, the
-          stretch of video and the speech it names are sent to sync. labs to make the new clip,
-          under your account with them. We don't keep your key.
-        </P>
-      </Part>
-      <Part title="Who helps us run it">
+      <Part title="Your choices and rights">
         <Items
           items={[
-            'WorkOS: sign-in and accounts.',
-            'Stripe: payments and invoices.',
-            'Kazi: the credit ledger, which keeps your balance by your email and account.',
-            'Hetzner: the servers that run the editor and hold your media.',
-            'Vercel: this website.',
-            'TypeSafe: answers to judge.ask and look questions.',
-            'sync. labs, only with your own key: lip sync for create.lipsync.',
-            'Resend: account email (welcome, credits running low, payment problems).',
+            <>
+              Ask for a copy of what we hold about you, ask us to correct it, or close your account
+              and have it deleted: write to {mail}.
+            </>,
+            'Delete any media sooner: ask your agent to delete it; otherwise it deletes itself on the schedule above.',
+            'Turn the reminder email before files are deleted on or off on your account page.',
+            'Remove a saved provider key or a script key on your account page.',
+            'Sign out to remove the sign-in cookie.',
           ]}
         />
-        <P>Each one gets only what its job needs.</P>
       </Part>
-      <Part title="The website">
+      <Part title="Contact and changes">
         <P>
-          The site uses Vercel Analytics to count visits, pages, sign-ups and which links and
-          buttons are clicked, without ad trackers or cross-site cookies. Signing in sets a cookie
-          that keeps you signed in.
-        </P>
-      </Part>
-      <Part title="Your choices">
-        <P>
-          You can ask for a copy of what we hold about you, ask us to correct it, or close your
-          account and have it deleted: write to {mail}. Media and timelines delete themselves on the
-          schedule above; we keep billing records as long as the law asks.
-        </P>
-      </Part>
-      <Part title="Changes">
-        <P>
-          If we change this policy in a way that matters, we email you first. Questions: {mail}.
+          Questions about this policy or your data: {mail}. If we change this policy in a way that
+          matters, we email you first.
         </P>
       </Part>
     </LegalPage>

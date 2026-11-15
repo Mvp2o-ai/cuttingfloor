@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.55.1
+
+### Patch Changes
+
+- f0dd9e2: The privacy policy is laid out by what app directories check for: the categories of personal data, the purposes, the categories of recipients, retention, and your choices and rights, with contact. It now also covers the reminder email before files are deleted (and its switch) and the search index made from your media.
+
 ## 0.55.0
 
 ### Minor Changes
