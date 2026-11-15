@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import type { McpServer } from '@modelcontextprotocol/server';
+import type { McpServer, ServerContext } from '@modelcontextprotocol/server';
 import type { ServerDeps } from './server.ts';
 import { SERVER_VERSION } from './version.ts';
 
@@ -11,17 +11,42 @@ import { SERVER_VERSION } from './version.ts';
 export const PLAYER_URI = 'ui://cuttingfloor/player';
 export const MCP_APP_MIME = 'text/html;profile=mcp-app';
 
+// The 2026-07-28 protocol names the client in every request's _meta; on a stateless 2025 request
+// only its User-Agent does.
+const CLIENT_INFO_META = 'io.modelcontextprotocol/clientInfo';
+
+/**
+ * A view's `_meta.ui` for the host reading it. `domain` is the view's sandbox origin, which each
+ * host spells its own way: ChatGPT requires this server's origin, while Claude refuses the view
+ * unless it is a hash under claudemcpcontent.com. Views fetch with CORS open to any origin, so only
+ * ChatGPT is given one.
+ */
+export function viewUi<T extends object>(
+  server: McpServer,
+  ctx: ServerContext,
+  ui: T,
+  domain: string,
+): T | (T & { domain: string }) {
+  const envelope = ctx.mcpReq.envelope as
+    | Record<string, { name?: unknown } | undefined>
+    | undefined;
+  const name = envelope?.[CLIENT_INFO_META]?.name ?? server.server.getClientVersion()?.name;
+  const agent = ctx.http?.req?.headers.get('user-agent') ?? '';
+  const chatgpt =
+    /^openai-mcp\b/i.test(agent) || (typeof name === 'string' && /^openai-mcp\b/i.test(name));
+  return chatgpt ? { ...ui, domain } : ui;
+}
+
 /** `_meta` for a tool whose results the player shows. */
 export const PLAYER_TOOL_META = { ui: { resourceUri: PLAYER_URI } };
 
 export function registerPlayer(server: McpServer, deps: ServerDeps): void {
   // The page loads the file from this server, so the host lets the sandbox fetch media from it;
   // clipboard-write backs its Copy link button.
+  const origin = new URL(deps.runtime.config.publicUrl).origin;
   const ui = {
-    csp: { resourceDomains: [new URL(deps.runtime.config.publicUrl).origin] },
+    csp: { resourceDomains: [origin] },
     permissions: { clipboardWrite: {} },
-    // ChatGPT serves each plugin's views from their own sandbox origin, named after this.
-    domain: new URL(deps.runtime.config.publicUrl).origin,
     prefersBorder: false,
   };
   server.registerResource(
@@ -33,8 +58,15 @@ export function registerPlayer(server: McpServer, deps: ServerDeps): void {
       mimeType: MCP_APP_MIME,
       _meta: { ui },
     },
-    async (uri) => ({
-      contents: [{ uri: uri.href, mimeType: MCP_APP_MIME, text: PLAYER_HTML, _meta: { ui } }],
+    async (uri, ctx) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: MCP_APP_MIME,
+          text: PLAYER_HTML,
+          _meta: { ui: viewUi(server, ctx, ui, origin) },
+        },
+      ],
     }),
   );
 }

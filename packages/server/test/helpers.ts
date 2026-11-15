@@ -42,6 +42,7 @@ export async function connect(
   owner = 'local',
   env: NodeJS.ProcessEnv = {},
   access?: () => Promise<void>,
+  name = 'test',
 ): Promise<Client> {
   const server = createServer({
     runtime,
@@ -51,7 +52,7 @@ export async function connect(
   });
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
-  const client = new Client({ name: 'test', version: '0.0.0' });
+  const client = new Client({ name, version: '0.0.0' });
   await client.connect(clientSide);
   return client;
 }

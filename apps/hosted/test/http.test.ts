@@ -632,6 +632,36 @@ describe('HTTP face', () => {
     }
   });
 
+  it("names a view's sandbox origin for ChatGPT only, as its stateless reads come in", async () => {
+    const base = await listen(parseApiKeys(`ken:${KEY}`));
+    const domain = async (userAgent: string) => {
+      const res = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${KEY}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-protocol-version': '2025-06-18',
+          'user-agent': userAgent,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'resources/read',
+          params: { uri: 'ui://cuttingfloor/player' },
+        }),
+      });
+      const text = await res.text();
+      const json = JSON.parse(
+        text.startsWith('{') ? text : (/^data: (.*)$/m.exec(text)?.[1] ?? ''),
+      );
+      return json.result.contents[0]._meta.ui.domain;
+    };
+    expect(await domain('openai-mcp/1.0.0')).toBe(new URL(runtime.config.publicUrl).origin);
+    // Claude refuses a view whose domain isn't its own hash form.
+    expect(await domain('Claude-User')).toBeUndefined();
+  });
+
   it('publishes a Server Card and an AI Catalog that points at it', async () => {
     const base = await listen(parseApiKeys(`ken:${KEY}`));
     const res = await fetch(`${base}/mcp/server-card`);

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { MCP_APP_MIME } from './player.ts';
+import { MCP_APP_MIME, viewUi } from './player.ts';
 import type { ServerDeps } from './server.ts';
 import { SERVER_VERSION } from './version.ts';
 
@@ -23,7 +23,6 @@ export function registerEditor(server: McpServer, deps: ServerDeps): void {
   const ui = {
     csp: { resourceDomains: [origin], connectDomains: [origin] },
     permissions: { clipboardWrite: {} },
-    domain: origin,
     prefersBorder: false,
   };
   server.registerResource(
@@ -36,8 +35,15 @@ export function registerEditor(server: McpServer, deps: ServerDeps): void {
       mimeType: MCP_APP_MIME,
       _meta: { ui },
     },
-    async (uri) => ({
-      contents: [{ uri: uri.href, mimeType: MCP_APP_MIME, text: EDITOR_HTML, _meta: { ui } }],
+    async (uri, ctx) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: MCP_APP_MIME,
+          text: EDITOR_HTML,
+          _meta: { ui: viewUi(server, ctx, ui, origin) },
+        },
+      ],
     }),
   );
 }
