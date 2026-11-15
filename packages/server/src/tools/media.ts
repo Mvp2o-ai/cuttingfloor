@@ -688,7 +688,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       const upload = await startUpload(
         rt,
         deps.owner(),
-        args.name,
+        args.name ?? 'upload',
         args.bytes,
         await deps.limits?.(),
       );

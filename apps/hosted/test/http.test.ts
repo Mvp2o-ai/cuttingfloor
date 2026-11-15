@@ -384,6 +384,22 @@ describe('HTTP face', () => {
       expect.objectContaining({ upload_id: up.upload_id, complete: true }),
     ]);
     const imported = await tool('media.import', { source: { upload_id: up.upload_id } });
+
+    // No name given: the sent file brings its own, extension and all.
+    const blind = (await tool('media.upload', {})).structuredContent as {
+      upload_id: string;
+      url: string;
+    };
+    expect(blind.upload_id).toMatch(/^u_/);
+    await fetch(blind.url, {
+      method: 'PUT',
+      headers: { 'upload-name': encodeURIComponent('IMG 0042.mov') },
+      body: Buffer.alloc(10, 1),
+    });
+    const named = (await tool('media.list', {})).structuredContent as {
+      uploads: Array<{ upload_id: string; name: string }>;
+    };
+    expect(named.uploads.find((u) => u.upload_id === blind.upload_id)?.name).toBe('IMG 0042.mov');
     expect(imported.isError).toBeFalsy();
     expect(imported.structuredContent).toHaveProperty('job_id');
     await client.close();

@@ -706,7 +706,10 @@ export const MediaUploadInput = z.object({
     .min(1)
     .max(200)
     .regex(/^[^/\\]+$/)
-    .describe('The file name with its extension, e.g. interview.mp4'),
+    .optional()
+    .describe(
+      "The file's name, if known. A label only: the file the user picks on the page brings its own name, and import reads the content, not the extension",
+    ),
   bytes: z
     .number()
     .int()
