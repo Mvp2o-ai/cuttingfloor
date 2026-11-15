@@ -342,7 +342,8 @@ describe.skipIf(!engines || !browserFound)('editor view', () => {
     expect(String(msg?.content[0]?.text)).toMatch(/^This cut is a beat late\n\n\(.*timeline /);
     expect(String(msg?.content[0]?.text)).toContain(`clip ${first?.id}`);
     await page.close();
-  });
+    // A real scrub with pauses, then waits for the view: past 5 s while the image's exports run.
+  }, 30_000);
 
   it('in a narrow fixed panel shows the whole picture and the bar under it resizes it', async () => {
     const { page, view } = await open({ serverTools: {} }, { width: 575, height: 1000 }, portrait);
