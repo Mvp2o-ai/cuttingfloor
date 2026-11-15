@@ -73,8 +73,8 @@ const INSTRUCTIONS_BODY = `Tools are granular primitives that do exactly what th
    filter.add on a clip, track or timeline: colour, LUT, blur, vignette, key, glitch, denoise; EQ, compressor, noise reduction, voice cleanup, pitch. adjustment.add covers all below for a stretch.
    Overlays: a higher video track, then set_transform, set_mask, set_blend, set_animation. Names: video://catalog/{name}; a wrong one is refused with the list.
    Facts: media.analyze (transcript, beats, faces, track, look, silence, scenes…) to cut by words (clip.add source {words}), caption (caption.add in_clip), cut on beats, reframe, pin to a tracked object; judge.ask answers typed questions (yes/no, choice, score, box) on text, JSON and pictures, and look asks them across sampled frames; media.seek finds a moment from plain words, in a video or a rendered edit.
-3. Look: preview "inline", render.frames; to watch motion and sound, export a range with review_h264.
-4. qa.check, then export.video: a download url and a page_url that plays in a browser, for the user (presets: web, master, 9:16, AV1, GIF, audio; overrides). export.timeline: FCPXML, OTIO, EDL, SRT, VTT.
+3. Look: preview "inline", render.frames; to watch motion and sound, export a range with mp4_h264_fast.
+4. qa.check, then export.video: a download url and a page_url that plays in a browser, for the user (formats: MP4 H.264 or AV1, ProRes MOV, GIF, WAV, MP3, at the sequence size unless overrides). export.timeline: FCPXML, OTIO, EDL, SRT, VTT.
 Skills: methods for common jobs; skills.search in the user's words first, then skills.get.
 Time is frames at the sequence rate; ranges end-exclusive.`;
 

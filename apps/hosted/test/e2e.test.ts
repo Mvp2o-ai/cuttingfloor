@@ -1369,7 +1369,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       // An export started meanwhile waits for the fill, saying so, and then finishes.
       const exported = await ok<{ job_id: string }>(client, 'export.video', {
         timeline_id: filled.timeline_id,
-        preset: 'master_prores_422hq',
+        preset: 'mov_prores_422hq',
         filename: 'filled-two',
       });
       const done = await waitJob(jobId, 400_000);
@@ -1524,7 +1524,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       });
       const started = await ok<{ job_id: string }>(client, 'export.video', {
         timeline_id: slow.timeline_id,
-        preset: 'master_prores_422hq',
+        preset: 'mov_prores_422hq',
         filename: 'progress-check',
       });
       const seen: number[] = [];
@@ -1557,7 +1557,8 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       });
       const started = await ok<{ job_id: string }>(client, 'export.video', {
         timeline_id: cut.timeline_id,
-        preset: 'review_h264',
+        preset: 'mp4_h264_fast',
+        overrides: { width: 854 },
         range: { start: 0, end: 50 },
         filename: 'review-check',
       });
@@ -1599,7 +1600,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       });
       const started = await ok<{ job_id: string }>(client, 'export.video', {
         timeline_id: pip,
-        preset: 'web_1080p_h264',
+        preset: 'mp4_h264',
         range: { start: 10, end: 12 },
       });
       const done = (await waitJob(started.job_id)) as { result?: { file?: string } };
@@ -1663,7 +1664,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     async function exportedAudio(timelineId: string): Promise<Int16Array> {
       const started = await ok<{ job_id: string }>(client, 'export.video', {
         timeline_id: timelineId,
-        preset: 'web_1080p_h264',
+        preset: 'mp4_h264',
       });
       const done = (await waitJob(started.job_id)) as { result?: { file: string } };
       if (!done.result) throw new Error(JSON.stringify(done));
@@ -2064,7 +2065,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       });
       const started = await ok<{ job_id: string }>(client, 'export.video', {
         timeline_id: faded.timeline_id,
-        preset: 'web_1080p_h264',
+        preset: 'mp4_h264',
       });
       const done = (await waitJob(started.job_id)) as { result?: { file: string } };
       if (!done.result) throw new Error(JSON.stringify(done));
@@ -2197,7 +2198,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
 
       const started = await ok<{ job_id: string }>(client, 'export.video', {
         timeline_id: t,
-        preset: 'master_prores_422hq',
+        preset: 'mov_prores_422hq',
         filename: 'title-later',
       });
       const job = await waitJob(started.job_id);
@@ -2227,7 +2228,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       ]);
       const started = await ok<{ job_id: string }>(client, 'export.video', {
         timeline_id: wide,
-        preset: 'master_prores_422hq',
+        preset: 'mov_prores_422hq',
         filename: 'wide-master',
       });
       await waitJob(started.job_id);
@@ -2238,7 +2239,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         from: 'render',
         job_id: started.job_id,
         timeline_id: wide,
-        preset: 'master_prores_422hq',
+        preset: 'mov_prores_422hq',
         // Which media each stretch plays, kept after the timeline expires.
         sources: [
           {
@@ -2255,7 +2256,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       // A part export: the spans start at the file's start, and the source range is cut to match.
       const part = await ok<{ job_id: string }>(client, 'export.video', {
         timeline_id: wide,
-        preset: 'review_h264',
+        preset: 'mp4_h264_fast',
         range: { start: 25, end: 50 },
       });
       await waitJob(part.job_id);
@@ -2558,7 +2559,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     ): Promise<{ left: Float64Array; right: Float64Array }> {
       const started = await ok<{ job_id: string }>(client, 'export.video', {
         timeline_id: timelineId,
-        preset: 'web_1080p_h264',
+        preset: 'mp4_h264',
         overwrite: true,
       });
       const done = (await waitJob(started.job_id)) as { result?: { file: string } };
@@ -3219,7 +3220,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(offline.structured.hint).toContain('deleted');
       const exported = await call(client, 'export.video', {
         timeline_id: placed.timeline_id,
-        preset: 'review_h264',
+        preset: 'mp4_h264_fast',
       });
       expect(exported.structured.code).toBe('media_offline');
 
@@ -3856,27 +3857,27 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       captioned = cap.timeline_id;
     }, 300_000);
 
-    it('exports GIF, audio, AV1 and overridden presets; refuses misfits', async () => {
+    it('exports GIF, audio, AV1 and overridden formats, at the sequence size unless asked', async () => {
       const gif = await exported({ timeline_id: timelineId, preset: 'gif' });
       expect(gif.result?.mime_type).toBe('image/gif');
       const g = (await ffprobe(gif.file as string)).streams[0];
-      expect(g).toMatchObject({ codec_name: 'gif', width: 640, height: 360 });
+      expect(g).toMatchObject({ codec_name: 'gif', width: 1280, height: 720 });
       expect(Number(g?.nb_read_packets)).toBe(60); // 4 s at 15 fps
 
-      const wav = await exported({ timeline_id: timelineId, preset: 'audio_wav_48k' });
+      const wav = await exported({ timeline_id: timelineId, preset: 'wav' });
       const w = await ffprobe(wav.file as string);
       expect(w.streams.map((st) => st.codec_type)).toEqual(['audio']);
       expect(Number(w.format.duration)).toBeCloseTo(4, 1);
-      const mp3 = await exported({ timeline_id: timelineId, preset: 'audio_mp3' });
+      const mp3 = await exported({ timeline_id: timelineId, preset: 'mp3' });
       expect((await ffprobe(mp3.file as string)).streams[0]?.codec_name).toBe('mp3');
 
-      const av1 = await exported({ timeline_id: timelineId, preset: 'web_1080p_av1' });
+      const av1 = await exported({ timeline_id: timelineId, preset: 'mp4_av1' });
       const a = await ffprobe(av1.file as string);
       expect(a.streams.map((st) => st.codec_name).sort()).toEqual(['av1', 'opus']);
 
       const small = await exported({
         timeline_id: timelineId,
-        preset: 'web_1080p_h264',
+        preset: 'mp4_h264',
         overrides: { width: 640, fps: 10, crf: 28 },
         filename: 'small',
       });
@@ -3887,11 +3888,12 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(sv).toMatchObject({ width: 640, height: 360 });
       expect(Number(sv?.nb_read_packets)).toBe(40);
 
-      const social = await exported({ timeline_id: timelineId, preset: 'social_9x16_h264' });
-      expect(social.error?.code).toBe('bad_request');
+      // No format decides a size: the sequence's, as it is.
+      const plain = await exported({ timeline_id: timelineId, preset: 'mp4_h264' });
+      expect(plain.result).toMatchObject({ width: 1280, height: 720 });
       const prores = await exported({
         timeline_id: timelineId,
-        preset: 'master_prores_422hq',
+        preset: 'mov_prores_422hq',
         overrides: { crf: 10 },
       });
       expect(prores.error?.code).toBe('bad_request');
@@ -3932,7 +3934,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(await seen(big, 1280, 720)).toEqual(bars);
       const out = await exported({
         timeline_id: timelineId,
-        preset: 'web_1080p_h264',
+        preset: 'mp4_h264',
         overrides: { width: 640 },
         filename: 'bars',
       });
@@ -4640,7 +4642,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       const { timeline_id } = await laid(source.media_id, 0, 'video');
       const started = await ok<{ job_id: string }>(client, 'export.video', {
         timeline_id,
-        preset: 'review_h264',
+        preset: 'mp4_h264_fast',
         range: { start: 0, end: 25 },
       });
       const done = (await waitJob(started.job_id, 300_000)) as {
@@ -5226,12 +5228,12 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
   it('exports H.264 and ProRes, with signed downloads', async () => {
     const started = await ok<{ job_id: string }>(client, 'export.video', {
       timeline_id: timeline,
-      preset: 'web_1080p_h264',
+      preset: 'mp4_h264',
       idempotency_key: 'web-1',
     });
     const repeat = await ok<{ job_id: string }>(client, 'export.video', {
       timeline_id: timeline,
-      preset: 'web_1080p_h264',
+      preset: 'mp4_h264',
       idempotency_key: 'web-1',
     });
     expect(repeat.job_id).toBe(started.job_id);
@@ -5243,10 +5245,11 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     const probe = await ffprobe(result.file);
     const v = probe.streams.find((s) => s.codec_type === 'video');
     const a = probe.streams.find((s) => s.codec_type === 'audio');
+    // The sequence's size: a format never scales the picture on its own.
     expect(v).toMatchObject({
       codec_name: 'h264',
-      width: 1920,
-      height: 1080,
+      width: 1280,
+      height: 720,
       nb_read_packets: '175',
     });
     expect(a?.codec_name).toBe('aac');
@@ -5263,13 +5266,13 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     // The default file name is taken now: a second export needs overwrite or a new name.
     const clash = await call(client, 'export.video', {
       timeline_id: timeline,
-      preset: 'web_1080p_h264',
+      preset: 'mp4_h264',
     });
     expect(clash.structured).toMatchObject({ code: 'output_exists' });
 
     const master = await ok<{ job_id: string }>(client, 'export.video', {
       timeline_id: timeline,
-      preset: 'master_prores_422hq',
+      preset: 'mov_prores_422hq',
       range: { start: 25, end: 75 },
     });
     const masterDone = await waitJob(master.job_id);
@@ -5306,7 +5309,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     });
     const job = await ok<{ job_id: string }>(client, 'export.video', {
       timeline_id: added.timeline_id,
-      preset: 'web_1080p_h264',
+      preset: 'mp4_h264',
     });
     const done = await waitJob(job.job_id);
     const probe = await ffprobe((done.result as { file: string }).file);
@@ -5330,7 +5333,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     });
     const job = await ok<{ job_id: string }>(client, 'export.video', {
       timeline_id: added.timeline_id,
-      preset: 'master_prores_422hq',
+      preset: 'mov_prores_422hq',
       range: { start: 290 * 30, end: 300 * 30 - 1 },
     });
     const done = await waitJob(job.job_id, 600_000);
@@ -5348,7 +5351,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     for (const name of ['det-a', 'det-b']) {
       const job = await ok<{ job_id: string }>(client, 'export.video', {
         timeline_id: timeline,
-        preset: 'master_prores_422hq',
+        preset: 'mov_prores_422hq',
         range: { start: 20, end: 40 },
         filename: name,
       });
@@ -5367,7 +5370,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
   it('ends jobs a dead process left running as interrupted, and retries fresh', async () => {
     const job = await ok<{ job_id: string }>(client, 'export.video', {
       timeline_id: timeline,
-      preset: 'master_prores_422hq',
+      preset: 'mov_prores_422hq',
       filename: 'restart',
       idempotency_key: 'restart-1',
     });
@@ -5381,7 +5384,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     expect(view.error?.code).toBe('interrupted');
     const retry = await ok<{ job_id: string }>(client, 'export.video', {
       timeline_id: timeline,
-      preset: 'master_prores_422hq',
+      preset: 'mov_prores_422hq',
       filename: 'restart',
       overwrite: true,
       idempotency_key: 'restart-1',
@@ -5556,7 +5559,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     }
     const job = await ok<{ job_id: string }>(client, 'export.video', {
       timeline_id: t,
-      preset: 'master_prores_422hq',
+      preset: 'mov_prores_422hq',
     });
     await new Promise((r) => setTimeout(r, 300));
     const cancelled = await ok<{ status: string }>(client, 'job.cancel', { job_id: job.job_id });
@@ -5573,7 +5576,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     };
     const args = {
       timeline_id: timeline,
-      preset: 'web_1080p_h264',
+      preset: 'mp4_h264',
       range: { start: 0, end: 25 },
       filename: 'task-export',
     };
@@ -5630,7 +5633,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     try {
       const execution = await session.callTool('export.video', {
         timeline_id: timeline,
-        preset: 'master_prores_422hq',
+        preset: 'mov_prores_422hq',
         range: { start: 0, end: 10 },
         filename: 'ext-tasks-export',
       });

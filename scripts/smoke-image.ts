@@ -174,7 +174,7 @@ try {
     throw new Error(`composite preview did not render: ${JSON.stringify(edited.warnings)}`);
   const exported = await call(http, 'export.video', {
     timeline_id: edited.timeline_id,
-    preset: 'web_1080p_h264',
+    preset: 'mp4_h264',
   });
   const output = await waitJob(http, exported.job_id as string);
   const download = await fetch(output.url as string);

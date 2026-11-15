@@ -601,7 +601,11 @@ export const BatchInput = z.object({
     ),
 });
 
-export const BatchResult = PlacingEditResult.extend({
+export const BatchResult = PlacingEditResult.omit({
+  clip_id: true,
+  clip_ids: true,
+  track_id: true,
+}).extend({
   results: z.array(
     z.object({
       tool: z.string(),
@@ -2200,17 +2204,10 @@ export const RenderFramesResult = z.object({
 });
 
 export const ExportPreset = z
-  .enum([
-    'web_1080p_h264',
-    'master_prores_422hq',
-    'social_9x16_h264',
-    'web_1080p_av1',
-    'gif',
-    'review_h264',
-    'audio_wav_48k',
-    'audio_mp3',
-  ])
-  .describe('video://catalog/presets lists each with what it takes');
+  .enum(['mp4_h264', 'mp4_h264_fast', 'mp4_av1', 'mov_prores_422hq', 'gif', 'wav', 'mp3'])
+  .describe(
+    'A format; the picture comes out at the sequence size unless overrides set another. video://catalog/presets lists what each takes',
+  );
 
 export const ExportOverrides = z
   .object({

@@ -2,7 +2,7 @@ import { access, mkdtemp, rm } from 'node:fs/promises';
 import { availableParallelism, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CfError } from '@cuttingfloor/schema';
-import { BIN, run } from './exec.ts';
+import { BIN, heavyThreads, run } from './exec.ts';
 import { noAudio, type Range } from './speech.ts';
 
 // Who speaks when (speaker diarisation) with sherpa-onnx on the CPU: pyannote segmentation-3.0
@@ -141,7 +141,7 @@ export async function diarize(
         throw noAudio(options, 'it has no audio stream');
       throw error;
     });
-    const threads = String(Math.max(1, Math.min(4, availableParallelism())));
+    const threads = String(heavyThreads(4));
     const clustering =
       options.speakers !== undefined
         ? [`--clustering.num-clusters=${options.speakers}`]

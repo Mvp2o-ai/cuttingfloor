@@ -57,7 +57,7 @@ describe('keeping', () => {
       uri: `video://jobs/${job.id}/output`,
       bytes: 10,
       frames: 25,
-      preset: 'web_1080p_h264',
+      preset: 'mp4_h264',
       mime_type: 'video/mp4',
     };
     await store.update(job, {

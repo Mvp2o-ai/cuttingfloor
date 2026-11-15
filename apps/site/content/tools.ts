@@ -466,14 +466,13 @@ export const ANALYSES = [
   'picture',
 ];
 export const EXPORT_PRESETS = [
-  'web_1080p_h264',
-  'master_prores_422hq',
-  'social_9x16_h264',
-  'web_1080p_av1',
+  'mp4_h264',
+  'mp4_h264_fast',
+  'mp4_av1',
+  'mov_prores_422hq',
   'gif',
-  'review_h264',
-  'audio_wav_48k',
-  'audio_mp3',
+  'wav',
+  'mp3',
 ];
 export const TIMELINE_FORMATS = ['fcpxml', 'otio', 'edl', 'srt', 'vtt'];
 export const VIDEO_EFFECTS = [

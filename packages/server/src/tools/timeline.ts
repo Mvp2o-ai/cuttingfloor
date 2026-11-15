@@ -90,7 +90,7 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
   'clip.split': {
     title: 'Split clip',
     description:
-      'Cut a clip (and its linked clips) in two at a frame. The left piece keeps its id; clip_id is the new right piece of the clip named, and clip_ids every new right piece (its linked ones too), linked together.',
+      'Cut a clip (and its linked clips) in two at a frame. The left piece keeps its id; clip_id is the new right piece of the clip named, and clip_ids every new right piece (its linked ones too), linked together. Each piece keeps its own copy of the settings (transform, mask, effects, speed); later changes apply to the piece named.',
   },
   'clip.link': { title: 'Link clips', description: 'Make clips move, trim and split together.' },
   'clip.unlink': { title: 'Unlink clip', description: 'Break the link group a clip belongs to.' },
@@ -503,9 +503,10 @@ async function applyAndReply(
     timeline_id: id,
     parent: baseId,
     changed: diff(base, doc),
-    ...(outcome.clip_id ? { clip_id: outcome.clip_id } : {}),
-    ...(outcome.clip_ids ? { clip_ids: outcome.clip_ids } : {}),
-    ...(outcome.track_id ? { track_id: outcome.track_id } : {}),
+    // A batch gives each op's ids in results; one id for the whole batch would only be its last op's.
+    ...(!batch && outcome.clip_id ? { clip_id: outcome.clip_id } : {}),
+    ...(!batch && outcome.clip_ids ? { clip_ids: outcome.clip_ids } : {}),
+    ...(!batch && outcome.track_id ? { track_id: outcome.track_id } : {}),
     preview: previewRef,
     ...(ops.some((o) => PLACING_TOOLS.has(o.tool))
       ? { placements: await placementsFor(rt, owner, base, doc) }

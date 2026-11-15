@@ -108,7 +108,7 @@ describe('plan limits', () => {
     const timeline = await titled(client);
     const exported = await call(client, 'export.video', {
       timeline_id: timeline,
-      preset: 'web_1080p_h264',
+      preset: 'mp4_h264',
     });
     expect(exported.isError).toBe(true);
     expect(exported.structured).toMatchObject({ code: 'quota_exceeded' });
@@ -133,7 +133,7 @@ describe('plan limits', () => {
     const timeline = await titled(client, { width: 3840, height: 2160, fps: { num: 25, den: 1 } });
     const big = await call(client, 'export.video', {
       timeline_id: timeline,
-      preset: 'master_prores_422hq',
+      preset: 'mov_prores_422hq',
     });
     expect(big.structured).toMatchObject({
       code: 'limit_exceeded',
@@ -145,7 +145,7 @@ describe('plan limits', () => {
     expect(JSON.stringify(big.structured)).not.toMatch(/\bplan\b/);
     const fitted = await call(client, 'export.video', {
       timeline_id: timeline,
-      preset: 'master_prores_422hq',
+      preset: 'mov_prores_422hq',
       overrides: { height: 1080 },
     });
     expect(fitted.isError).toBe(false);

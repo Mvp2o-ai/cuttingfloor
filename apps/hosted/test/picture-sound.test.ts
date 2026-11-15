@@ -388,7 +388,7 @@ describe.skipIf(!engines)('picture and sound', () => {
       // It is exported too.
       const exported = await job<{ frames: number }>('export.video', {
         timeline_id: t.timeline_id,
-        preset: 'review_h264',
+        preset: 'mp4_h264_fast',
       });
       expect(exported.frames).toBe(96);
     }, 600_000);
@@ -767,7 +767,7 @@ describe.skipIf(!engines)('picture and sound', () => {
         const t = await timeline(wet, 25, ops);
         const done = await job<{ file: string }>('export.video', {
           timeline_id: t.timeline_id,
-          preset: 'web_1080p_h264',
+          preset: 'mp4_h264',
         });
         return samples(done.file);
       };

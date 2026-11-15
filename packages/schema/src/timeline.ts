@@ -269,7 +269,13 @@ export type TrackView = z.infer<typeof TrackView>;
 
 export const MediaRefView = z.object({
   name: z.string(),
-  duration: frame.nullable().describe('Length in sequence frames; null for stills'),
+  duration: z
+    .number()
+    .min(0)
+    .nullable()
+    .describe(
+      'Length in sequence frames, exact (45.48 ends part way into frame 45, which a clip of the whole media counts as a frame); null for stills',
+    ),
   video: z.boolean(),
   audio: z.boolean(),
 });

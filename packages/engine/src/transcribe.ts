@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rename, rm, stat } from 'node:fs/promises';
 import { availableParallelism, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CfError } from '@cuttingfloor/schema';
-import { BIN, run } from './exec.ts';
+import { BIN, heavyThreads, run } from './exec.ts';
 import { download } from './fetch.ts';
 import { ALIGN_LANGUAGES, alignTranscriptWords, SPEECH_MODELS } from './speech.ts';
 
@@ -180,7 +180,7 @@ export async function transcribe(
         // Progress lines (every 5%) on stderr, so a long transcript shows it is moving.
         '-pp',
         '-t',
-        String(Math.max(1, Math.min(8, availableParallelism()))),
+        String(heavyThreads(8)),
       ],
       {
         cwd: dir,

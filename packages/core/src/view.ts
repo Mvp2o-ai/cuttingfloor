@@ -269,7 +269,11 @@ function bodyView(doc: NestedDoc): NestedView {
         id,
         {
           name: m.name,
-          duration: m.duration === null ? null : Math.floor(m.duration / framesToTicks(1, fps)),
+          // Exact, part frame and all: a clip of the whole media counts that last part as a frame.
+          duration:
+            m.duration === null
+              ? null
+              : Math.round((m.duration / framesToTicks(1, fps)) * 100) / 100,
           video: m.video,
           audio: m.audio,
         },
