@@ -858,6 +858,7 @@
       if (kind === 'image') return show(imageView(data));
       return failed('This kind of file does not play here. Download it to open it.');
     }
+    if (data.job_id && data.status === 'completed' && data.result) return render(data.result);
     if (data.job_id && data.status && data.status !== 'completed') {
       // The result may be old (a chat opened again later), so it says nothing about now until job.get answers.
       wait('Checking…');

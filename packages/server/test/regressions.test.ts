@@ -30,10 +30,9 @@ let env: TestEnv;
 let client: Client;
 
 async function importMedia(path: string): Promise<Record<string, unknown> & { media_id: string }> {
-  const started = await ok<{ job_id?: string; media_id: string }>(client, 'media.import', {
+  const started = await ok<{ job_id: string; media_id: string }>(client, 'media.import', {
     source: { path },
   });
-  if (!started.job_id) return ok(client, 'media.get', { media_id: started.media_id });
   const done = await settled<{ result?: Record<string, unknown>; error?: unknown }>(
     client,
     started.job_id,

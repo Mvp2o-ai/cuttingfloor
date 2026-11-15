@@ -201,6 +201,43 @@ describe('jobs that stall or will not stop', () => {
     await ok(client, 'job.cancel', { job_id: started.job_id });
   }, 30_000);
 
+  it('a job done before answers in the same shape: job_id and status, its result inside', async () => {
+    const client = await connect(env.runtime, 'replayed');
+    const store = env.runtime.jobs.store;
+    const job = await store.create({
+      owner: 'replayed',
+      tool: 'export.video',
+      idempotencyKey: 'k1',
+    });
+    const file = {
+      url: 'https://example.test/out.mp4',
+      page_url: 'https://example.test/watch',
+      expires_at: '2030-01-01T00:00:00Z',
+      uri: `video://jobs/${job.id}/output`,
+      bytes: 10,
+      frames: 25,
+      preset: 'web_1080p_h264',
+      mime_type: 'video/mp4',
+    };
+    const link = { type: 'resource_link' as const, uri: file.uri, name: 'out.mp4' };
+    await store.update(job, {
+      status: 'completed',
+      progress: 1,
+      result: {
+        content: [link, { type: 'text', text: JSON.stringify(file) }],
+        structuredContent: file,
+      },
+    });
+    const res = await call(client, 'export.video', {
+      timeline_id: `tl_${'a'.repeat(32)}`,
+      preset: 'web_1080p_h264',
+      idempotency_key: 'k1',
+    });
+    expect(res.isError).toBe(false);
+    expect(res.structured).toMatchObject({ job_id: job.id, status: 'completed', result: file });
+    expect(res.content[0]).toMatchObject(link);
+  });
+
   it('lists jobs without their results, and sums a result up when asked', async () => {
     const client = await connect(env.runtime, 'summaries');
     const store = env.runtime.jobs.store;

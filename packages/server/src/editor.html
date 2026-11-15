@@ -1581,6 +1581,7 @@
   function render(data) {
     if (!data) return stageError('Nothing to show.');
     if (data.url) return onFile(data);
+    if (data.job_id && data.status === 'completed' && data.result) return render(data.result);
     if (data.job_id && data.status && data.status !== 'completed') {
       // The result may be old (a chat opened again later), so it says nothing about now until job.get answers.
       if (host.caps.serverTools) { stageWait('Checking on the export…'); return follow(data.job_id); }

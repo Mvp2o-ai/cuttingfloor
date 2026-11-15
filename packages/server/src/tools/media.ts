@@ -57,6 +57,7 @@ import {
   withJob,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
+import * as z from 'zod/v4';
 import { askFrames, checkFrameState, type JudgedFrame, sampleTimes } from '../frames.ts';
 import { JEV_MODEL, JEV_URL } from '../jev.ts';
 import { LIBRARY_TOOL_META } from '../library.ts';
@@ -529,7 +530,11 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         'Importing the same file again returns the same media_id.',
       ].join(' '),
       inputSchema: MediaImportInput,
-      outputSchema: withJob(MediaInfo),
+      // {upload} has no job until its PUT completes, so it answers with the media itself.
+      outputSchema: z.union([
+        withJob(MediaInfo),
+        MediaInfo.describe('source {upload}: the new media with upload.url; no job until the PUT'),
+      ]),
       // ChatGPT passes a file the user attached as this argument.
       _meta: { 'openai/fileParams': ['file'] },
       annotations: {

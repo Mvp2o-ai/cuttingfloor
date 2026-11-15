@@ -268,7 +268,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         'Render animated HTML to a video with alpha, frame-exactly: lower thirds, animated titles, callouts, logo stings, kinetic type, generated graphics. Place the media_id with clip.add on a track above the video.',
         `Up to ${MOTION_LIMITS.maxSeconds} s, and width × height × fps × seconds up to 30 s of 1080p30.`,
         sandboxNote,
-        'Long-running: returns a task, or {job_id, media_id} for job.get. The same recipe returns the same media.',
+        'Long-running: returns a task, or {job_id, status, media_id} for job.get. The same recipe returns the same media, already completed with its result in result.',
       ].join(' '),
       inputSchema: CreateMotionInput,
       outputSchema: withJob(MediaInfo),
@@ -318,7 +318,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       description: [
         'Render an HTML page to a PNG: title and end cards, thumbnails, overlays, designed text. Transparent where nothing is painted. Capture waits for fonts, and for window.__ready if the page sets it to a promise (up to 10 s).',
         sandboxNote,
-        'Long-running: returns a task, or {job_id, media_id} for job.get.',
+        'Long-running: returns a task, or {job_id, status, media_id} for job.get. The same recipe returns the same media, already completed with its result in result.',
       ].join(' '),
       inputSchema: CreateStillInput,
       outputSchema: withJob(MediaInfo),

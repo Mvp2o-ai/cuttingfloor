@@ -248,16 +248,10 @@ async function waitJob(jobId: string, timeoutMs = 240_000): Promise<Record<strin
 async function importMedia(
   source: Record<string, string>,
 ): Promise<Record<string, unknown> & { media_id: string }> {
-  const started = await ok<{ job_id?: string; media_id: string }>(client, 'media.import', {
+  const started = await ok<{ job_id: string; media_id: string }>(client, 'media.import', {
     source,
   });
   expect(started.media_id).toMatch(/^m_/);
-  // A file with the same content as an earlier import answers at once, with no job.
-  if (!started.job_id) {
-    return ok<Record<string, unknown> & { media_id: string }>(client, 'media.get', {
-      media_id: started.media_id,
-    });
-  }
   const done = await waitJob(started.job_id);
   if (done.status !== 'completed' || done.error)
     throw new Error(`import failed: ${JSON.stringify(done.error)}`);
@@ -496,11 +490,15 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
   }, 300_000);
 
   it('dedupes a repeat import and imports from a URL', async () => {
-    // A file imported before answers at once with its existing media_id.
+    // A file imported before answers at once: a completed job with its existing media_id.
     const again = await ok<{ media_id: string; status: string }>(client, 'media.import', {
       source: { path: join(env.mediaDir, 'av.mp4') },
     });
-    expect(again).toMatchObject({ media_id: media.av, status: 'ready' });
+    expect(again).toMatchObject({
+      media_id: media.av,
+      status: 'completed',
+      result: { media_id: media.av, status: 'ready' },
+    });
     const fromUrl = await importMedia({ url: `${fileBase}/tone.wav` });
     expect(fromUrl).toMatchObject({ status: 'ready', kind: 'audio' });
     // Where it came from, without the query (which can carry the storage's signature).
@@ -3059,13 +3057,9 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     const ids: Record<string, string> = {};
 
     async function made(tool: string, args: Record<string, unknown>) {
-      const started = await ok<{ job_id?: string; media_id: string }>(client, tool, args);
-      // A recipe made before answers at once with the media, with no job.
-      const done = (
-        started.job_id
-          ? await waitJob(started.job_id, 300_000)
-          : { status: 'completed', result: started }
-      ) as {
+      const started = await ok<{ job_id: string; media_id: string }>(client, tool, args);
+      // A recipe made before answers at once: its job already completed, the media in result.
+      const done = (await waitJob(started.job_id, 300_000)) as {
         status: string;
         result?: Record<string, unknown> & { media_id: string };
         error?: { code: string; message: string };
