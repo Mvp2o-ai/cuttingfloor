@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { MCP_APP_MIME } from './player.ts';
+import { MCP_APP_MIME, viewUi } from './player.ts';
 import type { ServerDeps } from './server.ts';
 import { SERVER_VERSION } from './version.ts';
 
@@ -17,10 +17,10 @@ export const LIBRARY_TOOL_META = { ui: { resourceUri: LIBRARY_URI } };
 
 export function registerLibrary(server: McpServer, deps: ServerDeps): void {
   // Previews load the file (and a font's glyphs) from this server; clipboard-write backs Copy id.
+  const origin = new URL(deps.runtime.config.publicUrl).origin;
   const ui = {
-    csp: { resourceDomains: [new URL(deps.runtime.config.publicUrl).origin] },
+    csp: { resourceDomains: [origin] },
     permissions: { clipboardWrite: {} },
-    domain: new URL(deps.runtime.config.publicUrl).origin,
     prefersBorder: false,
   };
   server.registerResource(
@@ -33,8 +33,15 @@ export function registerLibrary(server: McpServer, deps: ServerDeps): void {
       mimeType: MCP_APP_MIME,
       _meta: { ui },
     },
-    async (uri) => ({
-      contents: [{ uri: uri.href, mimeType: MCP_APP_MIME, text: LIBRARY_HTML, _meta: { ui } }],
+    async (uri, ctx) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: MCP_APP_MIME,
+          text: LIBRARY_HTML,
+          _meta: { ui: viewUi(server, ctx, ui, origin) },
+        },
+      ],
     }),
   );
 }

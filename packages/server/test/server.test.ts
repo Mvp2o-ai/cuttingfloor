@@ -365,8 +365,12 @@ describe('protocol surface', () => {
       expect(page.mimeType).toBe('text/html;profile=mcp-app');
       expect(page.text).toContain("'ui/initialize'");
       expect(page.text).not.toContain('__VERSION__');
-      expect(page._meta).toEqual({
-        ui: { csp, permissions: { clipboardWrite: {} }, domain: origin, prefersBorder: false },
+      // Claude refuses a view whose domain isn't its own hash form, so only ChatGPT gets one.
+      const ui = { csp, permissions: { clipboardWrite: {} }, prefersBorder: false };
+      expect(page._meta).toEqual({ ui });
+      const chatgpt = await connect(env.runtime, 'local', {}, undefined, 'openai-mcp');
+      expect((await chatgpt.readResource({ uri })).contents[0]?._meta).toEqual({
+        ui: { ...ui, domain: origin },
       });
       // The inline script parses.
       const text = page.text ?? '';
