@@ -30,8 +30,10 @@ import {
 } from '@cuttingfloor/engine';
 import {
   CfError,
+  KEEP_MS,
   type MediaRef,
   type StoredClip,
+  span,
   type TimelineDoc,
   type TimelineView,
 } from '@cuttingfloor/schema';
@@ -318,7 +320,7 @@ function mediaIdsOf(doc: TimelineDoc): Set<string> {
 export function assertOnline(offline: string[]): void {
   if (offline.length) {
     throw new CfError('media_offline', `Media not available: ${offline.join(', ')}`, {
-      hint: 'The media was deleted, or expired 7 days after last use. Import the file again (or pick another media) and swap it into the clips with clip.replace',
+      hint: `The media was deleted, or expired ${span(KEEP_MS.media)} after last use. Import the file again (or pick another media) and swap it into the clips with clip.replace`,
       detail: { media_ids: offline },
     });
   }

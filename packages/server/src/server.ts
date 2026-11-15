@@ -1,7 +1,6 @@
 import type { CredentialStore } from '@cuttingfloor/credentials';
-import { MEDIA_TTL_MS } from '@cuttingfloor/engine';
 import { FREE_CREDITS } from '@cuttingfloor/plans';
-import type { AccountGetResult } from '@cuttingfloor/schema';
+import { type AccountGetResult, KEEP_MS, KEEPING, span } from '@cuttingfloor/schema';
 import { McpServer } from '@modelcontextprotocol/server';
 import { logToolCalls } from './calls.ts';
 import { registerCatalogs } from './catalog.ts';
@@ -54,7 +53,6 @@ function instructions(config: Runtime['config']): string {
     ? '; to try it, /samples/sample.mp4 and /samples/card.png'
     : '';
   const linkHours = Math.round(config.outputUrlTtlMs / 3_600_000);
-  const keepDays = Math.round(MEDIA_TTL_MS / 86_400_000);
   const credits = hosted
     ? `
 Credits: a job (export, import, analysis, create.*) spends credits, one a minute of it running; editing and previews are free. A new account starts with ${FREE_CREDITS} free credits. At 0 credits new jobs are refused (quota_exceeded): tell the user that new jobs (exports, imports, analysis) won't start until there are credits again, that editing and previews still work, and to ask again after.`
@@ -62,7 +60,7 @@ Credits: a job (export, import, analysis, create.*) spends credits, one a minute
   return `${INSTRUCTIONS_HEAD}
 - Edit what the user has: media.import their footage, music or logo: a file on the user's phone or computer through media.upload (give the user its link; they open it and pick the file), a URL, ${roots.length ? `a path under ${roots.join(', ')}, ` : ''}a file the user already sent (media.list shows those by name), or a small file as a data: URI${samples}. If the user attaches a file in the chat and the chat app doesn't hand it to you, call media.upload and give the user its link.
 ${INSTRUCTIONS_BODY}
-Links to files work for ${linkHours} ${linkHours === 1 ? 'hour' : 'hours'} (reading the media or job again gives fresh ones) and files are deleted ${keepDays} days after last use, so tell the user to download the files they want to keep.${credits}`;
+Links to files work for ${linkHours} ${linkHours === 1 ? 'hour' : 'hours'} (reading the media or job again gives fresh ones), so tell the user to download the files they want to keep.${credits}`;
 }
 
 const INSTRUCTIONS_HEAD = `cuttingfloor is a headless video editor. It makes video two ways, often both at once:
@@ -85,7 +83,7 @@ Typical flow:
 4. Look at the result with preview: "inline" on an edit, or render.frames (stills). To watch it play, with motion, timing and sound, when you or your client take video in: export.video a range with preset review_h264; its result links the file (video://jobs/{job_id}/output) and gives a signed url, fps and duration.
 5. qa.check, then export.video (long-running) for a signed download URL and a page_url to give the user, which plays it in any browser: presets for web, masters, 9:16 social, AV1, GIF and audio, with size/fps/bitrate overrides (video://catalog/presets). export.timeline hands the edit to another editor (FCPXML, OTIO, EDL) or writes captions (SRT, VTT).
 Skills: step-by-step instructions for common jobs, such as cutting the pauses and ums out of a talking video. Before composing one yourself, skills.search in the user's words, then skills.get and follow its steps.
-Time is integer frames at the sequence rate; ranges are end-exclusive. Keeping work: this is a place to work, not storage, and nothing here is kept for good. Timelines expire 24 h after last use; media and exports 7 days after last use. When the user treats something here as kept (a finished piece, something to share or come back to), tell them it is temporary and offer to save it where they keep their files. You keep what lasts: for work longer than a day, save the timeline.get document of the latest timeline on your side and timeline.load it to carry on; save the files you want to keep from their download url (media.get, export.video) and bring them back with media.import. media.delete removes a media you no longer want, so an old version stops turning up.`;
+Time is integer frames at the sequence rate; ranges are end-exclusive. Keeping work: this is a place to work, not storage. ${KEEPING} Every file's details say when it goes, with expiry in words. When the user treats something here as kept (a finished piece, something to share or come back to), tell them it is temporary and offer to save it where they keep their files. You keep what lasts: for work longer than ${span(KEEP_MS.timeline)}, save the timeline.get document of the latest timeline on your side and timeline.load it to carry on; save the files you want to keep from their download url (media.get, export.video) and bring them back with media.import. media.delete removes a media you no longer want, so an old version stops turning up.`;
 
 /** Builds one MCP server instance over the shared runtime. Transports live in apps/. */
 export function createServer(deps: ServerDeps): McpServer {

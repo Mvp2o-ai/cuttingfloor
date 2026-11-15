@@ -4,6 +4,7 @@ import {
   CfError,
   EditArgs,
   type EditTool,
+  KEEP_MS,
   type TimelineDoc,
   type TimelineOp,
 } from '@cuttingfloor/schema';
@@ -17,7 +18,7 @@ import {
 import { timelineIdOf } from './hash.ts';
 import type { Workspace } from './workspace.ts';
 
-export const TIMELINE_TTL_MS = 24 * 60 * 60 * 1000;
+export const TIMELINE_TTL_MS = KEEP_MS.timeline;
 
 /** How long the server remembers that a timeline expired, so a later lookup can say so. */
 const GONE_DAYS = 30;

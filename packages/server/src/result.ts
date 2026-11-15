@@ -5,7 +5,7 @@ import {
   type JobEstimate,
   type JobResult,
 } from '@cuttingfloor/jobs';
-import { CfError, RESULT_SUMMARY_ITEMS } from '@cuttingfloor/schema';
+import { CfError, RESULT_SUMMARY_ITEMS, restateExpiry } from '@cuttingfloor/schema';
 import { TASKS_EXTENSION_ID_V2 } from '@modelcontextprotocol/ext-tasks/core/v2';
 import type { CallToolResult } from '@modelcontextprotocol/server';
 
@@ -16,6 +16,36 @@ export function ok(structured: object, extra: CallToolResult['content'] = []): C
   return {
     content: [...extra, { type: 'text', text: JSON.stringify(structured) }],
     structuredContent: structured as Record<string, unknown>,
+  };
+}
+
+/**
+ * A stored result read again later (job.get, a task's result): each `expiry` sentence is said
+ * again as of now from the `kept_until` (or `expires_at`) beside it, so "in X days" stays true.
+ */
+export function freshExpiry<T>(value: T, now = Date.now()): T {
+  if (Array.isArray(value)) return value.map((v) => freshExpiry(v, now)) as T;
+  if (!value || typeof value !== 'object') return value;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) out[k] = freshExpiry(v, now);
+  const until = Date.parse(String(out.kept_until ?? out.expires_at));
+  if (typeof out.expiry === 'string' && !Number.isNaN(until))
+    out.expiry = restateExpiry(out.expiry, until, now);
+  return out as T;
+}
+
+/** A stored tool result with its expiry sentences as of now, in its text as well. */
+export function freshResult(result: CallToolResult, now = Date.now()): CallToolResult {
+  const structured = result.structuredContent;
+  if (!structured) return result;
+  const fresh = freshExpiry(structured, now);
+  const text = JSON.stringify(structured);
+  return {
+    ...result,
+    content: result.content.map((c) =>
+      c.type === 'text' && c.text === text ? { ...c, text: JSON.stringify(fresh) } : c,
+    ),
+    structuredContent: fresh,
   };
 }
 
@@ -186,7 +216,7 @@ export function jobView(
     ...(estimate?.startsIn !== undefined ? { starts_in_seconds: estimate.startsIn } : {}),
     created_at: job.createdAt,
     updated_at: job.lastUpdatedAt,
-    ...(done && mode === 'full' ? { result: result.structuredContent } : {}),
+    ...(done && mode === 'full' ? { result: freshExpiry(result.structuredContent) } : {}),
     ...(done && mode === 'summary' ? { result_summary: summarize(result.structuredContent) } : {}),
     ...(result?.isError ? { error: result.structuredContent } : {}),
   };

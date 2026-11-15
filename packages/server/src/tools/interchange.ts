@@ -7,6 +7,8 @@ import {
   CfError,
   ExportTimelineInput,
   ExportTimelineResult,
+  KEEP_MS,
+  span,
   TICKS_PER_SECOND,
   type TimelineDoc,
   withJob,
@@ -49,7 +51,7 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
       description: [
         'Write the edit for another editor: fcpxml (Final Cut Pro, DaVinci Resolve), otio (Premiere, Resolve, OpenTimelineIO apps), edl (CMX 3600, one video track), or srt/vtt (the captions).',
         'Best effort: warnings lists what the format could not carry (masks, blend modes, effects, animated transforms, ramps, text styling). timeline.get is the lossless copy.',
-        'media reference (default) points at the media where this server keeps it, which another machine cannot open and which goes 7 days after last use (the result warns); media collect makes a .zip with the media files next to the timeline file, to hand the edit on.',
+        `media reference (default) points at the media where this server keeps it, which another machine cannot open and which goes ${span(KEEP_MS.media)} after last use (the result warns); media collect makes a .zip with the media files next to the timeline file, to hand the edit on.`,
         'Long-running: a task, or {job_id} for job.get; the result has a signed download URL.',
       ].join(' '),
       inputSchema: ExportTimelineInput,
