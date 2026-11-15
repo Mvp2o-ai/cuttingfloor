@@ -396,7 +396,8 @@ export async function analyzeTimelinePicture(
           }) as never;
         }
         const key = await deps.credentials.resolve(owner, 'typesafe');
-        if (!key) throw new CfError('credential_required', 'The TypeSafe API key went away');
+        if (!key)
+          throw new CfError('credential_required', 'The judgment service API key went away');
         const questions = args.questions as Record<string, never>;
         const frames = await askFrames({
           base: rt.config.typesafeUrl ?? JEV_URL,

@@ -44,7 +44,7 @@ export const CreateLipsyncInput = z.object({
     .enum(LIPSYNC_MODELS)
     .default('lipsync-2')
     .describe(
-      "The provider's model: lipsync-2 (the cheapest, about $0.05 a second), lipsync-2-pro (finer teeth, beards and detail), sync-3 (close-ups, profiles, hands or mics in front of the mouth; about $0.13 a second). Billed to the user's own key",
+      "The provider's model: lipsync-2 (the standard), lipsync-2-pro (finer teeth, beards and detail), sync-3 (close-ups, profiles, hands or mics in front of the mouth). Billed to the user's own key",
     ),
   provider: z
     .enum(LIPSYNC_PROVIDERS)

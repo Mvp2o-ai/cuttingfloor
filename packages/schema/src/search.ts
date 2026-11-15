@@ -130,10 +130,10 @@ export const MediaSearchResult = z.object({
     .string()
     .optional()
     .describe('When not searched: the cost, what makes it up, and what the free filters would cut'),
-  model: z.string().optional().describe('The Jev model that judged'),
+  model: z.string().optional().describe('The judgment model that judged'),
   asked: z
     .record(z.string(), z.record(z.string(), z.unknown()))
-    .describe('Per criterion: the noul question Jev is asked, as sent'),
+    .describe('Per criterion: the noul question the judgment model is asked, as sent'),
   matches: z
     .record(
       z.string(),

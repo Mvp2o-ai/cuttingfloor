@@ -377,7 +377,8 @@ export function registerSearchTools(server: McpServer, deps: ServerDeps): void {
         job,
         async ({ signal, progress }) => {
           const key = await deps.credentials.resolve(owner, 'typesafe');
-          if (!key) throw new CfError('credential_required', 'The TypeSafe API key went away');
+          if (!key)
+            throw new CfError('credential_required', 'The judgment service API key went away');
           const jev = rt.config.typesafeUrl ?? JEV_URL;
           let done = 0;
           const tick = () => progress(done / judgments, `search: judged ${done} of ${judgments}`);

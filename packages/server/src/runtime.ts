@@ -121,7 +121,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
       : {}),
     ...(env.CUTTINGFLOOR_SYNC_URL ? { syncUrl: env.CUTTINGFLOOR_SYNC_URL.replace(/\/$/, '') } : {}),
     ...(mode === 'hosted' && env.CUTTINGFLOOR_KEY_SECRET ? { keysUrl: `${account}#keys` } : {}),
-    ...(mode === 'hosted' ? { uploadPage: `${account}#files` } : {}),
+    // The site's upload page: files only (the account page also sells credits).
+    ...(mode === 'hosted' ? { uploadPage: new URL('/upload', account).href } : {}),
     ...(mode === 'local' && env.CUTTINGFLOOR_MEDIA_HOST_PATH
       ? { mediaHostPath: env.CUTTINGFLOOR_MEDIA_HOST_PATH }
       : {}),
