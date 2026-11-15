@@ -2208,11 +2208,29 @@ export const RenderFramesResult = z.object({
   ),
 });
 
-export const ExportPreset = z
-  .enum(['mp4_h264', 'mp4_h264_fast', 'mp4_av1', 'mov_prores_422hq', 'gif', 'wav', 'mp3'])
-  .describe(
-    'A format; the picture comes out at the sequence size unless overrides set another. video://catalog/presets lists what each takes',
-  );
+/**
+ * Preset names before v0.56, still sent by clients that keep the tool list they saw when they
+ * connected (ChatGPT does until the user refreshes the app). Each means its format now; the size
+ * it once forced is gone. Not advertised: the published schema lists only the current names.
+ */
+const LEGACY_PRESETS: Record<string, string> = {
+  web_1080p_h264: 'mp4_h264',
+  social_9x16_h264: 'mp4_h264',
+  review_h264: 'mp4_h264_fast',
+  web_1080p_av1: 'mp4_av1',
+  master_prores_422hq: 'mov_prores_422hq',
+  audio_wav_48k: 'wav',
+  audio_mp3: 'mp3',
+};
+
+export const ExportPreset = z.preprocess(
+  (v) => (typeof v === 'string' && Object.hasOwn(LEGACY_PRESETS, v) ? LEGACY_PRESETS[v] : v),
+  z
+    .enum(['mp4_h264', 'mp4_h264_fast', 'mp4_av1', 'mov_prores_422hq', 'gif', 'wav', 'mp3'])
+    .describe(
+      'A format; the picture comes out at the sequence size unless overrides set another. video://catalog/presets lists what each takes',
+    ),
+);
 
 export const ExportOverrides = z
   .object({
