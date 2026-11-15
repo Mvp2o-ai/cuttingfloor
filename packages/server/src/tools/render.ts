@@ -45,7 +45,7 @@ import {
   sourcesFor,
   timelineImage,
 } from '../render.ts';
-import { guard, jobFor, jobReply, jobView, ok, waitForChange } from '../result.ts';
+import { doneReply, guard, jobFor, jobReply, jobView, ok, waitForChange } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 
 /** QA on a timeline this short answers inline; longer ones become a job. */
@@ -314,7 +314,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     'qa.check',
     {
       title: 'QA check',
-      description: `Measure the rendered timeline: gaps in the picture, offline media, rendered against expected frame count, integrated loudness (LUFS) and true peak (dBTP), plus black and silent stretches when you give their settings. With speech {min_probability}, every cut is listed with speech facts: the speech probability of the mix just before and after it (Silero VAD), whether it lands while someone is speaking, the seconds without speech each side, and, per clip edge, the transcript word it cuts through and how much of that word is lost (from the media's transcript, when it has one). Facts only, no verdicts. A timeline up to ${QA_INLINE_SECONDS} s is checked within the call (which waits its turn for a render when the server is busy); longer ones return a task or job.`,
+      description: `Measure the rendered timeline: gaps in the picture, offline media, rendered against expected frame count, integrated loudness (LUFS) and true peak (dBTP), plus black and silent stretches when you give their settings. With speech {min_probability}, every cut is listed with speech facts: the speech probability of the mix just before and after it (Silero VAD), whether it lands while someone is speaking, the seconds without speech each side, and, per clip edge, the transcript word it cuts through and how much of that word is lost (from the media's transcript, when it has one). Facts only, no verdicts. A timeline up to ${QA_INLINE_SECONDS} s is checked within the call (which waits its turn for a render when the server is busy) and answers as a completed job, the report in result; longer ones return a task or job.`,
       inputSchema: QaCheckInput,
       outputSchema: withJob(QaCheckResult),
       // A long timeline queues a job, which counts as a write.
@@ -374,7 +374,12 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         const signal =
           (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal ??
           new AbortController().signal;
-        return run(inlineJobContext(signal));
+        return doneReply(
+          rt.jobs.store,
+          { owner, tool: 'qa.check', meta: { timeline_id: args.timeline_id } },
+          await run(inlineJobContext(signal)),
+          ctx,
+        );
       }
       const admit = await admitJob(deps.limits);
       const job = await rt.jobs.store.create({

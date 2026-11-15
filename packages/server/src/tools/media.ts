@@ -57,13 +57,14 @@ import {
   withJob,
 } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
+import * as z from 'zod/v4';
 import { askFrames, checkFrameState, type JudgedFrame, sampleTimes } from '../frames.ts';
 import { JEV_MODEL, JEV_URL } from '../jev.ts';
 import { LIBRARY_TOOL_META } from '../library.ts';
 import { admitJob } from '../meter.ts';
 import { PLAYER_TOOL_META } from '../player.ts';
 import { type SourceSpan, timelineImage } from '../render.ts';
-import { guard, jobReply, jobView, ok } from '../result.ts';
+import { doneReply, guard, jobReply, jobView, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 import { checkSound, type Sound, withSound } from '../sound.ts';
 import { listHeld, startUpload, storageOf, storageRoom } from '../storage.ts';
@@ -529,7 +530,11 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         'Importing the same file again returns the same media_id.',
       ].join(' '),
       inputSchema: MediaImportInput,
-      outputSchema: withJob(MediaInfo),
+      // {upload} has no job until its PUT completes, so it answers with the media itself.
+      outputSchema: z.union([
+        withJob(MediaInfo),
+        MediaInfo.describe('source {upload}: the new media with upload.url; no job until the PUT'),
+      ]),
       // ChatGPT passes a file the user attached as this argument.
       _meta: { 'openai/fileParams': ['file'] },
       annotations: {
@@ -1285,14 +1290,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         );
         return ok(found);
       };
-      if (longest <= CORRELATE_INLINE_SECONDS && !args.a.timeline_id && !args.b.timeline_id) {
-        const signal =
-          (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal ??
-          new AbortController().signal;
-        return work(inlineJobContext(signal));
-      }
-      const admit = await admitJob(deps.limits);
-      const job = await store.create({
+      const init = {
         owner,
         tool: 'media.correlate',
         meta: {
@@ -1301,9 +1299,16 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
             : {}),
           inputs: [args.a.media_id, args.b.media_id].filter(Boolean).join(','),
         },
-        statusMessage: 'starting',
         ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),
-      });
+      };
+      if (longest <= CORRELATE_INLINE_SECONDS && !args.a.timeline_id && !args.b.timeline_id) {
+        const signal =
+          (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal ??
+          new AbortController().signal;
+        return doneReply(store, init, await work(inlineJobContext(signal)), ctx);
+      }
+      const admit = await admitJob(deps.limits);
+      const job = await store.create({ ...init, statusMessage: 'starting' });
       rt.jobs.start(job, work as never, { ...admit, work: longest });
       return jobReply(job, ctx);
     }),

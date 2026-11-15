@@ -2071,11 +2071,15 @@ export const JobHandle = z.object({
 });
 
 /**
- * A long-running tool's output: its result when it finishes in the call, or a JobHandle while it
- * works (job.get then gives the result).
+ * A long-running tool's output: always a JobHandle, so job_id and status are always there. A job
+ * already done when the call answers (the same recipe or key again) carries its result.
  */
 export function withJob<T extends z.ZodType>(result: T) {
-  return z.union([result, JobHandle]);
+  return JobHandle.extend({
+    result: result
+      .optional()
+      .describe('The result, when status is completed; otherwise job.get gives it once completed'),
+  });
 }
 
 // Render and export

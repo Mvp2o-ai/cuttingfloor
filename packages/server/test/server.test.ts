@@ -34,9 +34,11 @@ const anyResult = z.object({}).passthrough();
  * frame (media.import still and its origin, on every tool that returns media; 471 505
  * measured with everything above), and to 475 500 for saying what a fill does and that fills
  * and in-between frames are jobs of their own (474 205 measured), and to 480 000 for account.get,
- * the account's plan and credits (478 710 measured).
+ * the account's plan and credits (478 710 measured), and to 500 000 for one job shape: a long
+ * tool always answers with job_id and status, a finished job's result inside, and media.import
+ * also names its {upload} answer, the media with no job yet (497 737 measured).
  */
-const BUDGET_BYTES = 480_000;
+const BUDGET_BYTES = 500_000;
 let env: TestEnv;
 
 beforeAll(async () => {

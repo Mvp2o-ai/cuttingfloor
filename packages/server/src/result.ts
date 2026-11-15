@@ -75,14 +75,45 @@ export function jobReply(job: Job, ctx: unknown): CallToolResult {
   if (wantsTask(ctx)) {
     return { ...toTask(job), resultType: 'task' } as unknown as CallToolResult;
   }
-  if (job.status === 'completed' && job.result) return job.result as CallToolResult;
-  return ok({
+  const handle = {
     job_id: job.id,
     status: job.status,
     status_uri: `video://jobs/${job.id}`,
     ...(job.meta?.media_id ? { media_id: job.meta.media_id } : {}),
+  };
+  // A job already done (the same recipe or idempotency key again) answers in the same shape, its
+  // result inside, so code that reads job_id and status never has to tell two shapes apart.
+  const done = job.result as CallToolResult | undefined;
+  if (job.status === 'completed' && done) {
+    if (done.isError) return done;
+    const text = JSON.stringify(done.structuredContent);
+    return ok(
+      { ...handle, result: done.structuredContent, hint: 'Completed: the result is in result' },
+      done.content.filter((c) => !(c.type === 'text' && c.text === text)),
+    );
+  }
+  return ok({
+    ...handle,
     hint: 'Long-running: job.get {job_id, wait_seconds: 30} answers when it moves; the result comes with it once completed',
   });
+}
+
+/**
+ * Work done within the call (short enough not to need a job) still answers as a job: one recorded
+ * completed with its result, so the reply has a job_id job.get reads, like every long tool's.
+ */
+export async function doneReply(
+  store: FileJobStore,
+  init: Parameters<FileJobStore['create']>[0],
+  result: CallToolResult,
+  ctx: unknown,
+): Promise<CallToolResult> {
+  if (result.isError) return result;
+  const job = await store.create(init);
+  return jobReply(
+    await store.update(job, { status: 'completed', progress: 1, result: result as never }),
+    ctx,
+  );
 }
 
 /** How much of a finished job's result a view carries. */

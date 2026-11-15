@@ -366,10 +366,15 @@ describe.skipIf(!ffmpeg)('create.lipsync with a stand-in sync. labs', () => {
       range: { start_seconds: 1, end_seconds: 3 },
       audio_range: { start_seconds: 0, end_seconds: 1.5 },
     });
-    // Made before: the media comes back at once, with no job.
-    const twice = again.structuredContent as { job_id?: string; media_id: string };
-    expect(twice.job_id).toBeUndefined();
+    // Made before: the job is already completed, the media in its result.
+    const twice = again.structuredContent as {
+      status: string;
+      media_id: string;
+      result: { media_id: string };
+    };
+    expect(twice.status).toBe('completed');
     expect(twice.media_id).toBe(started.media_id);
+    expect(twice.result.media_id).toBe(started.media_id);
     expect(seen.filter((s) => s.path === '/v2/generate').length).toBe(generations);
 
     // Nothing written under the data root holds the key.
