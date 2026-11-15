@@ -728,6 +728,7 @@ function clipAdd(
   }
   const warnings =
     a.mode === 'insert' ? rippleOthers(doc, targets.values(), start, duration, a.other_tracks) : [];
+  if (!key) warnings.push(...pastStreamEnd(doc, made, media, mediaId));
   const main = made.find((c) => c.kind === primary.kind) ?? made[0];
   // A clip that is only sound has no picture to show: it previews as its waveform and loudness.
   const sound = made.every((c) => c.kind === 'audio');
@@ -736,6 +737,28 @@ function clipAdd(
     clip_ids: made.map((c) => c.id),
     warnings,
     ...(sound ? { audio: { start, end: start + duration } } : {}),
+  });
+}
+
+/** Clips that run past where their media's picture or sound stops, which the file outlasts. */
+function pastStreamEnd(
+  doc: TimelineDoc,
+  clips: StoredClip[],
+  media: MediaRef,
+  mediaId: string,
+): string[] {
+  const tpf = ticksPerFrame(doc.sequence.fps);
+  const seconds = (t: number) => Math.round((t / TICKS_PER_SECOND) * 1000) / 1000;
+  return clips.flatMap((clip) => {
+    const stops = clip.kind === 'video' ? media.picture : media.sound;
+    if (stops === undefined || media.duration === null) return [];
+    const over = clip.in / tpf + clip.duration / tpf - mediaFrames(stops, tpf);
+    if (over < 1) return [];
+    const what = clip.kind === 'video' ? 'picture' : 'sound';
+    const frames = Math.round(over);
+    return [
+      `Clip ${clip.id}'s last ${frames} frame${frames === 1 ? '' : 's'} have no ${what}: ${mediaId}'s ${what} stops at ${seconds(stops)} s, the file at ${seconds(media.duration)} s`,
+    ];
   });
 }
 

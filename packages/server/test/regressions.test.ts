@@ -773,6 +773,48 @@ describe.skipIf(!engines)('blind-test regressions', () => {
     expect(done.result.silences[0]?.end).toBeCloseTo(6, 1);
   }, 120_000);
 
+  it('says when an added clip runs past where the picture stops', async () => {
+    // 2 s of picture with 2.5 s of sound: the file outlasts its picture, as phone clips often do.
+    const file = join(env.mediaDir, 'short-picture.mp4');
+    await ff([
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc=size=320x180:rate=24:d=2',
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=440:sample_rate=48000:d=2.5',
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      file,
+    ]);
+    const media = await importMedia(file);
+    const info = await ok<{ duration_seconds: number; picture_seconds: number }>(
+      client,
+      'media.get',
+      { media_id: media.media_id },
+    );
+    expect(info.picture_seconds).toBeCloseTo(2, 1);
+    expect(info.duration_seconds).toBeGreaterThan(2.4);
+    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      name: 'short picture',
+      sequence: { width: 320, height: 180, fps: { num: 24, den: 1 } },
+    });
+    const added = await ok<{ clip_ids: string[]; warnings: string[] }>(client, 'clip.add', {
+      timeline_id,
+      track_id: 't1',
+      media_id: media.media_id,
+    });
+    const said = added.warnings.join(' ');
+    expect(said).toMatch(/have no picture: .* picture stops at 2 s/);
+    expect(said).not.toMatch(/no sound/);
+  }, 120_000);
+
   it('imports .woff and .woff2 fonts as the font they pack, and sets text in them', async () => {
     const ttf = await readFile('/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf');
     // WOFF2 from Google's encoder (wawoff2, the engine's own dependency); WOFF packed here.
