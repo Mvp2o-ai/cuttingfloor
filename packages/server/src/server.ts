@@ -58,7 +58,7 @@ function instructions(config: Runtime['config']): string {
 Credits: a job (export, import, analysis, create.*) spends credits, one a minute of it running; editing and previews are free. A new account starts with ${FREE_CREDITS} free credits. At 0 credits new jobs are refused (quota_exceeded): tell the user that new jobs (exports, imports, analysis) won't start until there are credits again, that editing and previews still work, and to ask again after.`
     : '';
   return `${INSTRUCTIONS_HEAD}
-- Edit what the user has: media.import their footage, music or logo: a file on the user's phone or computer through media.upload (give the user its link; they open it and pick the file), a URL, ${roots.length ? `a path under ${roots.join(', ')}, ` : ''}a file the user already sent (media.list shows those by name), or a small file as a data: URI${samples}. If the user attaches a file in the chat and the chat app doesn't hand it to you, call media.upload and give the user its link.
+- Edit what the user has: media.import their footage, music or logo: a file on the user's phone or computer through media.upload (give the user its link; they open it and pick the file)${config.uploadPage ? ` or their upload page, ${config.uploadPage}` : ''}, a URL, ${roots.length ? `a path under ${roots.join(', ')}, ` : ''}a file the user already sent (media.list shows those by name), or a small file as a data: URI${samples}. If the user attaches a file in the chat and the chat app doesn't hand it to you, call media.upload and give the user its link.
 ${INSTRUCTIONS_BODY}
 Links to files work for ${linkHours} ${linkHours === 1 ? 'hour' : 'hours'} (reading the media or job again gives fresh ones), so tell the user to download the files they want to keep.${credits}`;
 }

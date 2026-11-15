@@ -666,7 +666,7 @@ export const MediaSource = z.union([
       }),
     })
     .describe(
-      'A file you send next: the answer is the new media with upload.url; PUT the file there and it imports once the last byte arrives',
+      "A file you send yourself next, from a shell or code: the answer is the new media with upload.url; PUT the file there and it imports once the last byte arrives. Not a page for the user: for their own file, media.upload's link",
     ),
   z.object({
     data: z

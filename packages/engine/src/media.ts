@@ -93,6 +93,8 @@ export interface MediaConfig {
   allowPrivateUrls: boolean;
   /** Local mode: which folder on the user's machine a media root is, for hints. */
   hostFolders?: Record<string, string>;
+  /** Hosted: the account page's file drop, named in hints for the user's own files. */
+  uploadPage?: string;
 }
 
 export type Progress = (fraction: number, message: string) => void;
@@ -257,7 +259,7 @@ export class MediaLibrary {
   async resolvePath(path: string): Promise<string> {
     if (!this.config.roots.length) {
       throw new CfError('path_not_allowed', 'Path imports are not available on this server', {
-        hint: "For a file on the user's phone or computer, call media.upload and give the user its link to pick the file, then media.import its upload_id; or import from an http(s) URL",
+        hint: `${this.#fromUser()}; or import from an http(s) URL`,
       });
     }
     let real: string;
@@ -291,8 +293,16 @@ export class MediaLibrary {
       }
     }
     throw new CfError('path_not_allowed', `${path} is outside the media roots`, {
-      hint: `Paths must be under ${this.config.roots.join(', ')}. For a file elsewhere on the user's phone or computer, call media.upload and give the user its link`,
+      hint: `Paths must be under ${this.config.roots.join(', ')}. ${this.#fromUser()}`,
     });
+  }
+
+  /** How a file on the user's phone or computer gets here, for hints. */
+  #fromUser(): string {
+    const page = this.config.uploadPage
+      ? `, or the user drops it on their upload page, ${this.config.uploadPage}, and media.list shows it by name`
+      : '';
+    return `For a file on the user's phone or computer, call media.upload and give the user its link to pick the file, then media.import its upload_id${page}`;
   }
 
   /**
@@ -413,6 +423,19 @@ export class MediaLibrary {
               total ? 0.3 * (bytes / total) : 0.1,
               `downloading ${(bytes / 1e6).toFixed(1)} MB`,
             ),
+        }).catch((error: unknown) => {
+          // A link that needs signing in, or one only the chat app can open, fails here.
+          if (
+            error instanceof CfError &&
+            !error.hint &&
+            (error.code === 'bad_request' || error.code === 'path_not_allowed')
+          ) {
+            throw new CfError(error.code, error.message, {
+              ...(error.detail ? { detail: error.detail } : {}),
+              hint: `The server downloads the URL itself, so it has to open without signing in. ${this.#fromUser()}`,
+            });
+          }
+          throw error;
         });
         // A share link's own path names a web page ("view"); the file's name comes with it.
         if (

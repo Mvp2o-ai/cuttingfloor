@@ -65,6 +65,8 @@ export interface RuntimeConfig {
   syncUrl?: string;
   /** Hosted: the account page where users save their own provider keys (named in errors). */
   keysUrl?: string;
+  /** Hosted: the account page's file drop, where users send files (named in hints). */
+  uploadPage?: string;
   /** Local mode: the folder on the user's machine compose mounts at /media/videos. */
   mediaHostPath?: string;
 }
@@ -77,6 +79,10 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+  const account = (env.CUTTINGFLOOR_ACCOUNT_URL ?? 'https://cuttingfloor.ai/account').replace(
+    /\/$/,
+    '',
+  );
   // The look-only name from before judge.ask still sets the shared budget.
   return {
     dataDir: env.CUTTINGFLOOR_DATA ?? '/data',
@@ -110,11 +116,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
       ? { typesafeUrl: env.CUTTINGFLOOR_TYPESAFE_URL.replace(/\/$/, '') }
       : {}),
     ...(env.CUTTINGFLOOR_SYNC_URL ? { syncUrl: env.CUTTINGFLOOR_SYNC_URL.replace(/\/$/, '') } : {}),
-    ...(mode === 'hosted' && env.CUTTINGFLOOR_KEY_SECRET
-      ? {
-          keysUrl: `${(env.CUTTINGFLOOR_ACCOUNT_URL ?? 'https://cuttingfloor.ai/account').replace(/\/$/, '')}#keys`,
-        }
-      : {}),
+    ...(mode === 'hosted' && env.CUTTINGFLOOR_KEY_SECRET ? { keysUrl: `${account}#keys` } : {}),
+    ...(mode === 'hosted' ? { uploadPage: `${account}#files` } : {}),
     ...(mode === 'local' && env.CUTTINGFLOOR_MEDIA_HOST_PATH
       ? { mediaHostPath: env.CUTTINGFLOOR_MEDIA_HOST_PATH }
       : {}),
@@ -149,6 +152,7 @@ export class Runtime {
       downloadTimeoutMs: 30 * 60_000,
       allowPrivateUrls: config.allowPrivateUrls,
       ...(config.mediaHostPath ? { hostFolders: { '/media/videos': config.mediaHostPath } } : {}),
+      ...(config.uploadPage ? { uploadPage: config.uploadPage } : {}),
     });
     if (config.maxRenders) setRenderLimit(config.maxRenders);
     this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs, {
@@ -190,6 +194,7 @@ export class Runtime {
       secret: () => this.secret(),
       publicUrl: () => this.config.publicUrl,
       maxBytes: config.maxDownloadBytes,
+      ...(config.uploadPage ? { uploadPage: config.uploadPage } : {}),
     });
   }
 

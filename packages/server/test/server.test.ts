@@ -75,6 +75,39 @@ describe('protocol surface', () => {
     expect(text).not.toContain('/account');
   });
 
+  it("names the hosted upload page where the user's own files come in, and only there", async () => {
+    const page = 'https://cuttingfloor.ai/account#files';
+    const hosted = await testRuntime({
+      mode: 'hosted',
+      mediaRoots: [],
+      exportsDir: null,
+      uploadPage: page,
+    });
+    const client = await connect(hosted.runtime);
+    expect(client.getInstructions()).toContain(`or their upload page, ${page}`);
+    const { tools } = await client.listTools();
+    const described = (name: string) => tools.find((t) => t.name === name)?.description ?? '';
+    for (const name of ['media.import', 'media.upload', 'media.list']) {
+      expect(described(name), name).toContain(page);
+    }
+    // {upload} is a PUT address for an agent with a shell, never a page for the user.
+    expect(described('media.import')).toContain('only for a file you send yourself');
+    const path = await call(client, 'media.import', { source: { path: '/mnt/user-data/a.mp4' } });
+    expect(path.structured).toMatchObject({ code: 'path_not_allowed' });
+    expect(path.structured.hint).toContain(`upload page, ${page}`);
+    const gone = await call(client, 'media.import', {
+      source: { upload_id: `u_${'a'.repeat(26)}` },
+    });
+    expect(gone.structured).toMatchObject({ code: 'not_found' });
+    expect(gone.structured.hint).toContain(page);
+
+    const local = await connect(env.runtime);
+    expect(local.getInstructions()).not.toContain('upload page');
+    const outside = await call(local, 'media.import', { source: { path: '/etc/hosts' } });
+    expect(outside.structured.hint).toContain('media.upload');
+    expect(outside.structured.hint).not.toContain('upload page');
+  });
+
   it('advertises an open output schema on every tool, so clients can chain calls and added fields never break cached clients', async () => {
     const client = await connect(env.runtime);
     const { tools } = await client.listTools();

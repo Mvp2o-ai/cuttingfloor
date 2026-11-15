@@ -68,14 +68,22 @@ export class Uploads {
   readonly #secret: () => Promise<Buffer>;
   readonly #publicUrl: () => string;
   readonly maxBytes: number;
+  readonly #uploadPage: string | undefined;
   /** Uploads taking a request on this server, so two never write one file at once. */
   readonly #busy = new Set<string>();
 
   constructor(
     ws: Workspace,
-    options: { secret: () => Promise<Buffer>; publicUrl: () => string; maxBytes: number },
+    options: {
+      secret: () => Promise<Buffer>;
+      publicUrl: () => string;
+      maxBytes: number;
+      /** Hosted: the account page's file drop, offered when an upload has gone. */
+      uploadPage?: string;
+    },
   ) {
     this.#ws = ws;
+    this.#uploadPage = options.uploadPage;
     this.#secret = options.secret;
     this.#publicUrl = options.publicUrl;
     this.maxBytes = options.maxBytes;
@@ -279,7 +287,7 @@ export class Uploads {
     const meta = await this.#meta(key, id);
     if (!meta) {
       throw new CfError('not_found', `Upload ${id} not found`, {
-        hint: 'Uploads expire a day after media.upload, and each imports once; call media.upload again',
+        hint: `Uploads expire a day after media.upload, and each imports once; call media.upload again${this.#uploadPage ? `, or the user drops the file on their upload page, ${this.#uploadPage}, and media.list shows it by name` : ''}`,
       });
     }
     if (meta.import) {
