@@ -1,5 +1,15 @@
 # cuttingfloor
 
+## 0.55.0
+
+### Minor Changes
+
+- 42b79d8: File reminders: one email a day naming your files and exports that go in about 3 days or within a day, with fresh download links. Turn them off or on in the Email section of your account page.
+
+### Patch Changes
+
+- d69c166: Policy pages (privacy, terms, support, acceptable use, refunds) hold only their text, without the live demo strip or sign-up cards, and the privacy policy and terms say timelines are kept 7 days after last use.
+
 ## 0.54.1
 
 ### Patch Changes
