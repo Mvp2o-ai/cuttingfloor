@@ -694,7 +694,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       );
       return ok({
         ...upload,
-        how: `Opened in a browser, ${upload.url} is a page to pick the file and send it.`,
+        how: `Opened in a browser, ${upload.url} is a page to pick the file and send it. This upload id can be used to import this asset to the cutting floor, where all editing occurs.`,
       });
     }),
   );
