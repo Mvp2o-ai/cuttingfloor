@@ -2319,6 +2319,15 @@ function clipSetMask(
     delete clip.mask;
     return ok(clip.start, { clip_id: clip.id });
   }
+  if (clip.type === 'adjustment') {
+    throw new CfError(
+      'bad_request',
+      `${clip.id} is an adjustment clip: its effects cover the whole picture, and a mask does not narrow them`,
+      {
+        hint: 'An effect on part of the picture goes on a masked copy of the clip, on a track above it',
+      },
+    );
+  }
   const m = a.mask;
   const shapes: ToolShape[] = [m, ...(m.add ?? [])];
   const baked =

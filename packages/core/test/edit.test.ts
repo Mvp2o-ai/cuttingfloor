@@ -2015,6 +2015,16 @@ describe('effects', () => {
     const next = run(loaded, { tool: 'filter.add', args: { clip_id: 'c7', name: 'sepia' } });
     const effectIds = toView('tl_x', next.doc).tracks[1]?.clips[0]?.effects?.map((e) => e.id);
     expect(new Set(effectIds).size).toBe(2);
+    // Its effects cover the whole picture: a mask that would not narrow them is refused.
+    expect(() =>
+      run(doc, {
+        tool: 'clip.set_mask',
+        args: {
+          clip_id: 'c7',
+          mask: { shape: 'ellipse', x: 0.5, y: 0.4, width: 0.3, height: 0.3 },
+        },
+      }),
+    ).toThrow(/adjustment clip/);
   });
 });
 
