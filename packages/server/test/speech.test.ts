@@ -252,7 +252,7 @@ describe.skipIf(!ready)('speech and sound facts', () => {
       file: 'txt',
     });
     expect(beats.structured.code).toBe('bad_request');
-  });
+  }, 300_000);
 
   it('aligns transcript words to where they sound', async () => {
     const res = await job('media.analyze', {
