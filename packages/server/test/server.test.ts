@@ -493,6 +493,32 @@ describe('timelines', () => {
     expect(rate.isError).toBe(true);
   });
 
+  it('takes the preset names a client saved before formats replaced them, advertising only formats', async () => {
+    const client = await connect(env.runtime);
+    const { tools } = await client.listTools();
+    const schema = tools.find((t) => t.name === 'export.video')?.inputSchema;
+    const properties = schema?.properties as Record<string, { enum?: string[] }> | undefined;
+    expect(properties?.preset?.enum).toEqual([
+      'mp4_h264',
+      'mp4_h264_fast',
+      'mp4_av1',
+      'mov_prores_422hq',
+      'gif',
+      'wav',
+      'mp3',
+    ]);
+    const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+      name: 'Old client',
+      sequence: SEQ_720P25,
+    });
+    // Past argument checks: the empty timeline is what stops it, not the name.
+    const legacy = await call(client, 'export.video', { timeline_id, preset: 'web_1080p_h264' });
+    expect(legacy.structured).toMatchObject({ code: 'bad_request' });
+    const unknown = await call(client, 'export.video', { timeline_id, preset: 'web_4k' });
+    expect(unknown.isError).toBe(true);
+    expect(JSON.stringify(unknown.content)).toMatch(/preset/);
+  });
+
   it('runs edit.batch atomically with $refs', async () => {
     const client = await connect(env.runtime);
     const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
