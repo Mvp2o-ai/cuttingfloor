@@ -482,11 +482,14 @@ function checkSourceRange(doc: TimelineDoc, clip: StoredClip): void {
   }
   // A freeze frame covers no source span but still needs the frame it holds.
   const last = clip.in + Math.max(span(clip), 1);
-  if (media?.duration != null && last > media.duration) {
+  if (media?.duration != null) {
     const tpf = ticksPerFrame(doc.sequence.fps);
-    throw new CfError('bad_request', `Clip ${clip.id} would run past the end of its media`, {
-      hint: `The media is ${Math.floor(media.duration / tpf)} frames long`,
-    });
+    const frames = mediaFrames(media.duration, tpf);
+    if (last > frames * tpf) {
+      throw new CfError('bad_request', `Clip ${clip.id} would run past the end of its media`, {
+        hint: `The media is ${frames} frames long`,
+      });
+    }
   }
 }
 
@@ -695,7 +698,7 @@ function clipAdd(
   } else {
     inTicks = 0;
     const tpf = ticksPerFrame(fps);
-    duration = Math.floor(media.duration / tpf) * tpf;
+    duration = mediaFrames(media.duration, tpf) * tpf;
     if (duration <= 0) throw new CfError('bad_request', 'The media is shorter than one frame');
   }
 
@@ -2514,4 +2517,12 @@ function clipSetAnimation(doc: TimelineDoc, a: EditArgsOf<'clip.set_animation'>)
 /** Timeline length in ticks. */
 export function timelineEnd(doc: Pick<TimelineDoc, 'tracks'>): number {
   return doc.tracks.reduce((max, t) => Math.max(max, trackEnd(t)), 0);
+}
+
+/**
+ * A media's length in whole frames at the sequence rate, its last part frame counted: a frame
+ * that starts before the media ends shows it (the tail of a word, the last picture).
+ */
+function mediaFrames(duration: number, tpf: number): number {
+  return Math.ceil(duration / tpf - 1e-6);
 }
