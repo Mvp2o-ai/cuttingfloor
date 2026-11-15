@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { randomId, type Workspace } from '@cuttingfloor/core';
-import { CfError, type ToolError } from '@cuttingfloor/schema';
+import { CfError, KEEP_MS, type ToolError } from '@cuttingfloor/schema';
 
 /**
  * The durable job store. One record serves two surfaces: MCP Tasks
@@ -42,7 +42,7 @@ export interface Job {
   startedAt?: string;
 }
 
-export const JOB_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const JOB_TTL_MS = KEEP_MS.job;
 
 export class FileJobStore {
   readonly #ws: Workspace;

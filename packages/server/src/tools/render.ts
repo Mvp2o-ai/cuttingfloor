@@ -20,16 +20,20 @@ import {
   CfError,
   ExportResult,
   ExportVideoInput,
+  expiry,
   JobGetInput,
   JobGetResult,
   JobListInput,
   JobListResult,
   JobRef,
   JobView,
+  KEEP_MS,
+  KEEP_THEN,
   QaCheckInput,
   QaCheckResult,
   RenderFramesInput,
   RenderFramesResult,
+  span,
   type TimelineDoc,
   withJob,
 } from '@cuttingfloor/schema';
@@ -143,7 +147,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       title: 'Export video',
       description: [
         'Render the timeline to a file. Presets: web_1080p_h264 (MP4, fits 1920x1080), master_prores_422hq (MOV, sequence size), social_9x16_h264 (9:16 sequences, 1080x1920), web_1080p_av1 (MP4, AV1/Opus), gif (640 px, 15 fps), review_h264 (MP4, fits 854x854 with sound: small and quick, to watch a cut), audio_wav_48k, audio_mp3. overrides changes size, fps, bitrate or crf (video://catalog/presets).',
-        `Long-running: returns a task, or {job_id} for job.get. The result links the file (a resource_link to video://jobs/{job_id}/output, which reads as the file, or its signed URL when large), has a signed download URL and a page_url that plays it in any browser (the link to give a person to watch or share), both working for ${Math.round(rt.config.outputUrlTtlMs / 3_600_000)} h (job.get gives fresh ones)`,
+        `Long-running: returns a task, or {job_id} for job.get. The result links the file (a resource_link to video://jobs/{job_id}/output, which reads as the file, or its signed URL when large), has a signed download URL and a page_url that plays it in any browser (the link to give a person to watch or share), both working for ${Math.round(rt.config.outputUrlTtlMs / 3_600_000)} h (job.get gives fresh ones). The file itself is deleted ${span(KEEP_MS.job)} after the export finishes (kept_until, and expiry in words): save it from url to keep it`,
         rt.config.exportsDir
           ? `and the file in the exports folder (${rt.config.exportsDir}).`
           : '.',
@@ -434,7 +438,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         const job = await rt.freshLinks(await rt.jobs.store.get(args.job_id, owner));
         if (!job)
           throw new CfError('not_found', `No job ${args.job_id}`, {
-            hint: 'Finished jobs are kept 7 days',
+            hint: `Finished jobs are kept ${span(KEEP_MS.job)}`,
           });
         return ok(view(job), extra(job));
       }
@@ -537,10 +541,14 @@ export async function publish(
     file = join(process.env.CUTTINGFLOOR_EXPORTS_HOST_PATH ?? exportsDir, name);
   }
   const { url, pageUrl, expiresAt } = await rt.signOutput(owner, jobId, name);
+  // The job finishes as this is written; it and its output go KEEP_MS.job after.
+  const until = Date.now() + KEEP_MS.job;
   return {
     url,
     ...(options.page ? { page_url: pageUrl } : {}),
     expires_at: expiresAt,
+    kept_until: new Date(until).toISOString(),
+    expiry: expiry(until, KEEP_THEN.job),
     uri: `video://jobs/${jobId}/output`,
     ...(file ? { file } : {}),
     bytes: (await stat(out)).size,

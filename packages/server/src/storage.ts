@@ -2,7 +2,15 @@ import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isMissing, type Workspace } from '@cuttingfloor/core';
 import { mediaOrigin } from '@cuttingfloor/engine';
-import { CfError, MEDIA_LIST_LIMIT, type MediaListResult } from '@cuttingfloor/schema';
+import {
+  CfError,
+  expiry,
+  KEEP_MS,
+  KEEP_THEN,
+  MEDIA_LIST_LIMIT,
+  type MediaListResult,
+  span,
+} from '@cuttingfloor/schema';
 import type * as z from 'zod/v4';
 import type { OwnerLimits } from './meter.ts';
 import type { Runtime } from './runtime.ts';
@@ -74,7 +82,7 @@ export async function storageRoom(
       ? `The file is ${gb(need)}; the account's storage has ${gb(room)} left of ${gb(cap)}`
       : `The account's storage is full: ${gb(used)} of ${gb(cap)}`,
     {
-      hint: `Files expire on their own: uploads a day after they were sent, media and exports 7 days after last use. media.delete removes media you no longer need, or wait for older files to go${limits?.account ? ` (storage sizes: ${limits.account})` : ''}`,
+      hint: `Files expire on their own: uploads ${span(KEEP_MS.upload)} after they were sent, media ${span(KEEP_MS.media)} after last use, exports ${span(KEEP_MS.job)} after they finish. media.delete removes media you no longer need, or wait for older files to go${limits?.account ? ` (storage sizes: ${limits.account})` : ''}`,
       detail: {
         used_bytes: used,
         max_bytes: cap,
@@ -92,9 +100,16 @@ export async function startUpload(
   bytes: number | undefined,
   limits: OwnerLimits | undefined,
   via?: UploadVia,
-): Promise<{ upload_id: string; url: string; expires_at: string; max_bytes: number }> {
+): Promise<{
+  upload_id: string;
+  url: string;
+  expires_at: string;
+  expiry: string;
+  max_bytes: number;
+}> {
   const room = await storageRoom(rt.ws, owner, limits, bytes);
-  return rt.uploads.create(owner, name, bytes, room, via);
+  const made = await rt.uploads.create(owner, name, bytes, room, via);
+  return { ...made, expiry: expiry(Date.parse(made.expires_at), KEEP_THEN.upload) };
 }
 
 /** What the owner holds: media, uploads not imported yet, and storage against the cap. */
@@ -129,9 +144,12 @@ export async function listHeld(
       bytes: r.size,
       created_at: r.created_at,
       expires_at: r.expires_at,
+      expiry: expiry(Date.parse(r.expires_at), KEEP_THEN.media),
     })),
     media_count: media.length,
-    uploads: uploads.slice(0, MEDIA_LIST_LIMIT),
+    uploads: uploads
+      .slice(0, MEDIA_LIST_LIMIT)
+      .map((u) => ({ ...u, expiry: expiry(Date.parse(u.expires_at), KEEP_THEN.upload) })),
     upload_count: uploads.length,
     storage,
   };

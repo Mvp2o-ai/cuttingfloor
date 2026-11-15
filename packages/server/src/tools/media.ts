@@ -35,6 +35,7 @@ import {
   CfError,
   CORRELATE_LIMITS,
   JUDGE_LIMITS,
+  KEEP_MS,
   MEDIA_LIMITS,
   MediaAnalyzeInput,
   MediaAnalyzeResult,
@@ -51,6 +52,7 @@ import {
   MediaRefInput,
   MediaUploadInput,
   MediaUploadResult,
+  span,
   TIMELINE_ANALYSES,
   TIMELINE_PICTURE_ANALYSES,
   TIMELINE_SOUND_ANALYSES,
@@ -448,7 +450,9 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
   const renderedFile = async (owner: string, jobId: string): Promise<string> => {
     const job = await rt.jobs.store.get(jobId, owner);
     if (!job) {
-      throw new CfError('not_found', `No job ${jobId}`, { hint: 'Finished jobs are kept 7 days' });
+      throw new CfError('not_found', `No job ${jobId}`, {
+        hint: `Finished jobs are kept ${span(KEEP_MS.job)}`,
+      });
     }
     if (job.tool !== 'export.video') {
       throw new CfError('bad_request', `Job ${jobId} is a ${job.tool}, not an export.video`, {
@@ -526,7 +530,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         "Import the user's own video, audio, image or font to edit with or place as is: probe, fingerprint, conform if needed (VFR, rotation, HDR → BT.709), 540p proxy and integrated loudness. A reference image to recreate needs no import: rebuild it with create.motion or create.still.",
         'Long-running: returns a task, or {job_id, media_id} for job.get. The media_id is usable in edits as soon as the job reports processing, so with many files, start every import first and edit while they finish.',
         "For a file on the user's phone or computer, the easiest way in is media.upload: give the user its link; they open it on their phone or computer and pick the file, then import its upload_id.",
-        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL (Dropbox and Google Drive share links work as they are), {upload: {name, bytes}} for a file you send yourself (the answer is the new media with upload.url: PUT the file there, curl --fail -T file '<url>', and it imports once the last byte arrives, with no base64 in a message; a broken PUT resumes as media.upload says), the upload_id of a file sent through media.upload, a small file as a data: URI (up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB, with its sha256 so a garbled copy is refused), the job_id of a completed export.video (its render becomes media), or still: one frame of a video (media_id) or of an edit (timeline_id) as a PNG still at full size, to place as a picture, cut out or reuse. A URL is fetched once, when the import starts: it only has to work until then (a short-lived signed link from the user's own storage is enough), and the copy stays here 7 days after last use. A file the user attached in the chat comes as file, when the client passes it.`,
+        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL (Dropbox and Google Drive share links work as they are), {upload: {name, bytes}} for a file you send yourself (the answer is the new media with upload.url: PUT the file there, curl --fail -T file '<url>', and it imports once the last byte arrives, with no base64 in a message; a broken PUT resumes as media.upload says), the upload_id of a file sent through media.upload, a small file as a data: URI (up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB, with its sha256 so a garbled copy is refused), the job_id of a completed export.video (its render becomes media), or still: one frame of a video (media_id) or of an edit (timeline_id) as a PNG still at full size, to place as a picture, cut out or reuse. A URL is fetched once, when the import starts: it only has to work until then (a short-lived signed link from the user's own storage is enough), and the copy stays here ${span(KEEP_MS.media)} after last use. A file the user attached in the chat comes as file, when the client passes it.`,
         'Importing the same file again returns the same media_id.',
       ].join(' '),
       inputSchema: MediaImportInput,
@@ -696,7 +700,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Upload media',
       description: [
-        "A link to send one of the user's files to this server, for files on their phone or computer that the server can't read, including a file attached in the chat that the chat app doesn't hand you. Give the user the url: they open it on their phone or computer and pick the file; the page sends it and resumes on its own. Then media.import {source: {upload_id}}; media.import says whether the file is all in yet. The URL needs no other credentials and works for a day.",
+        `A link to send one of the user's files to this server, for files on their phone or computer that the server can't read, including a file attached in the chat that the chat app doesn't hand you. Give the user the url: they open it on their phone or computer and pick the file; the page sends it and resumes on its own. Then media.import {source: {upload_id}}; media.import says whether the file is all in yet. The URL needs no other credentials and works for ${span(KEEP_MS.upload)}; a file sent through it goes then unless imported.`,
         "If you can send the file yourself, PUT it there instead (curl --fail -T interview.mp4 '<url>'). A broken upload resumes: HEAD the url for Upload-Offset (the bytes received), then PUT the rest with Content-Range: bytes <offset>-<last>/<total>. Large files can go in parts the same way.",
       ].join(' '),
       inputSchema: MediaUploadInput,
@@ -1319,7 +1323,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Get media',
       description: [
-        'Status, where it came from (origin: the import source, the export of which timeline_id and preset, or the create.* tool and the media it was made from), a signed download url for the file (media is kept 7 days after last use: save the file from it to keep it, and media.import it again later) and a page_url that plays or shows it in any browser (to give a person), its format (extension and mime_type, read from the file, not its name), everything the probe read (probe: the format and every stream, e.g. pix_fmt, colour space, primaries, transfer), duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). While it is importing or being made, job names the job doing it and its progress.',
+        `Status, where it came from (origin: the import source, the export of which timeline_id and preset, or the create.* tool and the media it was made from), a signed download url for the file (media is kept ${span(KEEP_MS.media)} after last use, as kept_until and expiry say: save the file from it to keep it, and media.import it again later) and a page_url that plays or shows it in any browser (to give a person), its format (extension and mime_type, read from the file, not its name), everything the probe read (probe: the format and every stream, e.g. pix_fmt, colour space, primaries, transfer), duration, frame rate, conform reasons, integrated loudness and summaries of media.analyze results under analyses (counts only: analyses.transcript.words is how many words). While it is importing or being made, job names the job doing it and its progress.`,
         'include returns those results at the top level, e.g. include ["transcript"] gives transcript.words, the list of words with times. For long media, read them in pieces: from_seconds and to_seconds keep what overlaps that stretch of the media, offset and limit page through what is left, and pages says, per analysis, the index of the first item returned in the whole list (for transcript words, the index clip.add source {words} takes), how many matched and next_offset for the next page (null at the end).',
       ].join(' '),
       inputSchema: MediaRefInput,
@@ -1430,7 +1434,7 @@ async function startIngest(
               maxBytes: room,
               tooBig: {
                 limit: "the account's storage has left",
-                hint: 'Files expire on their own (uploads after a day, media and exports 7 days after last use); media.list shows what is held and media.delete frees room',
+                hint: `Files expire on their own (uploads ${span(KEEP_MS.upload)} after they were sent, media ${span(KEEP_MS.media)} after last use, exports ${span(KEEP_MS.job)} after they finish); media.list shows what is held and media.delete frees room`,
               },
             },
       );

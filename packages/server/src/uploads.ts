@@ -6,10 +6,10 @@ import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { isMissing, ownerKey, randomId, type Workspace } from '@cuttingfloor/core';
 import { readableSize } from '@cuttingfloor/engine';
-import { CfError } from '@cuttingfloor/schema';
+import { CfError, KEEP_MS } from '@cuttingfloor/schema';
 
 /** How long an upload URL works, and how long an unimported upload is kept. */
-export const UPLOAD_TTL_MS = 24 * 3_600_000;
+export const UPLOAD_TTL_MS = KEEP_MS.upload;
 
 interface UploadMeta {
   upload_id: string;

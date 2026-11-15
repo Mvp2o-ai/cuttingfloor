@@ -5,8 +5,13 @@ import {
   TASKS_EXTENSION_ID_V2,
   UpdateTaskRequestV2Schema,
 } from '@modelcontextprotocol/ext-tasks/core/v2';
-import { type McpServer, ProtocolError, ProtocolErrorCode } from '@modelcontextprotocol/server';
-import { toTask } from './result.ts';
+import {
+  type CallToolResult,
+  type McpServer,
+  ProtocolError,
+  ProtocolErrorCode,
+} from '@modelcontextprotocol/server';
+import { freshResult, toTask } from './result.ts';
 import type { ServerDeps } from './server.ts';
 
 /**
@@ -60,7 +65,7 @@ function detailed(job: Job) {
     ...toTask(job),
     resultType: 'complete',
     ...(job.status === 'completed' && job.result
-      ? { result: { ...job.result, resultType: 'complete' } }
+      ? { result: { ...freshResult(job.result as CallToolResult), resultType: 'complete' } }
       : {}),
     ...(job.status === 'failed'
       ? { error: job.error ?? { code: -32603, message: 'Task failed' } }

@@ -20,6 +20,7 @@ import { EFFECT_NAMES, type EffectName } from './effects.ts';
 import { ToolError } from './errors.ts';
 import { JobId, MediaId, TimelineId, UploadId } from './ids.ts';
 import { JUDGE_LIMITS, JudgeName, JudgeQuestion, JudgeText, NoulFields } from './judge.ts';
+import { KEEP_MS, span } from './keeping.ts';
 import {
   ClipPlacementSchema,
   ColourAnalysis,
@@ -737,6 +738,9 @@ export const MediaUploadResult = z.object({
   upload_id: UploadId,
   url: z.string().describe('Signed: PUT the file here; no other credentials needed'),
   expires_at: z.string(),
+  expiry: z
+    .string()
+    .describe('expires_at in words: the link and a file sent through it go then unless imported'),
   max_bytes: z.number(),
   how: z.string(),
 });
@@ -1212,6 +1216,18 @@ export const MediaOrigin = z
   );
 export type MediaOrigin = z.infer<typeof MediaOrigin>;
 
+/**
+ * When the server deletes a file, and the same in words with how long is left. Optional only for
+ * results stored before these were given; every new one has both.
+ */
+const kept = (rule: string) => ({
+  kept_until: z.string().optional().describe(`When the server deletes it: ${rule}`),
+  expiry: z
+    .string()
+    .optional()
+    .describe('kept_until in words: how long is left, and what keeps it longer or how to keep it'),
+});
+
 export const MediaInfo = z.object({
   media_id: MediaId,
   name: z.string(),
@@ -1226,6 +1242,9 @@ export const MediaInfo = z.object({
       'media.get: a page that plays or shows the file in any browser, with no sign-in, to give a person; works until expires_at',
     ),
   expires_at: z.string().optional().describe('When url and page_url stop working'),
+  ...kept(
+    `${span(KEEP_MS.media)} after last use; any use (a read, an edit, a render) pushes it back`,
+  ),
   origin: MediaOrigin.optional(),
   created_at: z.string().optional().describe('When it was imported or made'),
   fingerprint: z
@@ -1395,7 +1414,14 @@ export const MediaListResult = z.object({
         origin: MediaOrigin,
         bytes: z.number().nullable().describe('Size of the original file'),
         created_at: z.string(),
-        expires_at: z.string().describe('7 days after last use; any use pushes it back'),
+        expires_at: z
+          .string()
+          .describe(
+            `When the server deletes it: ${span(KEEP_MS.media)} after last use; any use pushes it back`,
+          ),
+        expiry: z
+          .string()
+          .describe('expires_at in words: how long is left and what keeps it longer'),
       }),
     )
     .describe(`Imported and created media, most recently used first (up to ${MEDIA_LIST_LIMIT})`),
@@ -1410,6 +1436,7 @@ export const MediaListResult = z.object({
         complete: z.boolean().describe('All sent: media.import {source: {upload_id}} takes it'),
         created_at: z.string(),
         expires_at: z.string(),
+        expiry: z.string().describe('expires_at in words: how long is left to import it'),
       }),
     )
     .describe(
@@ -2043,7 +2070,7 @@ export const JobGetManyResult = z.object({
   jobs: z.array(JobView).describe('The jobs found, in the order asked'),
   not_found: z
     .array(z.string())
-    .describe('Ids with no job of yours (finished jobs are kept 7 days)'),
+    .describe(`Ids with no job of yours (finished jobs are kept ${span(KEEP_MS.job)})`),
 });
 export const JobGetResult = z.union([JobView, JobGetManyResult]);
 export const JobListInput = z.object({
@@ -2193,6 +2220,7 @@ export const ExportTimelineInput = z.object({
 export const ExportTimelineResult = z.object({
   url: z.string().describe('Signed download URL'),
   expires_at: z.string(),
+  ...kept(`${span(KEEP_MS.job)} after the export finished`),
   uri: z.string().describe('MCP resource for the output'),
   file: z.string().optional().describe('Where it was written in the exports folder (local mode)'),
   bytes: z.number(),
@@ -2210,6 +2238,7 @@ export const ExportResult = z.object({
       'A page that plays the file in any browser, with no sign-in: the link to give a person to watch or share it. Works until expires_at',
     ),
   expires_at: z.string(),
+  ...kept(`${span(KEEP_MS.job)} after the export finished`),
   uri: z.string().describe('MCP resource for the output'),
   file: z
     .string()

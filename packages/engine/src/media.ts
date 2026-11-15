@@ -4,6 +4,9 @@ import { ownerKey, randomId, secondsToTicks, type Workspace } from '@cuttingfloo
 import {
   type ANALYSES,
   CfError,
+  expiry,
+  KEEP_MS,
+  KEEP_THEN,
   type MediaGetResult,
   type MediaInfo,
   type MediaOrigin,
@@ -19,7 +22,7 @@ import { wordSpeakers } from './speakers.ts';
 import { LOUDNESS_STATS, parseChannelLevels } from './speech.ts';
 import { unwrapWebFont } from './webfont.ts';
 
-export const MEDIA_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const MEDIA_TTL_MS = KEEP_MS.media;
 
 /** How long the server remembers why a media is gone (deleted or expired). */
 const GONE_DAYS = 30;
@@ -702,6 +705,8 @@ export function mediaInfo(
   /** Everything the probe read (media.get gives it). */
   options: { probe?: boolean } = {},
 ): MediaGetResult {
+  // Every way to a record (find, create, import) counts as a use, so it is kept from now.
+  const until = Date.now() + KEEP_MS.media;
   const p = record.probe;
   const a = record.analyses;
   const analyses = a
@@ -782,6 +787,8 @@ export function mediaInfo(
   return {
     media_id: record.media_id,
     name: record.name,
+    kept_until: new Date(until).toISOString(),
+    expiry: expiry(until, KEEP_THEN.media),
     origin: mediaOrigin(record),
     created_at: record.created_at,
     fingerprint: record.fingerprint,

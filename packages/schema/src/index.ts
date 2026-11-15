@@ -4,6 +4,7 @@ export * from './effects.ts';
 export * from './errors.ts';
 export * from './ids.ts';
 export * from './judge.ts';
+export * from './keeping.ts';
 export * from './lipsync.ts';
 export * from './measure.ts';
 export * from './motion.ts';
