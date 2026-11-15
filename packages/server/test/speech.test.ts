@@ -75,9 +75,13 @@ describe.skipIf(!ready)('speech and sound facts', () => {
   let truth: Array<{ start: number; end: number }>;
 
   async function importFile(path: string): Promise<string> {
-    const started = await ok<{ job_id?: string; media_id: string }>(client, 'media.import', {
-      source: { path },
-    });
+    const started = await ok<{ job_id?: string; media_id: string; hint?: string }>(
+      client,
+      'media.import',
+      { source: { path } },
+    );
+    // An import's media works in edits while it processes, unlike made media.
+    expect(started.hint ?? '').not.toContain('once the job is complete');
     if (started.job_id) {
       const done = await settled(client, started.job_id, 120_000);
       expect(done.status).toBe('completed');

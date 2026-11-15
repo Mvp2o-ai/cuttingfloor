@@ -222,7 +222,8 @@ const EDIT_DESCRIPTIONS: Record<EditTool, { title: string; description: string }
 
 // Edit results share one shape, described here rather than as 13 copies of an output schema
 // (packages/schema EditResult/BatchResult define it; tests hold results to it).
-const RETURNS = 'Returns the edit result (see the server instructions).';
+const RETURNS =
+  'Returns the new timeline_id (edit that one next), what changed, and where each changed clip now sits.';
 
 export function registerTimelineTools(server: McpServer, deps: ServerDeps): void {
   const { runtime: rt } = deps;
