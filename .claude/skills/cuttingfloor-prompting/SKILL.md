@@ -46,6 +46,12 @@ not "until media.import {source: {upload_id}}"): the agent finds and reads that 
 can't go stale. No shell commands or protocol mechanics. App stores (the ChatGPT plugin review)
 flag text that steers the model to other tools.
 
+Name what a thing does, not whose it is: the model behind judge.ask, look and media.seek is "the
+judgment model", never TypeSafe or Jev (the TYPESAFE_API_KEY setting in self-hosting hints is the
+exception). Never link the account page from model text: it sells credits, and app stores refuse
+links to a page where something is bought. Uploads go to cuttingfloor.ai/upload; plans only to
+/pricing. No prices, free allotments or upgrade wording, ours or a provider's.
+
 ## Results carry the facts for the next decision
 
 - Every result matches the declared output schema, including a call that stops early (an estimate,
