@@ -325,6 +325,12 @@ export const TOOLS: ToolEntry[] = [
     longRunning: 'always',
   },
   {
+    name: 'media.search',
+    title: 'Search media by natural language',
+    readOnly: false,
+    longRunning: 'always',
+  },
+  {
     name: 'media.listen',
     title: 'Find sounds by description',
     readOnly: false,

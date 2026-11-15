@@ -3889,7 +3889,12 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       expect(Number(sv?.nb_read_packets)).toBe(40);
 
       // No format decides a size: the sequence's, as it is.
-      const plain = await exported({ timeline_id: timelineId, preset: 'mp4_h264' });
+      const plain = await exported({
+        timeline_id: timelineId,
+        preset: 'mp4_h264',
+        filename: 'plain',
+      });
+      expect(plain.error, JSON.stringify(plain.error)).toBeUndefined();
       expect(plain.result).toMatchObject({ width: 1280, height: 720 });
       const prores = await exported({
         timeline_id: timelineId,
@@ -5209,6 +5214,60 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         }
       }
     }, 300_000);
+
+    it('media.search indexes media as it imports and judges only the keyframes', async () => {
+      // Twelve seconds of test pattern, three of black, twelve of test pattern.
+      await ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=640x360:rate=25:duration=12',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=black:size=640x360:rate=25:duration=3',
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=size=640x360:rate=25:duration=12',
+        '-filter_complex',
+        '[0:v][1:v][2:v]concat=n=3:v=1:a=0',
+        '-pix_fmt',
+        'yuv420p',
+        join(env.mediaDir, 'search.mp4'),
+      ]);
+      const media = await importMedia({ path: join(env.mediaDir, 'search.mp4') });
+      const c = await keyed(KEY);
+      type Found = {
+        searched: boolean;
+        estimate: { judgments: number };
+        matches: Record<string, Array<{ media_id: string; start: number; end: number }>>;
+        judged: string[];
+        skipped: Array<{ media_id: string; reason: string }>;
+      };
+      const search = async () => {
+        const started = await ok<{ job_id: string; result?: Found }>(c, 'media.search', {
+          looks: { black: 'the picture is black' },
+          media_ids: [media.media_id],
+        });
+        if (started.result) return started.result;
+        return ((await waitJob(started.job_id)) as { result: Found }).result;
+      };
+      // The index is built after the import, in the background: until then the media is skipped.
+      let found = await search();
+      for (let i = 0; i < 120 && found.skipped.some((s) => s.reason === 'indexing'); i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        found = await search();
+      }
+      expect(found.skipped).toEqual([]);
+      expect(found.judged).toEqual([media.media_id]);
+      // Keyframes where the picture changes and at least every 10 s: far fewer than 27 frames.
+      expect(found.estimate.judgments).toBeGreaterThanOrEqual(4);
+      expect(found.estimate.judgments).toBeLessThan(14);
+      expect(found.matches.black).toEqual([
+        expect.objectContaining({ media_id: media.media_id, start: 12, end: 15 }),
+      ]);
+    }, 180_000);
   });
 
   it('refuses crafted media', async () => {

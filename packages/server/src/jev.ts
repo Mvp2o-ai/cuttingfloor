@@ -130,9 +130,13 @@ export async function askJev(req: JevRequest): Promise<JevReply> {
         await pause(attempt, req.signal);
         continue;
       }
-      throw new CfError('engine_error', `TypeSafe is not reachable: ${(error as Error).message}`, {
-        hint: 'Check the server can reach api.typesafe.ai, then ask again',
-      });
+      throw new CfError(
+        'engine_error',
+        `The judgment service is not reachable: ${(error as Error).message}`,
+        {
+          hint: 'Check the server can reach api.typesafe.ai, then ask again',
+        },
+      );
     }
     if (res.ok) {
       const json = (await res.json()) as { model?: string; answers: Record<string, RawAnswer> };
@@ -147,7 +151,7 @@ export async function askJev(req: JevRequest): Promise<JevReply> {
       continue;
     }
     if (res.status === 401 || res.status === 403) {
-      throw new CfError('credential_invalid', 'TypeSafe refused the API key', {
+      throw new CfError('credential_invalid', 'The judgment service refused the API key', {
         detail: { provider: 'typesafe' },
         hint: 'Set a valid TYPESAFE_API_KEY (typesafe.ai) and restart the server',
       });
@@ -155,7 +159,7 @@ export async function askJev(req: JevRequest): Promise<JevReply> {
     if (res.status === 413 || detail.includes('max_tokens_exceeded')) {
       throw new CfError(
         'limit_exceeded',
-        'That is more than Jev reads in one call (64k tokens of state and questions, 32 MiB of images)',
+        'That is more than the judgment model reads in one call (64k tokens of state and questions, 32 MiB of images)',
         {
           detail: { provider: 'typesafe', status: res.status },
           hint: 'Split the questions or the state across calls: fewer or shorter text entries, fewer pictures, or half the questions in each call',
@@ -163,13 +167,17 @@ export async function askJev(req: JevRequest): Promise<JevReply> {
       );
     }
     if (res.status === 400 || res.status === 422) {
-      throw new CfError('bad_request', `TypeSafe rejected the questions: ${detail.slice(0, 500)}`, {
-        hint: 'Each question is {type: noul | choice | score | box, instructions, criteria?}; choice criteria is {option: meaning}, score criteria an array of 2-10 levels, box takes no criteria',
-      });
+      throw new CfError(
+        'bad_request',
+        `The judgment model rejected the questions: ${detail.slice(0, 500)}`,
+        {
+          hint: 'Each question is {type: noul | choice | score | box, instructions, criteria?}; choice criteria is {option: meaning}, score criteria an array of 2-10 levels, box takes no criteria',
+        },
+      );
     }
     throw new CfError(
       'engine_error',
-      `TypeSafe answered HTTP ${res.status}: ${detail.slice(0, 300)}`,
+      `The judgment service answered HTTP ${res.status}: ${detail.slice(0, 300)}`,
       {
         hint: 'Ask again shortly',
       },

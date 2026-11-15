@@ -1,7 +1,7 @@
 ---
 name: make-motion-graphics
-description: Make a motion graphics video like a professional motion designer, from brief to delivered master and any cutdowns. Brief, storyboard, animate each scene in HTML with After Effects-grade easing, camera and timing, assemble, score and export. Use when someone asks for motion graphics, an animated intro, title sequence, logo build, kinetic type, an explainer, promo or launch animation, or to animate a storyboard.
-version: 5
+description: Make a motion graphics video like a professional motion designer, from brief to delivered master and any cutdowns. Brief, storyboard, animate each scene in HTML with professional-grade easing, camera and timing, assemble, score and export. Use when someone asks for motion graphics, an animated intro, title sequence, logo build, kinetic type, an explainer, promo or launch animation, or to animate a storyboard.
+version: 6
 type: playbook
 source: system
 author: Sanji Nai-Chien
@@ -31,7 +31,7 @@ Brief, board, build each scene, look at it, then assemble. Every frame is a func
 
 4. The assistant should write one shared theme and one config before any scene. The theme holds the colours, the fonts and the easing constants; the config holds every piece of copy, every number and every colour a client might change, so a revision is a one-line edit. Use an installed font by name, or import a font file with `media.import` and pass it to `create.motion` as an asset (`url(assets/<name>)`); a fallback font in a render is a bug. Paste SVG artwork into the page, scaled by one uniform factor and centred.
 
-5. The assistant should build each scene as its own `create.motion` page at the scene's exact length, `transparent: false` for a full-frame scene and `true` for an overlay. One call holds at most 30 s of 1080p30 in pixels × frames, so a longer or larger video needs more than one page; one page per scene also means a revision re-renders one scene. Drive every element from time (CSS animations, the Web Animations API, anime.js from `lib/`, or `window.__seek(seconds)`), never from real-time logic. Structure the page like an After Effects comp:
+5. The assistant should build each scene as its own `create.motion` page at the scene's exact length, `transparent: false` for a full-frame scene and `true` for an overlay. One call holds at most 30 s of 1080p30 in pixels × frames, so a longer or larger video needs more than one page; one page per scene also means a revision re-renders one scene. Drive every element from time (CSS animations, the Web Animations API, anime.js from `lib/`, or `window.__seek(seconds)`), never from real-time logic. Structure the page like a compositing project:
    - One camera container per scene; every pan and zoom on it uses ease-in-out, and a full-width pan takes at least 0.8 s.
    - Parenting: group related elements under one parent and animate the parent, not each piece.
    - Offset: each element in a group starts 2–4 frames after the one before it. Repeated things (letters, cards, rows) never appear all at once.

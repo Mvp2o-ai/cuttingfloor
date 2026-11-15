@@ -77,13 +77,13 @@ const LIMITS: Record<string, string> = {
   generation_model_duration_exceeded:
     'Send a shorter range (range / audio_range), or pick another model',
   generation_plan_duration_exceeded:
-    "Send a shorter range (range / audio_range), or raise the plan on the user's sync. labs account",
+    "Send a shorter range (range / audio_range); this length is past what the user's sync. labs account takes",
   file_size_exceeds_plan_limit: 'Send a shorter range of the video (range)',
   free_tier_generations_exhausted:
     "The user's free sync. labs generations for this month are used; their sync. labs account is at sync.so",
   insufficient_credits: 'The user needs more credits on their sync. labs account (sync.so)',
   plan_feature_unavailable:
-    "Pick another model, or raise the plan on the user's sync. labs account",
+    "Pick another model; this one is not available on the user's sync. labs account",
   account_payment_required: 'The user needs to fix the payment on their sync. labs account',
   account_on_hold: 'The user needs to resolve the hold on their sync. labs account',
   account_suspended: 'The user needs to contact sync. labs support (support@sync.so)',

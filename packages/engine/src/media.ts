@@ -95,6 +95,8 @@ export interface MediaConfig {
   hostFolders?: Record<string, string>;
   /** Hosted: the account page's file drop, named in hints for the user's own files. */
   uploadPage?: string;
+  /** Told of each media as it becomes ready (imported, created or shared), never awaited. */
+  onReady?: (owner: string, record: MediaRecord) => void;
 }
 
 export type Progress = (fraction: number, message: string) => void;
@@ -112,6 +114,11 @@ export class MediaLibrary {
   dir(owner: string, id: string): string {
     if (!/^m_[0-9a-z]{26}$/.test(id)) throw new CfError('bad_request', `Not a media id: ${id}`);
     return this.#ws.ownerDir(owner, 'media', id);
+  }
+
+  /** Where media.search's index of the media's picture is kept (engine search.ts). */
+  searchDir(owner: string, id: string): string {
+    return join(this.dir(owner, id), 'search');
   }
 
   async get(owner: string, id: string): Promise<MediaRecord> {
@@ -512,6 +519,7 @@ export class MediaLibrary {
       record.status = 'ready';
       await this.save(owner, record);
       progress(1, 'ready');
+      this.config.onReady?.(owner, record);
       return record;
     } catch (error) {
       record.status = 'failed';
@@ -562,6 +570,14 @@ export class MediaLibrary {
       await mkdir(join(dir, 'analyses'), { recursive: true });
       await copyFile(join(analyses, name), join(dir, 'analyses', name)).catch(() => undefined);
     }
+    // Its search index too, when known has one: the same picture indexes the same.
+    const search = this.searchDir(owner, known.media_id);
+    for (const name of await this.#ws.list(search)) {
+      if (name.endsWith('.part')) continue;
+      await mkdir(this.searchDir(owner, record.media_id), { recursive: true });
+      const dest = join(this.searchDir(owner, record.media_id), name);
+      await link(join(search, name), dest).catch(() => copyFile(join(search, name), dest));
+    }
     record.status = 'ready';
     await this.save(owner, record);
     await this.#ws.writeJson(
@@ -569,6 +585,7 @@ export class MediaLibrary {
       { media_id: record.media_id },
     );
     progress(1, 'ready');
+    this.config.onReady?.(owner, record);
     return record;
   }
 

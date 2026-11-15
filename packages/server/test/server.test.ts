@@ -1,5 +1,4 @@
 import { installedFonts } from '@cuttingfloor/engine';
-import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { BatchResult, CfError, EditResult, QaCheckResult, withJob } from '@cuttingfloor/schema';
 import { TASKS_EXTENSION_ID_V2 } from '@modelcontextprotocol/ext-tasks/core/v2';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -70,7 +69,7 @@ describe('protocol surface', () => {
     const text = (await connect(hosted.runtime)).getInstructions() ?? '';
     expect(text).not.toContain('a path under');
     expect(text).not.toContain('/samples');
-    expect(text).toContain(`new accounts start with ${FREE_CREDITS}`);
+    expect(text).not.toMatch(/start with \d+/);
     expect(text).toContain('tell the user jobs wait for credits');
     expect(text).not.toContain('/account');
   });
@@ -96,7 +95,7 @@ describe('protocol surface', () => {
       mode: 'hosted',
       mediaRoots: [],
       exportsDir: null,
-      uploadPage: 'https://cuttingfloor.ai/account#files',
+      uploadPage: 'https://cuttingfloor.ai/upload',
     });
     const local = await testRuntime({ mediaRoots: ['/media', '/samples'] });
     for (const env of [hosted, local]) {
@@ -106,7 +105,7 @@ describe('protocol surface', () => {
   });
 
   it("names the hosted upload page where the user's own files come in, and only there", async () => {
-    const page = 'https://cuttingfloor.ai/account#files';
+    const page = 'https://cuttingfloor.ai/upload';
     const hosted = await testRuntime({
       mode: 'hosted',
       mediaRoots: [],
@@ -232,6 +231,7 @@ describe('protocol surface', () => {
         'media.import',
         'media.list',
         'media.listen',
+        'media.search',
         'media.seek',
         'media.upload',
         'qa.check',
@@ -297,7 +297,14 @@ describe('protocol surface', () => {
       ['export.timeline', 'export.video', 'job.cancel', 'media.analyze', 'media.delete'].sort(),
     );
     expect(where('openWorldHint')).toEqual(
-      ['create.lipsync', 'judge.ask', 'media.analyze', 'media.import', 'media.seek'].sort(),
+      [
+        'create.lipsync',
+        'judge.ask',
+        'media.analyze',
+        'media.import',
+        'media.search',
+        'media.seek',
+      ].sort(),
     );
     for (const t of tools) {
       if (t.annotations?.readOnlyHint) expect(t.annotations.destructiveHint, t.name).toBe(false);

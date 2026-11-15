@@ -100,6 +100,20 @@ export {
   renderTimelineFrames,
 } from './render.ts';
 export {
+  buildPictureIndex,
+  dot,
+  embedTexts,
+  INDEX_VERSION,
+  KEYFRAMES,
+  type Keyframe,
+  keyframePictures,
+  keyframeVectors,
+  type PictureIndex,
+  pickKeyframes,
+  readPictureIndex,
+  SEARCH_MODEL,
+} from './search.ts';
+export {
   isMade,
   type MatteSource,
   passFrames,

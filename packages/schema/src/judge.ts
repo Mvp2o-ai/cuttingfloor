@@ -104,7 +104,7 @@ export const JudgeAskInput = z.object({
     .record(JudgeName, z.union([JudgePicture, JudgeTimelinePicture, JudgeText]))
     .refine((s) => Object.keys(s).length > 0, 'state needs at least one entry')
     .describe(
-      'What Jev sees, entry by entry: name to a string, a JSON object or array, or a picture: {media_id} (an image), {media_id, at_seconds} (a video frame) or {timeline_id, at_seconds} (a frame of an edit as it renders). Questions refer to entries by name in backticks',
+      'What the judgment model sees, entry by entry: name to a string, a JSON object or array, or a picture: {media_id} (an image), {media_id, at_seconds} (a video frame) or {timeline_id, at_seconds} (a frame of an edit as it renders). Questions refer to entries by name in backticks',
     ),
   questions: z
     .record(JudgeName, JudgeQuestion)

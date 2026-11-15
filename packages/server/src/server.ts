@@ -1,5 +1,4 @@
 import type { CredentialStore } from '@cuttingfloor/credentials';
-import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { type AccountGetResult, KEEPING, span } from '@cuttingfloor/schema';
 import { McpServer } from '@modelcontextprotocol/server';
 import { logToolCalls } from './calls.ts';
@@ -18,6 +17,7 @@ import { registerJudgeTools } from './tools/judge.ts';
 import { registerListenTools } from './tools/listen.ts';
 import { registerMediaTools } from './tools/media.ts';
 import { registerRenderTools } from './tools/render.ts';
+import { registerSearchTools } from './tools/search.ts';
 import { registerSeekTools } from './tools/seek.ts';
 import { registerSkillTools } from './tools/skills.ts';
 import { registerTimelineTools } from './tools/timeline.ts';
@@ -54,7 +54,7 @@ function instructions(config: Runtime['config']): string {
     : '';
   const credits = hosted
     ? `
-Credits: a job (export, import, analysis, create.*) spends one a minute; editing and previews are free; new accounts start with ${FREE_CREDITS}. At 0 jobs are refused (quota_exceeded): tell the user jobs wait for credits, while editing and previews still work.`
+Credits: a job (export, import, analysis, create.*) spends one a minute, and judgments (judge.ask, media.seek, look) a little each; editing and previews are free. At 0 jobs are refused (quota_exceeded): tell the user jobs wait for credits, while editing and previews still work.`
     : '';
   return `cuttingfloor is a headless video editor. The cutting floor is its workspace, like an edit suite's: media is imported onto it before editing, cut and finished there, and leaves as a download. Work, not storage: ${KEEPING}; links work ${span(config.outputUrlTtlMs)} (re-reading gives fresh ones). Download finished or approved work, or have the user do it; when they count on keeping something, say it is temporary. To go on later, save timeline.get's document (timeline.load) and files from their url (media.import again). media.delete drops unwanted media.
 Two ways in, often both:
@@ -97,6 +97,7 @@ export function createServer(deps: ServerDeps): McpServer {
   registerTimelineTools(server, deps);
   registerMediaTools(server, deps);
   registerSeekTools(server, deps);
+  registerSearchTools(server, deps);
   registerListenTools(server, deps);
   registerJudgeTools(server, deps);
   registerCreateTools(server, deps);

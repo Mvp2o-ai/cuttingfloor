@@ -1514,7 +1514,7 @@ export const MediaAnalyzeResult = z.object({
     .record(z.string(), z.unknown())
     .optional()
     .describe('The summary media.get gives under analyses; look: where each answer holds'),
-  model: z.string().optional().describe('look: the Jev model'),
+  model: z.string().optional().describe('look: the judgment model'),
   frames: z.number().optional().describe('look: frames asked about'),
   transcript: Transcript.optional(),
   file: z
@@ -1706,11 +1706,11 @@ export const MediaSeekInput = z
 export const MediaSeekResult = z.object({
   media_id: MediaId.optional(),
   timeline_id: TimelineId.optional(),
-  model: z.string().describe('The Jev model that judged the frames'),
+  model: z.string().describe('The judgment model that judged the frames'),
   frames: z.number().describe('Frames judged'),
   asked: z
     .record(z.string(), z.record(z.string(), z.unknown()))
-    .describe('Per criterion: the noul question Jev was asked, as sent'),
+    .describe('Per criterion: the noul question the judgment model was asked, as sent'),
   matches: z
     .record(
       z.string(),

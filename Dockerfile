@@ -184,6 +184,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
  && fetch tokenizer_config.json "$MINILM_TOKENIZER_CONFIG_SHA256" \
  && fetch onnx/model_quantized.onnx "$MINILM_ONNX_SHA256"
 
+# SigLIP2 base (Apache-2.0; google/siglip2-base-patch16-224, as ONNX by onnx-community) for
+# media.search: the vision tower embeds each media's frames to pick keyframes, the text tower embeds
+# criteria for local similarity. Full-precision vision and fp16 text: their int8 builds move
+# embeddings too far (cosine 0.73 and as low as 0.77 to the originals). Pinned by revision and SHA-256.
+FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS search-models
+ARG SIGLIP2_REVISION=ba1f3b0843f24bc5417d38e19c37b287d719b2f4
+ARG SIGLIP2_CONFIG_SHA256=e43a9f7692d3819886a82cb2097048258d444f123c67d37ec825f9345b019cf2
+ARG SIGLIP2_PREPROCESSOR_SHA256=9b36b57ebaf20f09bf4c22100ccc21877ea6bfe5aead0c00c59f8af8ccefacfc
+ARG SIGLIP2_TOKENIZER_SHA256=cb9140fae3ac5122c972d37adf83e1248471a38147ad76f8215c8872c6fd8322
+ARG SIGLIP2_TOKENIZER_CONFIG_SHA256=7c3a247599e741bceba1a3fe0285aea88d1044dc1fad2caa1e48cdd9fd25f630
+ARG SIGLIP2_SPECIAL_TOKENS_SHA256=baec30ea10906f16adb8c18af7a34023002c1746542612b8b41c9f09e1351351
+ARG SIGLIP2_VISION_SHA256=c0573e3f4140c3a7c4e9cc5912bd6b26a033b46a6a8e8af26cbea262b163bcad
+ARG SIGLIP2_TEXT_SHA256=711da56ada0a4aa11c7dd3320df741081a3cae4f0ae1b5e5c6d5b294738d0eb0
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && dir=/models/onnx-community/siglip2-base-patch16-224-ONNX && mkdir -p "$dir/onnx" \
+ && fetch() { \
+      curl -fsSL -o "$dir/$1" "https://huggingface.co/onnx-community/siglip2-base-patch16-224-ONNX/resolve/$SIGLIP2_REVISION/$1" \
+      && echo "$2  $dir/$1" | sha256sum -c -; \
+    } \
+ && fetch config.json "$SIGLIP2_CONFIG_SHA256" \
+ && fetch preprocessor_config.json "$SIGLIP2_PREPROCESSOR_SHA256" \
+ && fetch tokenizer.json "$SIGLIP2_TOKENIZER_SHA256" \
+ && fetch tokenizer_config.json "$SIGLIP2_TOKENIZER_CONFIG_SHA256" \
+ && fetch special_tokens_map.json "$SIGLIP2_SPECIAL_TOKENS_SHA256" \
+ && fetch onnx/vision_model.onnx "$SIGLIP2_VISION_SHA256" \
+ && fetch onnx/text_model_fp16.onnx "$SIGLIP2_TEXT_SHA256"
+
 # RNNoise models for the voice_denoise effect (FFmpeg arnndn), pinned by commit and SHA-256:
 # beguiling-drafter keeps voice (laughs, breaths), somnolent-hogwash keeps speech only.
 # GregorR/rnnoise-models: the models are not subject to copyright; RNNoise itself is BSD.
@@ -324,6 +352,7 @@ COPY --from=skills-model /models/ /usr/share/cuttingfloor/models/
 COPY --from=denoise-models /models/ /usr/share/cuttingfloor/models/
 COPY --from=speech-models /models/ /usr/share/cuttingfloor/models/
 COPY --from=sound-models /models/ /usr/share/cuttingfloor/models/
+COPY --from=search-models /models/ /usr/share/cuttingfloor/models/
 COPY --from=picture-models /picture/ /usr/share/cuttingfloor/models/
 COPY --from=mlt-avformat /out/libmltavformat.so /tmp/libmltavformat.so
 RUN dest="$(dirname "$(find /usr/lib -path '*/mlt-7/libmltavformat.so' | head -1)")" \

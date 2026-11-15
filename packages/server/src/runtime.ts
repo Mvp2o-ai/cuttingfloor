@@ -13,6 +13,7 @@ import {
 import { FileJobStore, type Job, JobRunner } from '@cuttingfloor/jobs';
 import { KEEP } from '@cuttingfloor/schema';
 import { CALLS_TTL_MS, type CallEntry, jobEnd, recordCall } from './calls.ts';
+import { SearchIndexer } from './indexer.ts';
 import { METER_TTL_MS, type MeterEntry, meterJob, meterJudgments } from './meter.ts';
 import { Uploads } from './uploads.ts';
 
@@ -120,7 +121,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
       : {}),
     ...(env.CUTTINGFLOOR_SYNC_URL ? { syncUrl: env.CUTTINGFLOOR_SYNC_URL.replace(/\/$/, '') } : {}),
     ...(mode === 'hosted' && env.CUTTINGFLOOR_KEY_SECRET ? { keysUrl: `${account}#keys` } : {}),
-    ...(mode === 'hosted' ? { uploadPage: `${account}#files` } : {}),
+    // The site's upload page: files only (the account page also sells credits).
+    ...(mode === 'hosted' ? { uploadPage: new URL('/upload', account).href } : {}),
     ...(mode === 'local' && env.CUTTINGFLOOR_MEDIA_HOST_PATH
       ? { mediaHostPath: env.CUTTINGFLOOR_MEDIA_HOST_PATH }
       : {}),
@@ -133,6 +135,8 @@ export class Runtime {
   readonly ws: Workspace;
   readonly timelines: TimelineStore;
   readonly media: MediaLibrary;
+  /** media.search's picture index of each ready media. */
+  readonly indexer: SearchIndexer;
   readonly jobs: JobRunner;
   readonly uploads: Uploads;
   /** Downloaded models, kept across restarts (they are checksummed, not user data). */
@@ -156,7 +160,9 @@ export class Runtime {
       allowPrivateUrls: config.allowPrivateUrls,
       ...(config.mediaHostPath ? { hostFolders: { '/media/videos': config.mediaHostPath } } : {}),
       ...(config.uploadPage ? { uploadPage: config.uploadPage } : {}),
+      onReady: (owner, record) => this.indexer.enqueue(owner, record.media_id),
     });
+    this.indexer = new SearchIndexer(this.media);
     if (config.maxRenders) setRenderLimit(config.maxRenders);
     this.jobs = new JobRunner(new FileJobStore(this.ws), config.maxJobs, {
       ...(config.node ? { node: config.node } : {}),
