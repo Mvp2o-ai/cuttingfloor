@@ -1,5 +1,15 @@
 # cuttingfloor
 
+## 0.54.0
+
+### Minor Changes
+
+- 1bdcf68: media.search: find moments across all your media from plain words, like media.seek across every file. Pictures are judged at keyframes picked when media is imported (a new keyframe wherever the picture changes, at least every 10 s), so a 3-second moment in a long, still video is found without judging every second; speech is judged on transcripts media already has. Filters (kind, files, origin, name, length, time range) are free and cut what is judged; candidates narrows to the files that look most alike by local similarity. A search is billed per judgment (200 a credit), and one estimated over a credit returns the estimate, what makes it up and what the free filters would cut, and runs once the user agrees. Indexing at import is free and runs in the background.
+
+### Patch Changes
+
+- 9876d50: Model-readable text stays within app directory rules: upload links go to a new files-only page (cuttingfloor.ai/upload), the instructions no longer state a free credit allotment and say judgments spend credits too, sync. labs hints and the lip-sync models describe quality rather than plans and prices, the judgment model is named for what it is, qa.check no longer mentions a removed field, and the motion graphics skill names no other product.
+
 ## 0.53.0
 
 ### Minor Changes
