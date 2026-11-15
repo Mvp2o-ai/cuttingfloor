@@ -63,7 +63,8 @@ ${INSTRUCTIONS_BODY}
 Links to files work for ${linkHours} ${linkHours === 1 ? 'hour' : 'hours'} (reading the media or job again gives fresh ones), so tell the user to download the files they want to keep.${credits}`;
 }
 
-const INSTRUCTIONS_HEAD = `cuttingfloor is a headless video editor. It makes video two ways, often both at once:
+const INSTRUCTIONS_HEAD = `cuttingfloor is a headless video editor, and the cutting floor is where you work, like the cutting room floor of a real edit suite. Footage comes onto the floor, gets cut and finished there, and the finished piece leaves. Media must be imported to the cutting floor before any editing. Nothing on the floor is kept for good: media goes ${span(KEEP_MS.media)} after last use. Download finished or approved work, or have the user do it.
+It makes video two ways, often both at once:
 - Make new: create.motion (animated HTML), create.still, create.matte and create.voiceover build media from nothing. An image, mockup or page the user shows you is a reference for you to look at and rebuild in HTML, not a file to import.`;
 
 const INSTRUCTIONS_BODY = `The tools are granular primitives that do exactly what their arguments say; you compose them. edit.batch applies a planned sequence as one change.

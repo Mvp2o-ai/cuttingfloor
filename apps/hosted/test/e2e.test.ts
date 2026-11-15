@@ -573,25 +573,6 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     expect(dup.media_id).toBe(media.av);
   }, 120_000);
 
-  it('imports a file sent to the upload URL media.import hands back', async () => {
-    const bytes = await readFile(join(env.mediaDir, 'sent.mp4'));
-    const made = await ok<{ media_id: string; upload: { url: string } }>(client, 'media.import', {
-      source: { upload: { name: 'handed.mp4', bytes: bytes.length } },
-    });
-    const put = await fetch(made.upload.url, { method: 'PUT', body: bytes });
-    const started = (await put.json()) as { media_id: string; job_id: string };
-    expect(started.media_id).toBe(made.media_id);
-    const done = await waitJob(started.job_id, 120_000);
-    expect(done.result).toMatchObject({
-      media_id: made.media_id,
-      status: 'ready',
-      kind: 'video',
-      width: 640,
-      name: 'handed.mp4',
-      origin: { from: 'upload', via: 'media.upload' },
-    });
-  }, 120_000);
-
   it('names a file for what it is, gives every probed fact, and shows transparency as checks', async () => {
     const m = env.mediaDir;
     // Left half opaque red, right half see-through; and a logo with its black background baked in.
