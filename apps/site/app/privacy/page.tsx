@@ -34,7 +34,7 @@ export default function Privacy() {
             'Your account: email, name and how you sign in. WorkOS holds it for us, for as long as you have an account.',
             'Billing: your payment history is held by Stripe; we never see your card number. Your credits (the free ones, the packs you bought and what your jobs used) are kept in the credit ledger we share with Kazi, so credits bought on either work on both.',
             'Uploads, imported media and exports: 7 days after they are made.',
-            'Timelines (the edits themselves): 24 hours after they were last used.',
+            'Timelines (the edits themselves): 7 days after they were last used.',
             'Job records (which job ran, for how long): 13 months, to count your credits and for billing questions.',
             'Account records: which app you first connected from and when you first edited and exported, kept with your account, to see which apps people use and to send the right account emails.',
             'Keys you save: a provider key (your sync. labs key) is kept encrypted in your account, and only its last four characters are ever shown. Keys you make for scripts are kept as long as they last.',
