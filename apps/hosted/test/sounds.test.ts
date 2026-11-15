@@ -311,11 +311,12 @@ describe.skipIf(!ready)('sounds', () => {
     // During the speech, vocals carries it.
     expect(await level(file(vocals?.media_id as string), 3.2, 5)).toBeGreaterThan(-40);
 
-    // The same media and stems again: the same media, at once.
-    const again = await ok<{ stems?: Record<string, { media_id: string }> }>('create.stems', {
-      media_id: id,
-      stems: ['vocals'],
-    });
-    expect(again.stems?.vocals?.media_id).toBe(vocals?.media_id);
+    // The same media and stems again: the same media, at once, as a completed job.
+    const again = await ok<{
+      status: string;
+      result?: { stems?: Record<string, { media_id: string }> };
+    }>('create.stems', { media_id: id, stems: ['vocals'] });
+    expect(again.status).toBe('completed');
+    expect(again.result?.stems?.vocals?.media_id).toBe(vocals?.media_id);
   }, 600_000);
 });

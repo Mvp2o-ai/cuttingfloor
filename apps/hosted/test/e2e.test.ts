@@ -825,11 +825,14 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
 
   it('measures the render: gaps, frames, loudness, and black and silence with given settings', async () => {
     type Span = { start: number; end: number };
-    const report = await ok<{
-      gaps: Span[];
-      frames: { expected: number; rendered: number };
-      black?: Span[];
-      integrated_lufs: number | null;
+    // A short timeline is checked within the call: a completed job, the report in result.
+    const { result: report } = await ok<{
+      result: {
+        gaps: Span[];
+        frames: { expected: number; rendered: number };
+        black?: Span[];
+        integrated_lufs: number | null;
+      };
     }>(client, 'qa.check', { timeline_id: timeline });
     expect(report.gaps).toEqual([{ start: 100, end: 125 }]);
     expect(report.frames).toEqual({ expected: 175, rendered: 175 });
@@ -857,12 +860,14 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         },
       ],
     });
-    const qa = await ok<{
-      gaps: Span[];
-      black: Span[];
-      silences: Span[];
-      integrated_lufs: number | null;
-      true_peak_dbtp: number | null;
+    const { result: qa } = await ok<{
+      result: {
+        gaps: Span[];
+        black: Span[];
+        silences: Span[];
+        integrated_lufs: number | null;
+        true_peak_dbtp: number | null;
+      };
     }>(client, 'qa.check', {
       timeline_id: planted.timeline_id,
       black: { pixel_threshold: 0.1, picture_share: 0.98, min_seconds: 0.5 },
@@ -2815,11 +2820,9 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         limit_db: -1,
         preview: 'none',
       });
-      const report = await ok<{ integrated_lufs: number; true_peak_dbtp: number }>(
-        client,
-        'qa.check',
-        { timeline_id: loud.timeline_id },
-      );
+      const { result: report } = await ok<{
+        result: { integrated_lufs: number; true_peak_dbtp: number };
+      }>(client, 'qa.check', { timeline_id: loud.timeline_id });
       expect(report.true_peak_dbtp).toBeLessThanOrEqual(-1);
       expect(report.integrated_lufs).toBeGreaterThan(-10);
     }, 240_000);

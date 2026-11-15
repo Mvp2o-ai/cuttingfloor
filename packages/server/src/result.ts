@@ -98,6 +98,24 @@ export function jobReply(job: Job, ctx: unknown): CallToolResult {
   });
 }
 
+/**
+ * Work done within the call (short enough not to need a job) still answers as a job: one recorded
+ * completed with its result, so the reply has a job_id job.get reads, like every long tool's.
+ */
+export async function doneReply(
+  store: FileJobStore,
+  init: Parameters<FileJobStore['create']>[0],
+  result: CallToolResult,
+  ctx: unknown,
+): Promise<CallToolResult> {
+  if (result.isError) return result;
+  const job = await store.create(init);
+  return jobReply(
+    await store.update(job, { status: 'completed', progress: 1, result: result as never }),
+    ctx,
+  );
+}
+
 /** How much of a finished job's result a view carries. */
 export type ResultMode = 'full' | 'summary' | 'none';
 
