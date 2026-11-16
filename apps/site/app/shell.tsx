@@ -115,6 +115,13 @@ export function Nav({ cta = 'Start free', strip = true }: { cta?: string; strip?
               <small>Free. {name} adds cuttingfloor on a computer; Kazi works right here.</small>
             </a>
           ))}
+          {/* The iPhone app, for everyone on a phone, so it is above the fold there. */}
+          <a className="live-strip on-phone app-strip" href="/app" data-track="App: phone strip">
+            <b>
+              Get the iPhone app <span aria-hidden="true">→</span>
+            </b>
+            <small>Beta, through TestFlight. Send videos and say the edit, on the go.</small>
+          </a>
         </>
       ) : null}
     </header>

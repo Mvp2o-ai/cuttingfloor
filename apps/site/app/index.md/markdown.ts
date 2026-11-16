@@ -1,3 +1,4 @@
+import { APP_LEAD } from '../../content/app.ts';
 import { CAPS } from '../../content/capabilities.ts';
 import { DEMOS, lengths } from '../../content/demos.ts';
 import { LICENCE } from '../../content/facts.ts';
@@ -107,6 +108,10 @@ Full comparison: ${pageLink('Compare', '/compare')}
 ## Demos
 
 ${list(DEMOS.map((d) => `${pageLink(d.title, `/demos/${d.slug}`)}: ${d.description} (${d.agent}, ${lengths(d)})`))}
+
+## On your phone
+
+${APP_LEAD} The iPhone app is in beta: ${pageLink('join through TestFlight', '/app')}.
 
 ## Questions
 

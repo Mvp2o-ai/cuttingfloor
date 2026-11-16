@@ -202,6 +202,15 @@ a {
 .live-strip:hover b {
   text-decoration: underline;
 }
+/* The iPhone app strip (phones only): dark under the green one, so the two read apart. */
+.live-strip.app-strip {
+  background: var(--bg-2);
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+.live-strip.app-strip b {
+  color: var(--key);
+}
 
 /* From: what leads depends on where the visitor came from (from.tsx). Every variant is in the
    page; the script sets html[data-from] before the first paint. */
@@ -4840,4 +4849,44 @@ figure.allow-access {
 .allow-access figcaption {
   margin-top: 6px;
   font-size: 13px;
+}
+
+/* ---------- the iPhone app (mobile-app.tsx) ---------- */
+
+.app-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(24px, 4vw, 56px);
+  align-items: start;
+}
+.app-body .lede {
+  margin-top: 0;
+}
+.app-join {
+  margin-top: 24px;
+}
+.app-join .actions {
+  margin-top: 24px;
+}
+.app-note {
+  margin-top: 12px;
+  color: var(--mute);
+  font-size: 15px;
+}
+.app-shots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 560px;
+}
+.app-shots img {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
+  border-radius: 22px;
+}
+@media (max-width: 900px) {
+  .app-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

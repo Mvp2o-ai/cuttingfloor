@@ -11,7 +11,7 @@ import { WAYS_TITLE, WAYS_UPDATED } from '../content/ways.ts';
 export type Route = { path: string; title: string; updated: string };
 
 export const ROUTES: Route[] = [
-  { path: '/', title: 'cuttingfloor: the video editing MCP server', updated: '2026-11-08' },
+  { path: '/', title: 'cuttingfloor: the video editing MCP server', updated: '2026-11-16' },
   {
     path: '/demos',
     title: 'Demos',
@@ -33,6 +33,7 @@ export const ROUTES: Route[] = [
   },
   { path: '/features', title: 'Features', updated: '2026-11-01' },
   { path: '/pricing', title: 'Pricing', updated: '2026-11-01' },
+  { path: '/app', title: 'cuttingfloor on your iPhone', updated: '2026-11-16' },
   {
     path: '/connect',
     title: 'Connect cuttingfloor to Claude, ChatGPT, Codex, Cursor and more',

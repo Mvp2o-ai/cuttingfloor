@@ -9,6 +9,7 @@ import { ConnectNow } from './connect-now.tsx';
 import { DemoCards, DemoThumbs } from './demos/cards.tsx';
 import { TryKazi } from './kazi.tsx';
 import { LiveCard } from './live-card.tsx';
+import { AppSection } from './mobile-app.tsx';
 import { FROM_PACK } from './pricing.ts';
 import { Prompts } from './prompts.tsx';
 import { FAQS, structuredData } from './seo.ts';
@@ -155,9 +156,11 @@ export default function Home() {
           </p>
         </section>
 
+        <AppSection index="03" />
+
         <section className="cell" id="toolkit" aria-label="The toolkit">
           <div className="head">
-            <span className="label">03 / The toolkit</span>
+            <span className="label">04 / The toolkit</span>
             <div>
               <h2 className="display">{TOOLKIT_HEADLINE}</h2>
               <p className="compare-lede">
@@ -211,7 +214,7 @@ export default function Home() {
 
         <section className="cell" id={SESSION_ID} aria-label="A session">
           <div className="head">
-            <span className="label">04 / A session</span>
+            <span className="label">05 / A session</span>
             <h2 className="lede">
               AI video editing, one tool call at a time. <em>Here is one.</em>
             </h2>
@@ -225,7 +228,7 @@ export default function Home() {
 
         <section className="cell" id="problems" aria-label="Problems it solves">
           <div className="head">
-            <span className="label">05 / Solved</span>
+            <span className="label">06 / Solved</span>
             <div>
               <h2 className="display">The jobs that eat your week.</h2>
               <p className="compare-lede">
@@ -243,7 +246,7 @@ export default function Home() {
 
         <section className="cell" aria-label="Things to ask for">
           <div className="head">
-            <span className="label">06 / Ask for</span>
+            <span className="label">07 / Ask for</span>
             <div>
               <h2 className="display">Say it like you’d say it to an editor.</h2>
               <p className="compare-lede">
@@ -257,7 +260,7 @@ export default function Home() {
 
         <section className="cell" id="pricing">
           <div className="head">
-            <span className="label">07 / Pricing</span>
+            <span className="label">08 / Pricing</span>
             <div>
               <h2 className="display">Pay as you go. Start free.</h2>
               <p className="compare-lede">
@@ -274,7 +277,7 @@ export default function Home() {
 
         <section className="cell">
           <div className="head">
-            <span className="label">08 / Questions</span>
+            <span className="label">09 / Questions</span>
             <h2 className="display">Asked.</h2>
           </div>
           <div className="faq">
