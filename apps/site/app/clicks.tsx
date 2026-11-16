@@ -10,6 +10,10 @@ import { useEffect } from 'react';
  * Vercel can only group events by name, not by their data. The Pro plan allows two properties:
  * `label` again and `to` (a link's path, or its full address when it leaves the site).
  *
+ * A link to /start also sends "Sign-up click", one name whatever the button says or a browser
+ * translates it to, so the sign-up step counts per visitor and page. /start's own "Sign-up
+ * opened" is sent from the server, so it carries neither the visitor nor their country.
+ *
  * A video the visitor starts sends "Play: <file>", and one they turn the sound on in sends
  * "Sound on: <file>", by its path. Videos that play by themselves send nothing: only a play or
  * sound change within a second of the visitor touching that video counts.
@@ -29,6 +33,7 @@ export function Clicks() {
         to = (url.origin === location.origin ? url.pathname + url.hash : href).slice(0, 255);
       }
       track(`Click: ${label}`, { label, to });
+      if (to === '/start') track('Sign-up click', { label, to });
     };
     const onTouch = (event: Event) => {
       const el = event.target as Element | null;
