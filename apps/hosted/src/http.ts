@@ -17,6 +17,7 @@ import {
 import type { AccountGetResult } from '@cuttingfloor/schema';
 import {
   createServer,
+  importSent,
   type OwnerLimits,
   outputMime,
   type Runtime,
@@ -539,13 +540,26 @@ async function handleUpload(
         ? { start: Number(range[1]), total: range[3] === '*' ? null : Number(range[3]) }
         : null,
     });
+    // An upload media.import made becomes media now; any other waits for media.import.
+    let imported: { media_id: string; job_id: string } | undefined;
+    let failed: string | undefined;
+    if (state.complete) {
+      imported = await importSent(runtime, target.owner, target.id).catch((error: Error) => {
+        failed = error.message;
+        return undefined;
+      });
+    }
     reply(
       200,
       {
         ...state,
-        next: state.complete
-          ? `media.import {source: {upload_id: "${state.upload_id}"}}`
-          : 'send the rest: PUT with Content-Range from the bytes received',
+        ...(imported ?? {}),
+        ...(failed ? { error: `the file arrived but its import did not start: ${failed}` } : {}),
+        next: imported
+          ? `importing as media ${imported.media_id}: media.get {media_id: "${imported.media_id}"} or job.get {job_id: "${imported.job_id}"}`
+          : state.complete
+            ? `media.import {source: {upload_id: "${state.upload_id}"}}`
+            : 'send the rest: PUT with Content-Range from the bytes received',
       },
       state,
     );

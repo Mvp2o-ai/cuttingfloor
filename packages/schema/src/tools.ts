@@ -671,6 +671,21 @@ export const MediaSource = z.union([
   z.object({
     upload_id: UploadId.describe('A file sent to the URL media.upload gave, once fully sent'),
   }),
+  // Deprecated: the Cutting Floor iOS app's builds up to 2026-11 stage this way. Accepted, not
+  // advertised (server.ts drops deprecated branches); delete with importSent once the
+  // "deprecated: media.import source.upload" log line stops, not before 2026-12-16.
+  z
+    .object({
+      upload: z.object({
+        name: z
+          .string()
+          .min(1)
+          .max(200)
+          .regex(/^[^/\\]+$/),
+        bytes: z.int().positive().optional(),
+      }),
+    })
+    .meta({ deprecated: true }),
   z.object({
     data: z
       .string()
@@ -1359,6 +1374,15 @@ export const MediaInfo = z.object({
   beats: BeatsAnalysis.optional(),
   faces: FacesAnalysis.optional(),
   look: LookAnalysis.optional(),
+  /** Deprecated, with MediaSource's upload branch: where that client PUTs the file. */
+  upload: z
+    .object({
+      upload_id: UploadId,
+      url: z.string(),
+      expires_at: z.string(),
+      max_bytes: z.number(),
+    })
+    .optional(),
   pages: z
     .partialRecord(z.enum(ANALYSES), MediaPage)
     .optional()

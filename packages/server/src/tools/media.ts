@@ -574,7 +574,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         `Long-running: returns a task, or {job_id, media_id}. The media_id is editable once the job reports processing, so start every import, then edit. The same file returns the same media_id; the copy stays here ${span(KEEP_MS.media)} after last use.`,
       ].join(' '),
       inputSchema: MediaImportInput,
-      outputSchema: withJob(MediaInfo),
+      outputSchema: z.union([withJob(MediaInfo), MediaInfo.meta({ deprecated: true })]),
       // ChatGPT passes a file the user attached as this argument.
       _meta: { 'openai/fileParams': ['file'] },
       annotations: {
@@ -601,6 +601,32 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       const given = args.file
         ? { url: args.file.download_url }
         : (args.source as NonNullable<typeof args.source>);
+      if ('upload' in given) {
+        // Deprecated (MediaSource): media now, its file later; the PUT that completes it imports.
+        process.stderr.write('deprecated: media.import source.upload\n');
+        const room = await storageRoom(rt.ws, owner, await deps.limits?.(), given.upload.bytes);
+        const admit = await admitJob(deps.limits);
+        let record: MediaRecord | undefined;
+        const upload = await rt.uploads.createImport(
+          owner,
+          given.upload.name,
+          given.upload.bytes,
+          room,
+          async (upload_id) => {
+            record = await rt.media.create(
+              owner,
+              { upload: upload_id, file_name: given.upload.name, via: 'media.upload' },
+              args.name ?? given.upload.name,
+            );
+            return {
+              owner,
+              media_id: record.media_id,
+              ...(admit.ownerLimit === undefined ? {} : { owner_limit: admit.ownerLimit }),
+            };
+          },
+        );
+        return ok({ ...mediaInfo(record as MediaRecord), upload });
+      }
       // A frame made into a still is, like a data: URI, an upload that is already in.
       const still =
         'still' in given
@@ -1441,6 +1467,27 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       });
     }),
   );
+}
+
+/**
+ * After the PUT that completes an upload media.import made (the deprecated source {upload}):
+ * moves the file into its media and starts the import. Undefined for any other upload. `key` is
+ * the owner key the upload URL names.
+ */
+export async function importSent(
+  rt: ServerDeps['runtime'],
+  key: string,
+  uploadId: string,
+): Promise<{ media_id: string; job_id: string } | undefined> {
+  const sent = await rt.uploads.sent(key, uploadId);
+  if (!sent) return undefined;
+  const record = await rt.media.get(sent.owner, sent.media_id);
+  record.file = await rt.media.adopt(sent.owner, record, sent.file, { move: true });
+  await rt.media.save(sent.owner, record);
+  await rt.uploads.remove(sent.owner, uploadId);
+  const admit = sent.owner_limit === undefined ? {} : { ownerLimit: sent.owner_limit };
+  const job = await startIngest(rt, sent.owner, record, admit);
+  return { media_id: record.media_id, job_id: job.id };
 }
 
 /** Starts the import job that ingests a media record whose file is in place (or downloads). */
