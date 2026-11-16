@@ -888,7 +888,7 @@ const EXPLAINER: Demo = {
   ],
 };
 
-export const DEMOS: Demo[] = [EXPLAINER, INTERVIEW, TIPS, MEMORY, PRODUCT, JEV, LISTING, DANCE];
+export const DEMOS: Demo[] = [INTERVIEW, EXPLAINER, TIPS, MEMORY, PRODUCT, JEV, LISTING, DANCE];
 
 export function demo(slug: string): Demo | undefined {
   return DEMOS.find((d) => d.slug === slug);
