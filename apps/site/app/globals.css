@@ -4756,3 +4756,33 @@ html[data-from="claude"] .dm-add-apps [data-app="claude"] h3 {
 .hc-builders {
   background: linear-gradient(180deg, var(--bg-2), var(--bg) 60%);
 }
+
+/* The sign-in warning an app on your computer meets (app/connect/allow-access.tsx). */
+.allow-access {
+  margin: 16px 0 0;
+  color: var(--mute);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.allow-access p {
+  margin: 0;
+}
+.allow-access a {
+  color: var(--ink);
+}
+.allow-access figure,
+figure.allow-access {
+  margin: 12px 0 0;
+  max-width: 300px;
+}
+.allow-access img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+.allow-access figcaption {
+  margin-top: 6px;
+  font-size: 13px;
+}

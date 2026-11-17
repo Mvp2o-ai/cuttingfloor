@@ -1,6 +1,7 @@
-import { ALLOW_ACCESS, allowAccessNote, type Client } from '../../content/clients.ts';
+import type { Client } from '../../content/clients.ts';
 import { SendToSelf } from '../agents/send.tsx';
 import { Copy } from '../walkthroughs/copy.tsx';
+import { AllowAccess } from './allow-access.tsx';
 import { LogoSlot } from './logo.tsx';
 
 /** One app's setup: its steps, notes and help page, and what to paste. The agent pages use it too. */
@@ -30,14 +31,10 @@ export function ClientSection({ client: c, n }: { client: Client; n: number }) {
               </a>
             </p>
           )}
-          {(c.notes || c.localSignIn) && (
+          {c.localSignIn && <AllowAccess name={c.name} />}
+          {c.notes && (
             <ul className="cl-notes">
-              {c.localSignIn && (
-                <li>
-                  {allowAccessNote(c.name)} <a href={ALLOW_ACCESS}>Why?</a>
-                </li>
-              )}
-              {c.notes?.map((note) => (
+              {c.notes.map((note) => (
                 <li key={note}>{note}</li>
               ))}
             </ul>
