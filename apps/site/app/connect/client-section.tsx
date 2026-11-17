@@ -34,7 +34,7 @@ export function ClientSection({ client: c, n }: { client: Client; n: number }) {
             <ul className="cl-notes">
               {c.localSignIn && (
                 <li>
-                  {allowAccessNote(c.name)} <a href={ALLOW_ACCESS}>What does this mean?</a>
+                  {allowAccessNote(c.name)} <a href={ALLOW_ACCESS}>Why?</a>
                 </li>
               )}
               {c.notes?.map((note) => (

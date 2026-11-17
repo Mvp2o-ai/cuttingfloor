@@ -50,7 +50,7 @@ export function Connect() {
         </div>
         {client.localSignIn && (
           <p className="connect-more">
-            {allowAccessNote(client.name)} <a href={ALLOW_ACCESS}>What does this mean?</a>
+            {allowAccessNote(client.name)} <a href={ALLOW_ACCESS}>Why?</a>
           </p>
         )}
         {/* Every app here but Kazi is added on a computer: a phone gets Kazi or the setup for later. */}
