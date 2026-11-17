@@ -64,7 +64,7 @@ export const ALLOW_ACCESS = '/sign-in-warning';
 
 /** What the sign-in page shows an app that finishes sign-in on your computer, and what to click. */
 export const allowAccessNote = (name: string) =>
-  `${name} signs in through your own computer (localhost), so the sign-in page shows a yellow security warning before it sends you back. Every app that signs in this way gets it; it isn’t about cuttingfloor. Click Allow access to finish connecting.`;
+  `${name} signs in through localhost on your computer, so the sign-in page shows a yellow warning before it sends you back to ${name}. Click Allow access to finish connecting.`;
 
 /** The warning as a new Codex user sees it (2026-11-17), shown beside the note. */
 export const ALLOW_ACCESS_SHOT = {

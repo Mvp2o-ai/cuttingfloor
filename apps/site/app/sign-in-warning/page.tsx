@@ -30,7 +30,7 @@ export default function SignInWarning() {
           your browser back to the app itself, at an address on your own machine (often 127.0.0.1
           and a number). The sign-in page can’t see which app is listening there, so it asks you to
           make sure it’s yours. Any service that signs these apps in this way shows a warning like
-          it. It isn’t about cuttingfloor.
+          it.
         </P>
         <figure className="allow-access">
           {/* biome-ignore lint/performance/noImgElement: a static screenshot; next/image adds nothing */}
