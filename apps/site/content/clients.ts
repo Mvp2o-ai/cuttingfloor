@@ -62,9 +62,17 @@ export type Client = {
 /** The page that explains the sign-in page's warning about an app on your computer. */
 export const ALLOW_ACCESS = '/sign-in-warning';
 
-/** What to click on the sign-in page for an app that finishes sign-in on your computer. */
+/** What the sign-in page shows an app that finishes sign-in on your computer, and what to click. */
 export const allowAccessNote = (name: string) =>
-  `When your browser asks, click Allow access to finish connecting ${name}.`;
+  `${name} signs in through your own computer (localhost), so the sign-in page shows a yellow security warning before it sends you back. Every app that signs in this way gets it; it isn’t about cuttingfloor. Click Allow access to finish connecting.`;
+
+/** The warning as a new Codex user sees it (2026-11-17), shown beside the note. */
+export const ALLOW_ACCESS_SHOT = {
+  src: '/sign-in/allow-access-codex.png',
+  width: 936,
+  height: 1634,
+  alt: 'The sign-in page for Codex: what it can access, a yellow box saying the redirect points to an unverified application running on your machine, and the Allow access button.',
+};
 
 const json = (v: unknown) => JSON.stringify(v, null, 2);
 

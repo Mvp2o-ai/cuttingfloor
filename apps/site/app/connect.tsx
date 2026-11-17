@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { ALLOW_ACCESS, allowAccessNote, HOME_CLIENTS, MCP_URL } from '../content/clients.ts';
+import { HOME_CLIENTS, MCP_URL } from '../content/clients.ts';
 import { SendToSelf } from './agents/send.tsx';
+import { AllowAccess } from './connect/allow-access.tsx';
 
 export { MCP_URL };
 
@@ -48,11 +49,7 @@ export function Connect() {
             {copied ? 'Copied' : 'Copy'}
           </button>
         </div>
-        {client.localSignIn && (
-          <p className="connect-more">
-            {allowAccessNote(client.name)} <a href={ALLOW_ACCESS}>Why?</a>
-          </p>
-        )}
+        {client.localSignIn && <AllowAccess name={client.name} />}
         {/* Every app here but Kazi is added on a computer: a phone gets Kazi or the setup for later. */}
         {!client.ours && <SendToSelf app={client.name} />}
         <p className="connect-more">
