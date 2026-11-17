@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { ALLOW_ACCESS_SHOT } from '../../content/clients.ts';
+import { ALLOW_ACCESS_SHOT, LOCALHOST_SPEC } from '../../content/clients.ts';
 import { Items, LegalPage, P, Part } from '../legal.tsx';
 
 // What the sign-in page's warning means when an app on your computer connects (Codex, Claude Code,
@@ -30,7 +30,11 @@ export default function SignInWarning() {
           your browser back to the app itself, at an address on your own machine (often 127.0.0.1
           and a number). The sign-in page can’t see which app is listening there, so it asks you to
           make sure it’s yours. Any service that signs these apps in this way shows a warning like
-          it.
+          it. You can read more in the{' '}
+          <a href={LOCALHOST_SPEC} rel="noopener">
+            MCP spec
+          </a>
+          , which asks sign-in pages to warn when an app signs in through localhost.
         </P>
         <figure className="allow-access">
           {/* biome-ignore lint/performance/noImgElement: a static screenshot; next/image adds nothing */}
