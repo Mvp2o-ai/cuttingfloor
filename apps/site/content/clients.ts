@@ -66,6 +66,10 @@ export const ALLOW_ACCESS = '/sign-in-warning';
 export const allowAccessNote = (name: string) =>
   `${name} signs in through localhost on your computer, so the sign-in page shows a yellow warning before it sends you back to ${name}. Click Allow access to finish connecting.`;
 
+/** Where the MCP spec asks sign-in pages to warn about a localhost return address. */
+export const LOCALHOST_SPEC =
+  'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#localhost-redirect-uri-risks';
+
 /** The warning as a new Codex user sees it (2026-11-17), shown beside the note. */
 export const ALLOW_ACCESS_SHOT = {
   src: '/sign-in/allow-access-codex.png',

@@ -3,6 +3,7 @@ import {
   allowAccessNote,
   CLIENTS,
   CLIENTS_CHECKED,
+  LOCALHOST_SPEC,
   MCP_URL,
 } from '../../content/clients.ts';
 import {
@@ -46,7 +47,9 @@ export function markdown(): string {
       ...(c.notes || c.localSignIn
         ? [
             ...(c.localSignIn
-              ? [`- ${allowAccessNote(c.name)} Why: ${SITE_URL}${ALLOW_ACCESS}`]
+              ? [
+                  `- ${allowAccessNote(c.name)} Why: ${SITE_URL}${ALLOW_ACCESS}. You can read more in the MCP spec: ${LOCALHOST_SPEC}`,
+                ]
               : []),
             ...(c.notes ?? []).map((n) => `- ${n}`),
             '',
