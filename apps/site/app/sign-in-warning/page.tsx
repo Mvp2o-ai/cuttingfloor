@@ -12,6 +12,7 @@ export const metadata: Metadata = {
     canonical: '/sign-in-warning',
     types: { 'text/markdown': '/sign-in-warning.md' },
   },
+  robots: { index: false, follow: true },
 };
 
 export default function SignInWarning() {
