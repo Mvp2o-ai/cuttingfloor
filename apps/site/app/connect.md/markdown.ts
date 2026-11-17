@@ -46,7 +46,7 @@ export function markdown(): string {
       ...(c.notes || c.localSignIn
         ? [
             ...(c.localSignIn
-              ? [`- ${allowAccessNote(c.name)} What it means: ${SITE_URL}${ALLOW_ACCESS}`]
+              ? [`- ${allowAccessNote(c.name)} Why: ${SITE_URL}${ALLOW_ACCESS}`]
               : []),
             ...(c.notes ?? []).map((n) => `- ${n}`),
             '',

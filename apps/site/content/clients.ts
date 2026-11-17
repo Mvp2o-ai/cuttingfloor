@@ -62,9 +62,9 @@ export type Client = {
 /** The page that explains the sign-in page's warning about an app on your computer. */
 export const ALLOW_ACCESS = '/sign-in-warning';
 
-/** What the sign-in page will say for an app that finishes sign-in on your computer. */
+/** What to click on the sign-in page for an app that finishes sign-in on your computer. */
 export const allowAccessNote = (name: string) =>
-  `The sign-in page will warn that it’s sending you back to an app on your computer. That’s ${name} finishing the sign-in: click Allow access.`;
+  `When your browser asks, click Allow access to finish connecting ${name}.`;
 
 const json = (v: unknown) => JSON.stringify(v, null, 2);
 
