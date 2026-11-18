@@ -62,9 +62,21 @@ export type Client = {
 /** The page that explains the sign-in page's warning about an app on your computer. */
 export const ALLOW_ACCESS = '/sign-in-warning';
 
-/** What to click on the sign-in page for an app that finishes sign-in on your computer. */
+/** What the sign-in page shows an app that finishes sign-in on your computer, and what to click. */
 export const allowAccessNote = (name: string) =>
-  `When your browser asks, click Allow access to finish connecting ${name}.`;
+  `${name} signs in through localhost on your computer, so the sign-in page shows a yellow warning before it sends you back to ${name}. Click Allow access to finish connecting.`;
+
+/** Where the MCP spec asks sign-in pages to warn about a localhost return address. */
+export const LOCALHOST_SPEC =
+  'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#localhost-redirect-uri-risks';
+
+/** The warning as a new Codex user sees it (2026-11-17), shown beside the note. */
+export const ALLOW_ACCESS_SHOT = {
+  src: '/sign-in/allow-access-codex.png',
+  width: 936,
+  height: 1634,
+  alt: 'The sign-in page for Codex: what it can access, a yellow box saying the redirect points to an unverified application running on your machine, and the Allow access button.',
+};
 
 const json = (v: unknown) => JSON.stringify(v, null, 2);
 
