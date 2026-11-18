@@ -52,6 +52,17 @@ export function uploadPage(uploadId: string): string {
   const fill = bar.firstElementChild;
   const status = document.getElementById('status');
   let busy = false;
+  // Phones freeze the page when the user switches back to the chat: keep the screen awake while
+  // sending, and send again a part cut off in the background once the page is back.
+  let lock;
+  let cut;
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    if (busy && navigator.wakeLock) navigator.wakeLock.request('screen').then((l) => { lock = l; }, () => {});
+    if (hiddenAt && Date.now() - hiddenAt > 3000 && cut) cut.abort();
+    hiddenAt = 0;
+  });
   const say = (text, done) => { status.textContent = text; status.className = done ? 'done' : ''; };
   const mb = (n) => (n / 1e6).toFixed(1) + ' MB';
 
@@ -66,18 +77,21 @@ export function uploadPage(uploadId: string): string {
     if (busy) return;
     busy = true;
     bar.hidden = false;
+    if (navigator.wakeLock) lock = await navigator.wakeLock.request('screen').catch(() => undefined);
     try {
       let { at, complete } = await offset();
       if (at > file.size) at = 0;
       for (let tries = 0; !complete; ) {
         const end = Math.min(at + PART, file.size);
         fill.style.width = (100 * at / Math.max(file.size, 1)) + '%';
-        say('Sending ' + file.name + ': ' + mb(at) + ' of ' + mb(file.size));
+        say('Sending ' + file.name + ': ' + mb(at) + ' of ' + mb(file.size) + '. Keep this page open until it is sent; if you switch apps, come back and it carries on.');
+        cut = new AbortController();
         try {
           const r = await fetch(url, {
             method: 'PUT',
             headers: { 'content-range': 'bytes ' + at + '-' + (end - 1) + '/' + file.size, 'upload-name': encodeURIComponent(file.name) },
             body: file.slice(at, end),
+            signal: cut.signal,
           });
           const body = await r.json().catch(() => ({}));
           if (r.status === 413) throw Object.assign(new Error(body.error || 'The file is too big.'), { final: true });
@@ -87,9 +101,11 @@ export function uploadPage(uploadId: string): string {
           complete = r.headers.get('upload-complete') === 'true';
           tries = 0;
         } catch (error) {
-          if (error.final || ++tries > 5) throw error;
+          // A part cut off because the page came back from the background is not a failure.
+          const resumed = cut.signal.aborted;
+          if (error.final || (!resumed && ++tries > 5)) throw error;
           say('Connection dropped; picking up where it stopped…');
-          await new Promise((r) => setTimeout(r, 1000 * tries));
+          if (!resumed) await new Promise((r) => setTimeout(r, 1000 * tries));
           ({ at, complete } = await offset());
         }
       }
@@ -100,6 +116,9 @@ export function uploadPage(uploadId: string): string {
       say(error.message || String(error));
     } finally {
       busy = false;
+      cut = undefined;
+      if (lock) lock.release().catch(() => {});
+      lock = undefined;
     }
   }
 
@@ -112,8 +131,9 @@ export function uploadPage(uploadId: string): string {
     const file = e.dataTransfer.files[0];
     if (file) send(file);
   });
-  offset().then(({ complete }) => {
+  offset().then(({ at, complete }) => {
     if (complete) { drop.hidden = true; say('This file is already here. Go back to the chat and say it’s in. (Upload ' + id + ')', true); }
+    else if (at > 0) say(mb(at) + ' of your file is already here. Choose the same file again and the rest is sent.');
   }, (error) => say(error.message));
 })();
 </script>
