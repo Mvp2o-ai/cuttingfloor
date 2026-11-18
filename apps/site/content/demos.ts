@@ -47,6 +47,10 @@ export type Demo = {
   uploaded: string;
   /** The skill the agent followed, if one fits: /skills/<skill>. */
   skill?: string;
+  /** The guide that answers the same question: /guides/<guide>. */
+  guide?: string;
+  /** The fix that answers the same question: /fixes/<fix>. */
+  fix?: string;
   /** Chapters of the finished video, in its seconds, for key moments in search. */
   moments?: { name: string; start: number; end: number }[];
   agent: 'Claude' | 'ChatGPT' | 'Kazi';
@@ -888,7 +892,152 @@ const EXPLAINER: Demo = {
   ],
 };
 
-export const DEMOS: Demo[] = [INTERVIEW, EXPLAINER, TIPS, MEMORY, PRODUCT, JEV, LISTING, DANCE];
+// A streamer's 2:20 stream of Pulse Swarm, an original arcade game rendered on cuttingfloor, with
+// his facecam (generated streamer, lip-synced to his commentary; edited for real by cuttingfloor).
+const STREAM: Demo = {
+  id: 'stream',
+  slug: 'turn-a-gaming-stream-into-shorts',
+  title: 'Turn a gaming stream into Shorts',
+  description:
+    'A streamer asks ChatGPT to turn his stream into Shorts. cuttingfloor finds the three best moments, opens each on its hype line, stacks his facecam over the gameplay in 9:16 and adds big word-by-word captions: three Shorts from one stream.',
+  steps: [
+    'Followed the steps for turning a long video into Shorts.',
+    'Wrote down every word of the stream, with when it was said.',
+    'Had Jev, its own vision model, find the big combo, the crash and the boss fight in the picture.',
+    'Picked three moments: the boss win on his last life, the 50 combo, and the crash he begs chat not to clip.',
+    'Opened each Short on its hook: “LET’S GO!”, “FIFTY!” and “Chat, do not clip that.”',
+    'Put his facecam across the top and the game underneath, kept on his ship and the boss.',
+    'Fixed the words the transcript misheard, like “China” for “chain it” and “Vector 7” for “Sector 7”.',
+    'Added big captions on a purple-to-pink bar, with each word lighting up yellow as he says it.',
+    'Checked a frame from every part, then exported all three vertical.',
+  ],
+  uploaded: '2026-11-18',
+  skill: 'turn-a-long-video-into-shorts',
+  guide: 'turn-a-long-video-into-shorts',
+  fix: 'make-a-video-vertical',
+  moments: [
+    { name: 'Hook: LET’S GO!', start: 0, end: 2.8 },
+    { name: 'One life left', start: 2.8, end: 16.7 },
+    { name: 'Ten percent', start: 16.7, end: 20.5 },
+    { name: 'It’s down!', start: 20.5, end: 24.3 },
+    { name: 'New high score', start: 24.3, end: 25.5 },
+  ],
+  agent: 'ChatGPT',
+  raw: {
+    src: '/demo/stream/raw.mp4',
+    poster: '/demo/stream/raw.jpg',
+    label: 'kairoplays-sector-7-stream.mp4 · 2:20',
+    seconds: 140,
+    captions: '/demo/stream/raw.vtt',
+    wide: true,
+  },
+  extra: [
+    {
+      src: '/demo/stream/combo.mp4',
+      poster: '/demo/stream/combo.jpg',
+      label: 'fifty-combo-short.mp4 · 0:15',
+      seconds: 15.9,
+      captions: '/demo/stream/combo.vtt',
+      caption: 'Short 2: the 50 combo',
+    },
+    {
+      src: '/demo/stream/fail.mp4',
+      poster: '/demo/stream/fail.jpg',
+      label: 'do-not-clip-that-short.mp4 · 0:15',
+      seconds: 15.85,
+      captions: '/demo/stream/fail.vtt',
+      caption: 'Short 3: “Do not clip that”',
+    },
+  ],
+  transcript: [
+    { text: 'Yo yo yo, what’s up chat! We are back! Pulse Swarm, sector seven.', cut: 0 },
+    { text: '[warming up on the small ones, shout-outs to chat]', cut: 0 },
+    { text: 'Ooh, here comes a big wave. Okay, chain it, chain it, chain it!' },
+    { text: 'Wait, wait, wait! Twenty! Thirty! No way. No way!' },
+    { text: 'Oh my god, that laser was this close! FIFTY! Fifty combo! Let’s go!' },
+    { text: 'Honestly? I’m kind of cracked at this game. Nobody is touching me right now.' },
+    {
+      text: '[flies straight into a mine] No, no, no. Did I just fly into that? It wasn’t even moving!',
+    },
+    { text: 'Chat. Do not clip that. I’m serious.' },
+    {
+      text: 'Okay. Focus. We’ve still got two lives. [the boss warning, the first ten seconds of the fight]',
+      cut: 0,
+    },
+    { text: 'Ah! I got hit! One life left, chat. Nobody talk to me.' },
+    { text: 'It’s at ten percent. Five percent. Come on, come on, come on!' },
+    { text: 'No way! It’s down! Let’s go! Sector seven, done! New high score!' },
+    { text: 'GG, chat. That one is going in the highlights. Peace!', cut: 0 },
+  ],
+  turns: [
+    {
+      prompt:
+        'Here’s my stream from last night. Find the best moments and make them Shorts. Start each one on the hype, and keep my facecam in.',
+      reply:
+        'I’ll read everything you said, find the big moments in the picture, and cut each into a vertical Short that opens on its best second, with your facecam on top and the game underneath.',
+      calls: [
+        { fn: 'skills.get', note: 'long video into Shorts' },
+        { fn: 'media.import', note: 'the 2:20 stream' },
+        { fn: 'media.analyze', note: 'every word, timed' },
+        { fn: 'media.analyze', note: 'followed the ship' },
+        { fn: 'media.seek', note: 'Jev: combo, crash, boss, win' },
+        { fn: 'render.frames', note: 'looked at the whole stream' },
+        { fn: 'timeline.create', note: 'vertical, one per Short' },
+        { fn: 'edit.batch', note: 'hook first, facecam on top' },
+        { fn: 'clip.set_transform', note: 'cropped the facecam to the top' },
+        { fn: 'create.matte', note: 'a neon line between the two' },
+        { fn: 'render.frames', note: 'checked every part' },
+        { fn: 'export.video', note: 'vertical, 0:25' },
+      ],
+      status: 'Finding your best moments…',
+      done: 'Found three: your boss win on your last life, the 50 combo, and the crash where you tell chat not to clip it. Here’s the boss win, 25 seconds, opening on your “LET’S GO!”. Want captions on all three?',
+      video: {
+        src: '/demo/stream/cut.mp4',
+        poster: '/demo/stream/cut.jpg',
+        label: 'last-life-boss-win-cut.mp4 · 0:25',
+        seconds: 25.5,
+        captions: '/demo/stream/cut.vtt',
+      },
+    },
+    {
+      prompt: 'Yes! Big captions that light up each word, and finish all three.',
+      reply:
+        'I’ll fix the words the transcript misheard, put big captions on a purple-to-pink bar with the spoken word in yellow, and finish all three.',
+      calls: [
+        { fn: 'skills.get', note: 'Shorts-style captions' },
+        { fn: 'media.analyze', note: 'listened again to the shouting' },
+        { fn: 'create.matte', note: 'purple-to-pink caption bar' },
+        { fn: 'edit.batch', note: 'the 50 combo and the crash' },
+        { fn: 'caption.add', note: '41 captions, word by word' },
+        { fn: 'render.frames', note: 'captions covered the ship' },
+        { fn: 'text.set', note: 'bigger, moved under the action' },
+        { fn: 'render.frames', note: 'checked every caption' },
+        { fn: 'export.video', note: 'three vertical Shorts' },
+      ],
+      status: 'Adding captions…',
+      done: 'All three are ready: the boss win (0:25), the 50 combo (0:15) and “Chat, do not clip that” (0:15), each with captions that light up word by word. I fixed “China” to “chain it” and “Vector 7” to “Sector 7”. Want a title on the first second of each?',
+      video: {
+        src: '/demo/stream/short.mp4',
+        poster: '/demo/stream/short.jpg',
+        label: 'last-life-boss-win-short.mp4 · 0:25',
+        seconds: 25.5,
+        captions: '/demo/stream/short.vtt',
+      },
+    },
+  ],
+};
+
+export const DEMOS: Demo[] = [
+  STREAM,
+  INTERVIEW,
+  EXPLAINER,
+  TIPS,
+  MEMORY,
+  PRODUCT,
+  JEV,
+  LISTING,
+  DANCE,
+];
 
 export function demo(slug: string): Demo | undefined {
   return DEMOS.find((d) => d.slug === slug);

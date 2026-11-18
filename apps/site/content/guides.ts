@@ -244,7 +244,11 @@ export const GUIDES: Guide[] = [
     ],
     prompt:
       'Here’s my 40-minute stream. Make three vertical Shorts for TikTok, 30 to 60 seconds each: the clutch round, the funniest fail, and the moment chat went wild. Start each on the hook, keep my face in frame, and add big captions that highlight each word. Give me the download links.',
-    demos: ['edit-a-two-person-interview', 'edit-a-product-review-short'],
+    demos: [
+      'turn-a-gaming-stream-into-shorts',
+      'edit-a-two-person-interview',
+      'edit-a-product-review-short',
+    ],
     faqs: [
       {
         q: 'Can AI turn one long video into several Shorts?',

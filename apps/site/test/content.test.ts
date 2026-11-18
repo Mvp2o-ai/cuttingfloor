@@ -76,6 +76,11 @@ describe('links', () => {
     for (const slug of g.demos) expect(resolves(`/demos/${slug}`), slug).toBe(true);
   });
 
+  it.each(DEMOS.filter((d) => d.guide || d.fix))('/demos/$slug links to its guide and fix', (d) => {
+    if (d.guide) expect(resolves(`/guides/${d.guide}`), d.guide).toBe(true);
+    if (d.fix) expect(resolves(`/fixes/${d.fix}`), d.fix).toBe(true);
+  });
+
   it('relates every fix to three or four other fixes that exist', () => {
     for (const f of FIXES) {
       expect(f.related.length, f.id).toBeGreaterThanOrEqual(3);
