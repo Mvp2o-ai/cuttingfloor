@@ -188,5 +188,20 @@ describe('script keys', () => {
     });
     await modern.body?.cancel();
     expect(apps).toContainEqual([USER, 'claude-ai']);
+
+    // A 2025 client that said who it was before signing in names itself only by User-Agent.
+    const unnamed = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${made.key}`,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-protocol-version': '2025-06-18',
+        'user-agent': 'openai-mcp/1.0.0',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+    });
+    await unnamed.body?.cancel();
+    expect(apps).toContainEqual([USER, 'openai-mcp']);
   });
 });
