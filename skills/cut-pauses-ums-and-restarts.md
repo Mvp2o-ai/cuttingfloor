@@ -1,11 +1,11 @@
 ---
 name: cut-pauses-ums-and-restarts
 description: Clean up a talking video with cuttingfloor. Cut the long pauses, the ums, the lines the speaker started over, and lines said twice, then smooth every cut so nothing jumps. Use when someone asks to tighten a talking-head, vlog, interview, tutorial or listing video, remove dead air, remove filler words, or fix restarts and retakes.
-version: 8
+version: 9
 type: playbook
 source: system
 author: Ken Wiltshire
-related: add-captions:related
+related: add-captions:related, spend-credits-wisely:prerequisite, shorts-style-captions:related
 ---
 
 # Cut pauses, ums and restarts

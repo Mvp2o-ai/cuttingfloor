@@ -1,12 +1,12 @@
 ---
 name: make-motion-graphics
 description: Make a motion graphics video like a professional motion designer, from brief to delivered master and any cutdowns. Brief, storyboard, animate each scene in HTML with professional-grade easing, camera and timing, assemble, score and export. Use when someone asks for motion graphics, an animated intro, title sequence, logo build, kinetic type, an explainer, promo or launch animation, or to animate a storyboard.
-version: 6
+version: 7
 type: playbook
 source: system
 author: Sanji Nai-Chien
 author_url: https://www.youtube.com/watch?v=D5qpBbEWTxo
-related: storyboard-before-animate:prerequisite
+related: storyboard-before-animate:prerequisite, spend-credits-wisely:prerequisite
 ---
 
 # Make motion graphics like a pro

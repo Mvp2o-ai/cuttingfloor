@@ -1,11 +1,11 @@
 ---
 name: storyboard-before-animate
 description: Storyboard a video before any motion code is written. Lay out panel frames against a timed beat sheet, write what is on screen, how it moves, where the camera goes and how long it stays, prove the timing against the audio, and lock a frame map. Use when someone asks to storyboard, board out, build a beat sheet or animatic, plan the timing or shot order of a talking-head, explainer, launch, promo, teaser or vertical video, lay out a script or brief as frames, or work out screen time per beat before animating.
-version: 3
+version: 4
 type: playbook
 source: system
 author: Ken Wiltshire
-related: make-motion-graphics:related
+related: make-motion-graphics:related, spend-credits-wisely:prerequisite
 ---
 
 # Storyboard before animate
