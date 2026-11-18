@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   buildPictureIndex,
   INDEX_VERSION,
@@ -99,6 +99,12 @@ export class SearchIndexer {
         out: dir,
         signal: AbortSignal.timeout(60 * 60_000),
       });
+      // A media deleted while it was indexed: the index made its folder again, and would hold
+      // the account's storage until swept.
+      if (!(await this.#media.find(owner, id))) {
+        await rm(dirname(dir), { recursive: true, force: true });
+        return;
+      }
       await rm(join(dir, 'failed.json'), { force: true });
     } catch (error) {
       // A media deleted while it was indexed has no folder left to say so in.
