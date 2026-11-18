@@ -15,7 +15,7 @@ export type Fix = {
   see?: { label: string; href: string };
 };
 
-export const FIXES_UPDATED = '2026-11-06';
+export const FIXES_UPDATED = '2026-11-18';
 
 export const FIXES: Fix[] = [
   {
@@ -153,12 +153,12 @@ export const FIXES: Fix[] = [
     id: 'make-a-video-vertical',
     problem: 'How do I make a video vertical, or turn a long video into Shorts?',
     answer:
-      'The agent reframes to 9:16 and follows the speaker’s face so they stay in frame. For Shorts, it reads the transcript, picks the moments worth clipping and cuts each on whole sentences.',
+      'The agent fills the 9:16 frame and moves the crop shot by shot to keep the speaker’s face in view, with no black bars. For Shorts, it imports the long video once, finds the moments you name or describe from the transcript and the picture, cuts each on whole sentences with the hook first, and captions every word.',
     prompt:
       'Turn this 20-minute podcast into three vertical Shorts of its best moments, with captions.',
     see: {
-      label: 'Edit a two-person interview into a Short',
-      href: '/demos/edit-a-two-person-interview',
+      label: 'How to turn a long video into Shorts with AI',
+      href: '/guides/turn-a-long-video-into-shorts',
     },
   },
   {
