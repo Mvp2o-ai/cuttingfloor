@@ -214,6 +214,80 @@ export const GUIDES: Guide[] = [
       },
     ],
   },
+  {
+    slug: 'turn-a-long-video-into-shorts',
+    lang: 'en',
+    title: 'How to turn a long video into Shorts with AI',
+    metaTitle: 'Turn a long video into Shorts, Reels and TikToks with AI | cuttingfloor',
+    metaDescription:
+      'Turn a stream, podcast, film or lecture into vertical Shorts from ChatGPT, Claude or Kazi: you pick the moments, it cuts them, keeps every face in frame shot by shot, captions each word and exports MP4s.',
+    answer:
+      'Connect cuttingfloor to the AI you already use (ChatGPT, Claude or Kazi), send the long video, and say which moments you want. It transcribes every word with its time, finds moments you describe in plain words, cuts each Short, keeps the speaker in frame shot by shot in full-screen 9:16, adds word-by-word captions, and exports each as an MP4.',
+    updated: '2026-11-18',
+    steps: [
+      {
+        title: 'Connect your agent once',
+        body: 'Add cuttingfloor to ChatGPT, Claude or Kazi (below). It takes a minute, and you sign in the first time.',
+      },
+      {
+        title: 'Send the long video',
+        body: 'Attach it in the chat, send a direct link to the file (public Dropbox and Google Drive links work), or drop it on your upload page. A YouTube or Twitch page is not the file itself: download your video first, then send it.',
+      },
+      {
+        title: 'Say which moments, how long and how they look',
+        body: 'Name the moments (“the clutch at the end”, “when she explains pricing”) or describe what to look for, how many Shorts, how long each is, and the caption style. Your agent reads the whole transcript and searches the picture for what you described, then shows you what it found.',
+      },
+      {
+        title: 'Check them, then get the files',
+        body: 'It looks at frames from every shot before it hands anything over. Ask for changes in words (“start on the joke”, “shorter”, “captions higher”), then get each Short as an MP4 with a link that plays in any browser.',
+      },
+    ],
+    prompt:
+      'Here’s my 40-minute stream. Make three vertical Shorts for TikTok, 30 to 60 seconds each: the clutch round, the funniest fail, and the moment chat went wild. Start each on the hook, keep my face in frame, and add big captions that highlight each word. Give me the download links.',
+    demos: ['edit-a-two-person-interview', 'edit-a-product-review-short'],
+    faqs: [
+      {
+        q: 'Can AI turn one long video into several Shorts?',
+        a: 'Yes. The video is imported once and analysed once; every Short is cut from that same copy, so ten Shorts don’t cost ten imports. Each Short gets its own edit and its own export.',
+      },
+      {
+        q: 'How does it make a wide video vertical without black bars?',
+        a: 'By pan and scan: the picture fills the 9:16 frame and the crop moves to keep the subject in view. cuttingfloor finds every shot change and every face (five times a second), then sets the crop once per shot, so it jumps on cuts and never drifts. On a 12-minute film, finding the shot changes took 12 seconds and the faces 41 seconds.',
+      },
+      {
+        q: 'What if there are two people, a facecam, or no face at all?',
+        a: 'Two people far apart can be stacked, one above the other, each kept in frame. A gaming stream’s facecam can sit across the top with the gameplay below. With no face, it follows any subject you point at (a car, a player, a product), or puts the whole wide picture in the middle over a blurred copy of itself.',
+      },
+      {
+        q: 'Does the AI pick the best moments for me?',
+        a: 'It finds what you describe, and you decide. It reads the full transcript with the time of every word and searches the picture for moments you name in plain words (“a big win”, “when she laughs”), then shows you frames from each before cutting. Taste stays yours; it doesn’t score clips for you.',
+      },
+      {
+        q: 'Can it add TikTok-style captions?',
+        a: 'Yes. Captions are placed from the transcript’s word times and can light up each word as it’s said. Style is yours: font, size, colour, position, outline, shadow, and a gradient or rounded band behind the words. You can also get them as an SRT or VTT file.',
+      },
+      {
+        q: 'Can I paste a YouTube or Twitch link?',
+        a: 'Not a video page: the server needs the file itself. Download your stream or video (from YouTube Studio, your Twitch VODs or your camera), then attach it, send a direct file link, or drop it on your upload page.',
+      },
+      {
+        q: 'How long can the video be, and how long should each Short be?',
+        a: 'Long videos are fine: streams, films, full podcast episodes. Most Shorts that hold attention run 15 to 60 seconds and open on their hook in the first two seconds; YouTube allows Shorts up to three minutes. Tell your agent the length you want.',
+      },
+      {
+        q: 'Is this a separate app like OpusClip?',
+        a: 'No. cuttingfloor works inside the AI you already use (ChatGPT, Claude, Kazi, or any app that speaks MCP), so you ask for edits in your own words and can change anything after. It’s open source and can run on your own machine too.',
+      },
+      {
+        q: 'How does my agent know how to do this well?',
+        a: 'cuttingfloor ships skills, short methods your agent finds when it needs them: one for turning a long video into Shorts, built on pan and scan, subject tracking and Shorts-style captions. Your agent reads them on its own; you don’t need to mention them.',
+      },
+      {
+        q: 'What does it cost?',
+        a: `Start free with ${FREE_CREDITS} credits, no card and no time limit. A credit is a minute of the server working (importing, analysing, exporting); editing and previews are free, so one import feeds every Short. After that, credit packs that never expire, on the pricing page.`,
+      },
+    ],
+  },
 ];
 
 /** A guide's address: /guides/<slug> in English, /es/<slug> in Spanish. */
