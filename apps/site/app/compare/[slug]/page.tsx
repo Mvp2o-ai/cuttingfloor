@@ -52,7 +52,7 @@ export default async function VersusPage({ params }: Props) {
         }}
       />
       <Nav />
-      <main className="frame wt">
+      <main className="frame wt cmp-tight">
         <section className="cell wt-head marks">
           <span className="mark-b" />
           <Breadcrumbs
