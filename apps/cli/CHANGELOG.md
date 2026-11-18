@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.55.9
+
+### Patch Changes
+
+- 68403d1: media.import shows the player: it follows the import and plays the file in the chat when it lands.
+
 ## 0.55.8
 
 ### Patch Changes
