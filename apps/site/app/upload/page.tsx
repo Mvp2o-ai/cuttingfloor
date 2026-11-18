@@ -19,8 +19,8 @@ export default async function UploadPage() {
           <div className="head">
             <span className="label">Your files</span>
             <p className="lede">
-              Your footage, music, logos and photos: drop them here and your AI can use them. Tell
-              it the file’s name, for example “cut the pauses out of interview.mp4”.
+              Your footage, music, logos and photos: add them here and your AI can use them. Tell it
+              the file’s name, for example “cut the pauses out of interview.mp4”.
             </p>
           </div>
           {files ? (

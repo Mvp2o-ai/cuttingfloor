@@ -25,6 +25,8 @@ type Sending = {
   /** Kept to carry on after a failure without picking the file again. */
   file: File;
   upload_id?: string;
+  /** The server refused the file (too big, no room, link gone): sending again won't help. */
+  refused?: boolean;
 };
 
 const size = (n: number) =>
@@ -152,7 +154,11 @@ export function FilesPanel({ initial }: { initial: Files }) {
       update(key, { sent: file.size, state: 'done', note: '' });
       track('Upload', { kind: kind(file), mb: Math.round(file.size / 1e6) });
     } catch (error) {
-      update(key, { state: 'failed', note: (error as Error).message || String(error) });
+      update(key, {
+        state: 'failed',
+        note: (error as Error).message || String(error),
+        refused: error instanceof Final,
+      });
       track('Upload failed', { kind: kind(file) });
     } finally {
       if (--active.current === 0) {
@@ -277,7 +283,7 @@ export function FilesPanel({ initial }: { initial: Files }) {
                     ? s.note
                     : s.note || `${size(s.sent)} of ${size(s.size)}`}
               </span>
-              {s.state === 'failed' && s.upload_id ? (
+              {s.state === 'failed' && s.upload_id && !s.refused ? (
                 <button type="button" className="link file-resume" onClick={() => retry(s)}>
                   Resume
                 </button>
