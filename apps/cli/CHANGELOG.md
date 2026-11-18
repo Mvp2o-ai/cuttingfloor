@@ -1,5 +1,13 @@
 # cuttingfloor
 
+## 0.55.8
+
+### Patch Changes
+
+- 998bf7e: Skills split by technique: subject-tracking (positions over time into keyframes that follow a subject) and pan-and-scan (fill a frame of another shape by moving the crop shot by shot), and turn-a-long-video-into-shorts is now a thin composition of them with captions.
+- c831583: New skill turn-a-long-video-into-shorts: find the moments, cut Shorts with the hook first, and reframe a wide video to full-screen vertical shot by shot from shot changes and face boxes in one transform, then captions and one export each.
+- 042dd91: Two new skills: spend-credits-wisely (what spends credits and what is free, so a job checks its work for free and makes many outputs from one import), now a prerequisite of every skill, and shorts-style-captions (a gradient or rounded band behind word-by-word captions, from one band picture instead of one per line).
+
 ## 0.55.7
 
 ### Patch Changes
