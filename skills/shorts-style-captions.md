@@ -1,11 +1,11 @@
 ---
 name: shorts-style-captions
 description: Shorts and TikTok style captions with cuttingfloor, including a gradient or rounded band behind the words, which a caption's own box (one solid colour, square corners) can't draw. One band picture from create.matte, shaped with a rounded mask on a track under the captions, then caption.add with word timings for word-by-word highlighting. Use when someone asks for captions or subtitles "like TikTok", "like Shorts", "with a gradient behind them", "in a rounded box", "in a bar" or "with the word lighting up", or for a branded caption look.
-version: 1
+version: 2
 type: playbook
 source: system
 author: Ken Wiltshire
-related: spend-credits-wisely:prerequisite
+related: spend-credits-wisely:prerequisite, turn-a-long-video-into-shorts:related
 ---
 
 # Shorts-style captions

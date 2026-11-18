@@ -1,10 +1,11 @@
 ---
 name: spend-credits-wisely
 description: Get the most out of a cuttingfloor account's credits on any job. What spends credits (server time on imports, analysis, exports and create.*, and judgments) and what is free (every edit, previews, frames, reading kept results), so the assistant checks its work for free, imports and analyses once, makes many outputs from one import, and does one full export per finished piece. Use before any long video, any job with several outputs (Shorts, versions, languages), any repeated graphic such as subtitles or labels, or when credits are low or a job was refused with quota_exceeded.
-version: 1
+version: 2
 type: playbook
 source: system
 author: Ken Wiltshire
+related: turn-a-long-video-into-shorts:related, shorts-style-captions:related
 ---
 
 # Spend credits wisely
