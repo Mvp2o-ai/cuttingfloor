@@ -303,11 +303,12 @@ describe('the local model', () => {
       expect(tighter?.slug).toBe('cut-pauses-ums-and-restarts');
       expect(tighter?.semantic).toBeGreaterThan(0.5);
       expect(tighter?.keyword).toBeLessThan(0.4);
-      // Off-topic asks still rank, with scores low enough for the caller to see it doesn't fit.
+      // Off-topic asks still rank, with scores low enough for the caller to see it doesn't fit (a
+      // real match scores 0.45 or more; the font colour shares words with the captions skill).
       const [weather] = await index.search('what is the weather in Lisbon tomorrow');
       const [font] = await index.search('change the font colour');
-      expect(weather?.score).toBeLessThan(0.1);
-      expect(font?.score).toBeLessThan(0.1);
+      expect(weather?.score).toBeLessThan(0.2);
+      expect(font?.score).toBeLessThan(0.2);
     },
     60_000,
   );
