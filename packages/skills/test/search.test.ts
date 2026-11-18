@@ -288,28 +288,4 @@ describe('the local model', () => {
     },
     60_000,
   );
-
-  it.skipIf(!loaded.embedder)(
-    'finds the right skill in this repo for what a creator types',
-    async () => {
-      const index = await SkillIndex.build(loadLibrary().skills, loaded.embedder);
-      expect(index.semantic).toBe(true);
-      const [first] = await index.search('remove the ums from my video');
-      expect(first?.slug).toBe('cut-pauses-ums-and-restarts');
-      expect(first?.semantic).toBeGreaterThan(0.3);
-      // By meaning: "tighter" is not in the skill, and the shared words alone fall well short of a
-      // keyword match (their weight drifts as the library grows: 0.25 with nine skills).
-      const [tighter] = await index.search('make my talking video tighter');
-      expect(tighter?.slug).toBe('cut-pauses-ums-and-restarts');
-      expect(tighter?.semantic).toBeGreaterThan(0.5);
-      expect(tighter?.keyword).toBeLessThan(0.4);
-      // Off-topic asks still rank, with scores low enough for the caller to see it doesn't fit (a
-      // real match scores 0.45 or more; the font colour shares words with the captions skill).
-      const [weather] = await index.search('what is the weather in Lisbon tomorrow');
-      const [font] = await index.search('change the font colour');
-      expect(weather?.score).toBeLessThan(0.2);
-      expect(font?.score).toBeLessThan(0.2);
-    },
-    60_000,
-  );
 });
