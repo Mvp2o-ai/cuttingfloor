@@ -1,11 +1,11 @@
 ---
 name: act-on-part-of-the-picture
 description: Act on one area or one thing in the picture of a video and leave the rest of the frame untouched, with cuttingfloor. Select it (a shape, a box from faces, tracking or judge.ask, or a cutout of the subject), then act on that selection only - blur or pixelate it, grade it, or paint it out of the shot. Use when someone asks to blur or pixelate a face, a logo, a screen or a number plate, or to grade or paint out one object in a shot.
-version: 2
+version: 3
 type: playbook
 source: system
 author: Ken Wiltshire
-related: spend-credits-wisely:prerequisite
+related: spend-credits-wisely:prerequisite, subject-tracking:related
 ---
 
 # Act on part of the picture
