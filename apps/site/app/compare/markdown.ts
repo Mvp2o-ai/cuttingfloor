@@ -18,6 +18,7 @@ export function versusMarkdown(slug: string): string | undefined {
     summary: v.answer,
     updated: v.updated,
     body: [
+      `${pageLink('Start free', '/start')} · ${pageLink('Watch it edit', demos[0] ? `/demos/${demos[0].slug}` : '/demos')}`,
       ...v.sides.map((s) => `## ${s.name}\n\n${s.is}\n\n**Where it wins**\n\n${s.wins}`),
       `## The deciding line\n\n${v.deciding}`,
       `## Pick ${v.sides[0].name} if\n\n${v.pick[0]}`,

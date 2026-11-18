@@ -444,3 +444,21 @@ export const VERSUS: Versus[] = [
     updated: '2026-11-17',
   },
 ];
+
+// Names on the comparison tables that are not the side's own name.
+const VERSUS_ALIAS: Record<string, string> = {
+  invideo: 'invideo ai',
+  'adobe premiere': 'premiere pro',
+};
+
+/** The rival page for a product named on the comparison tables, when one exists. */
+export function versusPath(label: string): string | undefined {
+  const key = label.toLowerCase().replace(/ mcp$/, '');
+  const name = VERSUS_ALIAS[key] ?? key;
+  const page = VERSUS.find(
+    (v) =>
+      v.kind === 'rival' &&
+      v.sides.some((s) => s.name !== 'cuttingfloor' && s.name.toLowerCase() === name),
+  );
+  return page ? `/compare/${page.slug}` : undefined;
+}

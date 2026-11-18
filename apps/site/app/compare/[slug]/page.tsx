@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { demo } from '../../../content/demos.ts';
 import { VERSUS } from '../../../content/versus.ts';
-import { Breadcrumbs, Footer, JsonLd, Nav } from '../../shell.tsx';
+import { Breadcrumbs, Footer, JsonLd, Nav, SIGN_UP } from '../../shell.tsx';
 
 // One template for every versus page. The words come from the versus entry.
 
@@ -63,6 +63,14 @@ export default async function VersusPage({ params }: Props) {
           />
           <h1 className="display">{v.title}</h1>
           <p className="lede wt-answer">{v.answer}</p>
+          <div className="actions">
+            <a className="link-big" href={SIGN_UP}>
+              Start free
+            </a>
+            <a className="link-big quiet" href={demos[0] ? `/demos/${demos[0].slug}` : '/demos'}>
+              Watch it edit
+            </a>
+          </div>
         </section>
 
         <section className="cell">

@@ -9,8 +9,15 @@ import {
   SERVER_COLUMNS,
   SERVERS,
 } from '../../content/compare.ts';
-import { cell } from '../lib/markdown.ts';
+import { versusPath } from '../../content/versus.ts';
+import { abs, cell } from '../lib/markdown.ts';
 import { SITE_URL } from '../seo.ts';
+
+/** A product name linked to its comparison, or the name alone when this site has no page for it. */
+const named = (name: string) => {
+  const path = versusPath(name);
+  return path ? `[${name}](${abs(path)})` : name;
+};
 
 // /compare as Markdown, for agents deciding between tools: the same data as the page.
 
@@ -31,7 +38,7 @@ export function markdown(): string {
     '',
     '## Two kinds of AI video editing',
     '',
-    '- An editor with an AI inside: Descript (Underlord), invideo (Agent Two), Vidova, CutClip, Tella, OpusClip, Kapwing, CapCut, VEED. You open their app and their AI works in it, on their credits. Agent access, when offered, is a way into their app: a request to their AI, or edits to a project that lives in their editor.',
+    `- An editor with an AI inside: ${named('Descript')} (Underlord), ${named('invideo')} (Agent Two), ${named('Vidova')}, CutClip, Tella, OpusClip, Kapwing, ${named('CapCut')}, ${named('VEED')}. You open their app and their AI works in it, on their credits. Agent access, when offered, is a way into their app: a request to their AI, or edits to a project that lives in their editor.`,
     '- Editing tools for your agent: cuttingfloor. You stay in Claude, ChatGPT, Codex, Cursor or Kazi and connect one open-source MCP server, hosted or self-hosted. The agent makes each edit (cut, trim, caption, mix, effects, export) and sees the result after every edit.',
     '',
     'Forwarding a prompt: Descript\'s API and MCP have one editing call, a job that takes a written request ("remove the section from 1:30 to 2:15") and hands it to Underlord. There is no cut, trim, caption or render call, and no picture of the result is documented coming back. Import, search, publish and transcript export are direct calls. VideoDB\'s call_director works the same way.',
@@ -49,7 +56,7 @@ export function markdown(): string {
     '',
     ...table(
       ['Product', ...SERVER_COLUMNS.map((c) => c.label)],
-      SERVERS.map((s) => [s.name, ...SERVER_COLUMNS.map((c) => s.cells[c.key])]),
+      SERVERS.map((s) => [named(s.name), ...SERVER_COLUMNS.map((c) => s.cells[c.key])]),
     ),
     '',
     '## Editing apps, feature by feature',
@@ -60,7 +67,12 @@ export function markdown(): string {
     '',
     ...table(
       ['App', ...APP_COLUMNS.map((c) => c.label), 'Agent access', 'Self-host'],
-      APPS.map((a) => [a.name, ...APP_COLUMNS.map((c) => a.marks[c.key]), a.agent, a.selfHost]),
+      APPS.map((a) => [
+        named(a.name),
+        ...APP_COLUMNS.map((c) => a.marks[c.key]),
+        a.agent,
+        a.selfHost,
+      ]),
     ),
     '',
     'How cuttingfloor does each:',
@@ -71,7 +83,7 @@ export function markdown(): string {
     '',
     '## Pick it when',
     '',
-    ...[...SERVERS, ...ALSO].map((s) => `- ${s.name}: ${s.is} Pick it when ${s.pick}`),
+    ...[...SERVERS, ...ALSO].map((s) => `- ${named(s.name)}: ${s.is} Pick it when ${s.pick}`),
     '',
   ].join('\n');
   return body;
