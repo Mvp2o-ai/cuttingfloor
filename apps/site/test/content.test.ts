@@ -68,6 +68,9 @@ describe('answers', () => {
 });
 
 describe('links', () => {
+  it.each(FIXES.filter((f) => f.watch))('/fixes/$id links to a demo that exists', (f) => {
+    expect(resolves(f.watch?.href ?? ''), f.watch?.href).toBe(true);
+  });
   it.each(FIXES.filter((f) => f.see))('/fixes/$id links to a page that exists', (f) => {
     expect(resolves(f.see?.href ?? ''), f.see?.href).toBe(true);
   });

@@ -99,6 +99,11 @@ export default async function FixPage({ params }: Props) {
                 See it: <a href={f.see.href}>{f.see.label}</a>
               </p>
             )}
+            {f.watch && (
+              <p>
+                Watch it done: <a href={f.watch.href}>{f.watch.label}</a>
+              </p>
+            )}
           </div>
         </section>
 

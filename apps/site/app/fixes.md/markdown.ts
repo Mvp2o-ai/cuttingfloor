@@ -28,6 +28,7 @@ export function fixMarkdown(id: string): string | undefined {
     body: [
       `## What to type\n\n\`\`\`\n${f.prompt}\n\`\`\``,
       f.see ? `See it: [${f.see.label}](${abs(f.see.href)})` : '',
+      f.watch ? `Watch it done: [${f.watch.label}](${abs(f.watch.href)})` : '',
       `## Do it from your agent\n\n${list(AGENTS.map((a) => pageLink(a.name, `/agents/${a.slug}`)))}\n- ${pageLink('Connect', '/connect')}`,
       `## More fixes\n\n${list(related.map((r) => pageLink(r.problem, fixPath(r))))}\n- ${pageLink('Every fix', '/fixes')}`,
     ]

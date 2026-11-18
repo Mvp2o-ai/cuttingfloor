@@ -14,6 +14,8 @@ export type Fix = {
   prompt: string;
   /** A demo or guide that shows it. */
   see?: { label: string; href: string };
+  /** A demo of the job, when `see` is a guide, so the page shows it done as well. */
+  watch?: { label: string; href: string };
   /** Three or four other fixes, by id, linked at the foot of the page. */
   related: string[];
 };
@@ -179,6 +181,10 @@ export const FIXES: Fix[] = [
     see: {
       label: 'How to turn a long video into Shorts with AI',
       href: '/guides/turn-a-long-video-into-shorts',
+    },
+    watch: {
+      label: 'Turn a gaming stream into Shorts',
+      href: '/demos/turn-a-gaming-stream-into-shorts',
     },
     related: ['add-subtitles', 'trim-a-video', 'compress-a-video'],
   },
