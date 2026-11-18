@@ -575,8 +575,8 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       ].join(' '),
       inputSchema: MediaImportInput,
       outputSchema: withJob(MediaInfo),
-      // ChatGPT passes a file the user attached as this argument.
-      _meta: { 'openai/fileParams': ['file'] },
+      // ChatGPT passes a file the user attached as this argument; the player shows the import.
+      _meta: { 'openai/fileParams': ['file'], ...PLAYER_TOOL_META },
       annotations: {
         title: 'Import media',
         readOnlyHint: false,
