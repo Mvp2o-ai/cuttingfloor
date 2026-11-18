@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
-import { FIXES, FIXES_UPDATED } from '../../content/fixes.ts';
+import { FIXES, FIXES_UPDATED, fixLead, fixPath } from '../../content/fixes.ts';
 import { AgentBlock } from '../agents/block.tsx';
 import { LiveCard } from '../live-card.tsx';
+import { SITE_URL } from '../seo.ts';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
-import { Copy } from '../walkthroughs/copy.tsx';
 
-// The editing problems people search for most, each with the fix and what to say to your agent.
-// The words come from content/fixes.ts; the page only lays them out.
+// The index of the editing problems people search for most: each question links to its own page,
+// /fixes/<id>, with the answer's opening under it. The answers are marked up once, on their own
+// pages, so this one lists them. Each entry keeps the id old /fixes#<id> links point at.
 
 const TITLE = 'Common video editing problems, and how to fix them with AI';
 const DESCRIPTION =
@@ -25,11 +26,13 @@ export default function Fixes() {
       <JsonLd
         data={{
           '@context': 'https://schema.org',
-          '@type': 'FAQPage',
-          mainEntity: FIXES.map((f) => ({
-            '@type': 'Question',
+          '@type': 'ItemList',
+          name: TITLE,
+          itemListElement: FIXES.map((f, i) => ({
+            '@type': 'ListItem',
+            position: i + 1,
             name: f.problem,
-            acceptedAnswer: { '@type': 'Answer', text: f.answer },
+            url: new URL(fixPath(f), SITE_URL).toString(),
           })),
         }}
       />
@@ -42,8 +45,8 @@ export default function Fixes() {
           <h1 className="display">{TITLE}</h1>
           <p className="lede wt-answer">
             Connect cuttingfloor to the AI you already use (ChatGPT, Claude or Kazi), give it the
-            video and say what is wrong. Here are the problems people search for most, what the
-            agent does about each, and what to type.
+            video and say what is wrong. Here are the problems people search for most; each has its
+            own page with what the agent does about it and what to type.
           </p>
           <LiveCard />
           <p className="wt-byline">
@@ -69,22 +72,10 @@ export default function Fixes() {
             {FIXES.map((f, i) => (
               <li key={f.id} id={f.id}>
                 <span className="n">{String(i + 1).padStart(2, '0')}</span>
-                <h3>{f.problem}</h3>
-                <div className="fix-body">
-                  <p>{f.answer}</p>
-                  <figure className="wt-prompt">
-                    <pre>{f.prompt}</pre>
-                    <figcaption>
-                      <span className="label">Say it to your agent</span>
-                      <Copy text={f.prompt} label="Copy prompt" />
-                    </figcaption>
-                  </figure>
-                  {f.see && (
-                    <p>
-                      See it: <a href={f.see.href}>{f.see.label}</a>
-                    </p>
-                  )}
-                </div>
+                <h3>
+                  <a href={fixPath(f)}>{f.problem}</a>
+                </h3>
+                <p>{fixLead(f)}</p>
               </li>
             ))}
           </ol>

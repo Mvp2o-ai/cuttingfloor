@@ -1,6 +1,8 @@
+import { FIXES } from '../../content/fixes.ts';
 import { markdown as compare } from '../compare.md/markdown.ts';
 import { markdown as connect } from '../connect.md/markdown.ts';
 import { markdown as features } from '../features.md/markdown.ts';
+import { markdown as fixes, fixMarkdown } from '../fixes.md/markdown.ts';
 import { markdown as home } from '../index.md/markdown.ts';
 import { markdown as pricing } from '../pricing.md/markdown.ts';
 import { markdown as selfHost } from '../self-host.md/markdown.ts';
@@ -11,8 +13,21 @@ import { markdown as skills } from '../skills.md/markdown.ts';
 // which exports `markdown(): string`; a page is added here by importing that function.
 export const dynamic = 'force-static';
 
-/** In reading order: what it is, every tool, the price, connecting, self-hosting, compared, skills. */
-const PAGES: (() => string)[] = [home, features, pricing, connect, selfHost, compare, skills];
+/**
+ * In reading order: what it is, every tool, the price, connecting, self-hosting, compared, skills,
+ * then the fixes index and each fix's own page.
+ */
+const PAGES: (() => string)[] = [
+  home,
+  features,
+  pricing,
+  connect,
+  selfHost,
+  compare,
+  skills,
+  fixes,
+  ...FIXES.map((f) => () => fixMarkdown(f.id) ?? ''),
+];
 
 export function GET() {
   return new Response(PAGES.map((page) => page()).join('\n---\n\n'), {

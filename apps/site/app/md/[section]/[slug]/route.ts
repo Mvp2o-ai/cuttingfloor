@@ -1,10 +1,12 @@
 import { AGENTS } from '../../../../content/agents.ts';
 import { DEMOS } from '../../../../content/demos.ts';
+import { FIXES } from '../../../../content/fixes.ts';
 import { GUIDES } from '../../../../content/guides.ts';
 import { SKILLS } from '../../../../content/skills.ts';
 import { WALKTHROUGHS } from '../../../../content/walkthroughs.ts';
 import { agentMarkdown } from '../../../agents.md/markdown.ts';
 import { demoMarkdown } from '../../../demos.md/markdown.ts';
+import { fixMarkdown } from '../../../fixes.md/markdown.ts';
 import { guideMarkdown } from '../../../guides/markdown.ts';
 import { markdownResponse } from '../../../lib/markdown.ts';
 import type { Section } from '../../../lib/negotiate.ts';
@@ -27,6 +29,7 @@ const BUILD: Record<Section, { slugs: () => string[]; md: (slug: string) => stri
       slugs: () => GUIDES.filter((g) => g.lang === 'en').map((g) => g.slug),
       md: guideMarkdown('en'),
     },
+    fixes: { slugs: () => FIXES.map((f) => f.id), md: fixMarkdown },
     es: {
       slugs: () => GUIDES.filter((g) => g.lang === 'es').map((g) => g.slug),
       md: guideMarkdown('es'),

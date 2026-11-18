@@ -1,6 +1,6 @@
 import { AGENTS, AGENTS_UPDATED } from '../content/agents.ts';
 import { DEMOS } from '../content/demos.ts';
-import { FIXES_UPDATED } from '../content/fixes.ts';
+import { FIXES, FIXES_UPDATED, fixPath } from '../content/fixes.ts';
 import { GUIDES, guidePath } from '../content/guides.ts';
 import { SKILLS, SKILLS_UPDATED } from '../content/skills.ts';
 import { WALKTHROUGHS } from '../content/walkthroughs.ts';
@@ -61,6 +61,7 @@ export const ROUTES: Route[] = [
     title: 'Common video editing problems, and how to fix them with AI',
     updated: FIXES_UPDATED,
   },
+  ...FIXES.map((f) => ({ path: fixPath(f), title: f.problem, updated: FIXES_UPDATED })),
   { path: '/walkthroughs', title: 'Walkthroughs', updated: '2026-10-18' },
   ...WALKTHROUGHS.map((w) => ({
     path: `/walkthroughs/${w.slug}`,
