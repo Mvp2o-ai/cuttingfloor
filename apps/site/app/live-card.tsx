@@ -17,7 +17,7 @@ import { kaziUrl } from './kazi.tsx';
 const ENDING = {
   src: '/demo/live/ending.mp4',
   poster: '/demo/live/ending.jpg',
-  label: 'Big Buck Bunny with a happy ending',
+  label: 'Big Buck Bunny with a happier ending',
   seconds: 13,
   wide: true,
 };
@@ -122,7 +122,7 @@ export function LiveCard({ clip = true }: { clip?: boolean }) {
           <b>
             Watch it live now <span aria-hidden="true">→</span>
           </b>
-          <small>Kazi gives Big Buck Bunny a happy ending, while you watch.</small>
+          <small>Kazi gives Big Buck Bunny a happier ending.</small>
           <small>Kazi is one way in: ChatGPT, Claude or any MCP app connects the same way.</small>
           <small className="live-card-facts">Free · a few minutes · no sign-up</small>
         </span>

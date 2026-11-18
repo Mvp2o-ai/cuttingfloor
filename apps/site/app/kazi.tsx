@@ -38,7 +38,7 @@ export function demoPlace(id: string): KaziPlace {
 const TEXT = {
   en: {
     link: 'Try it live in Kazi, free',
-    how: 'Kazi is our own AI agent, on your phone or computer. It opens with a sample clip and edits it on cuttingfloor while you watch.',
+    how: 'Kazi is our own AI agent, on your phone or computer. It opens with a sample clip and edits it on cuttingfloor.',
   },
   es: {
     link: 'Pruébalo en vivo en Kazi, gratis',

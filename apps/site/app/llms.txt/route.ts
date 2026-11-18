@@ -36,7 +36,7 @@ Hosted video MCPs side by side, including which have their own AI inside: ${page
 
 ## Try it live
 
-A free live demo, no sign-up: ${kaziUrl('demos')} opens Kazi in the browser, which gives Big Buck Bunny a happy ending on cuttingfloor and plays the finished video. ${pageLink('Demos', '/demos')}
+A free live demo, no sign-up: ${kaziUrl('demos')} opens Kazi in the browser, which gives Big Buck Bunny a happier ending on cuttingfloor and plays the finished video. ${pageLink('Demos', '/demos')}
 
 ## Run it
 

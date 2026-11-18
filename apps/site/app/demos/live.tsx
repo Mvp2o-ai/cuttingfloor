@@ -4,13 +4,13 @@ import { Loop } from './pair.tsx';
 import { isoDuration } from './video.ts';
 
 // The top of /demos: the live demo in Kazi. One click opens a guest chat where Kazi gives the
-// ending of Big Buck Bunny a happy ending on cuttingfloor and plays it back, then offers sign-up.
+// ending of Big Buck Bunny a happier ending on cuttingfloor and plays it back, then offers sign-up.
 // Beside it, the end of a real run looping, with the steps Kazi takes ticking off.
 
 const ENDING = {
   src: '/demo/live/ending.mp4',
   poster: '/demo/live/ending.jpg',
-  label: 'Big Buck Bunny with a happy ending',
+  label: 'Big Buck Bunny with a happier ending',
   seconds: 13,
   wide: true,
 };
@@ -21,9 +21,9 @@ export function liveVideoObject() {
   return {
     '@context': 'https://schema.org',
     '@type': 'VideoObject',
-    name: 'Live demo: an AI agent gives Big Buck Bunny a happy ending',
+    name: 'Live demo: an AI agent gives Big Buck Bunny a happier ending',
     description:
-      'Kazi, an AI agent, edits the end of Big Buck Bunny over the cuttingfloor video editing MCP server: it finds the final scene, builds a happy-ending animation over it and exports the video. Try it live, free, with no sign-up.',
+      'Kazi, an AI agent, edits the end of Big Buck Bunny over the cuttingfloor video editing MCP server: it finds the final scene, builds a happier-ending animation over it and exports the video. Try it live, free, with no sign-up.',
     thumbnailUrl: [abs(ENDING.poster)],
     uploadDate: '2026-11-05T12:00:00+00:00',
     duration: isoDuration(ENDING.seconds),
@@ -35,7 +35,7 @@ export function liveVideoObject() {
 const STEPS = [
   'Opens the last minute of Big Buck Bunny',
   'Finds the final scene',
-  'Builds a happy-ending animation over it',
+  'Builds a happier-ending animation over it',
   'Exports the video',
   'Plays it for you in the chat',
 ];
@@ -48,7 +48,7 @@ export function LiveDemo() {
         <h1 className="display">Watch an agent edit a video, live.</h1>
         <p className="lede">
           One click opens Kazi in your browser. It takes the last minute of Big Buck Bunny, gives it
-          a happy ending with an animation over the final scene, and plays you the finished video.
+          a happier ending with an animation over the final scene, and plays you the finished video.
           Each step shows up as it runs.
         </p>
         <ul className="live-facts">
