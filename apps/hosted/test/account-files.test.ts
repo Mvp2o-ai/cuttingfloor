@@ -112,6 +112,40 @@ describe('account files', () => {
     expect(held.storage.used_bytes).toBeGreaterThanOrEqual(900);
   });
 
+  it('carries on an upload that stopped part way from its id, and only for its owner', async () => {
+    // A phone froze the page part way (the user switched apps); the page asks for the same
+    // upload's URL again and sends the rest from where the server says it stopped.
+    const up = (await (await start({ user: USER, name: 'clip.mp4', bytes: 200 })).json()) as {
+      upload_id: string;
+      url: string;
+    };
+    await fetch(up.url, {
+      method: 'PUT',
+      headers: { 'content-range': 'bytes 0-79/200' },
+      body: Buffer.alloc(80, 2),
+    });
+    const again = await start({ user: USER, upload_id: up.upload_id });
+    expect(again.status).toBe(200);
+    const resumed = (await again.json()) as { upload_id: string; url: string; expires_at: string };
+    expect(resumed.upload_id).toBe(up.upload_id);
+    const head = await fetch(resumed.url, { method: 'HEAD' });
+    expect(head.headers.get('upload-offset')).toBe('80');
+    const rest = await fetch(resumed.url, {
+      method: 'PUT',
+      headers: { 'content-range': 'bytes 80-199/200' },
+      body: Buffer.alloc(120, 2),
+    });
+    expect(await rest.json()).toMatchObject({ received: 200, complete: true });
+
+    // Sent, unknown, or someone else's: nothing to carry on.
+    expect((await start({ user: USER, upload_id: up.upload_id })).status).toBe(400);
+    expect((await start({ user: USER, upload_id: 'u_00000000000000000000000000' })).status).toBe(
+      404,
+    );
+    const other = 'user_01ABCDEFGHJKMNPQRSTVWXYZ02';
+    expect((await start({ user: other, upload_id: up.upload_id })).status).toBe(404);
+  });
+
   it('refuses a file bigger than the storage left, up front and part way', async () => {
     const res = await start({ user: USER, name: 'long.mp4', bytes: 5000 });
     expect(res.status).toBe(413);

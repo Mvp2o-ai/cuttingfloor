@@ -3099,6 +3099,9 @@ a.buy {
   flex-basis: 100%;
   height: 6px;
 }
+.file-list button.file-resume {
+  color: var(--key);
+}
 /* account: keys for scripts */
 .key-make {
   display: flex;
