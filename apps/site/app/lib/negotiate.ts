@@ -27,8 +27,20 @@ export const TOP_TWINS = [
   'mcp',
 ] as const;
 
+// Twins of pages deliberately out of the index. Named here rather than
+// derived from ROUTES, so the Markdown helper never imports the route list.
+export const NOT_INDEXED = new Set<string>(['/sign-in-warning']);
+
 /** Sections whose pages have twins at `/<section>/<slug>.md`. */
-export const SECTIONS = ['demos', 'walkthroughs', 'skills', 'agents', 'guides', 'es'] as const;
+export const SECTIONS = [
+  'demos',
+  'walkthroughs',
+  'skills',
+  'agents',
+  'guides',
+  'es',
+  'compare',
+] as const;
 export type Section = (typeof SECTIONS)[number];
 
 const top = new Set<string>(TOP_TWINS);

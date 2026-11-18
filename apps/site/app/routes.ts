@@ -3,6 +3,7 @@ import { DEMOS } from '../content/demos.ts';
 import { FIXES_UPDATED } from '../content/fixes.ts';
 import { GUIDES, guidePath } from '../content/guides.ts';
 import { SKILLS, SKILLS_UPDATED } from '../content/skills.ts';
+import { VERSUS } from '../content/versus.ts';
 import { WALKTHROUGHS } from '../content/walkthroughs.ts';
 import { WAYS_TITLE, WAYS_UPDATED } from '../content/ways.ts';
 
@@ -49,6 +50,11 @@ export const ROUTES: Route[] = [
     title: 'Compare AI video editing: MCP servers, APIs and editing apps',
     updated: '2026-11-01',
   },
+  ...VERSUS.map((v) => ({
+    path: `/compare/${v.slug}`,
+    title: v.title,
+    updated: v.updated,
+  })),
   {
     path: '/agents',
     title: 'Edit videos with your AI agent: Kazi, Claude and ChatGPT',

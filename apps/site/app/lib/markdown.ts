@@ -1,5 +1,5 @@
 import { SITE_URL } from '../seo.ts';
-import { markdownRoute, twinPath } from './negotiate.ts';
+import { NOT_INDEXED, markdownRoute, twinPath } from './negotiate.ts';
 
 // The Markdown twins share one shape and one response: a title, the canonical page it mirrors and
 // the date, then the page's content, served as text/markdown with the HTML page as canonical.
@@ -36,6 +36,7 @@ export function markdownResponse(path: string, text: string): Response {
       'content-type': 'text/markdown; charset=utf-8',
       vary: 'Accept',
       link: `<${abs(path)}>; rel="canonical"`,
+      ...(NOT_INDEXED.has(path) ? { 'X-Robots-Tag': 'noindex' } : {}),
     },
   });
 }
