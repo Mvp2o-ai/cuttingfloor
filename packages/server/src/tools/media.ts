@@ -569,8 +569,8 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       title: 'Import media',
       description: [
         "Ingest the user's own video, audio, image or font into an editable media_id: probe, fingerprint, conform if needed (VFR, rotation, HDR → BT.709), 540p proxy and integrated loudness. A reference image to recreate needs no import: rebuild it with create.motion or create.still.",
-        "A file on the user's phone or computer must be staged first (media.upload).",
-        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL (Dropbox and Google Drive share links work as they are; fetched once, at the start), the upload_id of a staged file, a small file as a data: URI (up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB, with its sha256), the job_id of a completed export.video, a still (one frame of a video or an edit, as a PNG), or a file the chat attaches, as file.`,
+        `A file on the user's phone or computer must be staged first (media.upload${rt.config.uploadPage ? `, or their upload page, ${rt.config.uploadPage}` : ''}).`,
+        `Sources: ${rt.config.mediaRoots.length ? `a path under ${rt.config.mediaRoots.join(', ')}, ` : ''}an http(s) URL to the file itself (public Dropbox and Google Drive share links work as they are; a video site's page such as YouTube, or a private share, does not; fetched once, at the start), the upload_id of a staged file, a small file as a data: URI (up to ${MEDIA_LIMITS.inlineBytes / 1024 ** 2} MB, with its sha256), the job_id of a completed export.video, a still (one frame of a video or an edit, as a PNG), or a file the chat attaches, as file.`,
         `Long-running: returns a task, or {job_id, media_id}. The media_id is editable once the job reports processing, so start every import, then edit. The same file returns the same media_id; the copy stays here ${span(KEEP_MS.media)} after last use.`,
       ].join(' '),
       inputSchema: MediaImportInput,
