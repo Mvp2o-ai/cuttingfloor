@@ -24,8 +24,20 @@ export function uploadPage(uploadId: string): string {
   p { color: var(--muted); margin: 0 0 20px; }
   label { display: block; border: 2px dashed var(--line); border-radius: 12px; padding: 40px 16px; text-align: center;
     cursor: pointer; transition: border-color .15s; }
-  label.over, label:hover { border-color: var(--accent); }
+  label.over, label:focus-within { border-color: var(--accent); }
+  @media (hover: hover) { label:hover { border-color: var(--accent); } }
+  label strong { display: block; color: var(--fg); }
+  label span { color: var(--muted); }
   input { display: none; }
+  /* A phone has nothing to drag: the box is one big button to the gallery or files. */
+  .on-phone { display: none; }
+  @media (pointer: coarse) {
+    .on-phone { display: block; }
+    .on-computer { display: none; }
+    label { border-style: solid; border-color: var(--accent); background: var(--bar); padding: 36px 20px; }
+    label strong { font-size: 18px; }
+    label:active { background: color-mix(in srgb, var(--accent) 22%, var(--bar)); }
+  }
   .bar { height: 8px; background: var(--bar); border-radius: 4px; overflow: hidden; margin: 20px 0 8px; }
   .bar div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
   #status { min-height: 1.5em; }
@@ -37,7 +49,11 @@ export function uploadPage(uploadId: string): string {
 <main>
   <h1>Send a file</h1>
   <p>Your AI asked for this file. Pick it here and it goes straight to cuttingfloor.</p>
-  <label id="drop">Drop a video, audio file or image here, or tap or click to choose one<input id="pick" type="file"></label>
+  <label id="drop">
+    <span class="on-computer"><strong>Drop a video, audio file or image here</strong><span>or click to choose one</span></span>
+    <span class="on-phone"><strong>Tap to choose a video, audio file or photo</strong><span>From your gallery or files</span></span>
+    <input id="pick" type="file">
+  </label>
   <div class="bar" hidden><div></div></div>
   <div id="status" role="status" aria-live="polite"></div>
 </main>

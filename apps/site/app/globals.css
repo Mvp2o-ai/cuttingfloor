@@ -1807,10 +1807,28 @@ h2.lede {
     padding: 7px 10px;
   }
 }
+/* Fingers: the nav's links and Sign out get 44px to tap; the links' padding is taken back from
+   the layout so the bar keeps its height. */
+@media (pointer: coarse) {
+  .nav-inner .account-links a,
+  .nav-inner:has(.account-links) .wordmark {
+    padding: 12px 0;
+    margin: -12px 0;
+  }
+  .nav-inner .account-out .nav-cta {
+    min-height: 44px;
+  }
+}
 /* The narrowest phones keep the mark, which still links home, and drop the name. */
 @media (max-width: 374px) {
   .nav-inner:has(.account-links) .wordmark {
     font-size: 0;
+  }
+}
+@media (max-width: 374px) and (pointer: coarse) {
+  .nav-inner:has(.account-links) .wordmark {
+    padding: 13px;
+    margin: -13px;
   }
 }
 .account-head {
@@ -3056,12 +3074,36 @@ a.buy {
 .drop span {
   color: var(--mute);
 }
-.drop:hover,
-.drop.over {
+.drop.over,
+.drop:focus-within {
   border-color: var(--key);
+}
+@media (hover: hover) {
+  .drop:hover {
+    border-color: var(--key);
+  }
 }
 .drop input {
   display: none;
+}
+/* On a phone the box is a button, not a place to drop: solid, filled, and lit when tapped. */
+@media (pointer: coarse) {
+  .drop {
+    padding: 36px 20px;
+    border-style: solid;
+    border-color: var(--key);
+    background: var(--bg-2);
+  }
+  .drop strong {
+    font-size: 19px;
+  }
+  .drop:active {
+    background: color-mix(in srgb, var(--key) 18%, var(--bg-2));
+  }
+}
+/* Sending stops when the page closes, so this line reads as an instruction, not a footnote. */
+.files-keep {
+  color: var(--ink);
 }
 .files-head {
   margin: 28px 0 8px;
@@ -3101,6 +3143,16 @@ a.buy {
 }
 .file-list button.file-resume {
   color: var(--key);
+}
+/* A finger needs a button, not an underlined word: 44px tall, outlined. */
+@media (pointer: coarse) {
+  .file-list button.file-resume {
+    min-height: 44px;
+    padding: 0 20px;
+    border: 1px solid var(--key);
+    text-decoration: none;
+    font-weight: 600;
+  }
 }
 /* account: keys for scripts */
 .key-make {

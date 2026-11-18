@@ -4,7 +4,7 @@ import { track } from '@vercel/analytics';
 import { useEffect, useRef, useState } from 'react';
 import type { Files, Started } from '../lib/files.ts';
 
-// Drop files from this computer for the agent to use. Each file goes up in parts straight to the
+// Drop or pick files for the agent to use (on a phone, tap to pick from the gallery or files). Each file goes up in parts straight to the
 // server's signed URL and resumes after a dropped connection; the agent then finds it by name.
 // Phones freeze a page in the background (the user switches back to their chat app), so the
 // screen is kept awake while sending, a part cut off in the background is sent again when the
@@ -28,11 +28,13 @@ type Sending = {
 };
 
 const size = (n: number) =>
-  n >= 1e9
-    ? `${(n / 1e9).toFixed(1)} GB`
-    : n >= 1e6
-      ? `${(n / 1e6).toFixed(1)} MB`
-      : `${Math.max(1, Math.round(n / 1e3))} KB`;
+  n === 0
+    ? '0 KB'
+    : n >= 1e9
+      ? `${(n / 1e9).toFixed(1)} GB`
+      : n >= 1e6
+        ? `${(n / 1e6).toFixed(1)} MB`
+        : `${Math.max(1, Math.round(n / 1e3))} KB`;
 
 /** The kind of file, for counting uploads: video, audio, image or other. */
 const kind = (file: File) => /^(video|audio|image)\//.exec(file.type)?.[1] ?? 'other';
@@ -242,8 +244,11 @@ export function FilesPanel({ initial }: { initial: Files }) {
           add(e.dataTransfer.files);
         }}
       >
-        <strong>Drop videos, audio or images here</strong>
-        <span>or click to choose files from this computer</span>
+        {/* A phone has no files to drag: the whole box is one big button to the gallery or files. */}
+        <strong className="on-computer">Drop videos, audio or images here</strong>
+        <span className="on-computer">or click to choose files from this computer</span>
+        <strong className="on-phone">Tap to choose videos, audio or photos</strong>
+        <span className="on-phone">From your gallery or files. You can pick more than one.</span>
         <input
           type="file"
           multiple
@@ -255,7 +260,7 @@ export function FilesPanel({ initial }: { initial: Files }) {
       </label>
 
       {busy ? (
-        <p className="meter-note">
+        <p className="meter-note files-keep">
           Keep this page open until it is sent. If you switch apps, come back and it carries on.
         </p>
       ) : null}
