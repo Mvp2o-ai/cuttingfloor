@@ -1,5 +1,12 @@
 # cuttingfloor
 
+## 0.55.7
+
+### Patch Changes
+
+- cf78ee3: The upload pages fit phones: on a touch screen the box reads "Tap to choose…" (from your gallery or files) and looks like a button, and Resume, the nav links and Sign out are big enough to tap. Computers keep "Drop … or click to choose".
+- fc0d96d: The upload page carries on a file that stopped part way: Resume sends the rest from what the server already has (after a reload, by picking the same file again). On phones the screen stays awake while sending, and a part cut off when the user switched apps is sent again when they come back.
+
 ## 0.55.6
 
 ### Patch Changes

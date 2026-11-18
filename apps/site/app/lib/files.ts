@@ -51,11 +51,13 @@ export async function filesOf(userId: string): Promise<Files | undefined> {
   }
 }
 
-/** Starts an upload for the user: the server's answer as it is, with its status. */
+/**
+ * Starts an upload for the user, or with `uploadId` gets an unfinished one's URL again to carry
+ * on: the server's answer as it is, with its status.
+ */
 export async function startUpload(
   userId: string,
-  name: string,
-  bytes: number,
+  file: { name: string; bytes: number } | { uploadId: string },
 ): Promise<{ status: number; body: Started | { error: string; hint?: string } }> {
   const s = server();
   if (!s) return { status: 503, body: { error: 'Uploads are not available just now' } };
@@ -63,7 +65,11 @@ export async function startUpload(
     const res = await fetch(`${s.base}/account/uploads`, {
       method: 'POST',
       headers: { authorization: `Bearer ${s.key}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ user: userId, name, bytes }),
+      body: JSON.stringify(
+        'uploadId' in file
+          ? { user: userId, upload_id: file.uploadId }
+          : { user: userId, name: file.name, bytes: file.bytes },
+      ),
       cache: 'no-store',
       signal: AbortSignal.timeout(10_000),
     });

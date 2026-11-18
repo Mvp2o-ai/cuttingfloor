@@ -947,17 +947,35 @@ export class Lifecycle {
     }
   }
 
-  /** Starts an upload for the account: a signed URL the browser sends the file to directly. */
+  /**
+   * Starts an upload for the account: a signed URL the browser sends the file to directly. With
+   * `upload_id` instead, the URL of that unfinished upload again, to carry on where it stopped.
+   */
   async #uploadRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
-    let body: { user?: unknown; name?: unknown; bytes?: unknown };
+    let body: { user?: unknown; name?: unknown; bytes?: unknown; upload_id?: unknown };
     try {
       body = JSON.parse(await readBody(req, 16 * 1024));
     } catch {
-      return json(res, 400, { error: 'body must be JSON: {user, name, bytes}' });
+      return json(res, 400, {
+        error: 'body must be JSON: {user, name, bytes} or {user, upload_id}',
+      });
     }
     const owner = typeof body.user === 'string' ? body.user : '';
     if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+    if (body.upload_id !== undefined) {
+      try {
+        const upload = await this.#o.runtime.uploads.resume(owner, String(body.upload_id));
+        return json(res, 200, upload);
+      } catch (error) {
+        if (!(error instanceof CfError)) throw error;
+        return json(res, error.code === 'not_found' ? 404 : 400, {
+          error: error.message,
+          code: error.code,
+          ...(error.hint ? { hint: error.hint } : {}),
+        });
+      }
+    }
     const file = MediaUploadInput.safeParse({ name: body.name, bytes: body.bytes });
     // The account page always knows the file it sends.
     if (!file.success || !file.data.name)

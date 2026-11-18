@@ -135,6 +135,34 @@ export class Uploads {
     };
   }
 
+  /**
+   * The signed URL of an unfinished upload again, so a sender that lost it (a phone that closed
+   * the page) carries on from the bytes already here. It ends when the upload does.
+   */
+  async resume(
+    owner: string,
+    uploadId: string,
+  ): Promise<{ upload_id: string; url: string; expires_at: string; max_bytes: number }> {
+    const key = ownerKey(owner);
+    const meta = /^u_[0-9a-z]{26}$/.test(uploadId) ? await this.#meta(key, uploadId) : undefined;
+    const exp = meta ? Date.parse(meta.created_at) + UPLOAD_TTL_MS : 0;
+    if (!meta || exp <= Date.now())
+      throw new CfError('not_found', `No upload ${uploadId}`, {
+        hint: 'It has expired or was never started; send the file again',
+      });
+    if (meta.complete)
+      throw new CfError('bad_request', `${meta.name} is already sent`, {
+        hint: 'It waits for the agent to import it',
+      });
+    const path = `/uploads/${key}/${uploadId}`;
+    return {
+      upload_id: uploadId,
+      url: `${this.#publicUrl()}${path}?exp=${exp}&sig=${await this.#sign(path, exp)}`,
+      expires_at: new Date(exp).toISOString(),
+      max_bytes: meta.max_bytes ?? this.maxBytes,
+    };
+  }
+
   /** An upload whose bytes are already here (a data: URI), complete at once. */
   async put(owner: string, name: string, bytes: Buffer): Promise<string> {
     const { upload_id } = await this.create(owner, name, bytes.length, undefined, 'data_uri');
