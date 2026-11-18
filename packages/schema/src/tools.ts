@@ -667,7 +667,13 @@ export const MediaSource = z.union([
       .min(1)
       .describe('A file under a media root, e.g. /media/videos/clip.mp4 (local mode)'),
   }),
-  z.object({ url: z.url().describe('An http(s) URL to download') }),
+  z.object({
+    url: z
+      .url()
+      .describe(
+        'An http(s) URL that downloads the file itself; a page about it (a YouTube or other video page, a private share) is refused',
+      ),
+  }),
   z.object({
     upload_id: UploadId.describe('A file sent to the URL media.upload gave, once fully sent'),
   }),
