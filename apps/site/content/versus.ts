@@ -68,7 +68,8 @@ export const VERSUS: Versus[] = [
     slug: 'descript',
     kind: 'rival',
     title: 'Descript vs cuttingfloor',
-    metaTitle: 'Descript vs cuttingfloor: transcript editing in an app or in your agent | cuttingfloor',
+    metaTitle:
+      'Descript vs cuttingfloor: transcript editing in an app or in your agent | cuttingfloor',
     metaDescription:
       'Both cut video by editing its words. Descript does it in its own editor; cuttingfloor does it inside Claude, ChatGPT or Cursor and exports the timeline. Where each wins.',
     answer:
@@ -173,8 +174,7 @@ export const VERSUS: Versus[] = [
         wins: 'A complete editor in a tab, with templates, stock, subtitles, and a polished interface built for people who want to see what they are making. Its API exposes AI models such as dubbing and lip-sync rather than editing tools.',
       },
     ],
-    deciding:
-      'Whether you want to see and drive the edit, or describe it and check the result.',
+    deciding: 'Whether you want to see and drive the edit, or describe it and check the result.',
     pick: [
       'the edit should happen inside your agent, and you want the timeline back as a file your editing app opens.',
       'you want a visual editor in a browser with templates and stock, and AI features inside that editor.',
@@ -235,7 +235,7 @@ export const VERSUS: Versus[] = [
       },
       {
         q: 'Which one is cheaper?',
-        a: 'They are priced on different things, so the answer depends on volume and on whether you supply footage. cuttingfloor charges credits per minute of a job running and is free self-hosted; check Invideo\'s current plans on its site.',
+        a: "They are priced on different things, so the answer depends on volume and on whether you supply footage. cuttingfloor charges credits per minute of a job running and is free self-hosted; check Invideo's current plans on its site.",
       },
     ],
     updated: '2026-11-17',
@@ -244,7 +244,8 @@ export const VERSUS: Versus[] = [
     slug: 'premiere',
     kind: 'rival',
     title: 'Premiere Pro vs cuttingfloor',
-    metaTitle: 'Premiere Pro vs cuttingfloor: finish in Premiere, start in your agent | cuttingfloor',
+    metaTitle:
+      'Premiere Pro vs cuttingfloor: finish in Premiere, start in your agent | cuttingfloor',
     metaDescription:
       'Premiere Pro is where a professional edit is finished. cuttingfloor is where an agent does the first pass and hands you an FCPXML timeline. They are meant to be used together.',
     answer:
@@ -345,8 +346,7 @@ export const VERSUS: Versus[] = [
         wins: 'Access and breadth. It runs in a tab on any machine with no install, has templates and stock built in, and covers subtitles, translation and cleanup without leaving the page.',
       },
     ],
-    deciding:
-      'Whether you can install software, and whether your footage is talking or assembled.',
+    deciding: 'Whether you can install software, and whether your footage is talking or assembled.',
     pick: [
       'you have long talking footage and want to edit it by its words on a desktop.',
       'you need to edit in a browser, on any machine, with templates and stock to hand.',
@@ -385,8 +385,7 @@ export const VERSUS: Versus[] = [
         wins: 'Editing through an agent, as a sequence of calls rather than one prompt. It is the closer of the two to working on real footage from inside Claude or ChatGPT.',
       },
     ],
-    deciding:
-      'Whether you have footage. Generation needs none; agent editing needs some.',
+    deciding: 'Whether you have footage. Generation needs none; agent editing needs some.',
     pick: [
       'you have no footage and want a finished video from a prompt.',
       'you have footage and want an agent to edit it, call by call, from inside your chat.',
@@ -439,7 +438,7 @@ export const VERSUS: Versus[] = [
       },
       {
         q: 'Can I use both together?',
-        a: 'Yes, and people do: OpusClip to find candidate moments, then an editor to finish them. The weaker link is usually the handoff, since neither imports the other\'s project directly.',
+        a: "Yes, and people do: OpusClip to find candidate moments, then an editor to finish them. The weaker link is usually the handoff, since neither imports the other's project directly.",
       },
     ],
     updated: '2026-11-17',

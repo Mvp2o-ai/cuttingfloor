@@ -1,5 +1,5 @@
 import { SITE_URL } from '../seo.ts';
-import { NOT_INDEXED, markdownRoute, twinPath } from './negotiate.ts';
+import { markdownRoute, NOT_INDEXED, twinPath } from './negotiate.ts';
 
 // The Markdown twins share one shape and one response: a title, the canonical page it mirrors and
 // the date, then the page's content, served as text/markdown with the HTML page as canonical.
