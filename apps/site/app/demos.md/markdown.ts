@@ -1,4 +1,6 @@
 import { DEMOS, type DemoVideo, demo, finished, length, lengths } from '../../content/demos.ts';
+import { FIXES, fixPath } from '../../content/fixes.ts';
+import { guide, guidePath } from '../../content/guides.ts';
 import { skill } from '../../content/skills.ts';
 import { kaziUrl } from '../kazi.tsx';
 import { abs, doc, list, pageLink } from '../lib/markdown.ts';
@@ -32,6 +34,8 @@ export function demoMarkdown(slug: string): string | undefined {
   const d = demo(slug);
   if (!d) return undefined;
   const s = d.skill ? skill(d.skill) : undefined;
+  const g = d.guide ? guide('en', d.guide) : undefined;
+  const f = d.fix ? FIXES.find((x) => x.id === d.fix) : undefined;
   const v = finished(d);
   const cuts = d.transcript.filter((w) => w.cut !== undefined).length;
   const turns = d.turns.map((t, i) =>
@@ -67,6 +71,8 @@ export function demoMarkdown(slug: string): string | undefined {
         ? `### Other versions\n\n${list(d.extra.map((x) => `${x.caption}: ${video(x)}`))}`
         : '',
       s ? `The skill it followed: ${pageLink(s.title, `/skills/${s.slug}`)}` : '',
+      g ? `The guide: ${pageLink(g.title, guidePath(g))}` : '',
+      f ? `The question it answers: ${pageLink(f.problem, fixPath(f))}` : '',
       `## More demos\n\n${list(
         DEMOS.filter((o) => o !== d).map((o) => pageLink(o.title, `/demos/${o.slug}`)),
       )}`,

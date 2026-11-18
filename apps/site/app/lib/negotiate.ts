@@ -28,7 +28,15 @@ export const TOP_TWINS = [
 ] as const;
 
 /** Sections whose pages have twins at `/<section>/<slug>.md`. */
-export const SECTIONS = ['demos', 'walkthroughs', 'skills', 'agents', 'guides', 'es'] as const;
+export const SECTIONS = [
+  'demos',
+  'walkthroughs',
+  'skills',
+  'agents',
+  'guides',
+  'fixes',
+  'es',
+] as const;
 export type Section = (typeof SECTIONS)[number];
 
 const top = new Set<string>(TOP_TWINS);

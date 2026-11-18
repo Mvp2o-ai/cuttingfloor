@@ -33,7 +33,7 @@ export const config = {
     '/start',
     '/callback',
     '/api/:path*',
-    '/:section(demos|walkthroughs|skills|agents|guides|es)/:slug.md',
+    '/:section(demos|walkthroughs|skills|agents|guides|fixes|es)/:slug.md',
     {
       source: '/((?!_next/|api/|md/|account|upload|welcome|start|callback|.*\\.).*)',
       has: [{ type: 'header', key: 'accept', value: '.*text/(x-)?markdown.*' }],

@@ -9,6 +9,8 @@ import {
   length,
   lengths,
 } from '../../../content/demos.ts';
+import { FIXES, fixPath } from '../../../content/fixes.ts';
+import { guide, guidePath } from '../../../content/guides.ts';
 import { skill } from '../../../content/skills.ts';
 import { demoPlace, TryKazi } from '../../kazi.tsx';
 import { LiveCard } from '../../live-card.tsx';
@@ -58,6 +60,8 @@ export default async function DemoPage({ params }: Props) {
   if (!d) notFound();
   const v = finished(d);
   const s = d.skill ? skill(d.skill) : undefined;
+  const g = d.guide ? guide('en', d.guide) : undefined;
+  const f = d.fix ? FIXES.find((x) => x.id === d.fix) : undefined;
   const others = DEMOS.filter((o) => o !== d);
   const cuts = d.transcript.filter((w) => w.cut !== undefined).length;
 
@@ -189,6 +193,16 @@ export default async function DemoPage({ params }: Props) {
             {s && (
               <>
                 <a href={`/skills/${s.slug}`}>The skill it followed: {s.title}</a> ·{' '}
+              </>
+            )}
+            {g && (
+              <>
+                <a href={guidePath(g)}>{g.title} →</a> ·{' '}
+              </>
+            )}
+            {f && (
+              <>
+                <a href={fixPath(f)}>{f.problem} →</a> ·{' '}
               </>
             )}
             {others.map((o) => (
