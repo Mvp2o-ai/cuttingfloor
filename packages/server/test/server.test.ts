@@ -333,7 +333,7 @@ describe('protocol surface', () => {
     );
   });
 
-  it('offers the editor on export.video, the player on media.get and the library on media.list', async () => {
+  it('offers the editor on export.video, the player on media.get and media.import and the library on media.list', async () => {
     const client = await connect(env.runtime);
     const { tools } = await client.listTools();
     const views = Object.fromEntries(
@@ -344,6 +344,7 @@ describe('protocol surface', () => {
     expect(views).toEqual({
       'export.video': 'ui://cuttingfloor/editor',
       'media.get': 'ui://cuttingfloor/player',
+      'media.import': 'ui://cuttingfloor/player',
       'media.list': 'ui://cuttingfloor/library',
     });
     // Everything the views call stays callable from a view (no visibility limits it to the model).
