@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   buildPictureIndex,
   INDEX_VERSION,
@@ -63,6 +63,11 @@ export class SearchIndexer {
     void this.#drain();
   }
 
+  /** Resolves once nothing is queued or being indexed (tests measure storage after it). */
+  async idle(): Promise<void> {
+    while (this.#running || this.#queue.length) await new Promise((r) => setTimeout(r, 50));
+  }
+
   async #drain(): Promise<void> {
     if (this.#running) return;
     this.#running = true;
@@ -99,6 +104,12 @@ export class SearchIndexer {
         out: dir,
         signal: AbortSignal.timeout(60 * 60_000),
       });
+      // A media deleted while it was indexed: the index made its folder again, and would hold
+      // the account's storage until swept.
+      if (!(await this.#media.find(owner, id))) {
+        await rm(dirname(dir), { recursive: true, force: true });
+        return;
+      }
       await rm(join(dir, 'failed.json'), { force: true });
     } catch (error) {
       // A media deleted while it was indexed has no folder left to say so in.

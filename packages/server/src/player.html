@@ -368,6 +368,7 @@
   }
   function doing() {
     if (host.tool === 'media.get') return 'Getting the file';
+    if (host.tool === 'media.import') return 'Importing';
     return 'Exporting';
   }
 
@@ -839,18 +840,18 @@
       } catch (e) {
         if (mine !== following) return;
         if (++misses <= 6) { wait('Reconnecting…'); continue; }
-        return failed(`Lost track of the export: ${e?.message ? e.message : 'the host did not answer'}.`, () => { wait('Checking…'); follow(jobId); });
+        return failed(`Lost track of the job: ${e?.message ? e.message : 'the host did not answer'}.`, () => { wait('Checking…'); follow(jobId); });
       }
       if (!job) return failed('The job could not be read.');
       if (job.status === 'completed' && job.result) return render(job.result);
       if (job.status === 'failed' || job.status === 'cancelled') {
-        return failed((job.error?.message) || `The export ${job.status}.`);
+        return failed((job.error?.message) || `The job ${job.status}.`);
       }
       wait(job.status_message || `${doing()}…`, job.progress);
     }
   }
 
-  function render(data) {
+  function render(data, fetched) {
     if (!data) return failed('Nothing to show.');
     if (data.url) {
       const kind = kindOf(data);
@@ -865,7 +866,23 @@
       return follow(data.job_id);
     }
     if (data.status === 'importing' || data.status === 'processing') return wait('Still importing…');
+    // An import's result names the media but carries no link; media.get signs one.
+    if (data.media_id && !fetched) return play(data.media_id);
     failed('Nothing to play yet.');
+  }
+
+  async function play(mediaId) {
+    const mine = ++following;
+    wait('Getting the file…');
+    try {
+      const r = await request('tools/call', { name: 'media.get', arguments: { media_id: mediaId } });
+      if (mine !== following) return;
+      if (r?.isError) return failed((r.structuredContent?.message) || 'The file could not be read.');
+      render(r?.structuredContent, true);
+    } catch (e) {
+      if (mine !== following) return;
+      failed(`The file could not be read: ${e?.message ? e.message : 'the host did not answer'}.`, () => play(mediaId));
+    }
   }
 
   function onResult(result) {

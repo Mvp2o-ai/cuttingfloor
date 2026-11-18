@@ -24,8 +24,20 @@ export function uploadPage(uploadId: string): string {
   p { color: var(--muted); margin: 0 0 20px; }
   label { display: block; border: 2px dashed var(--line); border-radius: 12px; padding: 40px 16px; text-align: center;
     cursor: pointer; transition: border-color .15s; }
-  label.over, label:hover { border-color: var(--accent); }
+  label.over, label:focus-within { border-color: var(--accent); }
+  @media (hover: hover) { label:hover { border-color: var(--accent); } }
+  label strong { display: block; color: var(--fg); }
+  label span { color: var(--muted); }
   input { display: none; }
+  /* A phone has nothing to drag: the box is one big button to the gallery or files. */
+  .on-phone { display: none; }
+  @media (pointer: coarse) {
+    .on-phone { display: block; }
+    .on-computer { display: none; }
+    label { border-style: solid; border-color: var(--accent); background: var(--bar); padding: 36px 20px; }
+    label strong { font-size: 18px; }
+    label:active { background: color-mix(in srgb, var(--accent) 22%, var(--bar)); }
+  }
   .bar { height: 8px; background: var(--bar); border-radius: 4px; overflow: hidden; margin: 20px 0 8px; }
   .bar div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
   #status { min-height: 1.5em; }
@@ -37,7 +49,11 @@ export function uploadPage(uploadId: string): string {
 <main>
   <h1>Send a file</h1>
   <p>Your AI asked for this file. Pick it here and it goes straight to cuttingfloor.</p>
-  <label id="drop">Drop a video, audio file or image here, or tap or click to choose one<input id="pick" type="file"></label>
+  <label id="drop">
+    <span class="on-computer"><strong>Drop a video, audio file or image here</strong><span>or click to choose one</span></span>
+    <span class="on-phone"><strong>Tap to choose a video, audio file or photo</strong><span>From your gallery or files</span></span>
+    <input id="pick" type="file">
+  </label>
   <div class="bar" hidden><div></div></div>
   <div id="status" role="status" aria-live="polite"></div>
 </main>
@@ -52,6 +68,17 @@ export function uploadPage(uploadId: string): string {
   const fill = bar.firstElementChild;
   const status = document.getElementById('status');
   let busy = false;
+  // Phones freeze the page when the user switches back to the chat: keep the screen awake while
+  // sending, and send again a part cut off in the background once the page is back.
+  let lock;
+  let cut;
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    if (busy && navigator.wakeLock) navigator.wakeLock.request('screen').then((l) => { lock = l; }, () => {});
+    if (hiddenAt && Date.now() - hiddenAt > 3000 && cut) cut.abort();
+    hiddenAt = 0;
+  });
   const say = (text, done) => { status.textContent = text; status.className = done ? 'done' : ''; };
   const mb = (n) => (n / 1e6).toFixed(1) + ' MB';
 
@@ -66,18 +93,21 @@ export function uploadPage(uploadId: string): string {
     if (busy) return;
     busy = true;
     bar.hidden = false;
+    if (navigator.wakeLock) lock = await navigator.wakeLock.request('screen').catch(() => undefined);
     try {
       let { at, complete } = await offset();
       if (at > file.size) at = 0;
       for (let tries = 0; !complete; ) {
         const end = Math.min(at + PART, file.size);
         fill.style.width = (100 * at / Math.max(file.size, 1)) + '%';
-        say('Sending ' + file.name + ': ' + mb(at) + ' of ' + mb(file.size));
+        say('Sending ' + file.name + ': ' + mb(at) + ' of ' + mb(file.size) + '. Keep this page open until it is sent; if you switch apps, come back and it carries on.');
+        cut = new AbortController();
         try {
           const r = await fetch(url, {
             method: 'PUT',
             headers: { 'content-range': 'bytes ' + at + '-' + (end - 1) + '/' + file.size, 'upload-name': encodeURIComponent(file.name) },
             body: file.slice(at, end),
+            signal: cut.signal,
           });
           const body = await r.json().catch(() => ({}));
           if (r.status === 413) throw Object.assign(new Error(body.error || 'The file is too big.'), { final: true });
@@ -87,9 +117,11 @@ export function uploadPage(uploadId: string): string {
           complete = r.headers.get('upload-complete') === 'true';
           tries = 0;
         } catch (error) {
-          if (error.final || ++tries > 5) throw error;
+          // A part cut off because the page came back from the background is not a failure.
+          const resumed = cut.signal.aborted;
+          if (error.final || (!resumed && ++tries > 5)) throw error;
           say('Connection dropped; picking up where it stopped…');
-          await new Promise((r) => setTimeout(r, 1000 * tries));
+          if (!resumed) await new Promise((r) => setTimeout(r, 1000 * tries));
           ({ at, complete } = await offset());
         }
       }
@@ -100,6 +132,9 @@ export function uploadPage(uploadId: string): string {
       say(error.message || String(error));
     } finally {
       busy = false;
+      cut = undefined;
+      if (lock) lock.release().catch(() => {});
+      lock = undefined;
     }
   }
 
@@ -112,8 +147,9 @@ export function uploadPage(uploadId: string): string {
     const file = e.dataTransfer.files[0];
     if (file) send(file);
   });
-  offset().then(({ complete }) => {
+  offset().then(({ at, complete }) => {
     if (complete) { drop.hidden = true; say('This file is already here. Go back to the chat and say it’s in. (Upload ' + id + ')', true); }
+    else if (at > 0) say(mb(at) + ' of your file is already here. Choose the same file again and the rest is sent.');
   }, (error) => say(error.message));
 })();
 </script>

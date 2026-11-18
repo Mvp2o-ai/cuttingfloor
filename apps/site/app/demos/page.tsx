@@ -9,7 +9,7 @@ import { Poster } from './poster.tsx';
 export const metadata: Metadata = {
   title: 'Live AI video editing demo, free: Kazi, Claude and ChatGPT edit over MCP | cuttingfloor',
   description:
-    'Try a live AI video edit in your browser, free and with no sign-up: Kazi gives Big Buck Bunny a happy ending on cuttingfloor while you watch. Then see creators’ own Kazi, Claude or ChatGPT edit real clips, before and after, every step.',
+    'Try a live AI video edit in your browser, free and with no sign-up: Kazi gives Big Buck Bunny a happier ending on cuttingfloor. Then see creators’ own Kazi, Claude or ChatGPT edit real clips, before and after, every step.',
   alternates: { canonical: '/demos', types: { 'text/markdown': '/demos.md' } },
 };
 

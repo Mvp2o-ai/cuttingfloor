@@ -38,6 +38,7 @@ export const SECTIONS = [
   'skills',
   'agents',
   'guides',
+  'fixes',
   'es',
   'compare',
 ] as const;

@@ -429,6 +429,13 @@ export class MediaLibrary {
               `downloading ${(bytes / 1e6).toFixed(1)} MB`,
             ),
         }).catch((error: unknown) => {
+          // A video's page, or a share that needs signing in, sends a web page instead of the file.
+          if (error instanceof CfError && error.detail?.web_page) {
+            throw new CfError(error.code, error.message, {
+              detail: error.detail,
+              hint: `The server imports only the file itself, never a page about it: a video site's page (YouTube, Vimeo, TikTok, Instagram) or a private share sends a web page. ${this.#fromUser()}; a public link that downloads the file directly also imports`,
+            });
+          }
           // A link that needs signing in, or one only the chat app can open, fails here.
           if (
             error instanceof CfError &&

@@ -4,6 +4,7 @@ import { Archivo, JetBrains_Mono, Ubuntu, VT323 } from 'next/font/google';
 import { Clicks } from './clicks.tsx';
 import { FromScript } from './from.tsx';
 import { DESCRIPTION, SITE_URL, TITLE } from './seo.ts';
+import { SourceScript } from './source.tsx';
 import './globals.css';
 
 const display = Archivo({ subsets: ['latin'], axes: ['wdth'], variable: '--font-display' });
@@ -38,10 +39,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <head>
         <FromScript />
+        <SourceScript />
       </head>
       <body>
         {children}
-        {/* Page views and clicks: no cookies, no ad trackers (privacy page). */}
+        {/* Page views and clicks: no ad trackers (privacy page). */}
         <Analytics />
         <Clicks />
       </body>

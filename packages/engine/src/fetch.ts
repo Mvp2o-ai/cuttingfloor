@@ -92,6 +92,19 @@ export async function download(
     }
     let bytes = 0;
     response.on('data', (chunk: Buffer) => {
+      // A video's page or a sign-in page answers 200 with HTML; that is never the file asked for.
+      if (bytes === 0 && isWebPage(chunk)) {
+        response.destroy(
+          new CfError(
+            'bad_request',
+            `The URL opened a web page on ${current.hostname}, not a file`,
+            {
+              detail: { web_page: true, host: current.hostname },
+            },
+          ),
+        );
+        return;
+      }
       bytes += chunk.length;
       if (bytes > options.maxBytes) {
         response.destroy(new CfError('limit_exceeded', ...tooBig(options)));
@@ -113,6 +126,17 @@ export async function download(
     return { bytes, filename: disposition?.[1] ?? (fromPath || null) };
   }
   throw new CfError('bad_request', `More than ${MAX_REDIRECTS} redirects`);
+}
+
+/** Whether a response's first bytes are an HTML document. */
+function isWebPage(chunk: Buffer): boolean {
+  const head = chunk
+    .subarray(0, 64)
+    .toString('utf8')
+    .replace(/^\uFEFF/, '')
+    .trimStart()
+    .toLowerCase();
+  return head.startsWith('<!doctype html') || head.startsWith('<html');
 }
 
 function request(url: URL, options: DownloadOptions): Promise<http.IncomingMessage> {

@@ -15,8 +15,7 @@ const TEXT = {
     lead: (app?: string) =>
       `On your phone? ${app ?? 'Most apps'} ${app ? 'adds' : 'add'} cuttingfloor on a computer.`,
     kazi: 'Try it now in Kazi, free',
-    kaziHow:
-      'Kazi works on your phone and opens with a sample clip, edited on cuttingfloor while you watch.',
+    kaziHow: 'Kazi works on your phone and opens with a sample clip and edits it on cuttingfloor.',
     later: 'Or set it up later:',
     button: 'Send me the setup',
     subject: 'Set up cuttingfloor',

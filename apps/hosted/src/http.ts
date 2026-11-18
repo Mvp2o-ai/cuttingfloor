@@ -132,6 +132,15 @@ async function appName(request: Request): Promise<string | undefined> {
   return undefined;
 }
 
+/**
+ * The app a User-Agent names (its first product, without the version), for a signed-in request
+ * that carries no clientInfo: a 2025 client that said who it was in an initialize sent before
+ * sign-in (ChatGPT sends `openai-mcp/1.0.0`).
+ */
+function userAgentApp(userAgent: string | undefined): string | undefined {
+  return /^[\w.-]+/.exec(userAgent ?? '')?.[0];
+}
+
 /** Whether a POST body holds only discovery messages (one, or a 2025-03-26 batch). */
 async function isDiscovery(request: Request): Promise<boolean> {
   if (request.method !== 'POST') return false;
@@ -400,7 +409,7 @@ export function createHttpServer(options: HttpOptions): Server {
       const caller = await authenticate(req, res, request, () => isDiscovery(request));
       if (!caller) return;
       if (options.onApp && (caller.via === 'script' || caller.via === 'oauth')) {
-        const app = await appName(request);
+        const app = (await appName(request)) ?? userAgentApp(req.headers['user-agent']);
         if (app) options.onApp(caller.owner, app);
       }
       const response = await handler.fetch(request, {

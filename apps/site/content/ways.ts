@@ -29,7 +29,7 @@ export const CREATOR_WAYS: Way[] = [
     name: 'Kazi',
     icon: 'kazi',
     tag: 'Fastest start',
-    text: 'Our own AI agent, on your phone or computer. It opens with a sample clip and edits it while you watch. Nothing to set up.',
+    text: 'Our own AI agent, on your phone or computer. It opens with a sample clip and edits it on cuttingfloor. Nothing to set up.',
     links: [
       { label: 'Try it live, free', href: kaziUrl('home'), track: 'Ways: Kazi live' },
       { label: 'How it works', href: '/agents/kazi', track: 'Ways: Kazi page' },

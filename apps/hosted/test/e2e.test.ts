@@ -3173,6 +3173,8 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
           'media.list',
           {},
         );
+      // Search indexes are built in the background and count as storage: measure once they're in.
+      await env.runtime.indexer.idle();
       const before = await listed();
       expect(before.media.map((m) => m.media_id)).toContain(matte.media_id);
 

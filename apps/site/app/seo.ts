@@ -29,7 +29,7 @@ export const FAQS = [
   },
   {
     q: 'Can I try AI video editing without signing up?',
-    a: 'Yes. The live demo on the Demos page opens Kazi in your browser, free, with no sign-up and nothing to install. Kazi gives Big Buck Bunny a happy ending on cuttingfloor and plays you the finished video, each step showing as it runs. It takes a few minutes.',
+    a: 'Yes. The live demo on the Demos page opens Kazi in your browser, free, with no sign-up and nothing to install. Kazi gives Big Buck Bunny a happier ending on cuttingfloor and plays you the finished video, each step showing as it runs. It takes a few minutes.',
   },
   {
     q: 'Can Claude edit videos?',

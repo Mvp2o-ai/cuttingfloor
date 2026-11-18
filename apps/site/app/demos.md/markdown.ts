@@ -1,4 +1,6 @@
 import { DEMOS, type DemoVideo, demo, finished, length, lengths } from '../../content/demos.ts';
+import { FIXES, fixPath } from '../../content/fixes.ts';
+import { guide, guidePath } from '../../content/guides.ts';
 import { skill } from '../../content/skills.ts';
 import { kaziUrl } from '../kazi.tsx';
 import { abs, doc, list, pageLink } from '../lib/markdown.ts';
@@ -19,7 +21,7 @@ export function markdown(): string {
     summary:
       'Each demo is a real clip edited by a creator’s own agent with cuttingfloor connected: what they asked for, every step the agent took, and the video before and after.',
     updated: updated('/demos'),
-    body: `## Live demo\n\nOne click opens Kazi in your browser, free, with no sign-up and nothing to install: ${KAZI_DEMO}. Kazi takes the last minute of Big Buck Bunny, gives it a happy ending with an animation over the final scene on cuttingfloor, and plays the finished video in the chat, each step shown as it runs. Then it asks for an email to keep the chat and edit your own footage. [The end of a real run](${abs('/demo/live/ending.mp4')}) (Big Buck Bunny © Blender Foundation, CC BY 3.0).\n\n## Demos\n\n${list(
+    body: `## Live demo\n\nOne click opens Kazi in your browser, free, with no sign-up and nothing to install: ${KAZI_DEMO}. Kazi takes the last minute of Big Buck Bunny, gives it a happier ending with an animation over the final scene on cuttingfloor, and plays the finished video in the chat, each step shown as it runs. Then it asks for an email to keep the chat and edit your own footage. [The end of a real run](${abs('/demo/live/ending.mp4')}) (Big Buck Bunny © Blender Foundation, CC BY 3.0).\n\n## Demos\n\n${list(
       DEMOS.map(
         (d) =>
           `${pageLink(d.title, `/demos/${d.slug}`)}: ${d.description} (${d.agent}, ${lengths(d)})`,
@@ -32,6 +34,8 @@ export function demoMarkdown(slug: string): string | undefined {
   const d = demo(slug);
   if (!d) return undefined;
   const s = d.skill ? skill(d.skill) : undefined;
+  const g = d.guide ? guide('en', d.guide) : undefined;
+  const f = d.fix ? FIXES.find((x) => x.id === d.fix) : undefined;
   const v = finished(d);
   const cuts = d.transcript.filter((w) => w.cut !== undefined).length;
   const turns = d.turns.map((t, i) =>
@@ -67,6 +71,8 @@ export function demoMarkdown(slug: string): string | undefined {
         ? `### Other versions\n\n${list(d.extra.map((x) => `${x.caption}: ${video(x)}`))}`
         : '',
       s ? `The skill it followed: ${pageLink(s.title, `/skills/${s.slug}`)}` : '',
+      g ? `The guide: ${pageLink(g.title, guidePath(g))}` : '',
+      f ? `The question it answers: ${pageLink(f.problem, fixPath(f))}` : '',
       `## More demos\n\n${list(
         DEMOS.filter((o) => o !== d).map((o) => pageLink(o.title, `/demos/${o.slug}`)),
       )}`,

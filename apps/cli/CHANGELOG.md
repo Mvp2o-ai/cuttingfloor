@@ -1,5 +1,32 @@
 # cuttingfloor
 
+## 0.55.9
+
+### Patch Changes
+
+- 68403d1: media.import shows the player: it follows the import and plays the file in the chat when it lands.
+
+## 0.55.8
+
+### Patch Changes
+
+- 998bf7e: Skills split by technique: subject-tracking (positions over time into keyframes that follow a subject) and pan-and-scan (fill a frame of another shape by moving the crop shot by shot), and turn-a-long-video-into-shorts is now a thin composition of them with captions.
+- c831583: New skill turn-a-long-video-into-shorts: find the moments, cut Shorts with the hook first, and reframe a wide video to full-screen vertical shot by shot from shot changes and face boxes in one transform, then captions and one export each.
+- 042dd91: Two new skills: spend-credits-wisely (what spends credits and what is free, so a job checks its work for free and makes many outputs from one import), now a prerequisite of every skill, and shorts-style-captions (a gradient or rounded band behind word-by-word captions, from one band picture instead of one per line).
+
+## 0.55.7
+
+### Patch Changes
+
+- cf78ee3: The upload pages fit phones: on a touch screen the box reads "Tap to choose…" (from your gallery or files) and looks like a button, and Resume, the nav links and Sign out are big enough to tap. Computers keep "Drop … or click to choose".
+- fc0d96d: The upload page carries on a file that stopped part way: Resume sends the rest from what the server already has (after a reload, by picking the same file again). On phones the screen stays awake while sending, and a part cut off when the user switched apps is sent again when they come back.
+
+## 0.55.6
+
+### Patch Changes
+
+- 9fd327a: media.import stops at a link that opens a web page (a YouTube or other video page, a private share) and says so, with how the file itself gets in, instead of failing later with "not a readable media file".
+
 ## 0.55.5
 
 ### Patch Changes
