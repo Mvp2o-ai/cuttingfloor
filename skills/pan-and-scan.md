@@ -1,7 +1,7 @@
 ---
 name: pan-and-scan
 description: Pan and scan with cuttingfloor - fit a picture into a frame of another shape (wide to vertical 9:16, wide to square or 4:5, vertical to wide) with no bars, by moving a crop window over it shot by shot to keep the subject in view, in one transform for the whole clip. Use when someone asks to make a video vertical, square or wide, to reframe or resize it for TikTok, Reels, Shorts, Stories or a feed, to get rid of black bars, or to crop to a subject without losing them.
-version: 2
+version: 3
 type: playbook
 source: system
 author: Ken Wiltshire
@@ -36,6 +36,7 @@ The picture covers the frame (`fit: "cover"`) and one `clip.set_transform` moves
 | A small subject in a wide shot | `scale` above 1 to punch in, with P or Q scaled to match |
 | The action fills the whole wide picture (a game, a landscape) | Letterbox instead: `fit: "contain"` over a blurred `cover` copy of itself (`filter.add` blur, radius a fraction of the frame height, about 0.04; background `scale` 1.2 so its blurred edges sit off screen) |
 | A screen recording, slides or text across the width | Letterbox or a stack; panning would cut words |
+| One shot inside the clip is a title card or wide text ("40 YEARS LATER") | Split the clip at that shot (`clip.split`) and letterbox only that piece; panning cuts the words |
 
 ## Required behavior
 - One transform for the clip, one held keyframe per shot; never a crop that drifts across a cut.
