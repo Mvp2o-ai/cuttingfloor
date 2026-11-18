@@ -63,6 +63,11 @@ export class SearchIndexer {
     void this.#drain();
   }
 
+  /** Resolves once nothing is queued or being indexed (tests measure storage after it). */
+  async idle(): Promise<void> {
+    while (this.#running || this.#queue.length) await new Promise((r) => setTimeout(r, 50));
+  }
+
   async #drain(): Promise<void> {
     if (this.#running) return;
     this.#running = true;

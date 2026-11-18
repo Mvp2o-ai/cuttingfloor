@@ -3173,6 +3173,8 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
           'media.list',
           {},
         );
+      // Search indexes are built in the background and count as storage: measure once they're in.
+      await env.runtime.indexer.idle();
       const before = await listed();
       expect(before.media.map((m) => m.media_id)).toContain(matte.media_id);
 
@@ -3200,9 +3202,9 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       }>(client, 'media.delete', { media_id: matte.media_id });
       expect(gone.deleted).toBe(true);
       expect(gone.freed_bytes).toBeGreaterThan(0);
-      // Its search index is built in the background and may land between the two readings, so
-      // freed_bytes can hold more than `before` counted: the room comes back, give or take that.
-      expect(gone.storage.used_bytes).toBeLessThan(before.storage.used_bytes);
+      expect(gone.storage.used_bytes).toBeLessThanOrEqual(
+        before.storage.used_bytes - gone.freed_bytes,
+      );
       expect((await listed()).media.map((m) => m.media_id)).not.toContain(matte.media_id);
       expect(
         (await call(client, 'media.get', { media_id: matte.media_id })).structured,
