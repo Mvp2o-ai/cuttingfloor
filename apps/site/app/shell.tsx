@@ -163,7 +163,13 @@ export function Footer({ cta = 'Start free' }: { cta?: string }) {
         </div>
         <p>
           cuttingfloor {cli.version}
-          <br />© {new Date().getFullYear()} {LEGAL_NAME}
+          <br />© {new Date().getFullYear()}{' '}
+          <a href="https://mvp2o.ai" rel="noopener">
+            {LEGAL_NAME}
+          </a>
+          .
+          <br />
+          All rights reserved.
           <br />
           <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
         </p>

@@ -17,7 +17,16 @@ export default function Support() {
       label="Support"
       href="/support"
       title="Support."
-      lede={`Help with cuttingfloor, from the people who make it at ${LEGAL_NAME}.`}
+      lede={
+        <>
+          Help with cuttingfloor, from the people who make it at{' '}
+          <a href="https://mvp2o.ai" rel="noopener">
+            {LEGAL_NAME}
+          </a>
+          .
+        </>
+      }
+      effective={false}
     >
       <Part title="Write to us">
         <P>Email {mail}. A person answers, usually within one working day.</P>

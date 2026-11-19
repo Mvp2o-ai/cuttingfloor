@@ -25,8 +25,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ...ROUTES.map((r) => ({
       url: new URL(r.path, SITE_URL).toString(),
       lastModified: r.updated,
-      changeFrequency: 'weekly' as const,
-      priority: r.path === '/' ? 1 : 0.8,
       videos: videos(r.path),
     })),
     { url: `${SITE_URL}/llms.txt`, changeFrequency: 'weekly', priority: 0.5 },

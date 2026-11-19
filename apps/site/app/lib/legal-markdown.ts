@@ -40,19 +40,23 @@ function blocks(node: ReactNode): string[] {
 export function legalMarkdown(page: () => ReactElement, metadata: Metadata): string {
   const el = page() as ReactElement<{
     title: string;
-    lede: string;
+    lede: ReactNode;
     href: string;
     dated?: boolean;
+    effective?: string | false;
     children: ReactNode;
   }>;
   if (el.type !== LegalPage) throw new Error('legalMarkdown: the page is not a LegalPage');
-  const { title, lede, href, dated = true, children } = el.props;
+  const { title, lede, href, dated = true, effective = EFFECTIVE, children } = el.props;
+  const intro = inline(lede).replace(/\s+/g, ' ').trim();
   return doc({
     path: href,
     title: title.replace(/\.$/, ''),
-    summary: String(metadata.description ?? lede),
-    body: [lede, ...(dated ? [`In effect from ${EFFECTIVE}.`] : []), ...blocks(children)].join(
-      '\n\n',
-    ),
+    summary: String(metadata.description ?? intro),
+    body: [
+      intro,
+      ...(dated && effective ? [`In effect from ${effective}.`] : []),
+      ...blocks(children),
+    ].join('\n\n'),
   });
 }

@@ -19,12 +19,12 @@ export function LegalPage({
 }: {
   label: string;
   title: string;
-  lede: string;
+  lede: ReactNode;
   href: string;
   /** Shows the effective date: policies do, explainers don't. */
   dated?: boolean;
-  /** The date this page took effect, when it changed after the others. */
-  effective?: string;
+  /** The date this page took effect, when it changed after the others; false shows none. */
+  effective?: string | false;
   children: ReactNode;
 }) {
   return (
@@ -38,7 +38,7 @@ export function LegalPage({
           <h1 className="display">{title}</h1>
           <p className="lede wt-answer">{lede}</p>
           {dated ? null : <LiveCard />}
-          {dated ? <p className="wt-links">In effect from {effective}.</p> : null}
+          {dated && effective ? <p className="wt-links">In effect from {effective}.</p> : null}
         </section>
         <section className="cell">
           <div className="wt-prose">{children}</div>
