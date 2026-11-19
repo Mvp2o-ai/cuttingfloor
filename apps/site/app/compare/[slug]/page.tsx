@@ -112,7 +112,7 @@ export default async function VersusPage({ params }: Props) {
         </section>
 
         <section className="cell">
-          {v.kind === 'neutral' ? (
+          {v.neitherInAgent ? (
             <p>
               Neither runs inside your agent. <a href="/start">cuttingfloor</a> does.
             </p>

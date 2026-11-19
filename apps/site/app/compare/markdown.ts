@@ -24,7 +24,7 @@ export function versusMarkdown(slug: string): string | undefined {
       `## Pick ${v.sides[0].name} if\n\n${v.pick[0]}`,
       `## Pick ${v.sides[1].name} if\n\n${v.pick[1]}`,
       `## Watch it do this\n\n${list(demos.map((d) => pageLink(d.title, `/demos/${d.slug}`)))}`,
-      ...(v.kind === 'neutral'
+      ...(v.neitherInAgent
         ? [`Neither runs inside your agent. ${pageLink('cuttingfloor', '/start')} does.`]
         : []),
       ...v.faqs.map((f) => `## ${f.q}\n\n${f.a}`),

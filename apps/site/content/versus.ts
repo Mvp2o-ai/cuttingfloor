@@ -15,6 +15,8 @@ export type Versus = {
   deciding: string;
   pick: [string, string];
   demos: string[];
+  /** Neither side runs inside an agent, so the page says cuttingfloor does. */
+  neitherInAgent?: true;
   faqs: { q: string; a: string }[];
   updated: string;
 };
@@ -133,7 +135,7 @@ export const VERSUS: Versus[] = [
     deciding:
       'Whether self-hosting matters to you. If your footage cannot leave your own machine, only one of these two works.',
     pick: [
-      'you need open source, self-hosting, or the agent to be able to check its own output before you look.',
+      'you need open source, or self-hosting so footage stays on your own machine.',
       'you want a hosted service with nothing to install and the simplest possible setup.',
     ],
     demos: ['make-a-motion-graphics-explainer-video', 'add-a-talking-head-to-your-explainer-video'],
@@ -247,14 +249,14 @@ export const VERSUS: Versus[] = [
     metaTitle:
       'Premiere Pro vs cuttingfloor: finish in Premiere, start in your agent | cuttingfloor',
     metaDescription:
-      'Premiere Pro is where a professional edit is finished. cuttingfloor is where an agent does the first pass and hands you an FCPXML timeline. They are meant to be used together.',
+      'Premiere Pro is where a professional edit is finished. cuttingfloor is where an agent does the first pass and hands you an OTIO timeline. They are meant to be used together.',
     answer:
-      'Premiere Pro is a professional editing application, and cuttingfloor is not a replacement for it. cuttingfloor does the first pass an agent can do: cutting to words, removing pauses, captioning, reframing, mixing, then exporting an FCPXML timeline Premiere opens. You finish the edit where you always did.',
+      'Premiere Pro is a professional editing application, and cuttingfloor is not a replacement for it. cuttingfloor does the first pass an agent can do: cutting to words, removing pauses, captioning, reframing, mixing, then exporting an OTIO timeline Premiere opens. You finish the edit where you always did.',
     sides: [
       {
         name: 'cuttingfloor',
         is: 'An open-source MCP server that does the first pass and exports a timeline.',
-        wins: 'The hours before the creative work: watching, cutting to words, killing pauses, captioning and reframing, done by an agent that checks its output. Exports FCPXML, OTIO and EDL straight into Premiere.',
+        wins: 'The hours before the creative work: watching, cutting to words, killing pauses, captioning and reframing, done by an agent that checks its output. Exports OTIO straight into Premiere, and FCPXML or EDL for other editors.',
       },
       {
         name: 'Premiere Pro',
@@ -272,7 +274,7 @@ export const VERSUS: Versus[] = [
     faqs: [
       {
         q: 'Does cuttingfloor export a Premiere project?',
-        a: 'It exports FCPXML, OTIO and EDL, plus SRT and VTT captions. Premiere Pro imports FCPXML, which brings across the cuts, clips and captions so you continue on a real timeline rather than re-cutting from scratch.',
+        a: 'It exports FCPXML, OTIO and EDL, plus SRT and VTT captions. Premiere Pro opens the OTIO, which brings across the cuts, clips and captions so you continue on a real timeline rather than re-cutting from scratch.',
       },
       {
         q: 'Will the timeline survive the round trip?',
@@ -288,6 +290,7 @@ export const VERSUS: Versus[] = [
   {
     slug: 'capcut-vs-descript',
     kind: 'neutral',
+    neitherInAgent: true,
     title: 'CapCut vs Descript',
     metaTitle: 'CapCut vs Descript: timeline editing or transcript editing | cuttingfloor',
     metaDescription:
@@ -328,6 +331,7 @@ export const VERSUS: Versus[] = [
   {
     slug: 'descript-vs-veed',
     kind: 'neutral',
+    neitherInAgent: true,
     title: 'Descript vs VEED',
     metaTitle: 'Descript vs VEED: transcript editor or browser editor | cuttingfloor',
     metaDescription:
@@ -372,7 +376,7 @@ export const VERSUS: Versus[] = [
     metaDescription:
       'Invideo AI generates a video from a prompt. Vidova is an MCP server that lets an agent edit video. Two different jobs in the same category, compared honestly.',
     answer:
-      'Invideo AI and Vidova sit in the same category and do different jobs. Invideo generates a video from a written prompt, assembling stock and voice into something finished. Vidova is an MCP server, so an AI agent calls it to edit video as a sequence of tool calls. Neither needs footage to start with the same assumptions.',
+      'Invideo AI and Vidova sit in the same category and do different jobs. Invideo generates a video from a written prompt, assembling stock and voice into something finished. Vidova is an MCP server, so an AI agent calls it to edit video as a sequence of tool calls.',
     sides: [
       {
         name: 'Invideo AI',
@@ -406,6 +410,7 @@ export const VERSUS: Versus[] = [
   {
     slug: 'opusclip-vs-kapwing',
     kind: 'neutral',
+    neitherInAgent: true,
     title: 'OpusClip vs Kapwing',
     metaTitle: 'OpusClip vs Kapwing: auto-clipping or editing a full project | cuttingfloor',
     metaDescription:
