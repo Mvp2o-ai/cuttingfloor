@@ -24,7 +24,8 @@ import { madeByPartner } from './lifecycle.ts';
 //   again at every send, so a copy edit there needs no deploy.
 // - Every attempt is logged, by account id and never by address, under
 //   `email-log/{yyyy-mm-dd}/…` (kept 400 days).
-// - `GET`/`POST /email/unsubscribe` is the signed one-click unsubscribe (RFC 8058 for the POST);
+// - `GET /email/unsubscribe` is the signed link, which asks to confirm (scanners open links); its
+//   button and mail clients' one-click (RFC 8058) `POST` unsubscribe;
 //   `POST /email/events` takes Resend's bounces and complaints and suppresses the address.
 
 /** An account's credits as the emails name them. */
@@ -327,8 +328,9 @@ export class Sequence {
   }
 
   /**
-   * The unsubscribe link from the email (GET) and mail clients' one-click (POST, RFC 8058): either
-   * unsubscribes at once.
+   * The unsubscribe link from the email (GET) asks for a press of a button, so mail scanners that
+   * open every link don't unsubscribe anyone; the button and mail clients' one-click (POST, RFC
+   * 8058) unsubscribe at once.
    */
   async #unsubscribeRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
     if (req.method !== 'GET' && req.method !== 'POST')
@@ -341,14 +343,25 @@ export class Sequence {
         400,
         'This unsubscribe link isn’t valid. Reply to any of our emails instead and we’ll take you off.',
       );
-    if (req.method === 'POST') await readBody(req, 4096).catch(() => '');
     const ws = this.#o.ws;
+    const done = 'You’re unsubscribed. cuttingfloor won’t send you these emails again.';
+    if (req.method === 'GET') {
+      if (await ws.readJson(ws.ownerDir(owner, 'email', 'unsubscribed.json')))
+        return page(res, 200, done);
+      return page(
+        res,
+        200,
+        'Stop cuttingfloor’s emails about getting started and your credits?',
+        '<form method="post" style="margin-top:16px"><button type="submit" style="font:inherit;padding:10px 18px;border:0;border-radius:8px;background:#111;color:#fff;cursor:pointer">Unsubscribe</button></form>',
+      );
+    }
+    await readBody(req, 4096).catch(() => '');
     await ws.writeJson(
       ws.ownerDir(owner, 'email', 'unsubscribed.json'),
       { at: new Date().toISOString() },
       { exclusive: true },
     );
-    page(res, 200, 'You’re unsubscribed. cuttingfloor won’t send you these emails again.');
+    page(res, 200, done);
   }
 
   /** Resend's webhook (signed by Svix): a bounce or a complaint suppresses the address for good. */
@@ -579,17 +592,17 @@ function same(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-function page(res: ServerResponse, status: number, message: string): void {
+function page(res: ServerResponse, status: number, message: string, form = ''): void {
   res
     .writeHead(status, {
       'content-type': 'text/html; charset=utf-8',
       'cache-control': 'no-store',
       'x-content-type-options': 'nosniff',
       'content-security-policy':
-        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     })
     .end(
-      `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>cuttingfloor</title></head><body style="margin:0;padding:48px 16px;font:16px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111"><p style="max-width:520px;margin:0 auto">${message}</p></body></html>`,
+      `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>cuttingfloor</title></head><body style="margin:0;padding:48px 16px;font:16px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111"><div style="max-width:520px;margin:0 auto"><p style="margin:0">${message}</p>${form}</div></body></html>`,
     );
 }
 

@@ -372,7 +372,7 @@ describe('credits reminder', () => {
 });
 
 describe('suppression, at the moment of sending', () => {
-  it('honours the unsubscribe link at once, and a mail client’s one-click POST', async () => {
+  it('honours the unsubscribe button and a mail client’s one-click POST, not a bare page load', async () => {
     const { ws, accounts, provider, sequence } = await setup();
     const one = accounts.add(1, T0);
     const two = accounts.add(2, T0);
@@ -381,9 +381,14 @@ describe('suppression, at the moment of sending', () => {
     const link = (id: string) =>
       sequence.unsubscribeUrl(id).replace('https://api.cuttingfloor.ai', base);
 
-    const clicked = await fetch(link(one));
-    expect(clicked.status).toBe(200);
-    expect(await clicked.text()).toContain('unsubscribed');
+    // A scanner opening the link only sees the button.
+    const opened = await fetch(link(one));
+    expect(opened.status).toBe(200);
+    expect(await opened.text()).toContain('<form method="post"');
+    expect(await ws.readJson(ws.ownerDir(one, 'email', 'unsubscribed.json'))).toBeUndefined();
+    const pressed = await fetch(link(one), { method: 'POST' });
+    expect(await pressed.text()).toContain('unsubscribed');
+    expect(await (await fetch(link(one))).text()).toContain('unsubscribed');
     const posted = await fetch(link(two), {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
