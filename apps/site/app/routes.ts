@@ -3,6 +3,7 @@ import { DEMOS } from '../content/demos.ts';
 import { FIXES, FIXES_UPDATED, fixPath } from '../content/fixes.ts';
 import { GUIDES, guidePath } from '../content/guides.ts';
 import { SKILLS, SKILLS_UPDATED } from '../content/skills.ts';
+import { VERSUS } from '../content/versus.ts';
 import { WALKTHROUGHS } from '../content/walkthroughs.ts';
 import { WAYS_TITLE, WAYS_UPDATED } from '../content/ways.ts';
 
@@ -49,6 +50,11 @@ export const ROUTES: Route[] = [
     title: 'Compare AI video editing: MCP servers, APIs and editing apps',
     updated: '2026-11-01',
   },
+  ...VERSUS.map((v) => ({
+    path: `/compare/${v.slug}`,
+    title: v.title,
+    updated: v.updated,
+  })),
   {
     path: '/agents',
     title: 'Edit videos with your AI agent: Kazi, Claude and ChatGPT',
@@ -74,10 +80,5 @@ export const ROUTES: Route[] = [
   { path: '/privacy', title: 'Privacy', updated: '2026-10-20' },
   { path: '/refunds', title: 'Refunds', updated: '2026-10-20' },
   { path: '/support', title: 'Support', updated: '2026-11-05' },
-  {
-    path: '/sign-in-warning',
-    title: 'Why sign-in says “This is a security risk”',
-    updated: '2026-11-13',
-  },
   { path: '/acceptable-use', title: 'Acceptable use', updated: '2026-10-20' },
 ];

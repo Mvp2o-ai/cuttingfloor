@@ -13,6 +13,7 @@ import {
   SERVERS,
 } from '../../content/compare.ts';
 import { REPO_URL } from '../../content/facts.ts';
+import { versusPath } from '../../content/versus.ts';
 import { TryKazi } from '../kazi.tsx';
 import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
@@ -33,6 +34,12 @@ export const metadata: Metadata = {
 };
 
 const MARK_CLASS: Record<Mark, string> = { Y: 'yes', N: 'no', P: 'part', $: 'paid', '?': 'q' };
+
+/** The product's own comparison, when this site has one. Otherwise the name stays text. */
+function Product({ name }: { name: string }) {
+  const href = versusPath(name);
+  return href ? <a href={href}>{name}</a> : name;
+}
 
 export default function Compare() {
   return (
@@ -87,10 +94,11 @@ export default function Compare() {
             <div>
               <h3>An editor with an AI inside</h3>
               <p>
-                Descript (with Underlord), invideo (Agent Two), Vidova, CutClip, Tella, OpusClip,
-                Kapwing, CapCut, VEED. You open their app and their AI works in it, on their
-                credits. When they offer agent access, it is a way into their app: a request to
-                their AI, or edits to a project that lives in their editor.
+                <Product name="Descript" /> (with Underlord), <Product name="invideo" /> (Agent
+                Two), <Product name="Vidova" />, CutClip, Tella, OpusClip, Kapwing,{' '}
+                <Product name="CapCut" />, <Product name="VEED" />. You open their app and their AI
+                works in it, on their credits. When they offer agent access, it is a way into their
+                app: a request to their AI, or edits to a project that lives in their editor.
               </p>
             </div>
             <div className="ours">
@@ -197,7 +205,7 @@ export default function Compare() {
                 {SERVERS.map((s) => (
                   <tr key={s.name} className={s.ours ? 'ours' : undefined}>
                     <th scope="row">
-                      {s.name}
+                      <Product name={s.name} />
                       <span>{s.is}</span>
                     </th>
                     {SERVER_COLUMNS.map((c) => (
@@ -242,7 +250,9 @@ export default function Compare() {
               <tbody>
                 {APPS.map((a) => (
                   <tr key={a.name} className={a.ours ? 'ours' : undefined}>
-                    <th scope="row">{a.name}</th>
+                    <th scope="row">
+                      <Product name={a.name} />
+                    </th>
                     {APP_COLUMNS.map((c) => (
                       <td key={c.key} className={`m m-${MARK_CLASS[a.marks[c.key]]}`}>
                         {MARKS[a.marks[c.key]]}
@@ -294,7 +304,7 @@ export default function Compare() {
               {[...SERVERS, ...ALSO].map((s) => (
                 <tr key={s.name} className={'ours' in s && s.ours ? 'ours' : undefined}>
                   <th scope="row" className="tier">
-                    {s.name}
+                    <Product name={s.name} />
                   </th>
                   <td className="note pick">{s.pick}</td>
                 </tr>
@@ -304,7 +314,10 @@ export default function Compare() {
           <ul className="cmp-also">
             {ALSO.map((a) => (
               <li key={a.name}>
-                <strong>{a.name}.</strong> {a.is}
+                <strong>
+                  <Product name={a.name} />.
+                </strong>{' '}
+                {a.is}
               </li>
             ))}
           </ul>
@@ -317,8 +330,9 @@ export default function Compare() {
               <p>
                 <a href={SIGN_UP}>Connect cuttingfloor to your agent</a> and ask for the edit you
                 want. {FREE_CREDITS} free credits, no card. Or run it yourself from{' '}
-                <a href={REPO_URL}>GitHub</a>, free. For people coming from CapCut, Descript, VEED
-                or Kapwing, see <a href="/alternatives">the alternatives page</a>.
+                <a href={REPO_URL}>GitHub</a>, free. Coming from <Product name="CapCut" />,{' '}
+                <Product name="Descript" />, <Product name="VEED" /> or Kapwing? Read the
+                comparison, or see <a href="/alternatives">the alternatives page</a>.
               </p>
             </section>
           </div>

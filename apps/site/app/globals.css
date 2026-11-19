@@ -3627,6 +3627,27 @@ table.pr-grid td {
 .ledger + .cmp-prose {
   margin-top: clamp(36px, 5vw, 56px);
 }
+/* A versus page is short sections read in a row: about 40% less room between them than .cell gives. */
+.cmp-tight .cell {
+  padding-top: clamp(34px, 5.4vw, 72px);
+  padding-bottom: clamp(34px, 5.4vw, 72px);
+}
+.cmp-tight .cmp-kinds {
+  margin-bottom: clamp(22px, 3vw, 34px);
+}
+.cmp-tight .cmp-kinds > div {
+  padding-top: 17px;
+  padding-bottom: 17px;
+}
+.cmp-tight .cell h2:not(.display) {
+  margin: 0.5em 0;
+}
+.cmp-tight .faq details {
+  padding: 12px 0;
+}
+.cmp-tight .faq p {
+  margin-top: 7px;
+}
 .cmp-prose h2 {
   font-size: clamp(24px, 2.6vw, 34px);
 }
