@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "cuttingfloor admin API",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -208,6 +208,7 @@
             "description": "The WorkOS user id the key belongs to"
           },
           "email": {
+            "description": "null when the account could not be read just now",
             "type": ["string", "null"]
           },
           "roles": {
@@ -320,7 +321,7 @@
                 "type": "null"
               }
             ],
-            "description": "First export that succeeded"
+            "description": "First video export that finished successfully (the first finished edit); not a timeline change. null: none yet"
           },
           "first_export_at": {
             "anyOf": [
@@ -333,7 +334,7 @@
                 "type": "null"
               }
             ],
-            "description": "First export attempted"
+            "description": "First video export started, whether or not it succeeded. null: none yet"
           },
           "first_client": {
             "description": "The app of the first request, e.g. claude",
@@ -358,22 +359,27 @@
                 "type": "object",
                 "properties": {
                   "plan": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "free: only the free credits; credits: pay as you go, has bought credits; enterprise, lifetime, staff: given plans. New plans may appear"
                   },
                   "left": {
-                    "description": "null when the plan has no cap",
+                    "description": "Credits left; null when the plan has no cap",
                     "type": ["number", "null"]
                   },
                   "used": {
-                    "type": "number"
+                    "type": "number",
+                    "description": "Credits used: since the account began, or this month on a given plan"
                   },
                   "free": {
-                    "type": "number"
+                    "type": "number",
+                    "description": "Free credits the account started with"
                   },
                   "bought": {
-                    "type": "number"
+                    "type": "number",
+                    "description": "Credits bought in packs, after refunds"
                   },
                   "per_month": {
+                    "description": "A given plan's credits each month; null otherwise",
                     "type": ["number", "null"]
                   },
                   "renews": {
@@ -386,7 +392,8 @@
                       {
                         "type": "null"
                       }
-                    ]
+                    ],
+                    "description": "When a given plan's credits renew; null otherwise"
                   }
                 },
                 "required": ["plan", "left", "used", "free", "bought", "per_month", "renews"]
@@ -395,7 +402,7 @@
                 "type": "null"
               }
             ],
-            "description": "From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer"
+            "description": "A credit is one minute of a server job (an export, a transcript) or 200 visual judgments. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer"
           },
           "files": {
             "type": "array",
@@ -429,8 +436,16 @@
                 "description": "Unsubscribed from account email"
               },
               "suppressed": {
-                "description": "bounced or complained: the address must not be emailed; null otherwise",
-                "type": ["string", "null"]
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["bounced", "complained"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Why the address must not be emailed: bounced or complained; null when it may be. New reasons may appear"
               }
             },
             "required": ["expiry_emails", "unsubscribed", "suppressed"]

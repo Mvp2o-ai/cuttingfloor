@@ -22,7 +22,7 @@ export const AdminError = z.object({
 
 export const AdminMe = z.object({
   user: z.string().describe('The WorkOS user id the key belongs to'),
-  email: z.string().nullable(),
+  email: z.string().nullable().describe('null when the account could not be read just now'),
   roles: z.array(z.string()).describe("The user's cuttingfloor roles, e.g. admin"),
   key: z.object({
     key_id: z.string(),
@@ -58,25 +58,38 @@ export const AdminAccount = z.object({
     ),
   first_call_at: nullableTime.describe('First signed-in request (connecting an app counts)'),
   first_tool_at: nullableTime.describe('First tool call that ran; null means never used'),
-  first_edit_at: nullableTime.describe('First export that succeeded'),
-  first_export_at: nullableTime.describe('First export attempted'),
+  first_edit_at: nullableTime.describe(
+    'First video export that finished successfully (the first finished edit); not a timeline change. null: none yet',
+  ),
+  first_export_at: nullableTime.describe(
+    'First video export started, whether or not it succeeded. null: none yet',
+  ),
   first_client: z.string().nullable().describe('The app of the first request, e.g. claude'),
   last_used_at: nullableTime.describe(
     'The day of the latest tool call, recorded at most once a day; null before it was recorded',
   ),
   credits: z
     .object({
-      plan: z.string(),
-      left: z.number().nullable().describe('null when the plan has no cap'),
-      used: z.number(),
-      free: z.number(),
-      bought: z.number(),
-      per_month: z.number().nullable(),
-      renews: nullableTime,
+      plan: z
+        .string()
+        .describe(
+          'free: only the free credits; credits: pay as you go, has bought credits; enterprise, lifetime, staff: given plans. New plans may appear',
+        ),
+      left: z.number().nullable().describe('Credits left; null when the plan has no cap'),
+      used: z
+        .number()
+        .describe('Credits used: since the account began, or this month on a given plan'),
+      free: z.number().describe('Free credits the account started with'),
+      bought: z.number().describe('Credits bought in packs, after refunds'),
+      per_month: z
+        .number()
+        .nullable()
+        .describe("A given plan's credits each month; null otherwise"),
+      renews: nullableTime.describe("When a given plan's credits renew; null otherwise"),
     })
     .nullable()
     .describe(
-      'From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer',
+      'A credit is one minute of a server job (an export, a transcript) or 200 visual judgments. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer',
     ),
   files: z.array(AdminFile).describe('Media and finished exports still kept, soonest to go first'),
   next_expiry_at: nullableTime.describe('When the first of files goes; null when none'),
@@ -84,9 +97,11 @@ export const AdminAccount = z.object({
     expiry_emails: z.boolean().describe('False when the account turned file reminders off'),
     unsubscribed: z.boolean().describe('Unsubscribed from account email'),
     suppressed: z
-      .string()
+      .enum(['bounced', 'complained'])
       .nullable()
-      .describe('bounced or complained: the address must not be emailed; null otherwise'),
+      .describe(
+        'Why the address must not be emailed: bounced or complained; null when it may be. New reasons may appear',
+      ),
   }),
 });
 

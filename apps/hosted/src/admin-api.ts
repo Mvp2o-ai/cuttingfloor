@@ -27,7 +27,7 @@ import { recipientState } from './sequence.ts';
 //   {user, label} and `POST /account/admin-keys/revoke` {user, key_id}, with the site's own key.
 
 /** The API's version: within v1 it only grows, so every change bumps minor or patch. */
-export const ADMIN_API_VERSION = '1.0.0';
+export const ADMIN_API_VERSION = '1.0.1';
 const BASE = '/admin/v1';
 /** Admin keys: their own prefix and folder, so a script key never opens this API. */
 export const ADMIN_KEYS: KeyKind = { prefix: 'cfa_', dir: 'admin-keys', label: 'Admin key' };
@@ -180,7 +180,11 @@ export class AdminApi {
       credits: linked ? await this.#credits(owner) : null,
       files,
       next_expiry_at: files[0]?.expires_at ?? null,
-      email_prefs: { expiry_emails: meta.expiry_emails !== 'off', ...prefs },
+      email_prefs: {
+        expiry_emails: meta.expiry_emails !== 'off',
+        unsubscribed: prefs.unsubscribed,
+        suppressed: prefs.suppressed as Account['email_prefs']['suppressed'],
+      },
     };
   }
 
