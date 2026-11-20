@@ -30,6 +30,11 @@ describe('a task says how far along its job is', () => {
     );
     expect(taskStatusMessage(job({ statusMessage: 'probing' }))).toBe('probing');
     expect(
+      taskStatusMessage(job({ statusMessage: 'encoding 23% · 238s left', progress: 0.3 }), {
+        secondsLeft: 240,
+      }),
+    ).toBe('encoding 23% · 238s left');
+    expect(
       taskStatusMessage(job({ status: 'completed', statusMessage: 'done', progress: 1 })),
     ).toBe('done');
   });
