@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.55.13
+
+### Patch Changes
+
+- 57d867a: The in-chat player and editor stop reading a job while the view is hidden, and read once when it shows again.
+
 ## 0.55.12
 
 ### Patch Changes
