@@ -1,0 +1,476 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "cuttingfloor admin API",
+    "version": "1.0.0",
+    "license": {
+      "name": "AGPL-3.0-only",
+      "identifier": "AGPL-3.0-only"
+    },
+    "description": "cuttingfloor's admin API: facts about cuttingfloor accounts for its admins and the systems they connect, such as a CRM. Sign in with an admin key: Authorization: Bearer cfa_…, which a cuttingfloor admin makes on the account page. Every answer is JSON; a refusal is an HTTP error status with {error: {code, message, hint}}. Within v1 the API only grows: new fields, endpoints and optional parameters. Ignore fields you don't know."
+  },
+  "servers": [
+    {
+      "url": "https://api.cuttingfloor.ai/admin/v1"
+    }
+  ],
+  "security": [
+    {
+      "adminKey": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "me",
+      "description": "The admin key and its user"
+    },
+    {
+      "name": "accounts",
+      "description": "cuttingfloor accounts"
+    }
+  ],
+  "paths": {
+    "/me": {
+      "get": {
+        "operationId": "get_me",
+        "tags": ["me"],
+        "summary": "The admin key in use",
+        "description": "Who this admin key belongs to: the user's id, email and cuttingfloor roles, and the key's id and expiry (ISO 8601 UTC). Use it to check a key works and to warn before it expires.",
+        "responses": {
+          "200": {
+            "description": "The key and its user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/accounts": {
+      "get": {
+        "operationId": "list_accounts",
+        "tags": ["accounts"],
+        "summary": "List accounts",
+        "description": "List cuttingfloor accounts, newest first, with what each did and what it holds: sign-up and first-use times (first_tool_at null = never ran a tool), last use, credits, files kept and when they go (next_expiry_at). Filter by exact email. Page with cursor: pass next_cursor from the last page until it is null. Export download links are null here; get_account signs them.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Accounts per page: default 50, at most 100",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The last page's next_cursor; leave out for the first page",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "email",
+            "in": "query",
+            "required": false,
+            "description": "Only the account with exactly this email (any case)",
+            "schema": {
+              "type": "string",
+              "format": "email"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountList"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/accounts/{id}": {
+      "get": {
+        "operationId": "get_account",
+        "tags": ["accounts"],
+        "summary": "Get one account",
+        "description": "One cuttingfloor account by its id (a WorkOS user id, user_…), as list_accounts gives it, with signed download links for its exports (valid for days).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The account id, user_… as list_accounts gives it",
+            "schema": {
+              "type": "string",
+              "pattern": "^user_[0-9A-Z]{26}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "adminKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "cfa_…",
+        "description": "An admin key from a cuttingfloor admin's account page"
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Refused: what went wrong and what to do instead",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "unauthorized, forbidden, bad_request, not_found, unavailable, or another stable code"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "description": "What to do instead",
+                "type": "string"
+              }
+            },
+            "required": ["code", "message"]
+          }
+        },
+        "required": ["error"]
+      },
+      "Me": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string",
+            "description": "The WorkOS user id the key belongs to"
+          },
+          "email": {
+            "type": ["string", "null"]
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The user's cuttingfloor roles, e.g. admin"
+          },
+          "key": {
+            "type": "object",
+            "properties": {
+              "key_id": {
+                "type": "string"
+              },
+              "expires_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 UTC"
+              }
+            },
+            "required": ["key_id", "expires_at"]
+          }
+        },
+        "required": ["user", "email", "roles", "key"]
+      },
+      "File": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["media", "export"],
+            "description": "media: imported or uploaded; export: a render"
+          },
+          "id": {
+            "type": "string",
+            "description": "media_id, or the export job_id"
+          },
+          "name": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the file is deleted (ISO 8601 UTC). Using media in an edit pushes it back; an export goes at this time regardless"
+          },
+          "download_url": {
+            "description": "A signed download link for an export, valid for days. Only get_account signs them: null in list pages, and for media",
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["kind", "id", "name", "expires_at", "download_url"]
+      },
+      "Account": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The WorkOS user id"
+          },
+          "email": {
+            "type": "string"
+          },
+          "email_verified": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC"
+          },
+          "made_by": {
+            "description": "The partner that made the account for its own user (e.g. the Cutting Floor AI app); null when the person signed up here",
+            "type": ["string", "null"]
+          },
+          "first_call_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 UTC"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First signed-in request (connecting an app counts)"
+          },
+          "first_tool_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 UTC"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First tool call that ran; null means never used"
+          },
+          "first_edit_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 UTC"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First export that succeeded"
+          },
+          "first_export_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 UTC"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First export attempted"
+          },
+          "first_client": {
+            "description": "The app of the first request, e.g. claude",
+            "type": ["string", "null"]
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 UTC"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The day of the latest tool call, recorded at most once a day; null before it was recorded"
+          },
+          "credits": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "plan": {
+                    "type": "string"
+                  },
+                  "left": {
+                    "description": "null when the plan has no cap",
+                    "type": ["number", "null"]
+                  },
+                  "used": {
+                    "type": "number"
+                  },
+                  "free": {
+                    "type": "number"
+                  },
+                  "bought": {
+                    "type": "number"
+                  },
+                  "per_month": {
+                    "type": ["number", "null"]
+                  },
+                  "renews": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "ISO 8601 UTC"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": ["plan", "left", "used", "free", "bought", "per_month", "renews"]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/File"
+            },
+            "description": "Media and finished exports still kept, soonest to go first"
+          },
+          "next_expiry_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 UTC"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the first of files goes; null when none"
+          },
+          "email_prefs": {
+            "type": "object",
+            "properties": {
+              "expiry_emails": {
+                "type": "boolean",
+                "description": "False when the account turned file reminders off"
+              },
+              "unsubscribed": {
+                "type": "boolean",
+                "description": "Unsubscribed from account email"
+              },
+              "suppressed": {
+                "description": "bounced or complained: the address must not be emailed; null otherwise",
+                "type": ["string", "null"]
+              }
+            },
+            "required": ["expiry_emails", "unsubscribed", "suppressed"]
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "email_verified",
+          "created_at",
+          "made_by",
+          "first_call_at",
+          "first_tool_at",
+          "first_edit_at",
+          "first_export_at",
+          "first_client",
+          "last_used_at",
+          "credits",
+          "files",
+          "next_expiry_at",
+          "email_prefs"
+        ]
+      },
+      "AccountList": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Account"
+            },
+            "description": "Newest accounts first"
+          },
+          "next_cursor": {
+            "description": "Pass as cursor for the next page; null at the end",
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["data", "next_cursor"]
+      }
+    }
+  }
+}

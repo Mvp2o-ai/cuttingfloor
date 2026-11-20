@@ -7,6 +7,8 @@ import { randomId, type Workspace } from '@cuttingfloor/core';
 // Still no database: each key is two files under the data root, and neither holds the key, only
 // its SHA-256. `keys/{sha256}.json` says whose it is (read on each request);
 // `owners/{owner}/keys/{key_id}.json` lists it on the account page. A key works for a year.
+// Admin keys (admin-api.ts) are the same, under `admin-keys/` with their own prefix: a script key
+// never opens the admin API, and an admin key never reaches /mcp.
 
 /** How long a script key works after it is made. */
 export const SCRIPT_KEY_TTL_MS = 365 * 24 * 3_600_000;
@@ -14,6 +16,15 @@ export const SCRIPT_KEY_TTL_MS = 365 * 24 * 3_600_000;
 export const SCRIPT_KEYS_MAX = 10;
 /** Every script key starts with this, so a leaked one is recognisable. */
 export const SCRIPT_KEY_PREFIX = 'cf_';
+
+/** Which keys a store holds: their prefix, their folder and a new key's default label. */
+export interface KeyKind {
+  prefix: string;
+  dir: string;
+  label: string;
+}
+
+export const SCRIPT_KEYS: KeyKind = { prefix: SCRIPT_KEY_PREFIX, dir: 'keys', label: 'Script key' };
 
 export interface ScriptKeyView {
   key_id: string;
@@ -35,9 +46,11 @@ const digest = (key: string) => createHash('sha256').update(key).digest('hex');
 
 export class ScriptKeys {
   readonly #ws: Workspace;
+  readonly #kind: KeyKind;
 
-  constructor(ws: Workspace) {
+  constructor(ws: Workspace, kind: KeyKind = SCRIPT_KEYS) {
     this.#ws = ws;
+    this.#kind = kind;
   }
 
   /** A new key for `owner`: the key itself is in this answer and nowhere else. */
@@ -75,11 +88,11 @@ export class ScriptKeys {
     label: string,
     partner?: { name: string; sub: string },
   ): Promise<ScriptKeyView & { key: string }> {
-    const key = `${SCRIPT_KEY_PREFIX}${randomBytes(32).toString('base64url')}`;
+    const key = `${this.#kind.prefix}${randomBytes(32).toString('base64url')}`;
     const now = Date.now();
     const file: KeyFile = {
       key_id: randomId('k_'),
-      label: label.trim().slice(0, 60) || 'Script key',
+      label: label.trim().slice(0, 60) || this.#kind.label,
       starts: key.slice(0, 7),
       created_at: new Date(now).toISOString(),
       expires_at: new Date(now + SCRIPT_KEY_TTL_MS).toISOString(),
@@ -100,7 +113,7 @@ export class ScriptKeys {
   }
 
   async #files(owner: string): Promise<KeyFile[]> {
-    const dir = this.#ws.ownerDir(owner, 'keys');
+    const dir = this.#ws.ownerDir(owner, this.#kind.dir);
     const out: KeyFile[] = [];
     for (const name of await this.#ws.list(dir)) {
       const file = await this.#ws.readJson<KeyFile>(join(dir, name)).catch(() => undefined);
@@ -126,20 +139,25 @@ export class ScriptKeys {
    * goes as well.
    */
   async removeAll(owner: string): Promise<void> {
-    for (const name of await this.#ws.list(this.#ws.path('keys'))) {
-      const path = this.#ws.path('keys', name);
+    for (const name of await this.#ws.list(this.#ws.path(this.#kind.dir))) {
+      const path = this.#ws.path(this.#kind.dir, name);
       const file = await this.#ws.readJson<KeyFile>(path).catch(() => undefined);
       if (file?.owner === owner) await this.#ws.remove(path);
     }
-    await this.#ws.remove(this.#ws.ownerDir(owner, 'keys'));
+    await this.#ws.remove(this.#ws.ownerDir(owner, this.#kind.dir));
   }
 
   /** Whose key this is, or undefined for one never made, revoked or expired. */
   async owner(key: string): Promise<string | undefined> {
-    if (!key.startsWith(SCRIPT_KEY_PREFIX)) return undefined;
+    return (await this.find(key))?.owner;
+  }
+
+  /** The key's owner and listing, or undefined for one never made, revoked or expired. */
+  async find(key: string): Promise<(ScriptKeyView & { owner: string }) | undefined> {
+    if (!key.startsWith(this.#kind.prefix)) return undefined;
     const file = await this.#ws.readJson<KeyFile>(this.#byHash(digest(key)));
     if (!file || Date.parse(file.expires_at) <= Date.now()) return undefined;
-    return file.owner;
+    return { ...view(file), owner: file.owner };
   }
 
   /** Removes expired keys' files. */
@@ -149,21 +167,21 @@ export class ScriptKeys {
       const file = await this.#ws.readJson<KeyFile>(path).catch(() => undefined);
       if (file && Date.parse(file.expires_at) <= now) await this.#ws.remove(path);
     };
-    for (const name of await this.#ws.list(this.#ws.path('keys'))) {
-      await expired(this.#ws.path('keys', name));
+    for (const name of await this.#ws.list(this.#ws.path(this.#kind.dir))) {
+      await expired(this.#ws.path(this.#kind.dir, name));
     }
     for (const key of await this.#ws.owners()) {
-      const dir = this.#ws.path('owners', key, 'keys');
+      const dir = this.#ws.path('owners', key, this.#kind.dir);
       for (const name of await this.#ws.list(dir)) await expired(join(dir, name));
     }
   }
 
   #byHash(sha256: string): string {
-    return this.#ws.path('keys', `${sha256}.json`);
+    return this.#ws.path(this.#kind.dir, `${sha256}.json`);
   }
 
   #byOwner(owner: string, keyId: string): string {
-    return this.#ws.ownerDir(owner, 'keys', `${keyId}.json`);
+    return this.#ws.ownerDir(owner, this.#kind.dir, `${keyId}.json`);
   }
 }
 
