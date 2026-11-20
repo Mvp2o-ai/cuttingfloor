@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { configFromEnv, Runtime } from '@cuttingfloor/server';
 import { AccessCheck } from './access.ts';
+import { ADMIN_KEYS, AdminApi } from './admin-api.ts';
 import { Mailer, ResendProvider } from './email.ts';
 import { recordSignInStep } from './funnel.ts';
 import { createHttpServer, parseApiKeys } from './http.ts';
@@ -11,6 +12,7 @@ import { Ledger } from './ledger.ts';
 import { Lifecycle } from './lifecycle.ts';
 import { discoverAuthorizationServer, JwtTokenVerifier } from './oauth.ts';
 import { ProviderKeys } from './provider-keys.ts';
+import { Rights } from './rights.ts';
 import { Sequence, WorkosSubscribers } from './sequence.ts';
 
 // `cuttingfloor serve`: the long-running HTTP node. Local mode (compose) is one user on
@@ -88,6 +90,9 @@ const access =
     : undefined;
 // Keys users make on the account page for scripts: only where accounts are checked.
 const scriptKeys = access ? new ScriptKeys(runtime.ws) : undefined;
+// The admin API's keys and cuttingfloor's own rights table (who is an admin).
+const adminKeys = access ? new ScriptKeys(runtime.ws, ADMIN_KEYS) : undefined;
+const rights = access ? new Rights(runtime.ws) : undefined;
 // Partners that get keys for their users: `<name>=<sha256 of its secret>`, comma-separated.
 const partners = new Map(
   (process.env.CUTTINGFLOOR_PARTNER_KEYS ?? '')
@@ -145,6 +150,7 @@ const lifecycle =
               },
             }),
         ...(scriptKeys ? { keys: scriptKeys } : {}),
+        ...(adminKeys && rights ? { adminKeys, rights } : {}),
         ...(process.env.RESEND_API_KEY
           ? {
               // Account email comes from the same person as the sign-up sequence, when one is set.
@@ -218,6 +224,20 @@ if (lifecycle && access && workosKey && publicUrl) {
       );
   }
 }
+const adminApi =
+  lifecycle && access && adminKeys && rights && publicUrl
+    ? new AdminApi({
+        runtime,
+        lifecycle,
+        access,
+        keys: adminKeys,
+        rights,
+        publicUrl,
+        ...(process.env.CUTTINGFLOOR_ACCOUNT_KEY
+          ? { accountKey: process.env.CUTTINGFLOOR_ACCOUNT_KEY }
+          : {}),
+      })
+    : undefined;
 // Hosted, the server's own TypeSafe key answers judge.ask and media.analyze look for every
 // account; no other provider key comes from this process's environment.
 const credentials = new LocalCredentialStore(
@@ -243,7 +263,9 @@ const server = createHttpServer({
         onApp: (owner: string, app: string) => lifecycle.usedFrom(owner, app),
         account: (owner: string) => lifecycle.account(owner),
         route: async (req, res, url) =>
-          (await sequence?.route(req, res, url)) || lifecycle.route(req, res, url),
+          (await adminApi?.route(req, res, url)) ||
+          (await sequence?.route(req, res, url)) ||
+          lifecycle.route(req, res, url),
       }
     : {}),
   ...(process.env.CUTTINGFLOOR_OPENAI_CHALLENGE

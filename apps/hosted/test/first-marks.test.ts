@@ -113,8 +113,10 @@ describe('first-use marks', () => {
     expect(users.get(USER)?.first_tool_at).toBeUndefined();
 
     await client.callTool({ name: 'media.list', arguments: {} });
-    const used = await settled(['first_tool_at']);
+    const used = await settled(['first_tool_at', 'last_used_at']);
     expect(used).toMatchObject({ first_client: 'test-app' });
+    // The day of the latest tool call, for the admin API's last_used_at.
+    expect(used.last_used_at?.slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
     expect(used.first_call_at).toBeTruthy();
     expect(used.first_tool_at).toBeTruthy();
     await client.close();

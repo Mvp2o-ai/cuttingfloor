@@ -28,6 +28,8 @@ export type AccountProps = {
   bought?: string;
   files?: Files;
   keys?: ScriptKey[];
+  /** Only for an admin (the server's rights table): keys for the admin API. */
+  adminKeys?: ScriptKey[];
   providerKeys?: SavedKey[];
   /** Whether the account gets an email before its files go (on unless turned off). */
   expiryEmails: boolean;
@@ -128,6 +130,22 @@ export function AccountView(p: AccountProps) {
             </p>
           </div>
           <KeysPanel initial={p.keys} server={p.server} />
+        </section>
+      ) : null}
+
+      {p.adminKeys ? (
+        <section className="cell" id="admin-api">
+          <div className="head">
+            <span className="label">Admin API</span>
+            <p className="lede">
+              You are a cuttingfloor admin. An admin key reads every account through the admin API (
+              <code>GET {p.server}/admin/v1/accounts</code>, described in its{' '}
+              <a href={`${p.server}/admin/v1/openapi.json`}>OpenAPI spec</a>), for a CRM or your own
+              scripts. It works for a year, until you revoke it, or until you are no longer an
+              admin.
+            </p>
+          </div>
+          <KeysPanel initial={p.adminKeys} server={p.server} kind="admin" />
         </section>
       ) : null}
 

@@ -16,11 +16,12 @@ export default async function AccountPage({
 }) {
   const { user } = await withAuth({ ensureSignedIn: true });
   const { bought } = await searchParams;
-  const [status, found, files, keys, providerKeys] = await Promise.all([
+  const [status, found, files, keys, adminKeys, providerKeys] = await Promise.all([
     accountStatus(user.id, Boolean(bought)),
     workos(`/user_management/users/${encodeURIComponent(user.id)}`).catch(() => ({})),
     filesOf(user.id),
     keysOf(user.id),
+    keysOf(user.id, 'admin'),
     providerKeysOf(user.id),
   ]);
   const metadata = ((found as { metadata?: unknown }).metadata ?? {}) as Record<string, string>;
@@ -40,6 +41,7 @@ export default async function AccountPage({
         bought={bought && /^\d+$/.test(bought) ? bought : undefined}
         files={files}
         keys={keys}
+        adminKeys={adminKeys}
         providerKeys={providerKeys}
         expiryEmails={metadata.expiry_emails !== 'off'}
         server={process.env.CUTTINGFLOOR_SERVER_URL ?? 'https://api.cuttingfloor.ai'}

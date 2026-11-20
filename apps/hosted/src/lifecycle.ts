@@ -27,13 +27,15 @@ import type { Ledger, LedgerUsage } from './ledger.ts';
 import { oneWriteAtATime } from './metadata.ts';
 import { type ProviderKeys, SAVABLE } from './provider-keys.ts';
 import { savedCard } from './purchase.ts';
+import type { Rights } from './rights.ts';
 import { forgetRecipient } from './sequence.ts';
 
 // What happens around an account as it is used, still without a database:
 // - WorkOS metadata records the first signed-in request (`first_call_at`: connecting counts; the
 //   site's welcome page waits on it), the first tool call that ran (`first_tool_at`), the first
 //   export, the first export that succeeded (the sign-up sequence's first edit, sequence.ts) and
-//   the app the first request came from. Writes go one at a time per user (metadata.ts).
+//   the app the first request came from, and the latest day a tool call ran (`last_used_at`,
+//   written at most once a day). Writes go one at a time per user (metadata.ts).
 // - Each job that ends is spent on Kazi's credit ledger (access.ts), once: a marker file
 //   (`owners/{owner}/ledger-spent/{job_id}.json`) says it was taken, and the sweep spends any job
 //   a server missed. Given plans are counted from the meter instead.
@@ -96,6 +98,9 @@ export interface LifecycleOptions {
   accountKey?: string;
   /** The accounts' script keys, made and revoked on the account page. */
   keys?: ScriptKeys;
+  /** Admin keys and the rights table (admin-api.ts): both go when an account is deleted. */
+  adminKeys?: ScriptKeys;
+  rights?: Rights;
   /** Provider keys the account saves on its page (its sync. labs key), kept encrypted in WorkOS. */
   providerKeys?: ProviderKeys;
   /**
@@ -120,6 +125,8 @@ export class Lifecycle {
   #seen = new Set<string>();
   #apps = new Set<string>();
   #tools = new Set<string>();
+  /** The UTC day each owner's `last_used_at` was last written by this server. */
+  #usedOn = new Map<string, string>();
   #timer: NodeJS.Timeout | undefined;
   /** The UTC day whose file reminders this server has sent. */
   #expiryDay = '';
@@ -164,11 +171,33 @@ export class Lifecycle {
 
   /** An owner's tool call ran (not just a sign-in or a tool list): records the first one. */
   #toolCalled(owner: string): void {
-    if (!isUser(owner) || this.#tools.has(owner)) return;
+    if (!isUser(owner)) return;
+    this.#lastUsed(owner);
+    if (this.#tools.has(owner)) return;
     this.#tools.add(owner);
     void this.#markOnce(owner, 'first_tool_at').catch((error: Error) => {
       this.#tools.delete(owner);
       process.stderr.write(`lifecycle: ${owner}: ${error.message}\n`);
+    });
+  }
+
+  /** Records the day of the owner's latest tool call, at most once a day. */
+  #lastUsed(owner: string): void {
+    const today = new Date().toISOString().slice(0, 10);
+    if (this.#usedOn.get(owner) === today) return;
+    this.#usedOn.set(owner, today);
+    const path = `/user_management/users/${encodeURIComponent(owner)}`;
+    void oneWriteAtATime(owner, async () => {
+      const user = await this.#workos(path);
+      const metadata = (user.metadata ?? {}) as Record<string, string>;
+      if (metadata.last_used_at?.slice(0, 10) === today) return;
+      await this.#workos(path, {
+        method: 'PUT',
+        body: { metadata: { ...metadata, last_used_at: new Date().toISOString() } },
+      });
+    }).catch((error: Error) => {
+      this.#usedOn.delete(owner);
+      process.stderr.write(`lifecycle: ${owner}: last used: ${error.message}\n`);
     });
   }
 
@@ -419,6 +448,7 @@ export class Lifecycle {
       await ws.sweep(ws.path('partners', name), PARTNER_LINK_TTL_MS);
     }
     await this.#o.keys?.sweep();
+    await this.#o.adminKeys?.sweep();
     await this.#expiryNotices(now);
     const welcome = this.#o.welcome;
     if (!this.#o.mailer || !welcome) return;
@@ -480,6 +510,33 @@ export class Lifecycle {
       this.#o.accountUrl,
     );
     await this.#notify(owner, `expiry-${day}`, { to: user.email, ...message });
+  }
+
+  /**
+   * One page of WorkOS users, newest first, for the admin API: `after` is WorkOS's own cursor.
+   * With `email`, only the users with it.
+   */
+  async usersPage(page: {
+    after?: string;
+    limit: number;
+    email?: string;
+  }): Promise<{ data: WorkosUser[]; after: string | null }> {
+    const query = new URLSearchParams({
+      limit: String(page.limit),
+      order: 'desc',
+      ...(page.after ? { after: page.after } : {}),
+      ...(page.email ? { email: page.email } : {}),
+    });
+    const list = (await this.#workos(`/user_management/users?${query}`)) as {
+      data?: WorkosUser[];
+      list_metadata?: { after?: string | null };
+    };
+    return { data: list.data ?? [], after: list.list_metadata?.after ?? null };
+  }
+
+  /** One WorkOS user, or undefined when there is none with this id. */
+  user(id: string): Promise<WorkosUser | undefined> {
+    return this.#workosUser(id);
   }
 
   /** WorkOS users, newest first, back to `oldest`. */
@@ -768,6 +825,8 @@ export class Lifecycle {
     });
     for (const job of working) await runtime.jobs.cancel(job.id, owner);
     await this.#o.keys?.removeAll(owner);
+    await this.#o.adminKeys?.removeAll(owner);
+    await this.#o.rights?.revoke(owner, 'admin');
     const timelines = new Set(
       (await ws.list(ws.ownerDir(owner, 'timelines'))).map((name) => name.replace(/\.json$/, '')),
     );
@@ -781,6 +840,7 @@ export class Lifecycle {
     this.#o.access.forget(owner);
     this.#seen.delete(owner);
     this.#apps.delete(owner);
+    this.#usedOn.delete(owner);
   }
 
   /** Removes every partner's link to these accounts or this email. */
@@ -1114,9 +1174,10 @@ interface Spent {
   top_up?: LedgerUsage['top_up'];
 }
 
-interface WorkosUser {
+export interface WorkosUser {
   id: string;
   email: string;
+  email_verified?: boolean;
   created_at: string;
   metadata?: Record<string, string>;
 }
