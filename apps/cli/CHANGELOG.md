@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.55.14
+
+### Patch Changes
+
+- 3e36b1e: A task's status message no longer says the time left twice when the job's own words already give it.
+
 ## 0.55.13
 
 ### Patch Changes
