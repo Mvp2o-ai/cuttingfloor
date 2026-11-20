@@ -72,6 +72,7 @@ import { doneReply, guard, jobReply, jobView, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 import { checkSound, type Sound, withSound } from '../sound.ts';
 import { listHeld, startUpload, storageOf, storageRoom } from '../storage.ts';
+import { UPLOAD_TOOL_META } from '../upload.ts';
 import { checkQuestions, checkText, jevKeyRequired, PICTURE, pictureSize } from './judge.ts';
 import { soundLabelIndexes, soundsReport } from './listen.ts';
 import {
@@ -710,7 +711,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Upload media',
       description: [
-        `Stage one file on this server: returns a url and an upload_id. A staged file is inert until imported. The url works for ${span(KEEP_MS.upload)} and takes the file from whoever holds it, with no other credentials; opened in a browser, it is a page to pick the file and send it, so it reaches files on the user's phone or computer, including one attached in a chat that isn't handed to you.`,
+        `Stage one file on this server: returns a url and an upload_id. A staged file is inert until imported. A chat app that displays this server's views shows the result to the user as an upload box: they pick a video, photo or other file from their phone or computer there and it is sent without leaving the chat, and the box says in the chat when it is in. The url works for ${span(KEEP_MS.upload)} and takes the file from whoever holds it, with no other credentials; opened in a browser, it is a page to pick the file and send it, so it reaches the same files where no box is shown, including one attached in a chat that isn't handed to you.`,
         ...(rt.config.uploadPage
           ? [
               `Files the user drops on their upload page, ${rt.config.uploadPage}, are staged too: many at once, after signing in to the same account.`,
@@ -719,6 +720,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       ].join(' '),
       inputSchema: MediaUploadInput,
       outputSchema: MediaUploadResult,
+      _meta: UPLOAD_TOOL_META,
       annotations: {
         title: 'Upload media',
         readOnlyHint: false,
@@ -737,7 +739,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       );
       return ok({
         ...upload,
-        how: `Opened in a browser, ${upload.url} is a page to pick the file and send it. This upload id can be used to import this asset to the cutting floor, where all editing occurs.`,
+        how: `Where the chat app displays views, the user sees an upload box with this result to pick the file and send it. Opened in a browser, ${upload.url} is a page that does the same. This upload id can be used to import this asset to the cutting floor, where all editing occurs.`,
       });
     }),
   );

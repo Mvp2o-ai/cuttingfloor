@@ -333,7 +333,7 @@ describe('protocol surface', () => {
     );
   });
 
-  it('offers the editor on export.video, the player on media.get and media.import and the library on media.list', async () => {
+  it('offers the editor on export.video, the player on media.get and media.import, the library on media.list and the upload box on media.upload', async () => {
     const client = await connect(env.runtime);
     const { tools } = await client.listTools();
     const views = Object.fromEntries(
@@ -346,6 +346,7 @@ describe('protocol surface', () => {
       'media.get': 'ui://cuttingfloor/player',
       'media.import': 'ui://cuttingfloor/player',
       'media.list': 'ui://cuttingfloor/library',
+      'media.upload': 'ui://cuttingfloor/upload',
     });
     // Everything the views call stays callable from a view (no visibility limits it to the model).
     for (const name of [
@@ -355,17 +356,30 @@ describe('protocol surface', () => {
       'job.get',
       'media.get',
       'media.list',
+      'media.upload',
     ]) {
       const tool = tools.find((t) => t.name === name);
       expect((tool?._meta as { ui?: { visibility?: string[] } })?.ui?.visibility).toBeUndefined();
     }
     const { resources } = await client.listResources();
     const origin = 'http://127.0.0.1:8787';
-    for (const [uri, csp] of [
-      ['ui://cuttingfloor/player', { resourceDomains: [origin] }],
-      ['ui://cuttingfloor/library', { resourceDomains: [origin] }],
+    const clipboard = { permissions: { clipboardWrite: {} } };
+    for (const [uri, csp, permissions] of [
+      ['ui://cuttingfloor/player', { resourceDomains: [origin] }, clipboard],
+      // The library's Add sends a file to this server.
+      [
+        'ui://cuttingfloor/library',
+        { resourceDomains: [origin], connectDomains: [origin] },
+        clipboard,
+      ],
       // The editor also reads the export's sound for its mix lane.
-      ['ui://cuttingfloor/editor', { resourceDomains: [origin], connectDomains: [origin] }],
+      [
+        'ui://cuttingfloor/editor',
+        { resourceDomains: [origin], connectDomains: [origin] },
+        clipboard,
+      ],
+      // The upload box only sends the file.
+      ['ui://cuttingfloor/upload', { connectDomains: [origin] }, {}],
     ] as const) {
       expect(resources.find((r) => r.uri === uri)?.mimeType).toBe('text/html;profile=mcp-app');
       const res = await client.readResource({ uri });
@@ -374,7 +388,7 @@ describe('protocol surface', () => {
       expect(page.text).toContain("'ui/initialize'");
       expect(page.text).not.toContain('__VERSION__');
       // Claude refuses a view whose domain isn't its own hash form, so only ChatGPT gets one.
-      const ui = { csp, permissions: { clipboardWrite: {} }, prefersBorder: false };
+      const ui = { csp, ...permissions, prefersBorder: false };
       expect(page._meta).toEqual({ ui });
       const chatgpt = await connect(env.runtime, 'local', {}, undefined, 'openai-mcp');
       expect((await chatgpt.readResource({ uri })).contents[0]?._meta).toEqual({
