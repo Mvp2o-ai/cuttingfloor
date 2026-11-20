@@ -820,15 +820,52 @@
   }
   const failed = (text, retry) => show(errorView(text, retry));
 
+  // Between readings the bar keeps moving: at the pace the job gives (seconds_left), else at the
+  // pace of its last two readings, never past the next reading's likely value.
+  let glide = null;
+  function gliding(paint) {
+    let last = null, before = null;
+    const at = () => {
+      if (!last || typeof last.p !== 'number') return undefined;
+      const dt = (Date.now() - last.t) / 1000;
+      let rate = 0;
+      if (last.left > 0) rate = (1 - last.p) / last.left;
+      else if (before && last.t > before.t && last.p > before.p) rate = (last.p - before.p) / ((last.t - before.t) / 1000);
+      return Math.min(0.99, last.p + rate * Math.min(dt, READ_SLOW_MS / 1000));
+    };
+    const timer = setInterval(() => { if (last) paint(last.text, at()); }, 250);
+    return {
+      read(text, p, left) {
+        if (typeof p === 'number' && (!last || p !== last.p)) before = last;
+        last = { text, p, left, t: Date.now() };
+        paint(text, p);
+      },
+      stop() { clearInterval(timer); },
+    };
+  }
+  // A job is read every second at first (short ones end there), then every few seconds: each
+  // reading is a call through the host.
+  const READ_FAST_MS = 1000, READ_SLOW_MS = 5000, FAST_FOR_MS = 5000;
+  // Sooner again as the job says it is about to end, so the result shows when it lands.
+  const pause = (started, left) => Date.now() - started < FAST_FOR_MS ? READ_FAST_MS
+    : left > 0 ? Math.max(READ_FAST_MS, Math.min(READ_SLOW_MS, left * 1000)) : READ_SLOW_MS;
   let following = 0;
   async function follow(jobId) {
     const mine = ++following;
+    const started = Date.now();
+    glide?.stop();
+    const g = gliding((text, p) => { if (mine === following) wait(text, p); });
+    glide = g;
+    try { return await followed(jobId, mine, started, g); } finally { g.stop(); }
+  }
+  async function followed(jobId, mine, started, g) {
     // A dropped call (the host asleep in a background tab, a network blip) is retried with a
     // growing pause; the error shows only once the host has stayed silent for about a minute.
     let misses = 0;
+    let left;
     for (let first = true; ; first = false) {
       // job.get answers at once, so the player checks back on its own interval.
-      if (!first) await new Promise((r) => setTimeout(r, misses ? Math.min(1000 * 2 ** misses, 15000) : 1000));
+      if (!first) await new Promise((r) => setTimeout(r, misses ? Math.min(1000 * 2 ** misses, 15000) : pause(started, left)));
       if (mine !== following) return;
       let job;
       try {
@@ -839,7 +876,7 @@
         if (r?.isError) return failed((job?.message) || 'The job could not be read.');
       } catch (e) {
         if (mine !== following) return;
-        if (++misses <= 6) { wait('Reconnecting…'); continue; }
+        if (++misses <= 6) { g.read('Reconnecting…'); continue; }
         return failed(`Lost track of the job: ${e?.message ? e.message : 'the host did not answer'}.`, () => { wait('Checking…'); follow(jobId); });
       }
       if (!job) return failed('The job could not be read.');
@@ -847,7 +884,8 @@
       if (job.status === 'failed' || job.status === 'cancelled') {
         return failed((job.error?.message) || `The job ${job.status}.`);
       }
-      wait(job.status_message || `${doing()}…`, job.progress);
+      g.read(job.status_message || `${doing()}…`, job.progress, job.seconds_left);
+      left = job.seconds_left;
     }
   }
 
