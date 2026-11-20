@@ -846,6 +846,14 @@
   // A job is read every second at first (short ones end there), then every few seconds: each
   // reading is a call through the host.
   const READ_FAST_MS = 1000, READ_SLOW_MS = 5000, FAST_FOR_MS = 5000;
+  const shown = () => new Promise((resolve) => {
+    const on = () => {
+      if (document.hidden) return;
+      document.removeEventListener('visibilitychange', on);
+      resolve();
+    };
+    document.addEventListener('visibilitychange', on);
+  });
   // Sooner again as the job says it is about to end, so the result shows when it lands.
   const pause = (started, left) => Date.now() - started < FAST_FOR_MS ? READ_FAST_MS
     : left > 0 ? Math.max(READ_FAST_MS, Math.min(READ_SLOW_MS, left * 1000)) : READ_SLOW_MS;
@@ -866,6 +874,8 @@
     for (let first = true; ; first = false) {
       // job.get answers at once, so the player checks back on its own interval.
       if (!first) await new Promise((r) => setTimeout(r, misses ? Math.min(1000 * 2 ** misses, 15000) : pause(started, left)));
+      // Nobody is looking: no reading until the view shows again, then one at once.
+      if (document.hidden) await shown();
       if (mine !== following) return;
       let job;
       try {
