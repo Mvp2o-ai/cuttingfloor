@@ -291,7 +291,8 @@ describe.skipIf(!engines || !browserFound)('editor view', () => {
     );
     expect(await view.$eval('#tc', (el) => el.textContent)).toContain('0:03.00');
     await page.close();
-  });
+    // The first page of the file: under the whole suite it has run to within a breath of 5 s.
+  }, 20_000);
 
   it('tells the agent where the person stopped, not while they scrub, and sends their note', async () => {
     const { page, view } = await open({

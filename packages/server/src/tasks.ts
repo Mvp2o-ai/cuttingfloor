@@ -27,7 +27,7 @@ export function registerTasks(server: McpServer, deps: ServerDeps): void {
   server.server.setRequestHandler(
     'tasks/get',
     { params: GetTaskRequestV2Schema.shape.params },
-    async ({ taskId }) => detailed(await mustFind(deps, taskId)),
+    async ({ taskId }) => detailed(deps, await mustFind(deps, taskId)),
   );
 
   server.server.setRequestHandler(
@@ -36,7 +36,7 @@ export function registerTasks(server: McpServer, deps: ServerDeps): void {
     async ({ taskId }) => {
       const job = await deps.runtime.jobs.cancel(taskId, deps.owner());
       if (!job) throw notFound(taskId);
-      return detailed(job);
+      return detailed(deps, job);
     },
   );
 
@@ -44,7 +44,7 @@ export function registerTasks(server: McpServer, deps: ServerDeps): void {
   server.server.setRequestHandler(
     'tasks/update',
     { params: UpdateTaskRequestV2Schema.shape.params },
-    async ({ taskId }) => detailed(await mustFind(deps, taskId)),
+    async ({ taskId }) => detailed(deps, await mustFind(deps, taskId)),
   );
 
   async function mustFind(d: ServerDeps, taskId: string): Promise<Job> {
@@ -60,9 +60,9 @@ function notFound(taskId: string): ProtocolError {
 }
 
 /** A task with its result (completed) or error (failed), per the 2026-07-28 Tasks schema. */
-function detailed(job: Job) {
+function detailed(deps: ServerDeps, job: Job) {
   return {
-    ...toTask(job),
+    ...toTask(job, deps.runtime.jobs.estimate(job.id)),
     resultType: 'complete',
     ...(job.status === 'completed' && job.result
       ? { result: { ...freshResult(job.result as CallToolResult), resultType: 'complete' } }

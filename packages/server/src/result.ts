@@ -9,6 +9,7 @@ import { CfError, RESULT_SUMMARY_ITEMS, restateExpiry } from '@cuttingfloor/sche
 import { TASKS_EXTENSION_ID_V2 } from '@modelcontextprotocol/ext-tasks/core/v2';
 import type { CallToolResult } from '@modelcontextprotocol/server';
 
+/** The shortest pause a Tasks client is asked to leave between reads. */
 export const POLL_INTERVAL_MS = 1000;
 
 /** A successful tool result: structured content plus the same JSON as text for older clients. */
@@ -87,16 +88,52 @@ export function wantsTask(ctx: unknown): boolean {
   return Boolean(caps?.extensions?.[TASKS_EXTENSION_ID_V2]);
 }
 
+/** A span of seconds in words: "40 s", "3 min". */
+const about = (seconds: number) =>
+  seconds < 90 ? `${Math.max(1, Math.round(seconds))} s` : `${Math.round(seconds / 60)} min`;
+
+/**
+ * A working task's status in words, on one line: what it is doing, how far along when the job
+ * says (and its own words don't already), and the time left or until it starts when there is an
+ * estimate. A task has no progress number, so a Tasks client shows this.
+ */
+export function taskStatusMessage(job: Job, estimate?: JobEstimate): string | undefined {
+  if (job.status !== 'working') return job.statusMessage;
+  const parts = [job.statusMessage ?? 'working'];
+  if (job.progress !== undefined && job.progress > 0 && !/\d\s*%/.test(parts[0] as string))
+    parts.push(`${Math.round(Math.min(1, job.progress) * 100)}%`);
+  if (estimate?.secondsLeft !== undefined) parts.push(`about ${about(estimate.secondsLeft)} left`);
+  else if (estimate?.startsIn !== undefined)
+    parts.push(`starts in about ${about(estimate.startsIn)}`);
+  // The job's own words give way, so how far along it is always shows.
+  const tail = parts.slice(1).join(', ');
+  const room = TASK_STATUS_CHARS - (tail ? tail.length + 2 : 0);
+  return [(parts[0] as string).slice(0, room).trimEnd(), ...(tail ? [tail] : [])].join(', ');
+}
+const TASK_STATUS_CHARS = 80;
+
+/**
+ * How long a Tasks client should leave between reads of a job: a second while it is young or
+ * about to end, so short work and results arrive promptly, and longer once it has run a while.
+ */
+export function pollIntervalMs(job: Job, estimate?: JobEstimate, now = Date.now()): number {
+  if (job.status !== 'working') return POLL_INTERVAL_MS;
+  if (estimate?.secondsLeft !== undefined && estimate.secondsLeft <= 10) return POLL_INTERVAL_MS;
+  const age = now - Date.parse(job.createdAt);
+  return age < 10_000 ? POLL_INTERVAL_MS : age < 60_000 ? 2000 : 5000;
+}
+
 /** The task wire shape (io.modelcontextprotocol/tasks) for a job. */
-export function toTask(job: Job) {
+export function toTask(job: Job, estimate?: JobEstimate) {
+  const statusMessage = taskStatusMessage(job, estimate);
   return {
     taskId: job.id,
     status: job.status,
-    ...(job.statusMessage ? { statusMessage: job.statusMessage } : {}),
+    ...(statusMessage ? { statusMessage } : {}),
     createdAt: job.createdAt,
     lastUpdatedAt: job.lastUpdatedAt,
     ttlMs: job.ttlMs,
-    pollIntervalMs: POLL_INTERVAL_MS,
+    pollIntervalMs: pollIntervalMs(job, estimate),
   };
 }
 
