@@ -517,6 +517,15 @@ export class MediaLibrary {
           progress(0.7 + 0.2 * f, `making proxy ${Math.round(f * 100)}%`),
         );
         record.proxy = proxy;
+        // The proxy decoded all of the file. Where it stops well short of the length the file
+        // states (an unfinished download, a cut-off recording), nothing past that can be read:
+        // what was read is the media's length.
+        const read = await probe(proxy, signal);
+        const stated = Math.max(streamSeconds(p, 'video') ?? 0, streamSeconds(p, 'audio') ?? 0);
+        if (p.duration !== null && read.duration !== null && read.duration < stated - 1) {
+          p.duration = Math.min(p.duration, read.duration);
+          if (p.video && read.video) p.video.frames = read.video.frames;
+        }
         await this.save(owner, record);
       }
       if (p.kind === 'video' || p.kind === 'audio') {
@@ -887,11 +896,13 @@ function streamSeconds(p: Probe, type: 'video' | 'audio'): number | null {
   if (!s) return null;
   const tagged = (s.tags as { DURATION?: string } | undefined)?.DURATION;
   const hms = tagged ? /^(\d+):(\d+):([\d.]+)$/.exec(tagged) : null;
-  const seconds = s.duration
+  const stated = s.duration
     ? Number(s.duration)
     : hms
       ? Number(hms[1]) * 3600 + Number(hms[2]) * 60 + Number(hms[3])
       : Number.NaN;
+  // Never past the media's length, which is what could be read of it.
+  const seconds = p.duration === null ? stated : Math.min(stated, p.duration);
   return Number.isFinite(seconds) ? Math.round(seconds * 1000) / 1000 : null;
 }
 

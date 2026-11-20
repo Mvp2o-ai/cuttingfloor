@@ -24,6 +24,9 @@ export const SEARCH_MODEL = 'onnx-community/siglip2-base-patch16-224-ONNX';
  */
 export const KEYFRAMES = { everySeconds: 1, distance: 0.1, maxGapSeconds: 10 } as const;
 
+/** Frames one worker run embeds; a longer video takes several runs. */
+const EMBED_FRAMES = 1800;
+
 /** Changes to how an index is built; an older index is built again. */
 export const INDEX_VERSION = 1;
 
@@ -58,18 +61,20 @@ async function worker(
   onProgress?: (fraction: number) => void,
 ): Promise<void> {
   try {
-    await run(
-      process.execPath,
-      [WORKER, JSON.stringify({ threads: threads(), dir: MODELS, model: SEARCH_MODEL, ...job })],
-      {
-        signal,
-        timeoutMs: 60 * 60_000,
-        onLine: (line) => {
-          const m = /^progress ([\d.]+)/.exec(line);
-          if (m) onProgress?.(Number(m[1]));
-        },
-      },
+    // The job goes in a file: a long video's frame paths outgrow what one argument may hold.
+    const file = `${String(job.output)}.job.json`;
+    await writeFile(
+      file,
+      JSON.stringify({ threads: threads(), dir: MODELS, model: SEARCH_MODEL, ...job }),
     );
+    await run(process.execPath, [WORKER, file], {
+      signal,
+      timeoutMs: 60 * 60_000,
+      onLine: (line) => {
+        const m = /^progress ([\d.]+)/.exec(line);
+        if (m) onProgress?.(Number(m[1]));
+      },
+    });
   } catch (error) {
     if (error instanceof CfError && error.code === 'engine_error') {
       const stderr = String((error.detail as { stderr?: string } | undefined)?.stderr ?? '');
@@ -204,11 +209,16 @@ export async function buildPictureIndex(options: {
     }
     if (!stills.length) throw new CfError('engine_error', 'No frames could be read for the index');
     options.onProgress?.(0.2);
-    const output = join(tmp, 'images.f32');
-    await worker({ mode: 'images', inputs: stills, output }, options.signal, (f) =>
-      options.onProgress?.(0.2 + 0.75 * f),
-    );
-    const vectors = rows(await readFile(output), stills.length);
+    // A worker run per stretch of frames, so its time limit bounds a stretch, not the whole video.
+    const vectors: Float32Array[] = [];
+    for (let at = 0; at < stills.length; at += EMBED_FRAMES) {
+      const inputs = stills.slice(at, at + EMBED_FRAMES);
+      const output = join(tmp, `images_${at}.f32`);
+      await worker({ mode: 'images', inputs, output }, options.signal, (f) =>
+        options.onProgress?.(0.2 + (0.75 * (at + f * inputs.length)) / stills.length),
+      );
+      vectors.push(...rows(await readFile(output), inputs.length));
+    }
     const picked = pickKeyframes(vectors, step);
     const end = options.duration ?? stills.length * step;
 

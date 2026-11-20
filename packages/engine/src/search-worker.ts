@@ -1,12 +1,12 @@
 // SigLIP2 embeddings for media.search, run in a process of its own (one per call) so a crash, a
-// hang or the memory the model takes never reaches the server. search.ts starts it with one JSON
-// argument and reads `progress <fraction>` lines from stderr; vectors go to a file, unit length,
+// hang or the memory the model takes never reaches the server. search.ts starts it with the path of
+// a JSON file holding the job and reads `progress <fraction>` lines from stderr; vectors go to a file, unit length,
 // float32, one row each, so nothing large crosses a pipe.
 //
 //   images: the JPEGs at `inputs` (a picture each), through the vision tower.
 //   texts:  `texts`, through the text tower (padded to 64 tokens, as the model was trained).
 
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 type Job =
   | {
@@ -73,7 +73,7 @@ async function main(job: Job): Promise<void> {
   writeFileSync(job.output, Buffer.from(out.buffer));
 }
 
-main(JSON.parse(process.argv[2] ?? '{}') as Job).catch((error: Error) => {
+main(JSON.parse(readFileSync(process.argv[2] ?? '', 'utf8')) as Job).catch((error: Error) => {
   process.stderr.write(`${error.stack ?? error.message}\n`);
   process.exit(1);
 });

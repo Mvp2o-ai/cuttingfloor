@@ -815,6 +815,48 @@ describe.skipIf(!engines)('blind-test regressions', () => {
     expect(said).not.toMatch(/no sound/);
   }, 120_000);
 
+  it('takes what can be read as the length of a file that states more (an unfinished download)', async () => {
+    const whole = join(env.mediaDir, 'whole.mp4');
+    await ff([
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc=size=320x180:rate=24:d=20',
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=440:sample_rate=48000:d=20',
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      '-movflags',
+      '+faststart',
+      whole,
+    ]);
+    // The header up front still says 20 s; the last 40% of the file is not the video.
+    const bytes = await readFile(whole);
+    const cut = Math.floor(bytes.length * 0.6);
+    for (let i = cut; i < bytes.length; i++) bytes[i] = (i * 2654435761) >>> 24;
+    await writeFile(join(env.mediaDir, 'unfinished.mp4'), bytes);
+    const media = await importMedia(join(env.mediaDir, 'unfinished.mp4'));
+    const info = await ok<{ duration_seconds: number; picture_seconds?: number }>(
+      client,
+      'media.get',
+      { media_id: media.media_id },
+    );
+    expect(info.duration_seconds).toBeGreaterThan(5);
+    expect(info.duration_seconds).toBeLessThan(16);
+    expect(info.picture_seconds ?? 0).toBeLessThanOrEqual(info.duration_seconds);
+    const late = await call(client, 'render.frames', { media_id: media.media_id, frames: [440] });
+    expect(late.isError).toBe(true);
+    expect(JSON.stringify(late.content)).toMatch(/past the end/);
+    const early = await call(client, 'render.frames', { media_id: media.media_id, frames: [48] });
+    expect(early.isError).toBeFalsy();
+  }, 120_000);
+
   it('imports .woff and .woff2 fonts as the font they pack, and sets text in them', async () => {
     const ttf = await readFile('/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf');
     // WOFF2 from Google's encoder (wawoff2, the engine's own dependency); WOFF packed here.
