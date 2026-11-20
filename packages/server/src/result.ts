@@ -103,10 +103,10 @@ export function taskStatusMessage(job: Job, estimate?: JobEstimate): string | un
   if (job.progress !== undefined && job.progress > 0 && !/\d\s*%/.test(parts[0] as string))
     parts.push(`${Math.round(Math.min(1, job.progress) * 100)}%`);
   // A job that tells its own time left (an export's encoder does) is not told a second one.
-  if (/\d\s*(s|min)\s+left/.test(parts[0] as string))
-    return (parts[0] as string).slice(0, TASK_STATUS_CHARS);
-  if (estimate?.secondsLeft !== undefined) parts.push(`about ${about(estimate.secondsLeft)} left`);
-  else if (estimate?.startsIn !== undefined)
+  const told = /\d\s*(s|min)\s+left/.test(parts[0] as string);
+  if (!told && estimate?.secondsLeft !== undefined)
+    parts.push(`about ${about(estimate.secondsLeft)} left`);
+  else if (!told && estimate?.startsIn !== undefined)
     parts.push(`starts in about ${about(estimate.startsIn)}`);
   // The job's own words give way, so how far along it is always shows.
   const tail = parts.slice(1).join(', ');
