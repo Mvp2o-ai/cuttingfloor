@@ -21,6 +21,7 @@ import { registerSearchTools } from './tools/search.ts';
 import { registerSeekTools } from './tools/seek.ts';
 import { registerSkillTools } from './tools/skills.ts';
 import { registerTimelineTools } from './tools/timeline.ts';
+import { registerUpload } from './upload.ts';
 import { SERVER_NAME, SERVER_VERSION } from './version.ts';
 
 export interface ServerDeps {
@@ -59,7 +60,7 @@ Credits: a job (export, import, analysis, create.*) spends one a minute, and jud
   return `cuttingfloor is a headless video editor. The cutting floor is its workspace, like an edit suite's: media is imported onto it before editing, cut and finished there, and leaves as a download. Work, not storage: ${KEEPING}; links work ${span(config.outputUrlTtlMs)} (re-reading gives fresh ones). Download finished or approved work, or have the user do it; when they count on keeping something, say it is temporary. To go on later, save timeline.get's document (timeline.load) and files from their url (media.import again). media.delete drops unwanted media.
 Two ways in, often both:
 - Make new: create.motion (animated HTML, frame-exact, alpha, sandboxed), .still (HTML to PNG), .matte (solid, gradient), .voiceover (speech, timed words); a picture the user shows is a reference to rebuild in HTML, not to import. Remake: create.cutout, .stabilized, .upscaled, .lipsync (user's provider key). No music or sound effects are made: they are the user's files.
-- Edit theirs: media.import a URL${roots.length ? `, a path under ${roots.join(', ')}` : ''}, an upload_id or a small data: URI${samples}. A file on their device, or attached but not handed to you: media.upload, a link they open to pick it${config.uploadPage ? `, or they drop it on their upload page, ${config.uploadPage}` : ''}. Sent files: media.list.
+- Edit theirs: media.import a URL${roots.length ? `, a path under ${roots.join(', ')}` : ''}, an upload_id or a small data: URI${samples}. A file on their device, or attached but not handed to you: media.upload, an upload box in the chat (or a link they open) to pick it${config.uploadPage ? `, or they drop it on their upload page, ${config.uploadPage}` : ''}. Sent files: media.list.
 ${INSTRUCTIONS_BODY}${credits}`;
 }
 
@@ -94,6 +95,7 @@ export function createServer(deps: ServerDeps): McpServer {
   registerPlayer(server, deps);
   registerEditor(server, deps);
   registerLibrary(server, deps);
+  registerUpload(server, deps);
   registerTimelineTools(server, deps);
   registerMediaTools(server, deps);
   registerSeekTools(server, deps);

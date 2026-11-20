@@ -91,6 +91,18 @@
   .soon { color: var(--gold); }
   .empty { color: var(--mute); padding: 28px 16px; text-align: center; }
   .empty b { display: block; color: var(--ink); font-size: 14px; margin-bottom: 4px; }
+  /* Adding a file from this device: the buttons, and the one being sent. */
+  .add input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  label.pill { cursor: pointer; }
+  .empty .adds { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 14px; }
+  .empty .adds .pill { height: 34px; padding: 0 16px; font-size: 13px; }
+  .empty .other { text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font-size: 12px; }
+  .up { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--rule); background: var(--bg-2); font-size: 12px; }
+  .up .n { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
+  .up .track { flex: 1; height: 5px; border-radius: 5px; background: var(--rule-2); overflow: hidden; }
+  .up .track i { display: block; height: 100%; width: 0; background: var(--key); transition: width .25s linear; }
+  .up .w { color: var(--mute); white-space: nowrap; }
+  .up.bad .w { color: var(--red); white-space: normal; }
 
   .preview { border-left: 1px solid var(--rule); display: flex; flex-direction: column; min-width: 0; max-height: var(--list-h); overflow-y: auto; scrollbar-width: thin; }
   .stage { position: relative; aspect-ratio: 16 / 9; flex: none; background: #000; display: grid; place-items: center; overflow: hidden; }
@@ -255,8 +267,10 @@
         <div class="brand"><svg class="marker" viewBox="0 0 32 32" aria-hidden="true"><path d="M4.4 4.4H24.4L4.4 24.4Z"/><path d="M27.6 7.6V27.6H7.6Z"/></svg><span class="wm">cuttingfloor<b>ai</b></span><span class="sub">Your files</span></div>
         <div class="grow"></div>
         <div class="store" id="store"></div>
+        <label class="pill primary add" id="add" hidden>${ICON.upload}Add<input type="file" data-add></label>
         <button class="ibtn" id="refresh" type="button" title="List again" aria-label="List again" hidden>${ICON.refresh}</button>
       </div>
+      <div class="up" id="up" hidden><span class="n" id="upName"></span><span class="track"><i id="upFill"></i></span><span class="w mono" id="upSay"></span></div>
       <div class="bar">
         <div id="chips" style="display:flex;gap:6px;flex-wrap:wrap"></div>
         <div class="grow"></div>
@@ -285,9 +299,17 @@
     });
     $('#refresh').onclick = refresh;
     $('#preview').addEventListener('click', onAction);
+    // Any of the Add buttons: the head's, and the empty list's.
+    root.addEventListener('change', (e) => {
+      const input = e.target.closest('input[data-add]'); if (!input) return;
+      const file = input.files[0]; input.value = '';
+      if (file) addFile(file);
+    });
   }
 
   function paint() {
+    // Nothing to preview in an empty list: the room goes to the Add buttons.
+    $('#preview').hidden = !!S.data && !S.items.length;
     paintHead();
     paintChips();
     paintList();
@@ -301,6 +323,7 @@
       $('#store').title = 'Storage used: uploads, media with its proxies, and exports';
     }
     $('#refresh').hidden = !host.caps.serverTools;
+    $('#add').hidden = !host.caps.serverTools;
   }
   function paintChips() {
     const counts = { all: S.items.length };
@@ -332,7 +355,11 @@
     if (S.error) { list.innerHTML = `<div class="empty"><b>The list did not load</b>${esc(S.error)}</div>`; return; }
     if (!S.data) { list.innerHTML = '<div class="empty"><div class="dots" style="justify-content:center"><i></i><i></i><i></i></div></div>'; return; }
     if (!S.items.length) {
-      list.innerHTML = '<div class="empty"><b>Nothing here yet</b>Ask in the chat to bring in a video, a song or a logo, or to make something new. It shows up here.</div>';
+      // Video and pictures only on the first button, so a phone offers its camera roll first.
+      const adds = host.caps.serverTools
+        ? '<div class="adds add"><label class="pill primary">Add a video or photo<input type="file" data-add accept="video/*,image/*"></label><label class="other">Or any other file<input type="file" data-add></label></div>'
+        : '';
+      list.innerHTML = `<div class="empty"><b>Nothing here yet</b>${adds ? 'Add a file from this device, or ask in the chat to bring one in or make something new.' : 'Ask in the chat to bring in a video, a song or a logo, or to make something new. It shows up here.'}${adds}</div>`;
       return;
     }
     const shown = S.items.filter((m) => (S.filter === 'all' || groupOf(m) === S.filter) && (!S.query || m.name.toLowerCase().includes(S.query)));
@@ -460,6 +487,70 @@
       } catch {
         toast('The chat app did not take the message. Copy the id instead.');
       }
+    }
+  }
+
+  // ---------- adding a file ----------
+  // The file goes from this page to media.upload's staging url, one part per request, so a send
+  // that breaks carries on from what arrived. Then the person says so in the chat.
+  const PART = 16 * 1024 * 1024;
+  let adding = false;
+  function upSay(name, at, total, words, bad) {
+    $('#up').hidden = false;
+    $('#up').className = `up${bad ? ' bad' : ''}`;
+    $('#upName').textContent = name;
+    $('#upFill').style.width = `${100 * at / Math.max(total, 1)}%`;
+    $('#upSay').textContent = words || `${bytes(at)} of ${bytes(total)}`;
+  }
+  async function addFile(file) {
+    if (adding) return toast('One file at a time: wait for this one.');
+    adding = true;
+    upSay(file.name, 0, file.size, 'Starting…');
+    try {
+      const up = await callTool('media.upload', { name: file.name.replace(/[/\\]/g, '_').slice(0, 200), bytes: file.size });
+      const state = async () => {
+        const r = await fetch(up.url, { method: 'HEAD', cache: 'no-store' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return { at: Number(r.headers.get('upload-offset') || 0), complete: r.headers.get('upload-complete') === 'true' };
+      };
+      let at = 0, complete = false;
+      for (let tries = 0; !complete; ) {
+        const end = Math.min(at + PART, file.size);
+        upSay(file.name, at, file.size);
+        try {
+          const r = await fetch(up.url, {
+            method: 'PUT',
+            headers: { 'content-range': `bytes ${at}-${end - 1}/${file.size}`, 'upload-name': encodeURIComponent(file.name) },
+            body: file.slice(at, end),
+          });
+          const body = await r.json().catch(() => ({}));
+          if (r.status === 413 || r.status === 403 || r.status === 404) throw Object.assign(new Error(body.error || 'It was not taken.'), { final: true });
+          if (!r.ok && r.status !== 409) throw new Error(body.error || `HTTP ${r.status}`);
+          at = Number(r.headers.get('upload-offset') || end);
+          complete = r.headers.get('upload-complete') === 'true';
+          tries = 0;
+        } catch (error) {
+          if (error.final || ++tries > 5) throw error;
+          upSay(file.name, at, file.size, 'Connection dropped; carrying on…');
+          await new Promise((r) => setTimeout(r, 1000 * tries));
+          ({ at, complete } = await state());
+        }
+      }
+      upSay(file.name, file.size, file.size, 'Sent');
+      await refresh();
+      if (S.items.some((m) => m.upload_id === up.upload_id)) pick(up.upload_id);
+      const text = `I sent “${file.name}” to cuttingfloor (upload_id ${up.upload_id}). Import it.`;
+      let told = false;
+      if (host.caps.message) {
+        const r = await request('ui/message', { role: 'user', content: [{ type: 'text', text }] }).catch(() => ({ isError: true }));
+        told = !r?.isError;
+      }
+      toast(told ? 'It is in. The chat carries on from here.' : 'It is in. Tell the chat you sent it.');
+      setTimeout(() => { $('#up').hidden = true; }, 2500);
+    } catch (error) {
+      upSay(file.name, 0, file.size, `It did not go through: ${error.message || error}`, true);
+    } finally {
+      adding = false;
     }
   }
 

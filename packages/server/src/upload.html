@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cuttingfloor upload</title>
+<style>
+  /*
+   * Where the person picks a file and it is sent: the media.upload result as a box in the chat.
+   * The file goes from this page to the staging url in the result, in parts, so a broken send
+   * carries on. It wears cuttingfloor's own colours, as the library and the player do.
+   */
+  :root {
+    --bg: #0e0d0b;
+    --bg-2: #161511;
+    --bg-3: #1d1b17;
+    --ink: #eee8dc;
+    --mute: #8f887c;
+    --rule: #2a2722;
+    --rule-2: #3a362f;
+    --key: #00b140;
+    --key-hi: #19c957;
+    --red: #e0573f;
+    --radius: 14px;
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  /* biome-ignore lint/complexity/noImportantStyles: hidden must beat every display rule below */
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: transparent; }
+  body { font: 13px/1.45 var(--font); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:focus-visible, label:focus-within { outline: 2px solid var(--key); outline-offset: 2px; }
+  svg { display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .card { background: var(--bg); border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+  .head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+  .marker { width: 16px; height: 16px; flex: none; fill: var(--key); stroke: none; }
+  .wm { font-weight: 800; font-size: 17px; letter-spacing: -0.02em; }
+  .wm b { color: var(--key); font-weight: 800; margin-left: 4px; }
+  .sub { font: 600 10.5px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--mute); padding-left: 10px; border-left: 1px solid var(--rule-2); }
+
+  .body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 150px; padding: 18px; border: 1.5px dashed var(--rule-2); border-radius: 12px; background: var(--bg-2); text-align: center; }
+  .drop.over { border-color: var(--key); background: var(--bg-3); }
+  .drop svg { width: 28px; height: 28px; color: var(--key); }
+  .drop b { font-size: 15px; }
+  .drop span { color: var(--mute); font-size: 12px; }
+  .drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .pill { display: inline-flex; align-items: center; height: 34px; padding: 0 16px; border-radius: 9px; background: var(--key); color: #04170a; font-weight: 700; }
+  .pill { cursor: pointer; }
+  .pill:hover { background: var(--key-hi); }
+  .other { color: var(--mute); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+  .other:hover { color: var(--ink); }
+
+  .going { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--rule); border-radius: 12px; background: var(--bg-2); }
+  .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar { height: 6px; border-radius: 6px; background: var(--rule-2); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--key); transition: width .25s linear; }
+  .line { display: flex; justify-content: space-between; gap: 10px; color: var(--mute); font-size: 12px; }
+  .done .bar i { width: 100%; }
+  .done .state { color: var(--key-hi); font-weight: 600; }
+  .bad .state { color: var(--red); }
+  .foot { padding: 8px 14px; border-top: 1px solid var(--rule); color: var(--mute); font-size: 11.5px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
+  .foot button { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div class="card">
+    <div class="head">
+      <div class="brand">
+        <svg class="marker" viewBox="0 0 32 32" aria-hidden="true"><path d="M4.4 4.4H24.4L4.4 24.4Z"/><path d="M27.6 7.6V27.6H7.6Z"/></svg>
+        <span class="wm">cuttingfloor<b>ai</b></span>
+      </div>
+      <span class="sub">Add a file</span>
+    </div>
+    <div class="body">
+      <div class="drop" id="drop" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
+        <b>Add a video or a photo</b>
+        <span id="limit">Drop it here, or choose it from this device.</span>
+        <!-- Video and pictures only, so a phone offers its camera roll first. -->
+        <label class="pill">Choose a video or photo<input type="file" id="pick" accept="video/*,image/*"></label>
+        <!-- No filter: anything else is taken too (music, a recording, a font, a LUT, a document). -->
+        <label class="other">Or any other file<input type="file" id="other"></label>
+      </div>
+      <div class="going" id="going" hidden>
+        <div class="name" id="name"></div>
+        <div class="bar"><i id="fill"></i></div>
+        <div class="line"><span class="state" id="state"></span><span class="mono" id="count"></span></div>
+      </div>
+    </div>
+    <div class="foot">
+      <span id="note">Waiting for the chat app…</span>
+      <button type="button" id="page" hidden>Open the upload page instead</button>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+  const VERSION = '__VERSION__';
+  const $ = (s) => document.querySelector(s);
+  const root = $('#root');
+  const html = document.documentElement;
+  // One part of the file per request, so a send that breaks carries on from what arrived.
+  const PART = 16 * 1024 * 1024;
+
+  // ---------- host protocol (MCP Apps, ui/*) ----------
+  let nextId = 1;
+  const pending = new Map();
+  const host = { caps: {}, ready: false };
+  const send = (msg) => window.parent.postMessage(msg, '*');
+  const request = (method, params) => new Promise((resolve, reject) => {
+    const id = nextId++;
+    pending.set(id, { resolve, reject });
+    send({ jsonrpc: '2.0', id, method, params });
+  });
+  const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
+  const openLink = (url) => request('ui/open-link', { url }).catch(() => window.open(url, '_blank', 'noopener'));
+
+  // ---------- the upload ----------
+  const S = { upload: null, busy: false, sent: false };
+  const size = (n) => n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${(n / 1e6).toFixed(1)} MB`;
+  const note = (text) => { $('#note').textContent = text; };
+
+  function going(name, state, cls) {
+    $('#drop').hidden = true;
+    $('#going').hidden = false;
+    $('#going').className = `going ${cls || ''}`;
+    $('#name').textContent = name;
+    $('#state').textContent = state;
+  }
+  function progress(at, total) {
+    $('#fill').style.width = `${100 * at / Math.max(total, 1)}%`;
+    $('#count').textContent = `${size(at)} of ${size(total)}`;
+  }
+  function again(message) {
+    $('#drop').hidden = false;
+    note(message);
+  }
+
+  async function offset(url) {
+    const r = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+    if (r.status === 403 || r.status === 404) throw Object.assign(new Error('This upload has been used or has expired. Ask in the chat for a new one.'), { final: true });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return { at: Number(r.headers.get('upload-offset') || 0), complete: r.headers.get('upload-complete') === 'true' };
+  }
+
+  async function sendFile(file) {
+    const up = S.upload;
+    if (!up || S.busy || S.sent) return;
+    if (up.max_bytes && file.size > up.max_bytes) {
+      return again(`${file.name} is ${size(file.size)}; this takes up to ${size(up.max_bytes)}.`);
+    }
+    S.busy = true;
+    going(file.name, 'Sending…');
+    progress(0, file.size);
+    note('Keep this chat open until it is sent.');
+    try {
+      let { at, complete } = await offset(up.url);
+      if (at > file.size) at = 0;
+      for (let tries = 0; !complete; ) {
+        const end = Math.min(at + PART, file.size);
+        progress(at, file.size);
+        try {
+          const r = await fetch(up.url, {
+            method: 'PUT',
+            headers: { 'content-range': `bytes ${at}-${end - 1}/${file.size}`, 'upload-name': encodeURIComponent(file.name) },
+            body: file.slice(at, end),
+          });
+          const body = await r.json().catch(() => ({}));
+          if (r.status === 413) throw Object.assign(new Error(body.error || 'The file is too big.'), { final: true });
+          if (r.status === 403 || r.status === 404) throw Object.assign(new Error('This upload has been used or has expired. Ask in the chat for a new one.'), { final: true });
+          if (!r.ok && r.status !== 409) throw new Error(body.error || `HTTP ${r.status}`);
+          at = Number(r.headers.get('upload-offset') || end);
+          complete = r.headers.get('upload-complete') === 'true';
+          tries = 0;
+        } catch (error) {
+          if (error.final || ++tries > 5) throw error;
+          $('#state').textContent = 'Connection dropped; picking up where it stopped…';
+          await new Promise((r) => setTimeout(r, 1000 * tries));
+          ({ at, complete } = await offset(up.url));
+          $('#state').textContent = 'Sending…';
+        }
+      }
+      progress(file.size, file.size);
+      await sent(file.name);
+    } catch (error) {
+      going(file.name, error.message || String(error), 'bad');
+      // The page behind the url sends the same file from outside the chat app's frame.
+      $('#page').hidden = false;
+      again(error.final ? 'This upload can no longer be used.' : 'It did not go through. Choose the file again to carry on, or open the upload page.');
+    } finally {
+      S.busy = false;
+    }
+  }
+
+  // The file is staged: say so in the chat as the person, which is what starts the next turn.
+  async function sent(name) {
+    S.sent = true;
+    going(name, 'Sent', 'done');
+    $('#page').hidden = true;
+    const text = `I sent “${name}” to cuttingfloor (upload_id ${S.upload.upload_id}). Import it.`;
+    if (host.caps.message) {
+      try {
+        const r = await request('ui/message', { role: 'user', content: [{ type: 'text', text }] });
+        if (r?.isError) throw new Error('refused');
+        return note('It is in. The chat carries on from here.');
+      } catch {}
+    }
+    if (host.caps.updateModelContext) {
+      request('ui/update-model-context', { content: [{ type: 'text', text: `The user sent “${name}”: upload ${S.upload.upload_id} is complete.` }] }).catch(() => {});
+    }
+    note('It is in. Tell the chat you sent it.');
+  }
+
+  function onResult(result) {
+    if (!result) return;
+    let data = result.structuredContent;
+    if (!data && Array.isArray(result.content)) {
+      const t = result.content.find((c) => c?.type === 'text');
+      try { data = t && JSON.parse(t.text); } catch {}
+    }
+    if (result.isError || !data?.url) {
+      return note(data?.message || result.content?.find((c) => c?.type === 'text')?.text || 'No upload was started.');
+    }
+    S.upload = data;
+    $('#limit').textContent = `Drop it here, or choose it from this device. Up to ${size(data.max_bytes)}.`;
+    $('#page').hidden = false;
+    $('#drop').hidden = false;
+    const days = Math.round((Date.parse(data.expires_at) - Date.now()) / 86_400_000);
+    note(days >= 1 ? `A file sent here waits ${days} day${days === 1 ? '' : 's'} to be brought into an edit.` : '');
+    // A view shown again (the chat reopened) finds what already arrived.
+    offset(data.url).then(({ at, complete }) => {
+      if (complete) { S.sent = true; going(data.name || 'Your file', 'Sent', 'done'); $('#page').hidden = true; note('This file is already in.'); }
+      else if (at > 0) note(`${size(at)} is already here. Choose the same file and the rest is sent.`);
+    }, (error) => {
+      // The frame may not be let through to the server: the page behind the url still is.
+      note(error.final ? error.message : 'This chat app does not let files be sent from here. Open the upload page.');
+      if (error.final) { $('#drop').hidden = true; $('#page').hidden = true; }
+    });
+  }
+
+  const drop = $('#drop');
+  for (const input of [$('#pick'), $('#other')]) {
+    input.addEventListener('change', () => { const f = input.files[0]; input.value = ''; if (f) sendFile(f); });
+  }
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    drop.classList.remove('over');
+    const f = e.dataTransfer.files[0];
+    if (f) sendFile(f);
+  });
+  $('#page').addEventListener('click', () => S.upload && openLink(S.upload.url));
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== window.parent) return;
+    const msg = event.data;
+    if (msg?.jsonrpc !== '2.0') return;
+    if (msg.id !== undefined && pending.has(msg.id) && !msg.method) {
+      const p = pending.get(msg.id);
+      pending.delete(msg.id);
+      if (msg.error) p.reject(new Error(msg.error.message || 'error'));
+      else p.resolve(msg.result);
+      return;
+    }
+    if (msg.method === 'ui/notifications/tool-result') whenReady(() => onResult(msg.params || {}));
+    else if (msg.method === 'ui/resource-teardown' && msg.id !== undefined) send({ jsonrpc: '2.0', id: msg.id, result: {} });
+  });
+
+  // Calls wait for the handshake, so the host's capabilities are known.
+  const queue = [];
+  function whenReady(fn) { if (host.ready) fn(); else queue.push(fn); }
+
+  new ResizeObserver(() => {
+    notify('ui/notifications/size-changed', { width: Math.ceil(html.scrollWidth), height: Math.ceil(root.getBoundingClientRect().height) });
+  }).observe(root);
+
+  request('ui/initialize', {
+    appInfo: { name: 'cuttingfloor-upload', version: VERSION },
+    appCapabilities: {},
+    protocolVersion: '2026-01-26',
+  }).then((r) => { host.caps = r?.hostCapabilities || {}; }, () => {}).finally(() => {
+    host.ready = true;
+    notify('ui/notifications/initialized', {});
+    for (const fn of queue.splice(0)) fn();
+  });
+})();
+</script>
+</body>
+</html>

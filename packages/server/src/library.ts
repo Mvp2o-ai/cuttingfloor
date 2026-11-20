@@ -16,10 +16,11 @@ export const LIBRARY_URI = 'ui://cuttingfloor/library';
 export const LIBRARY_TOOL_META = { ui: { resourceUri: LIBRARY_URI } };
 
 export function registerLibrary(server: McpServer, deps: ServerDeps): void {
-  // Previews load the file (and a font's glyphs) from this server; clipboard-write backs Copy id.
+  // Previews load the file (and a font's glyphs) from this server, and Add sends one to it;
+  // clipboard-write backs Copy id.
   const origin = new URL(deps.runtime.config.publicUrl).origin;
   const ui = {
-    csp: { resourceDomains: [origin] },
+    csp: { resourceDomains: [origin], connectDomains: [origin] },
     permissions: { clipboardWrite: {} },
     prefersBorder: false,
   };
