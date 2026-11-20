@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.56.1
+
+### Patch Changes
+
+- f415351: A task's status keeps its percentage when the job's own words give the time left without one.
+
 ## 0.56.0
 
 ### Minor Changes
