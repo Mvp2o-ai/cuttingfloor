@@ -1,5 +1,15 @@
 # cuttingfloor
 
+## 0.61.0
+
+### Minor Changes
+
+- 8499ed0: credits.claim adds a 30-second Big Buck Bunny sample to the user's library, free, and shows it in the player, with example edits to try on it.
+
+### Patch Changes
+
+- 7de7cce: The connect pages say plainly who can add cuttingfloor to ChatGPT: Plus, Pro and work plans, not the free plan, with no developer mode, and a workspace admin's say-so on work plans.
+
 ## 0.60.1
 
 ### Patch Changes
