@@ -104,7 +104,7 @@ export function AccountView(p: AccountProps) {
       ) : null}
 
       {p.providerKeys ? (
-        <section className="cell" id="keys">
+        <section className="cell settings" id="keys">
           <div className="head">
             <span className="label">Your sync. labs key</span>
             <p className="lede">
@@ -118,7 +118,7 @@ export function AccountView(p: AccountProps) {
       ) : null}
 
       {p.keys ? (
-        <section className="cell" id="api-keys">
+        <section className="cell settings" id="api-keys">
           <div className="head">
             <span className="label">API keys</span>
             <p className="lede">
@@ -129,12 +129,12 @@ export function AccountView(p: AccountProps) {
               <a href="/how-to-connect#builders">Ways to connect</a>
             </p>
           </div>
-          <KeysPanel initial={p.keys} server={p.server} />
+          <KeysPanel initial={p.keys} />
         </section>
       ) : null}
 
       {p.adminKeys ? (
-        <section className="cell" id="admin-api">
+        <section className="cell settings" id="admin-api">
           <div className="head">
             <span className="label">Admin API</span>
             <p className="lede">
@@ -145,7 +145,7 @@ export function AccountView(p: AccountProps) {
               admin.
             </p>
           </div>
-          <KeysPanel initial={p.adminKeys} server={p.server} kind="admin" />
+          <KeysPanel initial={p.adminKeys} kind="admin" />
         </section>
       ) : null}
 

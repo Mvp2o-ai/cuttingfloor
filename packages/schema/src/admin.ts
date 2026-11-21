@@ -65,6 +65,13 @@ export const AdminAccount = z.object({
     'First video export started, whether or not it succeeded. null: none yet',
   ),
   first_client: z.string().nullable().describe('The app of the first request, e.g. claude'),
+  use_case: z
+    .string()
+    .nullable()
+    .describe(
+      "What the user wants to make with video, one sentence their assistant gave when it activated the free credits; null when it hasn't",
+    ),
+  use_case_at: nullableTime.describe('When the assistant activated the free credits'),
   last_used_at: nullableTime.describe(
     'The day of the latest tool call, recorded at most once a day; null before it was recorded',
   ),
