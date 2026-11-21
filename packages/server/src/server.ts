@@ -69,7 +69,7 @@ Two ways in, often both:
 ${INSTRUCTIONS_BODY}${credits}`;
 }
 
-const WELCOME = `This is a new connection: welcome aboard. To get started, claim the user's ${FREE_CREDITS} free credits with credits.claim. The credits never expire, so there's no rush.`;
+const WELCOME = `This is a new connection: welcome aboard. Start by claiming the user's ${FREE_CREDITS} free credits with credits.claim: it also puts a sample video in their library and plays it here, so they can try an edit right away. The credits never expire.`;
 
 const INSTRUCTIONS_BODY = `Tools are primitives doing exactly what their arguments say; you compose them.
 1. create.* and media.import run long (a task, or a job_id; job.get can wait). Edits, previews and render.frames take a media_id once processing (imported) or complete (created); analysis, judge.ask and create.* need it ready; export waits for it.
