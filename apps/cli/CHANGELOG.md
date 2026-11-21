@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.59.1
+
+### Patch Changes
+
+- 14b5550: A new connection is welcomed and told to claim the user's 25 free credits; once they're claimed, connections say nothing about it.
+
 ## 0.59.0
 
 ### Minor Changes

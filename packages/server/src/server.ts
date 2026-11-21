@@ -1,4 +1,6 @@
+import { existsSync } from 'node:fs';
 import type { CredentialStore } from '@cuttingfloor/credentials';
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { type AccountGetResult, KEEPING, span } from '@cuttingfloor/schema';
 import { McpServer } from '@modelcontextprotocol/server';
 import { logToolCalls } from './calls.ts';
@@ -12,7 +14,7 @@ import { toErrorResult } from './result.ts';
 import type { Runtime } from './runtime.ts';
 import { registerTasks } from './tasks.ts';
 import { registerCreateTools } from './tools/create.ts';
-import { registerCreditTools } from './tools/credits.ts';
+import { claimFile, registerCreditTools } from './tools/credits.ts';
 import { registerInterchangeTools } from './tools/interchange.ts';
 import { registerJudgeTools } from './tools/judge.ts';
 import { registerListenTools } from './tools/listen.ts';
@@ -47,9 +49,10 @@ export interface ServerDeps {
 
 /**
  * The server's instructions, from its own config: path imports and the samples only where this
- * server has media roots, credits only on the hosted service (numbers from the plans).
+ * server has media roots, credits only on the hosted service (numbers from the plans). `welcome`
+ * leads with the welcome a signed-in account gets until its free credits are claimed.
  */
-function instructions(config: Runtime['config']): string {
+function instructions(config: Runtime['config'], welcome = false): string {
   const roots = config.mediaRoots;
   const hosted = config.mode === 'hosted';
   const samples = roots.includes('/samples')
@@ -57,17 +60,16 @@ function instructions(config: Runtime['config']): string {
     : '';
   const credits = hosted
     ? `
-Credits: jobs (export, import, analysis, create.*) spend one a minute, judgments (judge.ask, media.seek, look) a bit each; editing and previews are free and still work at 0, where jobs are refused (quota_exceeded): tell the user jobs wait for credits.
-${CLAIM}`
+Credits: jobs (export, import, analysis, create.*) spend one a minute, judgments (judge.ask, media.seek, look) a bit each; editing and previews are free and still work at 0, where jobs are refused (quota_exceeded): tell the user jobs wait for credits.`
     : '';
-  return `cuttingfloor is a headless video editor: media comes in, is cut and finished, and leaves as a download. Work, not storage: ${KEEPING}; links work ${span(config.outputUrlTtlMs)} (re-read for fresh ones). Download finished or approved work (or have the user); if they count on keeping it, say it's temporary. To go on later, keep timeline.get's document (timeline.load) and the files (media.import again). media.delete drops unwanted media.
+  return `${welcome ? `${WELCOME}\n` : ''}cuttingfloor is a headless video editor: media comes in, is cut and finished, and leaves as a download. Work, not storage: ${KEEPING}; links work ${span(config.outputUrlTtlMs)} (re-read for fresh ones). Download finished or approved work (or have the user); if they count on keeping it, say it's temporary. To go on later, keep timeline.get's document (timeline.load) and the files (media.import again). media.delete drops unwanted media.
 Two ways in, often both:
 - Make new: create.motion (animated HTML, alpha), .still (HTML to PNG), .matte (solid, gradient), .voiceover (speech, timed words); a picture the user shows is a reference to rebuild in HTML, not import. Remake: create.cutout, .stabilized, .upscaled, .lipsync (user's provider key). Music and sound effects aren't made; they're the user's files.
 - Edit theirs: media.import a URL${roots.length ? `, a path under ${roots.join(', ')}` : ''}, an upload_id or a small data: URI${samples}. A file on their device, or attached but not handed to you: media.upload, an upload box in the chat (or a link)${config.uploadPage ? `, or they drop it on their upload page, ${config.uploadPage}` : ''}. Sent files: media.list.
 ${INSTRUCTIONS_BODY}${credits}`;
 }
 
-const CLAIM = `Free credits: if the user hasn't asked for anything yet, offer to activate their free credits and ask what they want to make, then call credits.claim with it in one sentence. If they ask for an edit first, call it with their request in one sentence and go on with the edit; never hold the edit for it.`;
+const WELCOME = `This is a new connection: welcome aboard. To get started, claim the user's ${FREE_CREDITS} free credits with credits.claim, with one sentence on what they'd like to make with video. The credits never expire, so there's no rush.`;
 
 const INSTRUCTIONS_BODY = `Tools are primitives doing exactly what their arguments say; you compose them.
 1. create.* and media.import run long (a task, or a job_id; job.get can wait). Edits, previews and render.frames take a media_id once processing (imported) or complete (created); analysis, judge.ask and create.* need it ready; export waits for it.
@@ -84,11 +86,20 @@ const INSTRUCTIONS_BODY = `Tools are primitives doing exactly what their argumen
 Skills: methods for common jobs; skills.search in the user's words, then skills.get.
 Time is frames at the sequence rate; ranges end-exclusive.`;
 
+/**
+ * A signed-in hosted account (one with an account) whose free credits aren't claimed yet: one
+ * stat of credits.claim's record, so it costs a connection next to nothing.
+ */
+function unclaimed(deps: ServerDeps): boolean {
+  if (deps.runtime.config.mode !== 'hosted' || !deps.account) return false;
+  return !existsSync(claimFile(deps, deps.owner()));
+}
+
 /** Builds one MCP server instance over the shared runtime. Transports live in apps/. */
 export function createServer(deps: ServerDeps): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
-    { instructions: instructions(deps.runtime.config) },
+    { instructions: instructions(deps.runtime.config, unclaimed(deps)) },
   );
   logToolCalls(server, (entry) => deps.runtime.logCall(deps.owner(), entry));
   compactSchemas(server);

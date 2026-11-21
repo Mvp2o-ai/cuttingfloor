@@ -112,12 +112,23 @@ describe('credits.claim', () => {
     });
   });
 
-  it('is offered and named in the instructions only where there are credits', async () => {
+  it('welcomes a signed-in account in the instructions until its credits are claimed', async () => {
+    const before = await connectWithAccount('user_welcome', async () => ACCOUNT);
+    expect(before.getInstructions()).toMatch(
+      /^This is a new connection: welcome aboard\. .*credits\.claim/,
+    );
+    await call(before, 'credits.claim', { use_case: 'make a trailer' });
+    const after = await connectWithAccount('user_welcome', async () => ACCOUNT);
+    expect(after.getInstructions()).not.toContain('credits.claim');
+    expect(after.getInstructions()).not.toContain('welcome aboard');
+  });
+
+  it('is offered only where there are credits, and never named to a connection without an account', async () => {
     const hosted = await connect(env.runtime);
     const { tools } = await hosted.listTools();
     const tool = tools.find((t) => t.name === 'credits.claim');
     expect(tool?.inputSchema.required).toEqual(['use_case']);
-    expect(hosted.getInstructions()).toContain('offer to activate their free credits');
+    expect(hosted.getInstructions()).not.toContain('credits.claim');
 
     const local = await connect((await testRuntime()).runtime);
     expect((await local.listTools()).tools.map((t) => t.name)).not.toContain('credits.claim');
