@@ -258,7 +258,7 @@ const server = createHttpServer({
   ...(access
     ? {
         access: async (owner: string) => void (await access.require(owner)),
-        limits: (owner: string) => access.limits(owner),
+        limits: (owner: string, options?: { buy?: boolean }) => access.limits(owner, options),
       }
     : {}),
   ...(lifecycle

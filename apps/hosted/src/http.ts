@@ -61,7 +61,7 @@ export interface HttpOptions {
    */
   access?: (owner: string) => Promise<void>;
   /** Hosted: a signed-in owner's plan as limits on the work they start (not maintenance keys). */
-  limits?: (owner: string) => Promise<OwnerLimits>;
+  limits?: (owner: string, options?: { buy?: boolean }) => Promise<OwnerLimits>;
   /** Hosted: a signed-in owner's plan and credits, for account.get (not maintenance keys). */
   account?: (owner: string) => Promise<AccountGetResult>;
   /** Told of each signed-in owner's MCP request (first-call records). */
@@ -137,6 +137,11 @@ async function appName(request: Request): Promise<string | undefined> {
  * that carries no clientInfo: a 2025 client that said who it was in an initialize sent before
  * sign-in (ChatGPT sends `openai-mcp/1.0.0`).
  */
+/** A request from ChatGPT: its connector's User-Agent is openai-mcp/…. */
+function chatgpt(headers: Headers | undefined): boolean {
+  return /^openai-mcp\b/i.test(headers?.get('user-agent') ?? '');
+}
+
 function userAgentApp(userAgent: string | undefined): string | undefined {
   return /^[\w.-]+/.exec(userAgent ?? '')?.[0];
 }
@@ -192,7 +197,8 @@ export function createHttpServer(options: HttpOptions): Server {
       ...(anonymous
         ? { access: () => Promise.reject(new Error('Sign in to cuttingfloor first')) }
         : {}),
-      ...(limits ? { limits: () => limits(owner) } : {}),
+      // ChatGPT's plugin rules forbid selling credits, so its refusals only say what stopped.
+      ...(limits ? { limits: () => limits(owner, { buy: !chatgpt(requestHeaders) }) } : {}),
       ...(account ? { account: () => account(owner) } : {}),
     });
   };

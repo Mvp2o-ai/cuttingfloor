@@ -11,7 +11,8 @@ import {
 // Buy a credit pack. With a card saved from an earlier pack it is one click: charged here and
 // back to the account page. Otherwise (or when the bank wants the person to confirm) Stripe
 // Checkout, which saves the card for next time and for automatic top-up. Link and wallets come
-// with Checkout; Managed Payments (Stripe as merchant of record) once activated.
+// with Checkout, with every payment method the Stripe account enables, priced in the buyer's
+// currency; Managed Payments (Stripe as merchant of record) once activated.
 export async function POST(request: Request) {
   const { user } = await withAuth();
   const origin = new URL(request.url).origin;
@@ -30,7 +31,12 @@ export async function POST(request: Request) {
     'line_items[0][price]': await priceFor(pack),
     'line_items[0][quantity]': '1',
     ...packMetadata(pack, user.id, 'payment_intent_data[metadata]'),
-    'payment_intent_data[setup_future_usage]': 'off_session',
+    // Only cards (and Link) are saved for one-click buys and automatic top-up: asking every method
+    // to be reusable hides the ones that can't be (wallets, bank and local methods).
+    'payment_method_options[card][setup_future_usage]': 'off_session',
+    'payment_method_options[link][setup_future_usage]': 'off_session',
+    // Prices in the buyer's own currency, converted by Stripe.
+    'adaptive_pricing[enabled]': 'true',
     allow_promotion_codes: 'true',
     ...(process.env.STRIPE_MANAGED_PAYMENTS === '1' ? { 'managed_payments[enabled]': 'true' } : {}),
     success_url: `${origin}/account?bought=${pack.credits}#credits`,
