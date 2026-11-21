@@ -3154,7 +3154,31 @@ a.buy {
     font-weight: 600;
   }
 }
-/* account: keys for scripts */
+/* account: keys for scripts. Settings, so plain type: no display label or lede sizes. */
+.settings .head {
+  display: block;
+  margin-bottom: 20px;
+}
+.settings .label {
+  display: block;
+  margin-bottom: 6px;
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink);
+}
+.settings .lede {
+  font-size: 15px;
+  max-width: 70ch;
+  color: var(--mute);
+}
+.key-made .copy {
+  font-family: inherit;
+  font-size: 15px;
+  padding: 10px 16px;
+}
 .key-make {
   display: flex;
   flex-wrap: wrap;
@@ -3171,6 +3195,47 @@ a.buy {
 }
 .files code {
   overflow-wrap: anywhere;
+}
+.key-made {
+  margin: 16px 0 0;
+  padding: 16px;
+  border: 1px solid var(--key);
+}
+.key-made p {
+  margin: 0 0 10px;
+}
+.key-value {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+}
+.key-value code {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  overflow-x: auto;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  user-select: all;
+}
+.file-list li.key-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: baseline;
+  gap: 4px 20px;
+}
+.key-name {
+  overflow-wrap: anywhere;
+}
+.key-start {
+  color: var(--mute);
+}
+@media (max-width: 640px) {
+  .file-list li.key-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
 }
 button.link {
   appearance: none;
