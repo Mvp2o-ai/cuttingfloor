@@ -1,6 +1,12 @@
 import { copyFile, link, mkdir, open, readdir, realpath, rename, rm, stat } from 'node:fs/promises';
 import { basename, extname, join, sep } from 'node:path';
-import { ownerKey, randomId, secondsToTicks, type Workspace } from '@cuttingfloor/core';
+import {
+  floorChanged,
+  ownerKey,
+  randomId,
+  secondsToTicks,
+  type Workspace,
+} from '@cuttingfloor/core';
 import {
   type ANALYSES,
   CfError,
@@ -232,6 +238,7 @@ export class MediaLibrary {
     record.updated_at = new Date().toISOString();
     const { analyses: _kept, ...rest } = record;
     await this.#ws.writeJson(join(this.dir(owner, record.media_id), 'media.json'), rest);
+    await floorChanged(this.#ws, owner);
   }
 
   /**
@@ -648,6 +655,7 @@ export class MediaLibrary {
     }
     await this.#ws.remove(dir);
     await this.#tombstone(owner, id, 'deleted');
+    await floorChanged(this.#ws, owner);
     return freed;
   }
 
@@ -655,6 +663,7 @@ export class MediaLibrary {
     let n = 0;
     for (const owner of await this.#ws.owners()) {
       const base = this.#ws.path('owners', owner, 'media');
+      const before = n;
       // A media folder's age is its record's last use.
       for (const id of await this.#ws.list(base)) {
         const rec = join(base, id, 'media.json');
@@ -669,8 +678,11 @@ export class MediaLibrary {
           await this.#ws.remove(join(base, id));
         }
       }
+      if (n > before) await floorChanged(this.#ws, owner);
       await this.#ws.sweep(this.#ws.path('owners', owner, 'media-index'), ttlMs);
       await this.#ws.sweep(this.#ws.path('owners', owner, 'media-gone'), GONE_DAYS * 86_400_000);
+      // The floor cursor of an account idle as long as its media lasts; a lost one costs a list.
+      await this.#ws.sweep(this.#ws.path('owners', owner), ttlMs, (name) => name !== 'floor.json');
     }
     return n;
   }

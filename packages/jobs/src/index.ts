@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { randomId, type Workspace } from '@cuttingfloor/core';
+import { floorChanged, randomId, type Workspace } from '@cuttingfloor/core';
 import { CfError, KEEP_MS, type ToolError } from '@cuttingfloor/schema';
 
 /**
@@ -111,6 +111,7 @@ export class FileJobStore {
         job_id: job.id,
       });
     }
+    await floorChanged(this.#ws, job.owner);
     return job;
   }
 
@@ -143,6 +144,8 @@ export class FileJobStore {
   async update(job: Job, patch: Partial<Omit<Job, 'id' | 'owner'>>): Promise<Job> {
     const next: Job = { ...job, ...patch, lastUpdatedAt: new Date().toISOString() };
     await this.#ws.writeJson(this.#file(job.owner, job.id), next);
+    // A status change moves the account's floor; progress and heartbeats don't.
+    if (next.status !== job.status) await floorChanged(this.#ws, job.owner);
     for (const listener of this.#listeners) {
       try {
         listener(next);

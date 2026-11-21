@@ -26,6 +26,7 @@ export {
   timelineEnd,
   transitionHalves,
 } from './edit.ts';
+export { floorChanged, floorCursor, waitForFloor } from './floor.ts';
 export { canonicalJson, randomId, timelineIdOf } from './hash.ts';
 export {
   cueTime,
