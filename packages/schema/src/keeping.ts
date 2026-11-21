@@ -30,7 +30,7 @@ export function span(ms: number): string {
 }
 
 /** The keeping policy in one sentence, for the instructions and descriptions. */
-export const KEEPING = `everything goes ${span(KEEP)} after last use (exports after they finish, uploads after sending; each file's details say when)`;
+export const KEEPING = `everything goes ${span(KEEP)} after last use (exports from finishing, uploads from sending; each file's details say when)`;
 
 /**
  * When a file goes, in a sentence: "Expires in 5 days, on 2026-11-19 14:00 UTC; …". `then` says

@@ -13,6 +13,7 @@ export * from './search.ts';
 export * from './sequence.ts';
 export * from './skills.ts';
 export * from './sounds.ts';
+export * from './support.ts';
 export * from './text.ts';
 export * from './timeline.ts';
 export * from './tools.ts';
