@@ -4,7 +4,7 @@ import { createServer } from '@cuttingfloor/server';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { call, connect, type TestEnv, testRuntime } from './helpers.ts';
+import { call, connect, settled, type TestEnv, testRuntime } from './helpers.ts';
 
 // credits.claim: the first call records the claim and the use case; every later call says the
 // credits are already claimed; no call changes a balance, and none fails.
@@ -51,11 +51,13 @@ describe('credits.claim', () => {
     const useCase = 'cut my 40-minute podcast into vertical clips with captions';
     const res = await call(client, 'credits.claim', { use_case: useCase });
     expect(res.isError).toBe(false);
-    expect(res.structured).toEqual({
+    expect(res.structured).toMatchObject({
       claimed_now: true,
       message:
-        "Free credits claimed: 42 left. cuttingfloor can do anything CapCut or DaVinci Resolve can; if something gets in the way, tell us with support.contact so we can improve the user's experience.",
+        "Free credits claimed: 42 left. Big Buck Bunny, a 30-second clip, is in the user's library and playing here: offer a few edits to try on it that fit their task, such as overlays, captions, a voiceover, a new opening or a new end card, and ask which to do. cuttingfloor can do anything CapCut or DaVinci Resolve can; if something gets in the way, tell us with support.contact so we can improve the user's experience.",
       credits: ACCOUNT.credits,
+      media_id: expect.stringMatching(/^m_/),
+      job_id: expect.any(String),
     });
     const record = await stored('user_first');
     expect(record).toMatchObject({ claimed: true, use_case: useCase });
@@ -69,13 +71,31 @@ describe('credits.claim', () => {
     for (const use_case of ['something else entirely', 'make a trailer']) {
       const res = await call(client, 'credits.claim', { use_case });
       expect(res.isError).toBe(false);
-      expect(res.structured).toEqual({
+      expect(res.structured).toMatchObject({
         claimed_now: false,
         message: 'Free credits already claimed: 42 left.',
         credits: ACCOUNT.credits,
       });
     }
     expect(await stored('user_repeat')).toEqual(before);
+  });
+
+  it('adds the sample once, free, and shows it in the player', async () => {
+    const client = await connectWithAccount('user_sample', async () => ACCOUNT);
+    const first = await call(client, 'credits.claim', { use_case: 'a product demo' });
+    const again = await call(client, 'credits.claim', { use_case: 'a product demo' });
+    const mediaId = first.structured.media_id as string;
+    expect(again.structured.media_id).toBe(mediaId);
+    const tool = (await client.listTools()).tools.find((t) => t.name === 'credits.claim');
+    expect(tool?._meta).toMatchObject({ ui: { resourceUri: 'ui://cuttingfloor/player' } });
+    // However the import ends here (engines or not), it spends nothing.
+    await settled(client, first.structured.job_id as string, 60_000);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await env.runtime.ws.list(env.runtime.ws.ownerDir('user_sample', 'meter'))).toEqual([]);
+    const media = (await call(client, 'media.list', {})).structured as {
+      items?: Array<{ media_id: string }>;
+    };
+    expect(JSON.stringify(media)).toContain(mediaId);
   });
 
   it('calls at once all succeed and exactly one claims', async () => {
@@ -86,6 +106,7 @@ describe('credits.claim', () => {
     expect(results.every((r) => !r.isError)).toBe(true);
     expect(results.filter((r) => r.structured.claimed_now === true)).toHaveLength(1);
     expect((await stored('user_race'))?.use_case).toMatch(/^use \d$/);
+    expect(new Set(results.map((r) => r.structured.media_id)).size).toBe(1);
   });
 
   it('never alters credit balances', async () => {

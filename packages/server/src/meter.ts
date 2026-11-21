@@ -56,6 +56,8 @@ const month = (iso: string) => iso.slice(0, 7);
 /** Records a job's running time once it ends; jobs that never started a run record nothing. */
 export async function meterJob(ws: Workspace, job: Job): Promise<MeterEntry | undefined> {
   if (!job.startedAt || job.status === 'working') return undefined;
+  // The server's own work for the account, such as importing the onboarding sample, is free.
+  if (job.meta?.unbilled) return undefined;
   const ms = Date.parse(job.lastUpdatedAt) - Date.parse(job.startedAt);
   if (!(ms > 0)) return undefined;
   const entry: MeterEntry = {
