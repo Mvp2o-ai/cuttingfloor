@@ -80,6 +80,7 @@ describe('credits.claim', () => {
     expect(await stored('user_repeat')).toEqual(before);
   });
 
+  // A real import (probe, proxy, loudness) in the engine image takes more than the default 5 s.
   it('adds the sample once, free, and shows it in the player', async () => {
     const client = await connectWithAccount('user_sample', async () => ACCOUNT);
     const first = await call(client, 'credits.claim', { use_case: 'a product demo' });
@@ -96,7 +97,7 @@ describe('credits.claim', () => {
       items?: Array<{ media_id: string }>;
     };
     expect(JSON.stringify(media)).toContain(mediaId);
-  });
+  }, 90_000);
 
   it('calls at once all succeed and exactly one claims', async () => {
     const client = await connectWithAccount('user_race', async () => ACCOUNT);
