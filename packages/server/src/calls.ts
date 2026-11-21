@@ -1,5 +1,5 @@
-import { appendFile, mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import type { Workspace } from '@cuttingfloor/core';
 import type { Job } from '@cuttingfloor/jobs';
 import type { McpServer } from '@modelcontextprotocol/server';
@@ -36,6 +36,22 @@ export async function recordCall(
   const file = ws.ownerDir(owner, 'calls', `${entry.at.slice(0, 10)}.${node}.jsonl`);
   await mkdir(dirname(file), { recursive: true });
   await appendFile(file, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+}
+
+/** The owner's call log, every server's day files, oldest first; lines that don't parse are skipped. */
+export async function readCalls(ws: Workspace, owner: string): Promise<CallEntry[]> {
+  const dir = ws.ownerDir(owner, 'calls');
+  const entries: CallEntry[] = [];
+  for (const name of (await ws.list(dir)).filter((n) => n.endsWith('.jsonl'))) {
+    const text = await readFile(join(dir, name), 'utf8').catch(() => '');
+    for (const line of text.split('\n')) {
+      if (!line) continue;
+      try {
+        entries.push(JSON.parse(line) as CallEntry);
+      } catch {}
+    }
+  }
+  return entries.sort((a, b) => a.at.localeCompare(b.at));
 }
 
 /** A tool result's outcome: a CfError's code and message, or the SDK's text for its own refusals. */

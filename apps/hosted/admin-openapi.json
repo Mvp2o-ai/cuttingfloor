@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "cuttingfloor admin API",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -421,6 +421,102 @@
             ],
             "description": "A credit is one minute of a server job (an export, a transcript) or 200 visual judgments. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer"
           },
+          "support_messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "ISO 8601 UTC"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": ["at", "message"]
+            },
+            "description": "Messages the user's assistant sent the cuttingfloor team (support.contact): failures, things it couldn't do, requests. Newest first; every one kept"
+          },
+          "activity": {
+            "type": "object",
+            "properties": {
+              "calls": {
+                "type": "number",
+                "description": "Tool calls, including refused ones"
+              },
+              "failed": {
+                "type": "number",
+                "description": "Tool calls and jobs that ended in an error"
+              },
+              "jobs": {
+                "type": "number",
+                "description": "Long jobs that ended (completed, failed or cancelled)"
+              },
+              "last_call_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "ISO 8601 UTC"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The latest tool call; null when none in the window"
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "tool": {
+                      "type": "string"
+                    },
+                    "calls": {
+                      "type": "number"
+                    },
+                    "failed": {
+                      "type": "number"
+                    },
+                    "jobs": {
+                      "type": "number"
+                    }
+                  },
+                  "required": ["tool", "calls", "failed", "jobs"]
+                },
+                "description": "Each tool used, most calls first"
+              },
+              "recent_errors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "ISO 8601 UTC"
+                    },
+                    "tool": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["at", "tool", "code", "message"]
+                },
+                "description": "The latest errors, newest first, up to 20; messages cut at 500 characters"
+              }
+            },
+            "required": ["calls", "failed", "jobs", "last_call_at", "tools", "recent_errors"],
+            "description": "What the account's assistants did in the last 30 days, from the server's call log (it keeps 30 days; never the arguments or results)"
+          },
           "files": {
             "type": "array",
             "items": {
@@ -483,6 +579,8 @@
           "use_case_at",
           "last_used_at",
           "credits",
+          "support_messages",
+          "activity",
           "files",
           "next_expiry_at",
           "email_prefs"

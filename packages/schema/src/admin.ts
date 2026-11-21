@@ -98,6 +98,41 @@ export const AdminAccount = z.object({
     .describe(
       'A credit is one minute of a server job (an export, a transcript) or 200 visual judgments. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer',
     ),
+  support_messages: z
+    .array(z.object({ at: time, message: z.string() }))
+    .describe(
+      "Messages the user's assistant sent the cuttingfloor team (support.contact): failures, things it couldn't do, requests. Newest first; every one kept",
+    ),
+  activity: z
+    .object({
+      calls: z.number().describe('Tool calls, including refused ones'),
+      failed: z.number().describe('Tool calls and jobs that ended in an error'),
+      jobs: z.number().describe('Long jobs that ended (completed, failed or cancelled)'),
+      last_call_at: nullableTime.describe('The latest tool call; null when none in the window'),
+      tools: z
+        .array(
+          z.object({
+            tool: z.string(),
+            calls: z.number(),
+            failed: z.number(),
+            jobs: z.number(),
+          }),
+        )
+        .describe('Each tool used, most calls first'),
+      recent_errors: z
+        .array(
+          z.object({
+            at: time,
+            tool: z.string(),
+            code: z.string(),
+            message: z.string(),
+          }),
+        )
+        .describe('The latest errors, newest first, up to 20; messages cut at 500 characters'),
+    })
+    .describe(
+      "What the account's assistants did in the last 30 days, from the server's call log (it keeps 30 days; never the arguments or results)",
+    ),
   files: z.array(AdminFile).describe('Media and finished exports still kept, soonest to go first'),
   next_expiry_at: nullableTime.describe('When the first of files goes; null when none'),
   email_prefs: z.object({
