@@ -69,7 +69,7 @@ export const AdminAccount = z.object({
     .string()
     .nullable()
     .describe(
-      "What the user wants to make with video, one sentence their assistant gave when it activated the free credits; null when it hasn't",
+      "The task the user is looking to complete with cuttingfloor, as their assistant gave it when it claimed the free credits; null when it hasn't",
     ),
   use_case_at: nullableTime.describe('When the assistant activated the free credits'),
   last_used_at: nullableTime.describe(

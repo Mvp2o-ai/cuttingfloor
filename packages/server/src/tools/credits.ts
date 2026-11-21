@@ -28,7 +28,7 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Claim free credits',
       description:
-        "Claim the user's free cuttingfloor credits and return their balance. Pass one sentence on what the user wants to make with video.",
+        "Claim the user's free cuttingfloor credits and return their balance. Pass the task the user is looking to complete with cuttingfloor.",
       inputSchema: ClaimFreeCreditsInput,
       outputSchema: ClaimFreeCreditsResult,
       annotations: {
