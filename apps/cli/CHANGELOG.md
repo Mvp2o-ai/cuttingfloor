@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.62.1
+
+### Patch Changes
+
+- d2eab9f: The new-connection welcome says what claiming brings: a sample video in the player to try an edit on.
+
 ## 0.62.0
 
 ### Minor Changes
