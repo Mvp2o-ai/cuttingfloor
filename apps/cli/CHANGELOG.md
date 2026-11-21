@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.63.0
+
+### Minor Changes
+
+- 8bfe620: Out of credits outside ChatGPT, the refusal links where to buy more. Checkout shows every payment method the account enables and prices packs in the buyer's own currency.
+
 ## 0.62.1
 
 ### Patch Changes
