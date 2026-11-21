@@ -69,4 +69,12 @@ describe('access refusals', () => {
     expect(refusal?.hint).toContain('https://cuttingfloor.ai/pricing');
     expect(JSON.stringify({ ...refusal, limits })).not.toContain('/account');
   });
+
+  it('links where to buy credits when the client allows it', async () => {
+    const refusal = (await new Fixed(allowed, { left: 0, used: 10 }).limits('u', { buy: true }))
+      .refuseJobs;
+    expect(refusal?.hint).toContain('https://cuttingfloor.ai/account#credits');
+    expect(refusal?.hint).toContain('packs from $5 for 25 credits');
+    expect(refusal?.detail).toMatchObject({ buy: 'https://cuttingfloor.ai/account#credits' });
+  });
 });

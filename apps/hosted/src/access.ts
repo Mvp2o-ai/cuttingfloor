@@ -2,6 +2,7 @@ import {
   FREE_CREDITS,
   freeCreditsFor,
   JUDGMENTS_PER_CREDIT,
+  PACKS,
   PLANS,
   type PlanId,
   SUPPORT_EMAIL,
@@ -118,7 +119,11 @@ export class AccessCheck {
   }
 
   /** The owner's plan as limits on the work they start, with a refusal once no credits are left. */
-  async limits(owner: string): Promise<OwnerLimits> {
+  /**
+   * `buy`: the refusal may link the account page where credits are bought. Not for ChatGPT, whose
+   * plugin rules allow saying what stopped but not selling credits (the caller knows the client).
+   */
+  async limits(owner: string, options: { buy?: boolean } = {}): Promise<OwnerLimits> {
     const access = await this.require(owner);
     const limits = PLANS[access.plan].limits;
     const out: OwnerLimits = {
@@ -131,22 +136,26 @@ export class AccessCheck {
     };
     const balance = await this.balance(owner, access);
     if (balance.left !== null && balance.left <= 0) {
-      // Information only (ChatGPT's plugin rules): say what stopped and link the pricing page,
-      // never the account page where credits are bought.
+      // Information first: say what stopped and link the pricing page. Where the client allows it
+      // (not ChatGPT), also the account page where credits are bought.
       const plans = new URL('/pricing', this.#o.accountUrl).href;
       const monthly = balance.renews !== null;
+      // A given plan's month renews on its own: nothing to buy.
+      const buy = options.buy && !monthly ? `${this.#o.accountUrl}#credits` : undefined;
+      const pack = PACKS[0];
       out.refuseJobs = new CfError(
         'quota_exceeded',
         monthly
           ? `This month's ${balance.per_month} credits are used`
           : 'This account has no credits left',
         {
-          hint: `${monthly ? `They renew on ${balance.renews?.slice(0, 10)}. ` : ''}New jobs (exports, imports, analysis, create.*) and judgments (judge.ask) won't start until there are credits again; editing the timeline and previews still work. Ask again after. A credit is one minute of a job running, or ${JUDGMENTS_PER_CREDIT} visual judgments. How credits work: ${plans}`,
+          hint: `${monthly ? `They renew on ${balance.renews?.slice(0, 10)}. ` : ''}New jobs (exports, imports, analysis, create.*) and judgments (judge.ask) won't start until there are credits again; editing the timeline and previews still work. Ask again after. A credit is one minute of a job running, or ${JUDGMENTS_PER_CREDIT} visual judgments. How credits work: ${plans}${buy && pack ? `. The user can buy more at ${buy}: packs from $${pack.price} for ${pack.credits} credits, one click with a saved card, and they never expire` : ''}`,
           detail: {
             credits_left: balance.left,
             credits_used: balance.used,
             ...(monthly ? { renews: balance.renews } : {}),
             plans,
+            ...(buy ? { buy } : {}),
           },
         },
       );
