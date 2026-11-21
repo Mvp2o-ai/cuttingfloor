@@ -129,9 +129,43 @@ export const AdminAccount = z.object({
           }),
         )
         .describe('The latest errors, newest first, up to 20; messages cut at 500 characters'),
+      active_days: z.number().describe('Days (UTC) with at least one tool call'),
+      longest_streak: z.number().describe('The most days in a row with a tool call'),
     })
     .describe(
       "What the account's assistants did in the last 30 days, from the server's call log (it keeps 30 days; never the arguments or results)",
+    ),
+  out_of_credits: z
+    .object({
+      first_at: time.describe('The first job refused for want of credits'),
+      last_at: time,
+      refusals: z.number(),
+    })
+    .nullable()
+    .describe(
+      'Jobs refused because the account had no credits (quota_exceeded), in the last 30 days; null when none',
+    ),
+  spend: z
+    .array(z.object({ tool: z.string(), credits: z.number(), jobs: z.number() }))
+    .describe('Credits spent per tool since the account began, most first (jobs and judgments)'),
+  purchases: z
+    .array(
+      z.object({
+        at: time,
+        credits: z.number().describe('Credits in the pack'),
+        amount: z.number().describe('Paid, in the currency (dollars, not cents)'),
+        refunded: z.number().describe('Refunded, in the currency; 0 when none'),
+        currency: z.string().describe('e.g. usd'),
+      }),
+    )
+    .nullable()
+    .describe(
+      'Packs bought, newest first, from Stripe. Only get_account reads them: null in list pages, and when Stripe did not answer',
+    ),
+  apps: z
+    .array(z.object({ name: z.string(), first_seen_at: time, last_seen_at: time }))
+    .describe(
+      "Every app the account's requests came from (an MCP client's name, or rest), most recently seen first. Recorded from 2026-11-21; last_seen_at is at most a day behind",
     ),
   files: z.array(AdminFile).describe('Media and finished exports still kept, soonest to go first'),
   next_expiry_at: nullableTime.describe('When the first of files goes; null when none'),
@@ -150,10 +184,19 @@ export const AdminAccount = z.object({
 export const AdminAccountList = z.object({
   data: z.array(AdminAccount).describe('Newest accounts first'),
   next_cursor: z.string().nullable().describe('Pass as cursor for the next page; null at the end'),
+  total: z.number().describe('Accounts in the list (with the email filter, 0 or 1)'),
+  page: z.number().describe('This page, from 1'),
+  pages: z.number().describe('Pages at this limit; at least 1'),
+  has_more: z.boolean().describe('True when there is another page'),
+  next: z
+    .string()
+    .nullable()
+    .describe('The URL of the next page (page and limit), with the same filters; null at the end'),
 });
 
 export const AdminAccountListQuery = z.object({
   cursor: z.string().max(200).optional(),
+  page: z.coerce.number().int().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   email: z.email().optional().describe('Only the account with this email'),
 });

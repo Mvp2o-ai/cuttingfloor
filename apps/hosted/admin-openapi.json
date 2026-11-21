@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "cuttingfloor admin API",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -61,7 +61,7 @@
         "operationId": "list_accounts",
         "tags": ["accounts"],
         "summary": "List accounts",
-        "description": "List cuttingfloor accounts, newest first, with what each did and what it holds: sign-up and first-use times (first_tool_at null = never ran a tool), last use, credits, files kept and when they go (next_expiry_at). Filter by exact email. Page with cursor: pass next_cursor from the last page until it is null. Export download links are null here; get_account signs them.",
+        "description": "List cuttingfloor accounts, newest first, with what each did and what it holds: sign-up and first-use times (first_tool_at null = never ran a tool), last use, credits, files kept and when they go (next_expiry_at). Filter by exact email. Each page says total and pages; jump with page, or follow next (or cursor with next_cursor) until it is null. Lists up to a minute old. Export download links and purchases are null here; get_account gives them.",
         "parameters": [
           {
             "name": "limit",
@@ -83,6 +83,16 @@
             "schema": {
               "type": "string",
               "maxLength": 200
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "The page to show, from 1 to pages; instead of cursor",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
             }
           },
           {
@@ -512,10 +522,134 @@
                   "required": ["at", "tool", "code", "message"]
                 },
                 "description": "The latest errors, newest first, up to 20; messages cut at 500 characters"
+              },
+              "active_days": {
+                "type": "number",
+                "description": "Days (UTC) with at least one tool call"
+              },
+              "longest_streak": {
+                "type": "number",
+                "description": "The most days in a row with a tool call"
               }
             },
-            "required": ["calls", "failed", "jobs", "last_call_at", "tools", "recent_errors"],
+            "required": [
+              "calls",
+              "failed",
+              "jobs",
+              "last_call_at",
+              "tools",
+              "recent_errors",
+              "active_days",
+              "longest_streak"
+            ],
             "description": "What the account's assistants did in the last 30 days, from the server's call log (it keeps 30 days; never the arguments or results)"
+          },
+          "out_of_credits": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "first_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "The first job refused for want of credits"
+                  },
+                  "last_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "ISO 8601 UTC"
+                  },
+                  "refusals": {
+                    "type": "number"
+                  }
+                },
+                "required": ["first_at", "last_at", "refusals"]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Jobs refused because the account had no credits (quota_exceeded), in the last 30 days; null when none"
+          },
+          "spend": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string"
+                },
+                "credits": {
+                  "type": "number"
+                },
+                "jobs": {
+                  "type": "number"
+                }
+              },
+              "required": ["tool", "credits", "jobs"]
+            },
+            "description": "Credits spent per tool since the account began, most first (jobs and judgments)"
+          },
+          "purchases": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "ISO 8601 UTC"
+                    },
+                    "credits": {
+                      "type": "number",
+                      "description": "Credits in the pack"
+                    },
+                    "amount": {
+                      "type": "number",
+                      "description": "Paid, in the currency (dollars, not cents)"
+                    },
+                    "refunded": {
+                      "type": "number",
+                      "description": "Refunded, in the currency; 0 when none"
+                    },
+                    "currency": {
+                      "type": "string",
+                      "description": "e.g. usd"
+                    }
+                  },
+                  "required": ["at", "credits", "amount", "refunded", "currency"]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Packs bought, newest first, from Stripe. Only get_account reads them: null in list pages, and when Stripe did not answer"
+          },
+          "apps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "first_seen_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "ISO 8601 UTC"
+                },
+                "last_seen_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "ISO 8601 UTC"
+                }
+              },
+              "required": ["name", "first_seen_at", "last_seen_at"]
+            },
+            "description": "Every app the account's requests came from (an MCP client's name, or rest), most recently seen first. Recorded from 2026-11-21; last_seen_at is at most a day behind"
           },
           "files": {
             "type": "array",
@@ -581,6 +715,10 @@
           "credits",
           "support_messages",
           "activity",
+          "out_of_credits",
+          "spend",
+          "purchases",
+          "apps",
           "files",
           "next_expiry_at",
           "email_prefs"
@@ -599,9 +737,29 @@
           "next_cursor": {
             "description": "Pass as cursor for the next page; null at the end",
             "type": ["string", "null"]
+          },
+          "total": {
+            "type": "number",
+            "description": "Accounts in the list (with the email filter, 0 or 1)"
+          },
+          "page": {
+            "type": "number",
+            "description": "This page, from 1"
+          },
+          "pages": {
+            "type": "number",
+            "description": "Pages at this limit; at least 1"
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "True when there is another page"
+          },
+          "next": {
+            "description": "The URL of the next page (page and limit), with the same filters; null at the end",
+            "type": ["string", "null"]
           }
         },
-        "required": ["data", "next_cursor"]
+        "required": ["data", "next_cursor", "total", "page", "pages", "has_more", "next"]
       }
     }
   }

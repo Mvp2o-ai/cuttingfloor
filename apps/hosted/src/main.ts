@@ -4,6 +4,7 @@ import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { configFromEnv, Runtime } from '@cuttingfloor/server';
 import { AccessCheck } from './access.ts';
 import { ADMIN_KEYS, AdminApi } from './admin-api.ts';
+import { AppsSeen } from './apps-seen.ts';
 import { Mailer, ResendProvider } from './email.ts';
 import { recordSignInStep } from './funnel.ts';
 import { createHttpServer, parseApiKeys } from './http.ts';
@@ -132,6 +133,8 @@ const unset = Object.entries(sequenceEnv)
   .filter(([, value]) => !value)
   .map(([name]) => name);
 const sequenceOn = !unset.length && Boolean(publicUrl);
+/** The apps each account's requests came from, for the admin API. */
+const apps = new AppsSeen(runtime.ws);
 const lifecycle =
   access && ledger && workosKey && stripeKey
     ? new Lifecycle({
@@ -230,6 +233,7 @@ const adminApi =
         runtime,
         lifecycle,
         access,
+        apps,
         keys: adminKeys,
         rights,
         publicUrl,
@@ -260,7 +264,10 @@ const server = createHttpServer({
   ...(lifecycle
     ? {
         onCall: (owner: string) => lifecycle.called(owner),
-        onApp: (owner: string, app: string) => lifecycle.usedFrom(owner, app),
+        onApp: (owner: string, app: string) => {
+          lifecycle.usedFrom(owner, app);
+          apps.seen(owner, app);
+        },
         account: (owner: string) => lifecycle.account(owner),
         route: async (req, res, url) =>
           (await adminApi?.route(req, res, url)) ||

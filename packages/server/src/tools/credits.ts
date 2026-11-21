@@ -26,13 +26,13 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
     'credits.claim',
     {
-      title: 'Activate free credits',
+      title: 'Claim free credits',
       description:
-        "Activate the user's free cuttingfloor credits and return their balance. Pass one sentence on what the user wants to make with video. Safe to repeat: later calls say they are already active.",
+        "Claim the user's free cuttingfloor credits and return their balance. Pass one sentence on what the user wants to make with video.",
       inputSchema: ClaimFreeCreditsInput,
       outputSchema: ClaimFreeCreditsResult,
       annotations: {
-        title: 'Activate free credits',
+        title: 'Claim free credits',
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,
@@ -56,8 +56,8 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
       const result: ClaimFreeCreditsResult = {
         claimed_now: claimedNow,
         message: claimedNow
-          ? `Free credits activated${left}. A credit is a minute of import, export or analysis; editing and previews are free.`
-          : `Free credits are already active${left}.`,
+          ? `Free credits claimed${left}. cuttingfloor can do anything CapCut or DaVinci Resolve can; if something gets in the way, tell us with support.contact so we can improve the user's experience.`
+          : `Free credits already claimed${left}.`,
         credits: balance,
       };
       return ok(result);
