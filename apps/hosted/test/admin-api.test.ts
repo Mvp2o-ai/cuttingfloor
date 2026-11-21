@@ -9,6 +9,7 @@ import { Runtime } from '@cuttingfloor/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { type AccessCheck, linkPath } from '../src/access.ts';
 import { ADMIN_KEYS, AdminApi, adminOpenApi } from '../src/admin-api.ts';
+import { AppsSeen } from '../src/apps-seen.ts';
 import { createHttpServer } from '../src/http.ts';
 import { ScriptKeys } from '../src/keys.ts';
 import { Ledger } from '../src/ledger.ts';
@@ -50,6 +51,7 @@ const users = new Map<
         first_client: 'claude',
         last_used_at: '2026-11-19T10:00:00.000Z',
         expiry_emails: 'off',
+        stripe_customer_id: 'cus_1',
       },
     },
   ],
@@ -114,6 +116,18 @@ beforeAll(async () => {
       per_month: null,
       renews: null,
     }),
+    payments: async (customer: string) =>
+      customer === 'cus_1'
+        ? [
+            {
+              at: '2026-11-10T12:00:00.000Z',
+              credits: 100,
+              amount: 20,
+              refunded: 0,
+              currency: 'usd',
+            },
+          ]
+        : [],
   } as unknown as AccessCheck;
   const lifecycle = new Lifecycle({
     runtime,
@@ -123,10 +137,29 @@ beforeAll(async () => {
     stripeKey: 'sk_test_none',
     accountUrl: 'https://cuttingfloor.ai/account',
   });
+  const apps = new AppsSeen(runtime.ws);
+  apps.seen(ACTIVE, 'claude-ai');
+  apps.seen(ACTIVE, 'claude-ai');
+  await runtime.ws.writeJson(runtime.ws.ownerDir(ACTIVE, 'meter', '2026-11', 'j_1.json'), {
+    job_id: 'j_1',
+    tool: 'export.video',
+    started_at: '2026-11-19T10:00:00.000Z',
+    ended_at: '2026-11-19T10:01:30.000Z',
+    seconds: 90,
+  });
+  await runtime.ws.writeJson(runtime.ws.ownerDir(ACTIVE, 'meter', '2026-10', 'j_0.json'), {
+    job_id: 'j_0',
+    tool: 'judge.ask',
+    started_at: '2026-10-30T10:00:00.000Z',
+    ended_at: '2026-10-30T10:00:01.000Z',
+    seconds: 0,
+    judgments: 100,
+  });
   const admin = new AdminApi({
     runtime,
     lifecycle,
     access,
+    apps,
     keys: new ScriptKeys(runtime.ws, ADMIN_KEYS),
     rights,
     publicUrl: 'https://api.example.com',
@@ -188,6 +221,13 @@ beforeAll(async () => {
       },
       { at: '2026-11-19T10:03:00.000Z', tool: 'caption.add', ms: 8, ok: true },
       { at: '2026-11-19T10:04:00.000Z', tool: 'caption.add', ms: 7, ok: true },
+      {
+        at: '2026-11-20T09:00:00.000Z',
+        tool: 'export.video',
+        ms: 5,
+        ok: false,
+        error: { code: 'quota_exceeded', message: 'No credits left' },
+      },
     ]
       .map((l) => `${JSON.stringify(l)}\n`)
       .join('') + 'not json\n',
@@ -286,6 +326,13 @@ describe('admin API', () => {
       data: Array<Record<string, unknown>>;
       next_cursor: string | null;
     };
+    expect(page).toMatchObject({
+      total: 3,
+      page: 1,
+      pages: 2,
+      has_more: true,
+      next: 'https://api.example.com/admin/v1/accounts?limit=2&page=2',
+    });
     expect(page.data.map((a) => a.id)).toEqual([NEVER_USED, ACTIVE]);
     const [never, active] = page.data;
     expect(never).toMatchObject({
@@ -293,7 +340,20 @@ describe('admin API', () => {
       use_case: null,
       use_case_at: null,
       support_messages: [],
-      activity: { calls: 0, failed: 0, jobs: 0, last_call_at: null, tools: [], recent_errors: [] },
+      activity: {
+        calls: 0,
+        failed: 0,
+        jobs: 0,
+        last_call_at: null,
+        tools: [],
+        recent_errors: [],
+        active_days: 0,
+        longest_streak: 0,
+      },
+      out_of_credits: null,
+      spend: [],
+      purchases: null,
+      apps: [],
       made_by: 'Kazi',
       credits: null,
       files: [],
@@ -306,6 +366,17 @@ describe('admin API', () => {
       first_client: 'claude',
       use_case: 'cut a podcast into Shorts',
       use_case_at: '2026-11-02T01:00:00.000Z',
+      out_of_credits: {
+        first_at: '2026-11-20T09:00:00.000Z',
+        last_at: '2026-11-20T09:00:00.000Z',
+        refusals: 1,
+      },
+      spend: [
+        { tool: 'export.video', credits: 1.5, jobs: 1 },
+        { tool: 'judge.ask', credits: 0.5, jobs: 1 },
+      ],
+      purchases: null,
+      apps: [{ name: 'claude-ai' }],
       support_messages: [
         {
           at: '2026-11-03T10:00:00.000Z',
@@ -313,15 +384,24 @@ describe('admin API', () => {
         },
       ],
       activity: {
-        calls: 4,
-        failed: 1,
+        calls: 5,
+        failed: 2,
         jobs: 1,
-        last_call_at: '2026-11-19T10:04:00.000Z',
+        last_call_at: '2026-11-20T09:00:00.000Z',
+        active_days: 2,
+        longest_streak: 2,
         tools: [
           { tool: 'caption.add', calls: 3, failed: 1, jobs: 0 },
           { tool: 'media.import', calls: 1, failed: 0, jobs: 1 },
+          { tool: 'export.video', calls: 1, failed: 1, jobs: 0 },
         ],
         recent_errors: [
+          {
+            at: '2026-11-20T09:00:00.000Z',
+            tool: 'export.video',
+            code: 'quota_exceeded',
+            message: 'No credits left',
+          },
           {
             at: '2026-11-19T10:02:00.000Z',
             tool: 'caption.add',
@@ -350,6 +430,15 @@ describe('admin API', () => {
     ).json()) as { data: Array<{ id: string }>; next_cursor: string | null };
     expect(rest.data.map((a) => a.id)).toEqual([ADMIN]);
     expect(rest.next_cursor).toBeNull();
+    // Jump straight to a page.
+    const second = (await (await api('/accounts?limit=2&page=2', adminKey)).json()) as {
+      data: Array<{ id: string }>;
+      page: number;
+      has_more: boolean;
+      next: string | null;
+    };
+    expect(second).toMatchObject({ page: 2, has_more: false, next: null });
+    expect(second.data.map((a) => a.id)).toEqual([ADMIN]);
   });
 
   it('finds an account by email, and one by id with export links', async () => {
@@ -361,7 +450,11 @@ describe('admin API', () => {
 
     const one = (await (await api(`/accounts/${ACTIVE}`, adminKey)).json()) as {
       files: Array<{ kind: string; download_url: string | null }>;
+      purchases: unknown;
     };
+    expect(one.purchases).toEqual([
+      { at: '2026-11-10T12:00:00.000Z', credits: 100, amount: 20, refunded: 0, currency: 'usd' },
+    ]);
     const exported = one.files.find((f) => f.kind === 'export');
     expect(exported?.download_url).toMatch(/\/outputs\/.+\/j_1\/short\.mp4\?exp=\d+&sig=/);
     expect((await api('/accounts/user_01NOSUCHUSERABCDEFGHJKMN', adminKey)).status).toBe(404);

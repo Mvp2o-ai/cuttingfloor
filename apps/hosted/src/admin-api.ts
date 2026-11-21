@@ -7,8 +7,16 @@ import {
   type AdminMe,
   adminComponentSchemas,
 } from '@cuttingfloor/schema';
-import { type CallEntry, type Runtime, readCalls, readSupportMessages } from '@cuttingfloor/server';
+import {
+  billedSeconds,
+  type CallEntry,
+  meterEntries,
+  type Runtime,
+  readCalls,
+  readSupportMessages,
+} from '@cuttingfloor/server';
 import { type AccessCheck, linkPath } from './access.ts';
+import type { AppsSeen } from './apps-seen.ts';
 import { exportOf } from './expiry-notices.ts';
 import type { KeyKind, ScriptKeys } from './keys.ts';
 import type { Lifecycle, WorkosUser } from './lifecycle.ts';
@@ -27,12 +35,16 @@ import { recipientState } from './sequence.ts';
 //   {user, label} and `POST /account/admin-keys/revoke` {user, key_id}, with the site's own key.
 
 /** The API's version: within v1 it only grows, so every change bumps minor or patch. */
-export const ADMIN_API_VERSION = '1.2.0';
+export const ADMIN_API_VERSION = '1.3.0';
 const BASE = '/admin/v1';
 /** Admin keys: their own prefix and folder, so a script key never opens this API. */
 export const ADMIN_KEYS: KeyKind = { prefix: 'cfa_', dir: 'admin-keys', label: 'Admin key' };
 /** Accounts read at once while building a page: each reads WorkOS, the ledger and the disk. */
 const PARALLEL = 10;
+/** The account list, for totals and pages, is read again after a minute. */
+const USERS_FRESH_MS = 60_000;
+/** WorkOS pages of 100 read for the list: 50,000 accounts. */
+const USERS_PAGES = 500;
 
 type Account = AdminAccount;
 type File = AdminFile;
@@ -40,7 +52,9 @@ type File = AdminFile;
 export interface AdminApiOptions {
   runtime: Runtime;
   lifecycle: Pick<Lifecycle, 'usersPage' | 'user'>;
-  access: Pick<AccessCheck, 'balance'>;
+  access: Pick<AccessCheck, 'balance' | 'payments'>;
+  /** The apps each account used. */
+  apps: Pick<AppsSeen, 'read'>;
   /** Admin keys (cfa_…). */
   keys: ScriptKeys;
   rights: Rights;
@@ -52,6 +66,7 @@ export interface AdminApiOptions {
 
 export class AdminApi {
   readonly #o: AdminApiOptions;
+  #users: { at: number; list: WorkosUser[] } | undefined;
 
   constructor(options: AdminApiOptions) {
     this.#o = options;
@@ -102,6 +117,21 @@ export class AdminApi {
     }
   }
 
+  /** Every account, newest first, read from WorkOS at most once a minute. */
+  async #allUsers(): Promise<WorkosUser[]> {
+    if (this.#users && Date.now() - this.#users.at < USERS_FRESH_MS) return this.#users.list;
+    const list: WorkosUser[] = [];
+    let after: string | undefined;
+    for (let i = 0; i < USERS_PAGES; i++) {
+      const page = await this.#o.lifecycle.usersPage({ limit: 100, ...(after ? { after } : {}) });
+      list.push(...page.data.filter((u) => isUser(u.id)));
+      if (!page.after) break;
+      after = page.after;
+    }
+    this.#users = { at: Date.now(), list };
+    return list;
+  }
+
   async #list(res: ServerResponse, url: URL): Promise<true> {
     const query = AdminAccountListQuery.safeParse(Object.fromEntries(url.searchParams));
     if (!query.success)
@@ -111,19 +141,48 @@ export class AdminApi {
         'bad_request',
         query.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
       );
-    const { cursor, limit, email } = query.data;
-    const page = await this.#o.lifecycle.usersPage({
-      limit,
-      ...(cursor ? { after: cursor } : {}),
-      ...(email ? { email: email.toLowerCase() } : {}),
-    });
+    const { cursor, page: asked, limit, email } = query.data;
+    const all = email
+      ? (await this.#o.lifecycle.usersPage({ limit: 100, email: email.toLowerCase() })).data.filter(
+          (u) => isUser(u.id),
+        )
+      : await this.#allUsers();
+    const total = all.length;
+    const pages = Math.max(1, Math.ceil(total / limit));
+    // A cursor is the id of the last account on the page before.
+    let from = 0;
+    if (asked) from = (asked - 1) * limit;
+    else if (cursor) {
+      const at = all.findIndex((u) => u.id === cursor);
+      if (at < 0)
+        return fail(res, 400, 'bad_request', `cursor ${cursor} is not in the list`, 'Use page');
+      from = at + 1;
+    }
+    const users = all.slice(from, from + limit);
     const data: Account[] = [];
-    const users = page.data.filter((u) => isUser(u.id));
     for (let i = 0; i < users.length; i += PARALLEL) {
       const batch = users.slice(i, i + PARALLEL);
       data.push(...(await Promise.all(batch.map((u) => this.#account(u, { links: false })))));
     }
-    json(res, 200, { data, next_cursor: page.after });
+    const more = from + limit < total;
+    const nextCursor = more ? (users.at(-1)?.id ?? null) : null;
+    const page = Math.floor(from / limit) + 1;
+    const next = more
+      ? `${this.#o.publicUrl}${BASE}/accounts?${new URLSearchParams({
+          limit: String(limit),
+          page: String(page + 1),
+          ...(email ? { email } : {}),
+        })}`
+      : null;
+    json(res, 200, {
+      data,
+      total,
+      page,
+      pages,
+      has_more: more,
+      next_cursor: nextCursor,
+      next,
+    });
     return true;
   }
 
@@ -132,20 +191,26 @@ export class AdminApi {
     const owner = user.id;
     const rt = this.#o.runtime;
     const meta = user.metadata ?? {};
-    const [media, jobs, linked, prefs, claim, calls, messages] = await Promise.all([
-      rt.media.list(owner),
-      rt.jobs.store.list(owner, { status: 'completed', limit: 1000 }),
-      rt.ws.readJson(linkPath(rt.ws, owner)).catch(() => undefined),
-      recipientState(rt.ws, owner, user.email),
-      // credits.claim's record: the use case the assistant gave.
-      rt.ws
-        .readJson<{ use_case?: string; claimed_at?: string }>(
-          rt.ws.ownerDir(owner, 'free-credits.json'),
-        )
-        .catch(() => undefined),
-      readCalls(rt.ws, owner).catch(() => []),
-      readSupportMessages(rt.ws, owner).catch(() => []),
-    ]);
+    const customer = typeof meta.stripe_customer_id === 'string' ? meta.stripe_customer_id : '';
+    const [media, jobs, linked, prefs, claim, calls, messages, spent, apps, purchases] =
+      await Promise.all([
+        rt.media.list(owner),
+        rt.jobs.store.list(owner, { status: 'completed', limit: 1000 }),
+        rt.ws.readJson(linkPath(rt.ws, owner)).catch(() => undefined),
+        recipientState(rt.ws, owner, user.email),
+        // credits.claim's record: the use case the assistant gave.
+        rt.ws
+          .readJson<{ use_case?: string; claimed_at?: string }>(
+            rt.ws.ownerDir(owner, 'free-credits.json'),
+          )
+          .catch(() => undefined),
+        readCalls(rt.ws, owner).catch(() => []),
+        readSupportMessages(rt.ws, owner).catch(() => []),
+        spend(rt.ws, owner).catch(() => []),
+        this.#o.apps.read(owner).catch(() => []),
+        // Stripe only for one account: a page of 50 would be 50 calls.
+        !options.links ? null : customer ? this.#o.access.payments(customer).catch(() => null) : [],
+      ]);
     const now = Date.now();
     const files: File[] = [];
     for (const m of media) {
@@ -190,6 +255,10 @@ export class AdminApi {
       credits: linked ? await this.#credits(owner) : null,
       support_messages: messages,
       activity: activity(calls),
+      out_of_credits: outOfCredits(calls),
+      spend: spent,
+      purchases,
+      apps,
       files,
       next_expiry_at: files[0]?.expires_at ?? null,
       email_prefs: {
@@ -326,7 +395,7 @@ export function adminOpenApi(publicUrl: string): Record<string, unknown> {
           tags: ['accounts'],
           summary: 'List accounts',
           description:
-            'List cuttingfloor accounts, newest first, with what each did and what it holds: sign-up and first-use times (first_tool_at null = never ran a tool), last use, credits, files kept and when they go (next_expiry_at). Filter by exact email. Page with cursor: pass next_cursor from the last page until it is null. Export download links are null here; get_account signs them.',
+            'List cuttingfloor accounts, newest first, with what each did and what it holds: sign-up and first-use times (first_tool_at null = never ran a tool), last use, credits, files kept and when they go (next_expiry_at). Filter by exact email. Each page says total and pages; jump with page, or follow next (or cursor with next_cursor) until it is null. Lists up to a minute old. Export download links and purchases are null here; get_account gives them.',
           parameters: [
             {
               name: 'limit',
@@ -341,6 +410,13 @@ export function adminOpenApi(publicUrl: string): Record<string, unknown> {
               required: false,
               description: "The last page's next_cursor; leave out for the first page",
               schema: { type: 'string', maxLength: 200 },
+            },
+            {
+              name: 'page',
+              in: 'query',
+              required: false,
+              description: 'The page to show, from 1 to pages; instead of cursor',
+              schema: { type: 'integer', minimum: 1 },
             },
             {
               name: 'email',
@@ -457,7 +533,17 @@ export function activity(calls: CallEntry[]): Account['activity'] {
   }
   const rows = [...tools.values()].sort((a, b) => b.calls - a.calls || b.jobs - a.jobs);
   const sum = (k: 'calls' | 'failed' | 'jobs') => rows.reduce((n, r) => n + r[k], 0);
+  const days = [...new Set(calls.filter((c) => !c.status).map((c) => c.at.slice(0, 10)))].sort();
+  let streak = 0;
+  let run = 0;
+  for (let i = 0; i < days.length; i++) {
+    const gap = i ? (Date.parse(days[i] ?? '') - Date.parse(days[i - 1] ?? '')) / 86_400_000 : 0;
+    run = gap === 1 ? run + 1 : 1;
+    streak = Math.max(streak, run);
+  }
   return {
+    active_days: days.length,
+    longest_streak: streak,
     calls: sum('calls'),
     failed: sum('failed'),
     jobs: sum('jobs'),
@@ -465,4 +551,26 @@ export function activity(calls: CallEntry[]): Account['activity'] {
     tools: rows,
     recent_errors: errors.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 20),
   };
+}
+
+/** Jobs refused for want of credits in the call log; null when none. */
+export function outOfCredits(calls: CallEntry[]): Account['out_of_credits'] {
+  const refused = calls.filter((c) => c.error?.code === 'quota_exceeded');
+  const first = refused[0];
+  const last = refused.at(-1);
+  return first && last ? { first_at: first.at, last_at: last.at, refusals: refused.length } : null;
+}
+
+/** Credits spent per tool since the account began, from the server's meter. */
+async function spend(ws: Runtime['ws'], owner: string): Promise<Account['spend']> {
+  const tools = new Map<string, { tool: string; credits: number; jobs: number }>();
+  for await (const entry of meterEntries(ws, owner, new Date(0))) {
+    const row = tools.get(entry.tool) ?? { tool: entry.tool, credits: 0, jobs: 0 };
+    tools.set(entry.tool, row);
+    row.credits += billedSeconds(entry) / 60;
+    row.jobs += 1;
+  }
+  return [...tools.values()]
+    .map((r) => ({ ...r, credits: Math.round(r.credits * 1000) / 1000 }))
+    .sort((a, b) => b.credits - a.credits);
 }

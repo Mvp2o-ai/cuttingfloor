@@ -354,6 +354,32 @@ export class AccessCheck {
     return { link, account };
   }
 
+  /** The customer's cuttingfloor payments that went through, newest first, with any refund. */
+  async payments(customer: string): Promise<Payment[]> {
+    const out: Payment[] = [];
+    let after: string | undefined;
+    for (let page = 0; page < 20; page++) {
+      const list = (await this.#stripe(
+        `/v1/payment_intents?customer=${encodeURIComponent(customer)}&limit=100&expand[]=data.latest_charge${after ? `&starting_after=${after}` : ''}`,
+      )) as { data?: StripePaymentIntent[]; has_more?: boolean };
+      const data = list.data ?? [];
+      for (const pi of data) {
+        if (pi.status !== 'succeeded' || pi.metadata?.app !== 'cuttingfloor') continue;
+        const charge = typeof pi.latest_charge === 'object' ? pi.latest_charge : undefined;
+        out.push({
+          at: new Date((pi.created ?? 0) * 1000).toISOString(),
+          credits: Number(pi.metadata?.credits) || 0,
+          amount: (pi.amount_received ?? 0) / 100,
+          refunded: (charge?.amount_refunded ?? 0) / 100,
+          currency: pi.currency ?? 'usd',
+        });
+      }
+      after = data.at(-1)?.id;
+      if (!list.has_more || !after) break;
+    }
+    return out;
+  }
+
   /** The customer's paid packs, each less any refunded share. */
   async #purchases(customer: string): Promise<{ payment_intent: string; credits: number }[]> {
     const out: { payment_intent: string; credits: number }[] = [];
@@ -409,9 +435,21 @@ function month(now: number): { start: string; end: string } {
 const round = (n: number) => Math.round(n * 10) / 10;
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
+/** A payment, in the currency's main unit (dollars, not cents). */
+export interface Payment {
+  at: string;
+  credits: number;
+  amount: number;
+  refunded: number;
+  currency: string;
+}
+
 interface StripePaymentIntent {
   id: string;
   status: string;
+  created?: number;
+  amount_received?: number;
+  currency?: string;
   metadata?: Record<string, string>;
   latest_charge?: string | { amount?: number; amount_refunded?: number } | null;
 }
