@@ -75,3 +75,27 @@ export const AccountGetResult = z.object({
     ),
 });
 export type AccountGetResult = z.infer<typeof AccountGetResult>;
+
+// claim_free_credits: records that the account's free credits were claimed (once, with the use
+// case in the user's words) and returns the balance. It grants, spends and gates nothing.
+
+export const ClaimFreeCreditsInput = z.object({
+  use_case: z
+    .string()
+    .max(280)
+    .describe(
+      'One sentence describing what the user wants to do with video. Infer this from what they asked you; do not interview them for it.',
+    ),
+});
+export type ClaimFreeCreditsInput = z.infer<typeof ClaimFreeCreditsInput>;
+
+export const ClaimFreeCreditsResult = z.object({
+  claimed_now: z
+    .boolean()
+    .describe('true on the call that claimed them; false when they were already claimed'),
+  message: z.string(),
+  credits: AccountGetResult.shape.credits
+    .nullable()
+    .describe("The account's credits, as account.get gives them; null when they can't be read"),
+});
+export type ClaimFreeCreditsResult = z.infer<typeof ClaimFreeCreditsResult>;
