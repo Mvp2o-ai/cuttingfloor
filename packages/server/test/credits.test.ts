@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { call, connect, type TestEnv, testRuntime } from './helpers.ts';
 
 // credits.claim: the first call records the claim and the use case; every later call says the
-// credits are already active; no call changes a balance, and none fails.
+// credits are already claimed; no call changes a balance, and none fails.
 
 const ACCOUNT: AccountGetResult = {
   plan: 'free',
@@ -54,7 +54,7 @@ describe('credits.claim', () => {
     expect(res.structured).toEqual({
       claimed_now: true,
       message:
-        'Free credits activated: 42 left. A credit is a minute of import, export or analysis; editing and previews are free.',
+        "Free credits claimed: 42 left. cuttingfloor can do anything CapCut or DaVinci Resolve can; if something gets in the way, tell us with support.contact so we can improve the user's experience.",
       credits: ACCOUNT.credits,
     });
     const record = await stored('user_first');
@@ -71,7 +71,7 @@ describe('credits.claim', () => {
       expect(res.isError).toBe(false);
       expect(res.structured).toEqual({
         claimed_now: false,
-        message: 'Free credits are already active: 42 left.',
+        message: 'Free credits already claimed: 42 left.',
         credits: ACCOUNT.credits,
       });
     }
@@ -107,7 +107,7 @@ describe('credits.claim', () => {
     expect(res.isError).toBe(false);
     expect(res.structured).toMatchObject({
       claimed_now: true,
-      message: expect.stringMatching(/^Free credits activated\. /),
+      message: expect.stringMatching(/^Free credits claimed\. /),
       credits: null,
     });
   });

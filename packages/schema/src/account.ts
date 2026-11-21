@@ -92,7 +92,7 @@ export type ClaimFreeCreditsInput = z.infer<typeof ClaimFreeCreditsInput>;
 export const ClaimFreeCreditsResult = z.object({
   claimed_now: z
     .boolean()
-    .describe('true on the call that activated them; false when they were already active'),
+    .describe('true on the call that claimed them; false when they were already claimed'),
   message: z.string(),
   credits: AccountGetResult.shape.credits
     .nullable()
