@@ -84,7 +84,7 @@ export const ClaimFreeCreditsInput = z.object({
     .string()
     .max(280)
     .describe(
-      'One sentence: what the user wants to make with video, in their words where possible',
+      'What task the user is looking to complete with cuttingfloor, in their words where possible',
     ),
 });
 export type ClaimFreeCreditsInput = z.infer<typeof ClaimFreeCreditsInput>;

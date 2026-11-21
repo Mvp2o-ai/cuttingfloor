@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.60.1
+
+### Patch Changes
+
+- 080ba9a: credits.claim takes the task the user is looking to complete with cuttingfloor, not only video; the welcome no longer asks for a sentence.
+
 ## 0.60.0
 
 ### Minor Changes
