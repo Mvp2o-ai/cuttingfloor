@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -161,6 +161,37 @@ beforeAll(async () => {
     use_case: 'cut a podcast into Shorts',
     claimed_at: '2026-11-02T01:00:00.000Z',
   });
+  await runtime.ws.writeJson(runtime.ws.ownerDir(ACTIVE, 'support-messages', 'a.json'), {
+    at: '2026-11-03T10:00:00.000Z',
+    owner: ACTIVE,
+    message: 'Wanted rounded caption boxes; could not do them.',
+  });
+  const calls = runtime.ws.ownerDir(ACTIVE, 'calls');
+  await mkdir(calls, { recursive: true });
+  await writeFile(
+    join(calls, '2026-11-19.n1.jsonl'),
+    [
+      { at: '2026-11-19T10:00:00.000Z', tool: 'media.import', ms: 40, ok: true, job_id: 'j_1' },
+      {
+        at: '2026-11-19T10:01:00.000Z',
+        tool: 'media.import',
+        job_id: 'j_1',
+        status: 'completed',
+        ok: true,
+      },
+      {
+        at: '2026-11-19T10:02:00.000Z',
+        tool: 'caption.add',
+        ms: 9,
+        ok: false,
+        error: { code: 'invalid_call', message: 'box.radius is not allowed' },
+      },
+      { at: '2026-11-19T10:03:00.000Z', tool: 'caption.add', ms: 8, ok: true },
+      { at: '2026-11-19T10:04:00.000Z', tool: 'caption.add', ms: 7, ok: true },
+    ]
+      .map((l) => `${JSON.stringify(l)}\n`)
+      .join('') + 'not json\n',
+  );
   server = createHttpServer({
     runtime,
     credentials: new LocalCredentialStore({}, false),
@@ -261,6 +292,8 @@ describe('admin API', () => {
       first_tool_at: null,
       use_case: null,
       use_case_at: null,
+      support_messages: [],
+      activity: { calls: 0, failed: 0, jobs: 0, last_call_at: null, tools: [], recent_errors: [] },
       made_by: 'Kazi',
       credits: null,
       files: [],
@@ -273,6 +306,30 @@ describe('admin API', () => {
       first_client: 'claude',
       use_case: 'cut a podcast into Shorts',
       use_case_at: '2026-11-02T01:00:00.000Z',
+      support_messages: [
+        {
+          at: '2026-11-03T10:00:00.000Z',
+          message: 'Wanted rounded caption boxes; could not do them.',
+        },
+      ],
+      activity: {
+        calls: 4,
+        failed: 1,
+        jobs: 1,
+        last_call_at: '2026-11-19T10:04:00.000Z',
+        tools: [
+          { tool: 'caption.add', calls: 3, failed: 1, jobs: 0 },
+          { tool: 'media.import', calls: 1, failed: 0, jobs: 1 },
+        ],
+        recent_errors: [
+          {
+            at: '2026-11-19T10:02:00.000Z',
+            tool: 'caption.add',
+            code: 'invalid_call',
+            message: 'box.radius is not allowed',
+          },
+        ],
+      },
       last_used_at: '2026-11-19T10:00:00.000Z',
       made_by: null,
       credits: { plan: 'credits', left: 12.5, bought: 5 },

@@ -7,7 +7,7 @@ import {
   type AdminMe,
   adminComponentSchemas,
 } from '@cuttingfloor/schema';
-import type { Runtime } from '@cuttingfloor/server';
+import { type CallEntry, type Runtime, readCalls, readSupportMessages } from '@cuttingfloor/server';
 import { type AccessCheck, linkPath } from './access.ts';
 import { exportOf } from './expiry-notices.ts';
 import type { KeyKind, ScriptKeys } from './keys.ts';
@@ -27,7 +27,7 @@ import { recipientState } from './sequence.ts';
 //   {user, label} and `POST /account/admin-keys/revoke` {user, key_id}, with the site's own key.
 
 /** The API's version: within v1 it only grows, so every change bumps minor or patch. */
-export const ADMIN_API_VERSION = '1.1.0';
+export const ADMIN_API_VERSION = '1.2.0';
 const BASE = '/admin/v1';
 /** Admin keys: their own prefix and folder, so a script key never opens this API. */
 export const ADMIN_KEYS: KeyKind = { prefix: 'cfa_', dir: 'admin-keys', label: 'Admin key' };
@@ -132,7 +132,7 @@ export class AdminApi {
     const owner = user.id;
     const rt = this.#o.runtime;
     const meta = user.metadata ?? {};
-    const [media, jobs, linked, prefs, claim] = await Promise.all([
+    const [media, jobs, linked, prefs, claim, calls, messages] = await Promise.all([
       rt.media.list(owner),
       rt.jobs.store.list(owner, { status: 'completed', limit: 1000 }),
       rt.ws.readJson(linkPath(rt.ws, owner)).catch(() => undefined),
@@ -143,6 +143,8 @@ export class AdminApi {
           rt.ws.ownerDir(owner, 'free-credits.json'),
         )
         .catch(() => undefined),
+      readCalls(rt.ws, owner).catch(() => []),
+      readSupportMessages(rt.ws, owner).catch(() => []),
     ]);
     const now = Date.now();
     const files: File[] = [];
@@ -186,6 +188,8 @@ export class AdminApi {
       last_used_at: meta.last_used_at ?? null,
       // Only an account already on the ledger: reading one that isn't would join it to the ledger.
       credits: linked ? await this.#credits(owner) : null,
+      support_messages: messages,
+      activity: activity(calls),
       files,
       next_expiry_at: files[0]?.expires_at ?? null,
       email_prefs: {
@@ -430,4 +434,35 @@ async function readBody(req: IncomingMessage, limit: number): Promise<string> {
     chunks.push(chunk as Buffer);
   }
   return Buffer.concat(chunks).toString('utf8');
+}
+
+/** The call log as counts per tool and the latest errors. */
+export function activity(calls: CallEntry[]): Account['activity'] {
+  const tools = new Map<string, { tool: string; calls: number; failed: number; jobs: number }>();
+  let last: string | null = null;
+  const errors: Account['activity']['recent_errors'] = [];
+  for (const c of calls) {
+    const row = tools.get(c.tool) ?? { tool: c.tool, calls: 0, failed: 0, jobs: 0 };
+    tools.set(c.tool, row);
+    // A job's end has a status; a tool call has none.
+    if (c.status) row.jobs += 1;
+    else {
+      row.calls += 1;
+      if (!last || c.at > last) last = c.at;
+    }
+    if (!c.ok) {
+      row.failed += 1;
+      if (c.error) errors.push({ at: c.at, tool: c.tool, ...c.error });
+    }
+  }
+  const rows = [...tools.values()].sort((a, b) => b.calls - a.calls || b.jobs - a.jobs);
+  const sum = (k: 'calls' | 'failed' | 'jobs') => rows.reduce((n, r) => n + r[k], 0);
+  return {
+    calls: sum('calls'),
+    failed: sum('failed'),
+    jobs: sum('jobs'),
+    last_call_at: last,
+    tools: rows,
+    recent_errors: errors.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 20),
+  };
 }

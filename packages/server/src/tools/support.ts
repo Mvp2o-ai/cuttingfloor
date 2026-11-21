@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { join } from 'node:path';
 import { ContactSupportInput, ContactSupportResult } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { guard, ok } from '../result.ts';
@@ -10,6 +11,28 @@ import type { ServerDeps } from '../server.ts';
 // can't be kept (logged instead). It reads no balance and gates nothing.
 
 export const SUPPORT_ACK = 'Thanks for the message.';
+
+export interface SupportMessage {
+  at: string;
+  message: string;
+}
+
+/** The owner's support messages, newest first. */
+export async function readSupportMessages(
+  ws: ServerDeps['runtime']['ws'],
+  owner: string,
+): Promise<SupportMessage[]> {
+  const dir = ws.ownerDir(owner, 'support-messages');
+  const found = await Promise.all(
+    (await ws.list(dir))
+      .filter((n) => n.endsWith('.json'))
+      .map((n) => ws.readJson<SupportMessage>(join(dir, n)).catch(() => undefined)),
+  );
+  return found
+    .filter((m): m is SupportMessage => typeof m?.message === 'string')
+    .map(({ at, message }) => ({ at, message }))
+    .sort((a, b) => b.at.localeCompare(a.at));
+}
 
 export function registerSupportTools(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
