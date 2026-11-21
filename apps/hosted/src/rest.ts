@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { waitForFloor } from '@cuttingfloor/core';
 import { ErrorCode, type ToolError } from '@cuttingfloor/schema';
 import { type Runtime, SERVER_VERSION } from '@cuttingfloor/server';
 import { Client } from '@modelcontextprotocol/client';
@@ -21,6 +22,9 @@ type ToolInfo = {
 
 /** How long one call may run; long work answers at once with a job_id (job.get waits on it). */
 const CALL_TIMEOUT_MS = 15 * 60_000;
+
+/** The longest POST /v1/floor.changes holds, inside the timeouts of the clients that forward it. */
+const FLOOR_WAIT_MAX_SECONDS = 100;
 
 /** What each domain error is as an HTTP status. */
 const STATUS: Record<ErrorCode, number> = {
@@ -112,6 +116,8 @@ export class RestApi {
       res.end(req.method === 'HEAD' ? undefined : body);
       return;
     }
+    if (url.pathname === '/v1/floor.changes')
+      return this.#floorChanges(req, res, url, authenticate);
     const name = decodeURIComponent(url.pathname.slice('/v1/'.length));
     const tool = (await this.#listTools()).find((t) => t.name === name);
     if (!tool) {
@@ -172,6 +178,61 @@ export class RestApi {
     const status = STATUS[error.code] ?? 500;
     const retry = Number(error.detail?.retry_after_seconds);
     send(res, status, error, retry > 0 ? { 'retry-after': String(retry) } : {});
+  }
+
+  /**
+   * POST /v1/floor.changes {since, wait_seconds}: answers once the account's floor (media,
+   * uploads, jobs) has changed since the cursor given, or when the wait ends, so an app lists
+   * again only after a change. Not a tool: an app's signal, not an editing step. A dotted name
+   * under /v1 like the tools', so a client that forwards tool calls carries it unchanged.
+   */
+  async #floorChanges(
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    authenticate: (request: Request) => Promise<Caller | undefined>,
+  ): Promise<void> {
+    if (req.method !== 'POST') return refuse(req, res, 'POST');
+    const headers = new Headers();
+    for (const [k, v] of Object.entries(req.headers))
+      if (typeof v === 'string') headers.set(k, v);
+      else if (Array.isArray(v)) headers.set(k, v.join(', '));
+    const caller = await authenticate(
+      new Request(new URL(url.pathname, this.#runtime.config.publicUrl), {
+        method: 'POST',
+        headers,
+      }),
+    );
+    if (!caller) {
+      req.resume();
+      return;
+    }
+    const refused = () =>
+      send(res, 400, {
+        code: 'bad_request',
+        message: `The body is {"since"?: the last cursor, "wait_seconds"?: 0 to ${FLOOR_WAIT_MAX_SECONDS}}`,
+      });
+    let args: { since?: unknown; wait_seconds?: unknown } | null;
+    try {
+      const text = await readBody(req, 4096);
+      args = text.trim() ? JSON.parse(text) : {};
+    } catch {
+      return refused();
+    }
+    if (!args || typeof args !== 'object') return refused();
+    const { since, wait_seconds: wait = 0 } = args;
+    if (
+      (since !== undefined && typeof since !== 'string') ||
+      typeof wait !== 'number' ||
+      !(wait >= 0 && wait <= FLOOR_WAIT_MAX_SECONDS)
+    )
+      return refused();
+    const gone = new AbortController();
+    res.on('close', () => gone.abort());
+    const answer = await waitForFloor(this.#runtime.ws, caller.owner, since, wait * 1000, {
+      signal: gone.signal,
+    });
+    if (!res.writableEnded && !res.destroyed) send(res, 200, answer);
   }
 
   /** A data: URI import is the largest body a call takes. */
@@ -310,6 +371,55 @@ export function openApi(tools: ToolInfo[], publicUrl: string): Record<string, un
       },
     };
   }
+  paths['/v1/floor.changes'] = {
+    post: {
+      operationId: 'floor_changes',
+      summary: 'Wait for a change',
+      description:
+        "Not a tool: for apps that show an account's files. Answers once the account's media, uploads or jobs have changed since `since` (a media added, changing status or removed; an upload started or sent; a job started or ended; not progress), or when `wait_seconds` ends. Without `since` it answers at once with the cursor. List again on changed: true, then call again with the new cursor.",
+      tags: ['floor'],
+      requestBody: {
+        required: false,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                since: { type: 'string', description: 'The cursor the last answer gave' },
+                wait_seconds: {
+                  type: 'number',
+                  minimum: 0,
+                  maximum: FLOOR_WAIT_MAX_SECONDS,
+                  default: 0,
+                  description: 'How long to hold for a change',
+                },
+              },
+              additionalProperties: false,
+            },
+          },
+        },
+      },
+      responses: {
+        '200': {
+          description: 'Where the account stands',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  cursor: { type: 'string', description: 'Pass as since on the next call' },
+                  changed: { type: 'boolean', description: 'Whether it moved past since' },
+                },
+                required: ['cursor', 'changed'],
+                additionalProperties: false,
+              },
+            },
+          },
+        },
+        '4XX': { $ref: '#/components/responses/Error' },
+      },
+    },
+  };
   return {
     openapi: '3.1.0',
     info: {
@@ -322,7 +432,9 @@ Long work (imports, analysis, renders, exports) answers at once with a job_id: P
     },
     servers: [{ url: publicUrl }],
     security: [{ apiKey: [] }],
-    tags: [...new Set(tools.map((t) => t.name.split('.')[0]))].map((name) => ({ name })),
+    tags: [...new Set([...tools.map((t) => t.name.split('.')[0]), 'floor'])].map((name) => ({
+      name,
+    })),
     paths,
     components: {
       securitySchemes: {

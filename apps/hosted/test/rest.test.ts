@@ -87,7 +87,10 @@ describe('REST', () => {
     await mcp.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`)));
     const { tools } = await mcp.listTools();
     await mcp.close();
-    expect(Object.keys(spec.paths).sort()).toEqual(tools.map((t) => `/v1/${t.name}`).sort());
+    // Every tool, plus /v1/floor.changes (an app's signal, not a tool).
+    expect(Object.keys(spec.paths).sort()).toEqual(
+      [...tools.map((t) => `/v1/${t.name}`), '/v1/floor.changes'].sort(),
+    );
 
     const add = spec.paths['/v1/clip.add']?.post as {
       operationId: string;

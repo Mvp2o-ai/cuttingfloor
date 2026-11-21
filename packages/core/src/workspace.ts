@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path';
  *   owners/{owner}/jobs/{job_id}.json             7 d after finishing
  *   owners/{owner}/outputs/{job_id}/…             7 d
  *   owners/{owner}/calls/{day}.{node}.jsonl       30 d (what each call did, no arguments)
+ *   owners/{owner}/floor.json                     7 d (the cursor /v1/floor.changes waits on)
  *   cache/…                                       derived, disposable
  *
  * Hosted mode swaps the filesystem for object storage behind the same keys.

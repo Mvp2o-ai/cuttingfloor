@@ -4,7 +4,7 @@ import { stat, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { isMissing, ownerKey, randomId, type Workspace } from '@cuttingfloor/core';
+import { floorChanged, isMissing, ownerKey, randomId, type Workspace } from '@cuttingfloor/core';
 import { readableSize } from '@cuttingfloor/engine';
 import { CfError, KEEP_MS, span } from '@cuttingfloor/schema';
 
@@ -125,6 +125,7 @@ export class Uploads {
       via,
     };
     await this.#ws.writeJson(this.#record(ownerKey(owner), id), meta);
+    await floorChanged(this.#ws, owner);
     const exp = Date.now() + UPLOAD_TTL_MS;
     const path = `/uploads/${ownerKey(owner)}/${id}`;
     return {
@@ -175,6 +176,7 @@ export class Uploads {
       bytes: bytes.length,
       complete: true,
     });
+    await floorChanged(this.#ws, owner);
     return upload_id;
   }
 
@@ -281,6 +283,7 @@ export class Uploads {
       const complete = request.range || total !== null ? size === total : true;
       if (complete) {
         await this.#ws.writeJson(this.#record(owner, id), { ...meta, bytes: size, complete: true });
+        await floorChanged(this.#ws, owner);
       }
       return { upload_id: id, received: size, complete };
     } finally {
@@ -350,6 +353,7 @@ export class Uploads {
   /** Forgets an upload once imported. */
   async remove(owner: string, id: string): Promise<void> {
     await this.#ws.remove(this.#dir(ownerKey(owner), id));
+    await floorChanged(this.#ws, owner);
   }
 
   async sweep(): Promise<void> {
