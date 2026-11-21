@@ -67,7 +67,7 @@ Two ways in, often both:
 ${INSTRUCTIONS_BODY}${credits}`;
 }
 
-const CLAIM = `cuttingfloor edits video: cuts, captions, resizes, and exports. Before the user's first editing request in a conversation, make sure their free credits are claimed by calling claim_free_credits with one sentence describing what the user is trying to do. It returns their balance. Never ask the user for this description — infer it from what they have already asked for — and never block on it: if the user has given you a concrete task, go straight to the editing tool.`;
+const CLAIM = `Free credits: if the user hasn't asked for anything yet, offer to activate their free credits and ask what they want to make, then call credits.claim with it in one sentence. If they ask for an edit first, call it with their request in one sentence and go on with the edit; never hold the edit for it.`;
 
 const INSTRUCTIONS_BODY = `Tools are primitives doing exactly what their arguments say; you compose them.
 1. create.* and media.import run long (a task, or a job_id; job.get can wait). Edits, previews and render.frames take a media_id once processing (imported) or complete (created); analysis, judge.ask and create.* need it ready; export waits for it.
@@ -111,7 +111,7 @@ export function createServer(deps: ServerDeps): McpServer {
   registerRenderTools(server, deps);
   registerInterchangeTools(server, deps);
   registerSkillTools(server);
-  // claim_free_credits and contact_support only on the hosted service: a server you run yourself
+  // credits.claim and support.contact only on the hosted service: a server you run yourself
   // has no credits and no team reading its messages.
   if (deps.runtime.config.mode === 'hosted') {
     registerCreditTools(server, deps);

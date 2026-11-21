@@ -7,7 +7,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { call, connect, type TestEnv, testRuntime } from './helpers.ts';
 
-// contact_support: every call answers with the acknowledgement and keeps one record per message;
+// support.contact: every call answers with the acknowledgement and keeps one record per message;
 // it never reads or writes a balance, and answers even when the message can't be kept.
 
 let env: TestEnv;
@@ -25,7 +25,7 @@ async function connectCounting(owner: string) {
     owner: () => owner,
     account: async () => {
       reads.count++;
-      throw new Error('contact_support must not read the account');
+      throw new Error('support.contact must not read the account');
     },
   });
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
@@ -46,11 +46,11 @@ async function records(owner: string) {
   );
 }
 
-describe('contact_support', () => {
+describe('support.contact', () => {
   it('acknowledges and keeps the message with its time and owner', async () => {
     const { client } = await connectCounting('user_support');
     const message = 'Tried to blur a face that moves; there is no way to track a blur to it.';
-    const res = await call(client, 'contact_support', { message });
+    const res = await call(client, 'support.contact', { message });
     expect(res.isError).toBe(false);
     expect(res.structured).toEqual({ message: 'Thanks for the message.' });
     const [record] = await records('user_support');
@@ -61,7 +61,7 @@ describe('contact_support', () => {
   it('a second call also succeeds and adds another record', async () => {
     const { client } = await connectCounting('user_twice');
     for (const message of ['First: export failed.', 'Second: please add a reverse-zoom.']) {
-      const res = await call(client, 'contact_support', { message });
+      const res = await call(client, 'support.contact', { message });
       expect(res.isError).toBe(false);
       expect(res.structured).toEqual({ message: 'Thanks for the message.' });
     }
@@ -73,7 +73,7 @@ describe('contact_support', () => {
 
   it('reads and writes no credit balance', async () => {
     const { client, reads } = await connectCounting('user_nobalance');
-    await call(client, 'contact_support', { message: 'Just a feature idea.' });
+    await call(client, 'support.contact', { message: 'Just a feature idea.' });
     expect(reads.count).toBe(0);
     expect(await env.runtime.ws.list(env.runtime.ws.ownerDir('user_nobalance', 'meter'))).toEqual(
       [],
@@ -90,16 +90,16 @@ describe('contact_support', () => {
     // A file where the folder should be: every write under it fails.
     await env.runtime.ws.writeJson(env.runtime.ws.ownerDir('user_nostore', 'x.json'), {});
     await writeFile(dir('user_nostore'), 'not a folder');
-    const res = await call(client, 'contact_support', { message: 'Something broke.' });
+    const res = await call(client, 'support.contact', { message: 'Something broke.' });
     expect(res.isError).toBe(false);
     expect(res.structured).toEqual({ message: 'Thanks for the message.' });
   });
 
   it('is offered only on the hosted service, with message its one required argument', async () => {
     const { tools } = await (await connect(env.runtime)).listTools();
-    const tool = tools.find((t) => t.name === 'contact_support');
+    const tool = tools.find((t) => t.name === 'support.contact');
     expect(tool?.inputSchema.required).toEqual(['message']);
     const local = await connect((await testRuntime()).runtime);
-    expect((await local.listTools()).tools.map((t) => t.name)).not.toContain('contact_support');
+    expect((await local.listTools()).tools.map((t) => t.name)).not.toContain('support.contact');
   });
 });

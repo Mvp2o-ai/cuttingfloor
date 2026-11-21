@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "cuttingfloor admin API",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -340,6 +340,23 @@
             "description": "The app of the first request, e.g. claude",
             "type": ["string", "null"]
           },
+          "use_case": {
+            "description": "What the user wants to make with video, one sentence their assistant gave when it activated the free credits; null when it hasn't",
+            "type": ["string", "null"]
+          },
+          "use_case_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 UTC"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the assistant activated the free credits"
+          },
           "last_used_at": {
             "anyOf": [
               {
@@ -462,6 +479,8 @@
           "first_edit_at",
           "first_export_at",
           "first_client",
+          "use_case",
+          "use_case_at",
           "last_used_at",
           "credits",
           "files",

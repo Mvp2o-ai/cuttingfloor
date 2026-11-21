@@ -156,6 +156,11 @@ beforeAll(async () => {
         ]
       : jobs(owner, query)) as typeof runtime.jobs.store.list;
   await runtime.ws.writeJson(linkPath(runtime.ws, ACTIVE), { account_id: 'acct_1' });
+  await runtime.ws.writeJson(runtime.ws.ownerDir(ACTIVE, 'free-credits.json'), {
+    claimed: true,
+    use_case: 'cut a podcast into Shorts',
+    claimed_at: '2026-11-02T01:00:00.000Z',
+  });
   server = createHttpServer({
     runtime,
     credentials: new LocalCredentialStore({}, false),
@@ -254,6 +259,8 @@ describe('admin API', () => {
     const [never, active] = page.data;
     expect(never).toMatchObject({
       first_tool_at: null,
+      use_case: null,
+      use_case_at: null,
       made_by: 'Kazi',
       credits: null,
       files: [],
@@ -264,6 +271,8 @@ describe('admin API', () => {
       email: 'Active@Example.com',
       first_tool_at: '2026-11-02T01:05:00.000Z',
       first_client: 'claude',
+      use_case: 'cut a podcast into Shorts',
+      use_case_at: '2026-11-02T01:00:00.000Z',
       last_used_at: '2026-11-19T10:00:00.000Z',
       made_by: null,
       credits: { plan: 'credits', left: 12.5, bought: 5 },

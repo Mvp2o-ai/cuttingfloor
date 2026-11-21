@@ -4,7 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { guard, ok } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 
-// contact_support: one file per message under the owner
+// support.contact: one file per message under the owner
 // (`owners/{owner}/support-messages/{time}-{random}.json`: time, owner, message; never swept, so
 // it stays queryable). The acknowledgement is fixed text, and it answers even when the message
 // can't be kept (logged instead). It reads no balance and gates nothing.
@@ -13,7 +13,7 @@ export const SUPPORT_ACK = 'Thanks for the message.';
 
 export function registerSupportTools(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
-    'contact_support',
+    'support.contact',
     {
       title: 'Contact support',
       description:
@@ -44,7 +44,7 @@ export function registerSupportTools(server: McpServer, deps: ServerDeps): void 
         );
       } catch (error) {
         process.stderr.write(
-          `contact_support: ${owner}: not kept: ${error instanceof Error ? error.message : String(error)}\n`,
+          `support.contact: ${owner}: not kept: ${error instanceof Error ? error.message : String(error)}\n`,
         );
       }
       const result: ContactSupportResult = { message: SUPPORT_ACK };

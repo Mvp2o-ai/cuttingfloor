@@ -6,8 +6,8 @@ import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { call, connect, type TestEnv, testRuntime } from './helpers.ts';
 
-// claim_free_credits: the first call records the claim and echoes the use case; every later call
-// says it was claimed already; no call changes a balance, and none fails.
+// credits.claim: the first call records the claim and the use case; every later call says the
+// credits are already active; no call changes a balance, and none fails.
 
 const ACCOUNT: AccountGetResult = {
   plan: 'free',
@@ -45,15 +45,16 @@ const stored = (owner: string) =>
     env.runtime.ws.ownerDir(owner, 'free-credits.json'),
   );
 
-describe('claim_free_credits', () => {
-  it('first call sets the flag, stores the use case and echoes it verbatim', async () => {
+describe('credits.claim', () => {
+  it('first call sets the flag and stores the use case verbatim', async () => {
     const client = await connectWithAccount('user_first', async () => ACCOUNT);
     const useCase = 'cut my 40-minute podcast into vertical clips with captions';
-    const res = await call(client, 'claim_free_credits', { use_case: useCase });
+    const res = await call(client, 'credits.claim', { use_case: useCase });
     expect(res.isError).toBe(false);
     expect(res.structured).toEqual({
       claimed_now: true,
-      message: `Successfully claimed — the user's free credits are now active and they can start editing. They can now ${useCase}.`,
+      message:
+        'Free credits activated: 42 left. A credit is a minute of import, export or analysis; editing and previews are free.',
       credits: ACCOUNT.credits,
     });
     const record = await stored('user_first');
@@ -63,14 +64,14 @@ describe('claim_free_credits', () => {
 
   it('a repeat call says it was claimed already and leaves the stored use case alone', async () => {
     const client = await connectWithAccount('user_repeat', async () => ACCOUNT);
-    await call(client, 'claim_free_credits', { use_case: 'make a trailer' });
+    await call(client, 'credits.claim', { use_case: 'make a trailer' });
     const before = await stored('user_repeat');
     for (const use_case of ['something else entirely', 'make a trailer']) {
-      const res = await call(client, 'claim_free_credits', { use_case });
+      const res = await call(client, 'credits.claim', { use_case });
       expect(res.isError).toBe(false);
       expect(res.structured).toEqual({
         claimed_now: false,
-        message: 'Free credits have already been claimed.',
+        message: 'Free credits are already active: 42 left.',
         credits: ACCOUNT.credits,
       });
     }
@@ -80,21 +81,18 @@ describe('claim_free_credits', () => {
   it('calls at once all succeed and exactly one claims', async () => {
     const client = await connectWithAccount('user_race', async () => ACCOUNT);
     const results = await Promise.all(
-      Array.from({ length: 8 }, (_, i) =>
-        call(client, 'claim_free_credits', { use_case: `use ${i}` }),
-      ),
+      Array.from({ length: 8 }, (_, i) => call(client, 'credits.claim', { use_case: `use ${i}` })),
     );
     expect(results.every((r) => !r.isError)).toBe(true);
     expect(results.filter((r) => r.structured.claimed_now === true)).toHaveLength(1);
-    const winner = results.find((r) => r.structured.claimed_now)?.structured.message;
-    expect(winner).toContain(`They can now ${(await stored('user_race'))?.use_case}.`);
+    expect((await stored('user_race'))?.use_case).toMatch(/^use \d$/);
   });
 
   it('never alters credit balances', async () => {
     const account = structuredClone(ACCOUNT);
     const client = await connectWithAccount('user_balance', async () => account);
     for (let i = 0; i < 3; i++) {
-      const res = await call(client, 'claim_free_credits', { use_case: 'resize for TikTok' });
+      const res = await call(client, 'credits.claim', { use_case: 'resize for TikTok' });
       expect(res.structured.credits).toEqual(ACCOUNT.credits);
     }
     expect(account).toEqual(ACCOUNT);
@@ -105,20 +103,24 @@ describe('claim_free_credits', () => {
     const client = await connectWithAccount('user_down', async () => {
       throw new Error('WorkOS unavailable');
     });
-    const res = await call(client, 'claim_free_credits', { use_case: 'add captions' });
+    const res = await call(client, 'credits.claim', { use_case: 'add captions' });
     expect(res.isError).toBe(false);
-    expect(res.structured).toMatchObject({ claimed_now: true, credits: null });
+    expect(res.structured).toMatchObject({
+      claimed_now: true,
+      message: expect.stringMatching(/^Free credits activated\. /),
+      credits: null,
+    });
   });
 
   it('is offered and named in the instructions only where there are credits', async () => {
     const hosted = await connect(env.runtime);
     const { tools } = await hosted.listTools();
-    const tool = tools.find((t) => t.name === 'claim_free_credits');
+    const tool = tools.find((t) => t.name === 'credits.claim');
     expect(tool?.inputSchema.required).toEqual(['use_case']);
-    expect(hosted.getInstructions()).toContain('calling claim_free_credits');
+    expect(hosted.getInstructions()).toContain('offer to activate their free credits');
 
     const local = await connect((await testRuntime()).runtime);
-    expect((await local.listTools()).tools.map((t) => t.name)).not.toContain('claim_free_credits');
-    expect(local.getInstructions()).not.toContain('claim_free_credits');
+    expect((await local.listTools()).tools.map((t) => t.name)).not.toContain('credits.claim');
+    expect(local.getInstructions()).not.toContain('credits.claim');
   });
 });

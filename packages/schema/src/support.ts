@@ -1,6 +1,6 @@
 import * as z from 'zod/v4';
 
-// contact_support: a message for the cuttingfloor team, kept on the owner's data. It answers with
+// support.contact: a message for the cuttingfloor team, kept on the owner's data. It answers with
 // an acknowledgement and gates nothing.
 
 export const ContactSupportInput = z.object({
