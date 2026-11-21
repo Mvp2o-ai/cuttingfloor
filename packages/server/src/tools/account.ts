@@ -6,7 +6,7 @@ import type { ServerDeps } from '../server.ts';
 // account.get: the signed-in account's plan and credits. Hosted, the deployment answers it
 // (deps.account); a server you run yourself has no plan or credits.
 
-const LOCAL: AccountGetResult = {
+export const LOCAL: AccountGetResult = {
   plan: 'local',
   plan_name: 'Your own server',
   credits: { left: null, used: 0, free: 0, bought: 0, per_month: null, renews: null },
