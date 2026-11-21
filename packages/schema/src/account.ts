@@ -77,7 +77,8 @@ export const AccountGetResult = z.object({
 export type AccountGetResult = z.infer<typeof AccountGetResult>;
 
 // credits.claim: records that the account's free credits were claimed (once, with the use
-// case in the user's words) and returns the balance. It grants, spends and gates nothing.
+// case in the user's words), adds the onboarding sample to the library and returns the balance.
+// It grants, spends and gates nothing.
 
 export const ClaimFreeCreditsInput = z.object({
   use_case: z
@@ -97,5 +98,13 @@ export const ClaimFreeCreditsResult = z.object({
   credits: AccountGetResult.shape.credits
     .nullable()
     .describe("The account's credits, as account.get gives them; null when they can't be read"),
+  media_id: z
+    .string()
+    .nullable()
+    .describe(
+      "Big Buck Bunny, a 30-second sample (Blender Foundation, CC BY) added to the user's library, free, to try edits on; null when it couldn't be added",
+    ),
+  job_id: z.string().optional().describe("The sample's import, while it runs"),
+  status: z.string().optional().describe("The sample import's status, while it runs"),
 });
 export type ClaimFreeCreditsResult = z.infer<typeof ClaimFreeCreditsResult>;

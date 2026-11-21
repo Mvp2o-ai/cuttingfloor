@@ -14,10 +14,10 @@ export const MCP_URL = `${API_URL}/mcp`;
 export const CHATGPT_HELP =
   'https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt';
 export const CHATGPT_PLANS =
-  'As of 8 November 2026, OpenAI’s help page lists custom MCP servers for ChatGPT Business, Enterprise and Edu, on the web. It doesn’t say whether Free, Plus or Pro can add one: if Add custom MCP server shows under + on your Plugins page, your account can.';
+  'Who can add it: ChatGPT Plus, Pro, Business, Enterprise and Edu, on the web. Not the free plan. No developer mode needed. On a Business, Enterprise or Edu workspace, an admin first allows custom MCP servers for the workspace.';
 
 /** When the steps below were last checked against each vendor's docs. */
-export const CLIENTS_CHECKED = '2026-11-01';
+export const CLIENTS_CHECKED = '2026-11-21';
 
 export type Snippet = {
   /** What it is, in a few words: "Run in a terminal", "~/.cursor/mcp.json". */
@@ -194,7 +194,7 @@ const APPS: Client[] = [
     snippets: [{ label: 'The Server URL', code: MCP_URL }],
     notes: [
       CHATGPT_PLANS,
-      'On Business, only admins and owners can add a custom MCP server. On Enterprise and Edu, admins and owners can, and an admin can let other members.',
+      'On Business, only admins and owners can add a custom MCP server. On Enterprise and Edu, admins and owners can, and an admin can let other members. If Add custom MCP server isn’t under +, ask your workspace admin to allow custom MCP servers.',
       'Add it on chatgpt.com in a browser: OpenAI’s help page says custom MCP servers are web only.',
     ],
     docs: CHATGPT_HELP,

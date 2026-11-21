@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import {
   analyseBeats,
@@ -1451,13 +1451,13 @@ async function startIngest(
   owner: string,
   record: MediaRecord,
   admit: Awaited<ReturnType<typeof admitJob>>,
-  options: { room?: number; idempotencyKey?: string } = {},
+  options: { room?: number; idempotencyKey?: string; meta?: Record<string, string> } = {},
 ): Promise<Job> {
   const { room } = options;
   const job = await rt.jobs.store.create({
     owner,
     tool: 'media.import',
-    meta: { media_id: record.media_id },
+    meta: { media_id: record.media_id, ...options.meta },
     statusMessage: `importing ${record.media_id}`,
     ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
   });
@@ -1487,6 +1487,27 @@ async function startIngest(
     admit,
   );
   return job;
+}
+
+/**
+ * Imports a file the server ships (an onboarding sample) into the owner's library, as an upload
+ * would be, without admission or billing: the job carries `unbilled`, which the meter skips.
+ */
+export async function importBundled(
+  rt: ServerDeps['runtime'],
+  owner: string,
+  file: string,
+  name: string,
+  unbilled: string,
+): Promise<{ record: MediaRecord; job: Job }> {
+  const upload_id = await rt.uploads.put(owner, name, await readFile(file));
+  const upload = await rt.uploads.take(owner, upload_id);
+  const record = await rt.media.create(owner, { upload: upload_id, file_name: name }, name);
+  record.file = await rt.media.adopt(owner, record, upload.file, { move: true });
+  await rt.media.save(owner, record);
+  await rt.uploads.remove(owner, upload_id);
+  const job = await startIngest(rt, owner, record, {}, { meta: { unbilled } });
+  return { record, job };
 }
 
 /** The MIME type a data: URI declares, or '' for none. */

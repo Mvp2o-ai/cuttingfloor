@@ -36,7 +36,7 @@ export const CONNECT_FAQS = [
   },
   {
     q: 'Can ChatGPT edit video?',
-    a: `Yes, with cuttingfloor added as a plugin. Open chatgpt.com/plugins, click +, choose Add custom MCP server, paste ${MCP_URL} and set Authentication to OAuth, so ChatGPT opens the cuttingfloor sign-in page. Then type @cuttingfloor in a chat or a ChatGPT Work task.`,
+    a: `Yes, with cuttingfloor added as a plugin, on ChatGPT Plus, Pro or a work plan (not the free plan; no developer mode needed). Open chatgpt.com/plugins, click +, choose Add custom MCP server, paste ${MCP_URL} and set Authentication to OAuth, so ChatGPT opens the cuttingfloor sign-in page. Then type @cuttingfloor in a chat or a ChatGPT Work task.`,
   },
   {
     q: 'Is there a video editing MCP server for Codex?',
