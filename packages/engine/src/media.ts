@@ -7,6 +7,7 @@ import {
   defineCollection,
   FLOOR,
   floorChanged,
+  isExisting,
   isMissing,
   ownerKey,
   randomId,
@@ -187,16 +188,25 @@ export class MediaLibrary {
       }
       return `${folder}/${name}.json`;
     };
-    /** Whole or not at all: written beside its place, then moved into it. */
-    const write = async (name: string, value: unknown) => {
+    /**
+     * Whole or not at all: written beside its place and stored for good, then moved into it.
+     * `once` moves it in only when the place is free, and says whether it did.
+     */
+    const write = async (name: string, value: unknown, once = false): Promise<boolean> => {
       const to = key(name);
       const temp = `${to}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
       const body = Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
-      await blobs.put(temp, { bytes: body }, { private: true, type: 'application/json' });
+      await blobs.put(
+        temp,
+        { bytes: body },
+        { private: true, durable: true, type: 'application/json' },
+      );
       try {
-        await blobs.move(temp, to);
+        await blobs.move(temp, to, { ifAbsent: once });
+        return true;
       } catch (error) {
         await blobs.delete(temp).catch(() => undefined);
+        if (once && isExisting(error)) return false;
         throw error;
       }
     };
@@ -219,17 +229,12 @@ export class MediaLibrary {
         for await (const chunk of stream) chunks.push(chunk as Buffer);
         return JSON.parse(Buffer.concat(chunks).toString('utf8'));
       },
-      put: write,
-      /** Written only when there is none of this name. */
-      insertOnce: async (name: string, value: unknown): Promise<boolean> => {
-        if (await blobs.head(key(name))) return false;
+      put: async (name: string, value: unknown): Promise<void> => {
         await write(name, value);
-        return true;
       },
+      /** Written only when there is none of this name: of writers at once, one writes. */
+      insertOnce: (name: string, value: unknown): Promise<boolean> => write(name, value, true),
       delete: (name: string) => blobs.delete(key(name)),
-      /** Another media's analysis of the same name, byte for byte. */
-      copyFrom: (other: BlobKey) => blobs.copy(other, `${folder}/${other.split('/').at(-1)}`),
-      key,
     };
   }
 
@@ -812,7 +817,10 @@ export class MediaLibrary {
     const to = this.#analyses(owner, record.media_id);
     for (const name of await from.ids()) {
       try {
-        await to.copyFrom(from.key(name));
+        // Read and written whole: one that does not parse is not brought along, and a reader
+        // of the new media never meets half of one.
+        const value = await from.get(name);
+        if (value !== undefined) await to.put(name, value);
       } catch {
         // One analysis that can't be read is left behind; the rest come along.
       }

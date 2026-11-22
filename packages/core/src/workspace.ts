@@ -5,6 +5,7 @@ import { type FsBlobOptions, FsBlobStore } from './storage/fs-blobs.ts';
 import { FsRecords } from './storage/fs-records.ts';
 import { FsScratch } from './storage/fs-scratch.ts';
 import {
+  isExisting,
   isMissing,
   listDir,
   ownerKey,
@@ -103,4 +104,4 @@ export class Workspace {
   }
 }
 
-export { isMissing, ownerKey, touch };
+export { isExisting, isMissing, ownerKey, touch };

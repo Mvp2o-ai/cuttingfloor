@@ -84,12 +84,14 @@ export interface BlobStore {
 
   /**
    * Stores bytes under `key`, replacing what was there. `private` keeps them from other users
-   * of the machine where the store is one's files (an upload's bytes).
+   * of the machine where the store is one's files (an upload's bytes). `durable` has the bytes
+   * safely stored before this answers, for a small file whose loss a crash must not cause (the
+   * filesystem store syncs it; a store that always answers after storing has nothing to add).
    */
   put(
     key: BlobKey,
     from: BlobSource,
-    options?: { type?: string; private?: boolean },
+    options?: { type?: string; private?: boolean; durable?: boolean },
   ): Promise<BlobHead>;
   /** The blob's bytes. Rejects with ENOENT (`isMissing`) when there is none. */
   get(key: BlobKey): Promise<Readable>;
@@ -113,9 +115,12 @@ export interface BlobStore {
   /**
    * Hands a blob over to a new holder. Returns the key that holds the bytes afterwards: `to`
    * where the store renames, `from` where a blob never moves (an upload's object becomes the
-   * media's source as it is).
+   * media's source as it is). With `ifAbsent` the blob takes `to` only when nothing is there:
+   * of several at once exactly one does, and the others reject with EEXIST (`isExisting`),
+   * their `from` left as it was (the filesystem links; an object store puts with
+   * `If-None-Match: *`).
    */
-  move(from: BlobKey, to: BlobKey): Promise<BlobKey>;
+  move(from: BlobKey, to: BlobKey, options?: { ifAbsent?: boolean }): Promise<BlobKey>;
   /** Marks a blob, or everything under a prefix, as used now (sliding expiry). */
   touch(key: BlobKey): Promise<void>;
   /**

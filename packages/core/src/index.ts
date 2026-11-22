@@ -111,4 +111,4 @@ export {
   TimelineStore,
 } from './timelines.ts';
 export { diff, fromView, toView } from './view.ts';
-export { isMissing, ownerKey, touch, Workspace } from './workspace.ts';
+export { isExisting, isMissing, ownerKey, touch, Workspace } from './workspace.ts';

@@ -111,6 +111,11 @@ export function isMissing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
 }
 
+/** Whether a write that takes a name only when it is free found it taken. */
+export function isExisting(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === 'EEXIST';
+}
+
 export function ownerKey(owner: string): string {
   if (/^[A-Za-z0-9_-]{1,64}$/.test(owner)) return owner;
   return `h_${createHash('sha256').update(owner).digest('hex').slice(0, 32)}`;
