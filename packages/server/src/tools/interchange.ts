@@ -152,9 +152,7 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
               `media reference: the file points at ${kept.length} media where this server keeps them (${kept.slice(0, 20).join(', ')}${kept.length > 20 ? ', …' : ''}): an editor on another machine can't open those paths, and the server removes media ${MEDIA_TTL_MS / 86_400_000} days after last use, after which the clips open offline. To hand the edit on, export again with media: collect, a .zip with the files beside the timeline file`,
             );
           }
-          const outDir = rt.ws.ownerDir(owner, 'outputs', job.id);
-          await mkdir(outDir, { recursive: true });
-          const out = join(outDir, name);
+          const out = await rt.outputs.reserve(owner, job.id, name);
           if (!collect) {
             await writeFile(out, written.text);
           } else {

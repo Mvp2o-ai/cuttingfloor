@@ -1,5 +1,4 @@
-import { open, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { open } from 'node:fs/promises';
 import { PROVIDER_ENV, type ProviderId } from '@cuttingfloor/credentials';
 import {
   engineVersions,
@@ -191,15 +190,14 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
       const id = String(vars.job_id);
       const job = await rt.jobs.store.get(id, owner);
       if (!job) throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Unknown job ${id}`);
-      const dir = rt.ws.ownerDir(owner, 'outputs', id);
-      const [name] = await readdir(dir).catch(() => [] as string[]);
+      const name = await rt.outputs.file(owner, id);
       if (job.status !== 'completed' || !name) {
         throw new ProtocolError(
           ProtocolErrorCode.InvalidParams,
           `Job ${id} has no output (status ${job.status})`,
         );
       }
-      const file = join(dir, name);
+      const file = await rt.outputs.local(owner, id, name);
       const mimeType = outputMime(name);
       // Size and bytes come from one open handle, so the file can't change in between.
       const handle = await open(file, 'r');

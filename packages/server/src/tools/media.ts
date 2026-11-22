@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
+import { basename } from 'node:path';
 import {
   analyseBeats,
   detectFaces,
@@ -131,9 +131,7 @@ async function writeTranscript(
       ? `-${(transcript.from ?? 0).toFixed(1)}-${transcript.until == null ? 'end' : transcript.until.toFixed(1)}s`
       : '';
   const name = `${base}-transcript${stretch}.txt`;
-  const dir = rt.ws.ownerDir(owner, 'outputs', jobId);
-  await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, name), `${transcript.text.trim()}\n`);
+  await rt.outputs.write(owner, jobId, name, `${transcript.text.trim()}\n`, 'transcript');
   const signed = await rt.signOutput(owner, jobId, name);
   const until = Date.now() + KEEP_MS.job;
   return {
@@ -509,16 +507,13 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     if (job.status !== 'completed' || result?.isError) {
       throw new CfError('bad_request', `Export ${jobId} did not finish (${job.status})`);
     }
-    const dir = rt.ws.ownerDir(owner, 'outputs', jobId);
-    const [name] = (await readdir(dir).catch(() => [] as string[])).filter(
-      (n) => !n.startsWith('.'),
-    );
+    const name = await rt.outputs.file(owner, jobId, (n) => !n.startsWith('.'));
     if (!name) {
       throw new CfError('not_found', `Export ${jobId} has no file any more`, {
         hint: 'Outputs expire 7 days after the export; export the timeline again',
       });
     }
-    return join(dir, name);
+    return rt.outputs.local(owner, jobId, name);
   };
 
   /** One frame of a video or an edit as a PNG at full size, for a still media. */

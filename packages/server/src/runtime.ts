@@ -15,6 +15,7 @@ import { KEEP } from '@cuttingfloor/schema';
 import { CALLS, CALLS_TTL_MS, type CallEntry, jobEnd, recordCall } from './calls.ts';
 import { SearchIndexer } from './indexer.ts';
 import { METER, METER_TTL_MS, type MeterEntry, meterJob, meterJudgments } from './meter.ts';
+import { Outputs } from './outputs.ts';
 import { Uploads } from './uploads.ts';
 
 /**
@@ -172,6 +173,8 @@ export class Runtime {
   readonly indexer: SearchIndexer;
   readonly jobs: JobRunner;
   readonly uploads: Uploads;
+  /** Files jobs and previews leave for download. */
+  readonly outputs: Outputs;
   /** Downloaded models, kept across restarts (they are checksummed, not user data). */
   readonly modelsDir: string;
   #secret: Buffer | undefined;
@@ -186,6 +189,7 @@ export class Runtime {
     this.ws = new Workspace(config.dataDir);
     this.modelsDir = config.modelsDir ?? join(config.dataDir, 'models');
     this.timelines = new TimelineStore(this.ws);
+    this.outputs = new Outputs(this.ws);
     this.media = new MediaLibrary(this.ws, {
       roots: config.mediaRoots,
       maxDownloadBytes: config.maxDownloadBytes,
@@ -305,10 +309,13 @@ export class Runtime {
     // Frames kept for download (render.frames urls) last as long as their links.
     const { records, blobs } = this.ws;
     for (const owner of await records.owners()) {
-      await blobs.expire(
-        blobs.keys.outputs(owner),
-        this.config.outputUrlTtlMs,
-        (name) => !name.startsWith('f_'),
+      await this.outputs.forget(
+        owner,
+        await blobs.expire(
+          blobs.keys.outputs(owner),
+          this.config.outputUrlTtlMs,
+          (name) => !name.startsWith('f_'),
+        ),
       );
     }
     await this.uploads.sweep();
@@ -443,6 +450,6 @@ export class Runtime {
       const record = await this.media.find(key, id);
       return record?.file ? this.media.local(record.file) : undefined;
     }
-    return this.ws.path('owners', key, 'outputs', id, name);
+    return this.outputs.local(key, id, name);
   }
 }

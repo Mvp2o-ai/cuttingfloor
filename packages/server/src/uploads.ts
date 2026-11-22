@@ -182,7 +182,7 @@ export class Uploads {
     const key = ownerKey(owner);
     const meta = await this.#meta(key, upload_id);
     if (!meta) throw new CfError('engine_error', `Upload ${upload_id} vanished`);
-    await this.#ws.blobs.put(this.#blob(key, meta), { bytes });
+    await this.#ws.blobs.put(this.#blob(key, meta), { bytes }, { private: true });
     await this.#records(key).put(upload_id, { ...meta, bytes: bytes.length, complete: true });
     await floorChanged(this.#ws, owner);
     return upload_id;

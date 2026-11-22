@@ -4,6 +4,7 @@ import {
   type Collection,
   defineCollection,
   floorChanged,
+  OUTPUTS,
   randomId,
   type Workspace,
 } from '@cuttingfloor/core';
@@ -226,6 +227,7 @@ export class FileJobStore {
           await this.#jobs(key).delete(id);
           await records.collection(JOB_CANCELS, { owner: key }).delete(job.id);
           await blobs.deletePrefix(blobs.keys.output(key, job.id, ''));
+          await records.collection(OUTPUTS, { owner: key }).delete(job.id);
           n += 1;
         }
       }

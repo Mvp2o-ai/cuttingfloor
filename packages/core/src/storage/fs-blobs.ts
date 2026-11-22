@@ -73,7 +73,11 @@ export class FsBlobStore implements BlobStore {
     return rel.split(sep).join('/');
   }
 
-  async put(key: BlobKey, from: BlobSource): Promise<BlobHead> {
+  async put(
+    key: BlobKey,
+    from: BlobSource,
+    options: { private?: boolean } = {},
+  ): Promise<BlobHead> {
     const file = this.file(key);
     await mkdir(dirname(file), { recursive: true });
     if ('file' in from) {
@@ -82,7 +86,7 @@ export class FsBlobStore implements BlobStore {
         else await copyFile(from.file, file);
       }
     } else if ('bytes' in from) {
-      await writeFile(file, from.bytes, { mode: 0o600 });
+      await writeFile(file, from.bytes, options.private ? { mode: 0o600 } : {});
     } else {
       await pipeline(from.stream, createWriteStream(file, { flags: 'w' }));
     }
@@ -199,6 +203,8 @@ export class FsBlobStore implements BlobStore {
     const seen = new Set<number>();
     for (const e of entries) {
       if (!e.isFile() || e.parentPath === join(root, 'calls')) continue;
+      // Nor is its note of which file each output is.
+      if (e.parentPath === join(root, 'outputs-index')) continue;
       // A file swept between the listing and its stat no longer counts.
       total += await stat(join(e.parentPath, e.name)).then(
         (s) => {

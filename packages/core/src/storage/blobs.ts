@@ -80,8 +80,15 @@ export interface BlobKeys {
 export interface BlobStore {
   readonly keys: BlobKeys;
 
-  /** Stores bytes under `key`, replacing what was there. */
-  put(key: BlobKey, from: BlobSource, options?: { type?: string }): Promise<BlobHead>;
+  /**
+   * Stores bytes under `key`, replacing what was there. `private` keeps them from other users
+   * of the machine where the store is one's files (an upload's bytes).
+   */
+  put(
+    key: BlobKey,
+    from: BlobSource,
+    options?: { type?: string; private?: boolean },
+  ): Promise<BlobHead>;
   /** The blob's bytes. Rejects with ENOENT (`isMissing`) when there is none. */
   get(key: BlobKey): Promise<Readable>;
   /** Bytes `start` to `end`, both inclusive, as an HTTP range; `end` omitted reads to the end. */

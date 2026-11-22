@@ -57,7 +57,13 @@ export {
   span,
   subclip,
 } from './speed.ts';
-export { FLOOR, TIMELINES, TIMELINES_GONE } from './storage/collections.ts';
+export {
+  FLOOR,
+  OUTPUTS,
+  type OutputRecord,
+  TIMELINES,
+  TIMELINES_GONE,
+} from './storage/collections.ts';
 export {
   type BlobHead,
   type BlobKey,
