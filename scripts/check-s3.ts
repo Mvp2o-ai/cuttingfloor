@@ -432,6 +432,47 @@ try {
     },
   );
 
+  // Whether the bucket checks bytes against a hash sent with them, so a write it accepts is
+  // known to hold what was sent. Notes only: the store works either way, and uses whichever the
+  // bucket enforces (MinIO enforces both).
+  const integrity = async (
+    what: string,
+    header: (bytes: Buffer, right: boolean) => Record<string, string>,
+  ) => {
+    const bytes = Buffer.from(`integrity ${what} ${randomBytes(8).toString('hex')}`);
+    const put = (right: boolean) =>
+      client
+        .send(
+          new sdk.PutObjectCommand({
+            Bucket,
+            Key: `${prefix}integrity-${what}-${right}.txt`,
+            Body: bytes,
+            ...header(bytes, right),
+          } as never),
+        )
+        .then(
+          () => 'taken',
+          (e) => `refused (${status(e) ?? (e as Error).name})`,
+        );
+    const wrong = await put(false);
+    const right = await put(true);
+    say(
+      'note',
+      `a put with ${what}`,
+      `a wrong one is ${wrong}, a right one is ${right}${wrong.startsWith('refused') && right === 'taken' ? ': ENFORCED' : ': not enforced'}`,
+    );
+  };
+  await integrity('ChecksumSHA256', (bytes, right) => ({
+    ChecksumSHA256: createHash('sha256')
+      .update(right ? bytes : Buffer.from('other'))
+      .digest('base64'),
+  }));
+  await integrity('Content-MD5', (bytes, right) => ({
+    ContentMD5: createHash('md5')
+      .update(right ? bytes : Buffer.from('other'))
+      .digest('base64'),
+  }));
+
   await check('delete: an object, and one that is not there', async () => {
     await client.send(new sdk.DeleteObjectCommand({ Bucket, Key: `${prefix}copy.txt` }));
     await client.send(new sdk.DeleteObjectCommand({ Bucket, Key: `${prefix}never-was.txt` }));
