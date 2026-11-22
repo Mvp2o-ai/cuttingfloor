@@ -7,6 +7,7 @@ import {
   type CollectionScope,
   type CollectionSpec,
   defineCollection,
+  isExisting,
   isMissing,
   type Records,
   type Scratch,
@@ -340,6 +341,30 @@ export function recordsContract(backend: string, make: StoresFactory): void {
       expect(await log.read()).toStrictEqual([odd]);
     });
 
+    each('a key named __proto__ is a key like any other', async (s) => {
+      const c = s.records.collection(things as CollectionSpec<unknown>, { owner: 'alice' });
+      // As JSON gives it: an own key, not the object's prototype.
+      const plain = JSON.parse('{"__proto__":{"x":1},"name":"p","in":[{"__proto__":2}]}');
+      const odd = JSON.parse(
+        '{"__proto__":{"x":"\\u0000"},"name":"p\\u0000","in":{"__proto__":"\\ud800"}}',
+      );
+      for (const [id, value] of [
+        ['plain', plain],
+        ['odd', odd],
+      ] as const) {
+        await c.put(id, value);
+        const got = (await c.get(id)) as object;
+        expect(JSON.stringify(got)).toBe(JSON.stringify(value));
+        expect(Object.keys(got)).toContain('__proto__');
+        expect(Object.getPrototypeOf(got)).toBe(Object.prototype);
+        const updated = (await c.update(id, { set: { state: 'on' } })) as object;
+        expect(JSON.stringify(updated)).toBe(JSON.stringify({ ...value, state: 'on' }));
+        expect(
+          JSON.stringify((await c.find({ state: 'on' })).find((e) => e.id === id)?.value),
+        ).toBe(JSON.stringify({ ...value, state: 'on' }));
+      }
+    });
+
     each('fields named with a dot or a dollar are fields like any other', async (s) => {
       const c = s.records.collection(things as CollectionSpec<unknown>, { owner: 'alice' });
       await c.put('o', { name: 'n', 'a.b': 0 });
@@ -511,6 +536,40 @@ export function blobStoreContract(backend: string, make: StoresFactory): void {
       expect(await text(await blobs.get(now))).toBe('bytes');
       expect([b, c]).toContain(now);
       if (now === c) expect(await blobs.head(b)).toBeUndefined();
+    });
+
+    each('move with ifAbsent takes a free key once, and leaves a taken one alone', async (s) => {
+      const { blobs } = s;
+      const to = blobs.keys.derived('alice', 'm_1', 'analyses', 'transcript.json');
+      const temps = ['a', 'b', 'c', 'd'].map((n) => `${to}.${n}.tmp`);
+      for (const [i, temp] of temps.entries()) {
+        await blobs.put(
+          temp,
+          { bytes: Buffer.from(`body ${i}`) },
+          { private: true, durable: true },
+        );
+      }
+      const moved = await Promise.all(
+        temps.map((temp) =>
+          blobs.move(temp, to, { ifAbsent: true }).then(
+            () => true,
+            (error: unknown) => {
+              expect(isExisting(error)).toBe(true);
+              return false;
+            },
+          ),
+        ),
+      );
+      expect(moved.filter(Boolean)).toHaveLength(1);
+      const winner = moved.indexOf(true);
+      expect(await text(await blobs.get(to))).toBe(`body ${winner}`);
+      // A loser's bytes are still its own to remove; the winner's old name is gone.
+      for (const [i, temp] of temps.entries()) {
+        expect(Boolean(await blobs.head(temp))).toBe(i !== winner);
+      }
+      // Without it, a move replaces.
+      await blobs.move(temps[winner === 0 ? 1 : 0] as string, to);
+      expect(await text(await blobs.get(to))).toBe(`body ${winner === 0 ? 1 : 0}`);
     });
 
     each('share: one set of bytes for two holders, counted once, gone with the last', async (s) => {

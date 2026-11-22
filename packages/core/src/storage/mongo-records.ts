@@ -188,7 +188,15 @@ function mapStrings(value: unknown, text: (s: string) => string): unknown {
   if (Array.isArray(value)) return value.map((item) => mapStrings(item, text));
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value)) out[text(key)] = mapStrings(item, text);
+    for (const [key, item] of Object.entries(value)) {
+      // Defined, not assigned: a key named `__proto__` is a key like any other.
+      Object.defineProperty(out, text(key), {
+        value: mapStrings(item, text),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
     return out;
   }
   return value;
