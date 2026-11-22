@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { open, realpath, stat } from 'node:fs/promises';
 import { basename, extname, isAbsolute, join, sep } from 'node:path';
 import {
@@ -6,6 +7,7 @@ import {
   defineCollection,
   FLOOR,
   floorChanged,
+  isMissing,
   ownerKey,
   randomId,
   secondsToTicks,
@@ -126,13 +128,6 @@ export const MEDIA = defineCollection<MediaRecord>({
   db: { indexes: [['fingerprint']] },
 });
 
-/** One analysis of a media (transcript, beats, a look run), under the media's id. */
-export const MEDIA_ANALYSES = defineCollection<unknown>({
-  name: 'analyses',
-  scope: 'owner',
-  fs: { dir: (mediaId) => `media/${mediaId}/analyses` },
-});
-
 /** Which media holds given bytes (by fingerprint) or was made from a recipe (`recipe-…`). */
 export const MEDIA_INDEX = defineCollection<{ media_id: string }>({
   name: 'media_index',
@@ -176,8 +171,66 @@ export class MediaLibrary {
     return this.#ws.records.collection(MEDIA, { owner });
   }
 
-  #analyses(owner: string, id: string): Collection<unknown> {
-    return this.#ws.records.collection(MEDIA_ANALYSES, { owner, parent: this.#id(id) });
+  /**
+   * A media's analyses (transcript, beats, each look run): files beside the media, one a kind,
+   * in whichever store the media's files are (`owners/{owner}/media/{id}/analyses/{name}.json`
+   * on the filesystem, the JSON they always held). They are read whole and can be large, so
+   * they are not records; they go with the media's files when it is deleted or expires, and
+   * count as its storage. One can be written again, so nothing keeps one by its key alone.
+   */
+  #analyses(owner: string, id: string) {
+    const { blobs } = this.#ws;
+    const folder = blobs.keys.derived(owner, this.#id(id), 'analyses');
+    const key = (name: string): BlobKey => {
+      if (!name || /[/\\\0]/.test(name) || name.startsWith('.')) {
+        throw new Error(`Not an analysis name: ${name}`);
+      }
+      return `${folder}/${name}.json`;
+    };
+    /** Whole or not at all: written beside its place, then moved into it. */
+    const write = async (name: string, value: unknown) => {
+      const to = key(name);
+      const temp = `${to}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+      const body = Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+      await blobs.put(temp, { bytes: body }, { private: true, type: 'application/json' });
+      try {
+        await blobs.move(temp, to);
+      } catch (error) {
+        await blobs.delete(temp).catch(() => undefined);
+        throw error;
+      }
+    };
+    return {
+      /** The names there are, in no order. */
+      ids: async (): Promise<string[]> =>
+        (await blobs.list(folder))
+          .map((head) => head.key.slice(folder.length + 1))
+          .filter((file) => file.endsWith('.json') && !file.includes('/') && !file.startsWith('.'))
+          .map((file) => file.slice(0, -'.json'.length)),
+      get: async (name: string): Promise<unknown> => {
+        let stream: Awaited<ReturnType<typeof blobs.get>>;
+        try {
+          stream = await blobs.get(key(name));
+        } catch (error) {
+          if (isMissing(error)) return undefined;
+          throw error;
+        }
+        const chunks: Buffer[] = [];
+        for await (const chunk of stream) chunks.push(chunk as Buffer);
+        return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      },
+      put: write,
+      /** Written only when there is none of this name. */
+      insertOnce: async (name: string, value: unknown): Promise<boolean> => {
+        if (await blobs.head(key(name))) return false;
+        await write(name, value);
+        return true;
+      },
+      delete: (name: string) => blobs.delete(key(name)),
+      /** Another media's analysis of the same name, byte for byte. */
+      copyFrom: (other: BlobKey) => blobs.copy(other, `${folder}/${other.split('/').at(-1)}`),
+      key,
+    };
   }
 
   #index(owner: string): Collection<{ media_id: string }> {
@@ -367,7 +420,7 @@ export class MediaLibrary {
     const stored = await this.#records(owner).get(this.#id(id), { touch: true });
     if (!stored) return undefined;
     const record = this.#keyed(stored);
-    // Each analysis is its own record, so analyses running on different servers never overwrite
+    // Each analysis is its own file, so analyses running on different servers never overwrite
     // each other. A record from before that kept them inline: move them out once.
     const kept = this.#analyses(owner, id);
     if (record.analyses) {
@@ -759,8 +812,7 @@ export class MediaLibrary {
     const to = this.#analyses(owner, record.media_id);
     for (const name of await from.ids()) {
       try {
-        const value = await from.get(name);
-        if (value !== undefined) await to.put(name, value);
+        await to.copyFrom(from.key(name));
       } catch {
         // One analysis that can't be read is left behind; the rest come along.
       }
@@ -821,12 +873,10 @@ export class MediaLibrary {
     return freed;
   }
 
-  /** Removes a media's files, analyses and record. */
+  /** Removes a media's files (its analyses with them) and its record. */
   async #drop(owner: string, id: string): Promise<void> {
+    // Its analyses are among its files.
     await this.#ws.blobs.deletePrefix(this.prefix(owner, id));
-    for (const name of await this.#analyses(owner, id).ids()) {
-      await this.#analyses(owner, id).delete(name);
-    }
     await this.#records(owner).delete(id);
   }
 
