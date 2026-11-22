@@ -569,6 +569,25 @@ describe.skipIf(!up)('S3 blobs: what only this store promises', () => {
     { checksums: true },
   );
 
+  each(
+    'with MD5 on, bodies in hand carry their MD5 and the bucket takes them whole',
+    async ({ blobs }) => {
+      const small = Buffer.from('{"checked":"md5"}');
+      const one = blobs.keys.derived('alice', 'm_1', 'md5.json');
+      const made = await blobs.put(one, { bytes: small });
+      expect(made.bytes).toBe(small.length);
+      // A stream longer than a part goes up in parts, each checked by the bucket.
+      const big = Buffer.alloc(17 * MIB, 7);
+      const two = blobs.keys.derived('alice', 'm_1', 'md5.bin');
+      const sent = await blobs.put(two, { stream: Readable.from([big]) });
+      expect(sent.bytes).toBe(big.length);
+      const back = createHash('sha256');
+      for await (const chunk of await blobs.get(two)) back.update(chunk as Buffer);
+      expect(back.digest('hex')).toBe(createHash('sha256').update(big).digest('hex'));
+    },
+    { md5: true },
+  );
+
   each('a failure reaches the caller in plain words; the log has the detail', async (s) => {
     const log = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {

@@ -26,6 +26,8 @@ export interface S3Settings {
   uploads?: number;
   /** Whole-object puts carry their SHA-256 for the bucket to check (CUTTINGFLOOR_S3_CHECKSUM=sha256). */
   checksums?: boolean;
+  /** Bodies in hand carry their MD5 for the bucket to check (CUTTINGFLOOR_S3_CHECKSUM=md5). */
+  md5?: boolean;
   /** Tests: a copy larger than this is made in parts; whether the bucket takes conditional puts. */
   copyPartBytes?: number;
   conditionalWrites?: boolean;
@@ -82,8 +84,8 @@ export function s3SettingsFromEnv(env: NodeJS.ProcessEnv): S3Settings | undefine
     throw new Error('CUTTINGFLOOR_BLOB_CACHE must be an absolute path');
   }
   const checksum = value('CUTTINGFLOOR_S3_CHECKSUM').toLowerCase();
-  if (checksum && checksum !== 'sha256' && checksum !== 'none') {
-    throw new Error('CUTTINGFLOOR_S3_CHECKSUM must be sha256 or none');
+  if (checksum && checksum !== 'sha256' && checksum !== 'md5' && checksum !== 'none') {
+    throw new Error('CUTTINGFLOOR_S3_CHECKSUM must be sha256, md5 or none');
   }
   const style = value('CUTTINGFLOOR_S3_PATH_STYLE').toLowerCase();
   const pathStyle = style === '1' || style === 'true';
@@ -107,6 +109,7 @@ export function s3SettingsFromEnv(env: NodeJS.ProcessEnv): S3Settings | undefine
     concurrency: Math.round(number('CUTTINGFLOOR_S3_CONCURRENCY', 6, 1, 64)),
     connections: Math.round(number('CUTTINGFLOOR_S3_CONNECTIONS', 64, 1, 200)),
     ...(checksum === 'sha256' ? { checksums: true } : {}),
+    ...(checksum === 'md5' ? { md5: true } : {}),
   };
 }
 

@@ -115,6 +115,13 @@ export interface S3BlobOptions {
    * known, and a bucket wants one on every part or none.
    */
   checksums?: boolean;
+  /**
+   * Send the MD5 of every body whose bytes are in hand (whole-object puts, parts of a file or an
+   * in-order upload) as `Content-MD5`, for the bucket to refuse bytes that arrived changed.
+   * Hetzner's store enforces this and not the SHA-256 (scripts/check-s3.ts says which). A part
+   * streamed from a client at its pace carries none: its hash is not known before it is sent.
+   */
+  md5?: boolean;
   /** A copy larger than this is made in parts. Default 4 GiB (one request copies up to 5). */
   copyPartBytes?: number;
   /**
@@ -526,6 +533,11 @@ export class S3BlobStore implements BlobStore {
     return this.#putStream(key, from.stream, options.type);
   }
 
+  /** The header that has the bucket check a body against its MD5, when that is on. */
+  #md5(body: Buffer): { ContentMD5?: string } {
+    return this.#o.md5 ? { ContentMD5: createHash('md5').update(body).digest('base64') } : {};
+  }
+
   async #putBytes(key: BlobKey, body: Buffer, type: string | undefined): Promise<BlobHead> {
     const sha256 = createHash('sha256').update(body).digest('hex');
     const out = await this.#call('put', key, ({ sdk, client }) =>
@@ -539,6 +551,7 @@ export class S3BlobStore implements BlobStore {
           ...(this.#o.checksums
             ? { ChecksumSHA256: Buffer.from(sha256, 'hex').toString('base64') }
             : {}),
+          ...this.#md5(body),
           ...(type ? { ContentType: type } : {}),
         }),
       ),
@@ -590,6 +603,10 @@ export class S3BlobStore implements BlobStore {
         // The SDK never sends a stream twice, so a part that fails is read and sent again here.
         for (let attempt = 1; ; attempt += 1) {
           try {
+            // With MD5 on, the part is read first so the bucket can check what it received.
+            const held = this.#o.md5
+              ? await buffer(createReadStream(file, { start, end: start + bytes - 1 }))
+              : undefined;
             const out = await this.#call('part', key, ({ sdk, client }) =>
               client.send(
                 new sdk.UploadPartCommand({
@@ -597,8 +614,9 @@ export class S3BlobStore implements BlobStore {
                   Key: key,
                   UploadId: uploadId,
                   PartNumber: part,
-                  Body: createReadStream(file, { start, end: start + bytes - 1 }),
+                  Body: held ?? createReadStream(file, { start, end: start + bytes - 1 }),
                   ContentLength: bytes,
+                  ...(held ? this.#md5(held) : {}),
                 }),
               ),
             );
@@ -645,6 +663,7 @@ export class S3BlobStore implements BlobStore {
             PartNumber: part,
             Body: body,
             ContentLength: body.length,
+            ...this.#md5(body),
           }),
         ),
       );
@@ -1265,6 +1284,7 @@ export class S3BlobStore implements BlobStore {
             PartNumber: part,
             Body: body,
             ContentLength: bytes,
+            ...(Buffer.isBuffer(body) ? this.#md5(body) : {}),
           }),
         ),
       paced ? key : undefined,
