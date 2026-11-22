@@ -1,3 +1,6 @@
+import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { configFromEnv } from '@cuttingfloor/server';
 import { describe, expect, it } from 'vitest';
 
@@ -63,4 +66,30 @@ describe('CUTTINGFLOOR_RECORDS', () => {
       expect(message).not.toContain(secret);
     }
   });
+
+  it('a server on the filesystem never loads the database driver', async () => {
+    // In a process of its own: a runtime starts, keeps a record, and no module of the driver
+    // has been loaded (it is CommonJS, so loading it would show in the require cache).
+    const entry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
+    const script = `
+      const { mkdtemp } = await import('node:fs/promises');
+      const { tmpdir } = await import('node:os');
+      const { join } = await import('node:path');
+      const { createRequire } = await import('node:module');
+      const { Runtime, configFromEnv } = await import(${JSON.stringify(entry)});
+      const dataDir = await mkdtemp(join(tmpdir(), 'cf-no-driver-'));
+      const runtime = new Runtime({ ...configFromEnv({ CUTTINGFLOOR_DATA: dataDir }), mediaRoots: [] });
+      await runtime.start({ sweep: false });
+      await runtime.timelines.sweep();
+      await runtime.close();
+      const loaded = Object.keys(createRequire(import.meta.url).cache).filter((f) => /[\\/]mongodb[\\/]/.test(f));
+      console.log(JSON.stringify({ loaded: loaded.length }));
+    `;
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      ['--input-type=module', '-e', script],
+      { env: { ...process.env, CUTTINGFLOOR_RECORDS: '' } },
+    );
+    expect(JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}')).toEqual({ loaded: 0 });
+  }, 30_000);
 });

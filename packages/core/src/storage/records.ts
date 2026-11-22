@@ -51,18 +51,20 @@ export interface CollectionSpec<T> {
   readonly type?: T;
 }
 
-const defined: CollectionSpec<unknown>[] = [];
+/** By name and kind: a spec made again (a store built twice) is the same collection. */
+const defined = new Map<string, CollectionSpec<unknown>>();
 
 export function defineCollection<T>(
   spec: Omit<CollectionSpec<T>, 'type' | 'blobs'> & { blobs?: readonly (keyof T & string)[] },
 ): CollectionSpec<T> {
-  defined.push(spec as CollectionSpec<unknown>);
+  const key = `${spec.name}\0${spec.kind ?? ''}`;
+  if (!defined.has(key)) defined.set(key, spec as CollectionSpec<unknown>);
   return spec;
 }
 
 /** Every collection defined so far in this process, so a database store can prepare them at startup. */
 export function definedCollections(): readonly CollectionSpec<unknown>[] {
-  return defined;
+  return [...defined.values()];
 }
 
 /** Which records of a collection: an account's, and a parent's where the collection has one. */

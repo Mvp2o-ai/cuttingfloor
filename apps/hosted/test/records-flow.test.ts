@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,16 +13,18 @@ import {
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import type { AccountGetResult } from '@cuttingfloor/schema';
 import {
+  CLAIMS,
   createServer,
   meterEntries,
   Runtime,
   type RuntimeConfig,
   readCalls,
 } from '@cuttingfloor/server';
-import { Client } from '@modelcontextprotocol/client';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { EmailProvider, OutboundEmail } from '../src/email.ts';
+import { createHttpServer } from '../src/http.ts';
 import { ScriptKeys } from '../src/keys.ts';
 import { Sequence, type Subscribers } from '../src/sequence.ts';
 
@@ -69,6 +72,7 @@ const TEMPLATES = fileURLToPath(new URL('../email/', import.meta.url));
 
 interface Env {
   runtime: Runtime;
+  config: RuntimeConfig;
   dir: string;
   mediaDir: string;
   drop(): Promise<void>;
@@ -100,6 +104,7 @@ async function start(store: 'filesystem' | 'MongoDB'): Promise<Env> {
   await runtime.start({ sweep: false });
   return {
     runtime,
+    config,
     dir,
     mediaDir,
     drop: async () => {
@@ -395,6 +400,44 @@ describe.each((['filesystem', 'MongoDB'] as const).filter((store) => store === '
       await a.tick(now + 30_000);
       expect(sent).toHaveLength(1);
       expect(sent[0]?.to).toBe('person@example.com');
+    });
+
+    it('over HTTP, a signed-in account is welcomed until any server has its claim', async () => {
+      const owner = 'user_01ABCDEFGHJKMNPQRSTVWXYZ02';
+      const keys = new ScriptKeys(env.runtime.ws);
+      const { key } = await keys.create(owner, 'script');
+      const server = createHttpServer({
+        runtime: env.runtime,
+        credentials: new LocalCredentialStore({}, false),
+        scriptKeys: keys,
+        access: async () => undefined,
+        account: async () => ACCOUNT,
+      });
+      await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+      const url = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`);
+      const instructions = async () => {
+        const remote = new Client({ name: 'script', version: '0' });
+        await remote.connect(
+          new StreamableHTTPClientTransport(url, {
+            requestInit: { headers: { authorization: `Bearer ${key}` } },
+          }),
+        );
+        const text = remote.getInstructions() ?? '';
+        await remote.close();
+        return text;
+      };
+      try {
+        expect(await instructions()).toMatch(/^This is a new connection: welcome aboard\./);
+        // Claimed through another server on the same store: this one has not seen the claim.
+        const elsewhere = new Runtime(env.config);
+        await elsewhere.ws.records
+          .collection(CLAIMS, { owner })
+          .insertOnce('free-credits', { claimed: true, use_case: 'x', claimed_at: 'now' });
+        await elsewhere.close();
+        expect(await instructions()).not.toContain('welcome aboard');
+      } finally {
+        await new Promise((r) => server.close(r));
+      }
     });
 
     it('sweeps without losing anything still in its time, and forgets a deleted account', async () => {
