@@ -11,6 +11,22 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # The Mongo record store's suites run against this (nothing they test needs a replica set).
+    services:
+      mongo:
+        image: mongo:8
+        ports:
+          - 27017:27017
+        options: >-
+          --tmpfs /data/db
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      CUTTINGFLOOR_TEST_MONGODB_URI: mongodb://127.0.0.1:27017/?directConnection=true
+      # No MongoDB fails these suites here instead of skipping them.
+      CUTTINGFLOOR_REQUIRE_MONGO: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6

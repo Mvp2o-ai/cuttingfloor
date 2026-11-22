@@ -2,7 +2,7 @@
 
 ## Start here
 - `plans/` holds the build plan and full spec (local only, git-ignored). Read `plans/README.md` first.
-- `pnpm check` must pass before every commit: Biome lint, `tsc -b`, Vitest. Engine and end-to-end tests skip on hosts without FFmpeg and MLT; `docker build --target test .` runs everything (it sets `CUTTINGFLOOR_REQUIRE_ENGINES=1`, so a missing engine fails instead of skipping).
+- `pnpm check` must pass before every commit: Biome lint, `tsc -b`, Vitest. Engine and end-to-end tests skip on hosts without FFmpeg and MLT; `docker build --target test .` runs everything (it sets `CUTTINGFLOOR_REQUIRE_ENGINES=1`, so a missing engine fails instead of skipping). The MongoDB record store's suites skip without a MongoDB on `127.0.0.1:27017`: `scripts/test-mongo.sh` starts one in Docker (`stop` removes it); CI runs one and sets `CUTTINGFLOOR_REQUIRE_MONGO=1`, and the image's test stage stays on the filesystem.
 - Docker is the product's only runtime requirement. Engines and tools ship inside the image; never add a host dependency.
 
 ## Conventions
