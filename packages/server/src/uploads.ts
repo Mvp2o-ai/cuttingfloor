@@ -386,15 +386,19 @@ export class Uploads {
       // An hour past the URL's life, so a PUT that was still running finishes first. An upload
       // goes whole, its record with its bytes, by when either was last written.
       const ttl = UPLOAD_TTL_MS + 3_600_000;
+      const gone = await blobs.expire(blobs.keys.uploads(owner), ttl);
+      // On the filesystem that was the record too. Kept apart from the bytes, a record goes
+      // with them here, and one that never got a byte by its own age. One that can't be read
+      // or removed is left for the next sweep: a sweep never stops at a bad entry.
+      if (this.#ws.recordsWithFiles) continue;
       const uploads = this.#records(owner);
-      // Where records are kept apart from the bytes, a record goes with its bytes here, and one
-      // that never got a byte by its own age. (On the filesystem both went with the folder.)
-      for (const id of await blobs.expire(blobs.keys.uploads(owner), ttl)) {
-        await uploads.delete(id).catch(() => undefined);
-      }
-      for (const { id, value, usedAt } of await uploads.find()) {
+      for (const id of gone) await uploads.delete(id).catch(() => undefined);
+      const kept = await uploads.find().catch(() => []);
+      for (const { id, value, usedAt } of kept) {
         if (usedAt.getTime() >= Date.now() - ttl) continue;
-        if (!(await blobs.head(this.#blob(owner, value)))) await uploads.delete(id);
+        try {
+          if (!(await blobs.head(this.#blob(owner, value)))) await uploads.delete(id);
+        } catch {}
       }
     }
   }

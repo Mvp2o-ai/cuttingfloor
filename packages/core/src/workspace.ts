@@ -42,6 +42,12 @@ export class Workspace {
   readonly scratch: Scratch;
 
   /**
+   * False when the records are in another store than the files: removing a folder of files
+   * then removes no record with it.
+   */
+  readonly recordsWithFiles: boolean;
+
+  /**
    * `records` puts the records in another store (a database) while the files stay under the
    * data root; without it they are the JSON files they always were.
    */
@@ -53,6 +59,7 @@ export class Workspace {
     const blobs = new FsBlobStore(this.root, blobOptions);
     // Blob fields are written as paths under the root as it was given, as they always were.
     this.records = records ?? new FsRecords(this.root, { pathsFrom: root });
+    this.recordsWithFiles = !records;
     this.blobs = blobs;
     this.scratch = new FsScratch(blobs);
   }
