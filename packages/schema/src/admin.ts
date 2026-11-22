@@ -72,6 +72,12 @@ export const AdminAccount = z.object({
       "The task the user is looking to complete with cuttingfloor, as their assistant gave it when it claimed the free credits; null when it hasn't",
     ),
   use_case_at: nullableTime.describe('When the assistant activated the free credits'),
+  sample: z
+    .string()
+    .nullable()
+    .describe(
+      'The onboarding sample credits.claim put in their library for that task (e.g. gaming-stream, podcast-interview); null before a claim',
+    ),
   last_used_at: nullableTime.describe(
     'The day of the latest tool call, recorded at most once a day; null before it was recorded',
   ),

@@ -54,7 +54,7 @@ describe('credits.claim', () => {
     expect(res.structured).toMatchObject({
       claimed_now: true,
       message:
-        "Free credits claimed: 42 left. Big Buck Bunny, a 30-second clip, is in the user's library and playing here: offer a few edits to try on it that fit their task, such as overlays, captions, a voiceover, a new opening or a new end card, and ask which to do. cuttingfloor can do anything CapCut or DaVinci Resolve can; if something gets in the way, tell us with support.contact so we can improve the user's experience.",
+        "Free credits claimed: 42 left. A sample to try is in the user's library and playing here: a 30-second scene from Big Buck Bunny, an open animated film. Offer this first edit on it, in the user's language and fitted to their task: \"Make this a 15-second vertical teaser with a title card at the start and an end card.\" Offer other edits that fit too, and ask them to send their own clip when they're ready. cuttingfloor can do anything CapCut or DaVinci Resolve can; if something gets in the way, tell us with support.contact so we can improve the user's experience.",
       credits: ACCOUNT.credits,
       media_id: expect.stringMatching(/^m_/),
       job_id: expect.any(String),
