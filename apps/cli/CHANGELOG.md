@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.66.0
+
+### Minor Changes
+
+- c2c140a: Self-hosting on more than one server: set `CUTTINGFLOOR_URL_SECRET` (32 bytes or more, base64) and every server signs and opens the same download, watch and upload links. Unset, nothing changes: the server keeps its own key in `secret.key` under the data root.
+
 ## 0.65.1
 
 ### Patch Changes

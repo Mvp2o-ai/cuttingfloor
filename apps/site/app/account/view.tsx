@@ -235,7 +235,7 @@ function Steps({ progress, email }: { progress: AccountProps['progress']; email:
       body: (
         <p>
           Your AI hands back a link to watch and download the finished MP4. Download it to keep it:
-          links last a day.
+          links last 7 days.
         </p>
       ),
     },
