@@ -299,9 +299,15 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     lifecycle?.stop();
     sequence?.stop();
-    // Leases go back at once, so another server takes this one's periodic work over.
-    void runtime.close().catch(() => undefined);
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 5000).unref();
+    runtime.stop();
+    // The record store closes after the requests in flight have ended (they still read and
+    // write it), handing its leases back so another server takes the periodic work over.
+    const end = () =>
+      void runtime.close().then(
+        () => process.exit(0),
+        () => process.exit(0),
+      );
+    server.close(end);
+    setTimeout(end, 5000).unref();
   });
 }
