@@ -117,6 +117,12 @@ export interface RuntimeConfig {
    * then holds this server's caches only. Its keys are secrets: never logged.
    */
   s3?: S3Settings;
+  /**
+   * A server beside the one in production, on a copy of its data (CUTTINGFLOOR_STANDBY=1): it
+   * answers requests, and does nothing to the data by itself. No sweep at start or by the hour,
+   * no recovery of jobs, at start or by the minute.
+   */
+  standby?: boolean;
 }
 
 /** How long a link to a file in the bucket works: minted per request behind our own links. */
@@ -242,6 +248,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     ...(env.CUTTINGFLOOR_URL_SECRET ? { urlSecret: env.CUTTINGFLOOR_URL_SECRET } : {}),
     ...recordsFromEnv(env),
     ...blobsFromEnv(env),
+    ...(env.CUTTINGFLOOR_STANDBY === '1' ? { standby: true } : {}),
   };
 }
 
@@ -355,6 +362,7 @@ export class Runtime {
     await this.ws.blobs.ready();
     await this.secret();
     await this.ws.blobs.deletePrefix(this.ws.blobs.keys.cache('frames'));
+    if (this.config.standby) return;
     await this.jobs.recover();
     if (options.sweep !== false) {
       await this.#sweepTurn();

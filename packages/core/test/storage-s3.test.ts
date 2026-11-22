@@ -115,8 +115,12 @@ describe.skipIf(!up)('S3 blobs: what only this store promises', () => {
     const streamed = await blobs.put(c, {
       stream: Readable.from([big.subarray(0, 7 * MIB), big.subarray(7 * MIB)]),
     });
-    expect(streamed.bytes).toBe(big.length);
+    expect(streamed).toMatchObject({ bytes: big.length, sha256: sha(big) });
     expect(sha(await bytes(await blobs.get(c)))).toBe(sha(big));
+    // Kept in the records, and only for as long as the blob is those bytes.
+    expect((await blobs.head(c))?.sha256).toBe(sha(big));
+    await blobs.copy(a, c);
+    expect((await blobs.head(c))?.sha256).toBe(sha(small));
   });
 
   each(
@@ -246,7 +250,6 @@ describe.skipIf(!up)('S3 blobs: what only this store promises', () => {
     expect(await records.collection(BLOBS, { owner: 'alice' }).find()).toEqual([]);
     // (Its upload in parts is aborted too where the store lists uploads by prefix; MinIO lists
     // them only by their exact key, so that is not looked at here.)
-    expect(await blobs.list(`${open}.parts`)).toEqual([]);
     expect(await blobs.usage('bob')).toBe(7);
   });
 
@@ -300,11 +303,16 @@ describe.skipIf(!up)('S3 blobs: what only this store promises', () => {
     }
     // Before it is complete the blob does not exist; the bytes not yet in a part are held.
     expect(await blobs.head(key)).toBeUndefined();
-    expect((await blobs.list(`${key}.parts`)).length).toBeGreaterThan(0);
+    // What is held beside it is the store's own business: not listed, not counted.
+    expect(await blobs.list(blobs.keys.owner('alice'))).toEqual([]);
+    expect(await blobs.usage('alice')).toBe(0);
     const head = await blobs.multipartComplete(key, id, [last as BlobPart]);
     expect(head.bytes).toBe(body.length);
     expect(sha(await bytes(await blobs.get(key)))).toBe(sha(body));
-    expect(await blobs.list(`${key}.parts`)).toEqual([]);
+    expect((await blobs.list(blobs.keys.owner('alice'))).map((h) => h.key)).toEqual([key]);
+    expect(await blobs.usage('alice')).toBe(body.length);
+    // An upload nobody knows is dropped without complaint.
+    await blobs.multipartAbort(key, 'no-such-upload');
   });
 
   each('a part that breaks off keeps what arrived; the next continues from there', async (s) => {
@@ -355,6 +363,34 @@ describe.skipIf(!up)('S3 blobs: what only this store promises', () => {
     expect(Math.ceil((200 * 1024 ** 3) / partSize(200 * 1024 ** 3, 16 * MIB))).toBeLessThanOrEqual(
       10_000,
     );
+  });
+
+  each('an owner’s own prefix stands for everything they have; a time can be set', async (s) => {
+    const { blobs } = s;
+    const keys = [
+      blobs.keys.derived('alice', 'm_1', 'analyses', 't.json'),
+      blobs.keys.media('alice', 'm_1', 'source.bin'),
+      blobs.keys.output('alice', 'f_1', '1.png'),
+    ];
+    for (const key of keys) await blobs.put(key, { bytes: Buffer.alloc(4) });
+    await blobs.put(blobs.keys.output('bob', 'f_1', '1.png'), { bytes: Buffer.alloc(4) });
+    expect((await blobs.list(blobs.keys.owner('alice'))).map((h) => h.key)).toEqual(keys);
+    expect((await blobs.list(`${blobs.keys.owner('alice')}/`)).map((h) => h.key)).toEqual([
+      keys[1],
+    ]);
+    expect(await blobs.freeable(blobs.keys.owner('alice'))).toBe(12);
+    // A folder brought from elsewhere keeps its age, until it is written again.
+    const folder = 'outputs/alice/f_1';
+    const then = new Date(Date.now() - 5 * 86_400_000);
+    expect((await blobs.getTime(folder))?.getTime()).toBeGreaterThan(Date.now() - 60_000);
+    await blobs.setTime(folder, then);
+    expect(await blobs.getTime(folder)).toEqual(then);
+    expect(await blobs.getTime('outputs/alice/f_none')).toBeUndefined();
+    expect(await blobs.expire(blobs.keys.outputs('alice'), 6 * 86_400_000)).toEqual([]);
+    expect(await blobs.expire(blobs.keys.outputs('alice'), 4 * 86_400_000)).toEqual(['f_1']);
+    await blobs.deletePrefix(blobs.keys.owner('alice'));
+    expect(await blobs.list(blobs.keys.owner('alice'))).toEqual([]);
+    expect(await blobs.usage('bob')).toBe(4);
   });
 
   each('expire goes by the newest write, or a later touch', async (s) => {
@@ -420,7 +456,10 @@ describe.skipIf(!up)('S3 blobs: what only this store promises', () => {
     expect((await blobs.head(held))?.refs).toBe(1);
     for (const key of [unheld, going, stale]) expect(await blobs.head(key)).toBeUndefined();
     expect(await blobs.head(live)).toBeDefined();
-    expect((await blobs.list(`${upload}.parts`)).length).toBe(1);
+    // The upload's state was spared: it still completes.
+    const rest = await blobs.multipartPart(upload, id, 2, Readable.from([Buffer.alloc(5)]));
+    expect((await blobs.multipartComplete(upload, id, [rest])).bytes).toBe(15);
+    await blobs.delete(upload);
     expect((await kept.find()).map((r) => r.value)).toEqual([{ key: held, refs: 1 }]);
     function owner() {
       return 'alice';
@@ -509,7 +548,11 @@ describe.skipIf(!up)('S3 scratch: this node’s copies', () => {
     expect(new Set(paths).size).toBe(1);
     expect(sha(await readFile(paths[0] as string))).toBe(sha(body));
     // Three ranges of 5 MiB (the last short), fetched once between the six.
-    expect(read.mock.calls.map((c) => [c[1].start, c[1].end]).sort((a, b) => a[0] - b[0])).toEqual([
+    expect(
+      read.mock.calls
+        .map((c) => [c[1].start ?? 0, c[1].end ?? 0] as const)
+        .sort((a, b) => a[0] - b[0]),
+    ).toEqual([
       [0, 5 * MIB - 1],
       [5 * MIB, 10 * MIB - 1],
       [10 * MIB, body.length - 1],

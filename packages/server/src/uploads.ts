@@ -46,6 +46,12 @@ interface UploadMeta {
   parts?: BlobPart[];
   /** Counts writes of `parts`, so two parts landing at once both stay. */
   rev?: number;
+  /**
+   * An upload brought part way from another data root (the storage migration writes it): the
+   * store's upload in parts its whole parts went into, in order. Read once, as `mpu` and
+   * `part`, when the sender carries on from `offset`; null after.
+   */
+  multipart?: { id: string; parts: BlobPart[] } | null;
 }
 
 /** A request that stops saying it is still sending for this long has let go of its upload. */
@@ -495,7 +501,14 @@ export class Uploads {
   }
 
   async #meta(owner: string, id: string): Promise<UploadMeta | undefined> {
-    return this.#records(owner).get(id);
+    const meta = await this.#records(owner).get(id);
+    if (!meta?.multipart || !this.#remote || meta.complete || meta.part || meta.parts) return meta;
+    // Carried part way by the migration: its last part names everything that was carried.
+    return {
+      ...meta,
+      mpu: meta.mpu || meta.multipart.id,
+      part: (meta.offset ?? 0) > 0 ? (meta.multipart.parts.at(-1) ?? null) : null,
+    };
   }
 
   async #size(owner: string, meta: UploadMeta): Promise<number> {
@@ -540,10 +553,9 @@ export class Uploads {
     }
     if (meta.lock === undefined || meta.offset === undefined) {
       // A record laid down without its state (by an older server): it starts from nothing.
-      await uploads.update(id, {
-        set: { mpu: meta.mpu ?? '', offset: meta.offset ?? 0, lock: '', lock_at: 0, rev: 0 },
-      });
-      meta = (await this.#meta(owner, id)) ?? meta;
+      const state = { mpu: meta.mpu ?? '', offset: meta.offset ?? 0, lock: '', lock_at: 0, rev: 0 };
+      await uploads.update(id, { set: state });
+      meta = { ...meta, ...state };
     }
     const received = meta.offset ?? 0;
     const start = request.range?.start ?? 0;
@@ -566,7 +578,11 @@ export class Uploads {
     );
     /** Lets go, moving the record on; false when another request took the upload over. */
     const settle = (set: Partial<UploadMeta>) =>
-      uploads.compareAndSet(id, { lock: token }, { ...set, lock: '', lock_at: 0 });
+      uploads.compareAndSet(
+        id,
+        { lock: token },
+        { ...set, lock: '', lock_at: 0, ...(meta?.multipart ? { multipart: null } : {}) },
+      );
     try {
       const named = request.name?.trim().slice(0, 200);
       if (named && !/[/\\]/.test(named) && named !== meta.name) {

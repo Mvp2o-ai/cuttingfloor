@@ -32,8 +32,10 @@ export const S3_MAX_PARTS = 10_000;
  *   outputs/{owner}/{job_or_frames_id}/{name}
  *   tmp/…                                       the store's own probes (a bucket rule clears it)
  *
- * `cache/…` is never in the bucket: it stays on the node's disk. An owner has no one prefix
- * (`forget` removes all of theirs); `owner()` is the prefix of their media.
+ * `cache/…` is never in the bucket: it stays on the node's disk. An owner's blobs have no one
+ * prefix in the bucket; `owner()` is the prefix of their media, and that exact name given to
+ * `list`, `freeable` or `deletePrefix` stands for everything the owner has, as it does on the
+ * filesystem (`media/{owner}/` with its slash is the media alone).
  */
 export const S3_BLOB_KEYS: BlobKeys = {
   media: (owner, mediaId, name) => `media/${ownerKey(owner)}/${mediaId}/${name}`,
@@ -57,6 +59,13 @@ export interface BlobRecord {
   refs?: number;
   /** When `touch` last marked it used. */
   used_at?: string;
+  /**
+   * The bytes' SHA-256, for a blob that went up as a stream in parts (its hash was not known
+   * when its first part was sent, so it could not go with the object as others' do). It holds
+   * only while the object's tag is still `etag`: a blob written again is another's bytes.
+   */
+  sha256?: string;
+  etag?: string;
 }
 
 export const BLOBS = defineCollection<BlobRecord>({
@@ -106,6 +115,13 @@ interface UploadSoFar {
   parts: Array<[number, string, number]>;
   /** Bytes received and not yet in a real part (under 5 MiB). */
   tail: Buffer;
+}
+
+interface Listed {
+  key: string;
+  bytes: number;
+  modifiedAt: Date;
+  etag?: string;
 }
 
 type Sdk = typeof import('@aws-sdk/client-s3');
@@ -362,7 +378,31 @@ export class S3BlobStore implements BlobStore {
 
   async #record(key: BlobKey): Promise<BlobRecord | undefined> {
     const owned = this.#owned(key);
-    return owned?.media ? this.#kept(owned.owner).get(this.#id(key)) : undefined;
+    return owned ? this.#kept(owned.owner).get(this.#id(key)) : undefined;
+  }
+
+  /** Sets fields of a blob's record, making it when there is none. */
+  async #note(key: BlobKey, set: Partial<BlobRecord>): Promise<void> {
+    const owned = this.#owned(key);
+    if (!owned) return;
+    const kept = this.#kept(owned.owner);
+    const id = this.#id(key);
+    if (await kept.update(id, { set })) return;
+    const fresh: BlobRecord = { key, ...(owned.media ? { refs: 1 } : {}), ...set };
+    if (!(await kept.insertOnce(id, fresh))) await kept.update(id, { set });
+  }
+
+  /** The prefixes a listing covers: an owner's own name is everything of theirs. */
+  #scope(prefix: BlobKey): { folders: string[]; owner?: string } {
+    const whole = /^media\/([A-Za-z0-9_-]{1,64})$/.exec(prefix);
+    return whole
+      ? { folders: this.#prefixes(whole[1] as string), owner: whole[1] as string }
+      : { folders: [this.#folder(prefix)] };
+  }
+
+  /** What callers see of a listing: not the states of uploads still in parts. */
+  #shown<T extends { key: string }>(found: T[]): T[] {
+    return found.filter((o) => !o.key.includes(PARTS_SUFFIX));
   }
 
   async put(
@@ -479,10 +519,12 @@ export class S3BlobStore implements BlobStore {
     let bytes = 0;
     let uploadId: string | undefined;
     const parts: BlobPart[] = [];
+    const hash = createHash('sha256');
     const flush = async () => {
       const body = Buffer.concat(held);
       held = [];
       bytes = 0;
+      hash.update(body);
       uploadId ??= await this.#start(key, type, {});
       const part = parts.length + 1;
       const id = uploadId;
@@ -517,7 +559,11 @@ export class S3BlobStore implements BlobStore {
       }
       if (!uploadId) return await this.#putBytes(key, Buffer.concat(held), type);
       if (bytes) await flush();
-      return await this.multipartComplete(key, uploadId, parts);
+      const head = await this.multipartComplete(key, uploadId, parts);
+      // Its hash was not known when its first part went up: kept in the records instead.
+      const sha256 = hash.digest('hex');
+      if (head.etag) await this.#note(key, { sha256, etag: head.etag });
+      return { ...head, sha256, ...(type ? { type } : {}) };
     } catch (error) {
       if (uploadId) await this.multipartAbort(key, uploadId).catch(() => undefined);
       throw error;
@@ -580,8 +626,18 @@ export class S3BlobStore implements BlobStore {
     if (this.#isLocal(key)) return this.#local.head(key);
     const head = await this.stat(key);
     if (!head) return undefined;
+    // The records are asked only for what the bucket does not say: a media file's holders, and
+    // the hash of a blob that could not carry its own.
+    if (!this.#owned(key)?.media && head.sha256) return head;
     const record = await this.#record(key);
-    return record ? { ...head, refs: Math.max(1, record.refs ?? 1) } : head;
+    if (!record) return head;
+    return {
+      ...head,
+      refs: Math.max(1, record.refs ?? 1),
+      ...(!head.sha256 && record.sha256 && record.etag === head.etag
+        ? { sha256: record.sha256 }
+        : {}),
+    };
   }
 
   /** What the bucket says of one object, without the holders the records count. */
@@ -653,10 +709,8 @@ export class S3BlobStore implements BlobStore {
     return `${prefix.replace(/\/+$/, '')}/`;
   }
 
-  async #listed(
-    prefix: string,
-  ): Promise<Array<{ key: string; bytes: number; modifiedAt: Date; etag?: string }>> {
-    const found: Array<{ key: string; bytes: number; modifiedAt: Date; etag?: string }> = [];
+  async #listed(prefix: string): Promise<Listed[]> {
+    const found: Listed[] = [];
     let token: string | undefined;
     do {
       const page = await this.#call('list', prefix, ({ sdk, client }) =>
@@ -685,6 +739,8 @@ export class S3BlobStore implements BlobStore {
 
   async deletePrefix(prefix: BlobKey): Promise<void> {
     if (this.#isLocal(prefix)) return this.#local.deletePrefix(prefix);
+    const whole = this.#scope(prefix).owner;
+    if (whole) return this.forget(whole);
     const bare = prefix.replace(/\/+$/, '');
     const found = await this.#listed(this.#folder(prefix));
     await each(found, 16, ({ key }) => this.delete(key));
@@ -697,7 +753,11 @@ export class S3BlobStore implements BlobStore {
   /** Sizes and times as the bucket lists them; a hash and a type come from `head`. */
   async list(prefix: BlobKey): Promise<BlobHead[]> {
     if (this.#isLocal(prefix)) return this.#local.list(prefix);
-    const found = await this.#listed(this.#folder(prefix));
+    const found: Listed[] = [];
+    for (const folder of this.#scope(prefix).folders) {
+      found.push(...this.#shown(await this.#listed(folder)));
+    }
+    found.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     const owned = this.#owned(prefix);
     const refs = new Map<string, number>();
     if (owned?.media && found.length) {
@@ -893,6 +953,34 @@ export class S3BlobStore implements BlobStore {
   }
 
   /**
+   * Says when a blob, or a folder of them, was last used: for data brought from another store
+   * with its age (a kept frame set that is days old must not start its days again). It holds
+   * until something under it is written or touched again.
+   */
+  async setTime(keyOrPrefix: BlobKey, at: Date): Promise<void> {
+    const name = keyOrPrefix.replace(/\/+$/, '');
+    if (this.#isLocal(name) || !this.#owned(name)) return;
+    await this.#note(name, { used_at: at.toISOString() });
+  }
+
+  /** When a blob, or a folder of them, was last used, as `expire` reads it. Undefined: nothing there. */
+  async getTime(keyOrPrefix: BlobKey): Promise<Date | undefined> {
+    const name = keyOrPrefix.replace(/\/+$/, '');
+    if (this.#isLocal(name)) return (await this.#local.head(name))?.modifiedAt;
+    let newest = (await this.stat(name))?.modifiedAt.getTime() ?? 0;
+    for (const o of await this.#listed(`${name}/`))
+      newest = Math.max(newest, o.modifiedAt.getTime());
+    const owned = this.#owned(name);
+    const touched = owned
+      ? (await this.#kept(owned.owner).find({ key: name })).find((r) => r.value.used_at)
+      : undefined;
+    if (touched?.value.used_at && touched.usedAt.getTime() + 1000 >= newest) {
+      return new Date(touched.value.used_at);
+    }
+    return newest ? new Date(newest) : undefined;
+  }
+
+  /**
    * Each entry directly under the prefix is as old as the newest write under it, or as its
    * last `touch` when that came later (a touch record written after the newest object).
    */
@@ -944,7 +1032,7 @@ export class S3BlobStore implements BlobStore {
   async usage(owner: string): Promise<number> {
     let total = 0;
     for (const prefix of this.#prefixes(owner)) {
-      for (const o of await this.#listed(prefix)) total += o.bytes;
+      for (const o of this.#shown(await this.#listed(prefix))) total += o.bytes;
     }
     return total;
   }

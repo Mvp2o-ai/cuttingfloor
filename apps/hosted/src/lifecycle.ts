@@ -135,14 +135,18 @@ export class Lifecycle {
     this.#o = options;
   }
 
-  /** Meters into usage email and first-export records; sweeps new accounts. */
-  start(): void {
+  /**
+   * Meters into usage email and first-export records; sweeps new accounts. Without `sweep` it
+   * only hears this server's own calls and jobs: nothing runs by the clock (a standby server).
+   */
+  start(options: { sweep?: boolean } = {}): void {
     this.#o.runtime.onToolCall((owner) => this.#toolCalled(owner));
     this.#o.runtime.onMetered((owner, entry, job) => {
       void this.#metered(owner, entry, job).catch((error: Error) =>
         process.stderr.write(`lifecycle: ${owner}: ${error.message}\n`),
       );
     });
+    if (options.sweep === false) return;
     // One server's turn among those sharing the record store: the others would only look
     // through the same accounts and find every notice already sent.
     const sweep = () =>

@@ -1,4 +1,14 @@
-import { appendFile, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import {
+  appendFile,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import {
   isMissing,
@@ -113,6 +123,44 @@ export class FsRecords implements Records {
   async ready(): Promise<void> {}
 
   async close(): Promise<void> {}
+
+  /**
+   * Writes a record as it was, with its last use (its file's mtime): for moving a data root's
+   * records in (the migration), as the MongoDB store's `restore` does.
+   */
+  async restore<T>(
+    spec: CollectionSpec<T>,
+    scope: CollectionScope,
+    id: string,
+    value: T,
+    usedAt: Date,
+  ): Promise<void> {
+    await new FsCollection<T>(
+      { root: this.root, pathsFrom: this.#pathsFrom },
+      this.#dir(spec, scope),
+      spec,
+      (file, work) => this.#oneAtATime(file, work),
+    ).restore(id, value, usedAt);
+  }
+
+  /**
+   * Writes one part of a log whole, as it was, with its last write (the part's file's mtime):
+   * for the migration. What the part held before is replaced.
+   */
+  async restoreLog<T>(
+    spec: CollectionSpec<T>,
+    scope: CollectionScope & { part: string },
+    entries: readonly { entry: T }[],
+    usedAt: Date,
+  ): Promise<void> {
+    const file = join(this.#dir(spec, scope), `${safe(scope.part)}${spec.fs.ext ?? '.jsonl'}`);
+    await mkdir(dirname(file), { recursive: true });
+    const temp = `${file}.${process.pid}.restore.tmp`;
+    const text = entries.map(({ entry }) => `${JSON.stringify(entry)}\n`).join('');
+    await writeFile(temp, text, { mode: 0o600 });
+    await utimes(temp, usedAt, usedAt);
+    await rename(temp, file);
+  }
 
   #base<T>(spec: CollectionSpec<T>, scope: Pick<CollectionScope, 'owner'>): string {
     if (spec.scope === 'global') return this.root;
@@ -246,6 +294,13 @@ class FsCollection<T> implements Collection<T> {
 
   insertOnce(id: string, value: T): Promise<boolean> {
     return writeJson(this.#file(id), this.#stored(value), { exclusive: true });
+  }
+
+  /** The record as it was, its file's mtime the last use given (see FsRecords.restore). */
+  async restore(id: string, value: T, usedAt: Date): Promise<void> {
+    const file = this.#file(id);
+    await writeJson(file, this.#stored(value));
+    await utimes(file, usedAt, usedAt);
   }
 
   update(id: string, change: RecordChange<T>): Promise<T | undefined> {
