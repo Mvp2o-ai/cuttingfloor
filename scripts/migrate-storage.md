@@ -16,7 +16,7 @@ server while that server keeps serving, as often as needed, then one last time a
 | Source | `cuttingfloor-1` (5.161.202.136, Ashburn). Data at `/data` inside the `cuttingfloor` container, `/var/lib/cuttingfloor` on the host. |
 | New server | `cuttingfloor-fsn1` (2.31.35.57, Falkenstein), temporary name `fsn.api.cuttingfloor.ai`, started with `CUTTINGFLOOR_STANDBY=1` (see deploy/hetzner/README.md, "Standby"). |
 | Records | MongoDB Atlas, Frankfurt. Its access list holds both servers' addresses. |
-| Files | The bucket in Falkenstein. **Not possible yet:** this build moves files into a filesystem data root only (`--target-dir`). The object store's target goes into `blobTargetFromEnv` (`packages/server/src/migrate/target.ts`) when `claude/storage-s3` lands; until then `CUTTINGFLOOR_BLOBS=s3` is refused by name. Every command below is otherwise as it will be. |
+| Files | The bucket in Falkenstein: `CUTTINGFLOOR_BLOBS=s3` with the `CUTTINGFLOOR_S3_*` variables, as the new server has them (`blobTargetFromEnv` in `packages/server/src/migrate/target.ts`). Records then go to MongoDB (`CUTTINGFLOOR_RECORDS=mongo`), or, with `--target-dir`, to JSON files there. Run `scripts/check-s3.ts` against the bucket first, and see that its rule aborting incomplete uploads is 8 days or more. |
 | State | A folder on the old server's host, outside the data root: `/var/lib/cuttingfloor-migrate`. It holds the manifest and the reports. Keep it between passes. |
 
 The script runs on the old server from the release image that contains it (the running container

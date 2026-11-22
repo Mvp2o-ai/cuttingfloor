@@ -557,13 +557,14 @@ export class Uploads {
       await uploads.update(id, { set: state });
       meta = { ...meta, ...state };
     }
+    // As on the filesystem: a sender is told another is sending before it is told where from.
+    const busy = () => new UploadRefused(409, 'another request is sending this upload');
+    if (meta.lock && Date.now() - (meta.lock_at ?? 0) < LOCK_STALE_MS) throw busy();
     const received = meta.offset ?? 0;
     const start = request.range?.start ?? 0;
     if (request.range && start !== received) {
       throw new UploadRefused(409, `the upload has ${received} bytes; send from there`, received);
     }
-    const busy = () => new UploadRefused(409, 'another request is sending this upload');
-    if (meta.lock && Date.now() - (meta.lock_at ?? 0) < LOCK_STALE_MS) throw busy();
     const token = randomBytes(9).toString('base64url');
     // Taken only from the state just read: another sender in between loses nothing.
     const mine = await uploads.compareAndSet(

@@ -922,7 +922,8 @@ export class S3BlobStore implements BlobStore {
     for (let turn = 0; ; turn += 1) {
       if (await kept.insertOnce(claim, { key: to, used_at: new Date().toISOString() })) break;
       // A claim its writer never let go of (it died) is taken over after a minute.
-      const stale = await kept.get(claim);
+      // (A claim being written this instant may not read yet: it is as good as held.)
+      const stale = await kept.get(claim).catch(() => undefined);
       const age = stale?.used_at ? Date.now() - Date.parse(stale.used_at) : 0;
       if (stale && age > 60_000 && turn < 2) {
         await kept.delete(claim);

@@ -89,6 +89,78 @@ export function uploadPage(uploadId: string): string {
     return { at: Number(r.headers.get('upload-offset') || 0), complete: r.headers.get('upload-complete') === 'true' };
   }
 
+  // The link with something after its path: /parts, /parts/3, /complete.
+  const sub = (more, query) => location.origin + location.pathname + more + location.search + (query || '');
+  const gone = () => Object.assign(new Error('This link no longer works. Ask your agent for a new one.'), { final: true });
+
+  // Sends the file as numbered parts, six at once, each sent again by itself if it drops. A
+  // reload or another device asks which parts are in and sends the rest. Answers false where
+  // the server takes a file whole (or this one was begun that way): then it is sent in order.
+  async function sendParts(file) {
+    const begun = await fetch(sub('/parts', '&bytes=' + file.size), { cache: 'no-store', headers: { 'upload-name': encodeURIComponent(file.name) } });
+    if (begun.status === 404 || begun.status === 409 || begun.status === 405) return false;
+    const plan = await begun.json().catch(() => ({}));
+    if (begun.status === 413) throw Object.assign(new Error(plan.error || 'The file is too big.'), { final: true });
+    if (begun.status === 403) throw gone();
+    if (!begun.ok || !plan.part_bytes) return false;
+    if (plan.complete) return true;
+    const size = plan.part_bytes;
+    const count = Math.max(1, Math.ceil(file.size / size));
+    const have = new Set((plan.parts || []).map((p) => p.part));
+    const todo = [];
+    for (let n = 1; n <= count; n++) if (!have.has(n)) todo.push(n);
+    const sent = new Map();
+    let done = (plan.parts || []).reduce((sum, p) => sum + p.bytes, 0);
+    const show = () => {
+      let now = done;
+      for (const v of sent.values()) now += v;
+      fill.style.width = (100 * now / Math.max(file.size, 1)) + '%';
+      say('Sending ' + file.name + ': ' + mb(now) + ' of ' + mb(file.size) + '. Keep this page open until it is sent; if you switch apps, come back and it carries on.');
+    };
+    show();
+    cut = new AbortController();
+    const one = async (n) => {
+      const body = file.slice((n - 1) * size, Math.min(n * size, file.size));
+      for (let tries = 0; ; ) {
+        const mine = cut;
+        try {
+          const r = await fetch(sub('/parts/' + n), { method: 'PUT', body, signal: mine.signal });
+          if (r.status === 403 || r.status === 404) throw gone();
+          if (r.status === 413) throw Object.assign(new Error('The file is too big.'), { final: true });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          done += body.size;
+          sent.delete(n);
+          show();
+          return;
+        } catch (error) {
+          // A part cut off because the page came back from the background is not a failure.
+          const resumed = mine.signal.aborted;
+          if (error.final || (!resumed && ++tries > 5)) throw error;
+          if (resumed) { if (cut === mine) cut = new AbortController(); }
+          else await new Promise((r) => setTimeout(r, 1000 * tries));
+        }
+      }
+    };
+    const workers = [];
+    for (let i = 0; i < Math.min(6, todo.length); i++) {
+      workers.push((async () => { while (todo.length) await one(todo.shift()); })());
+    }
+    await Promise.all(workers);
+    for (let tries = 0; ; ) {
+      const r = await fetch(sub('/complete'), { method: 'POST' });
+      if (r.ok) return true;
+      const body = await r.json().catch(() => ({}));
+      // Parts the server does not have after all are sent again.
+      if (r.status === 409 && body.missing && body.missing.length && ++tries <= 3) {
+        for (const n of body.missing) await one(n);
+        continue;
+      }
+      if (r.status === 403 || r.status === 404) throw gone();
+      if (++tries > 3) throw new Error(body.error || 'HTTP ' + r.status);
+      await new Promise((res) => setTimeout(res, 1000 * tries));
+    }
+  }
+
   async function send(file) {
     if (busy) return;
     busy = true;
@@ -97,6 +169,7 @@ export function uploadPage(uploadId: string): string {
     try {
       let { at, complete } = await offset();
       if (at > file.size) at = 0;
+      if (!complete && (await sendParts(file).catch((error) => { if (error.final) throw error; return offset().then((o) => { if (o.complete) return true; throw error; }); }))) complete = true;
       for (let tries = 0; !complete; ) {
         const end = Math.min(at + PART, file.size);
         fill.style.width = (100 * at / Math.max(file.size, 1)) + '%';

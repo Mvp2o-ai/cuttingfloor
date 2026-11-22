@@ -27,6 +27,10 @@ jobs:
       CUTTINGFLOOR_TEST_MONGODB_URI: mongodb://127.0.0.1:27017/?directConnection=true
       # No MongoDB fails these suites here instead of skipping them.
       CUTTINGFLOOR_REQUIRE_MONGO: '1'
+      # The S3 blob store's suites run against a MinIO the job starts below (a service container
+      # cannot be given MinIO's `server` command), and fail here without it.
+      CUTTINGFLOOR_TEST_S3_ENDPOINT: http://127.0.0.1:9100
+      CUTTINGFLOOR_REQUIRE_S3: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
@@ -35,4 +39,5 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: scripts/test-s3.sh
       - run: pnpm check

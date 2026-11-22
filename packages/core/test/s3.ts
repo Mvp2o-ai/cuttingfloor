@@ -27,20 +27,18 @@ async function client() {
       region: TEST_S3.region,
       credentials: { accessKeyId: TEST_S3.accessKeyId, secretAccessKey: TEST_S3.secretAccessKey },
       forcePathStyle: true,
-      maxAttempts: 1,
-      requestHandler: { connectionTimeout: 1500, requestTimeout: 5000 },
     }),
   };
 }
 
 /** Whether the test store answers. Throws instead when it must and doesn't. */
 export async function s3Reachable(): Promise<boolean> {
-  const { sdk, s3 } = await client();
-  const up = await s3.send(new sdk.ListBucketsCommand({})).then(
+  // Any answer at all, within a moment: a port that takes the connection and says nothing (a
+  // container runtime that has stalled) is not a store.
+  const up = await fetch(TEST_S3.endpoint, { signal: AbortSignal.timeout(1500) }).then(
     () => true,
     () => false,
   );
-  s3.destroy();
   if (!up && process.env.CUTTINGFLOOR_REQUIRE_S3) {
     throw new Error(
       'CUTTINGFLOOR_REQUIRE_S3 is set but no S3 store answers (scripts/test-s3.sh starts one)',

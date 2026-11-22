@@ -1,3 +1,5 @@
+/// <reference lib="dom" />
+// The page functions in the browser test below run in the browser.
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
@@ -344,7 +346,8 @@ describe.each(stores)('files in a bucket, records on $store', ({ store, skip }) 
       // While it is sending, another sender is refused.
       await new Promise<void>((r) => broken.write(half.subarray(0, MIB), () => r()));
       await vi.waitFor(async () => {
-        const second = await put(url, cut(at, at + 10), { at, total });
+        // (From a byte further on, so one that arrives before the first has begun lands nothing.)
+        const second = await put(url, cut(at + 1, at + 11), { at: at + 1, total });
         expect(second).toMatchObject({
           status: 409,
           body: { error: 'another request is sending this upload' },
@@ -807,6 +810,107 @@ describe.skipIf(!up)('a server told to keep its files in a bucket', () => {
       await wrong.close();
     } finally {
       log.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// Docker has Chromium at /usr/bin/chromium; elsewhere CHROME_PATH names a Chrome to use.
+const chrome = process.env.CHROME_PATH ?? '/usr/bin/chromium';
+const browserFound = await exec(chrome, ['--version']).then(
+  () => true,
+  () => false,
+);
+
+describe.skipIf(!browserFound)('the upload page in a browser', () => {
+  /** Opens the upload link as a person would, picks the file, and waits for the page to say Sent. */
+  async function sendFromPage(url: string, file: string): Promise<string[]> {
+    const { launch } = await import('puppeteer-core');
+    const browser = await launch({
+      executablePath: chrome,
+      headless: true,
+      args: ['--no-sandbox', '--disable-gpu'],
+    });
+    try {
+      const page = await browser.newPage();
+      const asked: string[] = [];
+      page.on('request', (r) => {
+        const path = new URL(r.url()).pathname;
+        if (r.method() !== 'HEAD')
+          asked.push(`${r.method()} ${path.replace(/^.*\/u_[0-9a-z]+/, '')}`);
+      });
+      await page.goto(url);
+      const input = await page.waitForSelector('#pick');
+      await (input as unknown as { uploadFile(path: string): Promise<void> }).uploadFile(file);
+      await page.waitForFunction(() => document.querySelector('#status')?.className === 'done', {
+        timeout: 60_000,
+      });
+      return asked;
+    } finally {
+      await browser.close();
+    }
+  }
+
+  it.skipIf(!up)('sends the file in numbered parts to a server on a bucket', async () => {
+    const n = await node('filesystem');
+    const owner = 'alice';
+    try {
+      const client = await connect(n.runtime, owner);
+      const body = randomBytes(34 * MIB + 1);
+      const file = join(n.dir, 'Holiday film.mov');
+      await writeFile(file, body);
+      const upload = await startUpload(client, 'video');
+      const asked = await sendFromPage(upload.url, file);
+      expect(asked.filter((a) => a.startsWith('PUT')).sort()).toEqual([
+        'PUT /parts/1',
+        'PUT /parts/2',
+        'PUT /parts/3',
+      ]);
+      expect(asked.at(-1)).toBe('POST /complete');
+      expect(await offset(upload.url)).toEqual({ status: 200, at: body.length, complete: 'true' });
+      const key = `media/${owner}/${upload.upload_id}/data.mov`;
+      expect(sha(await stored(n, key))).toBe(sha(body));
+      const listed = await ok<{ uploads: Array<{ name: string }> }>(client, 'media.list', {});
+      expect(listed.uploads[0]?.name).toBe('Holiday film.mov');
+    } finally {
+      await wipe(n, [owner]);
+      await n.stop();
+    }
+  });
+
+  it('sends it whole, in order, to a server that keeps files on its disk', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'cf-fs-page-'));
+    const runtime = new Runtime({
+      dataDir: join(dir, 'data'),
+      mode: 'hosted',
+      publicUrl: 'http://127.0.0.1:0',
+      mediaRoots: [],
+      exportsDir: null,
+      maxJobs: 1,
+      outputUrlTtlMs: 3_600_000,
+      maxDownloadBytes: 64 * MIB,
+      allowPrivateUrls: false,
+      inlineMaxBytes: MIB,
+      motionUrl: null,
+    });
+    await runtime.start({ sweep: false });
+    const server = createHttpServer({ runtime, credentials: new LocalCredentialStore({}, false) });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    (runtime.config as { publicUrl: string }).publicUrl =
+      `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      const client = await connect(runtime, 'alice');
+      const body = randomBytes(300_000);
+      const file = join(dir, 'clip.mov');
+      await writeFile(file, body);
+      const upload = await startUpload(client, 'video');
+      const asked = await sendFromPage(upload.url, file);
+      expect(asked.filter((a) => a.startsWith('PUT'))).toEqual(['PUT ']);
+      expect(await offset(upload.url)).toEqual({ status: 200, at: body.length, complete: 'true' });
+    } finally {
+      server.closeAllConnections();
+      await new Promise((r) => server.close(r));
+      await runtime.close();
       await rm(dir, { recursive: true, force: true });
     }
   });

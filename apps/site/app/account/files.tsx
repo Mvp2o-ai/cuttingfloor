@@ -94,6 +94,82 @@ export function FilesPanel({ initial }: { initial: Files }) {
     if (res?.ok) setFiles((await res.json()) as Files);
   };
 
+  /**
+   * Sends the file as numbered parts of one size, six at once; a part that drops is sent again
+   * by itself, and a file begun earlier (a reload, another device) sends only what is missing.
+   * False where the server takes a file whole, or this one was begun in order: the caller then
+   * sends it with PUT and Content-Range.
+   */
+  async function sendParts(file: File, key: string, url: string): Promise<boolean> {
+    const u = new URL(url);
+    const sub = (more: string, query = '') => `${u.origin}${u.pathname}${more}${u.search}${query}`;
+    const begun = await fetch(sub('/parts', `&bytes=${file.size}`), { cache: 'no-store' }).catch(
+      () => undefined,
+    );
+    if (!begun || begun.status === 404 || begun.status === 405 || begun.status === 409) {
+      return false;
+    }
+    const plan = (await begun.json().catch(() => ({}))) as {
+      part_bytes?: number;
+      parts?: Array<{ part: number; bytes: number }>;
+      complete?: boolean;
+      error?: string;
+    };
+    if (begun.status === 413 || begun.status === 403) {
+      throw new Final(plan.error || 'The server refused the file.');
+    }
+    if (!begun.ok || !plan.part_bytes) return false;
+    if (plan.complete) return true;
+    const size = plan.part_bytes;
+    const count = Math.max(1, Math.ceil(file.size / size));
+    const have = new Set((plan.parts ?? []).map((p) => p.part));
+    const todo: number[] = [];
+    for (let n = 1; n <= count; n++) if (!have.has(n)) todo.push(n);
+    let done = (plan.parts ?? []).reduce((sum, p) => sum + p.bytes, 0);
+    update(key, { sent: done, note: '' });
+    const one = async (n: number) => {
+      const body = file.slice((n - 1) * size, Math.min(n * size, file.size));
+      for (let tries = 0; ; ) {
+        const cut = new AbortController();
+        inFlight.current.add(cut);
+        try {
+          const r = await fetch(sub(`/parts/${n}`), { method: 'PUT', body, signal: cut.signal });
+          if (r.status === 413 || r.status === 403 || r.status === 404) {
+            throw new Final('The upload link stopped working. Drop the file again.');
+          }
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          done += body.size;
+          update(key, { sent: done, note: '' });
+          return;
+        } catch (error) {
+          // A part cut off because the page came back from the background is not a failure.
+          if (error instanceof Final || (!cut.signal.aborted && ++tries > 5)) throw error;
+          update(key, { note: 'Connection dropped; sending that part again…' });
+          if (!cut.signal.aborted) await new Promise((r) => setTimeout(r, 1000 * tries));
+        } finally {
+          inFlight.current.delete(cut);
+        }
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(6, todo.length) }, async () => {
+        for (let n = todo.shift(); n !== undefined; n = todo.shift()) await one(n);
+      }),
+    );
+    for (let tries = 0; ; ) {
+      const r = await fetch(sub('/complete'), { method: 'POST' });
+      if (r.ok) return true;
+      const reply = (await r.json().catch(() => ({}))) as { missing?: number[]; error?: string };
+      if (r.status === 403 || r.status === 404) {
+        throw new Final('The upload link stopped working. Drop the file again.');
+      }
+      if (++tries > 3) throw new Error(reply.error || `HTTP ${r.status}`);
+      // Parts the server does not have after all are sent again.
+      if (r.status === 409 && reply.missing?.length) for (const n of reply.missing) await one(n);
+      else await new Promise((res) => setTimeout(res, 1000 * tries));
+    }
+  }
+
   async function send(file: File, key: string, resume?: string) {
     track(resume ? 'Upload resumed' : 'Upload started', { kind: kind(file) });
     if (active.current++ === 0) lock.current = await wakeLock();
@@ -122,6 +198,8 @@ export function FilesPanel({ initial }: { initial: Files }) {
         };
       };
       let { at, complete } = resume ? await offset() : { at: 0, complete: false };
+      // Numbered parts, six at once, where the server takes them; in order below where not.
+      if (!complete && (await sendParts(file, key, url))) complete = true;
       for (let tries = 0; !complete; ) {
         const end = Math.min(at + PART, file.size);
         update(key, { sent: at, note: '' });
