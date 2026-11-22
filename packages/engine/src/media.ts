@@ -832,13 +832,14 @@ export class MediaLibrary {
     for (const owner of await this.#ws.records.owners()) {
       const before = n;
       // A media is as old as its record's last use.
-      for (const id of await this.#records(owner).expire(ttlMs)) {
+      // Each media's files and tombstone are dealt with as it goes, before the next is removed.
+      await this.#records(owner).expire(ttlMs, undefined, async (id) => {
         if (MEDIA_ID.test(id)) {
           await this.#drop(owner, id);
           await this.#tombstone(owner, id, 'expired');
         }
         n += 1;
-      }
+      });
       if (n > before) await floorChanged(this.#ws, owner);
       await this.#index(owner).expire(ttlMs);
       await this.#ws.records.collection(MEDIA_GONE, { owner }).expire(GONE_DAYS * 86_400_000);

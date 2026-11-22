@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { defineCollection, FS_HOME, type FsBlobStore, Workspace } from '../src/index.ts';
 import {
@@ -221,6 +221,117 @@ describe('filesystem stores: layout on disk', () => {
       expect((await onDisk()).file).toBe('/media/own.mp4');
       await c.put('m_1', { file: null, note: 'none' });
       expect((await onDisk()).file).toBeNull();
+    } finally {
+      await s.close();
+    }
+  });
+
+  it('a relative data root: same files, paths on disk as they were written from it, both forms read', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'cf-relative-'));
+    try {
+      const given = relative(process.cwd(), join(base, 'data'));
+      expect(isAbsolute(given)).toBe(false);
+      const ws = new Workspace(given);
+      expect(ws.root).toBe(resolve(given));
+      const spec = defineCollection<{ file: string | null }>({
+        name: 'media',
+        scope: 'owner',
+        fs: { dir: 'media', leaf: 'media.json' },
+        blobs: ['file'],
+      });
+      const c = ws.records.collection(spec, { owner: 'alice' });
+      const key = ws.blobs.keys.media('alice', 'm_1', 'source.mp4');
+      await ws.blobs.put(key, { bytes: Buffer.from('bytes') });
+      await c.put('m_1', { file: key });
+      const record = join(ws.root, 'owners', 'alice', 'media', 'm_1', 'media.json');
+      // What the code before blob keys wrote from the same root: join(root, 'owners', …).
+      const old = join(given, 'owners', 'alice', 'media', 'm_1', 'source.mp4');
+      expect(JSON.parse(await readFile(record, 'utf8'))).toEqual({ file: old });
+      expect(await c.get('m_1')).toEqual({ file: key });
+      expect(await readFile(await ws.scratch.materialize(key), 'utf8')).toBe('bytes');
+      expect(await ws.scratch.materialize(key)).toBe(join(ws.root, key));
+      // The absolute form, and a key, read the same.
+      await writeFile(record, JSON.stringify({ file: join(ws.root, key) }));
+      expect((await c.get('m_1'))?.file).toBe(key);
+      await writeFile(record, JSON.stringify({ file: key }));
+      expect((await c.get('m_1'))?.file).toBe(key);
+      expect(ws.scratch.keyOf(old)).toBe(key);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  it('listings skip stray entries that are not names; only a lookup by such an id is refused', async () => {
+    const s = await fsStores();
+    try {
+      const flat = defineCollection<Thing>({
+        name: 'notices',
+        scope: 'owner',
+        fs: { dir: 'notices' },
+      });
+      const byDay = defineCollection<Thing>({
+        name: 'email_log',
+        scope: 'global',
+        fs: { dir: (day) => `email-log/${day}` },
+      });
+      const folders = defineCollection<Thing>({
+        name: 'media',
+        scope: 'owner',
+        fs: { dir: 'media', leaf: 'media.json' },
+      });
+      const c = s.records.collection(flat, { owner: 'alice' });
+      await c.put('a', { name: 'a' });
+      await s.records.collection(byDay, { parent: '2026-11-22' }).put('x', { name: 'x' });
+      await s.records.collection(folders, { owner: 'alice' }).put('m_1', { name: 'm' });
+      const owner = join(s.root, 'owners', 'alice');
+      await writeFile(join(s.root, 'owners', '.DS_Store'), 'stray');
+      await writeFile(join(owner, 'notices', '.DS_Store'), 'stray');
+      await writeFile(join(owner, 'notices', '.hidden.json'), '{"name":"stray"}');
+      await writeFile(join(owner, 'notices', 'a.json.123.abc.tmp'), 'stray');
+      await writeFile(join(owner, 'media', '.DS_Store'), 'stray');
+      await writeFile(join(s.root, 'email-log', '.DS_Store'), 'stray');
+      await writeFile(join(s.root, 'email-log', 'stray.txt'), 'stray');
+      expect(await s.records.owners()).toEqual(['alice']);
+      expect(await c.ids()).toEqual(['a']);
+      expect((await c.find()).map((e) => e.id)).toEqual(['a']);
+      expect(await s.records.parents(byDay)).toEqual(['2026-11-22']);
+      expect(await s.records.collection(folders, { owner: 'alice' }).ids()).toEqual(['m_1']);
+      expect((await s.records.collection(folders, { owner: 'alice' }).find()).length).toBe(1);
+      // Fresh strays stay through an expiry; nothing throws.
+      expect(await c.expire(60_000)).toEqual([]);
+      expect(await s.records.collection(folders, { owner: 'alice' }).expire(60_000)).toEqual([]);
+      expect(await s.records.expireParents(byDay, {}, 60_000)).toEqual([]);
+      await expect(async () => c.get('.hidden')).rejects.toThrow('Not a record id');
+    } finally {
+      await s.close();
+    }
+  });
+
+  it('expire tells of each record as it goes, before the next is removed', async () => {
+    const s = await fsStores();
+    try {
+      for (const spec of [
+        defineCollection<Thing>({ name: 'timelines', scope: 'owner', fs: { dir: 'timelines' } }),
+        defineCollection<Thing>({
+          name: 'media',
+          scope: 'owner',
+          fs: { dir: 'media', leaf: 'media.json' },
+        }),
+      ]) {
+        const c = s.records.collection(spec, { owner: 'alice' });
+        for (const id of ['a', 'b', 'c']) {
+          await c.put(id, { name: id });
+          await s.age.record(spec, { owner: 'alice' }, id, 3_600_000);
+        }
+        const left: number[] = [];
+        const told: string[] = [];
+        const gone = await c.expire(60_000, undefined, async (id) => {
+          told.push(id);
+          left.push((await c.ids()).length);
+        });
+        expect(told).toEqual(gone);
+        expect(left).toEqual([2, 1, 0]);
+      }
     } finally {
       await s.close();
     }

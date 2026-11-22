@@ -89,10 +89,15 @@ export interface Collection<T> {
   /** When it was last written or touched. */
   usedAt(id: string): Promise<Date | undefined>;
   /**
-   * Removes records last used more than `ttlMs` ago; `keep` spares ids. Returns the ids removed.
-   * On the filesystem a record that has a folder takes the folder with it.
+   * Removes records last used more than `ttlMs` ago; `keep` spares ids. `removed` is awaited
+   * for each as it goes, before the next is removed (a tombstone written per record). Returns
+   * the ids removed. On the filesystem a record that has a folder takes the folder with it.
    */
-  expire(ttlMs: number, keep?: (id: string) => boolean): Promise<string[]>;
+  expire(
+    ttlMs: number,
+    keep?: (id: string) => boolean,
+    removed?: (id: string) => Promise<void>,
+  ): Promise<string[]>;
 }
 
 /** An append-only list of small entries (the call log). */

@@ -1,5 +1,5 @@
 import { rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { BlobStore } from './storage/blobs.ts';
 import { type FsBlobOptions, FsBlobStore } from './storage/fs-blobs.ts';
 import { FsRecords } from './storage/fs-records.ts';
@@ -42,9 +42,12 @@ export class Workspace {
   readonly scratch: Scratch;
 
   constructor(root: string, options: FsBlobOptions = {}) {
-    this.root = root;
-    const blobs = new FsBlobStore(root, options);
-    this.records = new FsRecords(root);
+    // Absolute from the start: a relative data root (`./data`) means the folder under the
+    // directory the server started in, whatever a later path is compared against.
+    this.root = resolve(root);
+    const blobs = new FsBlobStore(this.root, options);
+    // Blob fields are written as paths under the root as it was given, as they always were.
+    this.records = new FsRecords(this.root, { pathsFrom: root });
     this.blobs = blobs;
     this.scratch = new FsScratch(blobs);
   }

@@ -1,6 +1,7 @@
-import { appendFile, mkdir, readFile, rm, stat } from 'node:fs/promises';
-import { dirname, isAbsolute, join } from 'node:path';
+import { appendFile, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import {
+  isMissing,
   listDir,
   nameUnder,
   ownerKey,
@@ -34,13 +35,20 @@ export class FsRecords implements Records {
   /** One read-modify-write of a record file at a time. */
   readonly #queues = new Map<string, Promise<unknown>>();
 
-  constructor(root: string) {
-    this.root = root;
+  /** The root as blob fields' paths are written from it: as configured, relative or not. */
+  readonly #pathsFrom: string;
+
+  constructor(root: string, options: { pathsFrom?: string } = {}) {
+    this.root = resolve(root);
+    this.#pathsFrom = options.pathsFrom ?? this.root;
   }
 
   collection<T>(spec: CollectionSpec<T>, scope: CollectionScope = {}): Collection<T> {
-    return new FsCollection<T>(this.root, this.#dir(spec, scope), spec, (file, work) =>
-      this.#oneAtATime(file, work),
+    return new FsCollection<T>(
+      { root: this.root, pathsFrom: this.#pathsFrom },
+      this.#dir(spec, scope),
+      spec,
+      (file, work) => this.#oneAtATime(file, work),
     );
   }
 
@@ -53,7 +61,13 @@ export class FsRecords implements Records {
     scope: Pick<CollectionScope, 'owner'> = {},
   ): Promise<string[]> {
     const dir = this.#parents(spec, scope);
-    return dir ? listDir(dir) : [];
+    if (!dir) return [];
+    // Only folders with a name a parent can have: a stray file is nobody's group.
+    const entries = await readdir(dir, { withFileTypes: true }).catch((error: unknown) => {
+      if (isMissing(error)) return [];
+      throw error;
+    });
+    return entries.filter((e) => e.isDirectory() && named(e.name)).map((e) => e.name);
   }
 
   async expireParents<T>(
@@ -81,7 +95,10 @@ export class FsRecords implements Records {
   }
 
   async owners(): Promise<string[]> {
-    return listDir(join(this.root, 'owners'));
+    // A stray file among the owners' folders (`.DS_Store`) is not an owner.
+    return (await listDir(join(this.root, 'owners'))).filter((n) =>
+      /^[A-Za-z0-9_-]{1,64}$/.test(n),
+    );
   }
 
   async home(_owner: string): Promise<string> {
@@ -118,10 +135,13 @@ export class FsRecords implements Records {
 }
 
 /** An id is one file or folder name: no separators, not hidden. */
+function named(id: string): boolean {
+  return Boolean(id) && !/[/\\\0]/.test(id) && !id.startsWith('.');
+}
+
+/** A caller's id, refused when it is not one. Listings skip such names instead. */
 function safe(id: string): string {
-  if (!id || id.includes('/') || id.includes('\\') || id.includes('\0') || id.startsWith('.')) {
-    throw new Error(`Not a record id: ${id}`);
-  }
+  if (!named(id)) throw new Error(`Not a record id: ${id}`);
   return id;
 }
 
@@ -137,13 +157,20 @@ class FsCollection<T> implements Collection<T> {
   readonly #root: string;
   readonly #blobs: readonly string[];
 
+  readonly #pathsFrom: string;
+  /** What a path written from a relative data root starts with; undefined for an absolute one. */
+  readonly #relative: string | undefined;
+
   constructor(
-    root: string,
+    { root, pathsFrom }: { root: string; pathsFrom: string },
     dir: string,
     spec: CollectionSpec<T>,
     locked: <R>(file: string, work: () => Promise<R>) => Promise<R>,
   ) {
     this.#root = root;
+    this.#pathsFrom = pathsFrom;
+    const given = normalize(pathsFrom);
+    this.#relative = isAbsolute(given) || given === '.' ? undefined : `${given}${sep}`;
     this.#blobs = spec.blobs ?? [];
     this.#dir = dir;
     this.#leaf = spec.fs.leaf;
@@ -164,7 +191,13 @@ class FsCollection<T> implements Collection<T> {
     const value = stored as Record<string, unknown>;
     for (const field of this.#blobs) {
       const ref = value[field];
-      const key = typeof ref === 'string' ? nameUnder(this.#root, ref) : undefined;
+      if (typeof ref !== 'string' || !ref) continue;
+      // A path: absolute, or, written from a relative data root, starting with that root.
+      const key = isAbsolute(ref)
+        ? nameUnder(this.#root, ref)
+        : this.#relative && ref.startsWith(this.#relative)
+          ? nameUnder(this.#root, resolve(ref))
+          : undefined;
       if (key) value[field] = key;
     }
     return stored;
@@ -176,7 +209,9 @@ class FsCollection<T> implements Collection<T> {
     const out = { ...value } as Record<string, unknown>;
     for (const field of this.#blobs) {
       const ref = out[field];
-      if (typeof ref === 'string' && ref && !isAbsolute(ref)) out[field] = under(this.#root, ref);
+      if (typeof ref === 'string' && ref && !isAbsolute(ref)) {
+        out[field] = under(this.#pathsFrom, ref);
+      }
     }
     return out as V;
   }
@@ -240,8 +275,11 @@ class FsCollection<T> implements Collection<T> {
 
   async ids(): Promise<string[]> {
     const names = await listDir(this.#dir);
-    if (this.#leaf) return names.filter((n) => !n.startsWith('.'));
-    return names.filter((n) => n.endsWith(this.#ext)).map((n) => n.slice(0, -this.#ext.length));
+    if (this.#leaf) return names.filter(named);
+    return names
+      .filter((n) => n.endsWith(this.#ext))
+      .map((n) => n.slice(0, -this.#ext.length))
+      .filter(named);
   }
 
   async find(where?: Partial<T>): Promise<RecordEntry<T>[]> {
@@ -273,10 +311,14 @@ class FsCollection<T> implements Collection<T> {
     );
   }
 
-  async expire(ttlMs: number, keep?: (id: string) => boolean): Promise<string[]> {
+  async expire(
+    ttlMs: number,
+    keep?: (id: string) => boolean,
+    removed?: (id: string) => Promise<void>,
+  ): Promise<string[]> {
     if (this.#leaf) {
       // A record's folder is as old as its record's last use; one without a record goes too.
-      const removed: string[] = [];
+      const gone: string[] = [];
       for (const id of await listDir(this.#dir)) {
         if (keep?.(id)) continue;
         const used = await stat(join(this.#dir, id, this.#leaf)).then(
@@ -285,17 +327,23 @@ class FsCollection<T> implements Collection<T> {
         );
         if (used !== undefined && used >= Date.now() - ttlMs) continue;
         await rm(join(this.#dir, id), { recursive: true, force: true });
-        if (used !== undefined) removed.push(id);
+        if (used === undefined) continue;
+        gone.push(id);
+        await removed?.(id);
       }
-      return removed;
+      return gone;
     }
     const record = (name: string) => name.endsWith(this.#ext);
     const id = (name: string) => (record(name) ? name.slice(0, -this.#ext.length) : name);
-    const removed = await sweepDir(this.#dir, ttlMs, (name) =>
-      // Among an owner's other things, only the records are this collection's to remove.
-      record(name) ? Boolean(keep?.(id(name))) : this.#shared,
+    const gone = await sweepDir(
+      this.#dir,
+      ttlMs,
+      (name) =>
+        // Among an owner's other things, only the records are this collection's to remove.
+        record(name) ? Boolean(keep?.(id(name))) : this.#shared,
+      removed && ((name) => removed(id(name))),
     );
-    return removed.map(id);
+    return gone.map(id);
   }
 }
 

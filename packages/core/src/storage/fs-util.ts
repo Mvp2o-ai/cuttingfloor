@@ -75,6 +75,8 @@ export async function sweepDir(
   dir: string,
   ttlMs: number,
   keep?: (name: string) => boolean,
+  /** Told of each entry as it goes, before the next is looked at. */
+  each?: (name: string) => Promise<void>,
 ): Promise<string[]> {
   const cutoff = Date.now() - ttlMs;
   const removed: string[] = [];
@@ -86,10 +88,12 @@ export async function sweepDir(
       if (s.mtimeMs < cutoff) {
         await rm(full, { recursive: true, force: true });
         removed.push(name);
-      }
+      } else continue;
     } catch (error) {
       if (!isMissing(error)) throw error;
+      continue;
     }
+    await each?.(name);
   }
   return removed;
 }

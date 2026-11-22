@@ -78,10 +78,11 @@ export class TimelineStore {
     let n = 0;
     for (const owner of await this.#ws.records.owners()) {
       const gone = this.#ws.records.collection(TIMELINES_GONE, { owner });
-      for (const id of await this.#of(owner).expire(ttlMs)) {
+      // Each timeline's tombstone is written as it goes, before the next is removed.
+      await this.#of(owner).expire(ttlMs, undefined, async (id) => {
         if (/^tl_[0-9a-f]{32}$/.test(id)) await gone.put(id, { at: new Date().toISOString() });
         n += 1;
-      }
+      });
       await gone.expire(GONE_DAYS * 86_400_000);
     }
     return n;
