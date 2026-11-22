@@ -1117,6 +1117,9 @@ describe.skipIf(!s3Up)('reading the bucket back on the new server', () => {
   });
 });
 
+/** Whether the tests run as root, whom file permissions do not stop. */
+const ROOT = process.getuid?.() === 0;
+
 describe('telling a target that differs', () => {
   let src: Seeded;
   let dst: Target;
@@ -1294,7 +1297,8 @@ describe('passes that must not lose data', () => {
     }
   });
 
-  it('stops, removing nothing, when a folder cannot be listed', async () => {
+  // Taking a folder's permissions away stops nobody who is root (the image's test stage is).
+  it.skipIf(ROOT)('stops, removing nothing, when a folder cannot be listed', async () => {
     const folder = src.runtime.ws.ownerDir(OWNER, 'timelines');
     await chmod(folder, 0o000);
     try {
@@ -1548,7 +1552,7 @@ describe('passes that must not lose data', () => {
     await rm(marker, { force: true });
   });
 
-  it('stops at the start when its state folder cannot be written', async () => {
+  it.skipIf(ROOT)('stops at the start when its state folder cannot be written', async () => {
     const locked = await mkdtemp(join(tmpdir(), 'cf-migrate-locked-'));
     await chmod(locked, 0o500);
     try {
