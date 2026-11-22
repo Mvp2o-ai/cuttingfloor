@@ -606,6 +606,33 @@ export class MongoRecords implements Records {
     );
   }
 
+  /**
+   * Writes entries of one part of a log as they were, each with its own time (`at`, which the
+   * log's expiry runs on) and its place in the part (`n`): for the migration. Written again, an
+   * entry replaces itself, so a part can be sent as often as it grows.
+   */
+  async restoreLog<T>(
+    spec: CollectionSpec<T>,
+    scope: CollectionScope & { part: string },
+    entries: readonly { n: number; at: Date; entry: T }[],
+  ): Promise<void> {
+    const { scope: where, prefix } = this.#place(spec, scope, false);
+    const part = safe(scope.part);
+    const col = await this.#handle<Document>(spec as CollectionSpec<unknown>, true);
+    for (let from = 0; from < entries.length; from += 500) {
+      await col.bulkWrite(
+        entries.slice(from, from + 500).map(({ n, at, entry }) => ({
+          replaceOne: {
+            filter: { _id: `${prefix}${part}/${n}` } as unknown as Filter<Document>,
+            replacement: { ...where, part, at, ...pack(entry).body },
+            upsert: true,
+          },
+        })),
+        { ordered: false },
+      );
+    }
+  }
+
   /** Where a spec's records are for a scope. `whole` asks for the parent of a grouped one too. */
   #place<T>(spec: CollectionSpec<T>, scope: CollectionScope, whole: boolean): Place {
     const out: Place['scope'] = {};
