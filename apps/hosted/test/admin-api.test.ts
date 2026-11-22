@@ -339,6 +339,7 @@ describe('admin API', () => {
       first_tool_at: null,
       use_case: null,
       use_case_at: null,
+      sample: null,
       support_messages: [],
       activity: {
         calls: 0,

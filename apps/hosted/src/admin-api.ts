@@ -35,7 +35,7 @@ import { recipientState } from './sequence.ts';
 //   {user, label} and `POST /account/admin-keys/revoke` {user, key_id}, with the site's own key.
 
 /** The API's version: within v1 it only grows, so every change bumps minor or patch. */
-export const ADMIN_API_VERSION = '1.3.1';
+export const ADMIN_API_VERSION = '1.4.0';
 const BASE = '/admin/v1';
 /** Admin keys: their own prefix and folder, so a script key never opens this API. */
 export const ADMIN_KEYS: KeyKind = { prefix: 'cfa_', dir: 'admin-keys', label: 'Admin key' };
@@ -192,7 +192,7 @@ export class AdminApi {
     const rt = this.#o.runtime;
     const meta = user.metadata ?? {};
     const customer = typeof meta.stripe_customer_id === 'string' ? meta.stripe_customer_id : '';
-    const [media, jobs, linked, prefs, claim, calls, messages, spent, apps, purchases] =
+    const [media, jobs, linked, prefs, claim, calls, messages, spent, apps, purchases, shown] =
       await Promise.all([
         rt.media.list(owner),
         rt.jobs.store.list(owner, { status: 'completed', limit: 1000 }),
@@ -210,6 +210,9 @@ export class AdminApi {
         this.#o.apps.read(owner).catch(() => []),
         // Stripe only for one account: a page of 50 would be 50 calls.
         !options.links ? null : customer ? this.#o.access.payments(customer).catch(() => null) : [],
+        rt.ws
+          .readJson<{ sample?: string }>(rt.ws.ownerDir(owner, 'onboarding.json'))
+          .catch(() => undefined),
       ]);
     const now = Date.now();
     const files: File[] = [];
@@ -250,6 +253,7 @@ export class AdminApi {
       first_client: meta.first_client ?? null,
       use_case: claim?.use_case ?? null,
       use_case_at: claim?.claimed_at ?? null,
+      sample: shown ? (shown.sample ?? 'animation-short') : null,
       last_used_at: meta.last_used_at ?? null,
       // Only an account already on the ledger: reading one that isn't would join it to the ledger.
       credits: linked ? await this.#credits(owner) : null,
