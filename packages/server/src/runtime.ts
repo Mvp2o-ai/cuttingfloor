@@ -109,6 +109,12 @@ export interface RuntimeConfig {
    * it is never logged.
    */
   records?: { store: 'mongo'; uri: string; db: string };
+  /**
+   * A server beside the one in production, on a copy of its data (CUTTINGFLOOR_STANDBY=1): it
+   * answers requests, and does nothing to the data by itself. No sweep at start or by the hour,
+   * no recovery of jobs, at start or by the minute.
+   */
+  standby?: boolean;
 }
 
 /**
@@ -213,6 +219,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
       : {}),
     ...(env.CUTTINGFLOOR_URL_SECRET ? { urlSecret: env.CUTTINGFLOOR_URL_SECRET } : {}),
     ...recordsFromEnv(env),
+    ...(env.CUTTINGFLOOR_STANDBY === '1' ? { standby: true } : {}),
   };
 }
 
@@ -324,6 +331,7 @@ export class Runtime {
     await this.ws.records.ready();
     await this.secret();
     await this.ws.blobs.deletePrefix(this.ws.blobs.keys.cache('frames'));
+    if (this.config.standby) return;
     await this.jobs.recover();
     if (options.sweep !== false) {
       await this.#sweepTurn();

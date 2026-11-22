@@ -132,7 +132,16 @@ Treat an authorization error from WorkOS as a separate unresolved configuration 
 - Size: a record is one document, up to the database's 16 MB; a bigger one is refused with a plain error. A media's analyses (transcripts, sounds, faces), the only things that grow large, are files beside the media, not records.
 - Periodic work: the hourly sweep, the job reaper, the account emails and the sign-up sequence run on one server at a time (a 60-second lease in the `locks` collection that the others take over when its holder stops).
 - A server left on the default keeps its files and never loads the database driver.
-- Switching an existing server needs its records moved first (`scripts/migrate-storage.ts`, not written yet): started on an empty database it sees no accounts' records.
+- Switching an existing server needs its records moved first: started on an empty database it sees no accounts' records. `scripts/migrate-storage.ts` moves them, and the files, from a live data root; its runbook is `scripts/migrate-storage.md`.
+
+**Standby: a second server on a copy of the data.** During the move a new server runs on the migrated copy while the old one is still production. Set `CUTTINGFLOOR_STANDBY=1` on the new one. It answers every request as usual (sign in, import, edit, export, upload: use it as a client would), and does nothing to the data by itself, because the copy's "last used" times are only as fresh as the last copy pass and its people must not hear from two servers. It logs one line at start saying so. What it turns off:
+- The sweep at start and every hour (`Runtime.start`, `Runtime.sweep`): timelines, media, finished jobs and their outputs, kept frames, uploads, the meter, the call log, sign-in steps.
+- Job recovery at start and the job reaper every minute (`JobRunner.recover`): a job the old server is running is not marked interrupted in the copy.
+- The lifecycle's sweep at start and every 10 minutes (`Lifecycle.sweep`): new accounts, the welcome, expiry notices, key and partner-link sweeps, the catch-up of ledger spend.
+- The sign-up email sequence (`Sequence`): it is not made, so its webhook and unsubscribe routes are not served either.
+- All email: no mailer is made, whatever `RESEND_API_KEY` holds.
+- Still on: what a request itself causes (a job spends credits in the ledger, an app is noted, a sign-in step is recorded), each job's own heartbeat, the five-minute refresh of the sign-in server's metadata, and clearing this server's own cached frames at start.
+- At the cutover: unset `CUTTINGFLOOR_STANDBY` and restart (`docker compose up -d`). Unset is the default and changes nothing.
 
 **Before a second server.** Records in MongoDB make two servers possible; these still assume one, and are to be dealt with first:
 - Leases are not fenced: a server that loses a lease mid-turn (a stall, the database out of reach for a minute) finishes the turn it began while another starts its own (`packages/core/src/storage/mongo-records.ts:457`; the turns at `packages/server/src/runtime.ts:339,353`, `apps/hosted/src/lifecycle.ts:150`, `apps/hosted/src/sequence.ts:136`). Emails stay single because each is claimed by `insertOnce`; sweeps would overlap.
