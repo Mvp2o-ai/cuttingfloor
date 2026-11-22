@@ -470,7 +470,7 @@ export class Lifecycle {
     const day = at.toISOString().slice(0, 10);
     if (!this.#o.mailer || at.getUTCHours() < EXPIRY_HOUR_UTC || this.#expiryDay === day) return;
     this.#expiryDay = day;
-    for (const owner of await this.#o.runtime.ws.owners()) {
+    for (const owner of await this.#o.runtime.ws.records.owners()) {
       if (!isUser(owner)) continue;
       await this.#expiring(owner, day, now).catch((error: Error) =>
         process.stderr.write(`lifecycle: ${owner}: expiry email: ${error.message}\n`),

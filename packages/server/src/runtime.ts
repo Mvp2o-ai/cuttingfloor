@@ -186,7 +186,16 @@ export class Runtime {
 
   constructor(config: RuntimeConfig) {
     this.config = config;
-    this.ws = new Workspace(config.dataDir);
+    // On the filesystem a blob's direct link is the server's own signed link to it, for the
+    // outputs it serves; nothing else is downloaded.
+    this.ws = new Workspace(config.dataDir, {
+      presign: async (key) => {
+        const m = /^owners\/([A-Za-z0-9_-]{1,64})\/outputs\/((?:j|f)_[0-9a-z]{26})\/([^/]+)$/.exec(
+          key,
+        );
+        return m ? (await this.signOutput(m[1] ?? '', m[2] ?? '', m[3] ?? '')).url : undefined;
+      },
+    });
     this.modelsDir = config.modelsDir ?? join(config.dataDir, 'models');
     this.timelines = new TimelineStore(this.ws);
     this.outputs = new Outputs(this.ws);
