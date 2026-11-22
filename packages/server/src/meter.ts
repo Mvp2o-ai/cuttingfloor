@@ -1,5 +1,4 @@
-import { join } from 'node:path';
-import type { Workspace } from '@cuttingfloor/core';
+import { defineCollection, type Workspace } from '@cuttingfloor/core';
 import type { Job, StartOptions } from '@cuttingfloor/jobs';
 import { JUDGMENTS_PER_CREDIT } from '@cuttingfloor/plans';
 import type { CfError } from '@cuttingfloor/schema';
@@ -11,6 +10,13 @@ import type { CfError } from '@cuttingfloor/schema';
 // expire, so what used them is counted against them for as long as an account plausibly lasts.
 
 export const METER_TTL_MS = 5 * 366 * 24 * 3_600_000;
+
+/** One entry per job or judging call, grouped by the month it ended (`yyyy-mm`). */
+export const METER = defineCollection<MeterEntry>({
+  name: 'meter',
+  scope: 'owner',
+  fs: { dir: (month) => `meter/${month}` },
+});
 
 export interface MeterEntry {
   job_id: string;
@@ -45,9 +51,7 @@ export async function meterJudgments(
     seconds: 0,
     judgments,
   };
-  await ws.writeJson(ws.ownerDir(owner, 'meter', month(now), `${id}.json`), entry, {
-    exclusive: true,
-  });
+  await ws.records.collection(METER, { owner, parent: month(now) }).insertOnce(id, entry);
   return entry;
 }
 
@@ -67,11 +71,9 @@ export async function meterJob(ws: Workspace, job: Job): Promise<MeterEntry | un
     ended_at: job.lastUpdatedAt,
     seconds: Math.round(ms) / 1000,
   };
-  await ws.writeJson(
-    ws.ownerDir(job.owner, 'meter', month(job.lastUpdatedAt), `${job.id}.json`),
-    entry,
-    { exclusive: true },
-  );
+  await ws.records
+    .collection(METER, { owner: job.owner, parent: month(job.lastUpdatedAt) })
+    .insertOnce(job.id, entry);
   return entry;
 }
 
@@ -82,11 +84,11 @@ export async function* meterEntries(
   since: Date,
 ): AsyncGenerator<MeterEntry> {
   const from = since.toISOString();
-  for (const name of (await ws.list(ws.ownerDir(owner, 'meter'))).sort()) {
+  for (const name of (await ws.records.parents(METER, { owner })).sort()) {
     if (name < month(from)) continue;
-    const dir = ws.ownerDir(owner, 'meter', name);
-    for (const file of await ws.list(dir)) {
-      const entry = await ws.readJson<MeterEntry>(join(dir, file));
+    const entries = ws.records.collection(METER, { owner, parent: name });
+    for (const id of await entries.ids()) {
+      const entry = await entries.get(id);
       if (entry && entry.ended_at >= from) yield entry;
     }
   }
