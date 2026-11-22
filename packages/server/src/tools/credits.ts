@@ -1,10 +1,12 @@
+import { randomBytes } from 'node:crypto';
 import { defineCollection } from '@cuttingfloor/core';
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 import {
   type AccountGetResult,
   ClaimFreeCreditsInput,
   ClaimFreeCreditsResult,
 } from '@cuttingfloor/schema';
-import type { McpServer } from '@modelcontextprotocol/server';
+import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import { askJev, JEV_URL } from '../jev.ts';
 import { PLAYER_TOOL_META } from '../player.ts';
 import { guard, ok } from '../result.ts';
@@ -41,6 +43,27 @@ export const CLAIMS = defineCollection<FreeCreditsClaim>({
 /** The sample credits.claim added for the account: one record, id `onboarding`. */
 export const ONBOARDING = defineCollection<{ media_id: string; sample?: string }>({
   name: 'account_onboarding',
+  scope: 'owner',
+  fs: { dir: '' },
+});
+
+/**
+ * Every task an assistant gave credits.claim, one record per call (id: the time, then a random
+ * tail): a user's later projects add to the list; the claim record keeps only the first.
+ */
+export interface ClaimedTask {
+  use_case: string;
+  at: string;
+}
+export const CLAIM_TASKS = defineCollection<ClaimedTask>({
+  name: 'account_claim_tasks',
+  scope: 'owner',
+  fs: { dir: 'claim-tasks' },
+});
+
+/** The one time the account's first tool result carried the claim guidance: one record, id `claim-guided`. */
+export const CLAIM_GUIDED = defineCollection<{ at: string; tool: string }>({
+  name: 'account_claim_guided',
   scope: 'owner',
   fs: { dir: '' },
 });
@@ -110,6 +133,16 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
         .insertOnce('free-credits', claim);
       // Claimed now or before: either way the account's next connection is not welcomed again.
       sawClaim(deps.runtime, deps.owner());
+      // Every call adds its task, first or later: a user's next project is worth knowing too.
+      await deps.runtime.ws.records
+        .collection(CLAIM_TASKS, { owner: deps.owner() })
+        .put(`${claim.claimed_at.replace(/\D/g, '')}${randomBytes(3).toString('hex')}`, {
+          use_case,
+          at: claim.claimed_at,
+        })
+        .catch((error: Error) =>
+          process.stderr.write(`credits.claim: ${deps.owner()}: task: ${error.message}\n`),
+        );
       const balance = await credits(deps);
       const left =
         balance === null ? '' : `: ${balance.left === null ? 'no cap' : `${balance.left} left`}`;
@@ -133,6 +166,60 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
       return ok(result);
     }),
   );
+}
+
+/** What the account's first tool result says: a fact about the account and the offer that fits it. */
+const GUIDANCE = `This account's ${FREE_CREDITS} free credits aren't activated yet. Ask the user what they'd like to make, then credits.claim with their answer activates them and puts a sample video that fits it in their library.`;
+
+/**
+ * The first tool result an account ever gets carries the claim guidance, once for good: no
+ * connection, host or claim state brings it back. Hosts keep the instructions from the day a
+ * connector was added; a result is read on every call. A signed-in hosted account only, never
+ * one that has claimed, never an error result, and never credits.claim's own. Wraps the request
+ * handler the SDK sets when the first tool registers, so it must run before any tool is.
+ */
+export function guideFirstCall(server: McpServer, deps: ServerDeps): void {
+  if (deps.runtime.config.mode !== 'hosted' || !deps.account) return;
+  const protocol = server.server as unknown as {
+    setRequestHandler: (method: string, ...rest: unknown[]) => void;
+  };
+  const set = protocol.setRequestHandler.bind(protocol);
+  protocol.setRequestHandler = (method, ...rest) => {
+    const handler = rest.pop() as (request: unknown, ctx: unknown) => Promise<unknown>;
+    if (method !== 'tools/call') return set(method, ...rest, handler);
+    return set(method, ...rest, async (request: unknown, ctx: unknown) => {
+      const result = (await handler(request, ctx)) as CallToolResult;
+      const tool = String((request as { params?: { name?: unknown } }).params?.name ?? '');
+      if (result?.isError || tool === 'credits.claim' || !Array.isArray(result?.content))
+        return result;
+      const owner = deps.owner();
+      if (done.get(deps.runtime)?.has(owner)) return result;
+      try {
+        if (await creditsClaimed(deps.runtime, owner)) return markDone(deps.runtime, owner, result);
+        const first = await deps.runtime.ws.records
+          .collection(CLAIM_GUIDED, { owner })
+          .insertOnce('claim-guided', { at: new Date().toISOString(), tool });
+        markDone(deps.runtime, owner, result);
+        return first
+          ? { ...result, content: [...result.content, { type: 'text', text: GUIDANCE }] }
+          : result;
+      } catch (error) {
+        // A store that cannot be read leaves the result as the tool made it.
+        process.stderr.write(`credits.guidance: ${owner}: ${(error as Error).message}\n`);
+        return result;
+      }
+    });
+  };
+}
+
+/** The accounts this process has settled: claimed, or already shown the guidance. */
+const done = new WeakMap<Runtime, Set<string>>();
+
+function markDone(runtime: Runtime, owner: string, result: CallToolResult): CallToolResult {
+  const owners = done.get(runtime) ?? new Set<string>();
+  done.set(runtime, owners);
+  owners.add(owner);
+  return result;
 }
 
 /** The balance as account.get gives it; null when it can't be read, so the claim still answers. */

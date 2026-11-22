@@ -72,6 +72,11 @@ export const AdminAccount = z.object({
       "The task the user is looking to complete with cuttingfloor, as their assistant gave it when it claimed the free credits; null when it hasn't",
     ),
   use_case_at: nullableTime.describe('When the assistant activated the free credits'),
+  use_cases: z
+    .array(z.object({ use_case: z.string(), at: time }))
+    .describe(
+      "Every task the assistant gave credits.claim, oldest first: the first activated the free credits, later ones are the user's next projects. Empty before a claim",
+    ),
   sample: z
     .string()
     .nullable()

@@ -194,6 +194,15 @@ beforeAll(async () => {
     use_case: 'cut a podcast into Shorts',
     claimed_at: '2026-11-02T01:00:00.000Z',
   });
+  // A later claim's task comes after the first one.
+  await runtime.ws.writeJson(runtime.ws.ownerDir(ACTIVE, 'claim-tasks', 'b.json'), {
+    use_case: 'make a trailer for my channel',
+    at: '2026-11-09T12:00:00.000Z',
+  });
+  await runtime.ws.writeJson(runtime.ws.ownerDir(ACTIVE, 'claim-tasks', 'a.json'), {
+    use_case: 'cut a podcast into Shorts',
+    at: '2026-11-02T01:00:00.000Z',
+  });
   await runtime.ws.writeJson(runtime.ws.ownerDir(ACTIVE, 'support-messages', 'a.json'), {
     at: '2026-11-03T10:00:00.000Z',
     owner: ACTIVE,
@@ -339,6 +348,7 @@ describe('admin API', () => {
       first_tool_at: null,
       use_case: null,
       use_case_at: null,
+      use_cases: [],
       sample: null,
       support_messages: [],
       activity: {
@@ -367,6 +377,10 @@ describe('admin API', () => {
       first_client: 'claude',
       use_case: 'cut a podcast into Shorts',
       use_case_at: '2026-11-02T01:00:00.000Z',
+      use_cases: [
+        { use_case: 'cut a podcast into Shorts', at: '2026-11-02T01:00:00.000Z' },
+        { use_case: 'make a trailer for my channel', at: '2026-11-09T12:00:00.000Z' },
+      ],
       out_of_credits: {
         first_at: '2026-11-20T09:00:00.000Z',
         last_at: '2026-11-20T09:00:00.000Z',

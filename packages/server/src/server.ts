@@ -15,7 +15,7 @@ import { toErrorResult } from './result.ts';
 import type { Runtime } from './runtime.ts';
 import { registerTasks } from './tasks.ts';
 import { registerCreateTools } from './tools/create.ts';
-import { claimFile, claimSeen, registerCreditTools } from './tools/credits.ts';
+import { claimFile, claimSeen, guideFirstCall, registerCreditTools } from './tools/credits.ts';
 import { registerInterchangeTools } from './tools/interchange.ts';
 import { registerJudgeTools } from './tools/judge.ts';
 import { registerListenTools } from './tools/listen.ts';
@@ -112,6 +112,7 @@ export function createServer(deps: ServerDeps): McpServer {
     { instructions: instructions(deps.runtime.config, unclaimed(deps)) },
   );
   logToolCalls(server, (entry) => deps.runtime.logCall(deps.owner(), entry));
+  guideFirstCall(server, deps);
   compactSchemas(server);
   allowTaskReplies(server);
   drainTools(server, deps.runtime);
