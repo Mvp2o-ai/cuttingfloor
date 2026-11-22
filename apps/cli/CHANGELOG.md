@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.65.0
+
+### Minor Changes
+
+- 3bae00b: A sound effects pack: 22 meme and hype sounds (boom, whooshes, airhorn, record scratch, fail buzzer, sad trombone, ding, pop, glitch and more), CC0 or made by cuttingfloor, listed at video://catalog/sound_effects and imported by url.
+
 ## 0.64.0
 
 ### Minor Changes
