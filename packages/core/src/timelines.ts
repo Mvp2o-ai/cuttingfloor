@@ -1,5 +1,3 @@
-import { stat } from 'node:fs/promises';
-import { join } from 'node:path';
 import {
   CfError,
   EditArgs,
@@ -16,6 +14,8 @@ import {
   type TimelineResolver,
 } from './edit.ts';
 import { timelineIdOf } from './hash.ts';
+import { TIMELINES, TIMELINES_GONE } from './storage/collections.ts';
+import type { Collection } from './storage/records.ts';
 import type { Workspace } from './workspace.ts';
 
 export const TIMELINE_TTL_MS = KEEP_MS.timeline;
@@ -31,26 +31,27 @@ export class TimelineStore {
     this.#ws = ws;
   }
 
-  #file(owner: string, id: string): string {
+  #of(owner: string): Collection<TimelineDoc | V1Doc> {
+    return this.#ws.records.collection(TIMELINES, { owner });
+  }
+
+  #id(id: string): string {
     if (!/^tl_[0-9a-f]{32}$/.test(id)) throw new CfError('bad_request', `Not a timeline id: ${id}`);
-    return this.#ws.ownerDir(owner, 'timelines', `${id}.json`);
+    return id;
   }
 
   /** Stores a document and returns its id. Storing the same document twice is a no-op. */
   async put(owner: string, doc: TimelineDoc): Promise<string> {
-    const id = await timelineIdOf(doc);
-    const file = this.#file(owner, id);
-    const created = await this.#ws.writeJson(file, doc, { exclusive: true });
-    if (!created) await this.#ws.readJson(file, { touch: true });
+    const id = this.#id(await timelineIdOf(doc));
+    const created = await this.#of(owner).insertOnce(id, doc);
+    if (!created) await this.#of(owner).get(id, { touch: true });
     return id;
   }
 
   async get(owner: string, id: string): Promise<TimelineDoc> {
     const doc = await this.find(owner, id);
     if (doc) return doc;
-    const gone = await this.#ws.readJson<{ at: string }>(
-      this.#ws.ownerDir(owner, 'timelines-gone', `${id}.json`),
-    );
+    const gone = await this.#ws.records.collection(TIMELINES_GONE, { owner }).get(id);
     if (gone) {
       throw new CfError(
         'expired',
@@ -69,30 +70,19 @@ export class TimelineStore {
   }
 
   async find(owner: string, id: string): Promise<TimelineDoc | undefined> {
-    const doc = await this.#ws.readJson<TimelineDoc | V1Doc>(this.#file(owner, id), {
-      touch: true,
-    });
+    const doc = await this.#of(owner).get(this.#id(id), { touch: true });
     return doc && migrate(doc);
   }
 
   async sweep(ttlMs = TIMELINE_TTL_MS): Promise<number> {
     let n = 0;
-    for (const owner of await this.#ws.owners()) {
-      const base = this.#ws.path('owners', owner, 'timelines');
-      for (const name of await this.#ws.list(base)) {
-        const s = await stat(join(base, name)).catch(() => undefined);
-        if (!s || s.mtimeMs >= Date.now() - ttlMs) continue;
-        await this.#ws.remove(join(base, name));
-        if (/^tl_[0-9a-f]{32}\.json$/.test(name)) {
-          const gone = this.#ws.path('owners', owner, 'timelines-gone', name);
-          await this.#ws.writeJson(gone, { at: new Date().toISOString() });
-        }
+    for (const owner of await this.#ws.records.owners()) {
+      const gone = this.#ws.records.collection(TIMELINES_GONE, { owner });
+      for (const id of await this.#of(owner).expire(ttlMs)) {
+        if (/^tl_[0-9a-f]{32}$/.test(id)) await gone.put(id, { at: new Date().toISOString() });
         n += 1;
       }
-      await this.#ws.sweep(
-        this.#ws.path('owners', owner, 'timelines-gone'),
-        GONE_DAYS * 86_400_000,
-      );
+      await gone.expire(GONE_DAYS * 86_400_000);
     }
     return n;
   }

@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { FLOOR } from './storage/collections.ts';
 import { ownerKey, type Workspace } from './workspace.ts';
 
 // Where an account's floor stands: a cursor in `owners/{owner}/floor.json` that every change an
@@ -14,7 +15,7 @@ export async function floorChanged(ws: Workspace, owner: string): Promise<void> 
   const key = ownerKey(owner);
   const cursor = `${Date.now().toString(36)}.${randomBytes(4).toString('hex')}`;
   try {
-    await ws.writeJson(ws.path('owners', key, 'floor.json'), { cursor });
+    await ws.records.collection(FLOOR, { owner: key }).put('floor', { cursor });
   } catch (error) {
     process.stderr.write(`floor: ${key}: ${(error as Error).message}\n`);
   }
@@ -23,8 +24,9 @@ export async function floorChanged(ws: Workspace, owner: string): Promise<void> 
 
 /** The owner's cursor now. */
 export async function floorCursor(ws: Workspace, owner: string): Promise<string> {
-  const floor = await ws
-    .readJson<{ cursor?: string }>(ws.path('owners', ownerKey(owner), 'floor.json'))
+  const floor = await ws.records
+    .collection(FLOOR, { owner })
+    .get('floor')
     .catch(() => undefined);
   return floor?.cursor ?? '0';
 }
