@@ -1,5 +1,5 @@
 import { ticksPerFrame } from '@cuttingfloor/core';
-import { clipPlacements, renderPicture } from '@cuttingfloor/engine';
+import { clipPlacements, type MediaLibrary } from '@cuttingfloor/engine';
 import type { StoredClip, TimelineDoc } from '@cuttingfloor/schema';
 import type { Runtime } from './runtime.ts';
 
@@ -34,9 +34,9 @@ export async function placementsFor(
         if (seq) src = { width: seq.width, height: seq.height, alpha: true };
       } else if (c.type === 'media') {
         const record = await rt.media.find(owner, c.media_id);
-        let p: ReturnType<typeof renderPicture> | undefined;
+        let p: Awaited<ReturnType<MediaLibrary['picture']>> | undefined;
         try {
-          p = record ? renderPicture(record, 'export') : undefined;
+          p = record ? await rt.media.picture(record, 'export') : undefined;
         } catch {
           p = undefined;
         }

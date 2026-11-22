@@ -5,7 +5,6 @@ import {
   mayBeTransparent,
   mediaStills,
   notReady,
-  renderSource,
   renderTimelineFrames,
 } from '@cuttingfloor/engine';
 import {
@@ -212,7 +211,7 @@ export function registerJudgeTools(server: McpServer, deps: ServerDeps): void {
       const images: JevImage[] = await Promise.all(
         found.map(async ({ record, time }, i) => {
           const [jpeg] = await mediaStills(
-            renderSource(record, 'export'),
+            await rt.media.sourceFile(record, 'export'),
             pictureSize(record),
             [time],
             { ...PICTURE, signal, checker: mayBeTransparent(record.probe) },

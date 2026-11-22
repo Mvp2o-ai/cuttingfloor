@@ -4,7 +4,6 @@ import {
   mayBeTransparent,
   mediaStills,
   notReady,
-  renderSource,
   renderTimelineFrames,
 } from '@cuttingfloor/engine';
 import {
@@ -198,7 +197,7 @@ export function registerSeekTools(server: McpServer, deps: ServerDeps): void {
         if (!p?.video) throw new CfError('bad_request', `Media ${mediaId} has no picture to seek`);
         fps = p.video.fps ?? null;
         duration = p.kind === 'image' ? 0 : (p.duration ?? 0);
-        const file = renderSource(record, 'export');
+        const file = await rt.media.sourceFile(record, 'export');
         const size = pictureSize(record);
         stillsOf = (times, signal, onFrame) =>
           mediaStills(file, size, times, {

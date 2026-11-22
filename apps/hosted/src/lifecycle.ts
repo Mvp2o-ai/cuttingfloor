@@ -1,6 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { join } from 'node:path';
+import { defineCollection, TIMELINES } from '@cuttingfloor/core';
 import type { Job } from '@cuttingfloor/jobs';
 import {
   FREE_CREDITS,
@@ -19,7 +19,7 @@ import {
   type Runtime,
   startUpload,
 } from '@cuttingfloor/server';
-import { type Access, type AccessCheck, type Balance, type Link, linkPath } from './access.ts';
+import { type Access, type AccessCheck, type Balance, LEDGER_LINKS } from './access.ts';
 import type { Mailer } from './email.ts';
 import { dueFiles, expiryMessage, exportOf, type Going } from './expiry-notices.ts';
 import type { ScriptKeys } from './keys.ts';
@@ -241,13 +241,13 @@ export class Lifecycle {
     const link = access.ledger;
     if (!link || entry.ended_at < link.since) return;
     const ws = this.#o.runtime.ws;
-    const marker = ws.ownerDir(owner, 'ledger-spent', `${entry.job_id}.json`);
-    let mark = await ws.readJson<Spent>(marker);
+    const marks = ws.records.collection(LEDGER_SPENT, { owner });
+    let mark = await marks.get(entry.job_id);
     if (!mark) {
       const credits = Math.round((billedSeconds(entry) / 60) * 1000) / 1000;
       // A job too short to round to a thousandth of a credit costs nothing (the ledger takes none).
       if (!(credits > 0)) {
-        await ws.writeJson(marker, { at: new Date().toISOString(), told: true });
+        await marks.put(entry.job_id, { at: new Date().toISOString(), told: true });
         return;
       }
       const spent = await this.#o.ledger.usage({
@@ -264,11 +264,11 @@ export class Lifecycle {
         crossed: spent.crossed,
         top_up: spent.top_up,
       };
-      await ws.writeJson(marker, mark);
+      await marks.put(entry.job_id, mark);
     }
     if (mark.told) return;
     await this.#tell(owner, access, entry.job_id, mark);
-    await ws.writeJson(marker, { ...mark, told: true });
+    await marks.put(entry.job_id, { ...mark, told: true });
   }
 
   /** Emails what a spend crossed, and what automatic top-up did there. */
@@ -328,25 +328,21 @@ export class Lifecycle {
    */
   async #spendMissed(key: string, now: number): Promise<void> {
     const ws = this.#o.runtime.ws;
-    await ws.sweep(ws.path('owners', key, 'ledger-spent'), SPENT_TTL_MS);
+    const marks = ws.records.collection(LEDGER_SPENT, { owner: key });
+    await marks.expire(SPENT_TTL_MS);
     if (!isUser(key)) return;
-    const link = await ws.readJson<Partial<Link>>(linkPath(ws, key));
+    const link = await ws.records.collection(LEDGER_LINKS, { owner: key }).get('link');
     if (!link?.account_id || !link.since) return;
     const from = new Date(Math.max(Date.parse(link.since), now - SPEND_RETRY_MS));
     let access: (Access & { allowed: true }) | undefined;
     for await (const entry of meterEntries(ws, key, from)) {
-      const mark = await ws.readJson<Spent>(
-        ws.ownerDir(key, 'ledger-spent', `${entry.job_id}.json`),
-      );
+      const mark = await marks.get(entry.job_id);
       if (mark?.told) continue;
       const known = access ?? (await this.#o.access.require(key));
       access = known;
       // A given plan has no ledger link: its jobs are never spent, even if it ends later.
       if (!known.ledger)
-        await ws.writeJson(ws.ownerDir(key, 'ledger-spent', `${entry.job_id}.json`), {
-          at: new Date().toISOString(),
-          told: true,
-        });
+        await marks.put(entry.job_id, { at: new Date().toISOString(), told: true });
       else await this.#spend(key, known, entry);
     }
   }
@@ -393,9 +389,7 @@ export class Lifecycle {
         : undefined;
     const ws = this.#o.runtime.ws;
     const sent = async (kind: 'low' | 'out') =>
-      Boolean(
-        await ws.readJson(ws.ownerDir(owner, 'notices', `${warningName(balance, kind)}.json`)),
-      );
+      Boolean(await ws.records.collection(NOTICES, { owner }).get(warningName(balance, kind)));
     const warnings: AccountGetResult['warnings'] = [];
     if (balance.left !== null) {
       const lowAt = bought ? LOW_CREDITS : Math.round((balance.per_month ?? 0) * 0.2 * 10) / 10;
@@ -438,14 +432,14 @@ export class Lifecycle {
    */
   async sweep(now = Date.now()): Promise<void> {
     const ws = this.#o.runtime.ws;
-    for (const key of await ws.owners()) {
-      await ws.sweep(ws.path('owners', key, 'notices'), NOTICE_TTL_MS);
+    for (const key of await ws.records.owners()) {
+      await ws.records.collection(NOTICES, { owner: key }).expire(NOTICE_TTL_MS);
       await this.#spendMissed(key, now).catch((error: Error) =>
         process.stderr.write(`lifecycle: ${key}: spend: ${error.message}\n`),
       );
     }
-    for (const name of await ws.list(ws.path('partners'))) {
-      await ws.sweep(ws.path('partners', name), PARTNER_LINK_TTL_MS);
+    for (const name of await ws.records.parents(PARTNER_LINKS)) {
+      await ws.records.collection(PARTNER_LINKS, { parent: name }).expire(PARTNER_LINK_TTL_MS);
     }
     await this.#o.keys?.sweep();
     await this.#o.adminKeys?.sweep();
@@ -476,7 +470,7 @@ export class Lifecycle {
     const day = at.toISOString().slice(0, 10);
     if (!this.#o.mailer || at.getUTCHours() < EXPIRY_HOUR_UTC || this.#expiryDay === day) return;
     this.#expiryDay = day;
-    for (const owner of await this.#o.runtime.ws.owners()) {
+    for (const owner of await this.#o.runtime.ws.records.owners()) {
       if (!isUser(owner)) continue;
       await this.#expiring(owner, day, now).catch((error: Error) =>
         process.stderr.write(`lifecycle: ${owner}: expiry email: ${error.message}\n`),
@@ -570,15 +564,14 @@ export class Lifecycle {
     const { mailer } = this.#o;
     if (!mailer || !message.to) return false;
     const ws = this.#o.runtime.ws;
-    const file = ws.ownerDir(owner, 'notices', `${name}.json`);
-    if (!(await ws.writeJson(file, { at: new Date().toISOString() }, { exclusive: true })))
-      return false;
+    const notices = ws.records.collection(NOTICES, { owner });
+    if (!(await notices.insertOnce(name, { at: new Date().toISOString() }))) return false;
     try {
       await mailer.send({ ...message, key: `${owner}:${name}` });
       return true;
     } catch (error) {
       // Unclaimed again, so the next chance sends it.
-      await ws.remove(file).catch(() => undefined);
+      await notices.delete(name).catch(() => undefined);
       throw error;
     }
   }
@@ -725,8 +718,8 @@ export class Lifecycle {
     if ('error' in user) return json(res, 400, user);
     const { email, sub } = user;
     const ws = this.#o.runtime.ws;
-    const link = ws.path('partners', partner, `${sha256(sub)}.json`);
-    const linked = await ws.readJson<{ email: string; owner: string }>(link);
+    const links = ws.records.collection(PARTNER_LINKS, { parent: partner });
+    const linked = await links.get(sha256(sub));
     if (linked && linked.email !== email)
       return json(res, 409, {
         error: `This ${partner} user is tied to another email; ask for its key with that one`,
@@ -740,7 +733,7 @@ export class Lifecycle {
     }
     try {
       const made = await keys.rotate(account.owner, { name: partner, sub });
-      await ws.writeJson(link, { email, owner: account.owner });
+      await links.put(sha256(sub), { email, owner: account.owner });
       process.stderr.write(
         `partner ${partner}: key ${made.key_id} for ${account.owner}${account.created ? ' (new)' : ''}\n`,
       );
@@ -776,13 +769,13 @@ export class Lifecycle {
     if ('error' in user) return json(res, 400, user);
     const { email, sub } = user;
     const ws = this.#o.runtime.ws;
-    const link = ws.path('partners', partner, `${sha256(sub)}.json`);
+    const links = ws.records.collection(PARTNER_LINKS, { parent: partner });
     // Each account to delete, and whether WorkOS still has its user.
     let accounts: { id: string; email: string; user: boolean }[];
     let linked: { owner?: string } | undefined;
     try {
       accounts = (await this.#usersWith(email)).map((u) => ({ id: u.id, email, user: true }));
-      linked = await ws.readJson<{ owner?: string }>(link);
+      linked = await links.get(sha256(sub));
       const tied = linked?.owner;
       if (tied && isUser(tied) && !accounts.some((a) => a.id === tied)) {
         const found = await this.#workosUser(tied);
@@ -797,7 +790,7 @@ export class Lifecycle {
     try {
       for (const account of accounts) await this.#erase(account.id, account.email);
       await this.#unlink(new Set(accounts.map((a) => a.id)), email);
-      await ws.remove(link);
+      await links.delete(sha256(sub));
       // Last: while the WorkOS user is there, a retry finds the account and finishes the rest.
       for (const account of accounts) if (account.user) await this.#deleteUser(account.id);
     } catch (error) {
@@ -827,16 +820,17 @@ export class Lifecycle {
     await this.#o.keys?.removeAll(owner);
     await this.#o.adminKeys?.removeAll(owner);
     await this.#o.rights?.revoke(owner, 'admin');
-    const timelines = new Set(
-      (await ws.list(ws.ownerDir(owner, 'timelines'))).map((name) => name.replace(/\.json$/, '')),
-    );
+    const timelines = new Set(await ws.records.collection(TIMELINES, { owner }).ids());
     if (timelines.size) {
-      const frames = ws.path('cache', 'frames');
-      for (const name of await ws.list(frames))
-        if (timelines.has(name.slice(0, name.indexOf('-')))) await ws.remove(join(frames, name));
+      const frames = `${ws.blobs.keys.cache('frames')}/`;
+      for (const { key } of await ws.blobs.list(frames)) {
+        const name = key.slice(frames.length);
+        if (timelines.has(name.slice(0, name.indexOf('-')))) await ws.blobs.delete(key);
+      }
     }
     await forgetRecipient(ws, owner, email);
-    await ws.remove(ws.ownerDir(owner));
+    await ws.blobs.deletePrefix(ws.blobs.keys.owner(owner));
+    await ws.records.forget(owner);
     this.#o.access.forget(owner);
     this.#seen.delete(owner);
     this.#apps.delete(owner);
@@ -846,13 +840,12 @@ export class Lifecycle {
   /** Removes every partner's link to these accounts or this email. */
   async #unlink(owners: Set<string>, email: string): Promise<void> {
     const ws = this.#o.runtime.ws;
-    for (const name of await ws.list(ws.path('partners'))) {
-      for (const file of await ws.list(ws.path('partners', name))) {
-        const path = ws.path('partners', name, file);
-        const link = await ws
-          .readJson<{ email?: string; owner?: string }>(path)
-          .catch(() => undefined);
-        if (link?.email === email || (link?.owner && owners.has(link.owner))) await ws.remove(path);
+    for (const name of await ws.records.parents(PARTNER_LINKS)) {
+      const links = ws.records.collection(PARTNER_LINKS, { parent: name });
+      for (const id of await links.ids()) {
+        const link = await links.get(id).catch(() => undefined);
+        if (link?.email === email || (link?.owner && owners.has(link.owner)))
+          await links.delete(id);
       }
     }
   }
@@ -1173,6 +1166,27 @@ interface Spent {
   crossed?: LedgerUsage['crossed'];
   top_up?: LedgerUsage['top_up'];
 }
+
+/** That a job was spent on the ledger, by job id (`owners/{owner}/ledger-spent/`). */
+export const LEDGER_SPENT = defineCollection<Spent>({
+  name: 'ledger_spent',
+  scope: 'owner',
+  fs: { dir: 'ledger-spent' },
+});
+
+/** That a notice was sent to an account, by its name: written once, so it is sent once. */
+export const NOTICES = defineCollection<{ at: string }>({
+  name: 'notices',
+  scope: 'owner',
+  fs: { dir: 'notices' },
+});
+
+/** A partner's user and the account its key is for, by the user id's SHA-256, per partner. */
+export const PARTNER_LINKS = defineCollection<{ email?: string; owner?: string }>({
+  name: 'partners',
+  scope: 'global',
+  fs: { dir: (partner) => `partners/${partner}` },
+});
 
 export interface WorkosUser {
   id: string;

@@ -47,8 +47,7 @@ export {
   mediaRef,
   notReady,
   type Progress,
-  renderPicture,
-  renderSource,
+  sourceRef,
 } from './media.ts';
 export { compileMlt, lengthFrames, type MltSource, scaledSize } from './mlt.ts';
 export {

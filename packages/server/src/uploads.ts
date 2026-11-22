@@ -1,10 +1,15 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
-import { stat, writeFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
-import type { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-import { floorChanged, isMissing, ownerKey, randomId, type Workspace } from '@cuttingfloor/core';
+import { extname } from 'node:path';
+import { Readable } from 'node:stream';
+import {
+  type BlobKey,
+  type Collection,
+  defineCollection,
+  floorChanged,
+  ownerKey,
+  randomId,
+  type Workspace,
+} from '@cuttingfloor/core';
 import { readableSize } from '@cuttingfloor/engine';
 import { CfError, KEEP_MS, span } from '@cuttingfloor/schema';
 
@@ -14,7 +19,7 @@ export const UPLOAD_TTL_MS = KEEP_MS.upload;
 interface UploadMeta {
   upload_id: string;
   name: string;
-  /** The file's data, in the upload's folder; named with the file's extension for probing. */
+  /** The name of the upload's blob, which carries the file's extension for probing. */
   file: string;
   bytes: number | null;
   complete: boolean;
@@ -26,6 +31,13 @@ interface UploadMeta {
 }
 
 export type UploadVia = 'media.upload' | 'account_page' | 'data_uri';
+
+/** An upload's record: `owners/{owner}/uploads/{upload_id}/upload.json` on the filesystem. */
+export const UPLOADS = defineCollection<UploadMeta>({
+  name: 'uploads',
+  scope: 'owner',
+  fs: { dir: 'uploads', leaf: 'upload.json' },
+});
 
 export interface UploadState {
   upload_id: string;
@@ -124,7 +136,7 @@ export class Uploads {
       ...(room !== undefined && room < this.maxBytes ? { max_bytes: room } : {}),
       via,
     };
-    await this.#ws.writeJson(this.#record(ownerKey(owner), id), meta);
+    await this.#records(owner).put(id, meta);
     await floorChanged(this.#ws, owner);
     const exp = Date.now() + UPLOAD_TTL_MS;
     const path = `/uploads/${ownerKey(owner)}/${id}`;
@@ -170,12 +182,8 @@ export class Uploads {
     const key = ownerKey(owner);
     const meta = await this.#meta(key, upload_id);
     if (!meta) throw new CfError('engine_error', `Upload ${upload_id} vanished`);
-    await writeFile(join(this.#dir(key, upload_id), meta.file), bytes, { mode: 0o600 });
-    await this.#ws.writeJson(this.#record(key, upload_id), {
-      ...meta,
-      bytes: bytes.length,
-      complete: true,
-    });
+    await this.#ws.blobs.put(this.#blob(key, meta), { bytes }, { private: true });
+    await this.#records(key).put(upload_id, { ...meta, bytes: bytes.length, complete: true });
     await floorChanged(this.#ws, owner);
     return upload_id;
   }
@@ -244,7 +252,7 @@ export class Uploads {
           .slice(0, 8)
           .replace(/[^.\w]/g, '');
         meta = { ...meta, name: named, ...(received === 0 ? { file: `data${ext}` } : {}) };
-        await this.#ws.writeJson(this.#record(owner, id), meta);
+        await this.#records(owner).put(id, meta);
       }
       const total = request.range ? request.range.total : request.length;
       const limit = meta.max_bytes ?? this.maxBytes;
@@ -255,7 +263,7 @@ export class Uploads {
       if ((total ?? 0) > limit || start + (request.length ?? 0) > limit) {
         throw new UploadRefused(413, tooBig, received);
       }
-      const file = join(this.#dir(owner, id), meta.file);
+      const blob = this.#blob(owner, meta);
       let size = start;
       const counted = async function* (source: Readable) {
         for await (const chunk of source) {
@@ -265,11 +273,17 @@ export class Uploads {
         }
       };
       try {
-        await pipeline(
-          body,
-          counted,
-          createWriteStream(file, { flags: request.range ? 'a' : 'w' }),
-        );
+        const { blobs } = this.#ws;
+        // A part continues the blob where it stands; a whole file replaces it. The filesystem
+        // store appends in place, so what has landed is the blob's size.
+        if (request.range) {
+          await blobs.multipartPart(
+            blob,
+            await blobs.multipartStart(blob),
+            1,
+            Readable.from(counted(body)),
+          );
+        } else await blobs.put(blob, { stream: Readable.from(counted(body)) });
       } catch (error) {
         if (error instanceof UploadRefused) throw error;
         // A broken connection keeps what arrived, for the client to resume from.
@@ -282,7 +296,7 @@ export class Uploads {
       // A whole-file PUT sent without a length ends when its body does.
       const complete = request.range || total !== null ? size === total : true;
       if (complete) {
-        await this.#ws.writeJson(this.#record(owner, id), { ...meta, bytes: size, complete: true });
+        await this.#records(owner).put(id, { ...meta, bytes: size, complete: true });
         await floorChanged(this.#ws, owner);
       }
       return { upload_id: id, received: size, complete };
@@ -291,8 +305,14 @@ export class Uploads {
     }
   }
 
-  /** A complete upload's file and name, for media.import. */
-  async take(owner: string, id: string): Promise<{ file: string; name: string; via?: UploadVia }> {
+  /**
+   * A complete upload's blob and name, for media.import; `file` is the blob as a local file on
+   * this node, to read.
+   */
+  async take(
+    owner: string,
+    id: string,
+  ): Promise<{ blob: BlobKey; file: string; name: string; via?: UploadVia }> {
     const key = ownerKey(owner);
     const meta = await this.#meta(key, id);
     if (!meta) {
@@ -310,8 +330,10 @@ export class Uploads {
         },
       );
     }
+    const blob = this.#blob(key, meta);
     return {
-      file: join(this.#dir(key, id), meta.file),
+      blob,
+      file: await this.#ws.scratch.materialize(blob),
       name: meta.name,
       ...(meta.via ? { via: meta.via } : {}),
     };
@@ -331,7 +353,7 @@ export class Uploads {
   > {
     const key = ownerKey(owner);
     const out = [];
-    for (const id of await this.#ws.list(this.#ws.path('owners', key, 'uploads'))) {
+    for (const id of await this.#records(key).ids()) {
       if (!/^u_[0-9a-z]{26}$/.test(id)) continue;
       const meta = await this.#meta(key, id);
       if (!meta) continue;
@@ -352,36 +374,36 @@ export class Uploads {
 
   /** Forgets an upload once imported. */
   async remove(owner: string, id: string): Promise<void> {
-    await this.#ws.remove(this.#dir(ownerKey(owner), id));
+    const { blobs } = this.#ws;
+    await blobs.deletePrefix(blobs.keys.upload(owner, id, ''));
+    await this.#records(owner).delete(id);
     await floorChanged(this.#ws, owner);
   }
 
   async sweep(): Promise<void> {
-    for (const owner of await this.#ws.owners()) {
-      // An hour past the URL's life, so a PUT that was still running finishes first.
-      await this.#ws.sweep(this.#ws.path('owners', owner, 'uploads'), UPLOAD_TTL_MS + 3_600_000);
+    const { records, blobs } = this.#ws;
+    for (const owner of await records.owners()) {
+      // An hour past the URL's life, so a PUT that was still running finishes first. An upload
+      // goes whole, its record with its bytes, by when either was last written.
+      await blobs.expire(blobs.keys.uploads(owner), UPLOAD_TTL_MS + 3_600_000);
     }
   }
 
-  #dir(owner: string, id: string): string {
-    return this.#ws.path('owners', owner, 'uploads', id);
+  #records(owner: string): Collection<UploadMeta> {
+    return this.#ws.records.collection(UPLOADS, { owner });
   }
 
-  #record(owner: string, id: string): string {
-    return join(this.#dir(owner, id), 'upload.json');
+  /** The key of the upload's bytes (`owner` is an owner or its key). */
+  #blob(owner: string, meta: UploadMeta): BlobKey {
+    return this.#ws.blobs.keys.upload(owner, meta.upload_id, meta.file);
   }
 
   async #meta(owner: string, id: string): Promise<UploadMeta | undefined> {
-    return this.#ws.readJson<UploadMeta>(this.#record(owner, id));
+    return this.#records(owner).get(id);
   }
 
   async #size(owner: string, meta: UploadMeta): Promise<number> {
-    try {
-      return (await stat(join(this.#dir(owner, meta.upload_id), meta.file))).size;
-    } catch (error) {
-      if (isMissing(error)) return 0;
-      throw error;
-    }
+    return (await this.#ws.blobs.head(this.#blob(owner, meta)))?.bytes ?? 0;
   }
 
   async #sign(path: string, exp: number): Promise<string> {

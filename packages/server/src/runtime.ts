@@ -2,7 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { availableParallelism, hostname } from 'node:os';
 import { extname, join } from 'node:path';
-import { ownerKey, TimelineStore, Workspace } from '@cuttingfloor/core';
+import { defineCollection, ownerKey, TimelineStore, Workspace } from '@cuttingfloor/core';
 import {
   MEDIA_TTL_MS,
   MediaLibrary,
@@ -12,9 +12,10 @@ import {
 } from '@cuttingfloor/engine';
 import { FileJobStore, type Job, JobRunner } from '@cuttingfloor/jobs';
 import { KEEP } from '@cuttingfloor/schema';
-import { CALLS_TTL_MS, type CallEntry, jobEnd, recordCall } from './calls.ts';
+import { CALLS, CALLS_TTL_MS, type CallEntry, jobEnd, recordCall } from './calls.ts';
 import { SearchIndexer } from './indexer.ts';
-import { METER_TTL_MS, type MeterEntry, meterJob, meterJudgments } from './meter.ts';
+import { METER, METER_TTL_MS, type MeterEntry, meterJob, meterJudgments } from './meter.ts';
+import { Outputs } from './outputs.ts';
 import { Uploads } from './uploads.ts';
 
 /**
@@ -23,6 +24,20 @@ import { Uploads } from './uploads.ts';
  */
 const SIGNED_LINK =
   /https?:\/\/[^/\s"\\]+\/(outputs|watch)\/([A-Za-z0-9_-]{1,64}\/(?:j|f|m)_[0-9a-z]{26}\/[^/?\s"\\]+)\?exp=(\d+)&sig=([A-Za-z0-9_-]+)/g;
+
+/** Usage counts an older build kept per owner; nothing writes them now, and what is left goes. */
+const LEGACY_USAGE = defineCollection<unknown>({
+  name: 'usage',
+  scope: 'owner',
+  fs: { dir: 'usage' },
+});
+
+/** Hosted sign-in steps, grouped by day (apps/hosted funnel.ts writes them). */
+export const FUNNEL_DAYS = defineCollection<unknown>({
+  name: 'funnel',
+  scope: 'global',
+  fs: { dir: (day) => `funnel/${day}` },
+});
 
 export interface RuntimeConfig {
   /** Data root: timelines, media, jobs, outputs and caches, all with TTLs. */
@@ -158,6 +173,8 @@ export class Runtime {
   readonly indexer: SearchIndexer;
   readonly jobs: JobRunner;
   readonly uploads: Uploads;
+  /** Files jobs and previews leave for download. */
+  readonly outputs: Outputs;
   /** Downloaded models, kept across restarts (they are checksummed, not user data). */
   readonly modelsDir: string;
   #secret: Buffer | undefined;
@@ -169,9 +186,19 @@ export class Runtime {
 
   constructor(config: RuntimeConfig) {
     this.config = config;
-    this.ws = new Workspace(config.dataDir);
+    // On the filesystem a blob's direct link is the server's own signed link to it, for the
+    // outputs it serves; nothing else is downloaded.
+    this.ws = new Workspace(config.dataDir, {
+      presign: async (key) => {
+        const m = /^owners\/([A-Za-z0-9_-]{1,64})\/outputs\/((?:j|f)_[0-9a-z]{26})\/([^/]+)$/.exec(
+          key,
+        );
+        return m ? (await this.signOutput(m[1] ?? '', m[2] ?? '', m[3] ?? '')).url : undefined;
+      },
+    });
     this.modelsDir = config.modelsDir ?? join(config.dataDir, 'models');
     this.timelines = new TimelineStore(this.ws);
+    this.outputs = new Outputs(this.ws);
     this.media = new MediaLibrary(this.ws, {
       roots: config.mediaRoots,
       maxDownloadBytes: config.maxDownloadBytes,
@@ -233,7 +260,7 @@ export class Runtime {
    */
   async start(options: { sweep?: boolean } = {}): Promise<void> {
     await this.secret();
-    await this.ws.remove(this.ws.path('cache', 'frames'));
+    await this.ws.blobs.deletePrefix(this.ws.blobs.keys.cache('frames'));
     await this.jobs.recover();
     if (options.sweep !== false) {
       await this.sweep();
@@ -289,22 +316,28 @@ export class Runtime {
     await this.media.sweep(MEDIA_TTL_MS);
     await this.jobs.store.sweep();
     // Frames kept for download (render.frames urls) last as long as their links.
-    for (const owner of await this.ws.owners()) {
-      await this.ws.sweep(
-        this.ws.path('owners', owner, 'outputs'),
-        this.config.outputUrlTtlMs,
-        (name) => !name.startsWith('f_'),
+    const { records, blobs } = this.ws;
+    for (const owner of await records.owners()) {
+      await this.outputs.forget(
+        owner,
+        await blobs.expire(
+          blobs.keys.outputs(owner),
+          this.config.outputUrlTtlMs,
+          (name) => !name.startsWith('f_'),
+        ),
       );
+      // And any record whose output went some other way (the job sweep above, an older server).
+      await this.outputs.prune(owner);
     }
     await this.uploads.sweep();
-    for (const owner of await this.ws.owners()) {
-      await this.ws.sweep(this.ws.path('owners', owner, 'usage'), 2 * 24 * 3_600_000);
-      await this.ws.sweep(this.ws.path('owners', owner, 'meter'), METER_TTL_MS);
-      await this.ws.sweep(this.ws.path('owners', owner, 'calls'), CALLS_TTL_MS);
+    for (const owner of await records.owners()) {
+      await records.collection(LEGACY_USAGE, { owner }).expire(2 * 24 * 3_600_000);
+      await records.expireParents(METER, { owner }, METER_TTL_MS);
+      await records.log(CALLS, { owner }).expire(CALLS_TTL_MS);
     }
-    await this.ws.sweep(this.ws.path('cache', 'frames'), 24 * 3_600_000);
+    await blobs.expire(blobs.keys.cache('frames'), 24 * 3_600_000);
     // Hosted sign-in steps (apps/hosted funnel.ts), one folder per day.
-    await this.ws.sweep(this.ws.path('funnel'), 400 * 24 * 3_600_000);
+    await records.expireParents(FUNNEL_DAYS, {}, 400 * 24 * 3_600_000);
   }
 
   async secret(): Promise<Buffer> {
@@ -426,8 +459,8 @@ export class Runtime {
     if (id.startsWith('m_')) {
       // An owner key is its own key, so the media library finds the owner's media by it.
       const record = await this.media.find(key, id);
-      return record?.file ?? undefined;
+      return record?.file ? this.media.local(record.file) : undefined;
     }
-    return this.ws.path('owners', key, 'outputs', id, name);
+    return this.outputs.local(key, id, name);
   }
 }

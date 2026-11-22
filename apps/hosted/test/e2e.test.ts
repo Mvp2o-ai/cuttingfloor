@@ -3262,7 +3262,9 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       const { stderr } = await exec('ffmpeg', [
         '-hide_banner',
         '-i',
-        (await env.runtime.media.get('local', voice.media_id)).file as string,
+        await env.runtime.media.local(
+          (await env.runtime.media.get('local', voice.media_id)).file as string,
+        ),
         '-af',
         'volumedetect',
         '-f',
@@ -3343,7 +3345,9 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       const shaky = await importMedia({ path: join(m, 'shaky.mp4') });
       const steady = await create('create.stabilized', { media_id: shaky.media_id });
       expect(steady).toMatchObject({ kind: 'video', has_audio: true, width: 640, height: 360 });
-      const file = (await env.runtime.media.get('local', steady.media_id)).file as string;
+      const file = await env.runtime.media.local(
+        (await env.runtime.media.get('local', steady.media_id)).file as string,
+      );
       const v = (await ffprobe(file)).streams.find((st) => st.codec_type === 'video');
       expect(v?.codec_name).toBe('prores');
       expect(Number(v?.nb_read_packets)).toBe(75);
@@ -3407,7 +3411,8 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         );
         return stdout[3] ?? -1;
       };
-      const file = async (id: string) => (await env.runtime.media.get('local', id)).file as string;
+      const file = async (id: string) =>
+        await env.runtime.media.local((await env.runtime.media.get('local', id)).file as string);
 
       const picture = await importMedia({ path: join(m, 'cutout.jpg') });
       const still = await create('create.cutout', {
@@ -3482,7 +3487,9 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         region: { at_seconds: 0.5, x: 60 / 320, y: 90 / 240, w: 60 / 320, h: 60 / 240 },
       });
       expect(disc).toMatchObject({ kind: 'video', width: 320, height: 240 });
-      const mov = (await env.runtime.media.get('local', disc.media_id)).file as string;
+      const mov = await env.runtime.media.local(
+        (await env.runtime.media.get('local', disc.media_id)).file as string,
+      );
       /** Alpha at a point of frame n. */
       const alphaAt = async (n: number, x: number, y: number) => {
         const { stdout } = await exec(
@@ -3515,7 +3522,9 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         media_id: two.media_id,
         region: { at_seconds: 1, points: [{ x: 230 / 320, y: 0.5 }] },
       });
-      const sq = (await env.runtime.media.get('local', square.media_id)).file as string;
+      const sq = await env.runtime.media.local(
+        (await env.runtime.media.get('local', square.media_id)).file as string,
+      );
       const { stdout } = await exec(
         'ffmpeg',
         [
@@ -4378,7 +4387,11 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
           { text, voice },
         );
         if (started.job_id) await waitJob(started.job_id, 300_000);
-        files.push((await env.runtime.media.get('local', started.media_id)).file as string);
+        files.push(
+          await env.runtime.media.local(
+            (await env.runtime.media.get('local', started.media_id)).file as string,
+          ),
+        );
       }
       const durations = await Promise.all(
         files.map(async (f) => Number((await ffprobe(f)).format.duration)),

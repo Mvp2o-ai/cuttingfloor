@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { copyFile, link, mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, link, mkdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ticksPerFrame, toView } from '@cuttingfloor/core';
+import { type OutputRecord, ticksPerFrame, toView } from '@cuttingfloor/core';
 import {
   exportTimeline,
   fingerprint,
@@ -12,7 +12,6 @@ import {
   notReady,
   qaCheck,
   renderMediaFrames,
-  renderSource,
   resolvePreset,
 } from '@cuttingfloor/engine';
 import { inlineJobContext, type Job, type JobContext } from '@cuttingfloor/jobs';
@@ -90,9 +89,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         const key = `${uri}\0${args.size}\0${args.long_edge}\0${quality ?? ''}`;
         const dir = `f_${createHash('sha256').update(key).digest('hex').slice(0, 26)}`;
         const name = `${uri.split('/')[3]}-${frames.join('_')}.${imageExtension(args.format)}`;
-        const folder = rt.ws.ownerDir(owner, 'outputs', dir);
-        await mkdir(folder, { recursive: true });
-        await writeFile(join(folder, name), data);
+        await rt.outputs.write(owner, dir, name, data, 'frames');
         const { url, expiresAt } = await rt.signOutput(owner, dir, name);
         images.push({
           uri,
@@ -124,7 +121,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         if (!record.probe?.video || !fps)
           throw new CfError('bad_request', `Media ${args.media_id} has no picture`);
         const full = args.size === 'full';
-        const file = renderSource(record, full ? 'export' : 'preview');
+        const file = await rt.media.sourceFile(record, full ? 'export' : 'preview');
         const v = record.probe.video;
         const rendered = await renderMediaFrames(file, fps, args.frames, {
           longEdge: full ? Math.max(v.width ?? 0, v.height ?? 0) || args.long_edge : args.long_edge,
@@ -229,9 +226,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       rt.jobs.start(
         job,
         async ({ signal, progress, status, waiting, aside }: JobContext) => {
-          const outDir = rt.ws.ownerDir(owner, 'outputs', job.id);
-          await mkdir(outDir, { recursive: true });
-          const out = join(outDir, name);
+          const out = await rt.outputs.reserve(owner, job.id, name);
           progress(0, 'preparing sources');
           await addPasses(rt, owner, doc, sources, 'export', true, signal, {
             timelineId: args.timeline_id,
@@ -269,7 +264,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
               .on('end', () => resolve(hash.digest('hex')));
           });
           const result = {
-            ...(await publish(rt, owner, job.id, out, name, { page: true })),
+            ...(await publish(rt, owner, job.id, out, name, { page: true, kind: 'export' })),
             sha256,
             fingerprint: await fingerprint(out),
             frames,
@@ -530,8 +525,9 @@ export async function publish(
   jobId: string,
   out: string,
   name: string,
-  options: { page?: boolean } = {},
+  options: { page?: boolean; kind?: OutputRecord['kind'] } = {},
 ) {
+  await rt.outputs.publish(owner, jobId, name, out, options.kind ?? 'timeline');
   let file: string | undefined;
   const exportsDir = rt.config.exportsDir;
   if (exportsDir) {

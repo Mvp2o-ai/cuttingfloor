@@ -14,8 +14,6 @@ import {
   notReady,
   type Probe,
   renderMatte,
-  renderPicture,
-  renderSource,
   SOUND_MODELS,
   speak,
   splitStems,
@@ -188,11 +186,15 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         const say = (f: number, m: string) => progress(f, `${record.media_id}: ${m}`);
         const share = finish ? 0.6 : 0.85;
         const made = await make(
-          rt.media.dir(owner, record.media_id),
+          await rt.media.derivedDir(owner, record.media_id),
           (f, m) => say(share * f, m),
           signal,
         );
-        record.file = typeof made === 'string' ? made : made.file;
+        record.file = await rt.media.own(
+          owner,
+          record.media_id,
+          typeof made === 'string' ? made : made.file,
+        );
         if (typeof made !== 'string' && made.warnings.length) record.warnings = made.warnings;
         let done = await rt.media.ingest(owner, record, (f, m) => say(share + 0.1 * f, m), signal);
         if (finish)
@@ -229,7 +231,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       }
       out.push({
         name: a.name,
-        data: (await readFile(record.file)).toString('base64'),
+        data: (await readFile(await rt.media.local(record.file))).toString('base64'),
         fingerprint: record.fingerprint ?? a.media_id,
       });
     }
@@ -423,11 +425,15 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         },
         args.words
           ? async (record, progress, signal) => {
-              const transcript = await voiceWords(record.file as string, args.text, {
-                modelsDir: rt.modelsDir,
-                signal,
-                onProgress: (f, m) => progress(f, `timing words: ${m}`),
-              });
+              const transcript = await voiceWords(
+                await rt.media.local(record.file as string),
+                args.text,
+                {
+                  modelsDir: rt.modelsDir,
+                  signal,
+                  onProgress: (f, m) => progress(f, `timing words: ${m}`),
+                },
+              );
               return rt.media.saveAnalysis(deps.owner(), record.media_id, 'transcript', transcript);
             }
           : undefined,
@@ -455,7 +461,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       if (!p.video || (p.kind !== 'video' && p.kind !== 'image')) {
         throw new CfError('bad_request', `Media ${args.media_id} has no picture to cut out`);
       }
-      const picture = renderPicture(source, 'export');
+      const picture = await rt.media.picture(source, 'export');
       const image = p.kind === 'image';
       const region = cutoutRegion(args.region, p);
       const model: CutoutModel = region
@@ -528,7 +534,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
           hint: 'Stabilising needs moving pictures; a still has no shake',
         });
       }
-      const picture = renderPicture(source, 'export');
+      const picture = await rt.media.picture(source, 'export');
       const recipe = {
         engine: 'vidstab-1',
         source: source.fingerprint ?? source.media_id,
@@ -584,7 +590,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       if (!p.video || (p.kind !== 'video' && p.kind !== 'image')) {
         throw new CfError('bad_request', `Media ${args.media_id} has no picture to upscale`);
       }
-      const picture = renderPicture(source, 'export');
+      const picture = await rt.media.picture(source, 'export');
       const width = picture.width ?? p.video.width;
       const height = picture.height ?? p.video.height;
       const image = p.kind === 'image';
@@ -762,21 +768,19 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
         job,
         async ({ signal, progress }) => {
           const first = fresh.values().next().value as MediaRecord;
-          const outputs = Object.fromEntries(
-            [...fresh].map(([stem, r]) => [
-              stem,
-              join(rt.media.dir(owner, r.media_id), 'source.wav'),
-            ]),
-          );
-          await splitStems(renderSource(source, 'export'), outputs, {
-            workDir: rt.media.dir(owner, first.media_id),
+          const outputs: Record<string, string> = {};
+          for (const [stem, r] of fresh) {
+            outputs[stem] = join(await rt.media.derivedDir(owner, r.media_id), 'source.wav');
+          }
+          await splitStems(await rt.media.sourceFile(source, 'export'), outputs, {
+            workDir: await rt.media.derivedDir(owner, first.media_id),
             signal,
             onProgress: (f) => progress(0.9 * f, 'stems: separating'),
           });
           const done = new Map(known);
           let i = 0;
           for (const [stem, record] of fresh) {
-            record.file = outputs[stem] as string;
+            record.file = await rt.media.own(owner, record.media_id, outputs[stem] as string);
             const ready = await rt.media.ingest(
               owner,
               record,
@@ -880,8 +884,18 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
           progress(0, 'cutting out the picture and the speech');
           const picture = join(dir, 'lipsync-video.mp4');
           const speech = join(dir, 'lipsync-audio.wav');
-          await excerptPicture(renderSource(video.record, 'export'), picture, videoSpan, signal);
-          await excerptSound(renderSource(audio.record, 'export'), speech, audioSpan, signal);
+          await excerptPicture(
+            await rt.media.sourceFile(video.record, 'export'),
+            picture,
+            videoSpan,
+            signal,
+          );
+          await excerptSound(
+            await rt.media.sourceFile(audio.record, 'export'),
+            speech,
+            audioSpan,
+            signal,
+          );
           const dest = join(dir, 'source.mp4');
           await syncLipsync(
             {

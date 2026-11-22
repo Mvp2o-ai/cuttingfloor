@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
+import { basename } from 'node:path';
 import {
   analyseBeats,
   detectFaces,
@@ -20,7 +20,6 @@ import {
   notReady,
   pictureSeries,
   renderMediaFrames,
-  renderSource,
   SOUND_MODELS,
   SPEECH_MODELS,
   type SpeechProbabilities,
@@ -132,9 +131,7 @@ async function writeTranscript(
       ? `-${(transcript.from ?? 0).toFixed(1)}-${transcript.until == null ? 'end' : transcript.until.toFixed(1)}s`
       : '';
   const name = `${base}-transcript${stretch}.txt`;
-  const dir = rt.ws.ownerDir(owner, 'outputs', jobId);
-  await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, name), `${transcript.text.trim()}\n`);
+  await rt.outputs.write(owner, jobId, name, `${transcript.text.trim()}\n`, 'transcript');
   const signed = await rt.signOutput(owner, jobId, name);
   const until = Date.now() + KEEP_MS.job;
   return {
@@ -510,16 +507,13 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     if (job.status !== 'completed' || result?.isError) {
       throw new CfError('bad_request', `Export ${jobId} did not finish (${job.status})`);
     }
-    const dir = rt.ws.ownerDir(owner, 'outputs', jobId);
-    const [name] = (await readdir(dir).catch(() => [] as string[])).filter(
-      (n) => !n.startsWith('.'),
-    );
+    const name = await rt.outputs.file(owner, jobId, (n) => !n.startsWith('.'));
     if (!name) {
       throw new CfError('not_found', `Export ${jobId} has no file any more`, {
         hint: 'Outputs expire 7 days after the export; export the timeline again',
       });
     }
-    return join(dir, name);
+    return rt.outputs.local(owner, jobId, name);
   };
 
   /** One frame of a video or an edit as a PNG at full size, for a still media. */
@@ -553,13 +547,18 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     const v = record.probe?.video;
     const fps = v?.fps;
     if (!v || !fps) throw new CfError('bad_request', `Media ${s.media_id} has no picture`);
-    const [image] = await renderMediaFrames(renderSource(record, 'export'), fps, [s.frame], {
-      longEdge: Math.max(v.width ?? 0, v.height ?? 0) || 1920,
-      format: 'png',
-      layout: 'single',
-      checker: false,
-      ...(signal ? { signal } : {}),
-    });
+    const [image] = await renderMediaFrames(
+      await rt.media.sourceFile(record, 'export'),
+      fps,
+      [s.frame],
+      {
+        longEdge: Math.max(v.width ?? 0, v.height ?? 0) || 1920,
+        format: 'png',
+        layout: 'single',
+        checker: false,
+        ...(signal ? { signal } : {}),
+      },
+    );
     if (!image) throw new CfError('render_failed', 'No image was rendered');
     return image;
   };
@@ -691,10 +690,15 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       );
       if (local && 'job_id' in source) {
         // The render is copied: outputs and media expire on their own clocks.
-        record.file = await rt.media.adopt(owner, record, local);
+        record.file = await rt.media.adopt(owner, record, { file: local });
         await rt.media.save(owner, record);
       } else if (local && 'upload_id' in source) {
-        record.file = await rt.media.adopt(owner, record, local, { move: true });
+        record.file = await rt.media.adopt(
+          owner,
+          record,
+          upload ? { blob: upload.blob } : { file: local },
+          { move: true },
+        );
         await rt.media.save(owner, record);
         await rt.uploads.remove(owner, source.upload_id);
       }
@@ -993,7 +997,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       rt.jobs.start(
         job,
         async ({ signal, progress }) => {
-          const file = renderSource(record, 'export');
+          const file = await rt.media.sourceFile(record, 'export');
           const v = p?.video;
           const size = pictureSize(record);
           const keep = (
@@ -1503,7 +1507,7 @@ export async function importBundled(
   const upload_id = await rt.uploads.put(owner, name, await readFile(file));
   const upload = await rt.uploads.take(owner, upload_id);
   const record = await rt.media.create(owner, { upload: upload_id, file_name: name }, name);
-  record.file = await rt.media.adopt(owner, record, upload.file, { move: true });
+  record.file = await rt.media.adopt(owner, record, { blob: upload.blob }, { move: true });
   await rt.media.save(owner, record);
   await rt.uploads.remove(owner, upload_id);
   const job = await startIngest(rt, owner, record, {}, { meta: { unbilled } });

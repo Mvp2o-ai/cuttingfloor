@@ -1,5 +1,3 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
 import {
   buildPictureIndex,
   INDEX_VERSION,
@@ -8,7 +6,6 @@ import {
   mayBeTransparent,
   type PictureIndex,
   readPictureIndex,
-  renderSource,
 } from '@cuttingfloor/engine';
 import { PICTURE, pictureSize } from './tools/judge.ts';
 
@@ -42,13 +39,15 @@ export class SearchIndexer {
   /** Where the media's index stands; queues it when it has none yet. */
   async status(owner: string, record: MediaRecord): Promise<IndexStatus> {
     if (!indexable(record)) return { state: 'no_picture' };
-    const dir = this.#media.searchDir(owner, record.media_id);
+    const dir = await this.#media.derivedDir(owner, record.media_id, 'search');
     const index = await readPictureIndex(dir);
     if (index) return { state: 'indexed', index };
-    const failed = await readFile(join(dir, 'failed.json'), 'utf8').then(
-      (t) => JSON.parse(t) as { version: number; message: string },
-      () => null,
-    );
+    const failed = await this.#media
+      .readDerived(owner, record.media_id, 'search', 'failed.json')
+      .then((t) =>
+        t === undefined ? null : (JSON.parse(t) as { version: number; message: string }),
+      )
+      .catch(() => null);
     if (failed?.version === INDEX_VERSION) return { state: 'failed', message: failed.message };
     this.enqueue(owner, record.media_id);
     return { state: 'indexing' };
@@ -86,7 +85,7 @@ export class SearchIndexer {
   async #build(owner: string, id: string): Promise<void> {
     const record = await this.#media.find(owner, id);
     if (record?.status !== 'ready' || !indexable(record)) return;
-    const dir = this.#media.searchDir(owner, id);
+    const dir = await this.#media.derivedDir(owner, id, 'search');
     if (await readPictureIndex(dir)) return;
     const p = record.probe;
     const kind = p?.kind === 'image' ? 'image' : 'video';
@@ -94,8 +93,10 @@ export class SearchIndexer {
       await buildPictureIndex({
         file:
           kind === 'video'
-            ? (record.proxy ?? renderSource(record, 'export'))
-            : renderSource(record, 'export'),
+            ? record.proxy
+              ? await this.#media.local(record.proxy)
+              : await this.#media.sourceFile(record, 'export')
+            : await this.#media.sourceFile(record, 'export'),
         kind,
         size: pictureSize(record),
         duration: p?.duration ?? null,
@@ -107,17 +108,19 @@ export class SearchIndexer {
       // A media deleted while it was indexed: the index made its folder again, and would hold
       // the account's storage until swept.
       if (!(await this.#media.find(owner, id))) {
-        await rm(dirname(dir), { recursive: true, force: true });
+        await this.#media.discard(owner, id);
         return;
       }
-      await rm(join(dir, 'failed.json'), { force: true });
+      await this.#media.deleteDerived(owner, id, 'search', 'failed.json');
     } catch (error) {
       // A media deleted while it was indexed has no folder left to say so in.
       if (!(await this.#media.find(owner, id))) return;
-      await mkdir(dir, { recursive: true });
-      await writeFile(
-        join(dir, 'failed.json'),
+      await this.#media.writeDerived(
+        owner,
+        id,
         JSON.stringify({ version: INDEX_VERSION, message: (error as Error).message }),
+        'search',
+        'failed.json',
       );
       throw error;
     }

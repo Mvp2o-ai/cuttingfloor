@@ -106,7 +106,11 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
           // Referenced files this server keeps for a while (its own copies), named in one warning.
           const kept: string[] = [];
           for (const r of records) {
-            const original = r.file ?? ('path' in r.source ? r.source.path : undefined);
+            const original = r.file
+              ? await rt.media.local(r.file)
+              : 'path' in r.source
+                ? r.source.path
+                : undefined;
             if (!original) {
               warnings.push(
                 `${r.name} (${r.media_id}) has no file to refer to; its clips are left out`,
@@ -148,9 +152,7 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
               `media reference: the file points at ${kept.length} media where this server keeps them (${kept.slice(0, 20).join(', ')}${kept.length > 20 ? ', …' : ''}): an editor on another machine can't open those paths, and the server removes media ${MEDIA_TTL_MS / 86_400_000} days after last use, after which the clips open offline. To hand the edit on, export again with media: collect, a .zip with the files beside the timeline file`,
             );
           }
-          const outDir = rt.ws.ownerDir(owner, 'outputs', job.id);
-          await mkdir(outDir, { recursive: true });
-          const out = join(outDir, name);
+          const out = await rt.outputs.reserve(owner, job.id, name);
           if (!collect) {
             await writeFile(out, written.text);
           } else {

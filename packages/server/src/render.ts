@@ -1,5 +1,3 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
 import { inBetween, type MediaFacts, ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
 import {
   betweenFile,
@@ -19,8 +17,6 @@ import {
   passedAudio,
   passFrames,
   probe,
-  renderPicture,
-  renderSource,
   renderTimelineFrames,
   renderWaveform,
   selectedFile,
@@ -62,7 +58,7 @@ export async function sourcesFor(
     }
     // Previews may read the original while it is conformed; exports wait for the mezzanine.
     if (purpose === 'export' && record.status !== 'ready') throw notReady(record, 'an export');
-    sources.set(id, renderPicture(record, purpose));
+    sources.set(id, await rt.media.picture(record, purpose));
   }
   if (passes) await addPasses(rt, owner, doc, sources, purpose, sound, undefined, fills);
   return { sources, offline };
@@ -121,8 +117,8 @@ export async function addPasses(
           }
           // Made once per clip and speed, from the full picture (or the clip's selection
           // copy, itself made at full size), whatever size it is shown at: a job of its own.
-          const input = plain === media ? renderSource(record, 'export') : plain.path;
-          const dir = join(rt.media.dir(owner, c.media_id), 'between');
+          const input = plain === media ? await rt.media.sourceFile(record, 'export') : plain.path;
+          const dir = await rt.media.derivedDir(owner, c.media_id, 'between');
           const options = {
             source: own,
             purpose: 'export' as const,
@@ -167,10 +163,10 @@ export async function addPasses(
           continue;
         }
         if (!sound) continue;
-        const input = record.mezzanine ?? record.file ?? renderSource(record, 'export');
+        const input = await rt.media.sourceFile(record, 'export');
         const path = await passedAudio(
           input,
-          join(rt.media.dir(owner, c.media_id), 'cleaned'),
+          await rt.media.derivedDir(owner, c.media_id, 'cleaned'),
           clipPasses(c),
           signal,
         );
@@ -232,11 +228,11 @@ async function selected(
     const m = await rt.media.find(owner, x.media_id);
     if (!m || m.status === 'failed' || m.status === 'importing') assertOnline([x.media_id]);
     // A fill is made once, at full size; show and hide follow the render's own size.
-    const pic = renderPicture(m as NonNullable<typeof m>, fill ? 'export' : purpose);
+    const pic = await rt.media.picture(m as NonNullable<typeof m>, fill ? 'export' : purpose);
     mattes.set(x.media_id, { path: pic.path, image: pic.image, alpha: pic.alpha });
   }
   const input = {
-    path: fill ? renderSource(record, 'export') : media.path,
+    path: fill ? await rt.media.sourceFile(record, 'export') : media.path,
     width: media.width,
     height: media.height,
     image: media.image,
@@ -244,7 +240,7 @@ async function selected(
     fps: v.fps,
     duration: record.probe?.duration ?? 0,
   };
-  const dir = join(rt.media.dir(owner, c.media_id), 'selected');
+  const dir = await rt.media.derivedDir(owner, c.media_id, 'selected');
   let path: string;
   if (fill) {
     const made = await copyJob(
@@ -493,17 +489,10 @@ export async function timelineImage(
     ? Math.max(doc.sequence.width, doc.sequence.height)
     : (options.longEdge ?? 640);
   const format = options.format ?? 'webp';
-  const cacheFile = rt.ws.path(
-    'cache',
-    'frames',
-    `${timelineId}-${frames.join('_')}-${longEdge}${options.full ? '-full' : ''}${options.quality ? `-q${options.quality}` : ''}.${format}`,
-  );
+  const cacheName = `${timelineId}-${frames.join('_')}-${longEdge}${options.full ? '-full' : ''}${options.quality ? `-q${options.quality}` : ''}.${format}`;
   await assertStillHeld(rt, owner, doc);
-  try {
-    return await readFile(cacheFile);
-  } catch {
-    // not cached yet
-  }
+  const kept = await cachedFrame(rt, cacheName);
+  if (kept) return kept;
   if (!timelineEnd(doc))
     throw new CfError('bad_request', 'The timeline is empty', {
       hint: 'Add a clip with clip.add first',
@@ -526,8 +515,7 @@ export async function timelineImage(
     ...(options.signal ? { signal: options.signal } : {}),
   });
   if (!image) throw new CfError('render_failed', 'No image was rendered');
-  await mkdir(dirname(cacheFile), { recursive: true });
-  await writeFile(cacheFile, image);
+  await cacheFrame(rt, cacheName, image);
   return image;
 }
 
@@ -552,14 +540,19 @@ export async function timelineWaveform(
   options: { format?: 'webp' | 'png'; signal?: AbortSignal } = {},
 ): Promise<{ image: Buffer; lufs: number | null; peak: number | null }> {
   const format = options.format ?? 'webp';
-  const base = rt.ws.path('cache', 'frames', `${timelineId}-wave-${range.start}_${range.end}`);
+  const base = `${timelineId}-wave-${range.start}_${range.end}`;
   await assertStillHeld(rt, owner, doc);
   try {
     const [image, meta] = await Promise.all([
-      readFile(`${base}.${format}`),
-      readFile(`${base}.json`, 'utf8'),
+      cachedFrame(rt, `${base}.${format}`),
+      cachedFrame(rt, `${base}.json`),
     ]);
-    return { image, ...(JSON.parse(meta) as { lufs: number | null; peak: number | null }) };
+    if (image && meta) {
+      return {
+        image,
+        ...(JSON.parse(meta.toString('utf8')) as { lufs: number | null; peak: number | null }),
+      };
+    }
   } catch {
     // not cached yet
   }
@@ -579,10 +572,29 @@ export async function timelineWaveform(
     format,
     ...(options.signal ? { signal: options.signal } : {}),
   });
-  await mkdir(dirname(base), { recursive: true });
-  await writeFile(`${base}.${format}`, wave.image);
-  await writeFile(`${base}.json`, JSON.stringify({ lufs: wave.lufs, peak: wave.peak }));
+  await cacheFrame(rt, `${base}.${format}`, wave.image);
+  await cacheFrame(
+    rt,
+    `${base}.json`,
+    Buffer.from(JSON.stringify({ lufs: wave.lufs, peak: wave.peak })),
+  );
   return wave;
+}
+
+/** A rendered frame or waveform kept on this node (`cache/frames`), or undefined. */
+async function cachedFrame(rt: Runtime, name: string): Promise<Buffer | undefined> {
+  try {
+    const chunks: Buffer[] = [];
+    const stream = await rt.ws.blobs.get(rt.ws.blobs.keys.cache('frames', name));
+    for await (const chunk of stream) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks);
+  } catch {
+    return undefined;
+  }
+}
+
+async function cacheFrame(rt: Runtime, name: string, bytes: Buffer): Promise<void> {
+  await rt.ws.blobs.put(rt.ws.blobs.keys.cache('frames', name), { bytes });
 }
 
 /** Transcript words and frame rates per media item, for edits that use them. */
