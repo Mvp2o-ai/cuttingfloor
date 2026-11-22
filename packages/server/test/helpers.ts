@@ -13,6 +13,11 @@ export interface TestEnv {
   exportsDir: string;
 }
 
+/**
+ * A runtime on a data root of its own under the temp folder. Runtimes keep writing (jobs, logs)
+ * after a test is done with them, so their folders go with the test run's own temp folder when
+ * the run ends (scripts/vitest-temp.ts), not with each file.
+ */
 export async function testRuntime(overrides: Partial<RuntimeConfig> = {}): Promise<TestEnv> {
   const dir = await mkdtemp(join(tmpdir(), 'cf-test-'));
   const mediaDir = join(dir, 'media');

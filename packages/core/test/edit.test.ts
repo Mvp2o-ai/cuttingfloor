@@ -1,4 +1,4 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -22,7 +22,16 @@ import {
   Workspace,
 } from '@cuttingfloor/core';
 import { CfError, type MediaRef, type TimelineDoc } from '@cuttingfloor/schema';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+
+/** Temp folders this file made, removed when it ends. */
+const temps: string[] = [];
+const temp = async (prefix: string) => {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  temps.push(dir);
+  return dir;
+};
+afterAll(() => Promise.all(temps.splice(0).map((d) => rm(d, { recursive: true, force: true }))));
 
 const fps = { num: 25, den: 1 };
 const seq = {
@@ -2263,7 +2272,7 @@ describe('time and views', () => {
 
 describe('TimelineStore', () => {
   it('stores by content hash and expires', async () => {
-    const ws = new Workspace(await mkdtemp(join(tmpdir(), 'cf-')));
+    const ws = new Workspace(await temp('cf-'));
     const store = new TimelineStore(ws);
     const doc = start();
     const id = await store.put('local', doc);
