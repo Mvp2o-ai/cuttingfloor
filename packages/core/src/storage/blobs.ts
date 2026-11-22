@@ -208,4 +208,20 @@ export interface BlobStore {
   multipartComplete(key: BlobKey, uploadId: string, parts: BlobPart[]): Promise<BlobHead>;
   /** Drops the upload and its parts. */
   multipartAbort(key: BlobKey, uploadId: string): Promise<void>;
+  /**
+   * Where the store keeps an upload's parts itself (an object store): the parts it holds, by
+   * number, to set right a record that disagrees with them.
+   */
+  multipartParts?(key: BlobKey, uploadId: string): Promise<BlobPart[]>;
+  /**
+   * Where the store keeps an upload's parts itself: an in-order upload taken back to the
+   * longest run of its parts, from the first, that the store holds as `after` says they were
+   * sent (another sender's bytes may have replaced some). Returns the part to carry on after
+   * (null: from the start) and the bytes that run holds.
+   */
+  multipartRewind?(
+    key: BlobKey,
+    uploadId: string,
+    after: BlobPart | undefined,
+  ): Promise<{ part: BlobPart | null; bytes: number }>;
 }

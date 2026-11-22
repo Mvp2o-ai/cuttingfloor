@@ -723,7 +723,32 @@ export class Uploads {
       // A whole-file PUT sent without a length ends when its body does.
       const complete = request.range || total !== null ? landed === total : true;
       if (complete) {
-        await blobs.multipartComplete(blob, mpu, part ? [part] : []);
+        // Still this request's? One that lost the upload to another never completes it.
+        if (!(await uploads.compareAndSet(id, { lock: token }, { lock_at: Date.now() }))) {
+          throw this.#overtaken(await this.#meta(owner, id));
+        }
+        try {
+          await blobs.multipartComplete(blob, mpu, part ? [part] : []);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'EPART' && blobs.multipartRewind) {
+            // Some parts are not the bytes this upload recorded (a sender that lost the upload
+            // wrote over them): back to the longest run that is, and the sender goes on from it.
+            const back = await blobs.multipartRewind(blob, mpu, part);
+            await settle({ mpu, part: back.part, offset: back.bytes });
+            throw new UploadRefused(
+              409,
+              `the upload has ${back.bytes} bytes; send from there`,
+              back.bytes,
+            );
+          }
+          // The store did not answer: this request's bytes are not counted, and are sent again.
+          await settle({});
+          throw new UploadRefused(
+            503,
+            `the server could not store that just now; send from ${received} again`,
+            received,
+          );
+        }
         const done = await settle({
           bytes: landed,
           complete: true,
@@ -933,13 +958,48 @@ export class Uploads {
     const missing = Array.from({ length: count }, (_, i) => i + 1).filter((n) => !have.has(n));
     const received = meta.parts.reduce((sum, p) => sum + p.bytes, 0);
     if (missing.length) return { upload_id: id, received, complete: false, missing };
-    try {
-      await this.#ws.blobs.multipartComplete(this.#blob(owner, meta), meta.mpu, meta.parts);
-    } catch (error) {
-      // Two requests completing at once: the one that lost finds it complete.
-      const now = await this.#meta(owner, id);
-      if (now?.complete) return { upload_id: id, received: now.bytes ?? 0, complete: true };
-      throw error;
+    const { blobs } = this.#ws;
+    const blob = this.#blob(owner, meta);
+    const total = meta.bytes;
+    const each = meta.part_bytes;
+    let parts = meta.parts;
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await blobs.multipartComplete(blob, meta.mpu, parts);
+        break;
+      } catch (error) {
+        // Two requests completing at once: the one that lost finds it complete.
+        const now = await this.#meta(owner, id);
+        if (now?.complete) return { upload_id: id, received: now.bytes ?? 0, complete: true };
+        const listed =
+          (error as NodeJS.ErrnoException).code === 'EPART' && blobs.multipartParts && attempt === 1
+            ? await blobs.multipartParts(blob, meta.mpu).catch(() => undefined)
+            : undefined;
+        if (!listed) {
+          throw new UploadRefused(503, 'the server could not finish the file just now; ask again');
+        }
+        // The record and the store disagree (a part sent twice, two different ways): the store
+        // holds the truth. Parts of the right size are kept as it holds them; the rest are sent
+        // again.
+        const size = (n: number) => (n === count ? total - (count - 1) * each : each);
+        const good = listed.filter(
+          (p) => p.part >= 1 && p.part <= count && p.bytes === size(p.part),
+        );
+        if (now?.mpu === meta.mpu) {
+          await uploads.compareAndSet(
+            id,
+            { rev: now.rev ?? 0 },
+            { parts: good, rev: (now.rev ?? 0) + 1 },
+          );
+        }
+        const have = new Set(good.map((p) => p.part));
+        const gap = Array.from({ length: count }, (_, i) => i + 1).filter((n) => !have.has(n));
+        if (gap.length) {
+          const got = good.reduce((sum, p) => sum + p.bytes, 0);
+          return { upload_id: id, received: got, complete: false, missing: gap };
+        }
+        parts = good;
+      }
     }
     await uploads.update(id, { set: { complete: true, mpu: '', parts: [], offset: meta.bytes } });
     await floorChanged(this.#ws, owner);

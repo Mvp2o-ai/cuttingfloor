@@ -1424,6 +1424,40 @@ export class S3BlobStore implements BlobStore {
     await this.#dropStates(key);
   }
 
+  async multipartRewind(
+    key: BlobKey,
+    uploadId: string,
+    after: BlobPart | undefined,
+  ): Promise<{ part: BlobPart | null; bytes: number }> {
+    const state: UploadSoFar = after
+      ? await this.#state(key, after.part, after)
+      : { next: 1, parts: [], tail: Buffer.alloc(0) };
+    const held = new Map((await this.multipartParts(key, uploadId)).map((p) => [p.part, p]));
+    const good: Array<[number, string, number]> = [];
+    for (const [n, etag, bytes] of state.parts) {
+      const there = held.get(n);
+      if (!there || there.etag !== etag || there.bytes !== bytes || n !== good.length + 1) break;
+      good.push([n, etag, bytes]);
+    }
+    if (!good.length) return { part: null, bytes: 0 };
+    // A state newer than any so far, holding that run and nothing left over.
+    const call = (after?.part ?? 0) + 1;
+    const at = this.#stateKey(key, call, randomBytes(6).toString('hex'));
+    const body = Buffer.from(`${JSON.stringify({ next: good.length + 1, parts: good })}\n`);
+    await this.#call('part', key, ({ sdk, client }) =>
+      client.send(
+        new sdk.PutObjectCommand({
+          Bucket: this.bucket,
+          Key: at,
+          Body: body,
+          ContentLength: body.length,
+        }),
+      ),
+    );
+    const bytes = good.reduce((sum, [, , b]) => sum + b, 0);
+    return { part: { part: call, bytes: 0, etag: `${IN_ORDER}${at}` }, bytes };
+  }
+
   /** The parts the bucket holds of an upload in parts, by number. */
   async multipartParts(key: BlobKey, uploadId: string): Promise<BlobPart[]> {
     const parts: BlobPart[] = [];

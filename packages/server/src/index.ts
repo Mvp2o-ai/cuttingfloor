@@ -29,5 +29,6 @@ export { createServer, type ServerDeps } from './server.ts';
 export { listHeld, startUpload, storageOf, storedBytes } from './storage.ts';
 export { CLAIMS, creditsClaimed, ONBOARDING } from './tools/credits.ts';
 export { readSupportMessages, type SupportMessage } from './tools/support.ts';
-export { UploadRefused, type UploadState, Uploads } from './uploads.ts';
+export { UPLOADS, UploadRefused, type UploadState, Uploads } from './uploads.ts';
+export { serverUrlKey, urlKeyFingerprint } from './url-key.ts';
 export { SERVER_NAME, SERVER_VERSION } from './version.ts';

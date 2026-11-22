@@ -11,7 +11,7 @@ import { Readable } from 'node:stream';
 import { promisify } from 'node:util';
 import type { MongoRecords, S3BlobStore, S3Settings } from '@cuttingfloor/core';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
-import { createServer, Runtime, type RuntimeConfig } from '@cuttingfloor/server';
+import { createServer, Runtime, type RuntimeConfig, UPLOADS } from '@cuttingfloor/server';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -578,6 +578,87 @@ describe.each(stores)('files in a bucket, records on $store', ({ store, skip }) 
       expect((await fetch(sub(upload.url, '/parts/1'), { method: 'PUT', body })).status).toBe(200);
       expect((await fetch(sub(upload.url, '/complete'), { method: 'POST' })).status).toBe(200);
       expect(await blobs.openUploads(key)).toEqual([]);
+    },
+  );
+
+  flow(
+    'a part the store holds other than as recorded is sent again, not refused for good',
+    async (n, owner, client) => {
+      const blobs = n.runtime.ws.blobs as S3BlobStore;
+      const body = randomBytes(16 * MIB + 100);
+      const upload = await startUpload(client, 'twice.bin');
+      const url = upload.url;
+      expect((await fetch(sub(url, '/parts', `&bytes=${body.length}`))).status).toBe(200);
+      for (const [n_, bytes] of [
+        [1, body.subarray(0, 16 * MIB)],
+        [2, body.subarray(16 * MIB)],
+      ] as const) {
+        expect((await fetch(sub(url, `/parts/${n_}`), { method: 'PUT', body: bytes })).status).toBe(
+          200,
+        );
+      }
+      // Part 1 sent again by another sender, other bytes of another length, landing in the store
+      // after the record was written.
+      const record = await n.runtime.ws.records
+        .collection(UPLOADS, { owner })
+        .get(upload.upload_id);
+      const key = `media/${owner}/${upload.upload_id}/data.bin`;
+      await blobs.multipartPart(
+        key,
+        record?.mpu as string,
+        1,
+        Readable.from([randomBytes(6 * MIB)]),
+        {
+          bytes: 6 * MIB,
+          anyOrder: true,
+        },
+      );
+      const first = await fetch(sub(url, '/complete'), { method: 'POST' });
+      expect(first.status).toBe(409);
+      expect(((await first.json()) as { missing?: number[] }).missing).toEqual([1]);
+      expect(
+        (await fetch(sub(url, '/parts/1'), { method: 'PUT', body: body.subarray(0, 16 * MIB) }))
+          .status,
+      ).toBe(200);
+      expect((await fetch(sub(url, '/complete'), { method: 'POST' })).status).toBe(200);
+      expect(sha(await stored(n, key))).toBe(sha(body));
+    },
+  );
+
+  flow(
+    'an upload sent in order whose parts another sender wrote over starts again from what holds',
+    async (n, owner, client) => {
+      const blobs = n.runtime.ws.blobs as S3BlobStore;
+      const body = randomBytes(12 * MIB);
+      const upload = await startUpload(client, 'over.bin');
+      const first = await put(upload.url, body.subarray(0, 6 * MIB), { at: 0, total: body.length });
+      expect(first).toMatchObject({ status: 200, offset: 6 * MIB });
+      // A sender that lost the upload writes over its first real part.
+      const record = await n.runtime.ws.records
+        .collection(UPLOADS, { owner })
+        .get(upload.upload_id);
+      const key = `media/${owner}/${upload.upload_id}/data.bin`;
+      await blobs.multipartPart(
+        key,
+        record?.mpu as string,
+        1,
+        Readable.from([randomBytes(5 * MIB)]),
+        {
+          bytes: 5 * MIB,
+          anyOrder: true,
+        },
+      );
+      const rest = await put(upload.url, body.subarray(6 * MIB), {
+        at: 6 * MIB,
+        total: body.length,
+      });
+      expect(rest).toMatchObject({ status: 409, offset: 0 });
+      // Sent again from there, it completes, and the bytes are the file.
+      expect(await put(upload.url, body, { at: 0, total: body.length })).toMatchObject({
+        status: 200,
+        complete: 'true',
+      });
+      expect(sha(await stored(n, key))).toBe(sha(body));
     },
   );
 
