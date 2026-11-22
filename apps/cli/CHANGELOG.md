@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.67.1
+
+### Patch Changes
+
+- a142cfd: An account's first tool result now says its free credits aren't activated yet and how the assistant activates them, once ever. Each credits.claim call's task is kept, not only the first, and the admin API (1.5.0) lists them all as `use_cases`.
+
 ## 0.67.0
 
 ### Minor Changes
