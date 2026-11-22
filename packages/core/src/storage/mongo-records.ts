@@ -421,12 +421,15 @@ export class MongoRecords implements Records {
     const col = (await this.database()).collection(spec.name);
     const owner: Record<string, 1> = spec.scope === 'owner' ? { owner: 1 } : {};
     const clock = log ? 'at' : 'used_at';
-    const wanted: Array<{ key: Record<string, 1>; name: string }> = [
-      {
-        key: { ...owner, ...(grouped(spec) && !log ? { parent: 1 } : {}), [clock]: 1 },
-        name: 'scope',
-      },
-    ];
+    const ttlMs = spec.db?.ttlMs;
+    const scope: Record<string, 1> = {
+      ...owner,
+      ...(grouped(spec) && !log ? { parent: 1 as const } : {}),
+      [clock]: 1,
+    };
+    const wanted: Array<{ key: Record<string, 1>; name: string }> = [];
+    // A global collection's scope index is the clock alone, which the backstop's index also is.
+    if (!ttlMs || Object.keys(scope).length > 1) wanted.push({ key: scope, name: 'scope' });
     for (const fields of spec.db?.indexes ?? []) {
       wanted.push({
         key: { ...owner, ...Object.fromEntries(fields.map((f) => [path(f), 1])) },
@@ -439,8 +442,7 @@ export class MongoRecords implements Records {
         name: `across_${fields.join('_')}`,
       });
     }
-    await col.createIndexes(wanted);
-    const ttlMs = spec.db?.ttlMs;
+    if (wanted.length) await col.createIndexes(wanted);
     if (!ttlMs) return;
     // A day behind the sweep, which decides (and tells whoever asked to hear of each record).
     const expireAfterSeconds = Math.ceil(ttlMs / 1000) + DAY_S;
@@ -452,7 +454,7 @@ export class MongoRecords implements Records {
       if (code !== 85 && code !== 86) throw error;
       await (await this.database()).command({
         collMod: spec.name,
-        index: { name: 'ttl', expireAfterSeconds },
+        index: { keyPattern: { [clock]: 1 }, expireAfterSeconds },
       });
     }
   }

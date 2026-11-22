@@ -17,6 +17,7 @@ export const SUPPORT_MESSAGES = defineCollection<SupportMessage & { owner?: stri
   name: 'support_messages',
   scope: 'owner',
   fs: { dir: 'support-messages' },
+  db: { indexes: [['at']] },
 });
 
 export interface SupportMessage {

@@ -51,7 +51,13 @@ export interface Job {
 export const JOB_TTL_MS = KEEP_MS.job;
 
 /** A job's record: `owners/{owner}/jobs/{job_id}.json` on the filesystem. */
-export const JOBS = defineCollection<Job>({ name: 'jobs', scope: 'owner', fs: { dir: 'jobs' } });
+export const JOBS = defineCollection<Job>({
+  name: 'jobs',
+  scope: 'owner',
+  fs: { dir: 'jobs' },
+  // An owner's jobs by status; every owner's working jobs by heartbeat, and by the server on them.
+  db: { indexes: [['status']], indexesAcross: [['status', 'lastUpdatedAt'], ['node']] },
+});
 
 /** That a job was asked to stop, beside its record (`{job_id}.cancel`). */
 export const JOB_CANCELS = defineCollection<{ at: string }>({
@@ -65,6 +71,7 @@ export const JOB_KEYS = defineCollection<{ job_id: string }>({
   name: 'job_keys',
   scope: 'owner',
   fs: { dir: 'jobs-idem' },
+  db: { ttlMs: JOB_TTL_MS },
 });
 
 function keyId(tool: string, key: string): string {
@@ -209,8 +216,8 @@ export class FileJobStore {
   async working(): Promise<Job[]> {
     const out: Job[] = [];
     for (const key of await this.#ws.records.owners()) {
-      for (const { value: job } of await this.#jobs(key).find()) {
-        if (job.status === 'working') out.push(job);
+      for (const { value: job } of await this.#jobs(key).find({ status: 'working' })) {
+        out.push(job);
       }
     }
     return out;

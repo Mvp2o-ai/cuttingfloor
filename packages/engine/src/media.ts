@@ -123,6 +123,7 @@ export const MEDIA = defineCollection<MediaRecord>({
   scope: 'owner',
   fs: { dir: 'media', leaf: 'media.json' },
   blobs: ['file', 'mezzanine', 'proxy'],
+  db: { indexes: [['fingerprint']] },
 });
 
 /** One analysis of a media (transcript, beats, a look run), under the media's id. */
@@ -142,8 +143,10 @@ export const MEDIA_INDEX = defineCollection<{ media_id: string }>({
 /** Why a media is gone, so a later lookup can say so. */
 export const MEDIA_GONE = defineCollection<{ reason: 'deleted' | 'expired'; at: string }>({
   name: 'gone',
+  kind: 'media',
   scope: 'owner',
   fs: { dir: 'media-gone' },
+  db: { ttlMs: GONE_DAYS * 86_400_000 },
 });
 
 const MEDIA_ID = /^m_[0-9a-z]{26}$/;

@@ -16,6 +16,8 @@ export const METER = defineCollection<MeterEntry>({
   name: 'meter',
   scope: 'owner',
   fs: { dir: (month) => `meter/${month}` },
+  // A month goes whole, by its newest entry: its oldest is up to a month older.
+  db: { ttlMs: METER_TTL_MS + 31 * 24 * 3_600_000 },
 });
 
 export interface MeterEntry {

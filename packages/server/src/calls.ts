@@ -17,6 +17,7 @@ export const CALLS = defineCollection<CallEntry>({
   name: 'calls',
   scope: 'owner',
   fs: { dir: 'calls', ext: '.jsonl' },
+  db: { ttlMs: CALLS_TTL_MS },
 });
 
 export interface CallEntry {

@@ -59,6 +59,7 @@ export {
 } from './speed.ts';
 export {
   FLOOR,
+  GONE_TTL_MS,
   OUTPUTS,
   type OutputRecord,
   TIMELINES,

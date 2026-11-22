@@ -12,11 +12,16 @@ export const TIMELINES = defineCollection<
   fs: { dir: 'timelines' },
 });
 
+/** How long a tombstone says what became of a timeline or media that went. */
+export const GONE_TTL_MS = 30 * 86_400_000;
+
 /** That a timeline expired, and when, so a later lookup can say so. */
 export const TIMELINES_GONE = defineCollection<{ at: string }>({
   name: 'gone',
+  kind: 'timeline',
   scope: 'owner',
   fs: { dir: 'timelines-gone' },
+  db: { ttlMs: GONE_TTL_MS },
 });
 
 /** What an output is: the one file a job made, or a set of frames kept for download. */
@@ -37,6 +42,7 @@ export const OUTPUTS = defineCollection<OutputRecord>({
   name: 'outputs',
   scope: 'owner',
   fs: { dir: 'outputs-index' },
+  db: { indexes: [['kind']] },
 });
 
 /** The account's floor cursor: one record, id `floor`. */

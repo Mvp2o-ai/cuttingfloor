@@ -6,7 +6,8 @@
   "description": "Project store: the .vproj folder, op log, snapshots and crash-safe commits.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./test/mongo": "./test/mongo.ts"
   },
   "dependencies": {
     "@cuttingfloor/schema": "workspace:*",

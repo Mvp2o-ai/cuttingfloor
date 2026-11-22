@@ -618,6 +618,8 @@ export const EMAIL_LOG = defineCollection<{ subscriber?: string }>({
   name: 'email_log',
   scope: 'global',
   fs: { dir: (day) => `email-log/${day}` },
+  // A day goes whole, by its newest send: its oldest is up to a day older.
+  db: { ttlMs: LOG_TTL_MS + 86_400_000, indexesAcross: [['subscriber']] },
 });
 
 const slots = (ws: Workspace, owner: string): Collection<Claim> =>

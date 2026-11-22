@@ -39,6 +39,13 @@ const lines = defineCollection<{ n: number }>({
   db: { ttlMs: 86_400_000 },
 });
 
+const shared = defineCollection<Thing>({
+  name: 'shared_things',
+  scope: 'global',
+  fs: { dir: 'shared-things' },
+  db: { ttlMs: 86_400_000 },
+});
+
 const HOUR = 3_600_000;
 
 describe.skipIf(!up)('MongoDB records: what only this store promises', () => {
@@ -184,12 +191,27 @@ describe.skipIf(!up)('MongoDB records: what only this store promises', () => {
       scope: [{ owner: 1, at: 1 }],
       ttl: [{ at: 1 }, 2 * 86_400],
     });
+    await r.collection(shared).put('k', { name: 'all' });
+    await r.idle();
+    expect(await of('shared_things')).toEqual({
+      _id_: [{ _id: 1 }],
+      ttl: [{ used_at: 1 }, 2 * 86_400],
+    });
     // Asked for again by another server, with another life: changed in place, nothing fails.
     const again = new MongoRecords({ uri: TEST_MONGODB_URI, db: db.databaseName });
     const longer: CollectionSpec<Thing> = { ...things, db: { ttlMs: 30 * 86_400_000 } };
     await again.collection(longer, { owner: 'alice' }).get('a');
     await again.close();
     expect((await of('things')).ttl).toEqual([{ used_at: 1 }, 31 * 86_400]);
+    // A global collection that had no life gets one on the index it already has.
+    const plain: CollectionSpec<Thing> = { name: 'late', scope: 'global', fs: { dir: 'late' } };
+    await r.collection(plain).put('k', { name: 'all' });
+    await r.idle();
+    expect(await of('late')).toEqual({ _id_: [{ _id: 1 }], scope: [{ used_at: 1 }] });
+    const later = new MongoRecords({ uri: TEST_MONGODB_URI, db: db.databaseName });
+    await later.collection({ ...plain, db: { ttlMs: 86_400_000 } }).get('k');
+    await later.close();
+    expect((await of('late')).scope).toEqual([{ used_at: 1 }, 2 * 86_400]);
   });
 
   each('a log entry carries when it was written; expire drops only the old ones', async (r) => {
