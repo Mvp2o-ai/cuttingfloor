@@ -122,6 +122,7 @@ Treat an authorization error from WorkOS as a separate unresolved configuration 
   - A shared `/data`: an NFS export over Hetzner's private network as a first step, or the S3 `BlobStore` (spec §3) for object storage. Uploads live there too, so a resumed upload can land on any server.
   - A Hetzner load balancer in front.
   - A distinct `CUTTINGFLOOR_NODE` per server (up.sh sets it to the server name).
+  - One `CUTTINGFLOOR_URL_SECRET` on every server (32 bytes or more, base64 or base64url), so a link one server signed opens on any of them; set to the `key` value in the data root's `secret.key`, links already handed out keep working, and with it set that file is never made or read.
 
 **3. A render pool sized by load.**
 - The work: exports and analyses move to worker servers.

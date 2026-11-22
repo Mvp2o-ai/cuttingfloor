@@ -71,6 +71,24 @@ export interface RuntimeConfig {
   uploadPage?: string;
   /** Local mode: the folder on the user's machine compose mounts at /media/videos. */
   mediaHostPath?: string;
+  /**
+   * The key that signs download, watch and upload links (CUTTINGFLOOR_URL_SECRET): at least 32
+   * bytes, base64 or base64url. Set, every server given it signs and checks the same links and
+   * `secret.key` under the data root is never made or read. Unset, the key is that file.
+   */
+  urlSecret?: string;
+}
+
+/** The link-signing key from CUTTINGFLOOR_URL_SECRET. The value never appears in the error. */
+function urlSecretKey(value: string): Buffer {
+  const text = value.trim();
+  const key = /^[A-Za-z0-9+/_-]+={0,2}$/.test(text) ? Buffer.from(text, 'base64') : null;
+  if (!key || key.length < 32) {
+    throw new Error(
+      `CUTTINGFLOOR_URL_SECRET must be at least 32 bytes, base64 or base64url (${key ? `it decodes to ${key.length}` : 'it is not base64'}). Make one with: openssl rand -base64 32. To keep links already handed out working, use the "key" value in secret.key under the data root.`,
+    );
+  }
+  return key;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
@@ -126,6 +144,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     ...(mode === 'local' && env.CUTTINGFLOOR_MEDIA_HOST_PATH
       ? { mediaHostPath: env.CUTTINGFLOOR_MEDIA_HOST_PATH }
       : {}),
+    ...(env.CUTTINGFLOOR_URL_SECRET ? { urlSecret: env.CUTTINGFLOOR_URL_SECRET } : {}),
   };
 }
 
@@ -290,6 +309,10 @@ export class Runtime {
 
   async secret(): Promise<Buffer> {
     if (this.#secret) return this.#secret;
+    if (this.config.urlSecret) {
+      this.#secret = urlSecretKey(this.config.urlSecret);
+      return this.#secret;
+    }
     const file = this.ws.path('secret.key');
     await this.ws.writeJson(file, { key: randomBytes(32).toString('base64') }, { exclusive: true });
     const { key } = JSON.parse(await readFile(file, 'utf8')) as { key: string };
