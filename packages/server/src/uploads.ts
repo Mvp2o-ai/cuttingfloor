@@ -52,6 +52,13 @@ interface UploadMeta {
    * `part`, when the sender carries on from `offset`; null after.
    */
   multipart?: { id: string; parts: BlobPart[] } | null;
+  /**
+   * Where files are in an object store: the media that took this upload's object as its own
+   * file (claimed by compare-and-set, so of two imports at once exactly one does), and when.
+   * The object is then that media's: the upload's record going never takes it.
+   */
+  taken?: string;
+  taken_at?: number;
 }
 
 /** A request that stops saying it is still sending for this long has let go of its upload. */
@@ -364,7 +371,7 @@ export class Uploads {
   async take(
     owner: string,
     id: string,
-  ): Promise<{ blob: BlobKey; file?: string; name: string; via?: UploadVia }> {
+  ): Promise<{ blob: BlobKey; file?: string; name: string; via?: UploadVia; taken?: string }> {
     const key = ownerKey(owner);
     const meta = await this.#meta(key, id);
     if (!meta) {
@@ -389,7 +396,31 @@ export class Uploads {
       ...(this.#remote ? {} : { file: await this.#ws.scratch.materialize(blob) }),
       name: meta.name,
       ...(meta.via ? { via: meta.via } : {}),
+      ...(meta.taken ? { taken: meta.taken } : {}),
     };
+  }
+
+  /**
+   * Where files are in an object store: makes the upload's object `mediaId`'s own file, once.
+   * Of imports claiming one upload at once exactly one gets true; `over` takes the claim over
+   * from a media that never came to be (its import died between claiming and saving).
+   * Returns the media that holds the claim otherwise, or undefined when the upload is gone.
+   */
+  async claim(
+    owner: string,
+    id: string,
+    mediaId: string,
+    over?: string,
+  ): Promise<true | { taken: string; at: number } | undefined> {
+    const uploads = this.#records(ownerKey(owner));
+    // `taken: undefined` is compared as absent: a record no import has claimed yet.
+    const free = { complete: true, taken: over } as unknown as Partial<UploadMeta>;
+    if (await uploads.compareAndSet(id, free, { taken: mediaId, taken_at: Date.now() })) {
+      return true;
+    }
+    const now = await uploads.get(id);
+    if (!now?.taken) return undefined;
+    return { taken: now.taken, at: now.taken_at ?? 0 };
   }
 
   /** The owner's uploads not yet imported, newest first. */
@@ -431,13 +462,16 @@ export class Uploads {
    */
   async remove(owner: string, id: string, options: { taken?: boolean } = {}): Promise<void> {
     const { blobs } = this.#ws;
+    let taken = options.taken === true;
     if (this.#remote) {
       const meta = await this.#meta(owner, id);
       if (meta?.mpu && !meta.complete) {
         await blobs.multipartAbort(this.#blob(owner, meta), meta.mpu).catch(() => undefined);
       }
+      // Claimed by a media: its object is that media's file now.
+      if (meta?.taken) taken = true;
     }
-    if (!options.taken) await blobs.deletePrefix(blobs.keys.upload(owner, id, ''));
+    if (!taken) await blobs.deletePrefix(blobs.keys.upload(owner, id, ''));
     await this.#records(owner).delete(id);
     await floorChanged(this.#ws, owner);
   }
@@ -449,14 +483,23 @@ export class Uploads {
     }
   }
 
-  /** The blobs the owner's uploads hold (sent or still arriving), for the orphan sweep. */
-  async held(owner: string): Promise<BlobKey[]> {
-    const out: BlobKey[] = [];
-    for (const { value } of await this.#records(owner).find()) out.push(this.#blob(owner, value));
+  /**
+   * The blobs the owner's uploads hold (sent or still arriving), for the orphan sweep, each with
+   * the media that has claimed it where one has (that media holds it then, not the upload).
+   */
+  async held(owner: string): Promise<Array<{ key: BlobKey; taken?: string }>> {
+    const out: Array<{ key: BlobKey; taken?: string }> = [];
+    for (const { value } of await this.#records(owner).find()) {
+      out.push({ key: this.#blob(owner, value), ...(value.taken ? { taken: value.taken } : {}) });
+    }
     return out;
   }
 
-  async sweep(): Promise<void> {
+  /**
+   * Removes uploads past their time. `media` names the files the owner's media hold, where files
+   * are in an object store: an upload whose object one of them names goes without it.
+   */
+  async sweep(options: { media?: (owner: string) => Promise<Set<BlobKey>> } = {}): Promise<void> {
     const { records, blobs } = this.#ws;
     for (const owner of await records.owners()) {
       // An hour past the URL's life, so a PUT that was still running finishes first. An upload
@@ -468,9 +511,17 @@ export class Uploads {
         const found = await this.#records(owner)
           .find()
           .catch(() => []);
-        for (const { id, usedAt } of found) {
-          if (usedAt.getTime() >= Date.now() - ttl) continue;
-          await this.remove(owner, id).catch(() => undefined);
+        const old = found.filter(({ usedAt }) => usedAt.getTime() < Date.now() - ttl);
+        if (!old.length) continue;
+        // Read after the uploads: an import between the two reads is then seen as a media.
+        const named = await (options.media?.(owner) ?? Promise.resolve(new Set<BlobKey>())).catch(
+          () => undefined,
+        );
+        // Not knowing what the media hold, nothing is removed this time.
+        if (!named) continue;
+        for (const { id, value } of old) {
+          const held = Boolean(value.taken) || named.has(this.#blob(owner, value));
+          await this.remove(owner, id, held ? { taken: true } : {}).catch(() => undefined);
         }
         continue;
       }

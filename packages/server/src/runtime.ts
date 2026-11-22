@@ -511,7 +511,9 @@ export class Runtime {
       // And any record whose output went some other way (the job sweep above, an older server).
       await this.outputs.prune(owner);
     }
-    await this.uploads.sweep();
+    await this.uploads.sweep({
+      media: async (owner) => new Set((await this.media.holders(owner)).held.keys()),
+    });
     for (const owner of await records.owners()) {
       await records.collection(LEGACY_USAGE, { owner }).expire(2 * 24 * 3_600_000);
       await records.expireParents(METER, { owner }, METER_TTL_MS);
@@ -533,14 +535,22 @@ export class Runtime {
     if (!blobs.orphans) return;
     for (const owner of await records.owners()) {
       try {
-        const holders = await this.media.holders(owner);
-        for (const key of await this.uploads.held(owner)) {
-          holders.held.set(key, (holders.held.get(key) ?? 0) + 1);
-        }
+        // Uploads before media: an import saves its media, then lets go of its upload, so one
+        // between the two reads is seen at least once.
+        const holders = async () => {
+          const uploads = await this.uploads.held(owner);
+          const found = await this.media.holders(owner);
+          for (const { key, taken } of uploads) {
+            // Claimed by a media that names it: counted once, as that media's.
+            if (taken && found.held.has(key)) continue;
+            found.held.set(key, (found.held.get(key) ?? 0) + 1);
+          }
+          return found;
+        };
         const report = await blobs.orphans(owner, holders, graceMs);
-        if (report.records || report.objects || report.refs) {
+        if (report.records || report.objects || report.refs || report.marked) {
           process.stderr.write(
-            `blobs: orphan sweep for ${owner}: ${report.objects} files and ${report.records} records removed, ${report.refs} holder counts set\n`,
+            `blobs: orphan sweep for ${owner}: ${report.objects} files and ${report.records} records removed, ${report.refs} holder counts set, ${report.marked ?? 0} files marked to check again\n`,
           );
         }
       } catch (error) {

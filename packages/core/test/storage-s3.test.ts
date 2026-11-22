@@ -475,32 +475,70 @@ describe.skipIf(!up)('S3 blobs: what only this store promises', () => {
     const upload = blobs.keys.upload('alice', 'u_1', 'data.bin');
     const id = await blobs.multipartStart(upload);
     await blobs.multipartPart(upload, id, 1, Readable.from([Buffer.alloc(10)]));
-    const holders = {
-      held: new Map([
-        [held, 1],
-        [upload, 1],
-      ]),
-      media: new Set(['m_held']),
+    // Named by two media and counted nowhere (an object store that once handed one file over
+    // twice): its count is made.
+    const twice = await put(blobs.keys.media('alice', 'u_2', 'data.bin'));
+    // An import lands between the sweep's two reads: what it holds then stays.
+    const racing = await put(blobs.keys.media('alice', 'u_3', 'data.bin'));
+    let reads = 0;
+    const holders = async () => {
+      reads += 1;
+      return {
+        held: new Map([
+          [held, 1],
+          [upload, 1],
+          [twice, 2],
+          ...(reads > 1 ? [[racing, 1] as [string, number]] : []),
+        ]),
+        media: new Set(['m_held']),
+      };
     };
     // Nothing is judged while it may be mid-write.
     expect(await blobs.orphans(owner(), holders, 3_600_000)).toEqual({
       records: 0,
       objects: 0,
-      refs: 0,
+      refs: 1,
+      marked: 0,
     });
+    expect((await blobs.head(twice))?.refs).toBe(2);
+    reads = 0;
+    // A file nothing names and no record speaks for is marked the first time, not deleted:
+    // its date in the bucket may be when its upload began.
     expect(await blobs.orphans(owner(), holders, -1000)).toEqual({
       records: 2,
-      objects: 3,
+      objects: 2,
       refs: 1,
+      marked: 2,
+    });
+    expect(await blobs.head(unheld)).toBeDefined();
+    expect(await blobs.head(racing)).toBeDefined();
+    // A grace later (here at once) it goes, unless something holds it by then.
+    reads = 0;
+    expect(await blobs.orphans(owner(), holders, -1000)).toEqual({
+      records: 1,
+      objects: 1,
+      refs: 0,
+      marked: 0,
     });
     expect((await blobs.head(held))?.refs).toBe(1);
     for (const key of [unheld, going, stale]) expect(await blobs.head(key)).toBeUndefined();
+    expect(await blobs.head(racing)).toBeDefined();
     expect(await blobs.head(live)).toBeDefined();
     // The upload's state was spared: it still completes.
     const rest = await blobs.multipartPart(upload, id, 2, Readable.from([Buffer.alloc(5)]));
     expect((await blobs.multipartComplete(upload, id, [rest])).bytes).toBe(15);
     await blobs.delete(upload);
-    expect((await kept.find()).map((r) => r.value)).toEqual([{ key: held, refs: 1 }]);
+    expect(
+      (await kept.find())
+        .map((r) => ({ key: r.value.key, refs: r.value.refs }))
+        .sort((a, b) => (a.key < b.key ? -1 : 1)),
+    ).toEqual(
+      [
+        { key: held, refs: 1 },
+        { key: twice, refs: 2 },
+        { key: racing, refs: undefined },
+      ].sort((a, b) => (a.key < b.key ? -1 : 1)),
+    );
     function owner() {
       return 'alice';
     }

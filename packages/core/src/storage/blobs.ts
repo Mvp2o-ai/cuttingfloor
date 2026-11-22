@@ -37,6 +37,8 @@ export interface OrphanReport {
   objects: number;
   /** Holder counts corrected. */
   refs: number;
+  /** Files first met with nothing naming them: judged a grace later. */
+  marked?: number;
 }
 
 /** Bytes to store: a local file, a stream, or bytes in memory. */
@@ -160,13 +162,14 @@ export interface BlobStore {
   forget(owner: string): Promise<void>;
   /**
    * Where what holds a blob is counted apart from the blob (an object store): puts right what a
-   * crash between the two left, for one owner. `held` counts the owner's media and unimported
-   * uploads naming each media file, `media` is the ids that still have a record, and nothing
-   * newer than `graceMs` is judged. Absent where a blob and its holders cannot disagree.
+   * crash between the two left, for one owner. `holders` reads how many of the owner's media
+   * and unimported uploads name each media file (`held`) and the ids that still have a record
+   * (`media`); it is read again before anything is deleted. Nothing newer than `graceMs` is
+   * judged. Absent where a blob and its holders cannot disagree.
    */
   orphans?(
     owner: string,
-    holders: { held: Map<BlobKey, number>; media: Set<string> },
+    holders: () => Promise<{ held: Map<BlobKey, number>; media: Set<string> }>,
     graceMs: number,
   ): Promise<OrphanReport>;
   /** Bytes under `prefix` that deleting it would free (shared bytes held elsewhere don't count). */

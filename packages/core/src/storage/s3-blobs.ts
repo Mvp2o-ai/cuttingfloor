@@ -72,6 +72,8 @@ export interface BlobRecord {
    */
   sha256?: string;
   etag?: string;
+  /** When the orphan sweep first met this file with nothing naming it. */
+  orphan_at?: string;
 }
 
 export const BLOBS = defineCollection<BlobRecord>({
@@ -1446,29 +1448,41 @@ export class S3BlobStore implements BlobStore {
   }
 
   /**
-   * Closes what a crash between the bucket and the records leaves, for one owner. `held` is
-   * how many of the owner's media and unimported uploads name each media file; `media` the ids
-   * that still have a record. Nothing newer than `graceMs` is judged: it may be mid-write.
+   * Closes what a crash between the bucket and the records leaves, for one owner. `holders`
+   * reads how many of the owner's media and unimported uploads name each media file, and the
+   * media ids that have a record; it is read again before anything is deleted, and nothing
+   * held then goes. Nothing is judged by a time newer than `graceMs` ago.
    *
-   * - a record saying its file is going (refs 0): the file and the record go;
+   * - a record saying its file is going (refs 0), or a file no one holds that has a record:
+   *   the file and the record go, once the later of the file's date and the record's times is
+   *   past the grace;
    * - a record whose file is gone: the record goes;
-   * - a holder count that is not the number of holders: set to it;
-   * - a media file no media or upload names: deleted;
+   * - a holder count that is not the number of holders: set to it (also for a file two media
+   *   name that has no count at all);
+   * - a file no media or upload names and no record: marked with a record the first time it is
+   *   met, and goes by the rule above no sooner than the grace after that, so a file's own date
+   *   (which may be when its upload began) never decides alone;
    * - derived files of a media that has no record: deleted.
    */
   async orphans(
     owner: string,
-    holders: { held: Map<BlobKey, number>; media: Set<string> },
+    holders: () => Promise<{ held: Map<BlobKey, number>; media: Set<string> }>,
     graceMs: number,
   ): Promise<OrphanReport> {
     const key = ownerKey(owner);
-    const report: OrphanReport = { records: 0, objects: 0, refs: 0 };
-    const old = (at: Date) => at.getTime() < Date.now() - graceMs;
+    const report: OrphanReport = { records: 0, objects: 0, refs: 0, marked: 0 };
+    const now = Date.now();
+    const old = (at: number) => at < now - graceMs;
     const kept = this.#kept(key);
+    const first = await holders();
     const mediaPrefix = `media/${key}/`;
     const objects = new Map((await this.#listed(mediaPrefix)).map((o) => [o.key, o]));
-    for (const { id, value, usedAt } of await kept.find()) {
-      if (!old(usedAt)) continue;
+    const found = await kept.find();
+    const recorded = new Set(found.map((r) => r.value.key));
+    /** Files to delete once the holders are read again, with their records. */
+    const doomed: Array<{ key: BlobKey; record?: string }> = [];
+    for (const { id, value, usedAt } of found) {
+      if (!old(usedAt.getTime())) continue;
       if (id.startsWith('claim-')) {
         await kept.delete(id);
         report.records += 1;
@@ -1484,47 +1498,75 @@ export class S3BlobStore implements BlobStore {
         continue;
       }
       const object = objects.get(value.key);
-      const holding = holders.held.get(value.key) ?? 0;
+      const holding = first.held.get(value.key) ?? 0;
       if (!object) {
         await kept.delete(id);
         report.records += 1;
       } else if ((value.refs ?? 1) <= 0 || holding === 0) {
-        if (!old(object.modifiedAt)) continue;
-        await this.#remove(value.key);
-        await kept.delete(id);
-        objects.delete(value.key);
-        report.objects += 1;
-        report.records += 1;
+        const used = Math.max(
+          object.modifiedAt.getTime(),
+          usedAt.getTime(),
+          value.used_at ? Date.parse(value.used_at) || 0 : 0,
+        );
+        if (old(used)) doomed.push({ key: value.key, record: id });
       } else if (value.refs === undefined) {
         await kept.update(id, { set: { refs: holding } });
+        report.refs += 1;
       } else if (value.refs !== holding) {
         if (await kept.compareAndSet(id, { refs: value.refs }, { refs: holding })) report.refs += 1;
       }
     }
     for (const object of objects.values()) {
-      if (holders.held.has(object.key) || !old(object.modifiedAt)) continue;
+      if (recorded.has(object.key)) continue;
+      const id = this.#id(object.key);
+      const holding = first.held.get(object.key) ?? 0;
+      if (holding > 1) {
+        // Named by more than one media and counted nowhere: count them, so deleting one of
+        // them leaves the file for the others.
+        if (await kept.insertOnce(id, { key: object.key, refs: holding })) report.refs += 1;
+        continue;
+      }
+      if (holding > 0 || !old(object.modifiedAt.getTime())) continue;
       // The state of an upload still being sent is held by the upload, as long as one lasts.
       const upload = object.key.indexOf(PARTS_SUFFIX);
       if (upload > 0) {
-        if (holders.held.has(object.key.slice(0, upload))) continue;
-        if (object.modifiedAt.getTime() > Date.now() - Math.max(graceMs, 8 * 86_400_000)) continue;
+        if (first.held.has(object.key.slice(0, upload))) continue;
+        if (object.modifiedAt.getTime() > now - Math.max(graceMs, 8 * 86_400_000)) continue;
+        doomed.push({ key: object.key });
+        continue;
       }
-      if (await kept.has(this.#id(object.key))) continue;
-      await this.#remove(object.key);
-      report.objects += 1;
+      // First met with nothing naming it: marked now, judged a grace later.
+      if (await kept.insertOnce(id, { key: object.key, orphan_at: new Date(now).toISOString() })) {
+        report.marked = (report.marked ?? 0) + 1;
+      }
     }
     const derivedPrefix = `derived/${key}/`;
     const stale = new Map<string, boolean>();
     for (const o of await this.#listed(derivedPrefix)) {
       const id = o.key.slice(derivedPrefix.length).split('/')[0] as string;
-      if (holders.media.has(id)) continue;
-      stale.set(id, (stale.get(id) ?? true) && old(o.modifiedAt));
+      if (first.media.has(id)) continue;
+      stale.set(id, (stale.get(id) ?? true) && old(o.modifiedAt.getTime()));
     }
-    for (const [id, all] of stale) {
-      if (!all) continue;
-      const found = await this.#listed(`${derivedPrefix}${id}/`);
-      await each(found, 16, (o) => this.#remove(o.key));
-      report.objects += found.length;
+    const gone = [...stale].filter(([, all]) => all).map(([id]) => id);
+    if (!doomed.length && !gone.length) return report;
+    // Read again: what an import or upload made meanwhile holds is never deleted.
+    const again = await holders();
+    for (const { key: file, record } of doomed) {
+      if (again.held.has(file) || first.held.has(file)) continue;
+      if (file.includes(PARTS_SUFFIX) && again.held.has(file.slice(0, file.indexOf(PARTS_SUFFIX))))
+        continue;
+      await this.#remove(file);
+      report.objects += 1;
+      if (record) {
+        await kept.delete(record);
+        report.records += 1;
+      }
+    }
+    for (const id of gone) {
+      if (again.media.has(id)) continue;
+      const under = await this.#listed(`${derivedPrefix}${id}/`);
+      await each(under, 16, (o) => this.#remove(o.key));
+      report.objects += under.length;
     }
     return report;
   }

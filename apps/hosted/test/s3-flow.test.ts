@@ -3,7 +3,7 @@
 import { execFile } from 'node:child_process';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
-import { request, type Server } from 'node:http';
+import { createServer as plainHttpServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -648,6 +648,9 @@ describe.each(stores)('files in a bucket, records on $store', ({ store, skip }) 
       await put(sent.url, randomBytes(1000));
       await n.runtime.sweepOrphans();
       expect(await blobs.head(stray)).toBeDefined();
+      // Met with nothing naming it, it is marked; a grace later (here at once) it goes.
+      await n.runtime.sweepOrphans(-1000);
+      expect(await blobs.head(stray)).toBeDefined();
       await n.runtime.sweepOrphans(-1000);
       expect(await blobs.head(stray)).toBeUndefined();
       expect(await keysOf(n, `media/${owner}/`)).toEqual([
@@ -669,63 +672,178 @@ describe.each(stores)('files in a bucket, records on $store', ({ store, skip }) 
     },
   );
 
-  it.skipIf(skip || !ffmpeg)(
-    'the same file imported twice is one object, counted once, and each plays without the other',
-    async () => {
+  /** A server of the test's own and its client, gone after `run`. */
+  const withNode = (name: string, run: (n: Node, client: Client) => Promise<void>) =>
+    it.skipIf(skip || !ffmpeg)(name, async () => {
       const n = await node(store);
-      const owner = 'alice';
       try {
-        const client = await connect(n.runtime, owner);
-        const body = wav(7);
-        const bring = async (name: string) => {
-          const upload = await startUpload(client, name, body.length);
-          await put(upload.url, body);
-          const job = await ok<{ job_id: string }>(client, 'media.import', {
-            source: { upload_id: upload.upload_id },
-          });
-          const done = await settled<{ result: { media_id: string }; error?: unknown }>(
-            client,
-            job.job_id,
-          );
-          expect([done.status, done.error]).toEqual(['completed', undefined]);
-          return { media_id: done.result.media_id, upload_id: upload.upload_id };
-        };
-        const first = await bring('one.wav');
-        const key = `media/${owner}/${first.upload_id}/data.wav`;
-        expect(await keysOf(n, `media/${owner}/`)).toEqual([key]);
-        const alone = await n.runtime.ws.blobs.usage(owner);
-        const second = await bring('two.wav');
-        expect(second.media_id).not.toBe(first.media_id);
-        // The second upload's object gave way to the first's: one object, two holders.
+        await run(n, await connect(n.runtime, 'alice'));
+      } finally {
+        await wipe(n, ['alice']);
+        await n.stop();
+      }
+    });
+
+  /** Sends `body` as a new upload and imports it; the job as it ends. */
+  const bring = async (client: Client, body: Buffer, name: string) => {
+    const upload = await startUpload(client, name, body.length);
+    await put(upload.url, body);
+    return { upload, ...(await importUpload(client, upload.upload_id)) };
+  };
+  const importUpload = async (client: Client, upload_id: string) => {
+    const job = await ok<{ job_id: string }>(client, 'media.import', { source: { upload_id } });
+    const done = await settled<{
+      result: { media_id: string };
+      error?: unknown;
+      status_message?: string;
+    }>(client, job.job_id);
+    expect([done.status, done.error]).toEqual(['completed', undefined]);
+    return { media_id: done.result.media_id, done };
+  };
+  const play = async (client: Client, media_id: string) => {
+    const got = await ok<{ url: string }>(client, 'media.get', { media_id });
+    const res = await fetch(got.url);
+    return [res.status, sha(Buffer.from(await res.arrayBuffer()))];
+  };
+  /** Moves an upload's record `days` back in time. */
+  const ageUpload = async (n: Node, owner: string, uploadId: string, days: number) => {
+    const at = new Date(Date.now() - days * 86_400_000);
+    if (store === 'filesystem') {
+      const file = join(n.dir, 'data', 'owners', owner, 'uploads', uploadId, 'upload.json');
+      await utimes(file, at, at);
+    } else {
+      const db = await (n.runtime.ws.records as MongoRecords).database();
+      await db.collection('uploads').updateMany({}, { $set: { used_at: at } });
+    }
+  };
+
+  withNode(
+    'the same bytes sent twice import as the media already there, as on the filesystem',
+    async (n, client) => {
+      const owner = 'alice';
+      const body = wav(7);
+      const first = await bring(client, body, 'one.wav');
+      const key = `media/${owner}/${first.upload.upload_id}/data.wav`;
+      expect(await keysOf(n, `media/${owner}/`)).toEqual([key]);
+      const alone = await n.runtime.ws.blobs.usage(owner);
+      // Sent again under another name: no second media, no ingest, and its copy goes.
+      const second = await bring(client, body, 'two.wav');
+      expect(second.media_id).toBe(first.media_id);
+      expect(second.done.status_message).toBe('already imported');
+      expect(await keysOf(n, `media/${owner}/`)).toEqual([key]);
+      expect(await n.runtime.ws.blobs.usage(owner)).toBe(alone);
+      const listed = await ok<{ media: unknown[]; uploads: unknown[] }>(client, 'media.list', {});
+      expect([listed.media.length, listed.uploads.length]).toEqual([1, 0]);
+      // A link to the same bytes is fetched and then shares the file: two media, one object.
+      const site = plainHttpServer((_req, res) => res.end(body));
+      await new Promise<void>((r) => site.listen(0, '127.0.0.1', r));
+      try {
+        const port = (site.address() as AddressInfo).port;
+        const job = await ok<{ job_id: string }>(client, 'media.import', {
+          source: { url: `http://127.0.0.1:${port}/again.wav` },
+        });
+        const fetched = await settled<{ result: { media_id: string } }>(client, job.job_id);
+        expect(fetched.status).toBe('completed');
+        const third = fetched.result.media_id;
+        expect(third).not.toBe(first.media_id);
         expect(await keysOf(n, `media/${owner}/`)).toEqual([key]);
         expect((await n.runtime.ws.blobs.head(key))?.refs).toBe(2);
-        const both = await n.runtime.ws.blobs.usage(owner);
-        const analyses = (
-          await n.runtime.ws.blobs.list(`derived/${owner}/${second.media_id}`)
-        ).reduce((sum, h) => sum + h.bytes, 0);
-        expect(both - analyses).toBe(alone);
-        const play = async (media_id: string) => {
-          const got = await ok<{ url: string }>(client, 'media.get', { media_id });
-          const res = await fetch(got.url);
-          return [res.status, sha(Buffer.from(await res.arrayBuffer()))];
-        };
-        expect(await play(first.media_id)).toEqual([200, sha(body)]);
-        expect(await play(second.media_id)).toEqual([200, sha(body)]);
+        expect(await play(client, first.media_id)).toEqual([200, sha(body)]);
+        expect(await play(client, third)).toEqual([200, sha(body)]);
         // Deleting one frees nothing the other holds, and leaves it playable.
         const freed = await ok<{ freed_bytes?: number }>(client, 'media.delete', {
           media_id: first.media_id,
         });
         expect(freed.freed_bytes ?? 0).toBeLessThan(body.length);
         expect((await n.runtime.ws.blobs.head(key))?.refs).toBe(1);
-        expect(await play(second.media_id)).toEqual([200, sha(body)]);
-        await ok(client, 'media.delete', { media_id: second.media_id });
-        expect(await keysOf(n, `media/${owner}/`)).toEqual([]);
-        expect(await keysOf(n, `derived/${owner}`)).toEqual([]);
-        expect(await n.runtime.ws.blobs.usage(owner)).toBe(0);
+        expect(await play(client, third)).toEqual([200, sha(body)]);
+        await ok(client, 'media.delete', { media_id: third });
       } finally {
-        await wipe(n, [owner]);
-        await n.stop();
+        await new Promise((r) => site.close(r));
       }
+      expect(await keysOf(n, `media/${owner}/`)).toEqual([]);
+      expect(await keysOf(n, `derived/${owner}`)).toEqual([]);
+      expect(await n.runtime.ws.blobs.usage(owner)).toBe(0);
+    },
+  );
+
+  withNode('two imports of one upload at once make one media', async (n, client) => {
+    const owner = 'alice';
+    const body = wav(11);
+    const upload = await startUpload(client, 'both.wav', body.length);
+    await put(upload.url, body);
+    const [a, b] = await Promise.all([
+      importUpload(client, upload.upload_id),
+      importUpload(client, upload.upload_id),
+    ]);
+    expect(a.media_id).toBe(b.media_id);
+    const listed = await ok<{ media: unknown[] }>(client, 'media.list', {});
+    expect(listed.media).toHaveLength(1);
+    const key = `media/${owner}/${upload.upload_id}/data.wav`;
+    expect((await n.runtime.ws.blobs.head(key))?.refs).toBe(1);
+    // Deleted, its file goes; nothing else held it.
+    await ok(client, 'media.delete', { media_id: a.media_id });
+    expect(await keysOf(n, `media/${owner}/`)).toEqual([]);
+  });
+
+  withNode(
+    'an import whose upload could not be let go of: asked again it is the same media, and the upload sweep spares its file',
+    async (n, client) => {
+      const owner = 'alice';
+      const body = wav(13);
+      const upload = await startUpload(client, 'kept.wav', body.length);
+      await put(upload.url, body);
+      const remove = vi
+        .spyOn(n.runtime.uploads, 'remove')
+        .mockRejectedValueOnce(new Error('database away'));
+      // The import goes on: the claim keeps the object the media's.
+      const { media_id } = await importUpload(client, upload.upload_id);
+      remove.mockRestore();
+      const listed = await ok<{ media: unknown[]; uploads: unknown[] }>(client, 'media.list', {});
+      expect([listed.media.length, listed.uploads.length]).toEqual([1, 1]);
+      // The upload is still listed; its object is the media's. Seven days on, its record goes
+      // and the object stays.
+      await ageUpload(n, owner, upload.upload_id, 8);
+      await n.runtime.sweep();
+      expect((await offset(upload.url)).status).toBe(404);
+      expect(await play(client, media_id)).toEqual([200, sha(body)]);
+      // Imported again (a retry): the same media, nothing new.
+      const again = await startUpload(client, 'kept-again.wav', body.length);
+      await put(again.url, body);
+      expect((await importUpload(client, again.upload_id)).media_id).toBe(media_id);
+      expect(await play(client, media_id)).toEqual([200, sha(body)]);
+    },
+  );
+
+  withNode(
+    'a retried import of an upload already made a media is that media',
+    async (n, client) => {
+      const owner = 'alice';
+      const body = wav(17);
+      const upload = await startUpload(client, 'retry.wav', body.length);
+      await put(upload.url, body);
+      const remove = vi
+        .spyOn(n.runtime.uploads, 'remove')
+        .mockRejectedValueOnce(new Error('database away'));
+      const first = await importUpload(client, upload.upload_id);
+      remove.mockRestore();
+      const retried = await importUpload(client, upload.upload_id);
+      expect(retried.media_id).toBe(first.media_id);
+      expect(retried.done.status_message).toBe('already imported');
+      const listed = await ok<{ media: Array<{ media_id: string }>; uploads: unknown[] }>(
+        client,
+        'media.list',
+        {},
+      );
+      expect(listed.media.map((m) => m.media_id)).toEqual([retried.media_id]);
+      expect(listed.uploads).toEqual([]);
+      const key = `media/${owner}/${upload.upload_id}/data.wav`;
+      expect(await keysOf(n, `media/${owner}/`)).toEqual([key]);
+      expect(await play(client, retried.media_id)).toEqual([200, sha(body)]);
+      // The orphan sweep agrees the media holds it.
+      await n.runtime.sweepOrphans(-1000);
+      await n.runtime.sweepOrphans(-1000);
+      expect(await play(client, retried.media_id)).toEqual([200, sha(body)]);
     },
   );
 });

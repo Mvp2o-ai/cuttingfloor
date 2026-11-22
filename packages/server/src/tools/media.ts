@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
-import type { BlobKey } from '@cuttingfloor/core';
+import { type BlobKey, randomId } from '@cuttingfloor/core';
 import {
   analyseBeats,
   detectFaces,
@@ -8,6 +8,7 @@ import {
   detectSilences,
   detectSounds,
   fingerprint,
+  fingerprintBlob,
   lengthFrames,
   type MediaRecord,
   makingJob,
@@ -82,6 +83,9 @@ import {
   inlineOr,
   measureVoices,
 } from './measure.ts';
+
+/** An upload claimed by an import whose media never came to be is taken over after this. */
+const CLAIM_STALE_MS = 10 * 60_000;
 
 /** Analysis data longer than this stays with the media instead of filling the result. */
 const INLINE_CHARS = 20_000;
@@ -640,8 +644,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         'upload_id' in source ? await rt.uploads.take(owner, source.upload_id) : undefined;
       const rendered = 'job_id' in source ? await renderedOutput(owner, source.job_id) : undefined;
       // Where files are in an object store, a sent or rendered file is not fetched to this
-      // server to be looked at here: the import job reads it once, and finds a copy the
-      // account already holds then (as it does for a URL).
+      // server: its fingerprint is read from the store in ranges (the same answer).
       const remote = rt.ws.blobs.remote;
       const local =
         'path' in source
@@ -651,26 +654,59 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               ? undefined
               : await rt.scratchFile(rendered.blob)
             : upload?.file;
-      if (local) {
-        const known = await rt.media.findByFingerprint(owner, await fingerprint(local));
+      /** A completed job that adds nothing: the media that already holds these bytes. */
+      const already = async (known: MediaRecord) => {
+        const done = await store.create({
+          owner,
+          tool: 'media.import',
+          meta: { media_id: known.media_id },
+          ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),
+        });
+        const result = ok(mediaInfo(known));
+        return jobReply(
+          await store.update(done, {
+            status: 'completed',
+            progress: 1,
+            statusMessage: 'already imported',
+            result: result as never,
+          }),
+          ctx,
+        );
+      };
+      // An upload another import has already made a media's own (an object store): that media,
+      // as importing it twice gives on the filesystem.
+      const claimed = async (mediaId: string) => {
+        // Claimed a moment ago, its media may still be on its way to being saved.
+        for (let turn = 0; turn < 50; turn += 1) {
+          const known = await rt.media.find(owner, mediaId);
+          if (known) return known;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        return undefined;
+      };
+      if (upload?.taken && 'upload_id' in source) {
+        const known = await claimed(upload.taken);
         if (known) {
-          if ('upload_id' in source) await rt.uploads.remove(owner, source.upload_id);
-          const done = await store.create({
-            owner,
-            tool: 'media.import',
-            meta: { media_id: known.media_id },
-            ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),
-          });
-          const result = ok(mediaInfo(known));
-          return jobReply(
-            await store.update(done, {
-              status: 'completed',
-              progress: 1,
-              statusMessage: 'already imported',
-              result: result as never,
-            }),
-            ctx,
-          );
+          await rt.uploads.remove(owner, source.upload_id, { taken: true }).catch(() => undefined);
+          return already(known);
+        }
+      }
+      const print = local
+        ? await fingerprint(local)
+        : remote && (upload || rendered)
+          ? await fingerprintBlob(rt.ws.blobs, (upload?.blob ?? rendered?.blob) as BlobKey)
+          : undefined;
+      if (print) {
+        const known = await rt.media.findByFingerprint(owner, print);
+        if (known) {
+          if ('upload_id' in source) {
+            await rt.uploads.remove(
+              owner,
+              source.upload_id,
+              known.file === upload?.blob ? { taken: true } : {},
+            );
+          }
+          return already(known);
         }
       }
       // A download or a copied render adds to what the account holds; an upload is already in.
@@ -688,6 +724,37 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               )
             : undefined;
       const admit = await admitJob(deps.limits);
+      // In an object store an upload's object becomes the media's file where it is: claimed
+      // first, so of two imports of one upload exactly one makes a media of it.
+      let id: string | undefined;
+      if (remote && upload && 'upload_id' in source) {
+        id = randomId('m_');
+        let claim = await rt.uploads.claim(owner, source.upload_id, id);
+        // A claim whose media was never saved (its import died) is taken over after a while.
+        if (
+          claim !== true &&
+          claim &&
+          Date.now() - claim.at > CLAIM_STALE_MS &&
+          !(await rt.media.find(owner, claim.taken))
+        ) {
+          claim = await rt.uploads.claim(owner, source.upload_id, id, claim.taken);
+        }
+        if (claim !== true) {
+          const known = claim ? await claimed(claim.taken) : undefined;
+          if (known) return already(known);
+          throw new CfError(
+            claim ? 'media_not_ready' : 'not_found',
+            claim
+              ? `Upload ${source.upload_id} is being imported`
+              : `Upload ${source.upload_id} not found`,
+            {
+              hint: claim
+                ? 'Another import of it is under way; media.list shows the media it makes'
+                : `A staged file goes ${span(KEEP_MS.upload)} after staging, and each imports once.`,
+            },
+          );
+        }
+      }
       const record = await rt.media.create(
         owner,
         still
@@ -704,6 +771,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
                 ? { url: source.url, attached: true }
                 : source,
         named ?? upload?.name ?? rendered?.name,
+        id ? { id } : {},
       );
       if (rendered) {
         // The render is copied: outputs and media expire on their own clocks. In an object
@@ -717,12 +785,16 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       } else if (upload && 'upload_id' in source) {
         record.file = await rt.media.adopt(owner, record, { blob: upload.blob }, { move: true });
         await rt.media.save(owner, record);
-        // An object store hands the upload's blob over where it is: only its record goes.
-        await rt.uploads.remove(
-          owner,
-          source.upload_id,
-          record.file === upload.blob ? { taken: true } : {},
-        );
+        // An object store hands the upload's blob over where it is: only its record goes. Should
+        // that fail, the import goes on: the claim keeps the object the media's, and the record
+        // goes with the upload sweep.
+        const taken = record.file === upload.blob;
+        await rt.uploads
+          .remove(owner, source.upload_id, taken ? { taken: true } : {})
+          .catch((error: Error) => {
+            if (!taken) throw error;
+            process.stderr.write(`media.import: upload record kept: ${error.message}\n`);
+          });
       }
       const job = await startIngest(rt, owner, record, admit, {
         ...(room === undefined ? {} : { room }),

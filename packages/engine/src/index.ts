@@ -35,6 +35,7 @@ export { fontMeasure, loadFace, type Measure } from './fontmetrics.ts';
 export { type ClipPlacement, clipPlacements, type PixelBox } from './geometry.ts';
 export {
   fingerprint,
+  fingerprintBlob,
   hasAlpha,
   MEDIA_TTL_MS,
   type MediaConfig,

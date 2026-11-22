@@ -3,6 +3,7 @@ import { open, realpath, stat } from 'node:fs/promises';
 import { basename, extname, isAbsolute, join, sep } from 'node:path';
 import {
   type BlobKey,
+  type BlobStore,
   type Collection,
   defineCollection,
   FLOOR,
@@ -618,10 +619,12 @@ export class MediaLibrary {
     owner: string,
     source: MediaRecord['source'],
     name: string | undefined,
+    /** The id to give it, when the caller had to name it first (to claim an upload with). */
+    options: { id?: string } = {},
   ): Promise<MediaRecord> {
     const now = new Date().toISOString();
     const record: MediaRecord = {
-      media_id: randomId('m_'),
+      media_id: options.id ?? randomId('m_'),
       name:
         name ??
         ('path' in source
@@ -1267,6 +1270,39 @@ export function sourceRef(record: MediaRecord, purpose: 'preview' | 'export'): s
       : (record.mezzanine ?? record.file);
   if (!file) throw notReady(record, null);
   return file;
+}
+
+/**
+ * `fingerprint` of a blob, read from the store in ranges (at most 12 MB, whatever its size):
+ * the same answer as for its bytes in a local file. Undefined when there is no such blob.
+ */
+export async function fingerprintBlob(
+  blobs: Pick<BlobStore, 'head' | 'getRange'>,
+  key: BlobKey,
+): Promise<string | undefined> {
+  const head = await blobs.head(key);
+  if (!head) return undefined;
+  const CHUNK = 4 * 1024 * 1024;
+  const size = head.bytes;
+  const hasher = await createBLAKE3();
+  hasher.init();
+  hasher.update(String(size));
+  const offsets = size <= 3 * CHUNK ? [0] : [0, Math.floor(size / 2 - CHUNK / 2), size - CHUNK];
+  for (const offset of offsets) {
+    const length = size <= 3 * CHUNK ? size : CHUNK;
+    const buf = Buffer.alloc(length);
+    if (length > 0) {
+      let at = 0;
+      for await (const chunk of await blobs.getRange(key, offset, offset + length - 1)) {
+        const bytes = chunk as Buffer;
+        bytes.copy(buf, at, 0, Math.min(bytes.length, length - at));
+        at += bytes.length;
+        if (at >= length) break;
+      }
+    }
+    hasher.update(buf);
+  }
+  return hasher.digest('hex').slice(0, 40);
 }
 
 /** Size + BLAKE3 of the first, middle and last 4 MB. */
