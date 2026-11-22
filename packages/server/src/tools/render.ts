@@ -12,7 +12,6 @@ import {
   notReady,
   qaCheck,
   renderMediaFrames,
-  renderSource,
   resolvePreset,
 } from '@cuttingfloor/engine';
 import { inlineJobContext, type Job, type JobContext } from '@cuttingfloor/jobs';
@@ -124,7 +123,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         if (!record.probe?.video || !fps)
           throw new CfError('bad_request', `Media ${args.media_id} has no picture`);
         const full = args.size === 'full';
-        const file = renderSource(record, full ? 'export' : 'preview');
+        const file = await rt.media.sourceFile(record, full ? 'export' : 'preview');
         const v = record.probe.video;
         const rendered = await renderMediaFrames(file, fps, args.frames, {
           longEdge: full ? Math.max(v.width ?? 0, v.height ?? 0) || args.long_edge : args.long_edge,

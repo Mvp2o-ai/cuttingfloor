@@ -426,7 +426,7 @@ export class Runtime {
     if (id.startsWith('m_')) {
       // An owner key is its own key, so the media library finds the owner's media by it.
       const record = await this.media.find(key, id);
-      return record?.file ?? undefined;
+      return record?.file ? this.media.local(record.file) : undefined;
     }
     return this.ws.path('owners', key, 'outputs', id, name);
   }

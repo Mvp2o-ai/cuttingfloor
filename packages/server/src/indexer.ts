@@ -8,7 +8,6 @@ import {
   mayBeTransparent,
   type PictureIndex,
   readPictureIndex,
-  renderSource,
 } from '@cuttingfloor/engine';
 import { PICTURE, pictureSize } from './tools/judge.ts';
 
@@ -94,8 +93,10 @@ export class SearchIndexer {
       await buildPictureIndex({
         file:
           kind === 'video'
-            ? (record.proxy ?? renderSource(record, 'export'))
-            : renderSource(record, 'export'),
+            ? record.proxy
+              ? await this.#media.local(record.proxy)
+              : await this.#media.sourceFile(record, 'export')
+            : await this.#media.sourceFile(record, 'export'),
         kind,
         size: pictureSize(record),
         duration: p?.duration ?? null,

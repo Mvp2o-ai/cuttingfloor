@@ -1,6 +1,10 @@
-import { copyFile, link, mkdir, open, readdir, realpath, rename, rm, stat } from 'node:fs/promises';
-import { basename, extname, join, sep } from 'node:path';
+import { open, realpath, stat } from 'node:fs/promises';
+import { basename, extname, isAbsolute, join, sep } from 'node:path';
 import {
+  type BlobKey,
+  type Collection,
+  defineCollection,
+  FLOOR,
   floorChanged,
   ownerKey,
   randomId,
@@ -52,14 +56,20 @@ export interface MediaRecord {
       }
     | { created: string; recipe: string; job_id?: string; from?: string[] }
     | { still: number; media_id?: string; timeline_id?: string };
-  /** The original: the user's file in place, or the downloaded copy. */
-  file: string | null;
+  /**
+   * The original: the blob the server holds (a downloaded, sent or created file), or, for a path
+   * import, the user's own file in place as an absolute path. `MediaLibrary.local` gives the
+   * local file of either.
+   */
+  file: BlobKey | string | null;
   size: number | null;
   fingerprint: string | null;
   probe: Probe | null;
   conform: string[];
-  mezzanine: string | null;
-  proxy: string | null;
+  /** The conformed copy's blob. */
+  mezzanine: BlobKey | null;
+  /** The proxy's blob. */
+  proxy: BlobKey | null;
   analysis: MediaInfo['analysis'];
   /** media.analyze results, kept with the media. */
   analyses?: {
@@ -107,6 +117,41 @@ export interface MediaConfig {
 
 export type Progress = (fraction: number, message: string) => void;
 
+/** A media's record: `owners/{owner}/media/{media_id}/media.json` on the filesystem. */
+export const MEDIA = defineCollection<MediaRecord>({
+  name: 'media',
+  scope: 'owner',
+  fs: { dir: 'media', leaf: 'media.json' },
+});
+
+/** One analysis of a media (transcript, beats, a look run), under the media's id. */
+export const MEDIA_ANALYSES = defineCollection<unknown>({
+  name: 'analyses',
+  scope: 'owner',
+  fs: { dir: (mediaId) => `media/${mediaId}/analyses` },
+});
+
+/** Which media holds given bytes (by fingerprint) or was made from a recipe (`recipe-…`). */
+export const MEDIA_INDEX = defineCollection<{ media_id: string }>({
+  name: 'media_index',
+  scope: 'owner',
+  fs: { dir: 'media-index' },
+});
+
+/** Why a media is gone, so a later lookup can say so. */
+export const MEDIA_GONE = defineCollection<{ reason: 'deleted' | 'expired'; at: string }>({
+  name: 'gone',
+  scope: 'owner',
+  fs: { dir: 'media-gone' },
+});
+
+const MEDIA_ID = /^m_[0-9a-z]{26}$/;
+
+/** Whether a record's file is a blob the server holds, not the user's own file in place. */
+function isBlob(ref: string | null): ref is BlobKey {
+  return !!ref && !isAbsolute(ref);
+}
+
 /** Imported media for each owner: records plus mezzanines and proxies, kept 7 days after last use. */
 export class MediaLibrary {
   readonly #ws: Workspace;
@@ -117,14 +162,118 @@ export class MediaLibrary {
     this.config = config;
   }
 
+  /** The media id, checked. */
+  #id(id: string): string {
+    if (!MEDIA_ID.test(id)) throw new CfError('bad_request', `Not a media id: ${id}`);
+    return id;
+  }
+
+  #records(owner: string): Collection<MediaRecord> {
+    return this.#ws.records.collection(MEDIA, { owner });
+  }
+
+  #analyses(owner: string, id: string): Collection<unknown> {
+    return this.#ws.records.collection(MEDIA_ANALYSES, { owner, parent: this.#id(id) });
+  }
+
+  #index(owner: string): Collection<{ media_id: string }> {
+    return this.#ws.records.collection(MEDIA_INDEX, { owner });
+  }
+
+  /** The key of one of the media's own files (source, mezzanine, proxy). */
+  #key(owner: string, id: string, name: string): BlobKey {
+    return this.#ws.blobs.keys.media(owner, this.#id(id), name);
+  }
+
+  /** The key every file kept with the media starts with. */
+  prefix(owner: string, id: string): BlobKey {
+    return this.#ws.blobs.keys.derived(owner, this.#id(id));
+  }
+
+  /**
+   * The media's folder on this node's filesystem store. Only for code that has not moved to
+   * `derivedDir` and `local`, and for tests that lay a record down by hand.
+   */
   dir(owner: string, id: string): string {
-    if (!/^m_[0-9a-z]{26}$/.test(id)) throw new CfError('bad_request', `Not a media id: ${id}`);
-    return this.#ws.ownerDir(owner, 'media', id);
+    return this.#ws.ownerDir(owner, 'media', this.#id(id));
+  }
+
+  /**
+   * A local folder for a set of files made from the media and found again by name (`cleaned`,
+   * `between`, `selected`, `search`). It may not exist yet; whoever writes there makes it.
+   */
+  derivedDir(owner: string, id: string, ...name: string[]): Promise<string> {
+    return this.#ws.scratch.materializeDir(
+      this.#ws.blobs.keys.derived(owner, this.#id(id), ...name),
+    );
   }
 
   /** Where media.search's index of the media's picture is kept (engine search.ts). */
   searchDir(owner: string, id: string): string {
     return join(this.dir(owner, id), 'search');
+  }
+
+  /**
+   * Makes a file an engine wrote on this node (in the media's `derivedDir`) one of the media's
+   * own, under the name it was written with. Returns what the record keeps.
+   */
+  async own(owner: string, id: string, localPath: string): Promise<BlobKey> {
+    return this.#ws.scratch.publish(localPath, this.#key(owner, id, basename(localPath)));
+  }
+
+  /** The local file of a record's `file`, `mezzanine` or `proxy`, for an engine to read. */
+  async local(ref: string): Promise<string> {
+    return isBlob(ref) ? this.#ws.scratch.materialize(ref) : ref;
+  }
+
+  /** The local file a render reads for this media (see sourceRef). */
+  async sourceFile(record: MediaRecord, purpose: 'preview' | 'export'): Promise<string> {
+    return this.local(sourceRef(record, purpose));
+  }
+
+  /** The picture a render reads for this media, with what the compositor needs to know about it. */
+  async picture(
+    record: MediaRecord,
+    purpose: 'preview' | 'export',
+  ): Promise<{
+    path: string;
+    image: boolean;
+    width: number | null;
+    height: number | null;
+    alpha: boolean;
+    family?: string;
+  }> {
+    const p = record.probe;
+    const v = p?.video;
+    const upright = v ? v.rotation % 180 === 0 : true;
+    return {
+      path: await this.sourceFile(record, purpose),
+      image: p?.kind === 'image',
+      width: v ? (upright ? v.width : v.height) : null,
+      height: v ? (upright ? v.height : v.width) : null,
+      alpha: p ? hasAlpha(p) : false,
+      ...(p?.family ? { family: p.family } : {}),
+    };
+  }
+
+  /** Whether the file a record names is still there. */
+  async #held(ref: string): Promise<boolean> {
+    if (isBlob(ref)) return (await this.#ws.blobs.head(ref)) !== undefined;
+    return exists(ref);
+  }
+
+  /**
+   * A record as kept before files had keys named its files by their absolute path under the
+   * data root: those become the keys of the same files. A path import's original stays a path.
+   */
+  #keyed(record: MediaRecord): MediaRecord {
+    for (const field of ['file', 'mezzanine', 'proxy'] as const) {
+      const ref = record[field];
+      if (!ref || isBlob(ref)) continue;
+      const key = this.#ws.scratch.keyOf(ref);
+      if (key) record[field] = key;
+    }
+    return record;
   }
 
   async get(owner: string, id: string): Promise<MediaRecord> {
@@ -136,9 +285,9 @@ export class MediaLibrary {
   /** Why the owner has no such media: deleted, expired, another account's, or never here. */
   async missing(owner: string, id: string): Promise<CfError> {
     const again = 'import the file again with media.import (a saved copy, or its source)';
-    const gone = await this.#ws.readJson<{ reason: 'deleted' | 'expired'; at: string }>(
-      this.#ws.ownerDir(owner, 'media-gone', `${id}.json`),
-    );
+    const gone = MEDIA_ID.test(id)
+      ? await this.#ws.records.collection(MEDIA_GONE, { owner }).get(id)
+      : undefined;
     if (gone?.reason === 'deleted') {
       return new CfError('not_found', `Media ${id} was deleted with media.delete at ${gone.at}`, {
         hint: `It can't come back; ${again}`,
@@ -156,14 +305,10 @@ export class MediaLibrary {
       );
     }
     const own = ownerKey(owner);
-    if (/^m_[0-9a-z]{26}$/.test(id)) {
-      for (const key of await this.#ws.owners()) {
+    if (MEDIA_ID.test(id)) {
+      for (const key of await this.#ws.records.owners()) {
         if (key === own) continue;
-        const held = await stat(this.#ws.path('owners', key, 'media', id, 'media.json')).then(
-          () => true,
-          () => false,
-        );
-        if (held) {
+        if (await this.#records(key).has(id)) {
           return new CfError('not_found', `Media ${id} belongs to another account`, {
             hint: "Media is kept per account; this one can't use it. Import the file into this account with media.import",
             detail: { media_id: id, reason: 'other_owner' },
@@ -179,45 +324,36 @@ export class MediaLibrary {
 
   /** Remembers why a media is gone, so a later lookup can say so. */
   async #tombstone(owner: string, id: string, reason: 'deleted' | 'expired'): Promise<void> {
-    await this.#ws.writeJson(this.#ws.ownerDir(owner, 'media-gone', `${id}.json`), {
-      reason,
-      at: new Date().toISOString(),
-    });
+    await this.#ws.records
+      .collection(MEDIA_GONE, { owner })
+      .put(id, { reason, at: new Date().toISOString() });
   }
 
   async find(owner: string, id: string): Promise<MediaRecord | undefined> {
-    const record = await this.#ws.readJson<MediaRecord>(join(this.dir(owner, id), 'media.json'), {
-      touch: true,
-    });
-    if (!record) return undefined;
-    // Each analysis is its own file, so analyses running on different servers never overwrite
+    const stored = await this.#records(owner).get(this.#id(id), { touch: true });
+    if (!stored) return undefined;
+    const record = this.#keyed(stored);
+    // Each analysis is its own record, so analyses running on different servers never overwrite
     // each other. A record from before that kept them inline: move them out once.
-    const dir = join(this.dir(owner, id), 'analyses');
+    const kept = this.#analyses(owner, id);
     if (record.analyses) {
       const { look, ...rest } = record.analyses;
-      for (const [kind, value] of Object.entries(rest)) {
-        await this.#ws.writeJson(join(dir, `${kind}.json`), value, { exclusive: true });
-      }
+      for (const [kind, value] of Object.entries(rest)) await kept.insertOnce(kind, value);
       for (const [i, run] of (look?.runs ?? []).entries()) {
-        await this.#ws.writeJson(
-          join(dir, `look-${String(i).padStart(14, '0')}-${run.id}.json`),
-          run,
-          {
-            exclusive: true,
-          },
-        );
+        await kept.insertOnce(`look-${String(i).padStart(14, '0')}-${run.id}`, run);
       }
       delete record.analyses;
       await this.save(owner, record);
     }
-    const names = (await this.#ws.list(dir)).filter((n) => n.endsWith('.json')).sort();
+    // In the order their files sort, which is the order look runs were made.
+    const names = (await kept.ids()).sort((a, b) => (`${a}.json` < `${b}.json` ? -1 : 1));
     const analyses: NonNullable<MediaRecord['analyses']> = {};
     const runs: LookRun[] = [];
     for (const name of names) {
-      const value = await this.#ws.readJson<never>(join(dir, name));
+      const value = (await kept.get(name)) as never;
       if (!value) continue;
       if (name.startsWith('look-')) runs.push(value);
-      else analyses[name.slice(0, -5) as Exclude<StoredAnalysis, 'look'>] = value;
+      else analyses[name as Exclude<StoredAnalysis, 'look'>] = value;
     }
     if (runs.length) analyses.look = { runs: runs.slice(-LOOK_RUNS_KEPT) };
     if (Object.keys(analyses).length) record.analyses = analyses;
@@ -226,18 +362,15 @@ export class MediaLibrary {
 
   /** Whether the owner still holds this media. Doesn't count as a use. */
   async exists(owner: string, id: string): Promise<boolean> {
-    if (!/^m_[0-9a-z]{26}$/.test(id)) return false;
-    return stat(join(this.dir(owner, id), 'media.json')).then(
-      () => true,
-      () => false,
-    );
+    if (!MEDIA_ID.test(id)) return false;
+    return this.#records(owner).has(id);
   }
 
   /** The record itself; analyses are written apart, with saveAnalysis. */
   async save(owner: string, record: MediaRecord): Promise<void> {
     record.updated_at = new Date().toISOString();
     const { analyses: _kept, ...rest } = record;
-    await this.#ws.writeJson(join(this.dir(owner, record.media_id), 'media.json'), rest);
+    await this.#records(owner).put(this.#id(record.media_id), rest as MediaRecord);
     await floorChanged(this.#ws, owner);
   }
 
@@ -251,20 +384,14 @@ export class MediaLibrary {
     kind: StoredAnalysis,
     value: unknown,
   ): Promise<MediaRecord> {
-    const dir = join(this.dir(owner, id), 'analyses');
+    const kept = this.#analyses(owner, id);
     if (kind === 'look') {
       const run = value as LookRun;
-      await this.#ws.writeJson(
-        join(dir, `look-${Date.now().toString().padStart(14, '0')}-${run.id}.json`),
-        run,
-        {
-          exclusive: true,
-        },
-      );
-      const looks = (await this.#ws.list(dir)).filter((n) => n.startsWith('look-')).sort();
-      for (const old of looks.slice(0, -LOOK_RUNS_KEPT)) await this.#ws.remove(join(dir, old));
+      await kept.insertOnce(`look-${Date.now().toString().padStart(14, '0')}-${run.id}`, run);
+      const looks = (await kept.ids()).filter((n) => n.startsWith('look-')).sort();
+      for (const old of looks.slice(0, -LOOK_RUNS_KEPT)) await kept.delete(old);
     } else {
-      await this.#ws.writeJson(join(dir, `${kind}.json`), value);
+      await kept.put(kind, value);
     }
     return this.get(owner, id);
   }
@@ -318,36 +445,39 @@ export class MediaLibrary {
   }
 
   /**
-   * Brings a file the server holds into a new record's folder: a rendered export is copied (it
-   * expires on its own clock), an upload is moved.
+   * Makes a file the server holds a new record's own: a rendered export is copied (it expires
+   * on its own clock), an upload is moved. `from` is a blob, or a local file on this node.
+   * Returns what the record keeps as its `file`.
    */
   async adopt(
     owner: string,
     record: MediaRecord,
-    file: string,
+    from: { blob: BlobKey } | { file: string },
     options: { move?: boolean } = {},
-  ): Promise<string> {
-    const dir = this.dir(owner, record.media_id);
-    await mkdir(dir, { recursive: true });
-    const dest = join(
-      dir,
-      `source${extname(file)
+  ): Promise<BlobKey> {
+    const name = 'blob' in from ? from.blob : from.file;
+    const key = this.#key(
+      owner,
+      record.media_id,
+      `source${extname(name)
         .slice(0, 8)
         .replace(/[^.\w]/g, '')}`,
     );
-    if (options.move) await rename(file, dest);
-    else await copyFile(file, dest);
-    return dest;
+    if ('file' in from) {
+      await this.#ws.blobs.put(key, { file: from.file, ...(options.move ? { move: true } : {}) });
+      return key;
+    }
+    if (options.move) return this.#ws.blobs.move(from.blob, key);
+    await this.#ws.blobs.copy(from.blob, key);
+    return key;
   }
 
   /** An existing usable import of the same content, for dedupe. */
   async findByFingerprint(owner: string, fingerprint: string): Promise<MediaRecord | undefined> {
-    const index = await this.#ws.readJson<{ media_id: string }>(
-      this.#ws.ownerDir(owner, 'media-index', `${fingerprint}.json`),
-    );
+    const index = await this.#index(owner).get(fingerprint);
     if (!index) return undefined;
     const record = await this.find(owner, index.media_id);
-    return record && record.status !== 'failed' && (!record.file || (await exists(record.file)))
+    return record && record.status !== 'failed' && (!record.file || (await this.#held(record.file)))
       ? record
       : undefined;
   }
@@ -358,9 +488,7 @@ export class MediaLibrary {
   }
 
   async rememberRecipe(owner: string, recipe: string, mediaId: string): Promise<void> {
-    await this.#ws.writeJson(this.#ws.ownerDir(owner, 'media-index', `recipe-${recipe}.json`), {
-      media_id: mediaId,
-    });
+    await this.#index(owner).put(`recipe-${recipe}`, { media_id: mediaId });
   }
 
   /** Creates the record a new import fills in. */
@@ -411,14 +539,16 @@ export class MediaLibrary {
     /** A tighter cap on a download than the server's (the account's storage left), and why. */
     options: { maxBytes?: number; tooBig?: { limit: string; hint: string } } = {},
   ): Promise<MediaRecord> {
-    const dir = this.dir(owner, record.media_id);
+    const { blobs, scratch } = this.#ws;
+    const own = (name: string) => this.#key(owner, record.media_id, name);
     try {
       if ('url' in record.source) {
         progress(0, 'downloading');
         const ext = extname(new URL(record.source.url).pathname)
           .slice(0, 8)
           .replace(/[^.\w]/g, '');
-        const dest = join(dir, `source${ext || '.bin'}`);
+        const key = own(`source${ext || '.bin'}`);
+        const dest = await scratch.reserve(key);
         const direct = directDownloadUrl(record.source.url);
         const got = await download(direct, dest, {
           maxBytes: Math.min(this.config.maxDownloadBytes, options.maxBytes ?? Infinity),
@@ -464,13 +594,13 @@ export class MediaLibrary {
         ) {
           record.name = got.filename.slice(0, 200);
         }
-        record.file = dest;
+        record.file = await scratch.publish(dest, key);
       } else if ('path' in record.source) {
         record.file = await this.resolvePath(record.source.path);
       } else if (!record.file) {
         throw new CfError('engine_error', `Created media ${record.media_id} has no file`);
       }
-      let file = record.file;
+      let file = await this.local(record.file);
       record.size = (await stat(file)).size;
       record.fingerprint = await fingerprint(file);
       // The same bytes imported before (a URL fetched again, an upload sent twice): share that
@@ -480,38 +610,44 @@ export class MediaLibrary {
         return await this.#share(owner, record, known, progress);
       }
       // A web font (WOFF, WOFF2) is used as the TrueType or OpenType font it packs.
-      const unpacked = await unwrapWebFont(file, dir);
-      if (unpacked) record.file = file = unpacked;
+      const unpacked = await unwrapWebFont(
+        file,
+        await scratch.materializeDir(this.prefix(owner, record.media_id)),
+      );
+      if (unpacked) {
+        record.file = await scratch.publish(unpacked, own(basename(unpacked)));
+        file = await this.local(record.file);
+      }
       progress(0.3, 'probing');
       record.probe = await probe(file, signal);
       // A copy the server holds is named for what it is, whatever name it came with (a PNG sent
       // as .svg, a download with no extension). The user's own file in a media root stays as is.
       const ext = record.probe.extension;
-      if (ext && file.startsWith(dir + sep) && extname(file).toLowerCase() !== ext) {
-        const named = join(dir, `source${ext}`);
-        await rename(file, named);
-        record.file = file = named;
+      if (ext && isBlob(record.file) && extname(file).toLowerCase() !== ext) {
+        record.file = await blobs.move(record.file, own(`source${ext}`));
+        file = await this.local(record.file);
       }
       record.conform = conformReasons(record.probe);
       record.status = 'processing';
       await this.save(owner, record);
-      await this.#ws.writeJson(
-        this.#ws.ownerDir(owner, 'media-index', `${record.fingerprint}.json`),
-        { media_id: record.media_id },
-      );
+      await this.#index(owner).put(record.fingerprint, { media_id: record.media_id });
 
       const p = record.probe;
+      /** The proxy made here, as a local file. */
+      let made: string | undefined;
       if (p.kind === 'video' && p.video) {
         let source = file;
         if (record.conform.length) {
           progress(0.35, `conforming (${record.conform.join(', ')})`);
-          record.mezzanine = join(dir, 'mezzanine.mov');
-          await conform(file, record.mezzanine, p, signal, (f) =>
+          record.mezzanine = own('mezzanine.mov');
+          const mezzanine = await scratch.reserve(record.mezzanine);
+          await conform(file, mezzanine, p, signal, (f) =>
             progress(0.35 + 0.35 * f, `conforming ${Math.round(f * 100)}%`),
           );
-          source = record.mezzanine;
+          await scratch.publish(mezzanine, record.mezzanine);
+          source = mezzanine;
           // Edits and exports read the mezzanine, so its length is the media's length.
-          const conformed = await probe(record.mezzanine, signal);
+          const conformed = await probe(mezzanine, signal);
           if (p.duration !== null && conformed.duration !== null) {
             p.duration = Math.min(p.duration, conformed.duration);
           }
@@ -519,11 +655,12 @@ export class MediaLibrary {
           await this.save(owner, record);
         }
         progress(0.7, 'making proxy');
-        const proxy = join(dir, 'proxy.mov');
+        const proxy = await scratch.reserve(own('proxy.mov'));
         await makeProxy(source, proxy, p, signal, (f) =>
           progress(0.7 + 0.2 * f, `making proxy ${Math.round(f * 100)}%`),
         );
-        record.proxy = proxy;
+        record.proxy = await scratch.publish(proxy, own('proxy.mov'));
+        made = proxy;
         // The proxy decoded all of the file. Where it stops well short of the length the file
         // states (an unfinished download, a cut-off recording), nothing past that can be read:
         // what was read is the media's length.
@@ -537,7 +674,7 @@ export class MediaLibrary {
       }
       if (p.kind === 'video' || p.kind === 'audio') {
         progress(0.9, 'analysing');
-        record.analysis = await analyse(record.proxy ?? file, p, signal);
+        record.analysis = await analyse(made ?? file, p, signal);
       }
       record.status = 'ready';
       await this.save(owner, record);
@@ -567,46 +704,43 @@ export class MediaLibrary {
     progress: Progress,
   ): Promise<MediaRecord> {
     progress(0.5, `same file as ${known.media_id}, already imported`);
-    const dir = this.dir(owner, record.media_id);
-    const from = this.dir(owner, known.media_id);
-    const held = (path: string | null): path is string => !!path && path.startsWith(from + sep);
-    const linked = async (path: string) => {
-      const dest = join(dir, basename(path));
-      await rm(dest, { force: true });
-      await link(path, dest).catch(() => copyFile(path, dest));
-      return dest;
-    };
+    const { blobs } = this.#ws;
+    const mine = `${this.prefix(owner, record.media_id)}/`;
+    const theirs = `${this.prefix(owner, known.media_id)}/`;
+    const held = (ref: string | null): ref is BlobKey => isBlob(ref) && ref.startsWith(theirs);
+    const shared = (key: BlobKey) =>
+      blobs.share(key, this.#key(owner, record.media_id, basename(key)));
     // A downloaded or sent copy gives way to known's; the user's own file in place stays.
-    if (record.file?.startsWith(dir + sep) && held(known.file)) {
-      await rm(record.file, { force: true });
-      record.file = await linked(known.file);
+    if (isBlob(record.file) && record.file.startsWith(mine) && held(known.file)) {
+      await blobs.delete(record.file);
+      record.file = await shared(known.file);
     }
     record.size = known.size;
     record.probe = known.probe;
     record.conform = known.conform;
-    record.mezzanine = held(known.mezzanine) ? await linked(known.mezzanine) : null;
-    record.proxy = held(known.proxy) ? await linked(known.proxy) : null;
+    record.mezzanine = held(known.mezzanine) ? await shared(known.mezzanine) : null;
+    record.proxy = held(known.proxy) ? await shared(known.proxy) : null;
     record.analysis = known.analysis;
-    const analyses = join(from, 'analyses');
-    for (const name of await this.#ws.list(analyses)) {
-      if (!name.endsWith('.json')) continue;
-      await mkdir(join(dir, 'analyses'), { recursive: true });
-      await copyFile(join(analyses, name), join(dir, 'analyses', name)).catch(() => undefined);
+    const from = this.#analyses(owner, known.media_id);
+    const to = this.#analyses(owner, record.media_id);
+    for (const name of await from.ids()) {
+      try {
+        const value = await from.get(name);
+        if (value !== undefined) await to.put(name, value);
+      } catch {
+        // One analysis that can't be read is left behind; the rest come along.
+      }
     }
     // Its search index too, when known has one: the same picture indexes the same.
-    const search = this.searchDir(owner, known.media_id);
-    for (const name of await this.#ws.list(search)) {
-      if (name.endsWith('.part')) continue;
-      await mkdir(this.searchDir(owner, record.media_id), { recursive: true });
-      const dest = join(this.searchDir(owner, record.media_id), name);
-      await link(join(search, name), dest).catch(() => copyFile(join(search, name), dest));
+    const search = `${blobs.keys.derived(owner, known.media_id, 'search')}/`;
+    for (const { key } of await blobs.list(search)) {
+      const name = key.slice(search.length);
+      if (name.endsWith('.part') || name.includes('/')) continue;
+      await blobs.share(key, blobs.keys.derived(owner, record.media_id, 'search', name));
     }
     record.status = 'ready';
     await this.save(owner, record);
-    await this.#ws.writeJson(
-      this.#ws.ownerDir(owner, 'media-index', `${record.fingerprint}.json`),
-      { media_id: record.media_id },
-    );
+    await this.#index(owner).put(record.fingerprint as string, { media_id: record.media_id });
     progress(1, 'ready');
     this.config.onReady?.(owner, record);
     return record;
@@ -614,19 +748,14 @@ export class MediaLibrary {
 
   /** Every media the owner has, newest use first, with when each expires. Doesn't count as a use. */
   async list(owner: string): Promise<Array<MediaRecord & { expires_at: string }>> {
-    const base = this.#ws.ownerDir(owner, 'media');
     const out: Array<MediaRecord & { expires_at: string; used: number }> = [];
-    for (const id of await this.#ws.list(base)) {
-      const file = join(base, id, 'media.json');
-      const [record, used] = await Promise.all([
-        this.#ws.readJson<MediaRecord>(file),
-        stat(file).then(
-          (s) => s.mtimeMs,
-          () => undefined,
-        ),
-      ]);
-      if (!record || used === undefined) continue;
-      out.push({ ...record, used, expires_at: new Date(used + MEDIA_TTL_MS).toISOString() });
+    for (const { value, usedAt } of await this.#records(owner).find()) {
+      const used = usedAt.getTime();
+      out.push({
+        ...this.#keyed(value),
+        used,
+        expires_at: new Date(used + MEDIA_TTL_MS).toISOString(),
+      });
     }
     return out.sort((a, b) => b.used - a.used).map(({ used: _used, ...record }) => record);
   }
@@ -637,8 +766,7 @@ export class MediaLibrary {
    * what the server made is removed. Returns the bytes freed.
    */
   async remove(owner: string, id: string): Promise<number> {
-    const dir = this.dir(owner, id);
-    const record = await this.#ws.readJson<MediaRecord>(join(dir, 'media.json'));
+    const record = await this.#records(owner).get(this.#id(id));
     if (!record) throw await this.missing(owner, id);
     if (record.status === 'importing' || record.status === 'processing') {
       const busy = notReady(record, 'media.delete');
@@ -647,60 +775,47 @@ export class MediaLibrary {
         ...(busy.detail ? { detail: busy.detail } : {}),
       });
     }
-    const freed = await folderBytes(dir);
-    const index = this.#ws.ownerDir(owner, 'media-index');
-    for (const name of await this.#ws.list(index)) {
-      const entry = await this.#ws.readJson<{ media_id: string }>(join(index, name));
-      if (entry?.media_id === id) await this.#ws.remove(join(index, name));
+    const freed = await this.#ws.blobs.freeable(this.prefix(owner, id));
+    const index = this.#index(owner);
+    for (const name of await index.ids()) {
+      const entry = await index.get(name);
+      if (entry?.media_id === id) await index.delete(name);
     }
-    await this.#ws.remove(dir);
+    await this.#drop(owner, id);
     await this.#tombstone(owner, id, 'deleted');
     await floorChanged(this.#ws, owner);
     return freed;
   }
 
+  /** Removes a media's files, analyses and record. */
+  async #drop(owner: string, id: string): Promise<void> {
+    await this.#ws.blobs.deletePrefix(this.prefix(owner, id));
+    for (const name of await this.#analyses(owner, id).ids()) {
+      await this.#analyses(owner, id).delete(name);
+    }
+    await this.#records(owner).delete(id);
+  }
+
   async sweep(ttlMs = MEDIA_TTL_MS): Promise<number> {
     let n = 0;
-    for (const owner of await this.#ws.owners()) {
-      const base = this.#ws.path('owners', owner, 'media');
+    for (const owner of await this.#ws.records.owners()) {
       const before = n;
-      // A media folder's age is its record's last use.
-      for (const id of await this.#ws.list(base)) {
-        const rec = join(base, id, 'media.json');
-        try {
-          const s = await stat(rec);
-          if (s.mtimeMs < Date.now() - ttlMs) {
-            await this.#ws.remove(join(base, id));
-            if (/^m_[0-9a-z]{26}$/.test(id)) await this.#tombstone(owner, id, 'expired');
-            n += 1;
-          }
-        } catch {
-          await this.#ws.remove(join(base, id));
+      // A media is as old as its record's last use.
+      for (const id of await this.#records(owner).expire(ttlMs)) {
+        if (MEDIA_ID.test(id)) {
+          await this.#drop(owner, id);
+          await this.#tombstone(owner, id, 'expired');
         }
+        n += 1;
       }
       if (n > before) await floorChanged(this.#ws, owner);
-      await this.#ws.sweep(this.#ws.path('owners', owner, 'media-index'), ttlMs);
-      await this.#ws.sweep(this.#ws.path('owners', owner, 'media-gone'), GONE_DAYS * 86_400_000);
+      await this.#index(owner).expire(ttlMs);
+      await this.#ws.records.collection(MEDIA_GONE, { owner }).expire(GONE_DAYS * 86_400_000);
       // The floor cursor of an account idle as long as its media lasts; a lost one costs a list.
-      await this.#ws.sweep(this.#ws.path('owners', owner), ttlMs, (name) => name !== 'floor.json');
+      await this.#ws.records.collection(FLOOR, { owner }).expire(ttlMs, (id) => id !== 'floor');
     }
     return n;
   }
-}
-
-/** Every byte under a folder. */
-async function folderBytes(dir: string): Promise<number> {
-  let total = 0;
-  const entries = await readdir(dir, { recursive: true, withFileTypes: true }).catch(() => []);
-  for (const e of entries) {
-    if (!e.isFile()) continue;
-    // A file another media shares (a hard link) stays on disk with it.
-    total += await stat(join(e.parentPath, e.name)).then(
-      (x) => (x.nlink > 1 ? 0 : x.size),
-      () => 0,
-    );
-  }
-  return total;
 }
 
 /** Where a media came from, as a result states it. A URL's query (often a signature) is left out. */
@@ -944,31 +1059,6 @@ export function hasAlpha(p: Probe): boolean {
   return /^(yuva|rgba|bgra|argb|abgr|gbrap|ya)/.test(p.video?.pix_fmt ?? '');
 }
 
-/** The picture a render reads for this media, with what the compositor needs to know about it. */
-export function renderPicture(
-  record: MediaRecord,
-  purpose: 'preview' | 'export',
-): {
-  path: string;
-  image: boolean;
-  width: number | null;
-  height: number | null;
-  alpha: boolean;
-  family?: string;
-} {
-  const p = record.probe;
-  const v = p?.video;
-  const upright = v ? v.rotation % 180 === 0 : true;
-  return {
-    path: renderSource(record, purpose),
-    image: p?.kind === 'image',
-    width: v ? (upright ? v.width : v.height) : null,
-    height: v ? (upright ? v.height : v.width) : null,
-    alpha: p ? hasAlpha(p) : false,
-    ...(p?.family ? { family: p.family } : {}),
-  };
-}
-
 /** The job that makes a media: the create.* job that made it, or its media.import. */
 export function makingJob(record: MediaRecord): { tool: string; job_id?: string } {
   if ('created' in record.source) {
@@ -988,7 +1078,12 @@ export function notReady(record: MediaRecord, needs: string | null): CfError {
   return mediaNotReady(record.media_id, record.status, needs, makingJob(record));
 }
 
-export function renderSource(record: MediaRecord, purpose: 'preview' | 'export'): string {
+/**
+ * Which of a media's files a render reads: the proxy for previews, the mezzanine or original
+ * for exports. A record's own reference (a blob key, or a path import's file); engines take the
+ * local file from `MediaLibrary.sourceFile`.
+ */
+export function sourceRef(record: MediaRecord, purpose: 'preview' | 'export'): string {
   const file =
     purpose === 'preview'
       ? (record.proxy ?? record.mezzanine ?? record.file)

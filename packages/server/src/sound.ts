@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { lengthFrames, noAudio, notReady, renderMix, renderSource } from '@cuttingfloor/engine';
+import { lengthFrames, noAudio, notReady, renderMix } from '@cuttingfloor/engine';
 import { assertOnline, sourcesFor } from './render.ts';
 import type { Runtime } from './runtime.ts';
 
@@ -82,7 +82,7 @@ export async function checkSound(
       plan: {
         kind: 'media',
         label,
-        sound: { file: renderSource(record, 'export'), ...range, shift: 0, duration },
+        sound: { file: await rt.media.sourceFile(record, 'export'), ...range, shift: 0, duration },
       },
       seconds,
     };

@@ -6,7 +6,6 @@ import {
   mayBeTransparent,
   renderLoad,
   renderMediaFrames,
-  renderSource,
 } from '@cuttingfloor/engine';
 import { CfError } from '@cuttingfloor/schema';
 import {
@@ -136,8 +135,8 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
       const fps = record.probe?.video?.fps;
       if (!fps)
         throw new ProtocolError(ProtocolErrorCode.InvalidParams, 'This media has no picture');
-      const [image] = await mustExist(() =>
-        renderMediaFrames(renderSource(record, 'preview'), fps, frames, {
+      const [image] = await mustExist(async () =>
+        renderMediaFrames(await rt.media.sourceFile(record, 'preview'), fps, frames, {
           longEdge: 640,
           format,
           layout: 'grid',

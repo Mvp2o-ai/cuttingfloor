@@ -106,7 +106,11 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
           // Referenced files this server keeps for a while (its own copies), named in one warning.
           const kept: string[] = [];
           for (const r of records) {
-            const original = r.file ?? ('path' in r.source ? r.source.path : undefined);
+            const original = r.file
+              ? await rt.media.local(r.file)
+              : 'path' in r.source
+                ? r.source.path
+                : undefined;
             if (!original) {
               warnings.push(
                 `${r.name} (${r.media_id}) has no file to refer to; its clips are left out`,

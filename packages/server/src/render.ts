@@ -19,8 +19,6 @@ import {
   passedAudio,
   passFrames,
   probe,
-  renderPicture,
-  renderSource,
   renderTimelineFrames,
   renderWaveform,
   selectedFile,
@@ -62,7 +60,7 @@ export async function sourcesFor(
     }
     // Previews may read the original while it is conformed; exports wait for the mezzanine.
     if (purpose === 'export' && record.status !== 'ready') throw notReady(record, 'an export');
-    sources.set(id, renderPicture(record, purpose));
+    sources.set(id, await rt.media.picture(record, purpose));
   }
   if (passes) await addPasses(rt, owner, doc, sources, purpose, sound, undefined, fills);
   return { sources, offline };
@@ -121,7 +119,7 @@ export async function addPasses(
           }
           // Made once per clip and speed, from the full picture (or the clip's selection
           // copy, itself made at full size), whatever size it is shown at: a job of its own.
-          const input = plain === media ? renderSource(record, 'export') : plain.path;
+          const input = plain === media ? await rt.media.sourceFile(record, 'export') : plain.path;
           const dir = join(rt.media.dir(owner, c.media_id), 'between');
           const options = {
             source: own,
@@ -167,7 +165,7 @@ export async function addPasses(
           continue;
         }
         if (!sound) continue;
-        const input = record.mezzanine ?? record.file ?? renderSource(record, 'export');
+        const input = await rt.media.sourceFile(record, 'export');
         const path = await passedAudio(
           input,
           join(rt.media.dir(owner, c.media_id), 'cleaned'),
@@ -232,11 +230,11 @@ async function selected(
     const m = await rt.media.find(owner, x.media_id);
     if (!m || m.status === 'failed' || m.status === 'importing') assertOnline([x.media_id]);
     // A fill is made once, at full size; show and hide follow the render's own size.
-    const pic = renderPicture(m as NonNullable<typeof m>, fill ? 'export' : purpose);
+    const pic = await rt.media.picture(m as NonNullable<typeof m>, fill ? 'export' : purpose);
     mattes.set(x.media_id, { path: pic.path, image: pic.image, alpha: pic.alpha });
   }
   const input = {
-    path: fill ? renderSource(record, 'export') : media.path,
+    path: fill ? await rt.media.sourceFile(record, 'export') : media.path,
     width: media.width,
     height: media.height,
     image: media.image,
