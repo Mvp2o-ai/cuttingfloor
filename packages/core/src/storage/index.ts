@@ -10,11 +10,13 @@ export type {
 export { FS_BLOB_KEYS, type FsBlobOptions, FsBlobStore } from './fs-blobs.ts';
 export { FS_HOME, FsRecords } from './fs-records.ts';
 export { FsScratch } from './fs-scratch.ts';
+export { MONGO_HOME, MongoRecords, type MongoRecordsOptions, mongoUri } from './mongo-records.ts';
 export {
   type Collection,
   type CollectionScope,
   type CollectionSpec,
   defineCollection,
+  definedCollections,
   type RecordChange,
   type RecordEntry,
   type RecordLog,

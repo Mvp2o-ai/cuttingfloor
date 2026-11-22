@@ -105,6 +105,15 @@ export class FsRecords implements Records {
     return FS_HOME;
   }
 
+  /** Servers sharing a data root each do their own periodic work, as they always did. */
+  async leader(_name: string): Promise<boolean> {
+    return true;
+  }
+
+  async ready(): Promise<void> {}
+
+  async close(): Promise<void> {}
+
   #base<T>(spec: CollectionSpec<T>, scope: Pick<CollectionScope, 'owner'>): string {
     if (spec.scope === 'global') return this.root;
     if (!scope.owner) throw new Error(`Collection ${spec.name} is kept per owner`);

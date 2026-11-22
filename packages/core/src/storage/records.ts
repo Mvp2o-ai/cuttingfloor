@@ -5,6 +5,12 @@
 export interface CollectionSpec<T> {
   /** The collection's name (a database collection where there is one). */
   readonly name: string;
+  /**
+   * The slice of a collection two kinds of record share under one name (`gone`: timelines and
+   * media). A database keeps each record's kind with it; on the filesystem `fs.dir` already
+   * keeps them apart.
+   */
+  readonly kind?: string;
   /** `owner`: each account has its own records. `global`: one set for the deployment. */
   readonly scope: 'owner' | 'global';
   /**
@@ -26,14 +32,37 @@ export interface CollectionSpec<T> {
    * have always held, so code from before blob keys reads the same records.
    */
   readonly blobs?: readonly string[];
+  /**
+   * What a database store adds for this collection; the filesystem store reads none of it.
+   * Every collection is already found by id, by owner (and parent) and by last use.
+   */
+  readonly db?: {
+    /** Record fields looked up within one owner's records (`['status']`), one list per index. */
+    indexes?: readonly (readonly string[])[];
+    /** Record fields looked up across every owner (`['status', 'lastUpdatedAt']`). */
+    indexesAcross?: readonly (readonly string[])[];
+    /**
+     * A fixed life, where the collection has one: the database may drop a record a day after
+     * this long since its last write, behind the sweep that decides (`expire`).
+     */
+    ttlMs?: number;
+  };
   /** Never read: carries the record's type. */
   readonly type?: T;
 }
 
+const defined: CollectionSpec<unknown>[] = [];
+
 export function defineCollection<T>(
   spec: Omit<CollectionSpec<T>, 'type' | 'blobs'> & { blobs?: readonly (keyof T & string)[] },
 ): CollectionSpec<T> {
+  defined.push(spec as CollectionSpec<unknown>);
   return spec;
+}
+
+/** Every collection defined so far in this process, so a database store can prepare them at startup. */
+export function definedCollections(): readonly CollectionSpec<unknown>[] {
+  return defined;
 }
 
 /** Which records of a collection: an account's, and a parent's where the collection has one. */
@@ -134,4 +163,16 @@ export interface Records {
    * deployment on the filesystem.
    */
   home(owner: string): Promise<string>;
+  /**
+   * Whether this server is the one to do the named periodic work now (a sweep, the day's
+   * reminders, the email sequence). Of the servers sharing a store one holds each name, on a
+   * lease it keeps renewing until it closes or dies; the others get false and skip their turn,
+   * and one of them takes over within the lease's length. Always true on the filesystem, where
+   * servers sharing a data root each did this work as before.
+   */
+  leader(name: string): Promise<boolean>;
+  /** Connects and prepares the store (a database's indexes). Nothing to do on the filesystem. */
+  ready(): Promise<void>;
+  /** Lets go of leases and connections. The store is not used after it. */
+  close(): Promise<void>;
 }

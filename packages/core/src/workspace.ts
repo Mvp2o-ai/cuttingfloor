@@ -41,13 +41,18 @@ export class Workspace {
   readonly blobs: BlobStore;
   readonly scratch: Scratch;
 
-  constructor(root: string, options: FsBlobOptions = {}) {
+  /**
+   * `records` puts the records in another store (a database) while the files stay under the
+   * data root; without it they are the JSON files they always were.
+   */
+  constructor(root: string, options: FsBlobOptions & { records?: Records } = {}) {
     // Absolute from the start: a relative data root (`./data`) means the folder under the
     // directory the server started in, whatever a later path is compared against.
     this.root = resolve(root);
-    const blobs = new FsBlobStore(this.root, options);
+    const { records, ...blobOptions } = options;
+    const blobs = new FsBlobStore(this.root, blobOptions);
     // Blob fields are written as paths under the root as it was given, as they always were.
-    this.records = new FsRecords(this.root, { pathsFrom: root });
+    this.records = records ?? new FsRecords(this.root, { pathsFrom: root });
     this.blobs = blobs;
     this.scratch = new FsScratch(blobs);
   }
