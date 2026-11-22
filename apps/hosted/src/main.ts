@@ -291,15 +291,16 @@ if (oauth) process.stderr.write(`oauth: sign-in at ${issuer} for ${oauth.resourc
 
 server.listen(port, host, () => {
   process.stderr.write(
-    `cuttingfloor ${config.mode} on http://${host}:${port}/mcp (data ${config.dataDir})\n`,
+    `cuttingfloor ${config.mode} on http://${host}:${port}/mcp (data ${config.dataDir}${config.records ? `, records in MongoDB database ${config.records.db}` : ''})\n`,
   );
 });
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
-    runtime.stop();
     lifecycle?.stop();
     sequence?.stop();
+    // Leases go back at once, so another server takes this one's periodic work over.
+    void runtime.close().catch(() => undefined);
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 5000).unref();
   });

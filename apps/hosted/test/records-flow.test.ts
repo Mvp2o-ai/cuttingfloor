@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { floorCursor, type MongoRecords } from '@cuttingfloor/core';
-import { mongoReachable, TEST_MONGODB_URI, testDatabase } from '@cuttingfloor/core/test/mongo';
+import {
+  MONGO_TEST_TIMEOUT_MS,
+  mongoReachable,
+  TEST_MONGODB_URI,
+  testDatabase,
+} from '@cuttingfloor/core/test/mongo';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import type { AccountGetResult } from '@cuttingfloor/schema';
 import {
@@ -47,6 +52,7 @@ afterAll(() => {
 });
 
 const up = await mongoReachable();
+vi.setConfig({ testTimeout: MONGO_TEST_TIMEOUT_MS, hookTimeout: MONGO_TEST_TIMEOUT_MS });
 
 const ACCOUNT: AccountGetResult = {
   plan: 'free',
@@ -314,7 +320,7 @@ describe.each((['filesystem', 'MongoDB'] as const).filter((store) => store === '
       expect(await env.runtime.jobs.store.working()).toEqual(
         expect.not.arrayContaining([expect.objectContaining({ id: first.job_id })]),
       );
-    }, 30_000);
+    });
 
     it('meters each judging call once, and logs the calls', async () => {
       const id = 'q_aaaaaaaaaaaaaaaaaaaaaaaaaa';

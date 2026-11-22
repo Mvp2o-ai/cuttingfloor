@@ -8,6 +8,12 @@ import type { Stores } from './storage-contract.ts';
 // one CUTTINGFLOOR_TEST_MONGODB_URI names. Suites that need it skip when there is none, unless
 // CUTTINGFLOOR_REQUIRE_MONGO says it must be there.
 
+/**
+ * A test on the database makes one of its own, with its indexes, and drops it: seconds when the
+ * machine is busy with the rest of the suite. Suites on it allow this long per test.
+ */
+export const MONGO_TEST_TIMEOUT_MS = 60_000;
+
 export const TEST_MONGODB_URI =
   process.env.CUTTINGFLOOR_TEST_MONGODB_URI ?? 'mongodb://127.0.0.1:27017/?directConnection=true';
 

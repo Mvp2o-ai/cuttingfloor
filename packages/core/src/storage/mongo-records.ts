@@ -275,19 +275,15 @@ export class MongoRecords implements Records {
     const db = await this.database();
     const locks = db.collection<{ _id: string }>(LOCKS);
     const { leaseMs, node } = this.#o;
+    const take = [{ $set: { holder: this.#holder, node, until: { $add: ['$$NOW', leaseMs] } } }];
     try {
-      await locks.updateOne(
-        {
-          _id: safe(name),
-          $or: [{ holder: this.#holder }, { $expr: { $lt: ['$until', '$$NOW'] } }],
-        },
-        [{ $set: { holder: this.#holder, node, until: { $add: ['$$NOW', leaseMs] } } }],
-        { upsert: true },
-      );
+      // Mine already, or nobody's yet: kept, or made (which fails when another holds it).
+      await locks.updateOne({ _id: safe(name), holder: this.#holder }, take, { upsert: true });
     } catch (error) {
-      // Held by another: the upsert found no lease to take and could not make a second.
-      if (duplicate(error)) return this.#lost(name);
-      throw error;
+      if (!duplicate(error)) throw error;
+      // Another's: taken only once it has run out, in one write no other taker can share.
+      const taken = await locks.updateOne({ _id: name, $expr: { $lt: ['$until', '$$NOW'] } }, take);
+      if (taken.matchedCount === 0) return this.#lost(name);
     }
     if (!this.#leases.has(name) && !this.#closed) {
       const renew = setInterval(
@@ -300,7 +296,7 @@ export class MongoRecords implements Records {
               (result) => {
                 if (result.matchedCount === 0) this.#lost(name);
               },
-              // Unreachable for now: the lease runs out by itself if this goes on.
+              // The database can't be reached just now: the lease runs out if that goes on.
               () => undefined,
             );
         },

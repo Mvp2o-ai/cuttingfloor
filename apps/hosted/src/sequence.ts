@@ -131,7 +131,10 @@ export class Sequence {
     const tick = () => {
       if (this.#running) return;
       this.#running = true;
-      void this.tick()
+      // One server's turn among those sharing the record store; a slot is claimed once anyway.
+      void this.#o.ws.records
+        .leader('email-sequence')
+        .then((mine) => (mine ? this.tick() : undefined))
         .catch((error: Error) => process.stderr.write(`sequence: ${error.message}\n`))
         .finally(() => {
           this.#running = false;

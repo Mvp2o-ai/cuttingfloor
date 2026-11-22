@@ -143,10 +143,13 @@ export class Lifecycle {
         process.stderr.write(`lifecycle: ${owner}: ${error.message}\n`),
       );
     });
+    // One server's turn among those sharing the record store: the others would only look
+    // through the same accounts and find every notice already sent.
     const sweep = () =>
-      void this.sweep().catch((error: Error) =>
-        process.stderr.write(`lifecycle: sweep: ${error.message}\n`),
-      );
+      void this.#o.runtime.ws.records
+        .leader('lifecycle')
+        .then((mine) => (mine ? this.sweep() : undefined))
+        .catch((error: Error) => process.stderr.write(`lifecycle: sweep: ${error.message}\n`));
     sweep();
     this.#timer = setInterval(sweep, SWEEP_MS);
     this.#timer.unref();

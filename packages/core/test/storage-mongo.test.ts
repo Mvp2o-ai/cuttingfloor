@@ -1,9 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { type CollectionSpec, defineCollection, MongoRecords, mongoUri } from '../src/index.ts';
-import { mongoReachable, mongoStores, TEST_MONGODB_URI, testRecords } from './mongo.ts';
+import {
+  MONGO_TEST_TIMEOUT_MS,
+  mongoReachable,
+  mongoStores,
+  TEST_MONGODB_URI,
+  testRecords,
+} from './mongo.ts';
 import { recordsContract } from './storage-contract.ts';
 
 const up = await mongoReachable();
+vi.setConfig({ testTimeout: MONGO_TEST_TIMEOUT_MS, hookTimeout: MONGO_TEST_TIMEOUT_MS });
 
 if (up) recordsContract('MongoDB', mongoStores);
 
@@ -231,6 +238,100 @@ describe.skipIf(!up)('MongoDB records: what only this store promises', () => {
     expect(await c.get('a')).toEqual({ name: 'moved' });
     expect((await c.usedAt('a'))?.toISOString()).toBe(at.toISOString());
   });
+});
+
+describe.skipIf(!up)('MongoDB records: two servers on one database', () => {
+  /** Two stores as two servers would hold them, and a third way in for the test to tidy up. */
+  const pair = (
+    name: string,
+    run: (a: MongoRecords, b: MongoRecords, db: string) => Promise<void>,
+    options: { leaseMs?: number } = {},
+  ) =>
+    it(name, async () => {
+      const first = testRecords({ node: 'a', ...options });
+      const db = (await first.database()).databaseName;
+      const second = new MongoRecords({ uri: TEST_MONGODB_URI, db, node: 'b', ...options });
+      try {
+        await run(first, second, db);
+      } finally {
+        await second.close();
+        await first.close();
+        const tidy = new MongoRecords({ uri: TEST_MONGODB_URI, db });
+        await (await tidy.database()).dropDatabase();
+        await tidy.close();
+      }
+    });
+
+  pair('insertOnce: of both servers trying at once, exactly one wins', async (a, b) => {
+    const stores = [a, b].map((r) => r.collection(things, { owner: 'alice' }));
+    const won = await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        (stores[i % 2] as (typeof stores)[0]).insertOnce('race', { name: `n${i}` }),
+      ),
+    );
+    expect(won.filter(Boolean)).toHaveLength(1);
+    expect((await stores[0]?.get('race'))?.name).toBe(`n${won.indexOf(true)}`);
+    expect((await stores[1]?.get('race'))?.name).toBe(`n${won.indexOf(true)}`);
+  });
+
+  pair('compareAndSet: of both servers moving one value, exactly one wins', async (a, b) => {
+    const stores = [a, b].map((r) => r.collection(things, { owner: 'alice' }));
+    await stores[0]?.put('a', { name: 'n', count: 0 });
+    const won = await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        (stores[i % 2] as (typeof stores)[0]).compareAndSet('a', { count: 0 }, { count: i + 1 }),
+      ),
+    );
+    expect(won.filter(Boolean)).toHaveLength(1);
+    expect((await stores[1]?.get('a'))?.count).toBe(won.indexOf(true) + 1);
+  });
+
+  pair('update: adds from both servers all count', async (a, b) => {
+    const stores = [a, b].map((r) => r.collection(things, { owner: 'alice' }));
+    await stores[0]?.put('a', { name: 'n', count: 0 });
+    await Promise.all(
+      Array.from({ length: 40 }, (_, i) =>
+        (stores[i % 2] as (typeof stores)[0]).update('a', { inc: { count: 1 } }),
+      ),
+    );
+    expect((await stores[0]?.get('a'))?.count).toBe(40);
+  });
+
+  pair(
+    'a lease has one holder, who keeps it; it passes on when the holder closes',
+    async (a, b) => {
+      const turns = await Promise.all([a.leader('sweep'), b.leader('sweep')]);
+      expect(turns.filter(Boolean)).toHaveLength(1);
+      const [holder, other] = turns[0] ? [a, b] : [b, a];
+      expect(await other.leader('sweep')).toBe(false);
+      expect(await holder.leader('sweep')).toBe(true);
+      // Another name is another lease.
+      expect(await other.leader('reaper')).toBe(true);
+      expect(await holder.leader('reaper')).toBe(false);
+      await holder.close();
+      expect(await other.leader('sweep')).toBe(true);
+    },
+  );
+
+  pair(
+    'a holder that dies loses the lease when it runs out; one that lives keeps it past that',
+    async (a, b, db) => {
+      expect(await a.leader('sweep')).toBe(true);
+      // Longer than the lease: the holder's renewals kept it.
+      await new Promise((r) => setTimeout(r, 2500));
+      expect(await b.leader('sweep')).toBe(false);
+      const lock = await (await b.database()).collection('locks').findOne({});
+      expect(lock).toMatchObject({ _id: 'sweep', node: 'a' });
+      // The holder is gone without a word (its connection with it): nothing renews the lease.
+      const dying = new MongoRecords({ uri: TEST_MONGODB_URI, db, node: 'c', leaseMs: 1500 });
+      expect(await dying.leader('reaper')).toBe(true);
+      await (await dying.database()).client.close();
+      expect(await b.leader('reaper')).toBe(false);
+      await new Promise((r) => setTimeout(r, 2000));
+      expect(await b.leader('reaper')).toBe(true);
+    },
+    { leaseMs: 1500 },
+  );
 });
 
 describe('MongoDB records: the connection', () => {
