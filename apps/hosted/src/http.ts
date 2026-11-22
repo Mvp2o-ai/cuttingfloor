@@ -18,6 +18,8 @@ import type { AccountGetResult } from '@cuttingfloor/schema';
 import {
   createServer,
   creditsClaimed,
+  DRAIN_RETRY_SECONDS,
+  drainingError,
   type OwnerLimits,
   outputMime,
   type Runtime,
@@ -324,6 +326,13 @@ export function createHttpServer(options: HttpOptions): Server {
         res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
         return;
       }
+      // Whether the server is draining and how many of its jobs still run: counts only.
+      if (url.pathname === '/healthz/drain') {
+        res
+          .writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+          .end(JSON.stringify(await runtime.drain.status()));
+        return;
+      }
       if (options.openaiChallenge && url.pathname === '/.well-known/openai-apps-challenge') {
         res.writeHead(200, { 'content-type': 'text/plain' }).end(options.openaiChallenge);
         return;
@@ -499,6 +508,25 @@ async function handleUpload(
 ): Promise<void> {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, UPLOAD_CORS).end();
+    return;
+  }
+  // Draining (drain.ts): no bytes are taken; where an upload stands can still be asked.
+  if (runtime.drain.active && req.method !== 'GET' && req.method !== 'HEAD') {
+    req.resume();
+    res
+      .writeHead(503, {
+        ...UPLOAD_CORS,
+        'content-type': 'application/json',
+        'cache-control': 'no-store',
+        'retry-after': String(DRAIN_RETRY_SECONDS),
+        connection: 'close',
+      })
+      .end(
+        JSON.stringify({
+          error: drainingError().message,
+          retry_after_seconds: DRAIN_RETRY_SECONDS,
+        }),
+      );
     return;
   }
   const reply = (

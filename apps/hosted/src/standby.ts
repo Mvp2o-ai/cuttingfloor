@@ -10,7 +10,7 @@ import type { Sequence } from './sequence.ts';
 
 /** The one line a standby server logs as it starts: that it is one, and what that turns off. */
 export const STANDBY_NOTICE =
-  'standby: CUTTINGFLOOR_STANDBY=1. This server answers requests and does nothing by the clock: no sweep at start or by the hour (timelines, media, jobs, outputs, uploads, meter, call log, sign-in steps), no recovery of interrupted jobs at start or by the minute, no lifecycle sweep (new accounts, welcome and expiry notices, key and partner-link sweeps, ledger spend catch-up), no email sequence, and no email of any kind (no mailer is made). Unset it and restart at the cutover.';
+  'standby: CUTTINGFLOOR_STANDBY=1. This server answers requests and does nothing by the clock: no sweep at start or by the hour (timelines, media, jobs, outputs, uploads, meter, call log, sign-in steps), no recovery of interrupted jobs at start or by the minute, no lifecycle sweep (new accounts, welcome and expiry notices, key and partner-link sweeps, ledger spend catch-up), no email sequence, and no email of any kind (no mailer is made). Jobs run unmetered (no ledger spend, usage report or automatic top-up), no WorkOS metadata is written, and top-up, account deletion and Stripe's events answer 503. Unset it and restart at the cutover.';
 
 /**
  * The mailer for account email, from the environment. None on a standby server, whatever keys

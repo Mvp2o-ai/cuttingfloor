@@ -23,7 +23,9 @@ import {
 import { FileJobStore, type Job, JobRunner } from '@cuttingfloor/jobs';
 import { KEEP } from '@cuttingfloor/schema';
 import { CALLS, CALLS_TTL_MS, type CallEntry, jobEnd, recordCall } from './calls.ts';
+import { Drain } from './drain.ts';
 import { SearchIndexer } from './indexer.ts';
+import { markLive } from './live.ts';
 import { METER, METER_TTL_MS, type MeterEntry, meterJob, meterJudgments } from './meter.ts';
 import { Outputs } from './outputs.ts';
 import { Uploads } from './uploads.ts';
@@ -129,6 +131,11 @@ export interface RuntimeConfig {
    * no recovery of jobs, at start or by the minute.
    */
   standby?: boolean;
+  /**
+   * Takes no new work from the start (CUTTINGFLOOR_DRAIN=1); a file named `drain` in the data
+   * root does the same with no restart (drain.ts).
+   */
+  drain?: boolean;
 }
 
 /** How long a link to a file in the bucket works: minted per request behind our own links. */
@@ -187,7 +194,7 @@ function blobsFromEnv(env: NodeJS.ProcessEnv): Pick<RuntimeConfig, 's3'> {
 }
 
 /** The link-signing key from CUTTINGFLOOR_URL_SECRET. The value never appears in the error. */
-function urlSecretKey(value: string): Buffer {
+export function urlSecretKey(value: string): Buffer {
   const text = value.trim();
   const key = /^[A-Za-z0-9+/_-]+={0,2}$/.test(text) ? Buffer.from(text, 'base64') : null;
   if (!key || key.length < 32) {
@@ -256,6 +263,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     ...blobsFromEnv(env),
     ...(env.CUTTINGFLOOR_S3_FILE_RECORDS === '1' ? { s3FileRecords: true } : {}),
     ...(env.CUTTINGFLOOR_STANDBY === '1' ? { standby: true } : {}),
+    ...(env.CUTTINGFLOOR_DRAIN === '1' ? { drain: true } : {}),
   };
 }
 
@@ -271,6 +279,8 @@ export class Runtime {
   readonly uploads: Uploads;
   /** Files jobs and previews leave for download. */
   readonly outputs: Outputs;
+  /** Whether the server takes new work now (the storage cutover drains it first). */
+  readonly drain: Drain;
   /** Downloaded models, kept across restarts (they are checksummed, not user data). */
   readonly modelsDir: string;
   #secret: Buffer | undefined;
@@ -356,6 +366,15 @@ export class Runtime {
         ),
     });
     // Uploads take files as big as URL imports may download.
+    this.drain = new Drain({
+      dataDir: this.ws.root,
+      forced: Boolean(config.drain),
+      node: config.node ?? 'local',
+      running: async () =>
+        (await this.jobs.store.working()).filter(
+          (j) => (j.node ?? this.config.node) === this.config.node,
+        ).length,
+    });
     this.uploads = new Uploads(this.ws, {
       secret: () => this.secret(),
       publicUrl: () => this.config.publicUrl,
@@ -374,6 +393,13 @@ export class Runtime {
     await this.ws.blobs.ready();
     await this.secret();
     await this.ws.blobs.deletePrefix(this.ws.blobs.keys.cache('frames'));
+    this.drain.start();
+    // Whether a server serves on this record store, which a storage migration refuses to write.
+    await markLive(this.ws.records, {
+      standby: Boolean(this.config.standby),
+      node: this.config.node ?? 'local',
+      filesystem: this.ws.recordsWithFiles,
+    });
     if (this.config.standby) return;
     await this.jobs.recover();
     if (options.sweep !== false) {
@@ -440,6 +466,7 @@ export class Runtime {
   }
 
   stop(): void {
+    this.drain.stop();
     if (this.#sweeper) clearInterval(this.#sweeper);
     if (this.#reaper) clearInterval(this.#reaper);
   }

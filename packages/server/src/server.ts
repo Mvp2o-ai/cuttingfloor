@@ -5,6 +5,7 @@ import { type AccountGetResult, KEEPING, span } from '@cuttingfloor/schema';
 import { McpServer } from '@modelcontextprotocol/server';
 import { logToolCalls } from './calls.ts';
 import { registerCatalogs } from './catalog.ts';
+import { drainingError } from './drain.ts';
 import { registerEditor } from './editor.ts';
 import { registerLibrary } from './library.ts';
 import type { OwnerLimits } from './meter.ts';
@@ -113,6 +114,7 @@ export function createServer(deps: ServerDeps): McpServer {
   logToolCalls(server, (entry) => deps.runtime.logCall(deps.owner(), entry));
   compactSchemas(server);
   allowTaskReplies(server);
+  drainTools(server, deps.runtime);
   if (deps.access) gateTools(server, deps.access);
   registerTasks(server, deps);
   registerResources(server, deps);
@@ -140,6 +142,29 @@ export function createServer(deps: ServerDeps): McpServer {
   // account.get (tools/account.ts) stays unregistered while ChatGPT reviews the plugin: the
   // review scanned the tools without it, and it describes buying credits.
   return server;
+}
+
+/**
+ * While the server drains (drain.ts), a tool that is not read-only is refused before it runs, as
+ * an outage is: reads, job.get and media.list go on, and jobs already running finish.
+ */
+function drainTools(server: McpServer, runtime: ServerDeps['runtime']): void {
+  const register = server.registerTool.bind(server);
+  server.registerTool = ((
+    name: string,
+    config: { annotations?: { readOnlyHint?: boolean } },
+    handler: (...a: unknown[]) => unknown,
+  ) =>
+    register(
+      name,
+      config as never,
+      (async (...args: unknown[]) => {
+        if (runtime.drain?.active && config.annotations?.readOnlyHint !== true) {
+          return toErrorResult(drainingError());
+        }
+        return handler(...args);
+      }) as never,
+    )) as typeof server.registerTool;
 }
 
 /** Runs the access check before every tool; a refusal is the tool's result. */

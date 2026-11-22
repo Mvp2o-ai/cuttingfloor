@@ -13,6 +13,8 @@ import {
 import { type AccountGetResult, CfError, MediaUploadInput } from '@cuttingfloor/schema';
 import {
   billedSeconds,
+  DRAIN_RETRY_SECONDS,
+  drainingError,
   listHeld,
   type MeterEntry,
   meterEntries,
@@ -108,6 +110,14 @@ export interface LifecycleOptions {
    * its secret, with its name.
    */
   partners?: Map<string, string>;
+  /**
+   * A standby server (CUTTINGFLOOR_STANDBY=1) on a copy of production's data: nothing it does
+   * may cost anyone money, message a person or change what production shares with it. Jobs run
+   * unmetered (no ledger spend, no usage report, no automatic top-up, no notice markers), no
+   * WorkOS metadata is written (first-use markers, last used), and the routes that charge, delete
+   * an account or take Stripe's events answer 503. Sign-in and reads work as ever.
+   */
+  standby?: boolean;
 }
 
 /** How long a partner's user id stays tied to its account after its last key. */
@@ -190,6 +200,7 @@ export class Lifecycle {
 
   /** Records the day of the owner's latest tool call, at most once a day. */
   #lastUsed(owner: string): void {
+    if (this.#o.standby) return;
     const today = new Date().toISOString().slice(0, 10);
     if (this.#usedOn.get(owner) === today) return;
     this.#usedOn.set(owner, today);
@@ -223,7 +234,7 @@ export class Lifecycle {
   }
 
   async #metered(owner: string, entry: MeterEntry, job?: Job): Promise<void> {
-    if (!isUser(owner)) return;
+    if (!isUser(owner) || this.#o.standby) return;
     this.#o.access.addSeconds(owner, billedSeconds(entry));
     if (job?.tool === 'export.video') {
       await this.#markOnce(owner, 'first_export_at');
@@ -569,7 +580,7 @@ export class Lifecycle {
     message: Omit<Parameters<Mailer['send']>[0], 'key'>,
   ): Promise<boolean> {
     const { mailer } = this.#o;
-    if (!mailer || !message.to) return false;
+    if (!mailer || !message.to || this.#o.standby) return false;
     const ws = this.#o.runtime.ws;
     const notices = ws.records.collection(NOTICES, { owner });
     if (!(await notices.insertOnce(name, { at: new Date().toISOString() }))) return false;
@@ -585,7 +596,7 @@ export class Lifecycle {
 
   /** Sets a field in the user's WorkOS metadata (the time, by default), if it isn't set yet. */
   async #markOnce(owner: string, field: string, value = new Date().toISOString()): Promise<void> {
-    if (!isUser(owner)) return;
+    if (!isUser(owner) || this.#o.standby) return;
     const path = `/user_management/users/${encodeURIComponent(owner)}`;
     await oneWriteAtATime(owner, async () => {
       const user = await this.#workos(path);
@@ -605,6 +616,24 @@ export class Lifecycle {
    * Returns false for any other path.
    */
   async route(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+    // On standby: nothing that charges, deletes an account or acts on a payment.
+    if (
+      this.#o.standby &&
+      ((url.pathname === '/partner/users' && req.method === 'DELETE') ||
+        url.pathname === '/stripe/webhook' ||
+        url.pathname === '/account/top-up')
+    ) {
+      req.resume();
+      json(res, 503, { error: 'This server is a standby copy and does not do that' });
+      return true;
+    }
+    // Draining (drain.ts): no new uploads from the account page.
+    if (url.pathname === '/account/uploads' && this.#o.runtime.drain.active) {
+      req.resume();
+      res.setHeader('retry-after', String(DRAIN_RETRY_SECONDS));
+      json(res, 503, { error: drainingError().message });
+      return true;
+    }
     if (url.pathname === '/partner/keys') {
       await this.#partnerRoute(req, res);
       return true;

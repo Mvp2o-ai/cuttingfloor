@@ -151,6 +151,7 @@ const lifecycle =
         workosKey,
         stripeKey,
         accountUrl,
+        standby,
         ...(sequenceOn
           ? {}
           : {
