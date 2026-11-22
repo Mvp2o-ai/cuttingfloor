@@ -3,7 +3,8 @@ import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Readable, Transform } from 'node:stream';
 import type { BlobStore, CollectionSpec, RecordEntry } from '@cuttingfloor/core';
-import { relTag, specKey } from './layout.ts';
+import { checkCarried } from './checks.ts';
+import { ownerTag, relTag, scrubText, specKey } from './layout.ts';
 import { type Manifest, parseRecordKey } from './manifest.ts';
 import {
   blobFields,
@@ -24,6 +25,15 @@ import { type Carried, carryPartway, partwayRecord } from './uploads.ts';
 
 /** A carried upload is sent anew after this long: stores drop unfinished multipart uploads. */
 export const PARTWAY_REDO_MS = 24 * 3_600_000;
+/**
+ * On the final pass, one carried longer ago than this is sent anew, so each starts its life at
+ * the target close to the switch: the bucket aborts unfinished uploads after 8 days, and an
+ * upload's link lasts 7 days and an hour from when it was made, so the worst case is a multipart
+ * upload 7 days and 7 hours old when its link ends.
+ */
+export const PARTWAY_FINAL_REDO_MS = 6 * 3_600_000;
+/** The manifest is written at most this often during a pass (and always at its end). */
+const SAVE_EVERY_MS = 60_000;
 
 export class Interrupted extends Error {
   constructor() {
@@ -46,7 +56,19 @@ export interface PassState {
   records: Record<string, Counts>;
   blobs: Record<string, Counts>;
   logs: Counts;
-  deletes: { planned: number; done: number; refused: boolean; of: number };
+  deletes: {
+    planned: number;
+    done: number;
+    refused: boolean;
+    of: number;
+    /** What would go, by kind and by owner (hashed). */
+    by_kind?: Record<string, number>;
+    by_owner?: Record<string, number>;
+    /** Why none went, when deletes were held back. */
+    held?: string;
+  };
+  /** Things the target holds that the source does not (with `repair`). */
+  extras?: { records: number; blobs: number; pruned: number };
   notes: string[];
 }
 
@@ -55,9 +77,17 @@ export interface PassOptions {
   concurrency: number;
   recordConcurrency: number;
   bytesPerSecond?: number;
-  allowDeletes: boolean;
+  /** The most things a pass may remove from the target, past `maxDeleteFraction`. */
+  allowDeletes?: number;
   maxDeleteFraction: number;
   rehash: boolean;
+  /** Writes have stopped at the source: nothing is trusted by size and time alone. */
+  final?: boolean;
+  /**
+   * Compares the target with the source for everything, whatever the manifest remembers, and
+   * rewrites what differs or is missing there (a standby server's tests).
+   */
+  repair?: boolean;
   partBytes?: number;
   /** Stops after this many writes to the target (tests of an interrupted pass). */
   abortAfter?: number;
@@ -93,9 +123,9 @@ export function stable(value: unknown): string {
 /** An error in a few safe words: its kind and code, and its message with any address taken out. */
 export function errorText(error: unknown): string {
   const e = error as { name?: string; code?: unknown; message?: string } | undefined;
-  const message = String(e?.message ?? '')
-    .replace(/mongodb(\+srv)?:\/\/\S+/g, 'mongodb://…')
-    .slice(0, 160);
+  const message = scrubText(
+    String(e?.message ?? '').replace(/mongodb(\+srv)?:\/\/\S+/g, 'mongodb://…'),
+  ).slice(0, 160);
   return [e?.name ?? 'Error', e?.code !== undefined ? String(e.code) : '', message]
     .filter(Boolean)
     .join(' ');
@@ -257,6 +287,26 @@ export function logEntries(text: string, fallback: Date, ttlMs: number | undefin
   return entries;
 }
 
+/**
+ * The last use a record takes at the target: its file's mtime, but for an upload the later of
+ * that and its folder's (bytes arriving write the folder, not the record), as the server's
+ * filesystem sweep ages it.
+ */
+export function recordUsedAt(plan: Plan, item: PlannedRecord['item'], mtimeMs: number): number {
+  if (item.spec.name !== 'uploads' || item.spec.kind) return mtimeMs;
+  return Math.max(mtimeMs, plan.uploadTimes.get(`${item.owner}/${item.id}`) ?? 0);
+}
+
+function entryOf(size: number, mtimeMs: number, ino: number, hash: string, usedMs: number) {
+  return {
+    size,
+    mtime_ms: mtimeMs,
+    ino,
+    hash,
+    ...(usedMs !== mtimeMs ? { used_ms: usedMs } : {}),
+  };
+}
+
 export async function runPass(
   source: Source,
   target: MigrationTarget,
@@ -286,7 +336,7 @@ export async function runPass(
   /** One write to the target done: counted, and the manifest saved now and then. */
   const wrote = async () => {
     writes += 1;
-    if (!dryRun && (writes % 100 === 0 || Date.now() - lastSave > 5000)) {
+    if (!dryRun && Date.now() - lastSave > SAVE_EVERY_MS) {
       lastSave = Date.now();
       await options.save();
     }
@@ -340,10 +390,14 @@ export async function runPass(
     return !b.partway && b.item.nlink > 1 && first && first !== b ? first : undefined;
   };
 
+  /** Undefined only when the file is not there; any other failure is the pass's to stop at. */
   const sourceStat = (rel: string) =>
     lstat(join(source.root, ...rel.split('/'))).then(
       (s) => s,
-      () => undefined,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return undefined;
+        throw error;
+      },
     );
   const unchanged = async (b: PlannedBlob) => {
     const s = await sourceStat(b.item.rel);
@@ -356,6 +410,7 @@ export async function runPass(
     return Boolean(
       entry &&
         !options.rehash &&
+        !options.repair &&
         entry.size === b.item.size &&
         entry.mtime_ms === b.item.mtimeMs &&
         entry.ino === b.item.ino,
@@ -377,6 +432,24 @@ export async function runPass(
     }
     if (b.partway) return carry(b);
     const first = sharer(b);
+    if (options.repair && !dryRun) {
+      // Whatever the manifest says: the target must hold these bytes, by size and recorded hash.
+      const had = manifest.blobs[item.rel];
+      if (
+        had &&
+        had.size === item.size &&
+        had.mtime_ms === item.mtimeMs &&
+        had.ino === item.ino &&
+        (first ? had.shared_from === first.item.rel : !had.shared_from)
+      ) {
+        const there = await target.blobs.head(had.target);
+        if (there && there.bytes === item.size && (!there.sha256 || there.sha256 === had.sha256)) {
+          bump(state.blobs, kind, 'unchanged');
+          return;
+        }
+        bump(state.blobs, kind, 'repaired');
+      }
+    }
     const entry = manifest.blobs[item.rel];
     if (clean(b) && (first ? entry?.shared_from === first.item.rel : !entry?.shared_from)) {
       bump(state.blobs, kind, 'unchanged');
@@ -489,8 +562,11 @@ export async function runPass(
   const carry = async (b: PlannedBlob): Promise<void> => {
     const { item, kind } = b;
     let prior = manifest.partway[item.rel];
-    const fresh = prior && Date.parse(prior.started_at) > Date.now() - PARTWAY_REDO_MS;
-    if (prior && fresh && prior.size === item.size && prior.mtime_ms === item.mtimeMs) {
+    const redo = options.final ? PARTWAY_FINAL_REDO_MS : PARTWAY_REDO_MS;
+    const fresh = prior && Date.parse(prior.started_at) > Date.now() - redo;
+    // In repair, only an upload the bucket still holds as carried counts as done.
+    const intact = prior && options.repair ? !(await checkCarried(target.blobs, prior)) : true;
+    if (prior && fresh && intact && prior.size === item.size && prior.mtime_ms === item.mtimeMs) {
       bump(state.blobs, kind, 'unchanged');
       return;
     }
@@ -498,7 +574,7 @@ export async function runPass(
       bump(state.blobs, kind, 'to_carry');
       return;
     }
-    if (prior && !fresh) {
+    if (prior && (!fresh || !intact)) {
       await target.blobs.multipartAbort(prior.target, prior.upload_id).catch(() => undefined);
       prior = undefined;
     }
@@ -592,6 +668,8 @@ export async function runPass(
     return found;
   };
 
+  /** How many moved media name each target key as their file, mezzanine or proxy. */
+  const mediaHolders = new Map<string, number>();
   const storeRecord = async (r: PlannedRecord): Promise<void> => {
     stopIfAsked();
     const { item } = r;
@@ -600,7 +678,17 @@ export async function runPass(
     const entry = manifest.records[r.key];
     // A record that names blobs, or an upload, is as the target holds it only while they are.
     const reads = Boolean(item.spec.blobs?.length) || item.spec.name === 'uploads';
-    if (entry && !reads && entry.size === item.size && entry.mtime_ms === item.mtimeMs) {
+    // By size, time and inode while the source is live; read and compared by content on the
+    // final pass and in repair, which trust nothing.
+    if (
+      entry &&
+      !reads &&
+      !options.final &&
+      !options.repair &&
+      entry.size === item.size &&
+      entry.mtime_ms === item.mtimeMs &&
+      (entry.ino === undefined || entry.ino === item.ino)
+    ) {
       bump(state.records, name, 'unchanged');
       return;
     }
@@ -620,6 +708,12 @@ export async function runPass(
       wait(`${name} ${relTag(item.rel)}`, mapped.wait);
       return;
     }
+    if (item.spec.name === 'media' && !item.spec.kind && item.owner) {
+      const value = mapped.value as Record<string, unknown>;
+      for (const key of new Set([value.file, value.mezzanine, value.proxy])) {
+        if (typeof key === 'string' && key) mediaHolders.set(key, (mediaHolders.get(key) ?? 0) + 1);
+      }
+    }
     const json = stable(mapped.value);
     const hash = hashOf(json);
     const bytes = Buffer.byteLength(json);
@@ -628,24 +722,34 @@ export async function runPass(
       state.oversize.push({ collection: name, id: relTag(item.rel), bytes });
       return;
     }
-    const { mtimeMs, size } = read.stat;
-    if (entry && entry.hash === hash && entry.mtime_ms === mtimeMs) {
+    const { mtimeMs, size, ino } = read.stat;
+    // An upload's clock is the later of its record's and its folder's last write.
+    const usedMs = recordUsedAt(plan, item, mtimeMs);
+    if (
+      entry &&
+      !options.repair &&
+      entry.hash === hash &&
+      entry.mtime_ms === mtimeMs &&
+      (entry.used_ms ?? entry.mtime_ms) === usedMs
+    ) {
       entry.size = size;
+      entry.ino = ino;
       bump(state.records, name, 'unchanged');
       return;
     }
-    if (!entry) {
+    if (!entry || options.repair) {
       // No memory of it: the target may hold it already (an earlier pass whose manifest was lost).
       const there = (await atTargetNow(r)).get(item.id);
       if (
         there &&
         hashOf(stable(there.value)) === hash &&
-        sameTime(there.usedAt.getTime(), mtimeMs)
+        sameTime(there.usedAt.getTime(), usedMs)
       ) {
-        if (!dryRun) manifest.records[r.key] = { size, mtime_ms: mtimeMs, hash };
-        bump(state.records, name, 'found_at_target');
+        if (!dryRun) manifest.records[r.key] = entryOf(size, mtimeMs, ino, hash, usedMs);
+        bump(state.records, name, options.repair && entry ? 'unchanged' : 'found_at_target');
         return;
       }
+      if (options.repair && entry) bump(state.records, name, 'repaired');
     }
     bump(state.records, name, dryRun ? 'to_write' : 'written');
     bump(state.records, name, dryRun ? 'to_write_bytes' : 'written_bytes', bytes);
@@ -658,9 +762,9 @@ export async function runPass(
       },
       item.id,
       mapped.value,
-      new Date(mtimeMs),
+      new Date(usedMs),
     );
-    manifest.records[r.key] = { size, mtime_ms: mtimeMs, hash };
+    manifest.records[r.key] = entryOf(size, mtimeMs, ino, hash, usedMs);
     await wrote();
   };
 
@@ -676,6 +780,30 @@ export async function runPass(
     );
   }
 
+  // ---- Holders of shared media files (an object store counts them) -----------------------
+
+  // A media whose record names another's file without a hard link at the source (a copy made
+  // by an older server) holds it too. Counted from the records, not from inodes: the store's
+  // count is raised to the number of media naming it, never lowered (a record still waiting
+  // would undercount, and too low a count lets one holder's delete take another's file).
+  if (!dryRun && target.blobs.remote) {
+    for (const [key, holders] of mediaHolders) {
+      if (holders < 2) continue;
+      try {
+        const head = await target.blobs.head(key);
+        if (!head) continue;
+        for (let refs = head.refs; refs < holders; refs += 1) {
+          await target.blobs.share(key, key);
+          await wrote();
+          bump(state.blobs, 'media:own', 'holders_added');
+        }
+      } catch (error) {
+        if (error instanceof Interrupted) throw error;
+        state.failed.push({ what: `holders of ${relTag(key)}`, why: errorText(error) });
+      }
+    }
+  }
+
   // ---- Logs -----------------------------------------------------------------------------
 
   const storeLog = async (l: PlannedLog): Promise<void> => {
@@ -683,24 +811,31 @@ export async function runPass(
     const { item } = l;
     bump({ logs: state.logs }, 'logs', 'parts');
     const entry = manifest.logs[item.rel];
-    if (entry && entry.size === item.size && entry.mtime_ms === item.mtimeMs) {
+    if (entry && !options.repair && entry.size === item.size && entry.mtime_ms === item.mtimeMs) {
       bump({ logs: state.logs }, 'logs', 'unchanged');
       return;
     }
+    // Its size first, then exactly that many bytes: lines appended after the stat are not read,
+    // and the part, now longer than the size kept, is sent again next pass. (Stat after the
+    // read would record lines that came in between as sent.)
+    const before = await sourceStat(item.rel);
+    if (!before) return;
     const chunks: Buffer[] = [];
     try {
-      for await (const chunk of await source.blobs.get(item.rel)) chunks.push(chunk as Buffer);
-    } catch {
+      if (before.size > 0) {
+        for await (const chunk of await source.blobs.getRange(item.rel, 0, before.size - 1)) {
+          chunks.push(chunk as Buffer);
+        }
+      }
+    } catch (error) {
+      if (!(await sourceStat(item.rel))) return;
+      // Not read this time: said, and left for the next pass.
+      bump({ logs: state.logs }, 'logs', 'waiting');
+      wait(relTag(item.rel), `the log part could not be read (${errorText(error)})`);
       return;
     }
-    const after = await sourceStat(item.rel);
-    if (!after) return;
-    const entries = logEntries(
-      Buffer.concat(chunks).toString('utf8'),
-      new Date(after.mtimeMs),
-      l.ttlMs,
-      plan.now,
-    );
+    const text = Buffer.concat(chunks).subarray(0, before.size).toString('utf8');
+    const entries = logEntries(text, new Date(before.mtimeMs), l.ttlMs, plan.now);
     bump({ logs: state.logs }, 'logs', dryRun ? 'parts_to_write' : 'parts_written');
     bump({ logs: state.logs }, 'logs', 'entries', entries.length);
     if (dryRun) return;
@@ -708,12 +843,12 @@ export async function runPass(
       item.spec,
       { ...(item.owner ? { owner: item.owner } : {}), part: item.part },
       entries,
-      new Date(after.mtimeMs),
+      new Date(before.mtimeMs),
     );
-    // As read: a part appended to since is sent again next pass.
+    // As read: what was there at the stat. A part appended to since is sent again next pass.
     manifest.logs[item.rel] = {
-      size: after.size,
-      mtime_ms: after.mtimeMs,
+      size: before.size,
+      mtime_ms: before.mtimeMs,
       entries: entries.length,
     };
     await wrote();
@@ -731,27 +866,77 @@ export async function runPass(
 
   // ---- What has gone from the source ----------------------------------------------------
 
-  const liveBlobs = new Set(plan.blobs.map((b) => b.item.rel));
-  const liveRecords = new Set(plan.records.map((r) => r.key));
+  // Only what the source no longer has at all: a thing past its time there and still there is
+  // left at the target, for the target's own sweep (after the switch its clocks run on, where
+  // the source's have stopped). An account left alone (`excludeOwners`) is never looked at.
   const liveOwners = new Set(plan.layout.owners);
-  const goneOwners = manifest.owners.filter((owner) => !liveOwners.has(owner));
   const ownerOf = (rel: string) => /^owners\/([^/]+)\//.exec(rel)?.[1];
-  const goneBlobs = Object.keys(manifest.blobs).filter((rel) => !liveBlobs.has(rel));
-  const gonePartway = Object.keys(manifest.partway).filter((rel) => !liveBlobs.has(rel));
-  const goneRecords = Object.keys(manifest.records).filter((key) => !liveRecords.has(key));
+  const kept = (owner: string | undefined) => Boolean(owner && plan.excluded.has(owner));
+  const goneOwners = manifest.owners.filter((owner) => !liveOwners.has(owner) && !kept(owner));
+  const goneBlobs = Object.keys(manifest.blobs).filter(
+    (rel) => !plan.present.blobs.has(rel) && !kept(ownerOf(rel)),
+  );
+  const gonePartway = Object.keys(manifest.partway).filter(
+    (rel) => !plan.present.blobs.has(rel) && !kept(ownerOf(rel)),
+  );
+  const goneRecords = Object.keys(manifest.records).filter(
+    (key) => !plan.present.records.has(key) && !kept(parseRecordKey(key).owner),
+  );
   const all =
     Object.keys(manifest.blobs).length +
     Object.keys(manifest.partway).length +
     Object.keys(manifest.records).length;
   state.deletes.planned = goneBlobs.length + gonePartway.length + goneRecords.length;
   state.deletes.of = all;
+  if (state.deletes.planned) {
+    const byKind: Record<string, number> = {};
+    const byOwner: Record<string, number> = {};
+    const count = (kind: string, owner: string | undefined, n = 1) => {
+      byKind[kind] = (byKind[kind] ?? 0) + n;
+      const tag = owner ? ownerTag(owner) : '(deployment)';
+      byOwner[tag] = (byOwner[tag] ?? 0) + n;
+    };
+    for (const owner of goneOwners) count('whole accounts', owner, 0);
+    for (const rel of goneBlobs) count('files', ownerOf(rel));
+    for (const rel of gonePartway) count('uploads part way', ownerOf(rel));
+    for (const key of goneRecords) {
+      const { collection, owner } = parseRecordKey(key);
+      count(`records ${collection}`, owner);
+    }
+    if (goneOwners.length) byKind['whole accounts'] = goneOwners.length;
+    state.deletes.by_kind = byKind;
+    state.deletes.by_owner = byOwner;
+    log(
+      `gone from the source since it was moved: ${Object.entries(byKind)
+        .map(([k, n]) => `${n} ${k}`)
+        .join(', ')}`,
+    );
+    for (const [owner, n] of Object.entries(byOwner)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)) {
+      log(`  ${owner}: ${n}`);
+    }
+  }
   const fraction = all ? state.deletes.planned / all : 0;
-  if (state.deletes.planned && fraction > options.maxDeleteFraction && !options.allowDeletes) {
+  const allowed = options.allowDeletes;
+  if (!state.deletes.planned) {
+    // Nothing to remove.
+  } else if (state.failed.length) {
+    // Removed only after every copy and record write of the pass went through.
+    state.deletes.held = 'a write of this pass failed';
+    log(
+      `deletes held back: ${state.failed.length} writes of this pass failed, so nothing is removed from the target until a pass goes through whole`,
+    );
+  } else if (
+    allowed !== undefined ? state.deletes.planned > allowed : fraction > options.maxDeleteFraction
+  ) {
     state.deletes.refused = true;
     log(
-      `deletes REFUSED: ${state.deletes.planned} of ${all} things moved so far are gone from the source (${(fraction * 100).toFixed(1)}%, more than ${(options.maxDeleteFraction * 100).toFixed(1)}%). Nothing was removed from the target. Run again with --allow-deletes if that is right.`,
+      allowed !== undefined
+        ? `deletes REFUSED: ${state.deletes.planned} things are gone from the source, more than --allow-deletes ${allowed}. Nothing was removed from the target.`
+        : `deletes REFUSED: ${state.deletes.planned} of ${all} things moved so far are gone from the source (${(fraction * 100).toFixed(1)}%, more than ${(options.maxDeleteFraction * 100).toFixed(1)}%). Nothing was removed from the target. If that is right, run again with --allow-deletes ${state.deletes.planned}.`,
     );
-  } else if (state.deletes.planned) {
+  } else {
     if (!dryRun) {
       const specs = new Map(plan.specs.map((spec) => [specKey(spec), spec]));
       for (const owner of goneOwners) {

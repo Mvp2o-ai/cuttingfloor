@@ -65,7 +65,8 @@ async function serve(options: { drain?: boolean; standby?: boolean } = {}) {
     server.closeAllConnections();
     await new Promise((r) => server.close(r));
     await runtime.close();
-    await rm(dir, { recursive: true, force: true });
+    // A call's log line may still be landing as it closes.
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const call = async (name: string, args: Record<string, unknown>) =>
     (await client.callTool({ name, arguments: args })) as {

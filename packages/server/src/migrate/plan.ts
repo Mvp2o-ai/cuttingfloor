@@ -6,6 +6,7 @@ import {
   definedCollections,
   FsBlobStore,
   FsRecords,
+  ownerKey,
 } from '@cuttingfloor/core';
 import { KEEP_MS } from '@cuttingfloor/schema';
 import {
@@ -89,6 +90,17 @@ export interface Plan {
   arriving: Map<string, string>;
   /** Jobs still working, by `{owner}/{job_id}`. */
   working: Set<string>;
+  /**
+   * Everything the source has, moved or not (past its time, without its record, unreadable):
+   * record keys (as the manifest keys them) and blob keys. Only what is not here has gone from
+   * the source, and only that is ever removed from the target: something that expired at the
+   * source and is still there is left for the target's own sweep.
+   */
+  present: { records: Set<string>; blobs: Set<string> };
+  /** Each upload's clock: the later of its record's and its folder's last write, by `{owner}/{id}`. */
+  uploadTimes: Map<string, number>;
+  /** Owner keys left alone on both sides (`excludeOwners`). */
+  excluded: Set<string>;
 }
 
 export interface PlanOptions {
@@ -98,14 +110,23 @@ export interface PlanOptions {
   /** A blob written less than this ago is left for the next pass. 0 takes everything. */
   settleMs?: number;
   ignore?: readonly string[];
+  /**
+   * Accounts the migration leaves alone on both sides (a test account made on the new server):
+   * not read at the source, never compared, removed or pruned at the target.
+   */
+  excludeOwners?: readonly string[];
 }
 
 const UPLOAD_KEEP_MS = KEEP_MS.upload + 3_600_000;
 
+/** A file's stat; undefined only when it is not there. Any other failure is thrown. */
 async function fileStat(path: string): Promise<FileStat | undefined> {
   return lstat(path).then(
     (s) => ({ size: s.size, mtimeMs: s.mtimeMs, ino: s.ino, dev: s.dev, nlink: s.nlink }),
-    () => undefined,
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return undefined;
+      throw error;
+    },
   );
 }
 
@@ -180,8 +201,9 @@ export async function buildPlan(
   const specs = options.specs ?? definedCollections();
   const outputTtlMs = options.outputTtlMs ?? KEEP_MS.job;
   const settleMs = options.settleMs ?? 0;
+  const excluded = new Set((options.excludeOwners ?? []).map((o) => ownerKey(o)));
   const layout = await readLayout(source.root, specs, {
-    ...(options.ignore ? { ignore: options.ignore } : {}),
+    ignore: [...(options.ignore ?? []), ...[...excluded].map((key) => `owners/${key}`)],
   });
 
   const plan: Plan = {
@@ -200,6 +222,14 @@ export async function buildPlan(
     mapKey: (key) => key,
     arriving: new Map(),
     working: new Set(),
+    present: {
+      records: new Set(
+        layout.records.map((r) => recordKey(specKey(r.spec), r.owner, r.parent, r.id)),
+      ),
+      blobs: new Set(layout.blobs.map((b) => b.rel)),
+    },
+    uploadTimes: new Map(),
+    excluded,
   };
   if (plan.unknown.length || plan.missingRules.length) return plan;
 
@@ -233,8 +263,11 @@ export async function buildPlan(
     } else if (item.spec.name === 'uploads') {
       const folder = layout.folders.get(`owners/${item.owner}/uploads/${item.id}`);
       const complete = value.complete === true;
+      // The later of the two: every byte received writes the folder, every state change the record.
+      const used = Math.max(folder ?? 0, read.stat.mtimeMs);
+      plan.uploadTimes.set(at, used);
       uploads.set(at, {
-        live: !((folder ?? read.stat.mtimeMs) + UPLOAD_KEEP_MS < now),
+        live: !(used + UPLOAD_KEEP_MS < now),
         complete,
         ...(typeof value.file === 'string' ? { file: value.file } : {}),
       });

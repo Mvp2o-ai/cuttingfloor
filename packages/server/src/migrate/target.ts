@@ -14,6 +14,7 @@ import {
   type S3BlobStore,
   type S3Settings,
   s3SettingsFromEnv,
+  Workspace,
 } from '@cuttingfloor/core';
 import { configFromEnv } from '../runtime.ts';
 import { readLayout } from './layout.ts';
@@ -65,6 +66,11 @@ export interface MigrationTarget {
    * are elsewhere.
    */
   recordFiles(specs: readonly CollectionSpec<unknown>[]): Promise<Map<BlobKey, number>>;
+  /**
+   * The target as a server opens it (its own records and blob stores), for checks that read it
+   * through the application's own code rather than the migration's. Made once, closed with it.
+   */
+  workspace(): Workspace;
   close(): Promise<void>;
 }
 
@@ -96,7 +102,12 @@ export function fsTarget(dir: string, records?: Records, recordsName?: string): 
   const fsRecords = records ? undefined : new FsRecords(root);
   const mongo = records instanceof MongoRecords ? records : undefined;
   const store = records ?? (fsRecords as FsRecords);
+  let ws: Workspace | undefined;
   return {
+    workspace: () => {
+      ws ??= new Workspace(root, { records: store });
+      return ws;
+    },
     name: `records=${recordsName ?? (fsRecords ? `fs:${root}` : 'other')} blobs=fs:${root}`,
     records: store,
     blobs,
@@ -144,7 +155,12 @@ export function s3Target(
   const blobs = blobStores(root, { s3, records }).blobs as S3BlobStore;
   /** Only what the store sweeps by its own age: a folder directly under an owner's kind. */
   const swept = (key: BlobKey) => key.replace(/\/+$/, '').split('/').length === 3;
+  let ws: Workspace | undefined;
   return {
+    workspace: () => {
+      ws ??= new Workspace(root, { records, s3 });
+      return ws;
+    },
     // The bucket's name only: never its keys.
     name: `records=${options.recordsName ?? (fsRecords ? `fs:${root}` : 'other')} blobs=s3:${s3.bucket}`,
     records,
@@ -167,6 +183,7 @@ export function s3Target(
     // Records are never among a bucket's objects.
     recordFiles: async () => new Map(),
     close: async () => {
+      await ws?.blobs.close();
       await blobs.close();
       await records.close();
     },

@@ -32,10 +32,27 @@ const HELP = `node scripts/migrate-storage.ts --state <dir> [--target-dir <dir>]
   --verify                  Only compare the target with the source.
   --no-verify               Do not compare after the pass.
   --final                   Writes have stopped at the source: take everything, leave nothing waiting.
+                            Refused unless the old server is draining with no jobs running. Ending
+                            clean, it marks the state folder and the target; any later pass is then
+                            refused unless --after-final.
+  --after-final             Run a pass after the final one (only to put right a wrong final pass).
+  --no-drain-check          --final without reading the old server's draining marker.
+  --repair                  Compare the target with the source for everything, whatever the manifest
+                            says, and rewrite what differs or is missing there. Lists extras.
+  --prune-extras <n>        With --repair: remove up to n things the target holds that the source does not.
+  --exclude-owner <owner>   Leave an account alone on both sides (a test account on the new server). Repeatable.
+  --reread <all|f|n>        With --verify: read files back from the target and hash them against the
+                            manifest (all, a share such as 0.1, or a count). Needs only --state and the
+                            target settings: run it on the new server.
+  --app-reads <all|n>       Media, outputs and uploads resolved through the server's own readers. Default 20.
+  --target-key-fingerprint <fp>  The new server's link-key fingerprint (scripts/url-key-fingerprint.ts
+                            there). Required by --final's verify.
+  --target-url <url>        The new server's address: a signed download and upload link are fetched from it.
+  --allow-shrink            Run although the source holds far less than at the last pass.
   --concurrency <n>         Files moved at once. Default 4. 1 is the gentlest.
   --record-concurrency <n>  Records moved at once. Default 8.
   --bwlimit <rate>          The most to read from the source per second: 20M, 500K, or bytes.
-  --allow-deletes           Remove from the target whatever has gone from the source, however much.
+  --allow-deletes <n>       Remove from the target up to n things gone from the source, past the share below.
   --max-delete-fraction <f> Without --allow-deletes, a pass removes at most this share of what it
                             has moved. Default 0.1.
   --links <n|all>           Signed links from job results and the email log to check. Default 200.
@@ -46,8 +63,10 @@ const HELP = `node scripts/migrate-storage.ts --state <dir> [--target-dir <dir>]
   --list-collections        Print every collection and whether it moves, and exit.
 
 Exit codes: 0 done and the same; 1 a write failed (run again); 2 refused, nothing written (a file
-it cannot name, a path import, a collection with no rule); 3 the target differs; 4 things changed
-under the pass and wait for the next; 5 deletes refused; 6 interrupted.
+it cannot name, a path import, a collection with no rule, a source that is not a data root or has
+shrunk, a pass after the final one, a target a server serves on, --final while the old server is
+not drained); 3 the target differs; 4 things changed under the pass and wait for the next (an
+unreadable record too); 5 deletes refused; 6 interrupted.
 `;
 
 function rate(text: string): number {
@@ -64,6 +83,22 @@ const number = (name: string, text: string | undefined): number | undefined => {
   return n;
 };
 
+/** A count the option must give. */
+function whole(name: string, text: string): number {
+  const n = Number(text);
+  if (!Number.isInteger(n) || n < 0) throw new Error(`--${name} ${text}: give a whole number`);
+  return n;
+}
+
+/** all, a share under 1, or a count. */
+function sample(name: string, text: string): 'all' | number {
+  if (text === 'all') return 'all';
+  const n = Number(text);
+  if (!Number.isFinite(n) || n <= 0)
+    throw new Error(`--${name} ${text}: give all, a share, or a count`);
+  return n;
+}
+
 async function main(): Promise<number> {
   const { values } = parseArgs({
     options: {
@@ -77,7 +112,17 @@ async function main(): Promise<number> {
       concurrency: { type: 'string' },
       'record-concurrency': { type: 'string' },
       bwlimit: { type: 'string' },
-      'allow-deletes': { type: 'boolean' },
+      'allow-deletes': { type: 'string' },
+      'after-final': { type: 'boolean' },
+      'no-drain-check': { type: 'boolean' },
+      repair: { type: 'boolean' },
+      'prune-extras': { type: 'string' },
+      'exclude-owner': { type: 'string', multiple: true },
+      reread: { type: 'string' },
+      'app-reads': { type: 'string' },
+      'target-key-fingerprint': { type: 'string' },
+      'target-url': { type: 'string' },
+      'allow-shrink': { type: 'boolean' },
       'max-delete-fraction': { type: 'string' },
       links: { type: 'string' },
       'blob-check': { type: 'string' },
@@ -117,16 +162,40 @@ async function main(): Promise<number> {
   };
   process.once('SIGINT', asked);
   process.once('SIGTERM', asked);
+  // A dropped SSH session stops the pass as SIGINT does: the manifest is saved first.
+  process.once('SIGHUP', asked);
   const settle = number('settle', values.settle);
   const options: MigrateOptions = {
     source,
     target,
     stateDir: values.state,
     specs,
-    mode: values['dry-run'] ? 'dry-run' : values.verify ? 'verify' : 'pass',
+    mode: values['dry-run'] ? 'dry-run' : values.verify || values.reread ? 'verify' : 'pass',
     verify: !values['no-verify'],
     final: Boolean(values.final),
-    allowDeletes: Boolean(values['allow-deletes']),
+    ...(values['allow-deletes'] !== undefined
+      ? { allowDeletes: whole('allow-deletes', values['allow-deletes']) }
+      : {}),
+    afterFinal: Boolean(values['after-final']),
+    ...(values['no-drain-check'] ? { drainCheck: false } : {}),
+    repair: Boolean(values.repair),
+    ...(values['prune-extras'] !== undefined
+      ? { pruneExtras: whole('prune-extras', values['prune-extras']) }
+      : {}),
+    ...(values['exclude-owner'] ? { excludeOwners: values['exclude-owner'] } : {}),
+    ...(values.reread !== undefined ? { reread: sample('reread', values.reread) } : {}),
+    ...(values['app-reads'] !== undefined
+      ? { appReads: sample('app-reads', values['app-reads']) }
+      : {}),
+    ...(values['target-key-fingerprint']
+      ? { targetKeyFingerprint: values['target-key-fingerprint'] }
+      : {}),
+    ...(values['target-url'] ? { targetUrl: values['target-url'] } : {}),
+    // The old server's own key when it signs with CUTTINGFLOOR_URL_SECRET; else its secret.key.
+    ...(process.env.CUTTINGFLOOR_SOURCE_URL_SECRET
+      ? { sourceUrlSecret: process.env.CUTTINGFLOOR_SOURCE_URL_SECRET }
+      : {}),
+    allowShrink: Boolean(values['allow-shrink']),
     rehash: Boolean(values.rehash),
     blobCheck,
     // Frames kept for download last as long as the server's links do.

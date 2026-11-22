@@ -1,9 +1,20 @@
 import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { CollectionSpec, RecordEntry } from '@cuttingfloor/core';
-import { COLLECTION_RULES, ownerTag, ownsId, relTag, specKey } from './layout.ts';
-import type { Manifest } from './manifest.ts';
-import { atTarget, hashStream, logEntries, pool, sameTime, slot, stable } from './pass.ts';
+import type { CollectionSpec, RecordEntry, Workspace } from '@cuttingfloor/core';
+import { urlKeyFingerprint } from '../url-key.ts';
+import { checkAppReads, checkCarried, checkLiveLinks, type Sample } from './checks.ts';
+import { COLLECTION_RULES, idTag, ownerTag, ownsId, relTag, specKey } from './layout.ts';
+import { type Manifest, recordKey } from './manifest.ts';
+import {
+  atTarget,
+  hashStream,
+  logEntries,
+  pool,
+  recordUsedAt,
+  sameTime,
+  slot,
+  stable,
+} from './pass.ts';
 import { type Plan, type PlannedRecord, readRecord, type Source } from './plan.ts';
 import type { MigrationTarget } from './target.ts';
 
@@ -37,6 +48,18 @@ export interface VerifyReport {
     target: number;
   }>;
   links: { found: number; checked: number; dead_at_source: number; broken: number };
+  /** Links signed with the source's key and fetched from the new server (`targetUrl`). */
+  live_links?: number;
+  /** Media, outputs and uploads resolved through the application's own readers. */
+  app_reads?: number;
+  /** The link-signing keys of both sides, by fingerprint (never the keys). */
+  signing_key?: { source?: string; target?: string; same: boolean };
+  /**
+   * Bytes the target stores twice that the filesystem stored once: files shared by hard link
+   * at the source (a deduplicated media's search index) that the target's `share` copies. They
+   * count against the owner's storage there.
+   */
+  stored_twice_bytes?: number;
   /** Things that changed at the source since the pass, so cannot be compared yet. */
   waiting: Array<{ what: string; why: string }>;
   differences: Difference[];
@@ -49,6 +72,18 @@ export interface VerifyOptions {
   blobCheck: 'sha' | 'size';
   concurrency: number;
   log: (line: string) => void;
+  /** Media, outputs and uploads to resolve through the app's own readers. Default 20 of each. */
+  appReads?: Sample;
+  /** The target as a server opens it, for `appReads`. */
+  targetWorkspace?: Workspace;
+  /** The key the source signs links with, for the key check and live links. */
+  sourceKey?: Buffer;
+  /** The new server's key fingerprint (scripts/url-key-fingerprint.ts there). */
+  targetKeyFingerprint?: string;
+  /** Without a fingerprint to compare, that is a difference (the final pass). */
+  requireKeyCheck?: boolean;
+  /** The new server's address: a download and an upload link are fetched from it. */
+  targetUrl?: string;
 }
 
 /**
@@ -115,7 +150,9 @@ export async function verify(
     sourceByScope.set(at, list);
   }
   const targetOwners = await target.records.owners();
-  const owners = [...new Set([...plan.layout.owners, ...manifest.owners, ...targetOwners])].sort();
+  const owners = [...new Set([...plan.layout.owners, ...manifest.owners, ...targetOwners])]
+    .filter((owner) => !plan.excluded.has(owner))
+    .sort();
   const scopes: Array<{ spec: CollectionSpec<unknown>; owner?: string; parent?: string }> = [];
   for (const spec of moving) {
     // A collection left behind on purpose has nothing at either side to compare.
@@ -194,21 +231,23 @@ export async function verify(
       }
       const fields = fieldsDiffering(mapped.value, got.value);
       if (fields.length) differ('record-differs', name, where, `fields: ${fields.join(', ')}`);
-      else if (!sameTime(got.usedAt.getTime(), read.stat.mtimeMs)) {
+      else if (!sameTime(got.usedAt.getTime(), recordUsedAt(plan, item, read.stat.mtimeMs))) {
         differ(
           'record-time',
           name,
           where,
-          `last use ${new Date(read.stat.mtimeMs).toISOString()} at the source, ${got.usedAt.toISOString()} at the target`,
+          `last use ${new Date(recordUsedAt(plan, item, read.stat.mtimeMs)).toISOString()} at the source, ${got.usedAt.toISOString()} at the target`,
         );
       } else counts.same += 1;
     }
     for (const id of there.keys()) {
       if (seen.has(id)) continue;
+      // Still at the source, past its time or unreadable: kept at the target for its own sweep.
+      if (plan.present.records.has(recordKey(name, owner, parent, id))) continue;
       differ(
         'record-extra',
         name,
-        `${owner ? `${ownerTag(owner)}/` : ''}${parent ? `${parent}/` : ''}${id.length > 34 ? `${id.slice(0, 12)}…` : id}`,
+        `${owner ? `${ownerTag(owner)}/` : ''}${parent ? `${idTag(parent)}/` : ''}${idTag(id)}`,
       );
     }
   });
@@ -295,14 +334,11 @@ export async function verify(
   const expected = new Set<string>();
   const waitingOwners = new Set<string>();
   const shas = new Map<string, Promise<string>>();
-  const usage = new Map<string, { bytes: number; seen: Set<string> }>();
-  const count = (owner: string, link: string, bytes: number) => {
-    const u = usage.get(owner) ?? { bytes: 0, seen: new Set<string>() };
-    usage.set(owner, u);
-    if (u.seen.has(link)) return;
-    u.seen.add(link);
-    u.bytes += bytes;
-  };
+  // Whatever the target holds for the migration: what this plan moves, and what it moved
+  // earlier that the source still has past its time (left for the target's own sweep).
+  for (const entry of Object.values(manifest.blobs)) expected.add(entry.target);
+  for (const carried of Object.values(manifest.partway)) expected.add(carried.target);
+  const partwayBytes = new Map<string, number>();
   await pool(plan.blobs, options.concurrency, async (b) => {
     const { item, kind } = b;
     const where = relTag(item.rel);
@@ -325,7 +361,10 @@ export async function verify(
       }
       const sent = carried.parts.reduce((sum, part) => sum + part.bytes, 0);
       const head = await target.blobs.head(carried.target);
-      if (sent !== carried.offset || (head && head.bytes !== carried.offset)) {
+      // In a bucket: the multipart upload and the state its record names, as the bucket has them.
+      const wrong = await checkCarried(target.blobs, carried);
+      if (wrong) differ(wrong.kind, kind, where, wrong.detail);
+      else if (sent !== carried.offset || (head && head.bytes !== carried.offset)) {
         differ(
           'upload-offset',
           kind,
@@ -333,7 +372,7 @@ export async function verify(
           `the sender resumes at ${carried.offset}; the target holds ${head ? head.bytes : sent} bytes`,
         );
       } else counts.same += 1;
-      if (head) count(item.owner, `p:${item.rel}`, head.bytes);
+      if (head) partwayBytes.set(carried.target, head.bytes);
       return;
     }
     const entry = manifest.blobs[item.rel];
@@ -343,7 +382,6 @@ export async function verify(
       wait(where, b.wait ?? (entry ? 'changed at the source since the pass' : 'not moved yet'));
       return;
     }
-    count(item.owner, item.nlink > 1 ? `${item.dev}:${item.ino}` : `f:${item.rel}`, item.size);
     const head = await target.blobs.head(entry.target);
     if (!head) return void differ('blob-missing', kind, where);
     if (head.bytes !== item.size) {
@@ -374,6 +412,30 @@ export async function verify(
 
   // ---- Each owner's files: nothing extra, and the same stored bytes -----------------------
 
+  /**
+   * What the owner's files take at the target by the target store's own rules: each object
+   * once. Bytes the store shares stay one object (the filesystem's hard links; a bucket's media
+   * files, shared by holder count); a non-media file a bucket "shares" is a copy, so counts again.
+   */
+  let storedTwice = 0;
+  const ownerOfRel = (rel: string) => /^owners\/([^/]+)\//.exec(rel)?.[1];
+  const expectedUsage = (owner: string): number => {
+    const seen = new Set<string>();
+    let bytes = 0;
+    for (const [rel, entry] of Object.entries(manifest.blobs)) {
+      if (ownerOfRel(rel) !== owner || seen.has(entry.target)) continue;
+      seen.add(entry.target);
+      // A hard link the filesystem target made: the same bytes as the file it shares.
+      if (entry.shared_from && !target.blobs.remote) continue;
+      const firstTarget = entry.shared_from ? manifest.blobs[entry.shared_from]?.target : undefined;
+      if (firstTarget && firstTarget !== entry.target) storedTwice += entry.size;
+      bytes += entry.size;
+    }
+    for (const [rel, carried] of Object.entries(manifest.partway)) {
+      if (ownerOfRel(rel) === owner) bytes += partwayBytes.get(carried.target) ?? 0;
+    }
+    return bytes;
+  };
   const recordFiles = await target.recordFiles(plan.specs);
   for (const owner of owners) {
     const prefix = target.blobs.keys.owner(owner);
@@ -391,7 +453,7 @@ export async function verify(
     const row = {
       owner: ownerTag(owner),
       source_usage: await source.blobs.usage(owner),
-      expected: usage.get(owner)?.bytes ?? 0,
+      expected: expectedUsage(owner),
       target: (await target.blobs.usage(owner)) - recordBytes,
     };
     report.owners.push(row);
@@ -404,6 +466,12 @@ export async function verify(
         `${row.expected} bytes moved, ${row.target} stored at the target`,
       );
     }
+  }
+  if (storedTwice) {
+    report.stored_twice_bytes = storedTwice;
+    report.notes.push(
+      `The target stores ${storedTwice} bytes twice that the source stored once by hard link (files of a deduplicated media's search index, which the target copies): accounts use that much more storage there.`,
+    );
   }
   log(
     `verify owners: ${report.owners.length} checked, ${report.differences.filter((d) => d.kind === 'usage').length} with other stored bytes at the target`,
@@ -479,6 +547,59 @@ export async function verify(
   log(
     `verify links: ${report.links.found} found in job results and the email log, ${report.links.checked} checked, ${report.links.dead_at_source} to files the source no longer keeps, ${report.links.broken} broken`,
   );
+
+  // ---- The key links are signed with, and links fetched from the new server ---------------
+
+  const sourceFp = options.sourceKey ? urlKeyFingerprint(options.sourceKey) : undefined;
+  const targetFp = options.targetKeyFingerprint?.trim().split(/\s+/)[0];
+  if (sourceFp && targetFp) {
+    report.signing_key = { source: sourceFp, target: targetFp, same: sourceFp === targetFp };
+    if (sourceFp !== targetFp) {
+      differ(
+        'signing-key',
+        'key',
+        'link-signing key',
+        `the new server signs with another key (${targetFp}) than the old one (${sourceFp}): links already handed out would fail there`,
+      );
+    }
+  } else if (options.requireKeyCheck) {
+    differ(
+      'signing-key',
+      'key',
+      'link-signing key',
+      sourceFp
+        ? 'not compared: give --target-key-fingerprint (scripts/url-key-fingerprint.ts on the new server prints it)'
+        : 'the source has no link-signing key to compare',
+    );
+  }
+  log(
+    `verify signing key: ${report.signing_key ? (report.signing_key.same ? 'the same on both servers' : 'DIFFERENT') : 'not compared'}`,
+  );
+  if (options.targetUrl && options.sourceKey) {
+    const live = await checkLiveLinks(options.targetUrl, options.sourceKey, plan, manifest);
+    report.live_links = live.checked;
+    report.differences.push(...live.differences);
+    log(
+      `verify live links: ${live.checked} fetched from the new server, ${live.differences.length} failed`,
+    );
+  }
+
+  // ---- What the application itself reads at the target ----------------------------------
+
+  if (options.targetWorkspace) {
+    const reads = await checkAppReads(
+      source,
+      options.targetWorkspace,
+      plan,
+      manifest,
+      options.appReads ?? 20,
+    );
+    report.app_reads = reads.checked;
+    report.differences.push(...reads.differences);
+    log(
+      `verify app reads: ${reads.checked} media, outputs and uploads resolved as the server reads them, ${reads.differences.length} not as at the source`,
+    );
+  }
   return report;
 }
 
@@ -497,4 +618,57 @@ export function differenceTable(differences: readonly Difference[]): string[] {
     lines.push(`${kind.padEnd(16)} ${of.padEnd(21)} ${String(row.n).padStart(5)}  ${row.first}`);
   }
   return lines;
+}
+
+/**
+ * What the target holds that the source does not have at all (made on a standby server while
+ * it was tested): records by collection and id, and files by key. Accounts left alone
+ * (`excludeOwners`) are not looked at.
+ */
+export async function findExtras(
+  target: MigrationTarget,
+  plan: Plan,
+  manifest: Manifest,
+): Promise<{
+  records: Array<{ spec: CollectionSpec<unknown>; owner?: string; parent?: string; id: string }>;
+  blobs: string[];
+}> {
+  const records: Array<{
+    spec: CollectionSpec<unknown>;
+    owner?: string;
+    parent?: string;
+    id: string;
+  }> = [];
+  const owners = [
+    ...new Set([...plan.layout.owners, ...manifest.owners, ...(await target.records.owners())]),
+  ].filter((owner) => !plan.excluded.has(owner));
+  for (const spec of plan.specs) {
+    if (isLog(spec) || COLLECTION_RULES[specKey(spec)]?.skip) continue;
+    for (const owner of spec.scope === 'owner' ? owners : [undefined]) {
+      const parents =
+        typeof spec.fs.dir === 'function'
+          ? await target.records.parents(spec, owner ? { owner } : {})
+          : [undefined];
+      for (const parent of parents) {
+        const scope = { ...(owner ? { owner } : {}), ...(parent ? { parent } : {}) };
+        for (const { id } of await target.records.collection(spec, scope).find()) {
+          if (!ownsId(spec, id)) continue;
+          if (plan.present.records.has(recordKey(specKey(spec), owner, parent, id))) continue;
+          records.push({ spec, ...scope, id });
+        }
+      }
+    }
+  }
+  const expected = new Set<string>(plan.blobs.map((b) => b.targetKey));
+  for (const entry of Object.values(manifest.blobs)) expected.add(entry.target);
+  for (const carried of Object.values(manifest.partway)) expected.add(carried.target);
+  const recordFiles = await target.recordFiles(plan.specs);
+  const blobs: string[] = [];
+  for (const owner of owners) {
+    for (const head of await target.blobs.list(target.blobs.keys.owner(owner))) {
+      if (recordFiles.has(head.key) || expected.has(head.key)) continue;
+      blobs.push(head.key);
+    }
+  }
+  return { records, blobs };
 }

@@ -66,6 +66,9 @@ export const COLLECTION_RULES: Readonly<Record<string, CollectionRule>> = {
   email_unsubscribed: { only: ['unsubscribed'] },
   email_suppressions: {},
   email_log: {},
+  migration: {
+    skip: 'the migration’s own marks (its final pass, a server serving): written at the target, never moved',
+  },
 };
 
 /** Folders and files under the data root that are not moved, and why. */
@@ -74,6 +77,8 @@ export const NOT_MOVED_ROOT: Readonly<Record<string, string>> = {
   cache: 'derived and disposable (cached frames)',
   'secret.key': 'the link-signing key, which goes into CUTTINGFLOOR_URL_SECRET by hand',
   code: 'legacy code.run scratch; nothing reads it',
+  drain: 'the switch that drains the old server for the cutover',
+  draining: 'the marker a draining server keeps',
 };
 
 /** Folders under an owner's folder that are not moved, and why. */
@@ -98,10 +103,27 @@ const isLog = (spec: CollectionSpec<unknown>) => spec.fs.ext === '.jsonl';
 const OWNER = /^[A-Za-z0-9_-]{1,64}$/;
 const PARENT = '\0parent\0';
 
-/** A file the server is still writing: it takes its real name by a rename when whole. */
-export function isTemp(name: string): boolean {
-  return /\.tmp(\.[A-Za-z0-9]{1,8})?$/.test(name) || name.endsWith('.part');
+/**
+ * A file the server is still writing: it takes its real name by a rename when whole. Only the
+ * server's own temporary names count (`{name}.{pid}.tmp`, `.{pid}.{hex}.tmp`, `.{pid}.restore.tmp`,
+ * `.{pid}.tmp.{ext}`, and `{name}.part` inside a media's search index, which the indexer
+ * writes): a user's own file called `clip.part` or `notes.tmp` is theirs (an upload's bytes keep
+ * the user's extension, `data.part`) and is moved like any other. `parts` is the file's path
+ * under the owner's folder, where it has one.
+ */
+export function isTemp(name: string, parts?: readonly string[]): boolean {
+  if (/\.\d+\.(?:[0-9a-f]{12}\.|restore\.)?tmp(?:\.[A-Za-z0-9]{1,8})?$/.test(name)) return true;
+  return Boolean(
+    parts &&
+      parts[0] === 'media' &&
+      parts[2] === 'search' &&
+      parts.length === 4 &&
+      name.endsWith('.part'),
+  );
 }
+
+/** Whether a failure to list or stat is only "it is not there" (which an absent path may be). */
+const absent = (error: unknown) => (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
 
 /** An id as the stores take one: a single name, not hidden. */
 const named = (id: string) => Boolean(id) && !/[/\\\0]/.test(id) && !id.startsWith('.');
@@ -303,14 +325,20 @@ export async function readLayout(
     let entries: import('node:fs').Dirent[];
     try {
       entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
+    } catch (error) {
+      // Gone between its listing and now. Anything else (a permission, an I/O error) stops the
+      // walk: a folder that cannot be listed must never read as an empty one.
+      if (absent(error)) return;
+      throw error;
     }
     for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
       const next = [...parts, e.name];
       if (e.isDirectory()) yield* files(join(dir, e.name), next);
       else {
-        const s = await lstat(join(dir, e.name)).catch(() => undefined);
+        const s = await lstat(join(dir, e.name)).catch((error: unknown) => {
+          if (absent(error)) return undefined;
+          throw error;
+        });
         if (!s) continue;
         if (!s.isFile()) {
           yield [next, { size: -1, mtimeMs: 0, ino: 0, dev: 0, nlink: 0 }];
@@ -346,14 +374,22 @@ export async function readLayout(
       if (ignored(rel)) continue;
       const name = parts[parts.length - 1] ?? '';
       if (stat.size < 0) out.unknown.push({ type: 'unknown', rel, why: 'not a regular file' });
-      else if (isTemp(name)) out.left.push({ type: 'left', rel, ...stat, why: 'being written' });
+      else if (isTemp(name, parts))
+        out.left.push({ type: 'left', rel, ...stat, why: 'being written' });
       else if (!classify(globalShapes, parts, rel, stat, undefined)) {
         out.unknown.push({ type: 'unknown', rel, why: 'no collection keeps a record here' });
       }
     }
   }
 
-  const ownerNames = await readdir(join(root, 'owners'), { withFileTypes: true }).catch(() => []);
+  // No owners folder is no accounts (the migration then refuses a source that has none); one
+  // that cannot be listed stops the walk.
+  const ownerNames = await readdir(join(root, 'owners'), { withFileTypes: true }).catch(
+    (error: unknown) => {
+      if (absent(error)) return [];
+      throw error;
+    },
+  );
   for (const o of ownerNames.sort((a, b) => (a.name < b.name ? -1 : 1))) {
     const ownerRel = `owners/${o.name}`;
     if (ignored(ownerRel)) {
@@ -376,7 +412,7 @@ export async function readLayout(
       if (stat.size < 0) out.unknown.push({ type: 'unknown', rel, why: 'not a regular file' });
       else if (leftWhy && parts.length > 1) {
         out.left.push({ type: 'left', rel, owner, ...stat, why: leftWhy });
-      } else if (isTemp(name)) {
+      } else if (isTemp(name, parts)) {
         out.left.push({ type: 'left', rel, owner, ...stat, why: 'being written' });
       } else if (classify(ownerShapes, parts, rel, stat, owner)) {
         // A record, a log part, or a legacy record left behind.
@@ -397,10 +433,18 @@ export async function readLayout(
       } else out.unknown.push({ type: 'unknown', rel, why: 'nothing the server keeps here' });
     }
     for (const area of ['uploads', 'outputs']) {
-      const holders = await readdir(join(ownerDir, area), { withFileTypes: true }).catch(() => []);
+      const holders = await readdir(join(ownerDir, area), { withFileTypes: true }).catch(
+        (error: unknown) => {
+          if (absent(error)) return [];
+          throw error;
+        },
+      );
       for (const h of holders) {
         if (!h.isDirectory()) continue;
-        const s = await lstat(join(ownerDir, area, h.name)).catch(() => undefined);
+        const s = await lstat(join(ownerDir, area, h.name)).catch((error: unknown) => {
+          if (absent(error)) return undefined;
+          throw error;
+        });
         if (s) out.folders.set(`${ownerRel}/${area}/${h.name}`, s.mtimeMs);
       }
     }
@@ -413,15 +457,42 @@ export function ownerTag(owner: string): string {
   return `o:${createHash('sha256').update(owner).digest('hex').slice(0, 10)}`;
 }
 
-/** An id as reports show it: whole when it is one of the server's own, else its first characters. */
+/**
+ * An id as reports show it: whole when it is one of the server's own (`m_…`, a day, a fixed
+ * name such as `source.mp4` or `transcript.json`), else hashed, so no account id, user id or
+ * name a user chose is ever printed, even in part.
+ */
 export function idTag(id: string): string {
-  if (/^[a-z]_[0-9a-z]{26}(\.[a-z]{1,8})?$/.test(id) || id.length <= 16) return id;
-  return `${id.slice(0, 12)}…`;
+  if (!id) return id;
+  if (
+    /^[a-z]{1,2}_[0-9a-z]{26,32}(\.[a-z0-9]{1,8})?$/.test(id) ||
+    /^\d{4}-\d{2}(-\d{2})?([.-][A-Za-z0-9_-]{1,32})?(\.json|\.jsonl)?$/.test(id) ||
+    /^[A-Za-z][A-Za-z_-]{0,23}(\.[A-Za-z0-9]{1,8})?$/.test(id)
+  ) {
+    return id;
+  }
+  const ext = /\.[A-Za-z0-9]{1,8}$/.exec(id)?.[0] ?? '';
+  return `#${createHash('sha256').update(id).digest('hex').slice(0, 8)}${ext}`;
+}
+
+/** Any owner key or blob key in a piece of text (an error's message) as reports show it. */
+export function scrubText(text: string): string {
+  return text
+    .replace(
+      /\b(owners|media|derived|outputs)\/([A-Za-z0-9_-]{1,64})(?=\/|\b)/g,
+      (_m, area, owner) => `${area}/${ownerTag(owner)}`,
+    )
+    .replace(/\buser_[0-9A-Za-z]{10,}/g, (id) => ownerTag(id));
 }
 
 /** A file's place as reports show it: the owner hashed, ids kept, a user's own file name hashed. */
 export function relTag(rel: string): string {
   const parts = rel.split('/');
+  // A bucket's key: its kind, then the owner.
+  if (/^(media|derived|outputs)$/.test(parts[0] ?? '') && parts.length >= 2) {
+    const [kind, owner, ...rest] = parts as [string, string, ...string[]];
+    return [kind, ownerTag(owner), ...rest.map(idTag)].join('/');
+  }
   if (parts[0] !== 'owners' || parts.length < 2) {
     return parts.map((p, i) => (i === parts.length - 1 ? idTag(p) : p)).join('/');
   }

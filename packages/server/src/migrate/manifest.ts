@@ -29,6 +29,10 @@ export interface PartwayEntry extends Carried {
 export interface RecordEntry {
   size: number;
   mtime_ms: number;
+  /** The file's inode: a record replaced by a rename has a new one, whatever its size and time. */
+  ino?: number;
+  /** The last use written with it, where that is not its mtime (an upload's: see `recordUsedAt`). */
+  used_ms?: number;
   /** SHA-256 of the record as written to the target (its JSON, keys sorted). */
   hash: string;
 }
@@ -58,6 +62,11 @@ export interface Manifest {
   folders: Record<string, number>;
   /** Owners the target was given anything for. */
   owners: string[];
+  /**
+   * How big the source was at the last pass: a source that has shrunk a great deal since (a
+   * mistyped mount, an empty folder) is refused before anything is removed for it.
+   */
+  last_source?: { owners: number; bytes: number; at: string };
 }
 
 export function emptyManifest(source: string, target: string): Manifest {

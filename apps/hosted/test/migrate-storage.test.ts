@@ -1,5 +1,16 @@
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -12,7 +23,14 @@ import {
 } from '@cuttingfloor/core';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import type { AccountGetResult } from '@cuttingfloor/schema';
-import { createServer, Runtime, type RuntimeConfig, readCalls } from '@cuttingfloor/server';
+import {
+  createServer,
+  MIGRATION,
+  Runtime,
+  type RuntimeConfig,
+  readCalls,
+  urlKeyFingerprint,
+} from '@cuttingfloor/server';
 import {
   EXIT,
   fsTarget,
@@ -390,6 +408,8 @@ async function makeTarget(store: 'filesystem' | 'MongoDB'): Promise<Target> {
         config(root, {
           node: 'new',
           urlSecret: secret,
+          // As the new server runs until the cutover: in standby, so passes may still write.
+          standby: true,
           ...(mongo ? { records: { store: 'mongo', uri: TEST_MONGODB_URI, db } } : {}),
         }),
       );
@@ -747,13 +767,24 @@ describe.each((['filesystem', 'MongoDB'] as const).filter((store) => store === '
 
     it('refuses to remove a great deal from the target unless told to', async () => {
       const { ws } = src.runtime;
+      // Another account stays, so the source is still a data root with accounts in it.
+      await ws.records
+        .collection(spec('timelines'), { owner: OTHER })
+        .put(`tl_${'7'.repeat(32)}`, { kept: true });
       await ws.blobs.deletePrefix(ws.blobs.keys.owner(OWNER));
       await ws.records.forget(OWNER);
-      const refused = await run(src, dst);
+      // So much less than last time is refused outright, before anything is weighed.
+      const shrunk = await run(src, dst);
+      expect(shrunk.exit_code).toBe(EXIT.refused);
+      expect(shrunk.refused?.why).toMatch(/at the last pass/);
+      const refused = await run(src, dst, { allowShrink: true });
       expect(refused.exit_code).toBe(EXIT.deletesRefused);
       expect(refused.deletes).toMatchObject({ refused: true, done: 0 });
       expect(await dst.target.records.owners()).toContain(OWNER);
-      const allowed = await run(src, dst, { allowDeletes: true });
+      // A count too small is refused too; one that covers it goes through.
+      const few = await run(src, dst, { allowShrink: true, allowDeletes: 3 });
+      expect(few.exit_code).toBe(EXIT.deletesRefused);
+      const allowed = await run(src, dst, { allowShrink: true, allowDeletes: 10_000 });
       expect(allowed.exit).toBe('ok');
       expect(await dst.target.records.owners()).not.toContain(OWNER);
       expect(await dst.target.blobs.list(dst.target.blobs.keys.owner(OWNER))).toEqual([]);
@@ -803,7 +834,9 @@ describe.each(
       node: 'new',
       urlSecret: src.secret,
       s3,
-      ...(store === 'MongoDB' ? { records: { store: 'mongo', uri: TEST_MONGODB_URI, db } } : {}),
+      ...(store === 'MongoDB'
+        ? { records: { store: 'mongo', uri: TEST_MONGODB_URI, db } }
+        : { s3FileRecords: true }),
     });
 
   beforeAll(async () => {
@@ -817,6 +850,17 @@ describe.each(
       ...(mongo ? { records: mongo, recordsName: `mongo:${db}` } : {}),
     });
     await makeBucket(target.blobs);
+    // The second media's search index shares the first's by hard link (a deduplicated media),
+    // and a third media names the first one's mezzanine as its own without a link (a copy an
+    // older server made): the bucket must count three holders for it.
+    const { ws, media } = src.runtime;
+    await ws.blobs.share(
+      ws.blobs.keys.derived(OWNER, src.mediaA, 'search', 'index.bin'),
+      ws.blobs.keys.derived(OWNER, src.mediaB, 'search', 'index.bin'),
+    );
+    const c = await media.create(OWNER, { url: 'https://example.com/c.mp4' }, 'c.mp4');
+    const mezzanine = ws.blobs.keys.media(OWNER, src.mediaA, 'mezzanine.mov');
+    await media.save(OWNER, { ...c, status: 'ready', file: mezzanine, size: 3013 });
     first = await migrate({
       source: src.root,
       target,
@@ -894,6 +938,54 @@ describe.each(
     expect(written(again)).toBe(0);
   });
 
+  it('counts holders from records, and says what the bucket stores twice', async () => {
+    const { blobs } = target;
+    const heads = await Promise.all(
+      [src.mediaA, src.mediaB].map((id) =>
+        blobs.head(blobs.keys.media(OWNER, id, 'mezzanine.mov')),
+      ),
+    );
+    expect(heads.find(Boolean)?.refs).toBe(3);
+    // The shared search index is two objects in the bucket, one file at the source: counted.
+    expect(first.verify?.stored_twice_bytes).toBe(1500);
+    expect(first.verify?.differences.filter((d) => d.kind === 'usage')).toEqual([]);
+  });
+
+  it('checks a part-way upload against the parts the bucket lists', async () => {
+    const state = join(dir, 'state');
+    const manifest = JSON.parse(await readFile(join(state, 'manifest.json'), 'utf8')) as {
+      partway: Record<string, { target: string; parts: Array<{ etag: string }> }>;
+    };
+    const carried = Object.values(manifest.partway)[0];
+    const stateKey = carried?.parts.at(-1)?.etag.slice('seq:'.length) as string;
+    expect(await target.blobs.head(stateKey)).toBeDefined();
+    await target.blobs.delete(stateKey);
+    const checked = await migrate({
+      source: src.root,
+      target,
+      stateDir: state,
+      specs: hostedCollections(src.runtime.ws),
+      mode: 'verify',
+      log: () => undefined,
+    });
+    expect(checked.verify?.differences).toEqual([
+      expect.objectContaining({ kind: 'upload-state', of: 'upload:part-way' }),
+    ]);
+    // A repair sends its parts anew.
+    const repaired = await migrate({
+      source: src.root,
+      target,
+      stateDir: state,
+      specs: hostedCollections(src.runtime.ws),
+      settleMs: 0,
+      partBytes: PART,
+      repair: true,
+      log: () => undefined,
+    });
+    expect(repaired.blobs['upload:part-way']).toMatchObject({ carried: 1 });
+    expect(repaired.verify?.differences).toEqual([]);
+  });
+
   it('a server on the bucket answers as the old one did, and a part-way upload carries on', async () => {
     runtime = new Runtime(serverConfig(join(dir, 'data')));
     await runtime.start({ sweep: false });
@@ -969,6 +1061,62 @@ describe.each(
   });
 });
 
+describe.skipIf(!s3Up)('reading the bucket back on the new server', () => {
+  it('hashes every file against the source’s hashes, without the source', async () => {
+    const src = await seed();
+    const dir = await mkdtemp(join(tmpdir(), 'cf-migrate-reread-'));
+    const s3 = testS3();
+    const target = s3Target(s3, { dir: join(dir, 'data') });
+    await makeBucket(target.blobs);
+    const options = {
+      source: src.root,
+      target,
+      stateDir: join(dir, 'state'),
+      specs: hostedCollections(src.runtime.ws),
+      settleMs: 0,
+      partBytes: PART,
+      log: () => undefined,
+    };
+    try {
+      expect((await migrate(options)).exit).toBe('ok');
+      // The source is out of reach (another server): the manifest and the bucket are enough.
+      const away = `${src.root}-away`;
+      await rename(src.root, away);
+      try {
+        const back = await migrate({ ...options, mode: 'verify', reread: 'all' });
+        expect(back.exit).toBe('ok');
+        expect(back.reread?.checked).toBeGreaterThan(5);
+        // Other bytes of the same size under one key: found by reading, whatever the store says.
+        const manifest = JSON.parse(
+          await readFile(join(dir, 'state', 'manifest.json'), 'utf8'),
+        ) as { blobs: Record<string, { target: string }> };
+        const key = Object.values(manifest.blobs).find((b) =>
+          b.target.endsWith('/cleaned/voice.wav'),
+        )?.target as string;
+        const head = await target.blobs.head(key);
+        await target.blobs.put(key, { bytes: bytesOf('Q', head?.bytes ?? 0) });
+        const caught = await migrate({ ...options, mode: 'verify', reread: 'all' });
+        expect(caught.exit_code).toBe(EXIT.differs);
+        expect(caught.verify?.differences).toEqual([
+          expect.objectContaining({ kind: 'blob-sha256', of: 'reread' }),
+        ]);
+        const some = await migrate({ ...options, mode: 'verify', reread: 2 });
+        expect(some.reread?.checked).toBe(2);
+      } finally {
+        await rename(away, src.root);
+      }
+    } finally {
+      await target.blobs.forget(OWNER).catch(() => undefined);
+      await target.blobs.forget(OTHER).catch(() => undefined);
+      await target.close();
+      src.runtime.stop();
+      await src.runtime.close();
+      await rm(src.dir, { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('telling a target that differs', () => {
   let src: Seeded;
   let dst: Target;
@@ -1008,7 +1156,11 @@ describe('telling a target that differs', () => {
       { what: expect.stringContaining('cleaned/voice.wav'), why: 'it changed while it was read' },
     ]);
     // On the final pass nothing may be left waiting, and nothing is.
-    const final = await run(src, dst, { final: true });
+    const final = await run(src, dst, {
+      final: true,
+      drainCheck: false,
+      targetKeyFingerprint: urlKeyFingerprint(Buffer.from(src.secret, 'base64')),
+    });
     expect(final.exit).toBe('ok');
     expect((await dst.target.blobs.head(key))?.bytes).toBe(2300);
   });
@@ -1056,7 +1208,7 @@ describe('telling a target that differs', () => {
       report.verify?.differences.length,
     );
     // The next pass with --rehash puts back what a pass can: files it finds changed or missing.
-    const mended = await run(src, dst, { rehash: true, verify: false });
+    const mended = await run(src, dst, { rehash: true, verify: false, afterFinal: true });
     expect(mended.blobs['media:own']?.copied).toBe(1);
   });
 
@@ -1070,6 +1222,8 @@ describe('telling a target that differs', () => {
         stateDir: fresh,
         specs: hostedCollections(src.runtime.ws),
         mode: 'dry-run',
+        // The target had its final pass in the test before.
+        afterFinal: true,
         log: () => undefined,
       });
       expect(dry.exit_code).toBe(EXIT.differs);
@@ -1098,11 +1252,274 @@ describe('telling a target that differs', () => {
           target: other.target,
           stateDir: dst.state,
           mode: 'dry-run',
+          afterFinal: true,
           log: () => undefined,
         }),
       ).rejects.toThrow(/another migration/);
     } finally {
       await other.drop();
+    }
+  });
+});
+
+describe('passes that must not lose data', () => {
+  let src: Seeded;
+  let dst: Target;
+  const fingerprint = () => urlKeyFingerprint(Buffer.from(src.secret, 'base64'));
+
+  beforeAll(async () => {
+    src = await seed();
+    dst = await makeTarget('filesystem');
+    expect((await run(src, dst)).exit).toBe('ok');
+  });
+
+  afterAll(async () => {
+    src?.runtime.stop();
+    await src?.runtime.close();
+    await dst?.drop();
+    if (src) await rm(src.dir, { recursive: true, force: true });
+  });
+
+  const timelines = () => dst.target.records.collection(spec('timelines'), { owner: OWNER });
+
+  it('refuses a source that is not a data root: an empty folder where the mount should be', async () => {
+    const empty = await mkdtemp(join(tmpdir(), 'cf-migrate-empty-'));
+    try {
+      const refused = await run(src, dst, { source: empty } as Partial<MigrateOptions>);
+      expect(refused.exit_code).toBe(EXIT.refused);
+      expect(refused.refused?.why).toMatch(/does not look like a server's data root/);
+      expect(await timelines().has(src.timeline)).toBe(true);
+    } finally {
+      await rm(empty, { recursive: true, force: true });
+    }
+  });
+
+  it('stops, removing nothing, when a folder cannot be listed', async () => {
+    const folder = src.runtime.ws.ownerDir(OWNER, 'timelines');
+    await chmod(folder, 0o000);
+    try {
+      const broke = await run(src, dst);
+      expect(broke.exit_code).toBe(EXIT.failed);
+      expect(broke.deletes.done).toBe(0);
+    } finally {
+      await chmod(folder, 0o755);
+    }
+    expect(await timelines().has(src.timeline)).toBe(true);
+  });
+
+  it('keeps an unreadable record waiting, with everything of it at the target', async () => {
+    const file = join(src.runtime.media.dir(OWNER, src.mediaB), 'media.json');
+    const text = await readFile(file, 'utf8');
+    const { mtime } = await lstat(file);
+    await writeFile(file, '{"not json');
+    try {
+      const pass = await run(src, dst);
+      expect(pass.exit_code).toBe(EXIT.waiting);
+      expect(pass.unreadable).toEqual([
+        { what: expect.stringContaining(src.mediaB), why: 'the record not JSON' },
+      ]);
+      expect(pass.deletes.planned).toBe(0);
+      const media = dst.target.records.collection(spec('media'), { owner: OWNER });
+      expect(await media.has(src.mediaB)).toBe(true);
+      const { blobs } = dst.target;
+      expect(await blobs.head(blobs.keys.media(OWNER, src.mediaB, 'source.mp4'))).toBeDefined();
+      expect((await run(src, dst, { mode: 'verify' })).exit_code).toBe(EXIT.waiting);
+    } finally {
+      await writeFile(file, text);
+      await utimes(file, mtime, mtime);
+    }
+    expect((await run(src, dst)).exit).toBe('ok');
+  });
+
+  it('gives an upload the later of its record’s and folder’s times, and moves a user’s .part file', async () => {
+    const { runtime } = src;
+    const sent = await ok<{ upload_id: string }>(src.client, 'media.upload', { name: 'clip.part' });
+    await runtime.uploads.receive(OWNER, sent.upload_id, Readable.from([bytesOf('k', 900)]), {
+      length: 900,
+      range: null,
+    });
+    const folder = runtime.ws.ownerDir(OWNER, 'uploads', sent.upload_id);
+    const older = new Date(Date.now() - 2 * DAY);
+    const newer = new Date(Date.now() - 3_600_000);
+    await utimes(join(folder, 'upload.json'), older, older);
+    await utimes(folder, newer, newer);
+    expect((await run(src, dst)).exit).toBe('ok');
+    const record = (
+      await dst.target.records.collection(spec('uploads'), { owner: OWNER }).find()
+    ).find((r) => r.id === sent.upload_id);
+    expect(Math.abs((record?.usedAt.getTime() ?? 0) - newer.getTime())).toBeLessThan(1000);
+    const { blobs } = dst.target;
+    expect(await blobs.head(blobs.keys.upload(OWNER, sent.upload_id, 'data.part'))).toMatchObject({
+      bytes: 900,
+    });
+  });
+
+  it('sends a log line appended while its part was read on the next pass', async () => {
+    const { FsBlobStore } = await import('@cuttingfloor/core');
+    const proto = FsBlobStore.prototype;
+    const real = proto.getRange;
+    const line = { at: new Date().toISOString(), tool: 'appended.meanwhile' };
+    let appended = false;
+    const spy = vi.spyOn(proto, 'getRange').mockImplementation(async function (
+      this: InstanceType<typeof FsBlobStore>,
+      key: string,
+      start: number,
+      end?: number,
+    ) {
+      if (!appended && /\/calls\/.+\.jsonl$/.test(key)) {
+        appended = true;
+        const { appendFile } = await import('node:fs/promises');
+        await appendFile(join(src.root, ...key.split('/')), `${JSON.stringify(line)}\n`);
+      }
+      return real.call(this, key, start, end);
+    });
+    try {
+      // A call after the last pass, so the part has something new to send.
+      await ok(src.client, 'timeline.create', { name: 'Log', sequence: SEQ });
+      await until(async () =>
+        (await readCalls(src.runtime.ws, OWNER)).some((c) => c.tool === 'timeline.create'),
+      );
+      await run(src, dst, { verify: false });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(appended).toBe(true);
+    expect((await run(src, dst)).exit).toBe('ok');
+    const log = await dst.target.records.log(spec('calls'), { owner: OWNER }).read();
+    expect(log).toEqual(expect.arrayContaining([expect.objectContaining(line)]));
+  });
+
+  it('repairs what a standby server changed, and lists and prunes what it added', async () => {
+    const { blobs } = dst.target;
+    await timelines().put(src.timeline, { tampered: true } as never);
+    await timelines().put(`tl_${'8'.repeat(32)}`, { test: true } as never);
+    const stray = blobs.keys.output(OWNER, 'j_aaaaaaaaaaaaaaaaaaaaaaaaaa', 'test.mp4');
+    await blobs.put(stray, { bytes: bytesOf('t', 10) });
+    expect((await run(src, dst)).exit_code).toBe(EXIT.differs);
+    const listed = await run(src, dst, { repair: true, pruneExtras: 1 });
+    expect(listed.extras).toMatchObject({ records: 1, blobs: 1, pruned: 0 });
+    expect(listed.exit_code).toBe(EXIT.deletesRefused);
+    expect((await timelines().get(src.timeline)) as unknown).not.toEqual({ tampered: true });
+    const pruned = await run(src, dst, { repair: true, pruneExtras: 5 });
+    expect(pruned.exit).toBe('ok');
+    expect(pruned.extras).toMatchObject({ pruned: 2 });
+    expect(await blobs.head(stray)).toBeUndefined();
+  });
+
+  it('leaves an account that is only at the target alone when told to', async () => {
+    const tester = 'user_01TESTACCOUNTONLYONTARGET0';
+    await dst.target.records
+      .collection(spec('timelines'), { owner: tester })
+      .put(`tl_${'6'.repeat(32)}`, { test: true } as never);
+    const seen = await run(src, dst, { mode: 'verify' });
+    expect(seen.exit_code).toBe(EXIT.differs);
+    // Named in reports by hash only.
+    expect(JSON.stringify(seen.verify)).not.toContain('user_01TEST');
+    const left = await run(src, dst, { excludeOwners: [tester] });
+    expect(left.exit).toBe('ok');
+    expect(await dst.target.records.owners()).toContain(tester);
+  });
+
+  it('keeps at the target what expired at the source and is still there', async () => {
+    const old = new Date(Date.now() - 8 * DAY);
+    await utimes(join(src.runtime.media.dir(OWNER, src.mediaA), 'media.json'), old, old);
+    const pass = await run(src, dst, { excludeOwners: ['user_01TESTACCOUNTONLYONTARGET0'] });
+    expect(pass.exit).toBe('ok');
+    expect(pass.deletes.planned).toBe(0);
+    const media = dst.target.records.collection(spec('media'), { owner: OWNER });
+    expect(await media.has(src.mediaA)).toBe(true);
+    const { blobs } = dst.target;
+    expect(
+      await blobs.head(blobs.keys.derived(OWNER, src.mediaA, 'cleaned', 'voice.wav')),
+    ).toBeDefined();
+  });
+
+  it('compares the link-signing keys by fingerprint', async () => {
+    const other = await run(src, dst, {
+      mode: 'verify',
+      targetKeyFingerprint: '0123456789abcdef',
+      excludeOwners: ['user_01TESTACCOUNTONLYONTARGET0'],
+    });
+    expect(other.verify?.differences).toEqual([expect.objectContaining({ kind: 'signing-key' })]);
+    expect(JSON.stringify(other)).not.toContain(src.secret);
+    const same = await run(src, dst, {
+      mode: 'verify',
+      targetKeyFingerprint: fingerprint(),
+      excludeOwners: ['user_01TESTACCOUNTONLYONTARGET0'],
+    });
+    expect(same.verify?.signing_key).toMatchObject({ same: true });
+    expect(same.exit).toBe('ok');
+  });
+
+  it('refuses a target a server serves on', async () => {
+    const marks = dst.target.records.collection(MIGRATION);
+    await marks.put('live', { node: 'new', since: new Date().toISOString() });
+    try {
+      const refused = await run(src, dst);
+      expect(refused.exit_code).toBe(EXIT.refused);
+      expect(refused.refused?.why).toMatch(/a server serves on the target/);
+    } finally {
+      await marks.delete('live');
+    }
+  });
+
+  it('runs the final pass only on a drained source, then refuses any pass after it', async () => {
+    const more = {
+      excludeOwners: ['user_01TESTACCOUNTONLYONTARGET0'],
+      targetKeyFingerprint: fingerprint(),
+    };
+    expect((await run(src, dst, { ...more, final: true })).refused?.why).toMatch(/not draining/);
+    const marker = join(src.root, 'draining');
+    const drained = (jobs: number) =>
+      writeFile(
+        marker,
+        JSON.stringify({
+          since: new Date().toISOString(),
+          at: new Date().toISOString(),
+          node: 'old',
+          jobs_running: jobs,
+        }),
+      );
+    await drained(2);
+    expect((await run(src, dst, { ...more, final: true })).refused?.why).toMatch(
+      /still runs 2 jobs/,
+    );
+    await drained(0);
+    // An upload carried more than six hours ago is carried anew by the final pass.
+    const file = join(dst.state, 'manifest.json');
+    const manifest = JSON.parse(await readFile(file, 'utf8')) as {
+      partway: Record<string, { started_at: string }>;
+    };
+    for (const carried of Object.values(manifest.partway)) {
+      carried.started_at = new Date(Date.now() - 7 * 3_600_000).toISOString();
+    }
+    await writeFile(file, JSON.stringify(manifest));
+    const final = await run(src, dst, { ...more, final: true });
+    expect(final.exit).toBe('ok');
+    expect(final.blobs['upload:part-way']).toMatchObject({ carried: 1 });
+    expect(await dst.target.records.collection(MIGRATION).get('final')).toMatchObject({
+      source: src.root,
+    });
+    // After it: passes are refused, verify is not, and --after-final is the way through.
+    const later = await run(src, dst, more);
+    expect(later.exit_code).toBe(EXIT.refused);
+    expect(later.refused?.why).toMatch(/final pass already ended clean/);
+    expect((await run(src, dst, { ...more, mode: 'dry-run' })).exit_code).toBe(EXIT.refused);
+    expect((await run(src, dst, { ...more, mode: 'verify' })).exit).toBe('ok');
+    expect((await run(src, dst, { ...more, afterFinal: true })).exit).toBe('ok');
+    await rm(marker, { force: true });
+  });
+
+  it('stops at the start when its state folder cannot be written', async () => {
+    const locked = await mkdtemp(join(tmpdir(), 'cf-migrate-locked-'));
+    await chmod(locked, 0o500);
+    try {
+      await expect(run(src, dst, { stateDir: locked } as Partial<MigrateOptions>)).rejects.toThrow(
+        /cannot be written/,
+      );
+    } finally {
+      await chmod(locked, 0o700);
+      await rm(locked, { recursive: true, force: true });
     }
   });
 });
