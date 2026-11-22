@@ -11,9 +11,12 @@ export function watchPage(o: {
   /** This server's public base URL, for the link previews chat apps show (they need it whole). */
   base: string;
   expiresAt: Date;
+  /** The file is fetched from a bucket: what plays it asks for it to be shown, not saved. */
+  inline?: boolean;
 }): string {
   const name = esc(o.name);
-  const src = esc(o.fileUrl);
+  const href = esc(o.fileUrl);
+  const src = esc(o.inline ? `${o.fileUrl}&inline=1` : o.fileUrl);
   const whole = esc(`${o.base}${o.fileUrl}`);
   const kind = o.mime.split('/')[0];
   const player =
@@ -67,7 +70,7 @@ ${og}
   <div class="stage">${player}</div>
   <footer>
     <h1>${name}</h1>
-    <span class="meta"><a href="${src}" download>Download</a> · link works until <time datetime="${o.expiresAt.toISOString()}">${o.expiresAt.toUTCString()}</time></span>
+    <span class="meta"><a href="${href}" download>Download</a> · link works until <time datetime="${o.expiresAt.toISOString()}">${o.expiresAt.toUTCString()}</time></span>
   </footer>
 </main>
 </body>

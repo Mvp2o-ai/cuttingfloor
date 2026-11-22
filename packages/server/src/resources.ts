@@ -197,8 +197,25 @@ export function registerResources(server: McpServer, deps: ServerDeps): void {
           `Job ${id} has no output (status ${job.status})`,
         );
       }
-      const file = await rt.outputs.local(owner, id, name);
       const mimeType = outputMime(name);
+      if (rt.ws.blobs.remote) {
+        // Read from the store itself: a file over the limit is never fetched to be measured.
+        const key = rt.outputs.key(owner, id, name);
+        const head = await rt.ws.blobs.head(key);
+        if (!head) {
+          throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Job ${id} has no output`);
+        }
+        if (head.bytes > rt.config.inlineMaxBytes) {
+          const { url } = await rt.signOutput(owner, id, name);
+          return { contents: [{ uri: uri.href, mimeType: 'text/uri-list', text: url }] };
+        }
+        const chunks: Buffer[] = [];
+        for await (const chunk of await rt.ws.blobs.get(key)) chunks.push(chunk as Buffer);
+        return {
+          contents: [{ uri: uri.href, mimeType, blob: Buffer.concat(chunks).toString('base64') }],
+        };
+      }
+      const file = await rt.outputs.local(owner, id, name);
       // Size and bytes come from one open handle, so the file can't change in between.
       const handle = await open(file, 'r');
       try {

@@ -1,6 +1,6 @@
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, extname, join } from 'node:path';
+import { basename, extname, isAbsolute, join } from 'node:path';
 import { INTERCHANGE_FILES, type InterchangeMedia, writeInterchange } from '@cuttingfloor/core';
 import { BIN, MEDIA_TTL_MS, run } from '@cuttingfloor/engine';
 import {
@@ -105,7 +105,32 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
           const used = new Set<string>();
           // Referenced files this server keeps for a while (its own copies), named in one warning.
           const kept: string[] = [];
+          // Where files are in a bucket, a file this server holds has no path another program
+          // could follow: a reference is its signed download link (which works as long as any
+          // link does), and only a collect fetches the files here.
+          const remote = rt.ws.blobs.remote;
+          const links: string[] = [];
           for (const r of records) {
+            const linked =
+              remote && !collect && r.file && !isAbsolute(r.file)
+                ? (await rt.signMedia(owner, r))?.url
+                : undefined;
+            if (linked) {
+              links.push(r.name);
+              const p = r.probe;
+              media.set(r.media_id, {
+                name: r.name,
+                path: linked,
+                duration: p?.duration ? Math.round(p.duration * TICKS_PER_SECOND) : null,
+                ...(p?.video
+                  ? { width: p.video.width, height: p.video.height, fps: p.video.fps }
+                  : {}),
+                ...(p?.audio
+                  ? { channels: p.audio.channels, sample_rate: p.audio.sample_rate }
+                  : {}),
+              });
+              continue;
+            }
             const original = r.file
               ? await rt.media.local(r.file)
               : 'path' in r.source
@@ -150,6 +175,11 @@ export function registerInterchangeTools(server: McpServer, deps: ServerDeps): v
           if (kept.length) {
             warnings.push(
               `media reference: the file points at ${kept.length} media where this server keeps them (${kept.slice(0, 20).join(', ')}${kept.length > 20 ? ', …' : ''}): an editor on another machine can't open those paths, and the server removes media ${MEDIA_TTL_MS / 86_400_000} days after last use, after which the clips open offline. To hand the edit on, export again with media: collect, a .zip with the files beside the timeline file`,
+            );
+          }
+          if (links.length) {
+            warnings.push(
+              `media reference: the file points at ${links.length} media by their download links on this server (${links.slice(0, 20).join(', ')}${links.length > 20 ? ', …' : ''}): the links stop working after ${span(rt.config.outputUrlTtlMs)}, and the server removes media ${MEDIA_TTL_MS / 86_400_000} days after last use, after which the clips open offline. To hand the edit on, export again with media: collect, a .zip with the files beside the timeline file`,
             );
           }
           const out = await rt.outputs.reserve(owner, job.id, name);

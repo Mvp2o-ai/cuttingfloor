@@ -1,8 +1,9 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { extname } from 'node:path';
 import { Readable } from 'node:stream';
 import {
   type BlobKey,
+  type BlobPart,
   type Collection,
   defineCollection,
   floorChanged,
@@ -28,6 +29,44 @@ interface UploadMeta {
   max_bytes?: number;
   /** How it was sent: a media.upload link, the account page, or a data: URI. */
   via?: UploadVia;
+
+  // Where files are in an object store, the upload's own state: the store's upload in parts
+  // fills the blob, and this record says how far it has got, for whichever server is asked next.
+  /** The store's id of the upload in parts filling the blob; '' before the first byte. */
+  mpu?: string;
+  /** Bytes received in order (PUT, whole or with Content-Range). */
+  offset?: number;
+  /** The latest in-order part as the store returned it: it names everything stored so far. */
+  part?: BlobPart | null;
+  /** The request taking in-order bytes now ('' for none), and when it last said it still is. */
+  lock?: string;
+  lock_at?: number;
+  /** Sent as numbered parts of one size instead: that size, the file's size, the parts in. */
+  part_bytes?: number;
+  parts?: BlobPart[];
+  /** Counts writes of `parts`, so two parts landing at once both stay. */
+  rev?: number;
+}
+
+/** A request that stops saying it is still sending for this long has let go of its upload. */
+const LOCK_STALE_MS = 90_000;
+const MIB = 1024 ** 2;
+
+/** The size of each numbered part of a file sent in parts: more for a bigger file. */
+export function uploadPartBytes(total: number): number {
+  const base = total <= 1024 ** 3 ? 16 * MIB : total <= 8 * 1024 ** 3 ? 32 * MIB : 64 * MIB;
+  return Math.max(base, Math.ceil(total / 10_000 / MIB) * MIB);
+}
+
+/** How a file being sent as numbered parts stands. */
+export interface UploadParts {
+  upload_id: string;
+  part_bytes: number;
+  total_bytes: number;
+  /** The parts that are in, by number. */
+  parts: Array<{ part: number; bytes: number }>;
+  received: number;
+  complete: boolean;
 }
 
 export type UploadVia = 'media.upload' | 'account_page' | 'data_uri';
@@ -74,6 +113,11 @@ export class Uploads {
   readonly #uploadPage: string | undefined;
   /** Uploads taking a request on this server, so two never write one file at once. */
   readonly #busy = new Set<string>();
+
+  /** Files are in an object store: an upload's state is its record, not a file's size. */
+  get #remote(): boolean {
+    return this.#ws.blobs.remote;
+  }
 
   constructor(
     ws: Workspace,
@@ -135,6 +179,7 @@ export class Uploads {
       created_at: new Date().toISOString(),
       ...(room !== undefined && room < this.maxBytes ? { max_bytes: room } : {}),
       via,
+      ...(this.#remote ? { mpu: '', offset: 0, part: null, lock: '', lock_at: 0, rev: 0 } : {}),
     };
     await this.#records(owner).put(id, meta);
     await floorChanged(this.#ws, owner);
@@ -226,6 +271,7 @@ export class Uploads {
       name?: string;
     },
   ): Promise<UploadState> {
+    if (this.#remote) return this.#receiveRemote(owner, id, body, request);
     let meta = await this.#meta(owner, id);
     if (!meta) throw new UploadRefused(404, 'no such upload, or it expired');
     if (meta.complete) {
@@ -307,12 +353,12 @@ export class Uploads {
 
   /**
    * A complete upload's blob and name, for media.import; `file` is the blob as a local file on
-   * this node, to read.
+   * this node, to read, where blobs are files here.
    */
   async take(
     owner: string,
     id: string,
-  ): Promise<{ blob: BlobKey; file: string; name: string; via?: UploadVia }> {
+  ): Promise<{ blob: BlobKey; file?: string; name: string; via?: UploadVia }> {
     const key = ownerKey(owner);
     const meta = await this.#meta(key, id);
     if (!meta) {
@@ -333,7 +379,8 @@ export class Uploads {
     const blob = this.#blob(key, meta);
     return {
       blob,
-      file: await this.#ws.scratch.materialize(blob),
+      // In an object store the blob is not fetched to be taken: the import reads it once.
+      ...(this.#remote ? {} : { file: await this.#ws.scratch.materialize(blob) }),
       name: meta.name,
       ...(meta.via ? { via: meta.via } : {}),
     };
@@ -372,12 +419,28 @@ export class Uploads {
     return out.sort((a, b) => b.created_at.localeCompare(a.created_at));
   }
 
-  /** Forgets an upload once imported. */
-  async remove(owner: string, id: string): Promise<void> {
+  /**
+   * Forgets an upload once imported. `taken`: its blob is now a media's own file where it is
+   * (an object store never moves one), so only the record goes.
+   */
+  async remove(owner: string, id: string, options: { taken?: boolean } = {}): Promise<void> {
     const { blobs } = this.#ws;
-    await blobs.deletePrefix(blobs.keys.upload(owner, id, ''));
+    if (this.#remote) {
+      const meta = await this.#meta(owner, id);
+      if (meta?.mpu && !meta.complete) {
+        await blobs.multipartAbort(this.#blob(owner, meta), meta.mpu).catch(() => undefined);
+      }
+    }
+    if (!options.taken) await blobs.deletePrefix(blobs.keys.upload(owner, id, ''));
     await this.#records(owner).delete(id);
     await floorChanged(this.#ws, owner);
+  }
+
+  /** The blobs the owner's uploads hold (sent or still arriving), for the orphan sweep. */
+  async held(owner: string): Promise<BlobKey[]> {
+    const out: BlobKey[] = [];
+    for (const { value } of await this.#records(owner).find()) out.push(this.#blob(owner, value));
+    return out;
   }
 
   async sweep(): Promise<void> {
@@ -386,6 +449,18 @@ export class Uploads {
       // An hour past the URL's life, so a PUT that was still running finishes first. An upload
       // goes whole, its record with its bytes, by when either was last written.
       const ttl = UPLOAD_TTL_MS + 3_600_000;
+      if (this.#remote) {
+        // The record is the upload's clock (every part received writes it); an imported
+        // upload has no record, so a media's file that began as one is never met here.
+        const found = await this.#records(owner)
+          .find()
+          .catch(() => []);
+        for (const { id, usedAt } of found) {
+          if (usedAt.getTime() >= Date.now() - ttl) continue;
+          await this.remove(owner, id).catch(() => undefined);
+        }
+        continue;
+      }
       const gone = await blobs.expire(blobs.keys.uploads(owner), ttl);
       // On the filesystem that was the record too. Kept apart from the bytes, a record goes
       // with them here, and one that never got a byte by its own age. One that can't be read
@@ -417,7 +492,376 @@ export class Uploads {
   }
 
   async #size(owner: string, meta: UploadMeta): Promise<number> {
+    if (this.#remote) {
+      if (meta.complete) return meta.bytes ?? 0;
+      if (meta.parts) return meta.parts.reduce((sum, p) => sum + p.bytes, 0);
+      return meta.offset ?? 0;
+    }
     return (await this.#ws.blobs.head(this.#blob(owner, meta)))?.bytes ?? 0;
+  }
+
+  /**
+   * One PUT where files are in an object store. The same answers as on the filesystem, from the
+   * record instead of a file: bytes go straight into the store's upload in parts (which keeps
+   * what does not fill a part beside the blob), and the record moves on by compare-and-set, so
+   * of two senders, or two servers, one takes each stretch and the other is told where the
+   * upload stands.
+   */
+  async #receiveRemote(
+    owner: string,
+    id: string,
+    body: Readable,
+    request: {
+      length: number | null;
+      range: { start: number; total: number | null } | null;
+      name?: string;
+    },
+  ): Promise<UploadState> {
+    const { blobs } = this.#ws;
+    const uploads = this.#records(owner);
+    let meta = await this.#meta(owner, id);
+    if (!meta) throw new UploadRefused(404, 'no such upload, or it expired');
+    if (meta.complete) {
+      throw new UploadRefused(409, 'this upload is complete; import it', meta.bytes ?? 0, true);
+    }
+    if (meta.parts) {
+      throw new UploadRefused(
+        409,
+        'this upload is being sent in parts; send the rest of its parts',
+        await this.#size(owner, meta),
+      );
+    }
+    if (meta.lock === undefined || meta.offset === undefined) {
+      // A record laid down without its state (by an older server): it starts from nothing.
+      await uploads.update(id, {
+        set: { mpu: meta.mpu ?? '', offset: meta.offset ?? 0, lock: '', lock_at: 0, rev: 0 },
+      });
+      meta = (await this.#meta(owner, id)) ?? meta;
+    }
+    const received = meta.offset ?? 0;
+    const start = request.range?.start ?? 0;
+    if (request.range && start !== received) {
+      throw new UploadRefused(409, `the upload has ${received} bytes; send from there`, received);
+    }
+    const busy = () => new UploadRefused(409, 'another request is sending this upload');
+    if (meta.lock && Date.now() - (meta.lock_at ?? 0) < LOCK_STALE_MS) throw busy();
+    const token = randomBytes(9).toString('base64url');
+    // Taken only from the state just read: another sender in between loses nothing.
+    const mine = await uploads.compareAndSet(
+      id,
+      { lock: meta.lock ?? '', lock_at: meta.lock_at ?? 0, offset: received },
+      { lock: token, lock_at: Date.now() },
+    );
+    if (!mine) throw busy();
+    const beat = setInterval(
+      () => void uploads.compareAndSet(id, { lock: token }, { lock_at: Date.now() }).catch(() => 0),
+      20_000,
+    );
+    /** Lets go, moving the record on; false when another request took the upload over. */
+    const settle = (set: Partial<UploadMeta>) =>
+      uploads.compareAndSet(id, { lock: token }, { ...set, lock: '', lock_at: 0 });
+    try {
+      const named = request.name?.trim().slice(0, 200);
+      if (named && !/[/\\]/.test(named) && named !== meta.name) {
+        // Before any byte lands, the file also takes the sent name's extension.
+        const ext = extname(named)
+          .slice(0, 8)
+          .replace(/[^.\w]/g, '');
+        const renamed = { name: named, ...(received === 0 ? { file: `data${ext}` } : {}) };
+        // A blob's key never changes once its upload in parts has begun.
+        if (received === 0 && meta.mpu) {
+          await blobs.multipartAbort(this.#blob(owner, meta), meta.mpu).catch(() => undefined);
+          meta = { ...meta, mpu: '' };
+          await uploads.compareAndSet(id, { lock: token }, { mpu: '' });
+        }
+        meta = { ...meta, ...renamed };
+        await uploads.compareAndSet(id, { lock: token }, renamed);
+      }
+      const total = request.range ? request.range.total : request.length;
+      const limit = meta.max_bytes ?? this.maxBytes;
+      const tooBig =
+        meta.max_bytes === undefined
+          ? `This file is too big: uploads take up to ${readableSize(limit)}`
+          : `This file is too big: the account's storage has room for ${readableSize(limit)} more. Older files expire on their own, or ask in the chat to delete some`;
+      if ((total ?? 0) > limit || start + (request.length ?? 0) > limit) {
+        throw new UploadRefused(413, tooBig, received);
+      }
+      const blob = this.#blob(owner, meta);
+      // A whole file replaces anything sent before: its upload in parts starts again.
+      let mpu = meta.mpu ?? '';
+      let after = meta.part ?? undefined;
+      if (!request.range && mpu) {
+        await blobs.multipartAbort(blob, mpu).catch(() => undefined);
+        mpu = '';
+      }
+      if (!request.range) after = undefined;
+      let size = start;
+      let refused: UploadRefused | undefined;
+      const counted = async function* (source: Readable) {
+        for await (const chunk of source) {
+          size += (chunk as Buffer).length;
+          if (size > limit) {
+            refused = new UploadRefused(413, tooBig);
+            throw refused;
+          }
+          yield chunk;
+        }
+      };
+      let part: BlobPart | undefined;
+      let broken = false;
+      try {
+        mpu ||= await blobs.multipartStart(blob);
+        part = await blobs.multipartPart(
+          blob,
+          mpu,
+          (after?.part ?? 0) + 1,
+          Readable.from(counted(body)),
+          {
+            ...(request.length === null ? {} : { bytes: request.length }),
+            ...(after ? { after } : {}),
+          },
+        );
+      } catch (error) {
+        if (refused) {
+          await settle(request.range ? {} : { mpu, offset: 0, part: null });
+          throw refused;
+        }
+        if (error instanceof UploadRefused) throw error;
+        // A broken connection keeps what arrived, for the client to resume from.
+        part = (error as { landed?: BlobPart }).landed;
+        broken = true;
+      }
+      const landed = start + (part?.bytes ?? 0);
+      if (broken) {
+        const kept = part
+          ? await settle({ mpu, part, offset: landed })
+          : await settle(request.range ? { mpu } : { mpu, offset: 0, part: null });
+        const now = kept
+          ? part
+            ? landed
+            : request.range
+              ? received
+              : 0
+          : await this.#offset(owner, id);
+        throw new UploadRefused(400, 'the upload stopped part way; resume it', now);
+      }
+      // A whole-file PUT sent without a length ends when its body does.
+      const complete = request.range || total !== null ? landed === total : true;
+      if (complete) {
+        await blobs.multipartComplete(blob, mpu, part ? [part] : []);
+        const done = await settle({
+          bytes: landed,
+          complete: true,
+          mpu: '',
+          part: null,
+          offset: landed,
+        });
+        if (!done) throw this.#overtaken(await this.#meta(owner, id));
+        await floorChanged(this.#ws, owner);
+      } else if (!(await settle({ mpu, part: part ?? null, offset: landed }))) {
+        throw this.#overtaken(await this.#meta(owner, id));
+      }
+      return { upload_id: id, received: landed, complete };
+    } catch (error) {
+      // Whatever went wrong, this request no longer holds the upload.
+      await uploads.compareAndSet(id, { lock: token }, { lock: '', lock_at: 0 }).catch(() => 0);
+      throw error;
+    } finally {
+      clearInterval(beat);
+    }
+  }
+
+  async #offset(owner: string, id: string): Promise<number> {
+    const meta = await this.#meta(owner, id);
+    return meta ? this.#size(owner, meta) : 0;
+  }
+
+  /** Another request took the upload over while this one was sending: where it stands now. */
+  #overtaken(meta: UploadMeta | undefined): UploadRefused {
+    if (!meta) return new UploadRefused(404, 'no such upload, or it expired');
+    if (meta.complete) {
+      return new UploadRefused(409, 'this upload is complete; import it', meta.bytes ?? 0, true);
+    }
+    const at = meta.offset ?? 0;
+    return new UploadRefused(409, `the upload has ${at} bytes; send from there`, at);
+  }
+
+  /**
+   * How a file being sent as numbered parts stands; with `total` (the file's size) it is set up
+   * to be sent that way, the first time. Undefined where files are not in an object store: the
+   * file is then sent with PUT.
+   */
+  async parts(
+    owner: string,
+    id: string,
+    total?: number,
+    name?: string,
+  ): Promise<UploadParts | undefined> {
+    if (!this.#remote) return undefined;
+    const uploads = this.#records(owner);
+    for (let turn = 0; turn < 5; turn += 1) {
+      let meta = await this.#meta(owner, id);
+      if (!meta) throw new UploadRefused(404, 'no such upload, or it expired');
+      if (meta.parts && meta.part_bytes && meta.bytes !== null) {
+        if (total !== undefined && total !== meta.bytes && !meta.complete) {
+          throw new UploadRefused(
+            409,
+            `this upload is of a file of ${meta.bytes} bytes; start a new one for another file`,
+          );
+        }
+        return this.#partsOf(meta);
+      }
+      if (meta.complete) {
+        return {
+          upload_id: id,
+          part_bytes: meta.bytes ?? 0,
+          total_bytes: meta.bytes ?? 0,
+          parts: [],
+          received: meta.bytes ?? 0,
+          complete: true,
+        };
+      }
+      if (total === undefined) {
+        throw new UploadRefused(400, 'say the size of the file: GET …/parts?bytes=<size>');
+      }
+      if ((meta.offset ?? 0) > 0 || meta.lock) {
+        throw new UploadRefused(
+          409,
+          `the upload has ${meta.offset ?? 0} bytes sent in order; send the rest with PUT and Content-Range`,
+          meta.offset ?? 0,
+        );
+      }
+      const limit = meta.max_bytes ?? this.maxBytes;
+      if (total > limit) {
+        throw new UploadRefused(
+          413,
+          meta.max_bytes === undefined
+            ? `This file is too big: uploads take up to ${readableSize(limit)}`
+            : `This file is too big: the account's storage has room for ${readableSize(limit)} more. Older files expire on their own, or ask in the chat to delete some`,
+          0,
+        );
+      }
+      const named = name?.trim().slice(0, 200);
+      if (named && !/[/\\]/.test(named) && named !== meta.name) {
+        const ext = extname(named)
+          .slice(0, 8)
+          .replace(/[^.\w]/g, '');
+        meta = { ...meta, name: named, file: `data${ext}` };
+      }
+      const blob = this.#blob(owner, meta);
+      const mpu = await this.#ws.blobs.multipartStart(blob);
+      // One of several first requests sets it up; the others read what it set.
+      const set = await uploads.compareAndSet(
+        id,
+        { rev: meta.rev ?? 0, offset: meta.offset ?? 0, lock: '' },
+        {
+          name: meta.name,
+          file: meta.file,
+          mpu,
+          bytes: total,
+          part_bytes: uploadPartBytes(total),
+          parts: [],
+          rev: (meta.rev ?? 0) + 1,
+        },
+      );
+      if (!set) await this.#ws.blobs.multipartAbort(blob, mpu).catch(() => undefined);
+    }
+    throw new UploadRefused(409, 'another request is setting this upload up; ask again');
+  }
+
+  #partsOf(meta: UploadMeta): UploadParts {
+    const parts = [...(meta.parts ?? [])].sort((a, b) => a.part - b.part);
+    return {
+      upload_id: meta.upload_id,
+      part_bytes: meta.part_bytes ?? 0,
+      total_bytes: meta.bytes ?? 0,
+      parts: parts.map((p) => ({ part: p.part, bytes: p.bytes })),
+      received: meta.complete ? (meta.bytes ?? 0) : parts.reduce((sum, p) => sum + p.bytes, 0),
+      complete: meta.complete,
+    };
+  }
+
+  /**
+   * Takes one numbered part of a file set up with `parts`. Its body goes straight into the
+   * store; sent again, a part replaces itself. Parts arrive in any order, several at once, on
+   * any server.
+   */
+  async receivePart(
+    owner: string,
+    id: string,
+    part: number,
+    body: Readable,
+    length: number | null,
+  ): Promise<UploadParts> {
+    const uploads = this.#records(owner);
+    const meta = await this.#meta(owner, id);
+    if (!this.#remote || !meta) throw new UploadRefused(404, 'no such upload, or it expired');
+    if (meta.complete) {
+      throw new UploadRefused(409, 'this upload is complete; import it', meta.bytes ?? 0, true);
+    }
+    if (!meta.parts || !meta.part_bytes || meta.bytes === null || !meta.mpu) {
+      throw new UploadRefused(409, 'set the upload up first: GET …/parts?bytes=<size>');
+    }
+    const count = Math.max(1, Math.ceil(meta.bytes / meta.part_bytes));
+    const expected = part === count ? meta.bytes - (count - 1) * meta.part_bytes : meta.part_bytes;
+    if (!Number.isInteger(part) || part < 1 || part > count) {
+      throw new UploadRefused(400, `this file has parts 1 to ${count}`);
+    }
+    if (length !== expected) {
+      throw new UploadRefused(
+        400,
+        `part ${part} is ${expected} bytes; send it with that Content-Length`,
+      );
+    }
+    let stored: BlobPart;
+    try {
+      stored = await this.#ws.blobs.multipartPart(this.#blob(owner, meta), meta.mpu, part, body, {
+        bytes: expected,
+        anyOrder: true,
+      });
+    } catch {
+      throw new UploadRefused(400, `part ${part} stopped part way; send it again`);
+    }
+    for (let turn = 0; turn < 200; turn += 1) {
+      const now = await this.#meta(owner, id);
+      if (!now) throw new UploadRefused(404, 'no such upload, or it expired');
+      if (now.complete) return this.#partsOf(now);
+      if (now.mpu !== meta.mpu) break;
+      const parts = [...(now.parts ?? []).filter((p) => p.part !== part), stored];
+      if (
+        await uploads.compareAndSet(id, { rev: now.rev ?? 0 }, { parts, rev: (now.rev ?? 0) + 1 })
+      ) {
+        return this.#partsOf({ ...now, parts });
+      }
+    }
+    throw new UploadRefused(409, `part ${part} could not be recorded; send it again`);
+  }
+
+  /** Makes the parts the file, once every one is in. Asked again, it says the same. */
+  async completeParts(owner: string, id: string): Promise<UploadState & { missing?: number[] }> {
+    const uploads = this.#records(owner);
+    const meta = await this.#meta(owner, id);
+    if (!this.#remote || !meta) throw new UploadRefused(404, 'no such upload, or it expired');
+    if (meta.complete) return { upload_id: id, received: meta.bytes ?? 0, complete: true };
+    if (!meta.parts || !meta.part_bytes || meta.bytes === null || !meta.mpu) {
+      throw new UploadRefused(409, 'this upload is not being sent in parts');
+    }
+    const count = Math.max(1, Math.ceil(meta.bytes / meta.part_bytes));
+    const have = new Set(meta.parts.map((p) => p.part));
+    const missing = Array.from({ length: count }, (_, i) => i + 1).filter((n) => !have.has(n));
+    const received = meta.parts.reduce((sum, p) => sum + p.bytes, 0);
+    if (missing.length) return { upload_id: id, received, complete: false, missing };
+    try {
+      await this.#ws.blobs.multipartComplete(this.#blob(owner, meta), meta.mpu, meta.parts);
+    } catch (error) {
+      // Two requests completing at once: the one that lost finds it complete.
+      const now = await this.#meta(owner, id);
+      if (now?.complete) return { upload_id: id, received: now.bytes ?? 0, complete: true };
+      throw error;
+    }
+    await uploads.update(id, { set: { complete: true, mpu: '', parts: [], offset: meta.bytes } });
+    await floorChanged(this.#ws, owner);
+    return { upload_id: id, received: meta.bytes, complete: true };
   }
 
   async #sign(path: string, exp: number): Promise<string> {

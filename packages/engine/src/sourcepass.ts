@@ -198,6 +198,11 @@ async function runPasses(
   }
 }
 
+/** Where the sound through the passes is kept in `dir`. */
+export function passedFile(dir: string, passes: SourcePass[]): string {
+  return join(dir, `${passes.map((p) => p.id).join('+')}.wav`);
+}
+
 /**
  * The sound of `input` through the passes, as a WAV in `dir`: made once, then reused, and two
  * renders asking at once share one run.
@@ -208,7 +213,7 @@ export function passedAudio(
   passes: SourcePass[],
   signal?: AbortSignal,
 ): Promise<string> {
-  const dest = join(dir, `${passes.map((p) => p.id).join('+')}.wav`);
+  const dest = passedFile(dir, passes);
   const going = making.get(dest);
   if (going) return going;
   const job = (async () => {

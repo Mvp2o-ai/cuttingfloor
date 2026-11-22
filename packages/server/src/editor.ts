@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { MCP_APP_MIME, viewUi } from './player.ts';
+import { MCP_APP_MIME, mediaOrigins, viewUi } from './player.ts';
 import type { ServerDeps } from './server.ts';
 import { SERVER_VERSION } from './version.ts';
 
@@ -19,9 +19,11 @@ export const EDITOR_TOOL_META = { ui: { resourceUri: EDITOR_URI } };
 export function registerEditor(server: McpServer, deps: ServerDeps): void {
   const origin = new URL(deps.runtime.config.publicUrl).origin;
   // The page plays the file from this server and reads its sound for the mix lane, so the host
-  // lets the sandbox load and fetch from it; clipboard-write backs its copy buttons.
+  // lets the sandbox load and fetch from it (and from the bucket this server's links redirect
+  // to, where files are kept in one); clipboard-write backs its copy buttons.
+  const from = mediaOrigins(deps.runtime);
   const ui = {
-    csp: { resourceDomains: [origin], connectDomains: [origin] },
+    csp: { resourceDomains: from, connectDomains: from },
     permissions: { clipboardWrite: {} },
     prefersBorder: false,
   };

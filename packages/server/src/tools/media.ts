@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
-import { basename } from 'node:path';
+import type { BlobKey } from '@cuttingfloor/core';
 import {
   analyseBeats,
   detectFaces,
@@ -486,7 +486,10 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
   };
 
   /** The file a completed export.video rendered, for importing it as media. */
-  const renderedFile = async (owner: string, jobId: string): Promise<string> => {
+  const renderedOutput = async (
+    owner: string,
+    jobId: string,
+  ): Promise<{ blob: BlobKey; name: string }> => {
     const job = await rt.jobs.store.get(jobId, owner);
     if (!job) {
       throw new CfError('not_found', `No job ${jobId}`, {
@@ -513,7 +516,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         hint: 'Outputs expire 7 days after the export; export the timeline again',
       });
     }
-    return rt.outputs.local(owner, jobId, name);
+    return { blob: rt.outputs.key(owner, jobId, name), name };
   };
 
   /** One frame of a video or an edit as a PNG at full size, for a still media. */
@@ -635,11 +638,18 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       // dedupe by fingerprint.
       const upload =
         'upload_id' in source ? await rt.uploads.take(owner, source.upload_id) : undefined;
+      const rendered = 'job_id' in source ? await renderedOutput(owner, source.job_id) : undefined;
+      // Where files are in an object store, a sent or rendered file is not fetched to this
+      // server to be looked at here: the import job reads it once, and finds a copy the
+      // account already holds then (as it does for a URL).
+      const remote = rt.ws.blobs.remote;
       const local =
         'path' in source
           ? await rt.media.resolvePath(source.path)
-          : 'job_id' in source
-            ? await renderedFile(owner, source.job_id)
+          : rendered
+            ? remote
+              ? undefined
+              : await rt.scratchFile(rendered.blob)
             : upload?.file;
       if (local) {
         const known = await rt.media.findByFingerprint(owner, await fingerprint(local));
@@ -667,8 +677,15 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       const room =
         'url' in source
           ? await storageRoom(rt.ws, owner, await deps.limits?.())
-          : local && 'job_id' in source
-            ? await storageRoom(rt.ws, owner, await deps.limits?.(), (await stat(local)).size)
+          : rendered
+            ? await storageRoom(
+                rt.ws,
+                owner,
+                await deps.limits?.(),
+                local
+                  ? (await stat(local)).size
+                  : ((await rt.ws.blobs.head(rendered.blob))?.bytes ?? 0),
+              )
             : undefined;
       const admit = await admitJob(deps.limits);
       const record = await rt.media.create(
@@ -686,21 +703,26 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               : 'url' in source && args.file
                 ? { url: source.url, attached: true }
                 : source,
-        named ?? upload?.name ?? (local && 'job_id' in source ? basename(local) : undefined),
+        named ?? upload?.name ?? rendered?.name,
       );
-      if (local && 'job_id' in source) {
-        // The render is copied: outputs and media expire on their own clocks.
-        record.file = await rt.media.adopt(owner, record, { file: local });
-        await rt.media.save(owner, record);
-      } else if (local && 'upload_id' in source) {
+      if (rendered) {
+        // The render is copied: outputs and media expire on their own clocks. In an object
+        // store the copy is made there, blob to blob.
         record.file = await rt.media.adopt(
           owner,
           record,
-          upload ? { blob: upload.blob } : { file: local },
-          { move: true },
+          local ? { file: local } : { blob: rendered.blob },
         );
         await rt.media.save(owner, record);
-        await rt.uploads.remove(owner, source.upload_id);
+      } else if (upload && 'upload_id' in source) {
+        record.file = await rt.media.adopt(owner, record, { blob: upload.blob }, { move: true });
+        await rt.media.save(owner, record);
+        // An object store hands the upload's blob over where it is: only its record goes.
+        await rt.uploads.remove(
+          owner,
+          source.upload_id,
+          record.file === upload.blob ? { taken: true } : {},
+        );
       }
       const job = await startIngest(rt, owner, record, admit, {
         ...(room === undefined ? {} : { room }),
@@ -1509,7 +1531,7 @@ export async function importBundled(
   const record = await rt.media.create(owner, { upload: upload_id, file_name: name }, name);
   record.file = await rt.media.adopt(owner, record, { blob: upload.blob }, { move: true });
   await rt.media.save(owner, record);
-  await rt.uploads.remove(owner, upload_id);
+  await rt.uploads.remove(owner, upload_id, record.file === upload.blob ? { taken: true } : {});
   const job = await startIngest(rt, owner, record, {}, { meta: { unbilled } });
   return { record, job };
 }

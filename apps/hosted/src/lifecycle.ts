@@ -832,7 +832,7 @@ export class Lifecycle {
       }
     }
     await forgetRecipient(ws, owner, email);
-    await ws.blobs.deletePrefix(ws.blobs.keys.owner(owner));
+    await ws.blobs.forget(owner);
     await ws.records.forget(owner);
     this.#o.access.forget(owner);
     this.#seen.delete(owner);

@@ -37,6 +37,16 @@ export function viewUi<T extends object>(
   return chatgpt ? { ...ui, domain } : ui;
 }
 
+/**
+ * The origins a view loads media from: this server, and, where files are kept in a bucket, the
+ * bucket too (this server's links to a file redirect there).
+ */
+export function mediaOrigins(runtime: ServerDeps['runtime']): string[] {
+  const origin = new URL(runtime.config.publicUrl).origin;
+  const bucket = runtime.bucketOrigin;
+  return bucket && bucket !== origin ? [origin, bucket] : [origin];
+}
+
 /** `_meta` for a tool whose results the player shows. */
 export const PLAYER_TOOL_META = { ui: { resourceUri: PLAYER_URI } };
 
@@ -45,7 +55,7 @@ export function registerPlayer(server: McpServer, deps: ServerDeps): void {
   // clipboard-write backs its Copy link button.
   const origin = new URL(deps.runtime.config.publicUrl).origin;
   const ui = {
-    csp: { resourceDomains: [origin] },
+    csp: { resourceDomains: mediaOrigins(deps.runtime) },
     permissions: { clipboardWrite: {} },
     prefersBorder: false,
   };

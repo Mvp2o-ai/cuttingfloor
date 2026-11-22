@@ -270,6 +270,33 @@ export class MediaLibrary {
     );
   }
 
+  /**
+   * The same folder with only `files` of it brought to this node (none: a folder to write in),
+   * for a set whose files are large and made one at a time (`between`, `cleaned`, `selected`):
+   * a caller names the one it needs and finds it there when it was made before, on any server.
+   * On the filesystem this is `derivedDir`.
+   */
+  derivedDirWith(owner: string, id: string, name: string[], files: string[]): Promise<string> {
+    return this.#ws.scratch.materializeDir(
+      this.#ws.blobs.keys.derived(owner, this.#id(id), ...name),
+      { only: files },
+    );
+  }
+
+  /**
+   * Stores what an engine wrote in a derived folder on this node (`files` of it, or all that is
+   * new or changed), so another server finds it. Nothing to do on the filesystem, where the
+   * folder is the store.
+   */
+  async keepDerived(owner: string, id: string, name: string[], files?: string[]): Promise<void> {
+    const prefix = this.#ws.blobs.keys.derived(owner, this.#id(id), ...name);
+    await this.#ws.scratch.publishDir(
+      await this.#ws.scratch.materializeDir(prefix, { only: [] }),
+      prefix,
+      files ? { only: files } : {},
+    );
+  }
+
   /** Removes every file kept with a media, whether or not it still has a record. */
   async discard(owner: string, id: string): Promise<void> {
     await this.#ws.blobs.deletePrefix(this.prefix(owner, id));
@@ -559,7 +586,10 @@ export class MediaLibrary {
       await this.#ws.blobs.put(key, { file: from.file, ...(options.move ? { move: true } : {}) });
       return key;
     }
-    if (options.move) return this.#ws.blobs.move(from.blob, key);
+    if (options.move) {
+      // An object store never moves a blob: the upload's object is the media's source as it is.
+      return this.#ws.blobs.remote ? from.blob : this.#ws.blobs.move(from.blob, key);
+    }
     await this.#ws.blobs.copy(from.blob, key);
     return key;
   }
@@ -799,11 +829,18 @@ export class MediaLibrary {
     const { blobs } = this.#ws;
     const mine = `${this.prefix(owner, record.media_id)}/`;
     const theirs = `${this.prefix(owner, known.media_id)}/`;
-    const held = (ref: string | null): ref is BlobKey => isBlob(ref) && ref.startsWith(theirs);
+    // In an object store a media's files are not under its own prefix, and may be another's.
+    const held = (ref: string | null): ref is BlobKey =>
+      isBlob(ref) && (blobs.remote || ref.startsWith(theirs));
     const shared = (key: BlobKey) =>
       blobs.share(key, this.#key(owner, record.media_id, basename(key)));
     // A downloaded or sent copy gives way to known's; the user's own file in place stays.
-    if (isBlob(record.file) && record.file.startsWith(mine) && held(known.file)) {
+    if (
+      isBlob(record.file) &&
+      (blobs.remote || record.file.startsWith(mine)) &&
+      held(known.file) &&
+      record.file !== known.file
+    ) {
       await blobs.delete(record.file);
       record.file = await shared(known.file);
     }
@@ -869,34 +906,79 @@ export class MediaLibrary {
         ...(busy.detail ? { detail: busy.detail } : {}),
       });
     }
-    const freed = await this.#ws.blobs.freeable(this.prefix(owner, id));
+    let freed = await this.#ws.blobs.freeable(this.prefix(owner, id));
+    for (const key of this.#apart(owner, record)) {
+      const head = await this.#ws.blobs.head(key);
+      if (head && head.refs <= 1) freed += head.bytes;
+    }
     const index = this.#index(owner);
     for (const name of await index.ids()) {
       const entry = await index.get(name);
       if (entry?.media_id === id) await index.delete(name);
     }
-    await this.#drop(owner, id);
+    await this.#drop(owner, id, record);
     await this.#tombstone(owner, id, 'deleted');
     await floorChanged(this.#ws, owner);
     return freed;
   }
 
-  /** Removes a media's files (its analyses with them) and its record. */
-  async #drop(owner: string, id: string): Promise<void> {
+  /**
+   * The record's own files that are not under the media's prefix: in an object store its
+   * source, mezzanine and proxy, each of which another media may hold too. None on the
+   * filesystem, where they are in the media's folder.
+   */
+  #apart(owner: string, record: MediaRecord): BlobKey[] {
+    const prefix = `${this.prefix(owner, record.media_id)}/`;
+    const keys = new Set<BlobKey>();
+    for (const ref of [record.file, record.mezzanine, record.proxy]) {
+      if (isBlob(ref) && !ref.startsWith(prefix)) keys.add(ref);
+    }
+    return [...keys];
+  }
+
+  /**
+   * Removes a media's files (its analyses with them) and its record. `record` is the media as
+   * it was, where it is known: its files kept apart from its prefix go by name (each stays for
+   * any other media that holds it).
+   */
+  async #drop(owner: string, id: string, record?: MediaRecord): Promise<void> {
+    if (record) for (const key of this.#apart(owner, record)) await this.#ws.blobs.delete(key);
     // Its analyses are among its files.
     await this.#ws.blobs.deletePrefix(this.prefix(owner, id));
     await this.#records(owner).delete(id);
+  }
+
+  /**
+   * What the owner's media hold, for an object store's orphan sweep: how many media name each
+   * file, and the ids that have a record.
+   */
+  async holders(owner: string): Promise<{ held: Map<BlobKey, number>; media: Set<string> }> {
+    const held = new Map<BlobKey, number>();
+    const media = new Set<string>();
+    for (const { id, value } of await this.#records(owner).find()) {
+      media.add(id);
+      for (const ref of new Set([value.file, value.mezzanine, value.proxy])) {
+        if (isBlob(ref)) held.set(ref, (held.get(ref) ?? 0) + 1);
+      }
+    }
+    return { held, media };
   }
 
   async sweep(ttlMs = MEDIA_TTL_MS): Promise<number> {
     let n = 0;
     for (const owner of await this.#ws.records.owners()) {
       const before = n;
+      // In an object store a media's own files are found through its record, which is gone by
+      // the time it is told of: read first.
+      const known = new Map<string, MediaRecord>();
+      if (this.#ws.blobs.remote) {
+        for (const { id, value } of await this.#records(owner).find()) known.set(id, value);
+      }
       // A media is as old as its record's last use.
       // Each media's files and tombstone are dealt with as it goes, before the next is removed.
       await this.#records(owner).expire(ttlMs, undefined, async (id) => {
         if (MEDIA_ID.test(id)) {
-          await this.#drop(owner, id);
+          await this.#drop(owner, id, known.get(id));
           await this.#tombstone(owner, id, 'expired');
         }
         n += 1;

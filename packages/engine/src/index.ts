@@ -145,6 +145,7 @@ export {
   clipPasses,
   DENOISE_MODELS,
   passedAudio,
+  passedFile,
   type SourcePass,
   sourceKey,
 } from './sourcepass.ts';

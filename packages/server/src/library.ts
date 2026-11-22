@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { MCP_APP_MIME, viewUi } from './player.ts';
+import { MCP_APP_MIME, mediaOrigins, viewUi } from './player.ts';
 import type { ServerDeps } from './server.ts';
 import { SERVER_VERSION } from './version.ts';
 
@@ -19,8 +19,9 @@ export function registerLibrary(server: McpServer, deps: ServerDeps): void {
   // Previews load the file (and a font's glyphs) from this server, and Add sends one to it;
   // clipboard-write backs Copy id.
   const origin = new URL(deps.runtime.config.publicUrl).origin;
+  const from = mediaOrigins(deps.runtime);
   const ui = {
-    csp: { resourceDomains: [origin], connectDomains: [origin] },
+    csp: { resourceDomains: from, connectDomains: from },
     permissions: { clipboardWrite: {} },
     prefersBorder: false,
   };

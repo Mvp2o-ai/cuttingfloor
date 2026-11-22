@@ -111,6 +111,8 @@ export class SearchIndexer {
         await this.#media.discard(owner, id);
         return;
       }
+      // Where files are not on this server, the index is stored for the others to read.
+      await this.#media.keepDerived(owner, id, ['search']);
       await this.#media.deleteDerived(owner, id, 'search', 'failed.json');
     } catch (error) {
       // A media deleted while it was indexed has no folder left to say so in.

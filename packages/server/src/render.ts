@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import { inBetween, type MediaFacts, ticksPerFrame, timelineEnd } from '@cuttingfloor/core';
 import {
   betweenFile,
@@ -15,6 +16,7 @@ import {
   mediaRef,
   notReady,
   passedAudio,
+  passedFile,
   passFrames,
   probe,
   renderTimelineFrames,
@@ -118,7 +120,9 @@ export async function addPasses(
           // Made once per clip and speed, from the full picture (or the clip's selection
           // copy, itself made at full size), whatever size it is shown at: a job of its own.
           const input = plain === media ? await rt.media.sourceFile(record, 'export') : plain.path;
-          const dir = await rt.media.derivedDir(owner, c.media_id, 'between');
+          // Only this clip's copy is brought to this node, when another server made it.
+          const copy = basename(betweenFile('.', between, 'export'));
+          const dir = await rt.media.derivedDirWith(owner, c.media_id, ['between'], [copy]);
           const options = {
             source: own,
             purpose: 'export' as const,
@@ -139,7 +143,10 @@ export async function addPasses(
             between.to - between.from,
             ({ signal: own2, onProgress }) =>
               betweenPicture(input, dir, between, { ...options, signal: own2, onProgress }).then(
-                (b) => b.path,
+                async (b) => {
+                  await rt.media.keepDerived(owner, c.media_id, ['between'], [copy]);
+                  return b.path;
+                },
               ),
           );
           const path = await copyFor(rt, made, c.id, {
@@ -164,12 +171,14 @@ export async function addPasses(
         }
         if (!sound) continue;
         const input = await rt.media.sourceFile(record, 'export');
+        const cleaned = basename(passedFile('.', clipPasses(c)));
         const path = await passedAudio(
           input,
-          await rt.media.derivedDir(owner, c.media_id, 'cleaned'),
+          await rt.media.derivedDirWith(owner, c.media_id, ['cleaned'], [cleaned]),
           clipPasses(c),
           signal,
         );
+        await rt.media.keepDerived(owner, c.media_id, ['cleaned'], [cleaned]);
         sources.set(key, { ...plain, path, image: false });
       }
 }
@@ -240,7 +249,9 @@ async function selected(
     fps: v.fps,
     duration: record.probe?.duration ?? 0,
   };
-  const dir = await rt.media.derivedDir(owner, c.media_id, 'selected');
+  // Only this pass's copy is brought to this node, when another server made it.
+  const copy = basename(selectedFile(input, '.', pass, fill ? 'export' : purpose));
+  const dir = await rt.media.derivedDirWith(owner, c.media_id, ['selected'], [copy]);
   let path: string;
   if (fill) {
     const made = await copyJob(
@@ -249,8 +260,14 @@ async function selected(
       selectedFile(input, dir, pass, 'export'),
       passFrames(input),
       input.image ? 1 : input.duration,
-      ({ signal: own, onProgress }) =>
-        selectedPicture(input, dir, pass, mattes, 'export', { signal: own, onProgress }),
+      async ({ signal: own, onProgress }) => {
+        const made = await selectedPicture(input, dir, pass, mattes, 'export', {
+          signal: own,
+          onProgress,
+        });
+        await rt.media.keepDerived(owner, c.media_id, ['selected'], [copy]);
+        return made;
+      },
     );
     const got = await copyFor(rt, made, c.id, {
       signal,
@@ -262,6 +279,7 @@ async function selected(
     path = got;
   } else {
     path = await selectedPicture(input, dir, pass, mattes, purpose, signal ? { signal } : {});
+    await rt.media.keepDerived(owner, c.media_id, ['selected'], [copy]);
   }
   // A fill copy has no alpha of its own; show and hide carry the selection as alpha.
   return { ...media, path, alpha: pass.mask.mode !== 'fill' };

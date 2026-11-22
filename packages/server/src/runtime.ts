@@ -1,12 +1,15 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { availableParallelism, hostname } from 'node:os';
-import { extname, join } from 'node:path';
+import { extname, isAbsolute, join } from 'node:path';
 import {
+  type BlobKey,
   defineCollection,
   MongoRecords,
   mongoUri,
   ownerKey,
+  type S3Settings,
+  s3SettingsFromEnv,
   TimelineStore,
   Workspace,
 } from '@cuttingfloor/core';
@@ -109,6 +112,25 @@ export interface RuntimeConfig {
    * it is never logged.
    */
   records?: { store: 'mongo'; uri: string; db: string };
+  /**
+   * Files in an S3 bucket instead of under the data root (CUTTINGFLOOR_BLOBS=s3). The data root
+   * then holds this server's caches only. Its keys are secrets: never logged.
+   */
+  s3?: S3Settings;
+}
+
+/** How long a link to a file in the bucket works: minted per request behind our own links. */
+const BUCKET_LINK_TTL_MS = 3_600_000;
+
+/** Nothing the orphan sweep judges is newer than this: it may be mid-write. */
+const ORPHAN_GRACE_MS = 24 * 3_600_000;
+
+/** A signed output link's target: a blob, or a local file where the user's own file is in place. */
+export interface OutputTarget {
+  /** The name it downloads as. */
+  name: string;
+  blob?: BlobKey;
+  file?: string;
 }
 
 /**
@@ -144,6 +166,12 @@ function recordsFromEnv(env: NodeJS.ProcessEnv): Pick<RuntimeConfig, 'records'> 
   return {
     records: { store: 'mongo', uri, db: value('CUTTINGFLOOR_MONGODB_DB') || 'cuttingfloor' },
   };
+}
+
+/** Where files are kept, from CUTTINGFLOOR_BLOBS: the filesystem unless it says `s3`. */
+function blobsFromEnv(env: NodeJS.ProcessEnv): Pick<RuntimeConfig, 's3'> {
+  const s3 = s3SettingsFromEnv(env);
+  return s3 ? { s3 } : {};
 }
 
 /** The link-signing key from CUTTINGFLOOR_URL_SECRET. The value never appears in the error. */
@@ -213,6 +241,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
       : {}),
     ...(env.CUTTINGFLOOR_URL_SECRET ? { urlSecret: env.CUTTINGFLOOR_URL_SECRET } : {}),
     ...recordsFromEnv(env),
+    ...blobsFromEnv(env),
   };
 }
 
@@ -251,6 +280,7 @@ export class Runtime {
             }),
           }
         : {}),
+      ...(config.s3 ? { s3: config.s3 } : {}),
       presign: async (key) => {
         const m = /^owners\/([A-Za-z0-9_-]{1,64})\/outputs\/((?:j|f)_[0-9a-z]{26})\/([^/]+)$/.exec(
           key,
@@ -322,6 +352,7 @@ export class Runtime {
    */
   async start(options: { sweep?: boolean } = {}): Promise<void> {
     await this.ws.records.ready();
+    await this.ws.blobs.ready();
     await this.secret();
     await this.ws.blobs.deletePrefix(this.ws.blobs.keys.cache('frames'));
     await this.jobs.recover();
@@ -400,7 +431,10 @@ export class Runtime {
    */
   async close(withinMs?: number): Promise<void> {
     this.stop();
-    const closed = this.ws.records.close().catch(() => undefined);
+    const closed = Promise.all([
+      this.ws.records.close().catch(() => undefined),
+      this.ws.blobs.close().catch(() => undefined),
+    ]).then(() => undefined);
     if (withinMs === undefined) return closed;
     let timer: NodeJS.Timeout | undefined;
     await Promise.race([
@@ -439,6 +473,34 @@ export class Runtime {
     await this.#sweepCache();
     // Hosted sign-in steps (apps/hosted funnel.ts), one folder per day.
     await records.expireParents(FUNNEL_DAYS, {}, FUNNEL_TTL_MS);
+    await this.sweepOrphans();
+  }
+
+  /**
+   * Where files are in an object store, what holds a file is counted apart from the file, and a
+   * crash between the two leaves one without the other. Puts that right for every owner: see
+   * `BlobStore.orphans`. Nothing to do on the filesystem.
+   */
+  async sweepOrphans(graceMs = ORPHAN_GRACE_MS): Promise<void> {
+    const { records, blobs } = this.ws;
+    if (!blobs.orphans) return;
+    for (const owner of await records.owners()) {
+      try {
+        const holders = await this.media.holders(owner);
+        for (const key of await this.uploads.held(owner)) {
+          holders.held.set(key, (holders.held.get(key) ?? 0) + 1);
+        }
+        const report = await blobs.orphans(owner, holders, graceMs);
+        if (report.records || report.objects || report.refs) {
+          process.stderr.write(
+            `blobs: orphan sweep for ${owner}: ${report.objects} files and ${report.records} records removed, ${report.refs} holder counts set\n`,
+          );
+        }
+      } catch (error) {
+        // One owner's trouble never stops the sweep.
+        process.stderr.write(`blobs: orphan sweep for ${owner}: ${(error as Error).message}\n`);
+      }
+    }
   }
 
   async secret(): Promise<Buffer> {
@@ -544,6 +606,20 @@ export class Runtime {
     exp: string | null,
     sig: string | null,
   ): Promise<string | undefined> {
+    const target = await this.outputTarget(pathname, exp, sig);
+    if (!target) return undefined;
+    return target.file ?? (target.blob ? this.ws.scratch.materialize(target.blob) : undefined);
+  }
+
+  /**
+   * Checks a signed output URL and names what it is a link to, without fetching it: the blob,
+   * or the local file of a path import. Undefined when invalid or expired.
+   */
+  async outputTarget(
+    pathname: string,
+    exp: string | null,
+    sig: string | null,
+  ): Promise<OutputTarget | undefined> {
     const m = /^\/outputs\/([A-Za-z0-9_-]{1,64})\/((?:j|f|m)_[0-9a-z]{26})\/([^/]+)$/.exec(
       pathname,
     );
@@ -560,8 +636,41 @@ export class Runtime {
     if (id.startsWith('m_')) {
       // An owner key is its own key, so the media library finds the owner's media by it.
       const record = await this.media.find(key, id);
-      return record?.file ? this.media.local(record.file) : undefined;
+      if (!record?.file) return undefined;
+      return isAbsolute(record.file) ? { name, file: record.file } : { name, blob: record.file };
     }
-    return this.outputs.local(key, id, name);
+    return { name, blob: this.outputs.key(key, id, name) };
+  }
+
+  /** A blob as a local file on this server, for an engine (or a hash) to read. */
+  scratchFile(blob: BlobKey): Promise<string> {
+    return this.ws.scratch.materialize(blob);
+  }
+
+  /**
+   * A link straight to a blob in the bucket, for a download (`attachment`, under its name) or
+   * to play in a page (`inline`). Undefined where files are served by this server itself.
+   */
+  async bucketLink(
+    blob: BlobKey,
+    name: string,
+    type: string,
+    how: 'attachment' | 'inline' = 'attachment',
+  ): Promise<string | undefined> {
+    if (!this.ws.blobs.remote) return undefined;
+    const plain = name.replace(/[^\x20-\x7e]|["\\]/g, '_');
+    return this.ws.blobs.presignGet(blob, {
+      ttlMs: BUCKET_LINK_TTL_MS,
+      disposition:
+        how === 'inline'
+          ? 'inline'
+          : `attachment; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+      type,
+    });
+  }
+
+  /** The origin files in the bucket are fetched from, which pages that play them must allow. */
+  get bucketOrigin(): string | undefined {
+    return (this.ws.blobs as { origin?: string }).origin;
   }
 }
