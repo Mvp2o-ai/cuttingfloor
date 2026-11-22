@@ -1,3 +1,4 @@
+import { CfError } from '@cuttingfloor/schema';
 import { describe, expect, it, vi } from 'vitest';
 import { type CollectionSpec, defineCollection, MongoRecords, mongoUri } from '../src/index.ts';
 import {
@@ -334,33 +335,184 @@ describe.skipIf(!up)('MongoDB records: two servers on one database', () => {
   );
 });
 
-describe('MongoDB records: the connection', () => {
-  it('builds a connection string from a cluster name or hosts, with the sign-in escaped', () => {
-    expect(mongoUri({ host: 'c.x.mongodb.net', user: 'app', password: 'p@ss/w:rd' })).toBe(
-      'mongodb+srv://app:p%40ss%2Fw%3Ard@c.x.mongodb.net/?retryWrites=true&w=majority',
-    );
-    expect(mongoUri({ host: '127.0.0.1:27017' })).toBe(
-      'mongodb://127.0.0.1:27017/?retryWrites=true&w=majority',
-    );
-    expect(mongoUri({ host: 'mongodb://a:1,b:2/', user: 'u', password: 'p' })).toBe(
-      'mongodb://u:p@a:1,b:2/?retryWrites=true&w=majority',
-    );
+describe.skipIf(!up)('MongoDB records: a record too big to be one', () => {
+  it('is refused in plain words, saying where and how big, and nothing is written', async () => {
+    const records = testRecords();
+    const log = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const c = records.collection(things, { owner: 'alice' });
+      const mb = (n: number) => 'x'.repeat(n * 1024 ** 2);
+      for (const write of [
+        () => c.put('a', { name: 'big', extra: mb(17) }),
+        () => c.insertOnce('a', { name: 'big', extra: mb(17) }),
+      ]) {
+        const error = (await write().then(
+          () => undefined,
+          (e: unknown) => e,
+        )) as CfError;
+        expect(error).toBeInstanceOf(CfError);
+        expect(error.toJSON()).toMatchObject({
+          code: 'limit_exceeded',
+          message: 'A record of 17.0 MB is too big to keep in things: one holds up to 16 MB',
+          detail: { collection: 'things', max_bytes: 16 * 1024 ** 2 },
+        });
+      }
+      expect(await c.has('a')).toBe(false);
+      // Many small numbers take more room in the database than in JSON: measured, not guessed.
+      const numbers = Array.from({ length: 2_400_000 }, (_, i) => i % 10);
+      expect(Buffer.byteLength(JSON.stringify(numbers))).toBeLessThan(5 * 1024 ** 2);
+      await expect(c.put('n', { name: 'n', extra: numbers })).rejects.toMatchObject({
+        code: 'limit_exceeded',
+      });
+      // One that fits, then grows past the limit in the database: refused the same way.
+      await c.put('g', { name: 'grows', extra: mb(9) });
+      for (const grow of [
+        () => c.update('g', { set: { state: mb(9) } }),
+        () => c.compareAndSet('g', { name: 'grows' }, { state: mb(9) }),
+      ]) {
+        const error = (await grow().then(
+          () => undefined,
+          (e: unknown) => e,
+        )) as CfError;
+        expect(error).toBeInstanceOf(CfError);
+        expect(error.code).toBe('limit_exceeded');
+        expect(JSON.stringify(error.toJSON())).not.toMatch(/mongo|bson/i);
+      }
+      expect((await c.get('g'))?.state).toBeUndefined();
+    } finally {
+      log.mockRestore();
+      await records.drop();
+    }
+  });
+});
+
+describe.skipIf(!up)('MongoDB records: when the database or an index fails', () => {
+  const taken = defineCollection<Thing>({
+    name: 'taken',
+    scope: 'owner',
+    fs: { dir: 'taken' },
+    db: { indexes: [['state']], ttlMs: 86_400_000 },
   });
 
-  it('an error from connecting never carries the sign-in', async () => {
-    const password = 's3cret-Pa55';
-    for (const uri of [
-      `mongodb://app-user:${password}@127.0.0.1:1/?directConnection=true`,
-      `mongodb://app-user:${password}@127.0.0.1:1/?nonsense=${password}`,
-    ]) {
-      const records = new MongoRecords({ uri, connectTimeoutMs: 300 });
-      const error = await records.owners().then(
+  it('a start fails on an index it cannot make, saying which; the others are made', async () => {
+    const records = testRecords();
+    try {
+      const db = await records.database();
+      // Another index already has this one's name.
+      await db.collection('taken').createIndex({ id: 1 }, { name: 'by_state' });
+      const error = await records.ready().then(
         () => undefined,
         (e: unknown) => e as Error,
       );
-      expect(error?.message).toMatch(/^MongoDB: /);
-      expect(JSON.stringify([error?.message, error?.stack, { ...error }])).not.toContain(password);
-      expect(error?.message).not.toContain('app-user');
+      expect(error?.message).toMatch(/^MongoDB: cannot make index by_state of taken \(/);
+      expect(error?.message).not.toContain('mongodb://');
+      const made = (await db.collection('taken').indexes()).map((i) => i.name).sort();
+      expect(made).toEqual(['_id_', 'by_state', 'scope', 'ttl']);
+    } finally {
+      await records.drop();
+    }
+  });
+
+  it('first used after the start, it says so once and the record store still works', async () => {
+    const records = testRecords();
+    const lines: string[] = [];
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation((text) => {
+      lines.push(String(text));
+      return true;
+    });
+    try {
+      const db = await records.database();
+      await db.collection('taken').createIndex({ id: 1 }, { name: 'by_state' });
+      const c = records.collection(taken, { owner: 'alice' });
+      for (let i = 0; i < 20; i += 1) await c.put(`r${i}`, { name: 'n' });
+      await records.idle();
+      expect(await c.ids()).toHaveLength(20);
+      expect(lines.filter((line) => line.includes('by_state'))).toHaveLength(1);
+      expect(lines[0]).toMatch(/^records: cannot make index by_state of taken/);
+    } finally {
+      write.mockRestore();
+      await records.drop();
+    }
+  });
+
+  it('a failure after the start reaches the caller as a plain refusal; the log has the detail', async () => {
+    const records = testRecords();
+    const logged: string[] = [];
+    const c = records.collection(things, { owner: 'alice' });
+    await c.put('a', { name: 'n' });
+    await records.idle();
+    const db = await records.database();
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation((text) => {
+      logged.push(String(text));
+      return true;
+    });
+    try {
+      // The connection is gone under the store.
+      await db.client.close();
+      for (const call of [
+        () => c.get('a'),
+        () => c.put('b', { name: 'n' }),
+        () => c.find(),
+        () => records.owners(),
+        () => records.leader('sweep'),
+        () => records.log(lines, { owner: 'alice' }).append({ n: 1 }),
+      ]) {
+        const error = await call().then(
+          () => undefined,
+          (e: unknown) => e as CfError,
+        );
+        expect(error).toBeInstanceOf(CfError);
+        expect(error?.code).toBe('service_unavailable');
+        expect(JSON.stringify(error?.toJSON())).not.toMatch(/mongo|127\.0\.0\.1|topology|client/i);
+      }
+      // A caller's own mistake is still the caller's.
+      await expect(c.get('../x')).rejects.toThrow(/Not a record id/);
+      expect(logged.some((line) => /^records: things\.get: Mongo/.test(line))).toBe(true);
+    } finally {
+      write.mockRestore();
+      const tidy = new MongoRecords({ uri: TEST_MONGODB_URI, db: db.databaseName });
+      await (await tidy.database()).dropDatabase();
+      await tidy.close();
+      await records.close();
+    }
+  });
+});
+
+describe('MongoDB records: the connection', () => {
+  it('builds a connection string from a host, with the sign-in escaped', () => {
+    expect(mongoUri({ host: 'c.x.mongodb.net', user: 'app', password: 'p@ss/w:rd' })).toBe(
+      'mongodb+srv://app:p%40ss%2Fw%3Ard@c.x.mongodb.net/?retryWrites=true&w=majority',
+    );
+    // Only an Atlas cluster's name is looked up as SRV; any other host is a plain one.
+    for (const host of ['mongo', 'localhost', 'db.internal', '127.0.0.1:27017', 'a:1,b:2']) {
+      expect(mongoUri({ host })).toBe(`mongodb://${host}/?retryWrites=true&w=majority`);
+    }
+    expect(mongoUri({ host: 'c.x.mongodb.net:27017' })).toMatch(/^mongodb:\/\/c\.x/);
+    expect(mongoUri({ host: 'mongodb+srv://db.internal/', user: 'u', password: 'p' })).toBe(
+      'mongodb+srv://u:p@db.internal/?retryWrites=true&w=majority',
+    );
+  });
+
+  it('a start that cannot connect says so without the sign-in, whatever the password', async () => {
+    for (const [password, uri] of [
+      ['s3cret-Pa55', 'mongodb://app-user:s3cret-Pa55@127.0.0.1:1/?directConnection=true'],
+      ['s3cret-Pa55', 'mongodb://app-user:s3cret-Pa55@127.0.0.1:1/?nonsense=s3cret-Pa55'],
+      // A colon written as it is, a password of two characters, and of one.
+      ['pa:ss-w0rd', 'mongodb://app-user:pa:ss-w0rd@127.0.0.1:1/?directConnection=true'],
+      ['ss-w0rd', 'mongodb://app-user:pa:ss-w0rd@127.0.0.1:1/?directConnection=true'],
+      ['zq', 'mongodb://app-user:zq@127.0.0.1:1/?nonsense=zq'],
+      ['7', 'mongodb://app-user:7@127.0.0.1:1/?nonsense=7'],
+    ] as const) {
+      const records = new MongoRecords({ uri, connectTimeoutMs: 300 });
+      const error = await records.ready().then(
+        () => undefined,
+        (e: unknown) => e as Error,
+      );
+      expect(error?.message).toMatch(/^MongoDB: cannot connect \(/);
+      const shown = JSON.stringify([error?.message, { ...error }]);
+      // After the port and the option, a short password can only show where it was echoed.
+      expect(shown.replace(/127\.0\.0\.1:1|nonsense/g, '')).not.toContain(password);
+      expect(shown).not.toContain('app-user');
       await records.close();
     }
   });

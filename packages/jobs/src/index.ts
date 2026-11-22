@@ -55,8 +55,8 @@ export const JOBS = defineCollection<Job>({
   name: 'jobs',
   scope: 'owner',
   fs: { dir: 'jobs' },
-  // An owner's jobs by status; every owner's working jobs by heartbeat, and by the server on them.
-  db: { indexes: [['status']], indexesAcross: [['status', 'lastUpdatedAt'], ['node']] },
+  // An owner's jobs by status (the jobs still working, the listing by status).
+  db: { indexes: [['status']] },
 });
 
 /** That a job was asked to stop, beside its record (`{job_id}.cancel`). */

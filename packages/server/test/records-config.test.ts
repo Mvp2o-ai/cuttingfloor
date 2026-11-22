@@ -15,7 +15,7 @@ describe('CUTTINGFLOOR_RECORDS', () => {
     expect(
       configFromEnv({ CUTTINGFLOOR_MONGODB_URI: 'mongodb://127.0.0.1:27017' }).records,
     ).toBeUndefined();
-    expect(() => configFromEnv({ CUTTINGFLOOR_RECORDS: 'sqlite' })).toThrow(/fs or mongo/);
+    expect(() => configFromEnv({ CUTTINGFLOOR_RECORDS: 'sqlite' })).toThrow(/fs or mongo$/);
   });
 
   it('takes the database as one connection string', () => {
@@ -47,7 +47,45 @@ describe('CUTTINGFLOOR_RECORDS', () => {
     });
   });
 
+  it('takes values as a secrets file gives them, and a plain host as a plain host', () => {
+    expect(
+      configFromEnv({
+        CUTTINGFLOOR_RECORDS: ' mongo\n',
+        CUTTINGFLOOR_MONGODB_HOST: 'mongo\n',
+        CUTTINGFLOOR_MONGODB_USER: 'app\n',
+        CUTTINGFLOOR_MONGODB_PASSWORD: 'pass word\r\n',
+        CUTTINGFLOOR_MONGODB_DB: ' cf \n',
+      }).records,
+    ).toEqual({
+      store: 'mongo',
+      uri: 'mongodb://app:pass%20word@mongo/?retryWrites=true&w=majority',
+      db: 'cf',
+    });
+    expect(
+      configFromEnv({
+        CUTTINGFLOOR_RECORDS: 'mongo',
+        CUTTINGFLOOR_MONGODB_URI: 'mongodb://app:pw@db:27017/\n',
+      }).records?.uri,
+    ).toBe('mongodb://app:pw@db:27017/');
+  });
+
   it('says which variable is missing or wrong, never what one holds', () => {
+    // A connection string pasted into the wrong variable is not printed back.
+    const pasted = 'mongodb+srv://app:hunter2-hunter2@cluster.x.mongodb.net';
+    let said = '';
+    try {
+      configFromEnv({ CUTTINGFLOOR_RECORDS: pasted });
+    } catch (error) {
+      said = (error as Error).message;
+    }
+    expect(said).toBe('CUTTINGFLOOR_RECORDS must be fs or mongo');
+    expect(() =>
+      configFromEnv({
+        CUTTINGFLOOR_RECORDS: 'mongo',
+        CUTTINGFLOOR_MONGODB_HOST: 'mongo',
+        CUTTINGFLOOR_MONGODB_PASSWORD: 'hunter2-hunter2',
+      }),
+    ).toThrow(/^CUTTINGFLOOR_MONGODB_PASSWORD is set without CUTTINGFLOOR_MONGODB_USER$/);
     expect(() => configFromEnv({ CUTTINGFLOOR_RECORDS: 'mongo' })).toThrow(
       /needs CUTTINGFLOOR_MONGODB_URI, or CUTTINGFLOOR_MONGODB_HOST/,
     );

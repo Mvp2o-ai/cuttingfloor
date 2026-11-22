@@ -3,15 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MongoRecords, Workspace } from '@cuttingfloor/core';
-import {
-  MONGO_TEST_TIMEOUT_MS,
-  mongoReachable,
-  TEST_MONGODB_URI,
-  testDatabase,
-} from '@cuttingfloor/core/test/mongo';
-import { Runtime, type RuntimeConfig } from '@cuttingfloor/server';
+import { LocalCredentialStore } from '@cuttingfloor/credentials';
+import { createServer, Runtime, type RuntimeConfig } from '@cuttingfloor/server';
+import { Client } from '@modelcontextprotocol/client';
+import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Sequence, type SequenceOptions, type Subscribers } from '../src/sequence.ts';
+import { MONGO_TEST_TIMEOUT_MS, mongoReachable, TEST_MONGODB_URI, testDatabase } from './mongo.ts';
 
 // Two servers on one database: the periodic work runs on one of them, and passes to the other
 // when the first stops.
@@ -135,5 +133,59 @@ describe.skipIf(!up)('periodic work on two servers sharing a database', () => {
     // The server doing it stops: the other's next turn takes the work over.
     await (leader === 'a' ? a : b).stop();
     await until(() => looks[idle] >= 3);
+  });
+
+  it('a client is told the server could not reach its records, in plain words', async () => {
+    const db = await database();
+    const runtime = new Runtime({
+      dataDir: join(await folder(), 'data'),
+      mode: 'local',
+      publicUrl: 'http://127.0.0.1:8787',
+      mediaRoots: [],
+      exportsDir: null,
+      maxJobs: 1,
+      outputUrlTtlMs: 3_600_000,
+      maxDownloadBytes: 1024 ** 2,
+      allowPrivateUrls: false,
+      inlineMaxBytes: 1024,
+      motionUrl: null,
+      records: { store: 'mongo', uri: TEST_MONGODB_URI, db },
+    });
+    tidy.push(() => runtime.close());
+    await runtime.start({ sweep: false });
+    const server = createServer({
+      runtime,
+      credentials: new LocalCredentialStore({}, false),
+      owner: () => 'local',
+    });
+    const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverSide);
+    const client = new Client({ name: 'test', version: '0.0.0' });
+    await client.connect(clientSide);
+    const create = () =>
+      client.callTool({
+        name: 'timeline.create',
+        arguments: { name: 'x', sequence: { width: 1280, height: 720, fps: { num: 25, den: 1 } } },
+      });
+    expect((await create()).isError).toBeFalsy();
+    // The database goes away under the running server.
+    const records = runtime.ws.records as MongoRecords;
+    await records.idle();
+    await (await records.database()).client.close();
+    const log = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const refused = await create();
+      expect(refused.isError).toBe(true);
+      expect(refused.structuredContent).toMatchObject({
+        code: 'service_unavailable',
+        message: 'The server could not read or write its records just now',
+      });
+      expect(JSON.stringify(refused)).not.toMatch(/mongo|127\.0\.0\.1|topology/i);
+      expect(log.mock.calls.some(([line]) => /^records: timelines\./.test(String(line)))).toBe(
+        true,
+      );
+    } finally {
+      log.mockRestore();
+    }
   });
 });

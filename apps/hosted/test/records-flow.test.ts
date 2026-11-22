@@ -1,15 +1,9 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { floorCursor, type MongoRecords } from '@cuttingfloor/core';
-import {
-  MONGO_TEST_TIMEOUT_MS,
-  mongoReachable,
-  TEST_MONGODB_URI,
-  testDatabase,
-} from '@cuttingfloor/core/test/mongo';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import type { AccountGetResult } from '@cuttingfloor/schema';
 import {
@@ -27,6 +21,7 @@ import type { EmailProvider, OutboundEmail } from '../src/email.ts';
 import { createHttpServer } from '../src/http.ts';
 import { ScriptKeys } from '../src/keys.ts';
 import { Sequence, type Subscribers } from '../src/sequence.ts';
+import { MONGO_TEST_TIMEOUT_MS, mongoReachable, TEST_MONGODB_URI, testDatabase } from './mongo.ts';
 
 // One account's ordinary day, through the SDK client and the hosted pieces, on each record
 // store: the same calls and the same assertions on the filesystem and on MongoDB. Engines are a
@@ -252,7 +247,39 @@ describe.each((['filesystem', 'MongoDB'] as const).filter((store) => store === '
       expect((await media.find(OWNER, record.media_id))?.analyses?.transcript).toMatchObject({
         text: 'hello',
       });
+      // Analyses are files beside the media on either record store: on disk where they always
+      // were, in the bytes they always had.
+      const analysesDir = env.runtime.ws.ownerDir(OWNER, 'media', record.media_id, 'analyses');
+      expect(await readFile(join(analysesDir, 'transcript.json'), 'utf8')).toBe(
+        '{\n  "model": "tiny",\n  "language": "en",\n  "text": "hello",\n  "words": [\n    {\n      "text": "hello",\n      "start": 0,\n      "end": 0.5,\n      "confidence": 0.9\n    }\n  ]\n}\n',
+      );
+      // One far past what a database document holds is written and read back whole.
+      const events = Array.from({ length: 300_000 }, (_, i) => ({
+        label: `sound ${i}`,
+        start: i / 4,
+        end: i / 4 + 0.2,
+        probability: 0.5,
+      }));
+      expect(Buffer.byteLength(JSON.stringify({ events }))).toBeGreaterThan(20 * 1024 ** 2);
+      await media.saveAnalysis(OWNER, record.media_id, 'sounds' as never, { events });
+      const back = (await media.find(OWNER, record.media_id))?.analyses as unknown as {
+        sounds: { events: typeof events };
+        transcript: { text: string };
+      };
+      expect(back.sounds.events).toHaveLength(300_000);
+      expect(back.sounds.events[299_999]).toEqual(events[299_999]);
+      expect(back.transcript.text).toBe('hello');
+      // Written again, it is the new one that is read; and it counts as the account's storage.
+      await media.saveAnalysis(OWNER, record.media_id, 'sounds' as never, { events: [] });
+      expect((await media.find(OWNER, record.media_id))?.analyses).toMatchObject({
+        sounds: { events: [] },
+      });
+      expect((await readdir(analysesDir)).sort()).toEqual(['sounds.json', 'transcript.json']);
+      expect(await env.runtime.ws.blobs.usage(OWNER)).toBeGreaterThan(100);
+      // The listing gives records without their analyses.
+      expect(JSON.stringify(await media.list(OWNER))).not.toContain('"analyses"');
       await ok(client, 'media.delete', { media_id: record.media_id });
+      expect(await readdir(analysesDir).catch(() => 'gone')).toBe('gone');
       const gone = await call<{ code: string; message: string }>(client, 'media.get', {
         media_id: record.media_id,
       });
@@ -445,6 +472,22 @@ describe.each((['filesystem', 'MongoDB'] as const).filter((store) => store === '
       await env.runtime.sweep();
       const listed = await ok<{ uploads: unknown[] }>(client, 'media.list', {});
       expect(listed.uploads).toHaveLength(1);
+      // An upload that never got a byte and is past its time: its record goes, wherever it is.
+      const empty = await ok<{ upload_id: string }>(client, 'media.upload', { name: 'never.mov' });
+      const longAgo = new Date(Date.now() - 30 * 86_400_000);
+      if (store === 'MongoDB') {
+        const db = await (ws.records as MongoRecords).database();
+        await db
+          .collection('uploads')
+          .updateOne({ id: empty.upload_id }, { $set: { used_at: longAgo } });
+      } else {
+        const folder = ws.ownerDir(OWNER, 'uploads', empty.upload_id);
+        await utimes(join(folder, 'upload.json'), longAgo, longAgo);
+        await utimes(folder, longAgo, longAgo);
+      }
+      expect((await ok<{ uploads: unknown[] }>(client, 'media.list', {})).uploads).toHaveLength(2);
+      await env.runtime.uploads.sweep();
+      expect((await ok<{ uploads: unknown[] }>(client, 'media.list', {})).uploads).toHaveLength(1);
       expect((await ws.records.owners()).sort()).toContain(OWNER);
       await ws.blobs.deletePrefix(ws.blobs.keys.owner(OWNER));
       await ws.records.forget(OWNER);

@@ -116,27 +116,33 @@ export interface RuntimeConfig {
  * needs the database's address as one connection string or as its parts.
  */
 function recordsFromEnv(env: NodeJS.ProcessEnv): Pick<RuntimeConfig, 'records'> {
-  const store = (env.CUTTINGFLOOR_RECORDS ?? '').trim().toLowerCase();
+  // Trimmed: a value read from a secrets file ends in a newline, which would fail the sign-in.
+  const value = (name: string) => env[name]?.trim() ?? '';
+  const store = value('CUTTINGFLOOR_RECORDS').toLowerCase();
   if (!store || store === 'fs' || store === 'filesystem') return {};
-  if (store !== 'mongo') {
-    throw new Error(`CUTTINGFLOOR_RECORDS must be fs or mongo, not ${store}`);
-  }
-  const host = env.CUTTINGFLOOR_MONGODB_HOST?.trim();
-  const user = env.CUTTINGFLOOR_MONGODB_USER?.trim();
-  const password = env.CUTTINGFLOOR_MONGODB_PASSWORD;
-  const uri =
-    env.CUTTINGFLOOR_MONGODB_URI?.trim() ||
-    (host ? mongoUri({ host, ...(user ? { user, password: password ?? '' } : {}) }) : '');
-  if (!/^mongodb(\+srv)?:\/\/./.test(uri)) {
-    // Which variable is wrong, never what it holds.
-    throw new Error(
-      uri
-        ? 'CUTTINGFLOOR_MONGODB_URI must start with mongodb:// or mongodb+srv://'
-        : 'CUTTINGFLOOR_RECORDS=mongo needs CUTTINGFLOOR_MONGODB_URI, or CUTTINGFLOOR_MONGODB_HOST with CUTTINGFLOOR_MONGODB_USER and CUTTINGFLOOR_MONGODB_PASSWORD',
-    );
+  // Never what it holds: a connection string pasted here by mistake carries a password.
+  if (store !== 'mongo') throw new Error('CUTTINGFLOOR_RECORDS must be fs or mongo');
+  const host = value('CUTTINGFLOOR_MONGODB_HOST');
+  const user = value('CUTTINGFLOOR_MONGODB_USER');
+  const password = value('CUTTINGFLOOR_MONGODB_PASSWORD');
+  let uri = value('CUTTINGFLOOR_MONGODB_URI');
+  if (uri) {
+    if (!/^mongodb(\+srv)?:\/\/./.test(uri)) {
+      throw new Error('CUTTINGFLOOR_MONGODB_URI must start with mongodb:// or mongodb+srv://');
+    }
+  } else {
+    if (!host) {
+      throw new Error(
+        'CUTTINGFLOOR_RECORDS=mongo needs CUTTINGFLOOR_MONGODB_URI, or CUTTINGFLOOR_MONGODB_HOST with CUTTINGFLOOR_MONGODB_USER and CUTTINGFLOOR_MONGODB_PASSWORD',
+      );
+    }
+    if (password && !user) {
+      throw new Error('CUTTINGFLOOR_MONGODB_PASSWORD is set without CUTTINGFLOOR_MONGODB_USER');
+    }
+    uri = mongoUri({ host, ...(user ? { user, password } : {}) });
   }
   return {
-    records: { store: 'mongo', uri, db: env.CUTTINGFLOOR_MONGODB_DB?.trim() || 'cuttingfloor' },
+    records: { store: 'mongo', uri, db: value('CUTTINGFLOOR_MONGODB_DB') || 'cuttingfloor' },
   };
 }
 
