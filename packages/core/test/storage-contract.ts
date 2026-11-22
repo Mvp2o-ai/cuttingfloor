@@ -63,6 +63,17 @@ const grouped = defineCollection<Thing>({
   fs: { dir: (parent) => `grouped/${parent}` },
 });
 const shared = defineCollection<Thing>({ name: 'shared', scope: 'global', fs: { dir: 'shared' } });
+interface Holder {
+  name: string;
+  file: string | null;
+  proxy: string | null;
+}
+const holders = defineCollection<Holder>({
+  name: 'holders',
+  scope: 'owner',
+  fs: { dir: 'holders' },
+  blobs: ['file', 'proxy'],
+});
 const lines = defineCollection<{ n: number }>({
   name: 'lines',
   scope: 'owner',
@@ -283,6 +294,23 @@ export function recordsContract(backend: string, make: StoresFactory): void {
       expect(await records.collection(foldered, { owner: 'alice' }).ids()).toEqual([]);
       expect(await records.parents(grouped, { owner: 'alice' })).toEqual([]);
       expect(await records.collection(things, { owner: 'bob' }).get('a')).toEqual({ name: 'his' });
+    });
+
+    each('blob fields read back as the keys they were written with, however written', async (s) => {
+      const c = s.records.collection(holders, { owner: 'alice' });
+      const key = s.blobs.keys.media('alice', 'm_1', 'source.mp4');
+      const proxy = s.blobs.keys.media('alice', 'm_1', 'proxy.mov');
+      await c.put('a', { name: 'a', file: key, proxy: null });
+      expect(await c.get('a')).toEqual({ name: 'a', file: key, proxy: null });
+      expect(await c.update('a', { set: { proxy } })).toEqual({ name: 'a', file: key, proxy });
+      expect(await c.compareAndSet('a', { file: key }, { name: 'b' })).toBe(true);
+      expect((await c.find({ proxy }))[0]?.value).toEqual({ name: 'b', file: key, proxy });
+      expect(await c.insertOnce('c', { name: 'c', file: key, proxy: null })).toBe(true);
+      expect((await c.get('c'))?.file).toBe(key);
+      // A local path outside the store (a file of the user's own) is kept as it is.
+      const outside = join(s.work, 'own.mp4');
+      await c.put('d', { name: 'd', file: outside, proxy: null });
+      expect((await c.get('d'))?.file).toBe(outside);
     });
 
     each('ids that could leave the collection are refused', async ({ records }) => {

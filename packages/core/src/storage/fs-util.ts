@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
 import { mkdir, open, readdir, readFile, rename, rm, stat, utimes } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 // The filesystem stores' file handling: crash-safe JSON files whose mtime is their last use.
 
@@ -110,6 +110,14 @@ export function isMissing(error: unknown): boolean {
 export function ownerKey(owner: string): string {
   if (/^[A-Za-z0-9_-]{1,64}$/.test(owner)) return owner;
   return `h_${createHash('sha256').update(owner).digest('hex').slice(0, 32)}`;
+}
+
+/** The store name of a file under the root, or undefined for a path outside it. */
+export function nameUnder(root: string, path: string): string | undefined {
+  if (!isAbsolute(path)) return undefined;
+  const rel = relative(root, path);
+  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return undefined;
+  return rel.split(sep).join('/');
 }
 
 /** The local file of a store name (a blob key, a record's place): its parts under the root. */

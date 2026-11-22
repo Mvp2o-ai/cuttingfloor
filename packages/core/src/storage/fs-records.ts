@@ -1,6 +1,15 @@
 import { appendFile, mkdir, readFile, rm, stat } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { listDir, ownerKey, readJson, sweepDir, touch, writeJson } from './fs-util.ts';
+import { dirname, isAbsolute, join } from 'node:path';
+import {
+  listDir,
+  nameUnder,
+  ownerKey,
+  readJson,
+  sweepDir,
+  touch,
+  under,
+  writeJson,
+} from './fs-util.ts';
 import type {
   Collection,
   CollectionScope,
@@ -30,7 +39,7 @@ export class FsRecords implements Records {
   }
 
   collection<T>(spec: CollectionSpec<T>, scope: CollectionScope = {}): Collection<T> {
-    return new FsCollection<T>(this.#dir(spec, scope), spec, (file, work) =>
+    return new FsCollection<T>(this.root, this.#dir(spec, scope), spec, (file, work) =>
       this.#oneAtATime(file, work),
     );
   }
@@ -124,11 +133,18 @@ class FsCollection<T> implements Collection<T> {
   readonly #shared: boolean;
   readonly #locked: <R>(file: string, work: () => Promise<R>) => Promise<R>;
 
+  /** The data root, and the fields kept on disk as file paths under it (see CollectionSpec). */
+  readonly #root: string;
+  readonly #blobs: readonly string[];
+
   constructor(
+    root: string,
     dir: string,
     spec: CollectionSpec<T>,
     locked: <R>(file: string, work: () => Promise<R>) => Promise<R>,
   ) {
+    this.#root = root;
+    this.#blobs = spec.blobs ?? [];
     this.#dir = dir;
     this.#leaf = spec.fs.leaf;
     this.#ext = spec.fs.ext ?? '.json';
@@ -142,8 +158,35 @@ class FsCollection<T> implements Collection<T> {
       : join(this.#dir, `${safe(id)}${this.#ext}`);
   }
 
+  /** A record as callers see it: a blob field's file path under the root is the blob's key. */
+  #read<V>(stored: V): V {
+    if (!this.#blobs.length || !stored || typeof stored !== 'object') return stored;
+    const value = stored as Record<string, unknown>;
+    for (const field of this.#blobs) {
+      const ref = value[field];
+      const key = typeof ref === 'string' ? nameUnder(this.#root, ref) : undefined;
+      if (key) value[field] = key;
+    }
+    return stored;
+  }
+
+  /** A record as the data root holds it: a blob field's key is the blob's file path. */
+  #stored<V>(value: V): V {
+    if (!this.#blobs.length || !value || typeof value !== 'object') return value;
+    const out = { ...value } as Record<string, unknown>;
+    for (const field of this.#blobs) {
+      const ref = out[field];
+      if (typeof ref === 'string' && ref && !isAbsolute(ref)) out[field] = under(this.#root, ref);
+    }
+    return out as V;
+  }
+
+  async #load(file: string, options: { touch?: boolean } = {}): Promise<T | undefined> {
+    return this.#read(await readJson<T>(file, options));
+  }
+
   get(id: string, options: { touch?: boolean } = {}): Promise<T | undefined> {
-    return readJson<T>(this.#file(id), options);
+    return this.#load(this.#file(id), options);
   }
 
   has(id: string): Promise<boolean> {
@@ -154,23 +197,23 @@ class FsCollection<T> implements Collection<T> {
   }
 
   async put(id: string, value: T): Promise<void> {
-    await writeJson(this.#file(id), value);
+    await writeJson(this.#file(id), this.#stored(value));
   }
 
   insertOnce(id: string, value: T): Promise<boolean> {
-    return writeJson(this.#file(id), value, { exclusive: true });
+    return writeJson(this.#file(id), this.#stored(value), { exclusive: true });
   }
 
   update(id: string, change: RecordChange<T>): Promise<T | undefined> {
     const file = this.#file(id);
     return this.#locked(file, async () => {
-      const current = await readJson<T>(file);
+      const current = await this.#load(file);
       if (current === undefined) return undefined;
       const next = { ...current, ...change.set } as Record<string, unknown>;
       for (const [field, by] of Object.entries(change.inc ?? {})) {
         next[field] = (typeof next[field] === 'number' ? next[field] : 0) + (by as number);
       }
-      await writeJson(file, next);
+      await writeJson(file, this.#stored(next));
       return next as T;
     });
   }
@@ -178,9 +221,9 @@ class FsCollection<T> implements Collection<T> {
   compareAndSet(id: string, expected: Partial<T>, set: Partial<T>): Promise<boolean> {
     const file = this.#file(id);
     return this.#locked(file, async () => {
-      const current = await readJson<T>(file);
+      const current = await this.#load(file);
       if (current === undefined || !matches(current, expected)) return false;
-      await writeJson(file, { ...current, ...set });
+      await writeJson(file, this.#stored({ ...current, ...set }));
       return true;
     });
   }
@@ -206,7 +249,7 @@ class FsCollection<T> implements Collection<T> {
     for (const id of await this.ids()) {
       const file = this.#file(id);
       const [value, used] = await Promise.all([
-        readJson<T>(file),
+        this.#load(file),
         stat(file).then(
           (s) => s.mtime,
           () => undefined,

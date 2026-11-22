@@ -185,6 +185,47 @@ describe('filesystem stores: layout on disk', () => {
     }
   });
 
+  it('keeps blob fields on disk as the files’ paths under the data root, and reads either form', async () => {
+    const s = await fsStores();
+    try {
+      const spec = defineCollection<{ file: string | null; note: string }>({
+        name: 'media',
+        scope: 'owner',
+        fs: { dir: 'media', leaf: 'media.json' },
+        blobs: ['file'],
+      });
+      const c = s.records.collection(spec, { owner: 'alice' });
+      const key = s.blobs.keys.media('alice', 'm_1', 'source.mp4');
+      const path = join(s.root, 'owners', 'alice', 'media', 'm_1', 'source.mp4');
+      const onDisk = async () =>
+        JSON.parse(
+          await readFile(join(s.root, 'owners', 'alice', 'media', 'm_1', 'media.json'), 'utf8'),
+        );
+      await c.put('m_1', { file: key, note: 'owners/not/a/blob/field' });
+      expect(await onDisk()).toEqual({ file: path, note: 'owners/not/a/blob/field' });
+      await c.update('m_1', { set: { note: 'again' } });
+      expect((await onDisk()).file).toBe(path);
+      // A record laid down with a path, as code before blob keys wrote it, reads as the key.
+      await writeFile(
+        join(s.root, 'owners', 'alice', 'media', 'm_1', 'media.json'),
+        JSON.stringify({ file: path, note: 'old' }),
+      );
+      expect(await c.get('m_1')).toEqual({ file: key, note: 'old' });
+      // One that already holds a key (written by an earlier build of this branch) reads the same.
+      await writeFile(
+        join(s.root, 'owners', 'alice', 'media', 'm_1', 'media.json'),
+        JSON.stringify({ file: key, note: 'key' }),
+      );
+      expect((await c.get('m_1'))?.file).toBe(key);
+      await c.put('m_1', { file: '/media/own.mp4', note: 'path import' });
+      expect((await onDisk()).file).toBe('/media/own.mp4');
+      await c.put('m_1', { file: null, note: 'none' });
+      expect((await onDisk()).file).toBeNull();
+    } finally {
+      await s.close();
+    }
+  });
+
   it('presignGet uses the signer the server gives it', async () => {
     const ws = new Workspace('/nowhere', {
       presign: async (key, { ttlMs }) => `https://example.test/${key}?ttl=${ttlMs}`,

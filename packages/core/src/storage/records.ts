@@ -19,11 +19,20 @@ export interface CollectionSpec<T> {
     /** Default `.json`. */
     ext?: string;
   };
+  /**
+   * Top-level fields that name a blob by its key (or hold null, or a local path outside the
+   * store). Callers always read and write keys; each store keeps them in its own form. The
+   * filesystem store writes the blob's file path under the data root, which is what data roots
+   * have always held, so code from before blob keys reads the same records.
+   */
+  readonly blobs?: readonly string[];
   /** Never read: carries the record's type. */
   readonly type?: T;
 }
 
-export function defineCollection<T>(spec: Omit<CollectionSpec<T>, 'type'>): CollectionSpec<T> {
+export function defineCollection<T>(
+  spec: Omit<CollectionSpec<T>, 'type' | 'blobs'> & { blobs?: readonly (keyof T & string)[] },
+): CollectionSpec<T> {
   return spec;
 }
 

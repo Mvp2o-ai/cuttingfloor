@@ -122,6 +122,7 @@ export const MEDIA = defineCollection<MediaRecord>({
   name: 'media',
   scope: 'owner',
   fs: { dir: 'media', leaf: 'media.json' },
+  blobs: ['file', 'mezzanine', 'proxy'],
 });
 
 /** One analysis of a media (transcript, beats, a look run), under the media's id. */
