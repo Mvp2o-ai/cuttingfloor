@@ -203,7 +203,8 @@ export async function buildPlan(
   const settleMs = options.settleMs ?? 0;
   const excluded = new Set((options.excludeOwners ?? []).map((o) => ownerKey(o)));
   const layout = await readLayout(source.root, specs, {
-    ignore: [...(options.ignore ?? []), ...[...excluded].map((key) => `owners/${key}`)],
+    ...(options.ignore ? { ignore: options.ignore } : {}),
+    leaveOwners: [...excluded],
   });
 
   const plan: Plan = {

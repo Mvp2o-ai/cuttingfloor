@@ -663,6 +663,9 @@ export async function findExtras(
     }
   }
   const expected = new Set<string>(plan.blobs.map((b) => b.targetKey));
+  // Everything the source still holds, moved or not (past its time, without its record, its
+  // record unreadable): none of it is an extra, whatever the manifest knows of it.
+  for (const rel of plan.present.blobs) expected.add(plan.mapKey(rel));
   for (const entry of Object.values(manifest.blobs)) expected.add(entry.target);
   for (const carried of Object.values(manifest.partway)) expected.add(carried.target);
   const recordFiles = await target.recordFiles(plan.specs);

@@ -79,6 +79,26 @@ describe('sending a file from the account page', () => {
     },
   );
 
+  it('gives up on a server that keeps answering "send from here" to what it was just sent', async () => {
+    // An upload begun in parts refuses bytes in order with 409 and the same offset each time.
+    let puts = 0;
+    server = createServer(async (req, res) => {
+      await read(req);
+      const path = new URL(req.url ?? '/', 'http://x').pathname;
+      if (path !== '/uploads/u') return void res.writeHead(500).end('{}');
+      if (req.method === 'HEAD') return void res.writeHead(200, { 'upload-offset': '0' }).end();
+      puts += 1;
+      res.writeHead(409, { 'upload-offset': '0' }).end('{"error":"being sent in parts"}');
+    });
+    await new Promise<void>((r) => server?.listen(0, '127.0.0.1', r));
+    const { port } = server.address() as AddressInfo;
+    const url = `http://127.0.0.1:${port}/uploads/u?exp=1&sig=s`;
+    await expect(sendFile(new Blob([Buffer.alloc(10)]), url, hooks())).rejects.toThrow(
+      'being sent in parts',
+    );
+    expect(puts).toBeLessThan(10);
+  });
+
   it('stops at a probe that says the file is too big', async () => {
     const { url, asked } = await older(413);
     await expect(sendFile(new Blob([Buffer.alloc(10)]), url, hooks())).rejects.toBeInstanceOf(

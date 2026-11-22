@@ -59,7 +59,8 @@ const HELP = `node scripts/migrate-storage.ts --state <dir> [--target-dir <dir>]
   --blob-check <sha|size>   sha (default): a file whose store keeps no hash is read back and hashed.
   --rehash                  Read every source file again instead of trusting the manifest.
   --settle <seconds>        Leave files written less than this ago for the next pass. Default 60.
-  --ignore <path>           Leave out a file or folder of the data root by its path under it. Repeatable.
+  --ignore <name>           Leave out an entry of the data root the migration does not know (lost+found). Repeatable.
+                            Never an account or a folder it moves: those would look gone. See --exclude-owner.
   --list-collections        Print every collection and whether it moves, and exit.
 
 Exit codes: 0 done and the same; 1 a write failed (run again); 2 refused, nothing written (a file

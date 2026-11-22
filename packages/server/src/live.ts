@@ -23,7 +23,7 @@ export const MIGRATION = defineCollection<MigrationMark>({
 
 /**
  * Says in the record store whether a server serves on it: `live` written when one starts out of
- * standby, removed when one starts in standby. Only where records are not files under the data
+ * standby, removed when that same node starts in standby. Only where records are not files under the data
  * root (a database): the filesystem data root of a server in production is the migration's
  * source, never its target, and gains nothing from it.
  */
@@ -33,6 +33,10 @@ export async function markLive(
 ): Promise<void> {
   if (options.filesystem) return;
   const marks = records.collection(MIGRATION);
-  if (options.standby) await marks.delete('live');
-  else await marks.put('live', { node: options.node, since: new Date().toISOString() });
+  if (options.standby) {
+    // Only this node's own mark: a second server started in standby on the same records (to
+    // look at something) must not clear the mark of the one that serves.
+    const live = await marks.get('live');
+    if (live && live.node === options.node) await marks.delete('live');
+  } else await marks.put('live', { node: options.node, since: new Date().toISOString() });
 }

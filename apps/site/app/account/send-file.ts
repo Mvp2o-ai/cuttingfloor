@@ -138,7 +138,13 @@ export async function sendFile(
       if (r.status === 413 || r.status === 403 || r.status === 404)
         throw new Final(reply.error || 'The server refused the file.');
       if (!r.ok && r.status !== 409) throw new Error(reply.error || `HTTP ${r.status}`);
-      at = Number(r.headers.get('upload-offset') || end);
+      const next = Number(r.headers.get('upload-offset') || end);
+      // "Send from N" with the N we just sent from moves nothing on (an upload begun in parts
+      // refuses bytes in order): a try used up, so it ends after a few instead of going round.
+      if (r.status === 409 && next === at) {
+        throw new Error(reply.error || 'The server did not take this part of the file.');
+      }
+      at = next;
       complete = r.headers.get('upload-complete') === 'true';
       tries = 0;
     } catch (error) {

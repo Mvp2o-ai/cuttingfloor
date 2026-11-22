@@ -264,11 +264,28 @@ function match(
 export async function readLayout(
   root: string,
   specs: readonly CollectionSpec<unknown>[],
-  options: { ignore?: readonly string[] } = {},
+  options: { ignore?: readonly string[]; leaveOwners?: readonly string[] } = {},
 ): Promise<Layout & { missingRules: string[] }> {
   const { shapes, missing } = rulesFor(specs);
   const ownerShapes = shapes.filter((s) => s.spec.scope === 'owner');
   const globalShapes = shapes.filter((s) => s.spec.scope === 'global');
+  // `ignore` is for an entry in the data root that nothing here knows (lost+found, a stray
+  // file). Anything the migration moves would, once ignored, look gone from the source, and
+  // what has gone is removed from the target: so it is refused, never taken.
+  for (const path of options.ignore ?? []) {
+    const name = path.replace(/\/+$/, '');
+    if (
+      !name ||
+      name.includes('/') ||
+      name === 'owners' ||
+      NOT_MOVED_ROOT[name] !== undefined ||
+      globalShapes.some((s) => s.dir[0] === name)
+    ) {
+      throw new Error(
+        `--ignore ${path}: only an entry in the data root that the migration does not know can be ignored. To leave an account alone on both sides, use --exclude-owner`,
+      );
+    }
+  }
   const out: Layout & { missingRules: string[] } = {
     owners: [],
     records: [],
@@ -280,8 +297,12 @@ export async function readLayout(
     leftWhole: [],
     missingRules: missing,
   };
+  const skipped = [
+    ...(options.ignore ?? []).map((path) => path.replace(/\/+$/, '')),
+    ...(options.leaveOwners ?? []).map((key) => `owners/${key}`),
+  ];
   const ignored = (rel: string) =>
-    (options.ignore ?? []).some((prefix) => rel === prefix || rel.startsWith(`${prefix}/`));
+    skipped.some((prefix) => rel === prefix || rel.startsWith(`${prefix}/`));
 
   const classify = (
     scoped: Shape[],

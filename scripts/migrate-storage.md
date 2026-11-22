@@ -150,13 +150,22 @@ Each step in order. Writes made on the new server after step 9 are never copied 
    touch /var/lib/cuttingfloor/drain
    curl -s https://api.cuttingfloor.ai/healthz/drain    # until "jobs_running":0
    ```
+   A drained server still writes a little: a line in the call log for every call (refused ones
+   too), last-use times when something is read, its search indexer. The final pass would call
+   each of those "still changing" and end 3. So once no job runs, stop it. Downloads and watch
+   pages are then down until step 8, which is why the steps from here are done without a pause:
+   ```sh
+   cd /opt/cuttingfloor && docker compose stop cuttingfloor motion
+   ```
 4. **Final pass.** Read `deletes.planned` in `/var/lib/cuttingfloor-migrate/summary-pass.json`
    from the last cron pass: about that many things went from the source since; give a little more.
    ```sh
    ./migrate.sh --final --allow-deletes 200 --links all --app-reads all \
      --target-key-fingerprint "$FP" --target-url https://fsn.api.cuttingfloor.ai
    ```
-   It refuses (exit 2) unless the old server is draining with no job running. It takes every file
+   The `draining` marker the server left says when it began to drain and that no job ran; a
+   marker older than the check allows (the server is stopped, so nothing refreshes it) is passed
+   with `--no-drain-check`. It refuses (exit 2) unless the old server is draining with no job running. It takes every file
    however recent, reads every record again by content, carries again any upload carried more
    than 6 hours ago, compares the signing keys and fetches a signed download and upload link from
    the new server. It must exit 0. It then marks the state folder and the target, and any later
@@ -221,7 +230,7 @@ Each step in order. Writes made on the new server after step 9 are never copied 
 | `--blob-check <sha\|size>` | `sha` (default) reads back a file whose store keeps no hash; `size` trusts its size. |
 | `--rehash` | Read every source file again instead of trusting the manifest. |
 | `--settle <seconds>` | Leave files written less than this ago for the next pass. Default 60. |
-| `--ignore <path>` | Leave out a file or folder by its path under the data root (`lost+found`). Repeatable. |
+| `--ignore <name>` | Leave out an entry of the data root that the migration does not know (`lost+found`). Repeatable. An account, or any folder the migration moves, is refused: ignored, it would look gone from the source and be removed from the target. To leave an account alone on both sides use `--exclude-owner`. |
 
 ## Exit codes
 

@@ -300,16 +300,25 @@ export async function migrate(options: MigrateOptions): Promise<MigrateSummary> 
 
   // ---- Whether this run may write at all ----------------------------------------------------
 
+  if (options.final && options.verify === false) {
+    return refuse(
+      'the final pass is only clean once it is verified (records, files, links and the link-signing key): --final does not take --no-verify',
+    );
+  }
   if (mode !== 'verify') {
     const marks = target.records.collection(MIGRATION);
-    const live = await marks.get('live').catch(() => undefined);
+    // A mark that cannot be read stops the run: unread is not the same as not there.
+    const live = await marks.get('live');
     if (live) {
       return refuse(
-        `a server serves on the target (node ${live.node ?? '?'}, live since ${live.since ?? '?'}): a pass never writes into a store in use. Start the new server with CUTTINGFLOOR_STANDBY=1, which removes this mark, before passing again.`,
+        `a server serves on the target (node ${live.node ?? '?'}, live since ${live.since ?? '?'}): a pass never writes into a store in use. Start that same node with CUTTINGFLOOR_STANDBY=1, which removes its mark, before passing again.`,
       );
     }
-    const finalHere = await readFile(join(stateDir, FINAL_MARK), 'utf8').catch(() => undefined);
-    const finalThere = await marks.get('final').catch(() => undefined);
+    const finalHere = await readFile(join(stateDir, FINAL_MARK), 'utf8').catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    });
+    const finalThere = await marks.get('final');
     if ((finalHere || finalThere) && !options.afterFinal) {
       return refuse(
         `the final pass already ended clean (${finalThere?.finished_at ?? 'in this state folder'}). The source stops changing at the switch, so a later pass would treat what it holds as expiring. Remove the cron. Only to put right a wrong final pass, before traffic moves: --after-final.`,
@@ -317,7 +326,13 @@ export async function migrate(options: MigrateOptions): Promise<MigrateSummary> 
     }
     if (options.final && options.drainCheck !== false) {
       const text = await readFile(join(sourceRoot, DRAIN_MARKER), 'utf8').catch(() => undefined);
-      const marker = text ? (JSON.parse(text) as DrainMarker) : undefined;
+      // The server rewrites the marker as it drains: one read part way is read as not there yet.
+      let marker: DrainMarker | undefined;
+      try {
+        marker = text ? (JSON.parse(text) as DrainMarker) : undefined;
+      } catch {
+        marker = undefined;
+      }
       const age = marker ? now() - Date.parse(marker.at) : Number.POSITIVE_INFINITY;
       if (!marker) {
         return refuse(
