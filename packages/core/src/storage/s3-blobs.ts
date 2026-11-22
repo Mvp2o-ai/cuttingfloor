@@ -23,6 +23,12 @@ const MIB = 1024 ** 2;
 export const S3_MIN_PART_BYTES = 5 * MIB;
 /** The most parts an upload may have (S3's rule). */
 export const S3_MAX_PARTS = 10_000;
+/**
+ * The most a part of an in-order upload may be. Bytes sent in order are gathered in memory into
+ * parts of `partBytes`, so one such upload holds up to about twice that at once (the bytes
+ * gathered, and the part made of them while it is sent): 32 MiB at the default 16, 128 MiB here.
+ */
+export const S3_MAX_PART_BYTES = 64 * MIB;
 
 /**
  * The bucket's layout: every key starts with its kind, then the owner.
@@ -93,6 +99,13 @@ export interface S3BlobOptions {
   concurrency?: number;
   /** Requests to the bucket at once, all transfers together. Default 64 (the bucket allows 256). */
   connections?: number;
+  /**
+   * Parts sent at the pace of a client (an upload's numbered parts, streamed from the sender to
+   * the bucket) at once, apart from `connections`, so slow senders never hold up downloads and
+   * other requests. Default 32. One upload has no more than `concurrency` of them at once.
+   * Each costs little memory: its bytes stream through (about 64 KiB of buffers), never held.
+   */
+  uploads?: number;
   /** A copy larger than this is made in parts. Default 4 GiB (one request copies up to 5). */
   copyPartBytes?: number;
   /**
@@ -131,7 +144,7 @@ interface Loaded {
   client: S3Client;
 }
 
-function errno(code: 'ENOENT' | 'EEXIST', message: string): Error {
+function errno(code: 'ENOENT' | 'EEXIST' | 'EPART', message: string): Error {
   return Object.assign(new Error(message), { code });
 }
 
@@ -146,8 +159,43 @@ function notFound(error: unknown): boolean {
   );
 }
 
+/** A completion naming parts the upload does not hold as named (another sender's bytes). */
+function badPart(error: unknown): boolean {
+  const name = (error as Error | undefined)?.name;
+  return name === 'InvalidPart' || name === 'InvalidPartOrder' || name === 'EntityTooSmall';
+}
+
 function precondition(error: unknown): boolean {
   return (error as Error | undefined)?.name === 'PreconditionFailed' || status(error) === 412;
+}
+
+/** At most `limit` holders at once; the rest wait their turn in order. */
+class Gate {
+  #free: number;
+  readonly #waiting: Array<() => void> = [];
+  constructor(limit: number) {
+    this.#free = Math.max(1, limit);
+  }
+
+  get idle(): boolean {
+    return this.#waiting.length === 0 && this.#free > 0 && this.#busy === 0;
+  }
+
+  #busy = 0;
+
+  async run<T>(work: () => Promise<T>): Promise<T> {
+    if (this.#free > 0) this.#free -= 1;
+    else await new Promise<void>((resolve) => this.#waiting.push(resolve));
+    this.#busy += 1;
+    try {
+      return await work();
+    } finally {
+      this.#busy -= 1;
+      const next = this.#waiting.shift();
+      if (next) next();
+      else this.#free += 1;
+    }
+  }
 }
 
 /** Runs `work` over `items`, at most `limit` at once; the first failure rejects. */
@@ -188,26 +236,42 @@ export class S3BlobStore implements BlobStore {
   #loaded: Promise<Loaded> | undefined;
   /** Whether the bucket refuses a write to a taken key when asked to (`If-None-Match: *`). */
   #conditional: boolean | undefined;
-  #free: number;
-  readonly #waiting: Array<() => void> = [];
+  /** Requests to the bucket at once (`connections`). */
+  readonly #requests: Gate;
+  /** Parts streamed at a client's pace at once (`uploads`), and per upload. */
+  readonly #paced: Gate;
+  readonly #pacedPer = new Map<BlobKey, Gate>();
 
   constructor(options: S3BlobOptions) {
+    // A bucket named with dots is not one host name under the endpoint (its certificate covers
+    // one level only): it is reached as a path, which must then be asked for.
+    if (options.bucket.includes('.') && !options.pathStyle) {
+      throw new Error(
+        'A bucket name with dots is reached as a path on the endpoint: set CUTTINGFLOOR_S3_PATH_STYLE=1, or use a name without dots',
+      );
+    }
     this.#o = options;
     this.#records = options.records;
     this.#local = options.local;
     this.bucket = options.bucket;
-    this.partBytes = Math.max(S3_MIN_PART_BYTES, options.partBytes ?? 16 * MIB);
+    this.partBytes = Math.min(
+      S3_MAX_PART_BYTES,
+      Math.max(S3_MIN_PART_BYTES, options.partBytes ?? 16 * MIB),
+    );
     this.concurrency = Math.max(1, options.concurrency ?? 6);
-    this.#free = Math.max(1, options.connections ?? 64);
+    this.#requests = new Gate(options.connections ?? 64);
+    this.#paced = new Gate(options.uploads ?? 32);
     this.#conditional = options.conditionalWrites;
     const url = new URL(options.endpoint);
+    // Where the client sends requests, as it addresses the bucket.
     this.origin = options.pathStyle ? url.origin : `${url.protocol}//${options.bucket}.${url.host}`;
   }
 
   async #s3(): Promise<Loaded> {
     this.#loaded ??= (async () => {
       const sdk = await import('@aws-sdk/client-s3');
-      const sockets = Math.max(8, this.#o.connections ?? 64);
+      // Room for every request of either kind at once.
+      const sockets = Math.max(8, (this.#o.connections ?? 64) + (this.#o.uploads ?? 32));
       const client = new sdk.S3Client({
         endpoint: this.#o.endpoint,
         region: this.#o.region,
@@ -222,6 +286,10 @@ export class S3BlobStore implements BlobStore {
         maxAttempts: 4,
         requestHandler: {
           connectionTimeout: 10_000,
+          // A request whose socket carries nothing for two minutes is given up (and retried),
+          // so a stalled bucket never holds a turn for good. A client that stalls sending a
+          // part is cut off by the server in the same time.
+          socketTimeout: 120_000,
           httpsAgent: { keepAlive: true, maxSockets: sockets },
           httpAgent: { keepAlive: true, maxSockets: sockets },
         },
@@ -231,30 +299,44 @@ export class S3BlobStore implements BlobStore {
     return this.#loaded;
   }
 
-  /** One request's turn: no more than `connections` talk to the bucket at once. */
-  async #slot<T>(work: () => Promise<T>): Promise<T> {
-    if (this.#free > 0) this.#free -= 1;
-    else await new Promise<void>((resolve) => this.#waiting.push(resolve));
+  /**
+   * A request's turn. Most take one of `connections`. One whose body comes at a client's pace
+   * (`paced`, the upload it is part of) takes one of `uploads` instead, and one of its upload's
+   * own `concurrency`, so senders however slow never hold up anything else.
+   */
+  async #slot<T>(work: () => Promise<T>, paced?: BlobKey): Promise<T> {
+    if (paced === undefined) return this.#requests.run(work);
+    let own = this.#pacedPer.get(paced);
+    if (!own) {
+      own = new Gate(this.concurrency);
+      this.#pacedPer.set(paced, own);
+    }
+    const gate = own;
     try {
-      return await work();
+      return await gate.run(() => this.#paced.run(work));
     } finally {
-      const next = this.#waiting.shift();
-      if (next) next();
-      else this.#free += 1;
+      if (gate.idle && this.#pacedPer.get(paced) === gate) this.#pacedPer.delete(paced);
     }
   }
 
   /**
-   * A request to the bucket. A missing object rejects as ENOENT; anything else is logged with
+   * A request to the bucket. A missing object rejects as ENOENT; parts that are not what the
+   * upload holds (CompleteMultipartUpload's InvalidPart) as EPART; anything else is logged with
    * its detail and reaches the caller as a plain refusal that names nothing of the store.
    */
-  async #call<T>(operation: string, key: string, work: (s3: Loaded) => Promise<T>): Promise<T> {
+  async #call<T>(
+    operation: string,
+    key: string,
+    work: (s3: Loaded) => Promise<T>,
+    paced?: BlobKey,
+  ): Promise<T> {
     const s3 = await this.#s3();
     try {
-      return await this.#slot(() => work(s3));
+      return await this.#slot(() => work(s3), paced);
     } catch (error) {
       if (notFound(error)) throw errno('ENOENT', `No blob ${key}`);
       if (precondition(error)) throw errno('EEXIST', `A blob is already at ${key}`);
+      if (badPart(error)) throw errno('EPART', `The parts of ${key} are not what was sent`);
       throw this.#failed(operation, key, error);
     }
   }
@@ -1051,13 +1133,38 @@ export class S3BlobStore implements BlobStore {
       await each(await this.#listed(prefix), 16, ({ key }) => this.#remove(key));
     }
     const media = this.#prefixes(owner)[0] as string;
-    const open = await this.#call('uploads', media, ({ sdk, client }) =>
-      client.send(new sdk.ListMultipartUploadsCommand({ Bucket: this.bucket, Prefix: media })),
-    );
-    for (const upload of open.Uploads ?? []) {
-      if (upload.Key && upload.UploadId) await this.multipartAbort(upload.Key, upload.UploadId);
+    for (const upload of await this.openUploads(media)) {
+      await this.multipartAbort(upload.key, upload.uploadId);
     }
     await this.#kept(ownerKey(owner)).clear();
+  }
+
+  /** Every upload in parts not yet completed or aborted under `prefix`, page by page. */
+  async openUploads(prefix: string): Promise<Array<{ key: BlobKey; uploadId: string }>> {
+    const found: Array<{ key: BlobKey; uploadId: string }> = [];
+    let keyMarker: string | undefined;
+    let idMarker: string | undefined;
+    for (;;) {
+      const page = await this.#call('uploads', prefix, ({ sdk, client }) =>
+        client.send(
+          new sdk.ListMultipartUploadsCommand({
+            Bucket: this.bucket,
+            Prefix: prefix,
+            ...(keyMarker ? { KeyMarker: keyMarker } : {}),
+            ...(idMarker ? { UploadIdMarker: idMarker } : {}),
+          }),
+        ),
+      );
+      for (const upload of page.Uploads ?? []) {
+        if (upload.Key && upload.UploadId)
+          found.push({ key: upload.Key, uploadId: upload.UploadId });
+      }
+      if (!page.IsTruncated) return found;
+      // A page that names no next place would ask for itself again: stop there.
+      if (!page.NextKeyMarker && !page.NextUploadIdMarker) return found;
+      keyMarker = page.NextKeyMarker;
+      idMarker = page.NextUploadIdMarker;
+    }
   }
 
   async presignGet(key: BlobKey, options: PresignOptions): Promise<string | undefined> {
@@ -1101,7 +1208,7 @@ export class S3BlobStore implements BlobStore {
     // bucket must be told a part's length before its first byte).
     const sent = options.bytes === undefined ? await buffer(body) : body;
     const length = options.bytes ?? (sent as Buffer).length;
-    const etag = await this.#part(key, uploadId, part, sent, length);
+    const etag = await this.#part(key, uploadId, part, sent, length, sent === body);
     return { part, bytes: length, etag };
   }
 
@@ -1111,23 +1218,29 @@ export class S3BlobStore implements BlobStore {
     part: number,
     body: Readable | Buffer,
     bytes: number,
+    /** Its bytes come at the sender's pace (streamed from a client). */
+    paced = false,
   ): Promise<string> {
     if (part < 1 || part > S3_MAX_PARTS) {
       throw new CfError('limit_exceeded', `An upload takes up to ${S3_MAX_PARTS} parts`, {
         hint: 'Send the file in larger parts',
       });
     }
-    const out = await this.#call('part', key, ({ sdk, client }) =>
-      client.send(
-        new sdk.UploadPartCommand({
-          Bucket: this.bucket,
-          Key: key,
-          UploadId: uploadId,
-          PartNumber: part,
-          Body: body,
-          ContentLength: bytes,
-        }),
-      ),
+    const out = await this.#call(
+      'part',
+      key,
+      ({ sdk, client }) =>
+        client.send(
+          new sdk.UploadPartCommand({
+            Bucket: this.bucket,
+            Key: key,
+            UploadId: uploadId,
+            PartNumber: part,
+            Body: body,
+            ContentLength: bytes,
+          }),
+        ),
+      paced ? key : undefined,
     );
     return out.ETag ?? '';
   }

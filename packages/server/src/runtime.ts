@@ -118,6 +118,12 @@ export interface RuntimeConfig {
    */
   s3?: S3Settings;
   /**
+   * Files in a bucket with records still in JSON files under the data root: for development and
+   * tests only (CUTTINGFLOOR_S3_FILE_RECORDS=1). Files in a bucket are for more than one server,
+   * which only share records in MongoDB, so without this a server refuses to start that way.
+   */
+  s3FileRecords?: boolean;
+  /**
    * A server beside the one in production, on a copy of its data (CUTTINGFLOOR_STANDBY=1): it
    * answers requests, and does nothing to the data by itself. No sweep at start or by the hour,
    * no recovery of jobs, at start or by the minute.
@@ -248,6 +254,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     ...(env.CUTTINGFLOOR_URL_SECRET ? { urlSecret: env.CUTTINGFLOOR_URL_SECRET } : {}),
     ...recordsFromEnv(env),
     ...blobsFromEnv(env),
+    ...(env.CUTTINGFLOOR_S3_FILE_RECORDS === '1' ? { s3FileRecords: true } : {}),
     ...(env.CUTTINGFLOOR_STANDBY === '1' ? { standby: true } : {}),
   };
 }
@@ -274,6 +281,11 @@ export class Runtime {
   #onToolCall = new Set<(owner: string, entry: CallEntry) => void>();
 
   constructor(config: RuntimeConfig) {
+    if (config.s3 && !config.records && !config.s3FileRecords) {
+      throw new Error(
+        'CUTTINGFLOOR_BLOBS=s3 needs CUTTINGFLOOR_RECORDS=mongo: a bucket is shared by servers, which share records only in MongoDB (CUTTINGFLOOR_S3_FILE_RECORDS=1 allows files for development and tests)',
+      );
+    }
     this.config = config;
     // On the filesystem a blob's direct link is the server's own signed link to it, for the
     // outputs it serves; nothing else is downloaded.

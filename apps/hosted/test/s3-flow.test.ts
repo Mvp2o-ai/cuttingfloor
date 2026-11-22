@@ -7,8 +7,9 @@ import { request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { promisify } from 'node:util';
-import type { MongoRecords, S3Settings } from '@cuttingfloor/core';
+import type { MongoRecords, S3BlobStore, S3Settings } from '@cuttingfloor/core';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { createServer, Runtime, type RuntimeConfig } from '@cuttingfloor/server';
 import { Client } from '@modelcontextprotocol/client';
@@ -77,7 +78,7 @@ async function node(
     s3,
     ...(store === 'MongoDB'
       ? { records: { store: 'mongo', uri: TEST_MONGODB_URI, db: shared.db ?? testDatabase() } }
-      : {}),
+      : { s3FileRecords: true }),
   };
   const runtime = new Runtime(config);
   if (!shared.s3) await makeBucket(runtime.ws.blobs);
@@ -556,6 +557,31 @@ describe.each(stores)('files in a bucket, records on $store', ({ store, skip }) 
   );
 
   flow(
+    'an in-order send that got no byte leaves nothing open once the file goes in parts',
+    async (n, owner, client) => {
+      const blobs = n.runtime.ws.blobs as S3BlobStore;
+      const upload = await startUpload(client, 'x.bin');
+      // MinIO lists open uploads by an object's whole name only.
+      const key = `media/${owner}/${upload.upload_id}/data.bin`;
+      const broken = new Readable({
+        read() {
+          this.destroy(new Error('sender gone'));
+        },
+      });
+      await n.runtime.uploads
+        .receive(owner, upload.upload_id, broken, { length: 100, range: { start: 0, total: 100 } })
+        .catch(() => undefined);
+      expect(await blobs.openUploads(key)).toHaveLength(1);
+      const body = randomBytes(100);
+      expect((await fetch(sub(upload.url, '/parts', '&bytes=100'))).status).toBe(200);
+      expect(await blobs.openUploads(key)).toHaveLength(1);
+      expect((await fetch(sub(upload.url, '/parts/1'), { method: 'PUT', body })).status).toBe(200);
+      expect((await fetch(sub(upload.url, '/complete'), { method: 'POST' })).status).toBe(200);
+      expect(await blobs.openUploads(key)).toEqual([]);
+    },
+  );
+
+  flow(
     'a link shows only sound, video and pictures in a page, and is kept no longer than it lasts',
     async (n, owner) => {
       const job = 'j_aaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -832,7 +858,13 @@ describe.skipIf(!up)('a server told to keep its files in a bucket', () => {
         inlineMaxBytes: MIB,
         motionUrl: null,
         s3,
+        s3FileRecords: true,
       });
+      // Files in a bucket are for servers that share records in MongoDB.
+      const { s3FileRecords: _files, ...alone } = config(testS3());
+      expect(() => new Runtime(alone)).toThrow(
+        /^CUTTINGFLOOR_BLOBS=s3 needs CUTTINGFLOOR_RECORDS=mongo/,
+      );
       const none = new Runtime(config(testS3('cf-test-no-such-bucket')));
       await expect(none.start({ sweep: false })).rejects.toThrow(
         /^CUTTINGFLOOR_S3_BUCKET names a bucket that does not exist/,

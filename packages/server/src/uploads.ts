@@ -726,6 +726,7 @@ export class Uploads {
     for (let turn = 0; turn < 5; turn += 1) {
       let meta = await this.#meta(owner, id);
       if (!meta) throw new UploadRefused(404, 'no such upload, or it expired');
+      const before = meta;
       if (meta.parts && meta.part_bytes && meta.bytes !== null) {
         if (total !== undefined && total !== meta.bytes && !meta.complete) {
           throw new UploadRefused(
@@ -789,6 +790,12 @@ export class Uploads {
         },
       );
       if (!set) await this.#ws.blobs.multipartAbort(blob, mpu).catch(() => undefined);
+      // The upload in parts begun for an in-order send that never got a byte is no one's now.
+      else if (before.mpu && before.mpu !== mpu) {
+        await this.#ws.blobs
+          .multipartAbort(this.#blob(owner, before), before.mpu)
+          .catch(() => undefined);
+      }
     }
     throw new UploadRefused(409, 'another request is setting this upload up; ask again');
   }

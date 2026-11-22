@@ -22,6 +22,8 @@ export interface S3Settings {
   partBytes: number;
   concurrency: number;
   connections: number;
+  /** Parts streamed at a client's pace at once, apart from `connections` (default 32). */
+  uploads?: number;
   /** Tests: a copy larger than this is made in parts; whether the bucket takes conditional puts. */
   copyPartBytes?: number;
   conditionalWrites?: boolean;
@@ -78,16 +80,24 @@ export function s3SettingsFromEnv(env: NodeJS.ProcessEnv): S3Settings | undefine
     throw new Error('CUTTINGFLOOR_BLOB_CACHE must be an absolute path');
   }
   const style = value('CUTTINGFLOOR_S3_PATH_STYLE').toLowerCase();
+  const pathStyle = style === '1' || style === 'true';
+  if (bucket.includes('.') && !pathStyle) {
+    throw new Error(
+      'CUTTINGFLOOR_S3_BUCKET has dots, so it is reached as a path: set CUTTINGFLOOR_S3_PATH_STYLE=1, or use a name without dots',
+    );
+  }
   return {
     endpoint: url.origin,
     region: need('CUTTINGFLOOR_S3_REGION'),
     bucket,
     accessKeyId: need('CUTTINGFLOOR_S3_ACCESS_KEY_ID'),
     secretAccessKey: need('CUTTINGFLOOR_S3_SECRET_ACCESS_KEY'),
-    pathStyle: style === '1' || style === 'true',
+    pathStyle,
     ...(cacheDir ? { cacheDir } : {}),
     cacheBytes: Math.round(number('CUTTINGFLOOR_BLOB_CACHE_GB', 50, 0.001, 100_000) * GIB),
-    partBytes: Math.round(number('CUTTINGFLOOR_S3_PART_MB', 16, 5, 1024) * MIB),
+    // Bytes sent in order are gathered in memory a part at a time: an upload holds up to about
+    // twice this (see S3_MAX_PART_BYTES).
+    partBytes: Math.round(number('CUTTINGFLOOR_S3_PART_MB', 16, 5, 64) * MIB),
     concurrency: Math.round(number('CUTTINGFLOOR_S3_CONCURRENCY', 6, 1, 64)),
     connections: Math.round(number('CUTTINGFLOOR_S3_CONNECTIONS', 64, 1, 200)),
   };

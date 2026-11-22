@@ -1,14 +1,18 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { readdir, readFile, stat, utimes, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Readable } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import {
   BLOBS,
   type BlobPart,
+  FsBlobStore,
+  FsRecords,
   isExisting,
   isMissing,
   partSize,
+  S3BlobStore,
   S3Scratch,
   s3SettingsFromEnv,
 } from '../src/index.ts';
@@ -83,6 +87,42 @@ describe.skipIf(!up)('S3 blobs: what only this store promises', () => {
     expect(await blobs.presignGet(cached, { ttlMs: 1000 })).toBeUndefined();
     expect((await blobs.list(blobs.keys.cache('frames'))).map((h) => h.key)).toEqual([cached]);
   });
+
+  each(
+    'parts sent slowly by clients never hold up the store’s other requests',
+    async ({ blobs }) => {
+      const kept = blobs.keys.derived('alice', 'm_1', 'a.json');
+      await blobs.put(kept, { bytes: Buffer.from('{}') });
+      // Two uploads of three parts each, every part stalled after its first byte: more than
+      // the two requests the store makes at once for everything else.
+      const bodies: PassThrough[] = [];
+      const sending: Promise<unknown>[] = [];
+      for (const id of ['u_1', 'u_2']) {
+        const key = blobs.keys.upload('alice', id, 'data.bin');
+        const upload = await blobs.multipartStart(key);
+        for (let part = 1; part <= 3; part += 1) {
+          const body = new PassThrough();
+          body.write(Buffer.alloc(1));
+          body.on('error', () => undefined);
+          bodies.push(body);
+          sending.push(
+            blobs
+              .multipartPart(key, upload, part, body, { bytes: 5 * MIB, anyOrder: true })
+              .catch(() => undefined),
+          );
+        }
+      }
+      await new Promise((r) => setTimeout(r, 300));
+      const asked = await Promise.race([
+        blobs.stat(kept).then((h) => h?.bytes),
+        new Promise((r) => setTimeout(() => r('held up'), 5000)),
+      ]);
+      expect(asked).toBe(2);
+      for (const body of bodies) body.destroy(new Error('sender gone'));
+      await Promise.all(sending);
+    },
+    { connections: 2, uploads: 8 },
+  );
 
   each('a put keeps the bytes’ SHA-256 and type; a large file goes up in parts', async (s) => {
     const { blobs } = s;
@@ -708,6 +748,27 @@ describe('CUTTINGFLOOR_BLOBS', () => {
     });
   });
 
+  it('takes a bucket with dots as a path on the endpoint, which its links then name', () => {
+    const dotted = { ...env, CUTTINGFLOOR_S3_BUCKET: 'cuttingfloor.prod' };
+    const settings = s3SettingsFromEnv({ ...dotted, CUTTINGFLOOR_S3_PATH_STYLE: '1' });
+    expect(settings).toMatchObject({ bucket: 'cuttingfloor.prod', pathStyle: true });
+    const store = new S3BlobStore({
+      ...(settings as NonNullable<typeof settings>),
+      records: new FsRecords(tmpdir()),
+      local: new FsBlobStore(tmpdir()),
+    });
+    expect(store.origin).toBe('https://fsn1.your-objectstorage.com');
+    expect(
+      () =>
+        new S3BlobStore({
+          ...(settings as NonNullable<typeof settings>),
+          pathStyle: false,
+          records: new FsRecords(tmpdir()),
+          local: new FsBlobStore(tmpdir()),
+        }),
+    ).toThrow(/CUTTINGFLOOR_S3_PATH_STYLE=1/);
+  });
+
   it('says which variable is missing or wrong, never what one holds', () => {
     for (const name of Object.keys(env).filter((k) => k !== 'CUTTINGFLOOR_BLOBS')) {
       expect(() => s3SettingsFromEnv({ ...env, [name]: ' ' })).toThrow(
@@ -721,6 +782,10 @@ describe('CUTTINGFLOOR_BLOBS', () => {
       { CUTTINGFLOOR_S3_ENDPOINT: secret },
       { CUTTINGFLOOR_S3_BUCKET: `${secret}/UPPER` },
       { CUTTINGFLOOR_S3_PART_MB: '1' },
+      // Gathered in memory per upload sent in order: no more than 64 MiB a part.
+      { CUTTINGFLOOR_S3_PART_MB: '65' },
+      // A bucket with dots is not a host name under the endpoint.
+      { CUTTINGFLOOR_S3_BUCKET: 'cuttingfloor.prod' },
       { CUTTINGFLOOR_S3_CONNECTIONS: '100000' },
       { CUTTINGFLOOR_BLOB_CACHE: 'relative/cache' },
     ]) {
