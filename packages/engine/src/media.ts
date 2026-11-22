@@ -925,9 +925,11 @@ export class MediaLibrary {
   /**
    * The record's own files that are not under the media's prefix: in an object store its
    * source, mezzanine and proxy, each of which another media may hold too. None on the
-   * filesystem, where they are in the media's folder.
+   * filesystem, where they are in the media's folder: a record there that names a file outside
+   * it (an older server's) names a file that is not its own, and is left alone as it always was.
    */
   #apart(owner: string, record: MediaRecord): BlobKey[] {
+    if (!this.#ws.blobs.remote) return [];
     const prefix = `${this.prefix(owner, record.media_id)}/`;
     const keys = new Set<BlobKey>();
     for (const ref of [record.file, record.mezzanine, record.proxy]) {
