@@ -57,6 +57,30 @@ export {
   span,
   subclip,
 } from './speed.ts';
+export {
+  type BlobHead,
+  type BlobKey,
+  type BlobKeys,
+  type BlobPart,
+  type BlobSource,
+  type BlobStore,
+  type Collection,
+  type CollectionScope,
+  type CollectionSpec,
+  defineCollection,
+  FS_BLOB_KEYS,
+  FS_HOME,
+  type FsBlobOptions,
+  FsBlobStore,
+  FsRecords,
+  FsScratch,
+  type PresignOptions,
+  type RecordChange,
+  type RecordEntry,
+  type RecordLog,
+  type Records,
+  type Scratch,
+} from './storage/index.ts';
 export { type Cue, parseSubtitles } from './subtitles.ts';
 export {
   framesToTicks,
