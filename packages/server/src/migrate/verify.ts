@@ -306,6 +306,8 @@ export async function verify(
   await pool(plan.blobs, options.concurrency, async (b) => {
     const { item, kind } = b;
     const where = relTag(item.rel);
+    // Its place at the target is its own, whether or not its bytes are there yet.
+    expected.add(b.targetKey);
     const counts = slot(report.blobs, kind, () => ({ source: 0, same: 0, bytes: 0 }));
     counts.source += 1;
     counts.bytes += item.size;

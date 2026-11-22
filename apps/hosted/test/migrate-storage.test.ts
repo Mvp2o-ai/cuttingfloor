@@ -3,6 +3,7 @@ import { lstat, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 import {
   type CollectionSpec,
   definedCollections,
@@ -778,3 +779,191 @@ describe.each((['filesystem', 'MongoDB'] as const).filter((store) => store === '
     });
   },
 );
+
+describe('telling a target that differs', () => {
+  let src: Seeded;
+  let dst: Target;
+
+  beforeAll(async () => {
+    src = await seed();
+    dst = await makeTarget('filesystem');
+  });
+
+  afterAll(async () => {
+    src?.runtime.stop();
+    await src?.runtime.close();
+    await dst?.drop();
+    if (src) await rm(src.dir, { recursive: true, force: true });
+  });
+
+  it('leaves what is still being written for the next pass', async () => {
+    // Everything was written a moment ago: no file is taken, and no record that names one.
+    const early = await run(src, dst, { settleMs: 3_600_000 });
+    expect(early.exit_code).toBe(EXIT.waiting);
+    expect(early.blobs['media:own']).toMatchObject({ waiting: 7 });
+    expect(early.records.media).toMatchObject({ waiting: 3 });
+    expect(early.records.timelines?.written).toBeGreaterThan(0);
+    expect(early.verify?.differences).toEqual([]);
+    // A file that changes while it is read is not kept as moved.
+    const key = src.runtime.ws.blobs.keys.derived(OWNER, src.mediaA, 'cleaned', 'voice.wav');
+    const put = dst.target.blobs.put.bind(dst.target.blobs);
+    const spy = vi.spyOn(dst.target.blobs, 'put').mockImplementation(async (to, from, options) => {
+      const head = await put(to, from, options);
+      if (to === key) await src.runtime.ws.blobs.put(key, { bytes: bytesOf('d', 2300) });
+      return head;
+    });
+    const torn = await run(src, dst);
+    spy.mockRestore();
+    expect(torn.exit_code).toBe(EXIT.waiting);
+    expect(torn.waiting).toEqual([
+      { what: expect.stringContaining('cleaned/voice.wav'), why: 'it changed while it was read' },
+    ]);
+    // On the final pass nothing may be left waiting, and nothing is.
+    const final = await run(src, dst, { final: true });
+    expect(final.exit).toBe('ok');
+    expect((await dst.target.blobs.head(key))?.bytes).toBe(2300);
+  });
+
+  it('verify names each kind of difference and exits non-zero', async () => {
+    const { blobs, records } = dst.target;
+    const clean = await run(src, dst, { mode: 'verify' });
+    expect(clean.exit).toBe('ok');
+    // A file with other bytes of the same size, one missing, one nobody moved.
+    await blobs.put(blobs.keys.media(OWNER, src.mediaA, 'proxy.mp4'), {
+      bytes: bytesOf('X', 3009),
+    });
+    await blobs.delete(blobs.keys.output(OWNER, src.frames, 'frame-000001.png'));
+    await blobs.put(blobs.keys.derived(OWNER, src.mediaA, 'cleaned', 'stray.wav'), {
+      bytes: bytesOf('z', 5),
+    });
+    // A record changed, one gone, one that was never at the source.
+    const timelines = records.collection(spec('timelines'), { owner: OWNER });
+    const jobs = records.collection(spec('jobs'), { owner: OWNER });
+    await jobs.update(src.cancelled, { set: { statusMessage: 'tampered' } });
+    await timelines.delete(src.timeline);
+    await timelines.put(`tl_${'9'.repeat(32)}`, { extra: true });
+    lines.length = 0;
+    const report = await run(src, dst, { mode: 'verify', links: 'all' });
+    expect(report.exit_code).toBe(EXIT.differs);
+    const kinds = (report.verify?.differences ?? []).map((d) => `${d.kind} ${d.of}`).sort();
+    expect(kinds).toEqual(
+      expect.arrayContaining([
+        'blob-extra blob',
+        'blob-missing output:frames',
+        'blob-sha256 media:own',
+        'link link',
+        'record-differs jobs',
+        'record-extra timelines',
+        'record-missing timelines',
+        'usage owner',
+      ]),
+    );
+    const changed = report.verify?.differences.find((d) => d.kind === 'record-differs');
+    // The field that differs is named; what it holds is not.
+    expect(changed?.detail).toMatch(/statusMessage/);
+    expect(JSON.stringify(report.verify)).not.toContain('tampered');
+    expect(lines.join('\n')).toMatch(/DIFFERENCES[\s\S]*record-differs\s+jobs/);
+    expect(JSON.parse(await readFile(report.files.verify ?? '', 'utf8')).differences.length).toBe(
+      report.verify?.differences.length,
+    );
+    // The next pass with --rehash puts back what a pass can: files it finds changed or missing.
+    const mended = await run(src, dst, { rehash: true, verify: false });
+    expect(mended.blobs['media:own']?.copied).toBe(1);
+  });
+
+  it('says in a dry run which records the target would refuse for their size', async () => {
+    const small: MigrationTarget = { ...dst.target, maxRecordBytes: 300 };
+    const fresh = await mkdtemp(join(tmpdir(), 'cf-migrate-state-'));
+    try {
+      const dry = await migrate({
+        source: src.root,
+        target: small,
+        stateDir: fresh,
+        specs: hostedCollections(src.runtime.ws),
+        mode: 'dry-run',
+        log: () => undefined,
+      });
+      expect(dry.exit_code).toBe(EXIT.differs);
+      expect(dry.oversize.length).toBeGreaterThan(0);
+      expect(dry.oversize[0]).toMatchObject({ collection: expect.any(String) });
+      expect(dry.oversize[0]?.bytes).toBeGreaterThan(300);
+    } finally {
+      await rm(fresh, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a state folder inside the source, and one that is another migration’s', async () => {
+    await expect(
+      migrate({
+        source: src.root,
+        target: dst.target,
+        stateDir: join(src.root, 'state'),
+        log: () => undefined,
+      }),
+    ).rejects.toThrow(/only ever read/);
+    const other = await makeTarget('filesystem');
+    try {
+      await expect(
+        migrate({
+          source: src.root,
+          target: other.target,
+          stateDir: dst.state,
+          mode: 'dry-run',
+          log: () => undefined,
+        }),
+      ).rejects.toThrow(/another migration/);
+    } finally {
+      await other.drop();
+    }
+  });
+});
+
+describe('the command line', () => {
+  it('runs a dry run from the environment’s settings and exits 0', async () => {
+    const src = await seed();
+    const dir = await mkdtemp(join(tmpdir(), 'cf-migrate-cli-'));
+    try {
+      const { spawnSync } = await import('node:child_process');
+      const script = fileURLToPath(new URL('../../../scripts/migrate-storage.ts', import.meta.url));
+      const result = spawnSync(
+        process.execPath,
+        [
+          script,
+          '--source',
+          src.root,
+          '--state',
+          join(dir, 'state'),
+          '--target-dir',
+          join(dir, 'data'),
+          '--dry-run',
+        ],
+        {
+          encoding: 'utf8',
+          env: { ...process.env, CUTTINGFLOOR_RECORDS: '', CUTTINGFLOOR_BLOBS: '' },
+        },
+      );
+      expect(result.stderr).toBe('');
+      expect(result.status).toBe(0);
+      expect(result.stdout).toMatch(/dry-run ended: ok \(exit 0\)/);
+      expect(result.stdout).toMatch(/records timelines: \d+ at the source, \d+ to write/);
+      expect(result.stdout).not.toContain(OWNER);
+      expect(await readdir(join(dir, 'data')).catch(() => [])).toEqual([]);
+      // A store this build cannot move files into is refused by name, before anything is read.
+      const s3 = spawnSync(
+        process.execPath,
+        [script, '--source', src.root, '--state', join(dir, 'state'), '--dry-run'],
+        {
+          encoding: 'utf8',
+          env: { ...process.env, CUTTINGFLOOR_RECORDS: '', CUTTINGFLOOR_BLOBS: 's3' },
+        },
+      );
+      expect(s3.status).toBe(1);
+      expect(s3.stderr).toMatch(/CUTTINGFLOOR_BLOBS=s3/);
+    } finally {
+      src.runtime.stop();
+      await src.runtime.close();
+      await rm(src.dir, { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
