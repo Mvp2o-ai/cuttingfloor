@@ -20,6 +20,7 @@ import {
   ProtocolErrorCode,
   ResourceTemplate,
 } from '@modelcontextprotocol/server';
+import { SOUND_EFFECTS, SOUND_EFFECTS_URL } from './sound-effects.ts';
 
 // Catalogues are data, not tools: the names a tool accepts plus what each one does, read as
 // resources so tool definitions stay small (spec §21.5).
@@ -198,6 +199,18 @@ const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<u
     body: {
       note: "Positions and sizes are fractions (0–1) of the clip's fitted frame: a box the shape of the sequence with the picture fitted inside it (bars where the shapes differ), before the clip's scale and position. A picture the sequence's shape fills it; a narrower one fills (its aspect / the sequence's) of its width, centred; a wider one (the sequence's aspect / its) of its height. feather is a fraction of the picture's short side.",
       shapes: Object.fromEntries(MASK_SHAPES.map((m) => [m, MASKS[m]])),
+    },
+  },
+  sound_effects: {
+    title: 'Sound effects',
+    body: {
+      note: `Meme and hype sounds to put on an audio track: media.import {source: {url}} with the url here, then clip.add. CC0 or made by cuttingfloor, free to use. Each is about -14 LUFS at its loudest.`,
+      sounds: Object.fromEntries(
+        Object.entries(SOUND_EFFECTS).map(([name, s]) => [
+          name,
+          { ...s, url: `${SOUND_EFFECTS_URL}/${name}.wav` },
+        ]),
+      ),
     },
   },
   animations: {

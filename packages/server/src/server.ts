@@ -64,7 +64,7 @@ Credits: jobs (export, import, analysis, create.*) spend one a minute, judgments
     : '';
   return `${welcome ? `${WELCOME}\n` : ''}cuttingfloor is a headless video editor: media comes in, is cut and finished, and leaves as a download. Work, not storage: ${KEEPING}; links work ${span(config.outputUrlTtlMs)} (re-read for fresh ones). Download finished or approved work (or have the user); if they count on keeping it, say it's temporary. To go on later, keep timeline.get's document (timeline.load) and the files (media.import again). media.delete drops unwanted media.
 Two ways in, often both:
-- Make new: create.motion (animated HTML, alpha), .still (HTML to PNG), .matte (solid, gradient), .voiceover (speech, timed words); a picture the user shows is a reference to rebuild in HTML, not import. Remake: create.cutout, .stabilized, .upscaled, .lipsync (user's provider key). Music and sound effects aren't made; they're the user's files.
+- Make new: create.motion (animated HTML, alpha), .still (HTML to PNG), .matte (solid, gradient), .voiceover (speech, timed words); a picture the user shows is a reference to rebuild in HTML, not import. Remake: create.cutout, .stabilized, .upscaled, .lipsync (user's provider key). Music isn't made (it's the user's files); meme and hype sound effects to import: video://catalog/sound_effects.
 - Edit theirs: media.import a URL${roots.length ? `, a path under ${roots.join(', ')}` : ''}, an upload_id or a small data: URI${samples}. A file on their device, or attached but not handed to you: media.upload, an upload box in the chat (or a link)${config.uploadPage ? `, or they drop it on their upload page, ${config.uploadPage}` : ''}. Sent files: media.list.
 ${INSTRUCTIONS_BODY}${credits}`;
 }
