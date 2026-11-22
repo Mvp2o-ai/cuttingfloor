@@ -38,6 +38,16 @@ async function fsStores(): Promise<Stores & { root: string }> {
           ms,
         );
       },
+      parent: (spec, scope, parent, ms) =>
+        back(
+          join(
+            root,
+            'owners',
+            scope.owner ?? '',
+            typeof spec.fs.dir === 'function' ? spec.fs.dir(parent) : spec.fs.dir,
+          ),
+          ms,
+        ),
       blob: (key, ms) => back(join(root, key), ms),
     },
     close: () => rm(base, { recursive: true, force: true }),

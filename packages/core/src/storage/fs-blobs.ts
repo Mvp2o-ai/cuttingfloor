@@ -30,7 +30,9 @@ export const FS_BLOB_KEYS: BlobKeys = {
   derived: (owner, mediaId, ...name) =>
     ['owners', ownerKey(owner), 'media', mediaId, ...name].join('/'),
   output: (owner, id, name) => `owners/${ownerKey(owner)}/outputs/${id}/${name}`,
+  outputs: (owner) => `owners/${ownerKey(owner)}/outputs`,
   upload: (owner, uploadId, name) => `owners/${ownerKey(owner)}/uploads/${uploadId}/${name}`,
+  uploads: (owner) => `owners/${ownerKey(owner)}/uploads`,
   cache: (...name) => ['cache', ...name].join('/'),
 };
 

@@ -100,6 +100,15 @@ export interface Records {
   log<T>(spec: CollectionSpec<T>, scope: CollectionScope & { part?: string }): RecordLog<T>;
   /** The parents a grouped collection has records under (months of the meter). */
   parents<T>(spec: CollectionSpec<T>, scope?: Pick<CollectionScope, 'owner'>): Promise<string[]>;
+  /**
+   * Drops whole groups of a grouped collection whose last write is more than `ttlMs` ago (a
+   * month of the meter, a day of sign-in steps). Returns the parents dropped.
+   */
+  expireParents<T>(
+    spec: CollectionSpec<T>,
+    scope: Pick<CollectionScope, 'owner'>,
+    ttlMs: number,
+  ): Promise<string[]>;
   /** The key of every owner the store holds anything for. */
   owners(): Promise<string[]>;
   /**

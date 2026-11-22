@@ -60,10 +60,14 @@ export interface BlobKeys {
   media(owner: string, mediaId: string, name: string): BlobKey;
   /** A file made from a media and found again by name: cleaned sound, in-betweens, an index. */
   derived(owner: string, mediaId: string, ...name: string[]): BlobKey;
-  /** A file of a job's output or a kept frame set. */
+  /** A file of a job's output or a kept frame set; `name` empty for the prefix of them all. */
   output(owner: string, id: string, name: string): BlobKey;
-  /** The bytes of an upload not imported yet. */
+  /** The prefix of every output an owner has, one entry per job or frame set. */
+  outputs(owner: string): BlobKey;
+  /** The bytes of an upload not imported yet; `name` empty for the upload's prefix. */
   upload(owner: string, uploadId: string, name: string): BlobKey;
+  /** The prefix of every upload an owner has, one entry per upload. */
+  uploads(owner: string): BlobKey;
   /** Derived and disposable: kept on this node only, rebuilt when missing. */
   cache(...name: string[]): BlobKey;
 }

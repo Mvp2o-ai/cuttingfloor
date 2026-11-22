@@ -43,13 +43,27 @@ export class FsRecords implements Records {
     spec: CollectionSpec<T>,
     scope: Pick<CollectionScope, 'owner'> = {},
   ): Promise<string[]> {
-    if (typeof spec.fs.dir !== 'function') return [];
-    // The folder the parents are entries of: the layout up to where the parent's name goes.
+    const dir = this.#parents(spec, scope);
+    return dir ? listDir(dir) : [];
+  }
+
+  async expireParents<T>(
+    spec: CollectionSpec<T>,
+    scope: Pick<CollectionScope, 'owner'>,
+    ttlMs: number,
+  ): Promise<string[]> {
+    const dir = this.#parents(spec, scope);
+    return dir ? sweepDir(dir, ttlMs) : [];
+  }
+
+  /** The folder the parents are entries of: the layout up to where the parent's name goes. */
+  #parents<T>(spec: CollectionSpec<T>, scope: Pick<CollectionScope, 'owner'>): string | undefined {
+    if (typeof spec.fs.dir !== 'function') return undefined;
     const mark = '\0parent\0';
     const parts = spec.fs.dir(mark).split('/');
     const at = parts.indexOf(mark);
-    if (at < 0) return [];
-    return listDir(join(this.#base(spec, scope), ...parts.slice(0, at)));
+    if (at < 0) return undefined;
+    return join(this.#base(spec, scope), ...parts.slice(0, at));
   }
 
   async owners(): Promise<string[]> {

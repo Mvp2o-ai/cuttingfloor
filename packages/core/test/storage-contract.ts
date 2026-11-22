@@ -30,6 +30,13 @@ export interface Stores {
       id: string,
       ms: number,
     ): Promise<void>;
+    /** Makes a whole group of a grouped collection look last written `ms` ago. */
+    parent(
+      spec: CollectionSpec<unknown>,
+      scope: CollectionScope,
+      parent: string,
+      ms: number,
+    ): Promise<void>;
     blob(key: string, ms: number): Promise<void>;
   };
   close(): Promise<void>;
@@ -239,6 +246,21 @@ export function recordsContract(backend: string, make: StoresFactory): void {
       expect(() => s.records.collection(grouped, { owner: 'alice' })).toThrow();
     });
 
+    each('expireParents drops whole groups past their time', async (s) => {
+      await s.records.collection(grouped, { owner: 'alice', parent: '2026-01' }).put('a', {
+        name: 'jan',
+      });
+      await s.records.collection(grouped, { owner: 'alice', parent: '2026-02' }).put('a', {
+        name: 'feb',
+      });
+      await s.age.parent(grouped, { owner: 'alice' }, '2026-01', 3_600_000);
+      expect(await s.records.expireParents(grouped, { owner: 'alice' }, 60_000)).toEqual([
+        '2026-01',
+      ]);
+      expect(await s.records.parents(grouped, { owner: 'alice' })).toEqual(['2026-02']);
+      expect(await s.records.expireParents(things, { owner: 'alice' }, 60_000)).toEqual([]);
+    });
+
     each('ids that could leave the collection are refused', async ({ records }) => {
       const c = records.collection(things, { owner: 'alice' });
       for (const id of ['', '../x', 'a/b', '.hidden']) {
@@ -279,6 +301,12 @@ export function blobStoreContract(backend: string, make: StoresFactory): void {
         blobs.keys.upload('alice', 'u_1', 'data.mp4'),
         blobs.keys.cache('frames', 'x.png'),
       ];
+      expect(
+        blobs.keys.output('alice', 'j_1', 'out.mp4').startsWith(blobs.keys.outputs('alice')),
+      ).toBe(true);
+      expect(
+        blobs.keys.upload('alice', 'u_1', 'data.mp4').startsWith(blobs.keys.uploads('alice')),
+      ).toBe(true);
       expect(new Set(keys).size).toBe(keys.length);
       for (const key of keys) expect(key.startsWith('/')).toBe(false);
     });
@@ -393,7 +421,7 @@ export function blobStoreContract(backend: string, make: StoresFactory): void {
       const kept = blobs.keys.output('alice', 'f_kept', 'a.bin');
       const fresh = blobs.keys.output('alice', 'j_new', 'a.bin');
       for (const key of [old, kept, fresh]) await blobs.put(key, { bytes: Buffer.alloc(1) });
-      const outputs = dirname(dirname(old));
+      const outputs = blobs.keys.outputs('alice');
       await s.age.blob(dirname(old), 3_600_000);
       await s.age.blob(dirname(kept), 3_600_000);
       expect(await blobs.expire(outputs, 60_000, (name) => name.startsWith('f_'))).toEqual([
