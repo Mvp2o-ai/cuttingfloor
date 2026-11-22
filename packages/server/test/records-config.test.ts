@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { configFromEnv } from '@cuttingfloor/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 // Where records are kept is one environment variable; the database's address comes whole or in
 // parts, and nothing secret is ever echoed back.
@@ -129,5 +129,33 @@ describe('CUTTINGFLOOR_RECORDS', () => {
       { env: { ...process.env, CUTTINGFLOOR_RECORDS: '' } },
     );
     expect(JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}')).toEqual({ loaded: 0 });
+  }, 30_000);
+
+  it('a shutdown is not held up by a database out of reach', async () => {
+    const { Runtime } = await import('@cuttingfloor/server');
+    const { mkdtemp } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const runtime = new Runtime({
+      ...configFromEnv({
+        CUTTINGFLOOR_DATA: await mkdtemp(join(tmpdir(), 'cf-unreachable-')),
+        CUTTINGFLOOR_RECORDS: 'mongo',
+        CUTTINGFLOOR_MONGODB_HOST: '127.0.0.1:1',
+      }),
+      mediaRoots: [],
+    });
+    const log = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      // A lease being asked for, as a turn of periodic work would: it waits on the database.
+      const asked = runtime.ws.records.leader('sweep').catch(() => false);
+      const began = Date.now();
+      await runtime.close(300);
+      expect(Date.now() - began).toBeLessThan(1500);
+      // Left to itself the store takes as long as the database takes to say no.
+      expect(await asked).toBe(false);
+      await runtime.close();
+    } finally {
+      log.mockRestore();
+    }
   }, 30_000);
 });

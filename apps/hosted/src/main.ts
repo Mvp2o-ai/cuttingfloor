@@ -302,8 +302,9 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     runtime.stop();
     // The record store closes after the requests in flight have ended (they still read and
     // write it), handing its leases back so another server takes the periodic work over.
+    // Whatever the database does, the process is gone a second after the 5 s cutoff.
     const end = () =>
-      void runtime.close().then(
+      void runtime.close(1000).then(
         () => process.exit(0),
         () => process.exit(0),
       );

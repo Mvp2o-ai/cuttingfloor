@@ -393,10 +393,23 @@ export class Runtime {
     if (this.#reaper) clearInterval(this.#reaper);
   }
 
-  /** Stops, and lets go of the record store's leases and connections. */
-  async close(): Promise<void> {
+  /**
+   * Stops, and lets go of the record store's leases and connections. With `withinMs` it answers
+   * by then whatever the store does (a database out of reach makes letting go wait), so a
+   * shutdown is never held up by it; the leases then run out by themselves.
+   */
+  async close(withinMs?: number): Promise<void> {
     this.stop();
-    await this.ws.records.close();
+    const closed = this.ws.records.close().catch(() => undefined);
+    if (withinMs === undefined) return closed;
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      closed,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, withinMs);
+      }),
+    ]);
+    clearTimeout(timer);
   }
 
   async sweep(): Promise<void> {
