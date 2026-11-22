@@ -326,6 +326,8 @@ export class Runtime {
           (name) => !name.startsWith('f_'),
         ),
       );
+      // And any record whose output went some other way (the job sweep above, an older server).
+      await this.outputs.prune(owner);
     }
     await this.uploads.sweep();
     for (const owner of await records.owners()) {

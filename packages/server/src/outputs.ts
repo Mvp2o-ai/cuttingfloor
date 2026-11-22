@@ -83,6 +83,22 @@ export class Outputs {
     return undefined;
   }
 
+  /**
+   * Forgets every record whose output holds no file any more, however it went: swept just now,
+   * swept by a server from before outputs had records, or lost with a crash in between.
+   */
+  async prune(owner: string): Promise<number> {
+    const { records, blobs } = this.#ws;
+    const kept = records.collection(OUTPUTS, { owner });
+    let n = 0;
+    for (const id of await kept.ids()) {
+      if ((await blobs.list(this.key(owner, id, ''))).length) continue;
+      await kept.delete(id);
+      n += 1;
+    }
+    return n;
+  }
+
   /** Forgets the records of outputs that have gone (`ids` as the sweep removed them). */
   async forget(owner: string, ids: string[]): Promise<void> {
     for (const id of ids) await this.#ws.records.collection(OUTPUTS, { owner }).delete(id);

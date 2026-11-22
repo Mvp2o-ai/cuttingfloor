@@ -1,5 +1,5 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
+import { join, relative, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type TestEnv, testRuntime } from './helpers.ts';
 
@@ -28,6 +28,28 @@ describe('the runtime on the filesystem stores', () => {
     await ws.blobs.delete(outputs.key('local', id, 'new.txt'));
     expect(await outputs.file('local', id)).toBe('old.mp4');
     expect(await outputs.file('local', id, (name) => !name.startsWith('old'))).toBeUndefined();
+  });
+
+  it('the sweep forgets output records whose output has gone some other way', async () => {
+    const { outputs, ws } = env.runtime;
+    const index = (id: string) => ws.ownerDir('pruned', 'outputs-index', `${id}.json`);
+    const has = (id: string) =>
+      readFile(index(id), 'utf8').then(
+        () => true,
+        () => false,
+      );
+    const gone = 'j_cccccccccccccccccccccccccc';
+    const empty = 'f_cccccccccccccccccccccccccc';
+    const held = 'j_dddddddddddddddddddddddddd';
+    for (const id of [gone, empty, held])
+      await outputs.write('pruned', id, 'out.txt', 'x', 'export');
+    // As a server from before these records sweeps: the output's folder goes, or its file.
+    await rm(ws.ownerDir('pruned', 'outputs', gone), { recursive: true });
+    await rm(ws.ownerDir('pruned', 'outputs', empty, 'out.txt'));
+    await writeFile(ws.ownerDir('pruned', 'outputs-index', '.DS_Store'), 'stray');
+    await env.runtime.sweep();
+    expect([await has(gone), await has(empty), await has(held)]).toEqual([false, false, true]);
+    expect(await outputs.file('pruned', held)).toBe('out.txt');
   });
 
   it('counts the same stored bytes with or without an output record', async () => {
@@ -171,6 +193,48 @@ describe('the runtime on the filesystem stores', () => {
       `owners/disk/media/${id}/proxy.mov`,
     ]);
     expect((await media.list('disk'))[0]?.file).toBe(read.file);
+  });
+
+  it('expires media one at a time, each with its tombstone before the next goes', async () => {
+    const { media, ws } = env.runtime;
+    const ids = ['m_aaaaaaaaaaaaaaaaaaaaaaaaba', 'm_aaaaaaaaaaaaaaaaaaaaaaaabb'];
+    const old = new Date(Date.now() - 30 * 24 * 3_600_000);
+    for (const id of ids) {
+      const file = `${media.dir('expiring', id)}/media.json`;
+      await ws.writeJson(file, { media_id: id, name: id, status: 'ready', source: { path: '/x' } });
+      await utimes(file, old, old);
+    }
+    await writeFile(ws.ownerDir('expiring', 'media', '.DS_Store'), 'stray');
+    await utimes(ws.ownerDir('expiring', 'media', '.DS_Store'), old, old);
+    expect(await media.sweep()).toBe(2);
+    for (const id of ids) {
+      expect(await media.exists('expiring', id)).toBe(false);
+      expect((await media.missing('expiring', id)).detail).toMatchObject({ reason: 'expired' });
+    }
+  });
+
+  it('runs on a relative data root, reading media records written from it before', async () => {
+    const given = relative(process.cwd(), join(env.dir, 'relative-data'));
+    const rel = await testRuntime({ dataDir: given });
+    try {
+      const { media, ws } = rel.runtime;
+      const sent = join(rel.dir, 'clip.mp4');
+      await writeFile(sent, 'bytes');
+      const record = await media.create('local', { url: 'https://example.test/c.mp4' }, 'c.mp4');
+      record.file = await media.adopt('local', record, { file: sent });
+      await media.save('local', record);
+      const dir = join(given, 'owners', 'local', 'media', record.media_id);
+      const stored = JSON.parse(await readFile(join(dir, 'media.json'), 'utf8'));
+      // As develop wrote it from this root, and as develop reads it back.
+      expect(stored.file).toBe(join(dir, 'source.mp4'));
+      const read = await media.get('local', record.media_id);
+      expect(read.file).toBe(ws.blobs.keys.media('local', record.media_id, 'source.mp4'));
+      expect(await readFile(await media.local(read.file as string), 'utf8')).toBe('bytes');
+      expect(await media.local(read.file as string)).toBe(resolve(dir, 'source.mp4'));
+    } finally {
+      rel.runtime.stop();
+      await rm(rel.dir, { recursive: true, force: true });
+    }
   });
 
   it('loads a media record in the shape production holds today', async () => {
