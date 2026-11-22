@@ -57,7 +57,10 @@ async function expiredData(): Promise<{ root: string; timeline: string; blob: st
 afterEach(async () => {
   vi.useRealTimers();
   for (const runtime of runtimes.splice(0)) await runtime.close();
-  for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
+  for (const dir of dirs.splice(0)) {
+    // A sequence's turn that was under way when it stopped may still be writing its last record.
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
 });
 
 describe('a standby server', () => {
@@ -182,6 +185,7 @@ describe('a standby server', () => {
       expect(started[1]).toEqual({ sweep: true });
     } finally {
       running?.stop();
+      await new Promise((r) => setTimeout(r, 250));
     }
   });
 });
