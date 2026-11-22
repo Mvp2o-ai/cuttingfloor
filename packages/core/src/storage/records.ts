@@ -111,6 +111,8 @@ export interface Records {
     scope: Pick<CollectionScope, 'owner'>,
     ttlMs: number,
   ): Promise<string[]>;
+  /** Removes every record an owner has, in every collection kept per owner (the account is deleted). */
+  forget(owner: string): Promise<void>;
   /** The key of every owner the store holds anything for. */
   owners(): Promise<string[]>;
   /**

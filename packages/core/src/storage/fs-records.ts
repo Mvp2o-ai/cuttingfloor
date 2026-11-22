@@ -66,6 +66,11 @@ export class FsRecords implements Records {
     return join(this.#base(spec, scope), ...parts.slice(0, at));
   }
 
+  /** The owner's folder goes whole: its records, and with them the files kept beside them. */
+  async forget(owner: string): Promise<void> {
+    await rm(join(this.root, 'owners', ownerKey(owner)), { recursive: true, force: true });
+  }
+
   async owners(): Promise<string[]> {
     return listDir(join(this.root, 'owners'));
   }

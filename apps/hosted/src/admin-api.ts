@@ -10,12 +10,14 @@ import {
 import {
   billedSeconds,
   type CallEntry,
+  CLAIMS,
   meterEntries,
+  ONBOARDING,
   type Runtime,
   readCalls,
   readSupportMessages,
 } from '@cuttingfloor/server';
-import { type AccessCheck, linkPath } from './access.ts';
+import { type AccessCheck, LEDGER_LINKS } from './access.ts';
 import type { AppsSeen } from './apps-seen.ts';
 import { exportOf } from './expiry-notices.ts';
 import type { KeyKind, ScriptKeys } from './keys.ts';
@@ -196,13 +198,15 @@ export class AdminApi {
       await Promise.all([
         rt.media.list(owner),
         rt.jobs.store.list(owner, { status: 'completed', limit: 1000 }),
-        rt.ws.readJson(linkPath(rt.ws, owner)).catch(() => undefined),
+        rt.ws.records
+          .collection(LEDGER_LINKS, { owner })
+          .get('link')
+          .catch(() => undefined),
         recipientState(rt.ws, owner, user.email),
         // credits.claim's record: the use case the assistant gave.
-        rt.ws
-          .readJson<{ use_case?: string; claimed_at?: string }>(
-            rt.ws.ownerDir(owner, 'free-credits.json'),
-          )
+        rt.ws.records
+          .collection(CLAIMS, { owner })
+          .get('free-credits')
           .catch(() => undefined),
         readCalls(rt.ws, owner).catch(() => []),
         readSupportMessages(rt.ws, owner).catch(() => []),
@@ -210,8 +214,9 @@ export class AdminApi {
         this.#o.apps.read(owner).catch(() => []),
         // Stripe only for one account: a page of 50 would be 50 calls.
         !options.links ? null : customer ? this.#o.access.payments(customer).catch(() => null) : [],
-        rt.ws
-          .readJson<{ sample?: string }>(rt.ws.ownerDir(owner, 'onboarding.json'))
+        rt.ws.records
+          .collection(ONBOARDING, { owner })
+          .get('onboarding')
           .catch(() => undefined),
       ]);
     const now = Date.now();

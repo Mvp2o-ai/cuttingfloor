@@ -2,9 +2,9 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import { readFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
-import type { Workspace } from '@cuttingfloor/core';
+import { type Collection, defineCollection, type Workspace } from '@cuttingfloor/core';
 import { EmailError, type EmailProvider } from './email.ts';
-import { madeByPartner } from './lifecycle.ts';
+import { madeByPartner, NOTICES } from './lifecycle.ts';
 
 // The sign-up sequence: a welcome within a minute of signing up, exactly one follow-up a
 // configured time later, chosen by whether the account has finished a first edit, and later a
@@ -165,7 +165,7 @@ export class Sequence {
       }
     }
     const ws = this.#o.ws;
-    await ws.sweep(ws.path('email-log'), LOG_TTL_MS);
+    await ws.records.expireParents(EMAIL_LOG, {}, LOG_TTL_MS);
   }
 
   /** The signed link that unsubscribes this account in one click. */
@@ -198,12 +198,11 @@ export class Sequence {
   async #dispatch(owner: string, slot: Slot): Promise<void> {
     const { ws } = this.#o;
     if (slot !== 'welcome') {
-      const welcome = await ws.readJson<Claim>(ws.ownerDir(owner, 'email', 'welcome.json'));
+      const welcome = await slots(ws, owner).get('welcome');
       if (welcome?.outcome !== 'sent') return;
     }
-    const file = ws.ownerDir(owner, 'email', `${slot}.json`);
     const claim: Claim = { slot, outcome: 'sending', at: new Date().toISOString() };
-    if (!(await ws.writeJson(file, claim, { exclusive: true }))) return;
+    if (!(await slots(ws, owner).insertOnce(slot, claim))) return;
     let sent = false;
     try {
       const state = await this.#o.subscribers.current(owner);
@@ -220,7 +219,7 @@ export class Sequence {
               ? 'no_credits_left'
               : undefined);
       if (!state || !credits || why) {
-        await this.#settle(owner, file, { ...claim, outcome: 'suppressed', reason: why ?? '' });
+        await this.#settle(owner, { ...claim, outcome: 'suppressed', reason: why ?? '' });
         return;
       }
       const app = appName(state.firstClient);
@@ -256,21 +255,21 @@ export class Sequence {
           idempotencyKey: `sequence:${owner}:${slot}`,
         });
         sent = true;
-        await this.#settle(owner, file, {
+        await this.#settle(owner, {
           ...sending,
           outcome: 'sent',
           provider_message_id: message.id,
         });
       } catch (error) {
         if (sent || !(error instanceof EmailError && error.permanent)) throw error;
-        await this.#settle(owner, file, { ...sending, outcome: 'failed', reason: error.message });
+        await this.#settle(owner, { ...sending, outcome: 'failed', reason: error.message });
       }
     } catch (error) {
       // Once sent, the claim stays whatever went wrong after. Otherwise it goes, so the next tick
       // tries again: WorkOS or the provider may answer then.
       if (!sent) {
         await this.#log(owner, { ...claim, outcome: 'failed', reason: (error as Error).message });
-        await ws.remove(file);
+        await slots(ws, owner).delete(slot);
       }
       throw error;
     }
@@ -279,18 +278,18 @@ export class Sequence {
   /** Why this message must not go to this account now, if it mustn't. */
   async #suppressed(owner: string, slot: Slot, email: string): Promise<string | undefined> {
     const { ws } = this.#o;
-    if (await ws.readJson(ws.ownerDir(owner, 'email', 'unsubscribed.json'))) return 'unsubscribed';
-    const blocked = await ws.readJson<{ reason: string }>(suppressionFile(ws, email));
+    if (await unsubscribes(ws, owner).get('unsubscribed')) return 'unsubscribed';
+    const blocked = await suppressions(ws).get(suppressionId(email));
     if (blocked) return blocked.reason;
     // Accounts made before this sequence got the lifecycle's welcome instead.
-    if (slot === 'welcome' && (await ws.readJson(ws.ownerDir(owner, 'notices', 'welcome.json'))))
+    if (slot === 'welcome' && (await ws.records.collection(NOTICES, { owner }).get('welcome')))
       return 'already_received';
     return undefined;
   }
 
   /** Records how a claimed send ended, on the claim and in the send log. */
-  async #settle(owner: string, file: string, claim: Claim): Promise<void> {
-    await this.#o.ws.writeJson(file, { ...claim, at: new Date().toISOString() });
+  async #settle(owner: string, claim: Claim): Promise<void> {
+    await slots(this.#o.ws, owner).put(claim.slot, { ...claim, at: new Date().toISOString() });
     await this.#log(owner, claim);
   }
 
@@ -310,15 +309,12 @@ export class Sequence {
       `sequence: ${owner} ${claim.slot} ${claim.outcome}${claim.template ? ` ${claim.template}@${claim.template_version}` : ''}${claim.provider_message_id ? ` ${claim.provider_message_id}` : ''}${claim.reason ? ` (${claim.reason})` : ''}\n`,
     );
     const ws = this.#o.ws;
-    await ws.writeJson(
-      ws.path(
-        'email-log',
-        at.slice(0, 10),
-        `${at.slice(11, 19).replaceAll(':', '')}-${randomBytes(4).toString('hex')}.json`,
-      ),
-      entry,
-      { exclusive: true },
-    );
+    await ws.records
+      .collection(EMAIL_LOG, { parent: at.slice(0, 10) })
+      .insertOnce(
+        `${at.slice(11, 19).replaceAll(':', '')}-${randomBytes(4).toString('hex')}`,
+        entry,
+      );
   }
 
   #token(owner: string): string {
@@ -346,8 +342,7 @@ export class Sequence {
     const ws = this.#o.ws;
     const done = 'You’re unsubscribed. cuttingfloor won’t send you these emails again.';
     if (req.method === 'GET') {
-      if (await ws.readJson(ws.ownerDir(owner, 'email', 'unsubscribed.json')))
-        return page(res, 200, done);
+      if (await unsubscribes(ws, owner).get('unsubscribed')) return page(res, 200, done);
       return page(
         res,
         200,
@@ -356,11 +351,7 @@ export class Sequence {
       );
     }
     await readBody(req, 4096).catch(() => '');
-    await ws.writeJson(
-      ws.ownerDir(owner, 'email', 'unsubscribed.json'),
-      { at: new Date().toISOString() },
-      { exclusive: true },
-    );
+    await unsubscribes(ws, owner).insertOnce('unsubscribed', { at: new Date().toISOString() });
     page(res, 200, done);
   }
 
@@ -396,7 +387,7 @@ export class Sequence {
     const to = event.data?.to;
     const ws = this.#o.ws;
     for (const address of Array.isArray(to) ? to : to ? [to] : []) {
-      await ws.writeJson(suppressionFile(ws, address), {
+      await suppressions(ws).put(suppressionId(address), {
         reason,
         at: new Date().toISOString(),
         email_id: event.data?.email_id ?? null,
@@ -569,13 +560,12 @@ export function isNoReply(address: string): boolean {
  * address's suppression. Its claims and unsubscribe live in its own folder, which goes with it.
  */
 export async function forgetRecipient(ws: Workspace, owner: string, email: string): Promise<void> {
-  if (email) await ws.remove(suppressionFile(ws, email));
-  const log = ws.path('email-log');
-  for (const day of await ws.list(log)) {
-    for (const name of await ws.list(join(log, day))) {
-      const path = join(log, day, name);
-      const entry = await ws.readJson<{ subscriber?: string }>(path).catch(() => undefined);
-      if (entry?.subscriber === owner) await ws.remove(path);
+  if (email) await suppressions(ws).delete(suppressionId(email));
+  for (const day of await ws.records.parents(EMAIL_LOG)) {
+    const sent = ws.records.collection(EMAIL_LOG, { parent: day });
+    for (const id of await sent.ids()) {
+      const entry = await sent.get(id).catch(() => undefined);
+      if (entry?.subscriber === owner) await sent.delete(id);
     }
   }
 }
@@ -587,17 +577,54 @@ export async function recipientState(
   email: string,
 ): Promise<{ unsubscribed: boolean; suppressed: string | null }> {
   const [unsubscribed, blocked] = await Promise.all([
-    ws.readJson(ws.ownerDir(owner, 'email', 'unsubscribed.json')),
-    email ? ws.readJson<{ reason: string }>(suppressionFile(ws, email)) : undefined,
+    unsubscribes(ws, owner).get('unsubscribed'),
+    email ? suppressions(ws).get(suppressionId(email)) : undefined,
   ]);
   return { unsubscribed: Boolean(unsubscribed), suppressed: blocked?.reason ?? null };
 }
 
 /** A suppressed address, kept by its hash rather than the address itself. */
-function suppressionFile(ws: Workspace, email: string): string {
-  const hash = createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
-  return ws.path('email-suppressions', `${hash}.json`);
+function suppressionId(email: string): string {
+  return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
 }
+
+/** The sequence's claim of each message for an account, by slot (`owners/{owner}/email/`). */
+export const EMAIL_SLOTS = defineCollection<Claim>({
+  name: 'email_slots',
+  scope: 'owner',
+  fs: { dir: 'email' },
+});
+
+/** That an account unsubscribed: one record, id `unsubscribed`, beside its slots. */
+export const EMAIL_UNSUBSCRIBED = defineCollection<{ at: string }>({
+  name: 'email_unsubscribed',
+  scope: 'owner',
+  fs: { dir: 'email' },
+});
+
+/** Addresses that must not be emailed (bounced, complained), by the address's SHA-256. */
+export const EMAIL_SUPPRESSIONS = defineCollection<{
+  reason: string;
+  at?: string;
+  email_id?: string | null;
+}>({
+  name: 'email_suppressions',
+  scope: 'global',
+  fs: { dir: 'email-suppressions' },
+});
+
+/** How each claimed send ended, one record a send, grouped by day. */
+export const EMAIL_LOG = defineCollection<{ subscriber?: string }>({
+  name: 'email_log',
+  scope: 'global',
+  fs: { dir: (day) => `email-log/${day}` },
+});
+
+const slots = (ws: Workspace, owner: string): Collection<Claim> =>
+  ws.records.collection(EMAIL_SLOTS, { owner });
+const unsubscribes = (ws: Workspace, owner: string) =>
+  ws.records.collection(EMAIL_UNSUBSCRIBED, { owner });
+const suppressions = (ws: Workspace) => ws.records.collection(EMAIL_SUPPRESSIONS);
 
 function same(a: string, b: string): boolean {
   const x = Buffer.from(a);

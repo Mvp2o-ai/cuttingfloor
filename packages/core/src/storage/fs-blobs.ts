@@ -33,6 +33,7 @@ export const FS_BLOB_KEYS: BlobKeys = {
   outputs: (owner) => `owners/${ownerKey(owner)}/outputs`,
   upload: (owner, uploadId, name) => `owners/${ownerKey(owner)}/uploads/${uploadId}/${name}`,
   uploads: (owner) => `owners/${ownerKey(owner)}/uploads`,
+  owner: (owner) => `owners/${ownerKey(owner)}`,
   cache: (...name) => ['cache', ...name].join('/'),
 };
 

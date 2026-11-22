@@ -1,3 +1,4 @@
+import { defineCollection } from '@cuttingfloor/core';
 import {
   FREE_CREDITS,
   freeCreditsFor,
@@ -95,7 +96,14 @@ const ALLOWED_TTL = 5 * 60_000;
 const DENIED_TTL = 20_000;
 const USAGE_TTL = 15_000;
 
-/** Where an owner's ledger link is kept. */
+/** An owner's ledger link: one record, id `link` (`owners/{owner}/ledger/link.json`). */
+export const LEDGER_LINKS = defineCollection<Partial<Link> & Pick<Link, 'since' | 'used_before'>>({
+  name: 'ledger_links',
+  scope: 'owner',
+  fs: { dir: 'ledger' },
+});
+
+/** The link's file on the filesystem store, for tests that lay one down by hand. */
 export const linkPath = (ws: Runtime['ws'], owner: string) =>
   ws.ownerDir(owner, 'ledger', 'link.json');
 
@@ -218,7 +226,10 @@ export class AccessCheck {
     } catch (error) {
       if (!(error instanceof LedgerMissing)) throw error;
       // The ledger lost it (removed by hand): link again, from now.
-      await this.#o.ws.remove(linkPath(this.#o.ws, owner)).catch(() => undefined);
+      await this.#o.ws.records
+        .collection(LEDGER_LINKS, { owner })
+        .delete('link')
+        .catch(() => undefined);
       this.#cache.delete(owner);
       const access = await this.require(owner);
       if (!access.ledger) throw error;
@@ -318,8 +329,8 @@ export class AccessCheck {
     customer: string | undefined,
   ): Promise<{ link: Link; account?: LedgerAccount }> {
     const ws = this.#o.ws;
-    const file = linkPath(ws, owner);
-    let known = await ws.readJson<Partial<Link> & Pick<Link, 'since' | 'used_before'>>(file);
+    const links = ws.records.collection(LEDGER_LINKS, { owner });
+    let known = await links.get('link');
     if (known?.account_id) {
       const link = known as Link;
       if (!customer || link.customer === customer) return { link };
@@ -328,7 +339,7 @@ export class AccessCheck {
         workos_user_id: owner,
         stripe_customer_id: customer,
       });
-      await ws.writeJson(file, { ...link, customer });
+      await links.put('link', { ...link, customer });
       return { link: { ...link, customer }, account };
     }
     if (!known) {
@@ -338,8 +349,8 @@ export class AccessCheck {
         used_before: round3((await meteredSeconds(ws, owner, new Date(created_at), since)) / 60),
       };
       // Another server may have claimed it at the same moment; the first claim stands.
-      await ws.writeJson(file, claim, { exclusive: true });
-      known = (await ws.readJson<typeof claim>(file)) ?? claim;
+      await links.insertOnce('link', claim);
+      known = (await links.get('link')) ?? claim;
     }
     const { since, used_before } = known;
     // The ledger grants its own free credits once per person, so the carry-over leaves them out.
@@ -359,7 +370,7 @@ export class AccessCheck {
       used_before,
       ...(customer ? { customer } : {}),
     };
-    await ws.writeJson(file, link);
+    await links.put('link', link);
     return { link, account };
   }
 

@@ -68,6 +68,8 @@ export interface BlobKeys {
   upload(owner: string, uploadId: string, name: string): BlobKey;
   /** The prefix of every upload an owner has, one entry per upload. */
   uploads(owner: string): BlobKey;
+  /** The prefix of every blob an owner has. */
+  owner(owner: string): BlobKey;
   /** Derived and disposable: kept on this node only, rebuilt when missing. */
   cache(...name: string[]): BlobKey;
 }

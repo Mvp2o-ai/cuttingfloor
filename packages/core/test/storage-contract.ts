@@ -273,6 +273,18 @@ export function recordsContract(backend: string, make: StoresFactory): void {
       expect(await his.get('a')).toEqual({ name: 'his' });
     });
 
+    each('forget removes everything one owner has', async ({ records }) => {
+      await records.collection(things, { owner: 'alice' }).put('a', { name: 'a' });
+      await records.collection(foldered, { owner: 'alice' }).put('b', { name: 'b' });
+      await records.collection(grouped, { owner: 'alice', parent: 'p' }).put('c', { name: 'c' });
+      await records.collection(things, { owner: 'bob' }).put('a', { name: 'his' });
+      await records.forget('alice');
+      expect(await records.collection(things, { owner: 'alice' }).ids()).toEqual([]);
+      expect(await records.collection(foldered, { owner: 'alice' }).ids()).toEqual([]);
+      expect(await records.parents(grouped, { owner: 'alice' })).toEqual([]);
+      expect(await records.collection(things, { owner: 'bob' }).get('a')).toEqual({ name: 'his' });
+    });
+
     each('ids that could leave the collection are refused', async ({ records }) => {
       const c = records.collection(things, { owner: 'alice' });
       for (const id of ['', '../x', 'a/b', '.hidden']) {
@@ -321,6 +333,9 @@ export function blobStoreContract(backend: string, make: StoresFactory): void {
       ).toBe(true);
       expect(new Set(keys).size).toBe(keys.length);
       for (const key of keys) expect(key.startsWith('/')).toBe(false);
+      expect(
+        blobs.keys.media('alice', 'm_1', 'source.mp4').startsWith(blobs.keys.owner('alice')),
+      ).toBe(true);
     });
 
     each('put from bytes, a stream and a file; get, head and a range', async (s) => {
