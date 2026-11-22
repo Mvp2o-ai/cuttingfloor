@@ -544,6 +544,31 @@ describe.skipIf(!up)('S3 blobs: what only this store promises', () => {
     }
   });
 
+  each(
+    'with checksums on, a whole put carries its SHA-256 for the bucket to check',
+    async ({ blobs, settings }) => {
+      const key = blobs.keys.derived('alice', 'm_1', 'checked.json');
+      const body = Buffer.from('{"checked":true}');
+      await blobs.put(key, { bytes: body });
+      const sdk = await import('@aws-sdk/client-s3');
+      const client = new sdk.S3Client({
+        endpoint: settings.endpoint,
+        region: settings.region,
+        credentials: settings,
+        forcePathStyle: true,
+      });
+      try {
+        const head = await client.send(
+          new sdk.HeadObjectCommand({ Bucket: settings.bucket, Key: key, ChecksumMode: 'ENABLED' }),
+        );
+        expect(head.ChecksumSHA256).toBe(createHash('sha256').update(body).digest('base64'));
+      } finally {
+        client.destroy();
+      }
+    },
+    { checksums: true },
+  );
+
   each('a failure reaches the caller in plain words; the log has the detail', async (s) => {
     const log = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
@@ -574,7 +599,10 @@ describe.skipIf(!up)('S3 blobs: what only this store promises', () => {
         const start = (await broken.ready().catch((e) => e)) as Error;
         expect(start.message).toMatch(/^The bucket refused CUTTINGFLOOR_S3_ACCESS_KEY_ID/);
         const logged = log.mock.calls.map((c) => String(c[0])).join('');
-        expect(logged).toMatch(/blobs: put outputs\/alice\/j_1\/a: /);
+        // The owner is an account id: the log names a hash of it, never the id.
+        expect(logged).toMatch(/blobs: put outputs\/o-[0-9a-f]{10}\/j_1\/a: /);
+        expect(logged).not.toContain('alice');
+        expect(isMissing(error) ? error.message : '').not.toContain('alice');
         expect(logged).not.toContain('not-the-secret-key');
         expect(logged).not.toContain(TEST_S3.secretAccessKey);
         await broken.close();
@@ -858,6 +886,7 @@ describe('CUTTINGFLOOR_BLOBS', () => {
       { CUTTINGFLOOR_S3_PART_MB: '1' },
       // Gathered in memory per upload sent in order: no more than 64 MiB a part.
       { CUTTINGFLOOR_S3_PART_MB: '65' },
+      { CUTTINGFLOOR_S3_CHECKSUM: 'crc32' },
       // A bucket with dots is not a host name under the endpoint.
       { CUTTINGFLOOR_S3_BUCKET: 'cuttingfloor.prod' },
       { CUTTINGFLOOR_S3_CONNECTIONS: '100000' },

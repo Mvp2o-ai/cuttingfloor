@@ -108,6 +108,13 @@ export interface S3BlobOptions {
    * Each costs little memory: its bytes stream through (about 64 KiB of buffers), never held.
    */
   uploads?: number;
+  /**
+   * Send each whole-object put's SHA-256 for the bucket to check before it stores the bytes
+   * (`x-amz-checksum-sha256`), where the bucket enforces it (scripts/check-s3.ts says). Parts of
+   * an upload in parts are not sent with one: a client's part is streamed before its hash is
+   * known, and a bucket wants one on every part or none.
+   */
+  checksums?: boolean;
   /** A copy larger than this is made in parts. Default 4 GiB (one request copies up to 5). */
   copyPartBytes?: number;
   /**
@@ -148,6 +155,18 @@ interface Loaded {
 
 function errno(code: 'ENOENT' | 'EEXIST' | 'EPART', message: string): Error {
   return Object.assign(new Error(message), { code });
+}
+
+/**
+ * Text that may name a blob, as it may be logged or reach an error: each owner in a key is a
+ * short hash of it (an owner is an account id), so logs never carry who a file is.
+ */
+export function shown(text: string): string {
+  return text.replace(
+    /\b(media|derived|outputs)\/([A-Za-z0-9_-]{1,64})(?=\/|\b)/g,
+    (_all, kind: string, owner: string) =>
+      `${kind}/o-${createHash('sha256').update(owner).digest('hex').slice(0, 10)}`,
+  );
 }
 
 function status(error: unknown): number | undefined {
@@ -336,9 +355,9 @@ export class S3BlobStore implements BlobStore {
     try {
       return await this.#slot(() => work(s3), paced);
     } catch (error) {
-      if (notFound(error)) throw errno('ENOENT', `No blob ${key}`);
-      if (precondition(error)) throw errno('EEXIST', `A blob is already at ${key}`);
-      if (badPart(error)) throw errno('EPART', `The parts of ${key} are not what was sent`);
+      if (notFound(error)) throw errno('ENOENT', `No blob ${shown(key)}`);
+      if (precondition(error)) throw errno('EEXIST', `A blob is already at ${shown(key)}`);
+      if (badPart(error)) throw errno('EPART', `The parts of ${shown(key)} are not what was sent`);
       throw this.#failed(operation, key, error);
     }
   }
@@ -346,7 +365,9 @@ export class S3BlobStore implements BlobStore {
   #failed(operation: string, key: string, error: unknown): CfError {
     const e = error as Error;
     process.stderr.write(
-      `blobs: ${operation} ${key}: ${e?.name ?? 'Error'}: ${e?.message ?? error}${status(error) ? ` (${status(error)})` : ''}\n`,
+      shown(
+        `blobs: ${operation} ${key}: ${e?.name ?? 'Error'}: ${e?.message ?? error}${status(error) ? ` (${status(error)})` : ''}\n`,
+      ),
     );
     return new CfError(
       'service_unavailable',
@@ -367,7 +388,7 @@ export class S3BlobStore implements BlobStore {
       await client.send(new sdk.HeadBucketCommand({ Bucket: this.bucket }));
     } catch (error) {
       const e = error as Error;
-      process.stderr.write(`blobs: bucket check: ${e?.name}: ${e?.message}\n`);
+      process.stderr.write(shown(`blobs: bucket check: ${e?.name}: ${e?.message}\n`));
       const code = status(error);
       throw new Error(
         code === 404
@@ -515,6 +536,9 @@ export class S3BlobStore implements BlobStore {
           Body: body,
           ContentLength: body.length,
           Metadata: { sha256 },
+          ...(this.#o.checksums
+            ? { ChecksumSHA256: Buffer.from(sha256, 'hex').toString('base64') }
+            : {}),
           ...(type ? { ContentType: type } : {}),
         }),
       ),
@@ -862,7 +886,7 @@ export class S3BlobStore implements BlobStore {
       return this.put(to, { stream: await this.get(from) });
     }
     const head = await this.stat(from);
-    if (!head) throw errno('ENOENT', `No blob ${from}`);
+    if (!head) throw errno('ENOENT', `No blob ${shown(from)}`);
     const limit = this.#o.copyPartBytes ?? 4 * 1024 ** 3;
     if (head.bytes <= limit) {
       await this.#call('copy', from, ({ sdk, client }) =>
@@ -923,7 +947,7 @@ export class S3BlobStore implements BlobStore {
       await this.copy(from, to);
       return to;
     }
-    if (!(await this.stat(from))) throw errno('ENOENT', `No blob ${from}`);
+    if (!(await this.stat(from))) throw errno('ENOENT', `No blob ${shown(from)}`);
     const kept = this.#kept(owned.owner);
     const id = this.#id(from);
     for (let turn = 0; ; turn += 1) {
@@ -938,13 +962,13 @@ export class S3BlobStore implements BlobStore {
         continue;
       }
       // Its last holder is deleting it.
-      if (record.refs <= 0) throw errno('ENOENT', `No blob ${from}`);
+      if (record.refs <= 0) throw errno('ENOENT', `No blob ${shown(from)}`);
       if (await kept.compareAndSet(id, { refs: record.refs }, { refs: record.refs + 1 })) break;
     }
     // Gone in between (deleted by a holder with no record yet): this holder holds nothing.
     if (!(await this.stat(from))) {
       await kept.delete(id);
-      throw errno('ENOENT', `No blob ${from}`);
+      throw errno('ENOENT', `No blob ${shown(from)}`);
     }
     return from;
   }
@@ -965,7 +989,7 @@ export class S3BlobStore implements BlobStore {
    */
   async #putAbsent(from: BlobKey, to: BlobKey): Promise<void> {
     const head = await this.stat(from);
-    if (!head) throw errno('ENOENT', `No blob ${from}`);
+    if (!head) throw errno('ENOENT', `No blob ${shown(from)}`);
     if (head.bytes > 4 * 1024 ** 3) {
       throw this.#failed('move', to, new Error('too large to place only when absent'));
     }
@@ -994,7 +1018,8 @@ export class S3BlobStore implements BlobStore {
       } catch (error) {
         // Two conditional writes at one moment: the store asks one to come back; by then the
         // other has landed.
-        if (status(error) === 409 && (await this.stat(to))) throw errno('EEXIST', `Taken: ${to}`);
+        if (status(error) === 409 && (await this.stat(to)))
+          throw errno('EEXIST', `Taken: ${shown(to)}`);
         throw error;
       }
       return;
@@ -1013,10 +1038,10 @@ export class S3BlobStore implements BlobStore {
         await kept.delete(claim);
         continue;
       }
-      throw errno('EEXIST', `A blob is already at ${to}`);
+      throw errno('EEXIST', `A blob is already at ${shown(to)}`);
     }
     try {
-      if (await this.stat(to)) throw errno('EEXIST', `A blob is already at ${to}`);
+      if (await this.stat(to)) throw errno('EEXIST', `A blob is already at ${shown(to)}`);
       await write();
     } finally {
       await kept.delete(claim).catch(() => undefined);
