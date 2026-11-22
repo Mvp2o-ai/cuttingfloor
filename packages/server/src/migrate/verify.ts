@@ -272,8 +272,11 @@ export async function verify(
         try {
           for await (const chunk of await source.blobs.get(part.item.rel))
             chunks.push(chunk as Buffer);
-        } catch {
-          continue;
+        } catch (error) {
+          // Gone is gone; a part that cannot be read is not compared, and says so.
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+          moved = false;
+          break;
         }
         const now = await lstat(file).catch(() => undefined);
         const known = manifest.logs[part.item.rel];
