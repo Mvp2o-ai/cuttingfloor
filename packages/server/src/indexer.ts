@@ -72,9 +72,11 @@ export class SearchIndexer {
     this.#running = true;
     try {
       for (let next = this.#queue.shift(); next; next = this.#queue.shift()) {
-        await this.#build(next.owner, next.id).catch((error: Error) =>
-          process.stderr.write(`index: ${next?.id}: ${error.message}\n`),
-        );
+        const { owner, id } = next;
+        // The media's copy on this node stays while it is indexed, however long that takes.
+        await this.#media
+          .hold(() => this.#build(owner, id))
+          .catch((error: Error) => process.stderr.write(`index: ${next?.id}: ${error.message}\n`));
         this.#waiting.delete(`${next.owner}/${next.id}`);
       }
     } finally {

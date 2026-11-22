@@ -27,4 +27,10 @@ export interface Scratch {
   keyOf(localPath: string): BlobKey | undefined;
   /** A folder for work in progress, on this node only. The caller removes it. */
   temp(prefix: string): Promise<string>;
+  /**
+   * Runs `work` with every local copy it is handed (`materialize`, `materializeDir`, `reserve`)
+   * kept until it settles, however long that is: a long job's source is never removed from
+   * under it to make room. Nothing to keep on the filesystem, where the paths are the blobs.
+   */
+  hold<T>(work: () => Promise<T>): Promise<T>;
 }

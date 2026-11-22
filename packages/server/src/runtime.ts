@@ -347,22 +347,25 @@ export class Runtime {
         );
       },
       // A job whose render waits for a slot says so, and where it stands.
+      // Every local copy a job is handed stays on this node's disk until the job ends.
       around: (ctx, work) =>
-        watchRenderQueue(
-          {
-            // Waiting for a render slot is not a stall.
-            queued: (ahead) => {
-              ctx.waiting(true);
-              ctx.status(
-                `waiting for a render slot: ${ahead === 0 ? 'next in line' : `${ahead} ahead`} (${renderLoad().limit} renders run at once on this server)`,
-              );
+        this.ws.scratch.hold(() =>
+          watchRenderQueue(
+            {
+              // Waiting for a render slot is not a stall.
+              queued: (ahead) => {
+                ctx.waiting(true);
+                ctx.status(
+                  `waiting for a render slot: ${ahead === 0 ? 'next in line' : `${ahead} ahead`} (${renderLoad().limit} renders run at once on this server)`,
+                );
+              },
+              started: () => {
+                ctx.waiting(false);
+                ctx.status('rendering');
+              },
             },
-            started: () => {
-              ctx.waiting(false);
-              ctx.status('rendering');
-            },
-          },
-          work,
+            work,
+          ),
         ),
     });
     // Uploads take files as big as URL imports may download.

@@ -595,6 +595,11 @@ export class MediaLibrary {
     return key;
   }
 
+  /** Runs `work` with every local copy it is handed kept on this node until it ends. */
+  hold<T>(work: () => Promise<T>): Promise<T> {
+    return this.#ws.scratch.hold(work);
+  }
+
   /** An existing usable import of the same content, for dedupe. */
   async findByFingerprint(owner: string, fingerprint: string): Promise<MediaRecord | undefined> {
     const index = await this.#index(owner).get(fingerprint);

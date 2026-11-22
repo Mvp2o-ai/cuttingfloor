@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomBytes } from 'node:crypto';
 import { constants, createWriteStream } from 'node:fs';
 import {
@@ -74,6 +75,10 @@ export class S3Scratch implements Scratch {
   readonly #used = new Map<string, number>();
   /** Media files never change under a key: their tag is trusted for a minute. */
   readonly #fresh = new Map<BlobKey, { path: string; at: number }>();
+  /** The paths handed out within the `hold` this call runs in. */
+  readonly #lease = new AsyncLocalStorage<Set<string>>();
+  /** Paths some `hold` still keeps, and how many keep each: never evicted. */
+  readonly #kept = new Map<string, number>();
   /** Bytes added since the cache was last measured; undefined before the first measure. */
   #added: number | undefined;
   #held = 0;
@@ -99,6 +104,7 @@ export class S3Scratch implements Scratch {
   #use(path: string): void {
     const now = Date.now();
     this.#used.set(path, now);
+    this.#keep(path);
     // Kept on the disk too, for a server started later. Never awaited: a hint, not a fact.
     const at = new Date(now);
     void utimes(path, at, at).catch(() => undefined);
@@ -199,6 +205,7 @@ export class S3Scratch implements Scratch {
     await mkdir(dirname(path), { recursive: true });
     this.#reserved.set(path, key);
     this.#used.set(path, Date.now());
+    this.#keep(path);
     return path;
   }
 
@@ -396,6 +403,32 @@ export class S3Scratch implements Scratch {
     return mkdtemp(join(tmpdir(), prefix));
   }
 
+  async hold<T>(work: () => Promise<T>): Promise<T> {
+    const mine = new Set<string>();
+    try {
+      return await this.#lease.run(mine, work);
+    } finally {
+      for (const path of mine) {
+        const left = (this.#kept.get(path) ?? 1) - 1;
+        if (left > 0) this.#kept.set(path, left);
+        else this.#kept.delete(path);
+      }
+    }
+  }
+
+  /** Keeps a path handed out within a `hold` until it settles. */
+  #keep(path: string): void {
+    const mine = this.#lease.getStore();
+    if (!mine || mine.has(path)) return;
+    mine.add(path);
+    this.#kept.set(path, (this.#kept.get(path) ?? 0) + 1);
+  }
+
+  /** Whether a `hold` keeps this path (or, for a folder, the folder). */
+  #inUse(path: string): boolean {
+    return this.#kept.has(path) || this.#kept.has(path.replace(/\.[0-9a-f]{12}\.part$/, ''));
+  }
+
   /** Counts bytes in; past the cap, the cache is measured and the least recently used go. */
   #grew(bytes: number): void {
     if (this.#added === undefined) {
@@ -462,6 +495,8 @@ export class S3Scratch implements Scratch {
     for (const unit of units.sort((a, b) => a.used - b.used)) {
       if (total <= this.#maxBytes) break;
       if (now - unit.used < this.#graceMs) break;
+      // In use by a job however long ago it was handed out: never removed under it.
+      if (this.#inUse(unit.path)) continue;
       // A download still landing is its request's to finish.
       if (unit.path.endsWith('.part') && now - unit.used < 6 * 3_600_000) continue;
       await rm(unit.path, { recursive: true, force: true });

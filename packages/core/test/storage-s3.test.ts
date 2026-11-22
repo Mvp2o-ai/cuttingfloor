@@ -698,6 +698,42 @@ describe.skipIf(!up)('S3 scratch: this node’s copies', () => {
     ]);
   });
 
+  each('nothing a job still holds is evicted, however long ago it was handed out', async (s) => {
+    const { blobs } = s;
+    const scratch = new S3Scratch(blobs, undefined as never, {
+      dir: join(s.root, 'held-cache'),
+      maxBytes: 1,
+      graceMs: 50,
+    });
+    const key = blobs.keys.media('alice', 'm_long', 'source.bin');
+    await blobs.put(key, { bytes: randomBytes(10_000) });
+    const there = (p: string) =>
+      stat(p).then(
+        () => true,
+        () => false,
+      );
+    let path = '';
+    let release: () => void = () => undefined;
+    const done = new Promise<void>((r) => {
+      release = r;
+    });
+    const job = scratch.hold(async () => {
+      path = await scratch.materialize(key);
+      await done;
+    });
+    // A long job: its copy is long past the grace (and the disk's own times say so too).
+    await new Promise((r) => setTimeout(r, 100));
+    while (!path) await new Promise((r) => setTimeout(r, 10));
+    const old = new Date(Date.now() - 2 * 3_600_000);
+    await utimes(path, old, old);
+    await scratch.evict();
+    expect(await there(path)).toBe(true);
+    release();
+    await job;
+    await scratch.evict();
+    expect(await there(path)).toBe(false);
+  });
+
   each('over its cap the least recently used goes, never what was just handed out', async (s) => {
     const { blobs } = s;
     const scratch = new S3Scratch(blobs, undefined as never, {

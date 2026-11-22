@@ -61,4 +61,8 @@ export class FsScratch implements Scratch {
   temp(prefix: string): Promise<string> {
     return mkdtemp(join(tmpdir(), prefix));
   }
+
+  hold<T>(work: () => Promise<T>): Promise<T> {
+    return work();
+  }
 }
