@@ -208,7 +208,37 @@ export class MediaLibrary {
     );
   }
 
-  /** Where media.search's index of the media's picture is kept (engine search.ts). */
+  /** Removes every file kept with a media, whether or not it still has a record. */
+  async discard(owner: string, id: string): Promise<void> {
+    await this.#ws.blobs.deletePrefix(this.prefix(owner, id));
+  }
+
+  /** A small file kept beside a set of derived files (a note that making them failed). */
+  async readDerived(owner: string, id: string, ...name: string[]): Promise<string | undefined> {
+    try {
+      const chunks: Buffer[] = [];
+      const key = this.#ws.blobs.keys.derived(owner, this.#id(id), ...name);
+      for await (const chunk of await this.#ws.blobs.get(key)) chunks.push(chunk as Buffer);
+      return Buffer.concat(chunks).toString('utf8');
+    } catch {
+      return undefined;
+    }
+  }
+
+  async writeDerived(owner: string, id: string, text: string, ...name: string[]): Promise<void> {
+    await this.#ws.blobs.put(this.#ws.blobs.keys.derived(owner, this.#id(id), ...name), {
+      bytes: Buffer.from(text),
+    });
+  }
+
+  async deleteDerived(owner: string, id: string, ...name: string[]): Promise<void> {
+    await this.#ws.blobs.delete(this.#ws.blobs.keys.derived(owner, this.#id(id), ...name));
+  }
+
+  /**
+   * Where media.search's index of the media's picture is kept on the filesystem store (tests
+   * read it); the server takes it from `derivedDir(owner, id, 'search')`.
+   */
   searchDir(owner: string, id: string): string {
     return join(this.dir(owner, id), 'search');
   }

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { join } from 'node:path';
+import { defineCollection } from '@cuttingfloor/core';
 import { ContactSupportInput, ContactSupportResult } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { guard, ok } from '../result.ts';
@@ -12,6 +12,13 @@ import type { ServerDeps } from '../server.ts';
 
 export const SUPPORT_ACK = 'Thanks for the message.';
 
+/** Messages an account sent with support.contact, one record each. */
+export const SUPPORT_MESSAGES = defineCollection<SupportMessage & { owner?: string }>({
+  name: 'support_messages',
+  scope: 'owner',
+  fs: { dir: 'support-messages' },
+});
+
 export interface SupportMessage {
   at: string;
   message: string;
@@ -22,11 +29,9 @@ export async function readSupportMessages(
   ws: ServerDeps['runtime']['ws'],
   owner: string,
 ): Promise<SupportMessage[]> {
-  const dir = ws.ownerDir(owner, 'support-messages');
+  const messages = ws.records.collection(SUPPORT_MESSAGES, { owner });
   const found = await Promise.all(
-    (await ws.list(dir))
-      .filter((n) => n.endsWith('.json'))
-      .map((n) => ws.readJson<SupportMessage>(join(dir, n)).catch(() => undefined)),
+    (await messages.ids()).map((id) => messages.get(id).catch(() => undefined)),
   );
   return found
     .filter((m): m is SupportMessage => typeof m?.message === 'string')
@@ -56,15 +61,13 @@ export function registerSupportTools(server: McpServer, deps: ServerDeps): void 
       const at = new Date().toISOString();
       const ws = deps.runtime.ws;
       try {
-        await ws.writeJson(
-          ws.ownerDir(
+        await ws.records
+          .collection(SUPPORT_MESSAGES, { owner })
+          .insertOnce(`${at.replace(/[:.]/g, '')}-${randomBytes(4).toString('hex')}`, {
+            at,
             owner,
-            'support-messages',
-            `${at.replace(/[:.]/g, '')}-${randomBytes(4).toString('hex')}.json`,
-          ),
-          { at, owner, message },
-          { exclusive: true },
-        );
+            message,
+          });
       } catch (error) {
         process.stderr.write(
           `support.contact: ${owner}: not kept: ${error instanceof Error ? error.message : String(error)}\n`,

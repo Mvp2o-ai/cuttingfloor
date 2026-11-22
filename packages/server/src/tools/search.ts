@@ -276,7 +276,7 @@ export function registerSearchTools(server: McpServer, deps: ServerDeps): void {
           const scored = await Promise.all(
             pictured.map(async (p) => {
               const vectors = await keyframeVectors(
-                rt.media.searchDir(owner, p.record.media_id),
+                await rt.media.derivedDir(owner, p.record.media_id, 'search'),
                 p.index as PictureIndex,
               );
               let best = -1;
@@ -393,7 +393,7 @@ export function registerSearchTools(server: McpServer, deps: ServerDeps): void {
             if (plan.keyframes.length && plan.index) {
               const index = plan.index;
               const stills = await keyframePictures(
-                rt.media.searchDir(owner, r.media_id),
+                await rt.media.derivedDir(owner, r.media_id, 'search'),
                 index,
                 plan.keyframes,
               );

@@ -1,3 +1,4 @@
+import { defineCollection } from '@cuttingfloor/core';
 import {
   type AccountGetResult,
   ClaimFreeCreditsInput,
@@ -29,6 +30,25 @@ export interface FreeCreditsClaim {
   claimed_at: string;
 }
 
+/** The account's claim of its free credits: one record, id `free-credits`. */
+export const CLAIMS = defineCollection<FreeCreditsClaim>({
+  name: 'account_claims',
+  scope: 'owner',
+  fs: { dir: '' },
+});
+
+/** The sample credits.claim added for the account: one record, id `onboarding`. */
+export const ONBOARDING = defineCollection<{ media_id: string; sample?: string }>({
+  name: 'account_onboarding',
+  scope: 'owner',
+  fs: { dir: '' },
+});
+
+/**
+ * The claim's file on the filesystem store, for the one caller that must answer without waiting
+ * (createServer builds the instructions synchronously). A store that is not the filesystem
+ * needs the claim handed in with the account instead.
+ */
 export const claimFile = (deps: ServerDeps, owner: string) =>
   deps.runtime.ws.ownerDir(owner, 'free-credits.json');
 
@@ -58,9 +78,9 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
       };
       // Exclusive: the first call wins, across calls at once and servers; later ones find the
       // file and leave it as it is.
-      const claimedNow = await deps.runtime.ws.writeJson(claimFile(deps, deps.owner()), claim, {
-        exclusive: true,
-      });
+      const claimedNow = await deps.runtime.ws.records
+        .collection(CLAIMS, { owner: deps.owner() })
+        .insertOnce('free-credits', claim);
       const balance = await credits(deps);
       const left =
         balance === null ? '' : `: ${balance.left === null ? 'no cap' : `${balance.left} left`}`;
@@ -116,8 +136,8 @@ const adding = new Map<string, Promise<Shown>>();
 
 async function findOrImport(deps: ServerDeps, owner: string, useCase: string): Promise<Shown> {
   const rt = deps.runtime;
-  const file = rt.ws.ownerDir(owner, 'onboarding.json');
-  const named = await rt.ws.readJson<{ media_id: string; sample?: string }>(file);
+  const onboarding = rt.ws.records.collection(ONBOARDING, { owner });
+  const named = await onboarding.get('onboarding');
   const held = named && (await rt.media.find(owner, named.media_id));
   if (held && held.status !== 'failed') {
     const job = held.job_id ? await rt.jobs.store.get(held.job_id, owner) : undefined;
@@ -135,7 +155,7 @@ async function findOrImport(deps: ServerDeps, owner: string, useCase: string): P
     sample.file,
     'onboarding',
   );
-  await rt.ws.writeJson(file, { media_id: record.media_id, sample: sample.slug });
+  await onboarding.put('onboarding', { media_id: record.media_id, sample: sample.slug });
   return { slug: sample.slug, media_id: record.media_id, job: { id: job.id, status: job.status } };
 }
 
