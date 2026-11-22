@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.65.1
+
+### Patch Changes
+
+- 2de451b: The new-connection welcome asks what the user wants to make before claiming, so the sample fits and the claim follows their answer.
+
 ## 0.65.0
 
 ### Minor Changes
