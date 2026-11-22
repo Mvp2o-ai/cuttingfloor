@@ -10,6 +10,7 @@ import {
 import {
   billedSeconds,
   type CallEntry,
+  CLAIM_TASKS,
   CLAIMS,
   meterEntries,
   ONBOARDING,
@@ -37,7 +38,7 @@ import { recipientState } from './sequence.ts';
 //   {user, label} and `POST /account/admin-keys/revoke` {user, key_id}, with the site's own key.
 
 /** The API's version: within v1 it only grows, so every change bumps minor or patch. */
-export const ADMIN_API_VERSION = '1.4.0';
+export const ADMIN_API_VERSION = '1.5.0';
 const BASE = '/admin/v1';
 /** Admin keys: their own prefix and folder, so a script key never opens this API. */
 export const ADMIN_KEYS: KeyKind = { prefix: 'cfa_', dir: 'admin-keys', label: 'Admin key' };
@@ -194,31 +195,48 @@ export class AdminApi {
     const rt = this.#o.runtime;
     const meta = user.metadata ?? {};
     const customer = typeof meta.stripe_customer_id === 'string' ? meta.stripe_customer_id : '';
-    const [media, jobs, linked, prefs, claim, calls, messages, spent, apps, purchases, shown] =
-      await Promise.all([
-        rt.media.list(owner),
-        rt.jobs.store.list(owner, { status: 'completed', limit: 1000 }),
-        rt.ws.records
-          .collection(LEDGER_LINKS, { owner })
-          .get('link')
-          .catch(() => undefined),
-        recipientState(rt.ws, owner, user.email),
-        // credits.claim's record: the use case the assistant gave.
-        rt.ws.records
-          .collection(CLAIMS, { owner })
-          .get('free-credits')
-          .catch(() => undefined),
-        readCalls(rt.ws, owner).catch(() => []),
-        readSupportMessages(rt.ws, owner).catch(() => []),
-        spend(rt.ws, owner).catch(() => []),
-        this.#o.apps.read(owner).catch(() => []),
-        // Stripe only for one account: a page of 50 would be 50 calls.
-        !options.links ? null : customer ? this.#o.access.payments(customer).catch(() => null) : [],
-        rt.ws.records
-          .collection(ONBOARDING, { owner })
-          .get('onboarding')
-          .catch(() => undefined),
-      ]);
+    const [
+      media,
+      jobs,
+      linked,
+      prefs,
+      claim,
+      tasks,
+      calls,
+      messages,
+      spent,
+      apps,
+      purchases,
+      shown,
+    ] = await Promise.all([
+      rt.media.list(owner),
+      rt.jobs.store.list(owner, { status: 'completed', limit: 1000 }),
+      rt.ws.records
+        .collection(LEDGER_LINKS, { owner })
+        .get('link')
+        .catch(() => undefined),
+      recipientState(rt.ws, owner, user.email),
+      // credits.claim's record: the use case the assistant gave.
+      rt.ws.records
+        .collection(CLAIMS, { owner })
+        .get('free-credits')
+        .catch(() => undefined),
+      // Every task credits.claim was given, not only the first.
+      rt.ws.records
+        .collection(CLAIM_TASKS, { owner })
+        .find()
+        .catch(() => []),
+      readCalls(rt.ws, owner).catch(() => []),
+      readSupportMessages(rt.ws, owner).catch(() => []),
+      spend(rt.ws, owner).catch(() => []),
+      this.#o.apps.read(owner).catch(() => []),
+      // Stripe only for one account: a page of 50 would be 50 calls.
+      !options.links ? null : customer ? this.#o.access.payments(customer).catch(() => null) : [],
+      rt.ws.records
+        .collection(ONBOARDING, { owner })
+        .get('onboarding')
+        .catch(() => undefined),
+    ]);
     const now = Date.now();
     const files: File[] = [];
     for (const m of media) {
@@ -258,6 +276,7 @@ export class AdminApi {
       first_client: meta.first_client ?? null,
       use_case: claim?.use_case ?? null,
       use_case_at: claim?.claimed_at ?? null,
+      use_cases: tasks.map((t) => t.value).sort((a, b) => a.at.localeCompare(b.at)),
       sample: shown ? (shown.sample ?? 'animation-short') : null,
       last_used_at: meta.last_used_at ?? null,
       // Only an account already on the ledger: reading one that isn't would join it to the ledger.

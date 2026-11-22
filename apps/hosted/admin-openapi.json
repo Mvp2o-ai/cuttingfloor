@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "cuttingfloor admin API",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -367,6 +367,24 @@
             ],
             "description": "When the assistant activated the free credits"
           },
+          "use_cases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "use_case": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "ISO 8601 UTC"
+                }
+              },
+              "required": ["use_case", "at"]
+            },
+            "description": "Every task the assistant gave credits.claim, oldest first: the first activated the free credits, later ones are the user's next projects. Empty before a claim"
+          },
           "sample": {
             "description": "The onboarding sample credits.claim put in their library for that task (e.g. gaming-stream, podcast-interview); null before a claim",
             "type": ["string", "null"]
@@ -715,6 +733,7 @@
           "first_client",
           "use_case",
           "use_case_at",
+          "use_cases",
           "sample",
           "last_used_at",
           "credits",
