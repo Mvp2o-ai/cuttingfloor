@@ -20,6 +20,7 @@ import {
   creditsClaimed,
   DRAIN_RETRY_SECONDS,
   drainingError,
+  markWelcomed,
   type OwnerLimits,
   outputMime,
   type Runtime,
@@ -148,6 +149,21 @@ function chatgpt(headers: Headers | undefined): boolean {
 function userAgentApp(userAgent: string | undefined): string | undefined {
   return /^[\w.-]+/.exec(userAgent ?? '')?.[0];
 }
+
+/** Whether a POST body asks for the server's instructions: initialize, or discovery in the newer protocol. */
+async function sendsInstructions(request: Request): Promise<boolean> {
+  if (request.method !== 'POST') return false;
+  try {
+    const body: unknown = JSON.parse(await request.clone().text());
+    return (Array.isArray(body) ? body : [body]).some((m) =>
+      INSTRUCTION_METHODS.has((m as { method?: unknown } | null)?.method as string),
+    );
+  } catch {
+    return false;
+  }
+}
+
+const INSTRUCTION_METHODS = new Set(['initialize', 'server/discover']);
 
 /** Whether a POST body holds only discovery messages (one, or a 2025-03-26 batch). */
 async function isDiscovery(request: Request): Promise<boolean> {
@@ -450,6 +466,10 @@ export function createHttpServer(options: HttpOptions): Server {
       const request = await toWebRequest(req as IncomingMessage & { method: string; url: string });
       const caller = await authenticate(req, res, request, () => isDiscovery(request));
       if (!caller) return;
+      // A connection that is handed the instructions has had the welcome: it counts as the
+      // account's one first word about its free credits, so the first tool result need not say it.
+      if (options.account && (caller.via === 'script' || caller.via === 'oauth'))
+        if (await sendsInstructions(request)) await markWelcomed(runtime, caller.owner);
       if (options.onApp && (caller.via === 'script' || caller.via === 'oauth')) {
         const app = (await appName(request)) ?? userAgentApp(req.headers['user-agent']);
         if (app) options.onApp(caller.owner, app);

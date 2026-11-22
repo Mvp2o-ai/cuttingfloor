@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.67.2
+
+### Patch Changes
+
+- a3ad451: A connection handed the free-credits welcome counts as the account's one word about them, so its first tool result doesn't repeat it.
+
 ## 0.67.1
 
 ### Patch Changes

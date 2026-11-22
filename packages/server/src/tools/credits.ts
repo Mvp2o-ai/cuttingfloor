@@ -212,6 +212,26 @@ export function guideFirstCall(server: McpServer, deps: ServerDeps): void {
   };
 }
 
+/**
+ * An unclaimed account's connection was handed the welcome (initialize, or discovery in the
+ * newer protocol): the same once-ever mark as the first tool result, so a user who connects and
+ * never makes a call has had the guidance, and one who does isn't told twice. Never raises.
+ */
+export async function markWelcomed(runtime: Runtime, owner: string): Promise<void> {
+  if (done.get(runtime)?.has(owner)) return;
+  try {
+    if (!(await creditsClaimed(runtime, owner)))
+      await runtime.ws.records
+        .collection(CLAIM_GUIDED, { owner })
+        .insertOnce('claim-guided', { at: new Date().toISOString(), tool: 'initialize' });
+    const owners = done.get(runtime) ?? new Set<string>();
+    done.set(runtime, owners);
+    owners.add(owner);
+  } catch (error) {
+    process.stderr.write(`credits.guidance: ${owner}: ${(error as Error).message}\n`);
+  }
+}
+
 /** The accounts this process has settled: claimed, or already shown the guidance. */
 const done = new WeakMap<Runtime, Set<string>>();
 
