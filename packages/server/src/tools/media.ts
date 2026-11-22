@@ -698,7 +698,12 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         record.file = await rt.media.adopt(owner, record, { file: local });
         await rt.media.save(owner, record);
       } else if (local && 'upload_id' in source) {
-        record.file = await rt.media.adopt(owner, record, { file: local }, { move: true });
+        record.file = await rt.media.adopt(
+          owner,
+          record,
+          upload ? { blob: upload.blob } : { file: local },
+          { move: true },
+        );
         await rt.media.save(owner, record);
         await rt.uploads.remove(owner, source.upload_id);
       }
@@ -1507,7 +1512,7 @@ export async function importBundled(
   const upload_id = await rt.uploads.put(owner, name, await readFile(file));
   const upload = await rt.uploads.take(owner, upload_id);
   const record = await rt.media.create(owner, { upload: upload_id, file_name: name }, name);
-  record.file = await rt.media.adopt(owner, record, { file: upload.file }, { move: true });
+  record.file = await rt.media.adopt(owner, record, { blob: upload.blob }, { move: true });
   await rt.media.save(owner, record);
   await rt.uploads.remove(owner, upload_id);
   const job = await startIngest(rt, owner, record, {}, { meta: { unbilled } });
