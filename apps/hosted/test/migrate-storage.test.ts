@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import {
   chmod,
   lstat,
@@ -1449,6 +1449,44 @@ describe('passes that must not lose data', () => {
     });
     expect(same.verify?.signing_key).toMatchObject({ same: true });
     expect(same.exit).toBe('ok');
+  });
+
+  it('fetches a download and an upload link signed with the old key from the new server', async () => {
+    const serveOn = async (secret: string) => {
+      const runtime = await dst.runtime(secret);
+      const server = createHttpServer({
+        runtime,
+        credentials: new LocalCredentialStore({}, false),
+      });
+      await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+      const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+      return {
+        url,
+        stop: async () => {
+          server.closeAllConnections();
+          await new Promise((r) => server.close(r));
+        },
+      };
+    };
+    const more = { mode: 'verify' as const, excludeOwners: ['user_01TESTACCOUNTONLYONTARGET0'] };
+    const same = await serveOn(src.secret);
+    try {
+      const checked = await run(src, dst, { ...more, targetUrl: same.url });
+      expect(checked.verify?.live_links).toBe(2);
+      expect(checked.exit).toBe('ok');
+    } finally {
+      await same.stop();
+    }
+    const other = await serveOn(randomBytes(32).toString('base64'));
+    try {
+      const refused = await run(src, dst, { ...more, targetUrl: other.url });
+      expect(refused.verify?.differences.map((d) => `${d.kind} ${d.of}`).sort()).toEqual([
+        'link-live download',
+        'link-live upload',
+      ]);
+    } finally {
+      await other.stop();
+    }
   });
 
   it('refuses a target a server serves on', async () => {
