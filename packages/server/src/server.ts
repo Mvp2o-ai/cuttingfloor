@@ -14,7 +14,7 @@ import { toErrorResult } from './result.ts';
 import type { Runtime } from './runtime.ts';
 import { registerTasks } from './tasks.ts';
 import { registerCreateTools } from './tools/create.ts';
-import { claimFile, registerCreditTools } from './tools/credits.ts';
+import { claimFile, claimSeen, registerCreditTools } from './tools/credits.ts';
 import { registerInterchangeTools } from './tools/interchange.ts';
 import { registerJudgeTools } from './tools/judge.ts';
 import { registerListenTools } from './tools/listen.ts';
@@ -45,6 +45,13 @@ export interface ServerDeps {
   limits?: () => Promise<OwnerLimits>;
   /** Hosted: the owner's plan and credits, for account.get. Absent locally: no plan. */
   account?: () => Promise<AccountGetResult>;
+  /**
+   * Hosted: whether the account's free credits are claimed, read with `creditsClaimed` before
+   * the server is built, since building it cannot wait for a record store that is not the
+   * filesystem. Left out, the filesystem store's record is read in place; on another store the
+   * account counts as claimed only once this process has seen its claim.
+   */
+  claimed?: boolean;
 }
 
 /**
@@ -92,6 +99,8 @@ Time is frames at the sequence rate; ranges end-exclusive.`;
  */
 function unclaimed(deps: ServerDeps): boolean {
   if (deps.runtime.config.mode !== 'hosted' || !deps.account) return false;
+  if (deps.claimed !== undefined) return !deps.claimed;
+  if (deps.runtime.config.records) return !claimSeen(deps.runtime, deps.owner());
   return !existsSync(claimFile(deps, deps.owner()));
 }
 

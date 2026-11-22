@@ -291,16 +291,24 @@ if (oauth) process.stderr.write(`oauth: sign-in at ${issuer} for ${oauth.resourc
 
 server.listen(port, host, () => {
   process.stderr.write(
-    `cuttingfloor ${config.mode} on http://${host}:${port}/mcp (data ${config.dataDir})\n`,
+    `cuttingfloor ${config.mode} on http://${host}:${port}/mcp (data ${config.dataDir}${config.records ? `, records in MongoDB database ${config.records.db}` : ''})\n`,
   );
 });
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
-    runtime.stop();
     lifecycle?.stop();
     sequence?.stop();
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 5000).unref();
+    runtime.stop();
+    // The record store closes after the requests in flight have ended (they still read and
+    // write it), handing its leases back so another server takes the periodic work over.
+    // Whatever the database does, the process is gone a second after the 5 s cutoff.
+    const end = () =>
+      void runtime.close(1000).then(
+        () => process.exit(0),
+        () => process.exit(0),
+      );
+    server.close(end);
+    setTimeout(end, 5000).unref();
   });
 }

@@ -143,10 +143,13 @@ export class Lifecycle {
         process.stderr.write(`lifecycle: ${owner}: ${error.message}\n`),
       );
     });
+    // One server's turn among those sharing the record store: the others would only look
+    // through the same accounts and find every notice already sent.
     const sweep = () =>
-      void this.sweep().catch((error: Error) =>
-        process.stderr.write(`lifecycle: sweep: ${error.message}\n`),
-      );
+      void this.#o.runtime.ws.records
+        .leader('lifecycle')
+        .then((mine) => (mine ? this.sweep() : undefined))
+        .catch((error: Error) => process.stderr.write(`lifecycle: sweep: ${error.message}\n`));
     sweep();
     this.#timer = setInterval(sweep, SWEEP_MS);
     this.#timer.unref();
@@ -1172,6 +1175,7 @@ export const LEDGER_SPENT = defineCollection<Spent>({
   name: 'ledger_spent',
   scope: 'owner',
   fs: { dir: 'ledger-spent' },
+  db: { ttlMs: SPENT_TTL_MS },
 });
 
 /** That a notice was sent to an account, by its name: written once, so it is sent once. */
@@ -1179,6 +1183,7 @@ export const NOTICES = defineCollection<{ at: string }>({
   name: 'notices',
   scope: 'owner',
   fs: { dir: 'notices' },
+  db: { ttlMs: NOTICE_TTL_MS },
 });
 
 /** A partner's user and the account its key is for, by the user id's SHA-256, per partner. */
@@ -1186,6 +1191,7 @@ export const PARTNER_LINKS = defineCollection<{ email?: string; owner?: string }
   name: 'partners',
   scope: 'global',
   fs: { dir: (partner) => `partners/${partner}` },
+  db: { indexesAcross: [['email'], ['owner']] },
 });
 
 export interface WorkosUser {

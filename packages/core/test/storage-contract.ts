@@ -7,6 +7,7 @@ import {
   type CollectionScope,
   type CollectionSpec,
   defineCollection,
+  isExisting,
   isMissing,
   type Records,
   type Scratch,
@@ -313,6 +314,102 @@ export function recordsContract(backend: string, make: StoresFactory): void {
       expect((await c.get('d'))?.file).toBe(outside);
     });
 
+    each('strings and keys come back as written, whatever code units they hold', async (s) => {
+      const c = s.records.collection(things as CollectionSpec<unknown>, { owner: 'alice' });
+      // Half a surrogate pair, U+0000 (in a key too) and a private-use character.
+      const odd = {
+        name: 'lone \ud83d high, \udc00 low, nul \0, \uf8ff and \uf8ff0041',
+        ['key\0with nul']: 1,
+        ['key \ud800']: ['\udfff', { ['\uf8ff']: '\0' }],
+        fine: 'pair \ud83d\ude00 stays',
+      };
+      await c.put('a', odd);
+      expect(await c.get('a')).toStrictEqual(odd);
+      expect(await c.insertOnce('b', odd)).toBe(true);
+      expect((await c.find({ name: odd.name })).map((e) => e.id).sort()).toEqual(['a', 'b']);
+      expect(await c.update('a', { set: { state: '\ud800', tags: ['\0'] } })).toStrictEqual({
+        ...odd,
+        state: '\ud800',
+        tags: ['\0'],
+      });
+      expect(await c.compareAndSet('a', { state: '\ud800' }, { state: '\udbff' })).toBe(true);
+      expect(await c.compareAndSet('a', { state: '\ufffd' }, { state: 'no' })).toBe(false);
+      expect(((await c.get('a')) as { state: string }).state).toBe('\udbff');
+      expect((await c.find())[0]?.value).toMatchObject({ fine: odd.fine });
+      const log = s.records.log(lines as CollectionSpec<unknown>, { owner: 'alice', part: 'p' });
+      await log.append(odd);
+      expect(await log.read()).toStrictEqual([odd]);
+    });
+
+    each('a key named __proto__ is a key like any other', async (s) => {
+      const c = s.records.collection(things as CollectionSpec<unknown>, { owner: 'alice' });
+      // As JSON gives it: an own key, not the object's prototype.
+      const plain = JSON.parse('{"__proto__":{"x":1},"name":"p","in":[{"__proto__":2}]}');
+      const odd = JSON.parse(
+        '{"__proto__":{"x":"\\u0000"},"name":"p\\u0000","in":{"__proto__":"\\ud800"}}',
+      );
+      for (const [id, value] of [
+        ['plain', plain],
+        ['odd', odd],
+      ] as const) {
+        await c.put(id, value);
+        const got = (await c.get(id)) as object;
+        expect(JSON.stringify(got)).toBe(JSON.stringify(value));
+        expect(Object.keys(got)).toContain('__proto__');
+        expect(Object.getPrototypeOf(got)).toBe(Object.prototype);
+        const updated = (await c.update(id, { set: { state: 'on' } })) as object;
+        expect(JSON.stringify(updated)).toBe(JSON.stringify({ ...value, state: 'on' }));
+        expect(
+          JSON.stringify((await c.find({ state: 'on' })).find((e) => e.id === id)?.value),
+        ).toBe(JSON.stringify({ ...value, state: 'on' }));
+      }
+    });
+
+    each('fields named with a dot or a dollar are fields like any other', async (s) => {
+      const c = s.records.collection(things as CollectionSpec<unknown>, { owner: 'alice' });
+      await c.put('o', { name: 'n', 'a.b': 0 });
+      expect(
+        await c.update('o', { set: { 'a.b': 1, $c: 2, '': 3 }, inc: { 'd.e': 4 } as never }),
+      ).toStrictEqual({ name: 'n', 'a.b': 1, $c: 2, '': 3, 'd.e': 4 });
+      expect(await c.update('o', { inc: { 'd.e': 1, count: 1 } as never })).toMatchObject({
+        'd.e': 5,
+        count: 1,
+      });
+      expect(await c.compareAndSet('o', { 'a.b': 2 }, { $c: 9 })).toBe(false);
+      expect(await c.compareAndSet('o', { 'a.b': 1, $c: 2 }, { $c: 5, 'x.y': null })).toBe(true);
+      expect(await c.get('o')).toStrictEqual({
+        name: 'n',
+        'a.b': 1,
+        $c: 5,
+        '': 3,
+        'd.e': 5,
+        count: 1,
+        'x.y': null,
+      });
+      expect((await c.find({ 'a.b': 1 })).map((e) => e.id)).toEqual(['o']);
+      expect(await c.find({ $c: 2 })).toEqual([]);
+      // No nested field is reached by a dotted name.
+      await c.put('n', { a: { b: 1 } });
+      expect(await c.find({ 'a.b': 1 })).toHaveLength(1);
+      expect(await c.update('n', { set: { 'a.b': 2 } })).toStrictEqual({ a: { b: 1 }, 'a.b': 2 });
+    });
+
+    each('a record that is a list takes an update as a JSON file would', async (s) => {
+      const c = s.records.collection(things as CollectionSpec<unknown>, { owner: 'alice' });
+      await c.put('l', ['a', { name: 'in' }]);
+      expect(await c.get('l')).toStrictEqual(['a', { name: 'in' }]);
+      const spread = { 0: 'a', 1: { name: 'in' }, name: 'x', count: 2 };
+      expect(await c.update('l', { set: { name: 'x' }, inc: { count: 2 } as never })).toStrictEqual(
+        spread,
+      );
+      expect(await c.get('l')).toStrictEqual(spread);
+      await c.put('m', ['a']);
+      expect(await c.compareAndSet('m', { 0: 'b' }, { name: 'no' })).toBe(false);
+      expect(await c.compareAndSet('m', { 0: 'a' }, { name: 'yes' })).toBe(true);
+      expect(await c.get('m')).toStrictEqual({ 0: 'a', name: 'yes' });
+      expect((await c.find({ name: 'yes' })).map((e) => e.id)).toEqual(['m']);
+    });
+
     each('ids that could leave the collection are refused', async ({ records }) => {
       const c = records.collection(things, { owner: 'alice' });
       for (const id of ['', '../x', 'a/b', '.hidden']) {
@@ -439,6 +536,40 @@ export function blobStoreContract(backend: string, make: StoresFactory): void {
       expect(await text(await blobs.get(now))).toBe('bytes');
       expect([b, c]).toContain(now);
       if (now === c) expect(await blobs.head(b)).toBeUndefined();
+    });
+
+    each('move with ifAbsent takes a free key once, and leaves a taken one alone', async (s) => {
+      const { blobs } = s;
+      const to = blobs.keys.derived('alice', 'm_1', 'analyses', 'transcript.json');
+      const temps = ['a', 'b', 'c', 'd'].map((n) => `${to}.${n}.tmp`);
+      for (const [i, temp] of temps.entries()) {
+        await blobs.put(
+          temp,
+          { bytes: Buffer.from(`body ${i}`) },
+          { private: true, durable: true },
+        );
+      }
+      const moved = await Promise.all(
+        temps.map((temp) =>
+          blobs.move(temp, to, { ifAbsent: true }).then(
+            () => true,
+            (error: unknown) => {
+              expect(isExisting(error)).toBe(true);
+              return false;
+            },
+          ),
+        ),
+      );
+      expect(moved.filter(Boolean)).toHaveLength(1);
+      const winner = moved.indexOf(true);
+      expect(await text(await blobs.get(to))).toBe(`body ${winner}`);
+      // A loser's bytes are still its own to remove; the winner's old name is gone.
+      for (const [i, temp] of temps.entries()) {
+        expect(Boolean(await blobs.head(temp))).toBe(i !== winner);
+      }
+      // Without it, a move replaces.
+      await blobs.move(temps[winner === 0 ? 1 : 0] as string, to);
+      expect(await text(await blobs.get(to))).toBe(`body ${winner === 0 ? 1 : 0}`);
     });
 
     each('share: one set of bytes for two holders, counted once, gone with the last', async (s) => {

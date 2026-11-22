@@ -124,6 +124,29 @@ Treat an authorization error from WorkOS as a separate unresolved configuration 
   - A distinct `CUTTINGFLOOR_NODE` per server (up.sh sets it to the server name).
   - One `CUTTINGFLOOR_URL_SECRET` on every server (32 bytes or more, base64 or base64url), so a link one server signed opens on any of them; set to the `key` value in the data root's `secret.key`, links already handed out keep working, and with it set that file is never made or read.
 
+**Records in MongoDB.** `CUTTINGFLOOR_RECORDS=mongo` moves every record (timelines, media and job records, uploads' state, keys, the meter, notices, the call log) from JSON files under `/data` into a MongoDB database that every server shares; files stay under `/data`.
+- The database: `CUTTINGFLOOR_MONGODB_HOST` with `CUTTINGFLOOR_MONGODB_USER` and `CUTTINGFLOOR_MONGODB_PASSWORD`, or whole as `CUTTINGFLOOR_MONGODB_URI` (which wins); `CUTTINGFLOOR_MONGODB_DB` names the database (default `cuttingfloor`). Values are trimmed, so a secrets file's trailing newline does no harm.
+- Which kind of host: a name ending in `.mongodb.net` with no port is an Atlas cluster and is looked up as SRV (`mongodb+srv://`); any other host (`mongo`, `localhost`, `10.0.0.5:27017`, several with commas) is plain `mongodb://`. Start the host with `mongodb://` or `mongodb+srv://` to say which yourself.
+- Starting: the server connects and makes its indexes before it listens, and does not start when it cannot connect or an index cannot be made (the error names the collection and index). The database's access list must hold the server's address.
+- What is logged: the user and password never are, in a log line or an error. A failed connection or query is logged with the driver's own words, which can name the database's hosts; a client is only told the server could not reach its records.
+- Size: a record is one document, up to the database's 16 MB; a bigger one is refused with a plain error. A media's analyses (transcripts, sounds, faces), the only things that grow large, are files beside the media, not records.
+- Periodic work: the hourly sweep, the job reaper, the account emails and the sign-up sequence run on one server at a time (a 60-second lease in the `locks` collection that the others take over when its holder stops).
+- A server left on the default keeps its files and never loads the database driver.
+- Switching an existing server needs its records moved first (`scripts/migrate-storage.ts`, not written yet): started on an empty database it sees no accounts' records.
+
+**Before a second server.** Records in MongoDB make two servers possible; these still assume one, and are to be dealt with first:
+- Leases are not fenced: a server that loses a lease mid-turn (a stall, the database out of reach for a minute) finishes the turn it began while another starts its own (`packages/core/src/storage/mongo-records.ts:457`; the turns at `packages/server/src/runtime.ts:339,353`, `apps/hosted/src/lifecycle.ts:150`, `apps/hosted/src/sequence.ts:136`). Emails stay single because each is claimed by `insertOnce`; sweeps would overlap.
+- A job's heartbeat fails silently (`packages/jobs/src/index.ts:762`): with the database out of reach for over 2 minutes, the reaper on another server ends healthy jobs as interrupted.
+- `recover()` at startup takes a working job with no `node` as this server's (`packages/jobs/src/index.ts:608`).
+- The idempotency pointer is read, then written (`packages/jobs/src/index.ts:142`): the same key on two servers at once starts two jobs.
+- Jobs at once per account and per lane, queue position and estimates are counted per server (`packages/jobs/src/index.ts:459`).
+- An upload takes one sender at a time per server only (`#busy`, `packages/server/src/uploads.ts:76`): parts of one upload must reach one server until stage 3 of the storage plan.
+- Work shared by calls on one server is shared only there: the onboarding sample (`packages/server/src/tools/credits.ts:164`) and copy jobs (`packages/server/src/copy-jobs.ts:30`) can be started twice.
+- `Rights.grant` and `revoke` read, change and write (`apps/hosted/src/rights.ts:46,60`), as does the list of apps an account was seen from (`apps/hosted/src/apps-seen.ts:45`): two at once, one is lost.
+- Credits are cached 5 minutes per server (`apps/hosted/src/access.ts:112`): a top-up taken by one server is unseen on another for that long.
+- `owners()` asks every collection for its owners (`packages/core/src/storage/mongo-records.ts:431`), and the reaper asks each owner for its working jobs every 60 seconds (`packages/jobs/src/index.ts:216`): fine for hundreds of accounts, a query across owners for thousands.
+- Waiting on a job or the floor polls every second (`packages/server/src/result.ts`, `packages/core/src/floor.ts`); change streams would replace that.
+
 **3. A render pool sized by load.**
 - The work: exports and analyses move to worker servers.
 - The scaling loop: a small script adds or removes servers through the Hetzner API (`hcloud server create/delete`, billed by the hour) according to how busy the workers are.

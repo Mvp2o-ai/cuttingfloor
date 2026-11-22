@@ -59,6 +59,7 @@ export {
 } from './speed.ts';
 export {
   FLOOR,
+  GONE_TTL_MS,
   OUTPUTS,
   type OutputRecord,
   TIMELINES,
@@ -75,12 +76,17 @@ export {
   type CollectionScope,
   type CollectionSpec,
   defineCollection,
+  definedCollections,
   FS_BLOB_KEYS,
   FS_HOME,
   type FsBlobOptions,
   FsBlobStore,
   FsRecords,
   FsScratch,
+  MONGO_HOME,
+  MongoRecords,
+  type MongoRecordsOptions,
+  mongoUri,
   type PresignOptions,
   type RecordChange,
   type RecordEntry,
@@ -105,4 +111,4 @@ export {
   TimelineStore,
 } from './timelines.ts';
 export { diff, fromView, toView } from './view.ts';
-export { isMissing, ownerKey, touch, Workspace } from './workspace.ts';
+export { isExisting, isMissing, ownerKey, touch, Workspace } from './workspace.ts';

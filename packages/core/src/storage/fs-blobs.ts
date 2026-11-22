@@ -77,7 +77,7 @@ export class FsBlobStore implements BlobStore {
   async put(
     key: BlobKey,
     from: BlobSource,
-    options: { private?: boolean } = {},
+    options: { private?: boolean; durable?: boolean } = {},
   ): Promise<BlobHead> {
     const file = this.file(key);
     await mkdir(dirname(file), { recursive: true });
@@ -85,6 +85,15 @@ export class FsBlobStore implements BlobStore {
       if (from.file !== file) {
         if (from.move) await rename(from.file, file);
         else await copyFile(from.file, file);
+      }
+    } else if ('bytes' in from && options.durable) {
+      // On the disk before it is answered for, so a rename onto its place never names nothing.
+      const handle = await open(file, 'w', options.private ? 0o600 : 0o666);
+      try {
+        await handle.writeFile(from.bytes);
+        await handle.sync();
+      } finally {
+        await handle.close();
       }
     } else if ('bytes' in from) {
       await writeFile(file, from.bytes, options.private ? { mode: 0o600 } : {});
@@ -167,10 +176,14 @@ export class FsBlobStore implements BlobStore {
     return to;
   }
 
-  async move(from: BlobKey, to: BlobKey): Promise<BlobKey> {
+  async move(from: BlobKey, to: BlobKey, options: { ifAbsent?: boolean } = {}): Promise<BlobKey> {
     const dest = this.file(to);
     await mkdir(dirname(dest), { recursive: true });
-    await rename(this.file(from), dest);
+    if (options.ifAbsent) {
+      // A second name for the bytes fails when the name is taken; then the first name goes.
+      await link(this.file(from), dest);
+      await rm(this.file(from), { force: true });
+    } else await rename(this.file(from), dest);
     return to;
   }
 

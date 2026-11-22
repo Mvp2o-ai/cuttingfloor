@@ -14,14 +14,14 @@ import {
   type TimelineResolver,
 } from './edit.ts';
 import { timelineIdOf } from './hash.ts';
-import { TIMELINES, TIMELINES_GONE } from './storage/collections.ts';
+import { GONE_TTL_MS, TIMELINES, TIMELINES_GONE } from './storage/collections.ts';
 import type { Collection } from './storage/records.ts';
 import type { Workspace } from './workspace.ts';
 
 export const TIMELINE_TTL_MS = KEEP_MS.timeline;
 
 /** How long the server remembers that a timeline expired, so a later lookup can say so. */
-const GONE_DAYS = 30;
+const GONE_DAYS = GONE_TTL_MS / 86_400_000;
 
 /** Immutable, content-addressed timelines with a sliding TTL. */
 export class TimelineStore {

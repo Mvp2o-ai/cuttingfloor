@@ -131,7 +131,10 @@ export class Sequence {
     const tick = () => {
       if (this.#running) return;
       this.#running = true;
-      void this.tick()
+      // One server's turn among those sharing the record store; a slot is claimed once anyway.
+      void this.#o.ws.records
+        .leader('email-sequence')
+        .then((mine) => (mine ? this.tick() : undefined))
         .catch((error: Error) => process.stderr.write(`sequence: ${error.message}\n`))
         .finally(() => {
           this.#running = false;
@@ -618,6 +621,8 @@ export const EMAIL_LOG = defineCollection<{ subscriber?: string }>({
   name: 'email_log',
   scope: 'global',
   fs: { dir: (day) => `email-log/${day}` },
+  // A day goes whole, by its newest send: its oldest is up to a day older.
+  db: { ttlMs: LOG_TTL_MS + 86_400_000, indexesAcross: [['subscriber']] },
 });
 
 const slots = (ws: Workspace, owner: string): Collection<Claim> =>

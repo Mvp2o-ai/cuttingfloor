@@ -62,11 +62,17 @@ export class ScriptKeys {
     this.#ws = ws;
     this.#kind = kind;
     const name = kind.dir.replaceAll('-', '_');
-    this.#hashes = defineCollection<KeyFile>({ name, scope: 'global', fs: { dir: kind.dir } });
+    this.#hashes = defineCollection<KeyFile>({
+      name,
+      scope: 'global',
+      fs: { dir: kind.dir },
+      db: { indexesAcross: [['owner']], ttlMs: SCRIPT_KEY_TTL_MS },
+    });
     this.#listed = defineCollection<KeyFile>({
       name: `${name}_listed`,
       scope: 'owner',
       fs: { dir: kind.dir },
+      db: { ttlMs: SCRIPT_KEY_TTL_MS },
     });
   }
 

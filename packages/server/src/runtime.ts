@@ -2,7 +2,14 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { availableParallelism, hostname } from 'node:os';
 import { extname, join } from 'node:path';
-import { defineCollection, ownerKey, TimelineStore, Workspace } from '@cuttingfloor/core';
+import {
+  defineCollection,
+  MongoRecords,
+  mongoUri,
+  ownerKey,
+  TimelineStore,
+  Workspace,
+} from '@cuttingfloor/core';
 import {
   MEDIA_TTL_MS,
   MediaLibrary,
@@ -32,11 +39,15 @@ const LEGACY_USAGE = defineCollection<unknown>({
   fs: { dir: 'usage' },
 });
 
+const FUNNEL_TTL_MS = 400 * 24 * 3_600_000;
+
 /** Hosted sign-in steps, grouped by day (apps/hosted funnel.ts writes them). */
 export const FUNNEL_DAYS = defineCollection<unknown>({
   name: 'funnel',
   scope: 'global',
   fs: { dir: (day) => `funnel/${day}` },
+  // A day goes whole, by its newest step: its oldest is up to a day older.
+  db: { ttlMs: FUNNEL_TTL_MS + 24 * 3_600_000 },
 });
 
 export interface RuntimeConfig {
@@ -92,6 +103,47 @@ export interface RuntimeConfig {
    * `secret.key` under the data root is never made or read. Unset, the key is that file.
    */
   urlSecret?: string;
+  /**
+   * Records in MongoDB instead of JSON files under the data root (CUTTINGFLOOR_RECORDS=mongo),
+   * for a deployment of more than one server. Files stay under the data root. `uri` is a secret:
+   * it is never logged.
+   */
+  records?: { store: 'mongo'; uri: string; db: string };
+}
+
+/**
+ * Where records are kept, from CUTTINGFLOOR_RECORDS: the filesystem unless it says `mongo`, which
+ * needs the database's address as one connection string or as its parts.
+ */
+function recordsFromEnv(env: NodeJS.ProcessEnv): Pick<RuntimeConfig, 'records'> {
+  // Trimmed: a value read from a secrets file ends in a newline, which would fail the sign-in.
+  const value = (name: string) => env[name]?.trim() ?? '';
+  const store = value('CUTTINGFLOOR_RECORDS').toLowerCase();
+  if (!store || store === 'fs' || store === 'filesystem') return {};
+  // Never what it holds: a connection string pasted here by mistake carries a password.
+  if (store !== 'mongo') throw new Error('CUTTINGFLOOR_RECORDS must be fs or mongo');
+  const host = value('CUTTINGFLOOR_MONGODB_HOST');
+  const user = value('CUTTINGFLOOR_MONGODB_USER');
+  const password = value('CUTTINGFLOOR_MONGODB_PASSWORD');
+  let uri = value('CUTTINGFLOOR_MONGODB_URI');
+  if (uri) {
+    if (!/^mongodb(\+srv)?:\/\/./.test(uri)) {
+      throw new Error('CUTTINGFLOOR_MONGODB_URI must start with mongodb:// or mongodb+srv://');
+    }
+  } else {
+    if (!host) {
+      throw new Error(
+        'CUTTINGFLOOR_RECORDS=mongo needs CUTTINGFLOOR_MONGODB_URI, or CUTTINGFLOOR_MONGODB_HOST with CUTTINGFLOOR_MONGODB_USER and CUTTINGFLOOR_MONGODB_PASSWORD',
+      );
+    }
+    if (password && !user) {
+      throw new Error('CUTTINGFLOOR_MONGODB_PASSWORD is set without CUTTINGFLOOR_MONGODB_USER');
+    }
+    uri = mongoUri({ host, ...(user ? { user, password } : {}) });
+  }
+  return {
+    records: { store: 'mongo', uri, db: value('CUTTINGFLOOR_MONGODB_DB') || 'cuttingfloor' },
+  };
 }
 
 /** The link-signing key from CUTTINGFLOOR_URL_SECRET. The value never appears in the error. */
@@ -160,6 +212,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
       ? { mediaHostPath: env.CUTTINGFLOOR_MEDIA_HOST_PATH }
       : {}),
     ...(env.CUTTINGFLOOR_URL_SECRET ? { urlSecret: env.CUTTINGFLOOR_URL_SECRET } : {}),
+    ...recordsFromEnv(env),
   };
 }
 
@@ -189,6 +242,15 @@ export class Runtime {
     // On the filesystem a blob's direct link is the server's own signed link to it, for the
     // outputs it serves; nothing else is downloaded.
     this.ws = new Workspace(config.dataDir, {
+      ...(config.records
+        ? {
+            records: new MongoRecords({
+              uri: config.records.uri,
+              db: config.records.db,
+              ...(config.node ? { node: config.node } : {}),
+            }),
+          }
+        : {}),
       presign: async (key) => {
         const m = /^owners\/([A-Za-z0-9_-]{1,64})\/outputs\/((?:j|f)_[0-9a-z]{26})\/([^/]+)$/.exec(
           key,
@@ -259,20 +321,40 @@ export class Runtime {
    * would otherwise outlive a fix to how they are drawn.
    */
   async start(options: { sweep?: boolean } = {}): Promise<void> {
+    await this.ws.records.ready();
     await this.secret();
     await this.ws.blobs.deletePrefix(this.ws.blobs.keys.cache('frames'));
     await this.jobs.recover();
     if (options.sweep !== false) {
-      await this.sweep();
-      this.#sweeper = setInterval(() => void this.sweep().catch(() => undefined), 3_600_000);
+      await this.#sweepTurn();
+      this.#sweeper = setInterval(() => void this.#sweepTurn().catch(() => undefined), 3_600_000);
       this.#sweeper.unref();
       // Jobs whose server died, wherever they ran, end interrupted within a few minutes.
       this.#reaper = setInterval(
-        () => void this.jobs.recover({ startup: false }).catch(() => undefined),
+        () =>
+          void this.ws.records
+            .leader('job-reaper')
+            .then((mine) => (mine ? this.jobs.recover({ startup: false }) : 0))
+            .catch(() => undefined),
         60_000,
       );
       this.#reaper.unref();
     }
+  }
+
+  /**
+   * The hourly sweep, by the one server whose turn it is among those sharing the record store;
+   * the others only clear their own cached frames.
+   */
+  async #sweepTurn(): Promise<void> {
+    if (await this.ws.records.leader('sweep')) return this.sweep();
+    await this.#sweepCache();
+  }
+
+  /** What only this server holds: frames it cached. */
+  async #sweepCache(): Promise<void> {
+    const { blobs } = this.ws;
+    await blobs.expire(blobs.keys.cache('frames'), 24 * 3_600_000);
   }
 
   /**
@@ -311,6 +393,25 @@ export class Runtime {
     if (this.#reaper) clearInterval(this.#reaper);
   }
 
+  /**
+   * Stops, and lets go of the record store's leases and connections. With `withinMs` it answers
+   * by then whatever the store does (a database out of reach makes letting go wait), so a
+   * shutdown is never held up by it; the leases then run out by themselves.
+   */
+  async close(withinMs?: number): Promise<void> {
+    this.stop();
+    const closed = this.ws.records.close().catch(() => undefined);
+    if (withinMs === undefined) return closed;
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      closed,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, withinMs);
+      }),
+    ]);
+    clearTimeout(timer);
+  }
+
   async sweep(): Promise<void> {
     await this.timelines.sweep();
     await this.media.sweep(MEDIA_TTL_MS);
@@ -335,9 +436,9 @@ export class Runtime {
       await records.expireParents(METER, { owner }, METER_TTL_MS);
       await records.log(CALLS, { owner }).expire(CALLS_TTL_MS);
     }
-    await blobs.expire(blobs.keys.cache('frames'), 24 * 3_600_000);
+    await this.#sweepCache();
     // Hosted sign-in steps (apps/hosted funnel.ts), one folder per day.
-    await records.expireParents(FUNNEL_DAYS, {}, 400 * 24 * 3_600_000);
+    await records.expireParents(FUNNEL_DAYS, {}, FUNNEL_TTL_MS);
   }
 
   async secret(): Promise<Buffer> {
