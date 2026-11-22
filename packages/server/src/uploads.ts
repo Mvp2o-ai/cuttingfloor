@@ -385,7 +385,17 @@ export class Uploads {
     for (const owner of await records.owners()) {
       // An hour past the URL's life, so a PUT that was still running finishes first. An upload
       // goes whole, its record with its bytes, by when either was last written.
-      await blobs.expire(blobs.keys.uploads(owner), UPLOAD_TTL_MS + 3_600_000);
+      const ttl = UPLOAD_TTL_MS + 3_600_000;
+      const uploads = this.#records(owner);
+      // Where records are kept apart from the bytes, a record goes with its bytes here, and one
+      // that never got a byte by its own age. (On the filesystem both went with the folder.)
+      for (const id of await blobs.expire(blobs.keys.uploads(owner), ttl)) {
+        await uploads.delete(id).catch(() => undefined);
+      }
+      for (const { id, value, usedAt } of await uploads.find()) {
+        if (usedAt.getTime() >= Date.now() - ttl) continue;
+        if (!(await blobs.head(this.#blob(owner, value)))) await uploads.delete(id);
+      }
     }
   }
 
