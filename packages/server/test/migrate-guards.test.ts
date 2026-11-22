@@ -55,7 +55,9 @@ describe('the live mark', () => {
     };
     return {
       marks,
-      records: { collection: (spec: unknown) => (spec === MIGRATION ? collection : undefined) } as never,
+      records: {
+        collection: (spec: unknown) => (spec === MIGRATION ? collection : undefined),
+      } as never,
     };
   }
 
