@@ -5,6 +5,7 @@ export type {
   BlobPart,
   BlobSource,
   BlobStore,
+  OrphanReport,
   PresignOptions,
 } from './blobs.ts';
 export { FS_BLOB_KEYS, type FsBlobOptions, FsBlobStore } from './fs-blobs.ts';
@@ -22,4 +23,16 @@ export {
   type RecordLog,
   type Records,
 } from './records.ts';
+export {
+  BLOBS,
+  type BlobRecord,
+  partSize,
+  S3_BLOB_KEYS,
+  S3_MAX_PARTS,
+  S3_MIN_PART_BYTES,
+  type S3BlobOptions,
+  S3BlobStore,
+} from './s3-blobs.ts';
+export { blobStores, blobsFromEnv, type S3Settings, s3SettingsFromEnv } from './s3-config.ts';
+export { S3Scratch, type S3ScratchOptions } from './s3-scratch.ts';
 export type { Scratch } from './scratch.ts';

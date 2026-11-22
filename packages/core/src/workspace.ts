@@ -1,9 +1,8 @@
 import { rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { BlobStore } from './storage/blobs.ts';
-import { type FsBlobOptions, FsBlobStore } from './storage/fs-blobs.ts';
+import type { FsBlobOptions } from './storage/fs-blobs.ts';
 import { FsRecords } from './storage/fs-records.ts';
-import { FsScratch } from './storage/fs-scratch.ts';
 import {
   isExisting,
   isMissing,
@@ -15,6 +14,7 @@ import {
   writeJson,
 } from './storage/fs-util.ts';
 import type { Records } from './storage/records.ts';
+import { blobStores, type S3Settings } from './storage/s3-config.ts';
 import type { Scratch } from './storage/scratch.ts';
 
 /**
@@ -50,19 +50,25 @@ export class Workspace {
 
   /**
    * `records` puts the records in another store (a database) while the files stay under the
-   * data root; without it they are the JSON files they always were.
+   * data root; without it they are the JSON files they always were. `s3` puts the files in a
+   * bucket; the data root then holds only this node's caches (and the records, without
+   * `records`).
    */
-  constructor(root: string, options: FsBlobOptions & { records?: Records } = {}) {
+  constructor(root: string, options: FsBlobOptions & { records?: Records; s3?: S3Settings } = {}) {
     // Absolute from the start: a relative data root (`./data`) means the folder under the
     // directory the server started in, whatever a later path is compared against.
     this.root = resolve(root);
-    const { records, ...blobOptions } = options;
-    const blobs = new FsBlobStore(this.root, blobOptions);
+    const { records, s3, ...blobOptions } = options;
     // Blob fields are written as paths under the root as it was given, as they always were.
     this.records = records ?? new FsRecords(this.root, { pathsFrom: root });
-    this.recordsWithFiles = !records;
-    this.blobs = blobs;
-    this.scratch = new FsScratch(blobs);
+    this.recordsWithFiles = !records && !s3;
+    const stores = blobStores(this.root, {
+      ...(s3 ? { s3 } : {}),
+      records: this.records,
+      presign: blobOptions,
+    });
+    this.blobs = stores.blobs;
+    this.scratch = stores.scratch;
   }
 
   path(...parts: string[]): string {
