@@ -281,7 +281,7 @@ export const CREDIT = [
 export const KEPT_DAYS = 7;
 export const TIMELINE_HOURS = 24;
 /** Where people export or keep files: the deletion rule, said plainly. */
-export const KEEP_FILES = `Download what you want to keep: download links last a day, and files are kept ${KEPT_DAYS} days after you last use them.`;
+export const KEEP_FILES = `Download what you want to keep: download links last ${KEPT_DAYS} days, and files are kept ${KEPT_DAYS} days after you last use them.`;
 export const KEPT = `On the hosted server, media and exports are kept ${KEPT_DAYS} days, timelines ${TIMELINE_HOURS} hours after last use.`;
 
 const free = ALL.free.limits;

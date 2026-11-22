@@ -93,7 +93,7 @@ Provider keys hosted come from the client, never from the server's environment: 
 | `CUTTINGFLOOR_SHORT_JOB_SECONDS` | 60 | How much media a job may read and still count as short |
 | `CUTTINGFLOOR_STALL_SECONDS` | 300 | A running job whose progress hasn't moved for this long (or a quarter of a second per second of media it reads, if longer) is ended with a `stalled` error and its slot freed |
 | `CUTTINGFLOOR_MAX_RENDERS` | cores ÷ 2, at least 2 | Renders (melt, encodes, transcription) at once, jobs and inline previews together; the rest wait their turn |
-| `CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS` | `24` | Signed download link lifetime |
+| `CUTTINGFLOOR_OUTPUT_URL_TTL_HOURS` | `168` (7 days) | Signed download link lifetime |
 | `CUTTINGFLOOR_URL_SECRET` | unset | The key that signs download, watch and upload links: 32 bytes or more, base64 or base64url. Unset, the server makes its own and keeps it in `secret.key` under the data root |
 | `CUTTINGFLOOR_MAX_DOWNLOAD_BYTES` | 10 GiB | Size cap for URL imports and uploads |
 | `CUTTINGFLOOR_MOTION_URL` | unset (compose sets it) | The sandbox for `create.motion` and `create.still`; without it those tools explain how to start one |

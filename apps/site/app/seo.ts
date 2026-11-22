@@ -85,7 +85,7 @@ export const FAQS = [
   },
   {
     q: 'Where does my footage go?',
-    a: 'To our servers, for as long as you work on it. Media and renders are deleted seven days after you last use them, timelines after a day without use, and download links last a day, so download what you want to keep. No one else can see them.',
+    a: 'To our servers, for as long as you work on it. Media and renders are deleted seven days after you last use them, timelines after a day without use, and download links last seven days, so download what you want to keep. No one else can see them.',
   },
   {
     q: 'What happens when my credits run out?',

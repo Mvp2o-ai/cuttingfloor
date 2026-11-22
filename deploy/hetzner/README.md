@@ -2,7 +2,7 @@
 
 One server first. It's the same image as local, in hosted mode:
 - OAuth sign-in through WorkOS AuthKit (each user is an owner), keys users make on the account page for scripts, and maintenance API keys alongside
-- imports from a URL, or of a file sent to a signed upload URL (`media.upload`, resumable, kept a day until imported)
+- imports from a URL, or of a file sent to a signed upload URL (`media.upload`, resumable, kept 7 days until imported)
 - the server's own TypeSafe key for `media.analyze look`, with a daily frame cap per account
 - the sandbox under gVisor
 - Caddy for TLS

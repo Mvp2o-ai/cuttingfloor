@@ -81,7 +81,7 @@ export const COMPARE: { row: string; hosted: string; self: string }[] = [
   {
     row: 'Storage and time limits',
     hosted:
-      'On our servers, for a while: timelines for a day after you last use them, media and renders for 7 days, download links for 24 hours. Download what you want to keep.',
+      'On our servers, for a while: timelines for a day after you last use them, media and renders for 7 days, download links for 7 days. Download what you want to keep.',
     self: 'On your machine, with the same time limits inside Docker. Finished exports also land in a folder on your computer, and stay there.',
   },
   {
