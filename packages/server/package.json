@@ -6,7 +6,8 @@
   "description": "The MCP server: tools, resources and the Tasks adapter over a shared runtime; transport-agnostic.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./migrate": "./src/migrate/index.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",
