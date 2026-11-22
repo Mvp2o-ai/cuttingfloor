@@ -17,6 +17,7 @@ import {
 import type { AccountGetResult } from '@cuttingfloor/schema';
 import {
   createServer,
+  creditsClaimed,
   type OwnerLimits,
   outputMime,
   type Runtime,
@@ -175,7 +176,7 @@ async function isDiscovery(request: Request): Promise<boolean> {
 export function createHttpServer(options: HttpOptions): Server {
   const { runtime, credentials, oauth } = options;
   /** One MCP server for one request, as `owner` signed in `via`; /mcp and /v1 both use it. */
-  const serverFor = (owner: string, via: unknown, requestHeaders?: Headers) => {
+  const serverFor = async (owner: string, via: unknown, requestHeaders?: Headers) => {
     const signedIn = via === 'oauth' || via === 'script';
     // Before sign-in only discovery reaches a server; refuse any tool all the same.
     const anonymous = via === 'anonymous';
@@ -189,8 +190,16 @@ export function createHttpServer(options: HttpOptions): Server {
     const saved = options.savedKeys
       ? new SavedCredentialStore(credentials, options.savedKeys)
       : credentials;
+    // The welcome a new account's connection gets: on the filesystem createServer reads the
+    // claim in place; a database is read here, before the server is built. If it can't be read
+    // the connection goes without the welcome, and the call itself says what is wrong.
+    const claimed =
+      account && runtime.config.records
+        ? await creditsClaimed(runtime, owner).catch(() => true)
+        : undefined;
     return createServer({
       runtime,
+      ...(claimed !== undefined ? { claimed } : {}),
       credentials: headers ? new RequestCredentialStore(saved, headers) : saved,
       owner: () => owner,
       ...(gate ? { access: () => gate(owner) } : {}),

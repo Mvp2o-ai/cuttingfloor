@@ -61,12 +61,16 @@ const CORS = {
 
 export class RestApi {
   readonly #runtime: Runtime;
-  readonly #serverFor: (owner: string, via: string, headers?: Headers) => McpServer;
+  readonly #serverFor: (
+    owner: string,
+    via: string,
+    headers?: Headers,
+  ) => McpServer | Promise<McpServer>;
   #tools: Promise<ToolInfo[]> | undefined;
 
   constructor(
     runtime: Runtime,
-    serverFor: (owner: string, via: string, headers?: Headers) => McpServer,
+    serverFor: (owner: string, via: string, headers?: Headers) => McpServer | Promise<McpServer>,
   ) {
     this.#runtime = runtime;
     this.#serverFor = serverFor;
@@ -166,7 +170,7 @@ export class RestApi {
         message: 'The body must be one JSON object: the tool’s arguments',
       });
     const result = await this.#call(
-      this.#serverFor(caller.owner, caller.via, headers),
+      await this.#serverFor(caller.owner, caller.via, headers),
       name,
       args as Record<string, unknown>,
     );
@@ -242,7 +246,8 @@ export class RestApi {
 
   /** Every tool, as tools/list gives it (the same for every account). */
   #listTools(): Promise<ToolInfo[]> {
-    this.#tools ??= this.#connect(this.#serverFor('anonymous', 'anonymous'))
+    this.#tools ??= Promise.resolve(this.#serverFor('anonymous', 'anonymous'))
+      .then((server) => this.#connect(server))
       .then(async (client) => {
         try {
           const tools: ToolInfo[] = [];

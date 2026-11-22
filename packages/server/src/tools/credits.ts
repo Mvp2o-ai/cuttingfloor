@@ -8,6 +8,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { askJev, JEV_URL } from '../jev.ts';
 import { PLAYER_TOOL_META } from '../player.ts';
 import { guard, ok } from '../result.ts';
+import type { Runtime } from '../runtime.ts';
 import { FALLBACK_SAMPLE, SAMPLES, type Sample, sampleBySlug, samplePath } from '../samples.ts';
 import type { ServerDeps } from '../server.ts';
 import { LOCAL } from './account.ts';
@@ -52,6 +53,32 @@ export const ONBOARDING = defineCollection<{ media_id: string; sample?: string }
 export const claimFile = (deps: ServerDeps, owner: string) =>
   deps.runtime.ws.ownerDir(owner, 'free-credits.json');
 
+/** The accounts each runtime has seen claimed. A claim is never undone, so this never goes stale. */
+const seen = new WeakMap<Runtime, Set<string>>();
+
+function sawClaim(runtime: Runtime, owner: string): void {
+  const owners = seen.get(runtime) ?? new Set<string>();
+  seen.set(runtime, owners);
+  owners.add(owner);
+}
+
+/** Whether this process has seen the account's claim: an answer without a read, for createServer. */
+export function claimSeen(runtime: Runtime, owner: string): boolean {
+  return seen.get(runtime)?.has(owner) ?? false;
+}
+
+/**
+ * Whether the account's free credits are claimed, from any record store. A server whose store
+ * is not the filesystem awaits this and hands the answer to createServer as `claimed`. One read
+ * by id until the account claims, none after.
+ */
+export async function creditsClaimed(runtime: Runtime, owner: string): Promise<boolean> {
+  if (claimSeen(runtime, owner)) return true;
+  const claimed = await runtime.ws.records.collection(CLAIMS, { owner }).has('free-credits');
+  if (claimed) sawClaim(runtime, owner);
+  return claimed;
+}
+
 export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
     'credits.claim',
@@ -81,6 +108,8 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
       const claimedNow = await deps.runtime.ws.records
         .collection(CLAIMS, { owner: deps.owner() })
         .insertOnce('free-credits', claim);
+      // Claimed now or before: either way the account's next connection is not welcomed again.
+      sawClaim(deps.runtime, deps.owner());
       const balance = await credits(deps);
       const left =
         balance === null ? '' : `: ${balance.left === null ? 'no cap' : `${balance.left} left`}`;

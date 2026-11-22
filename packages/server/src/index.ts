@@ -12,7 +12,7 @@ export { HEALTH_URI } from './resources.ts';
 export { configFromEnv, FUNNEL_DAYS, Runtime, type RuntimeConfig } from './runtime.ts';
 export { createServer, type ServerDeps } from './server.ts';
 export { listHeld, startUpload, storageOf, storedBytes } from './storage.ts';
-export { CLAIMS, ONBOARDING } from './tools/credits.ts';
+export { CLAIMS, creditsClaimed, ONBOARDING } from './tools/credits.ts';
 export { readSupportMessages, type SupportMessage } from './tools/support.ts';
 export { UploadRefused, type UploadState, Uploads } from './uploads.ts';
 export { SERVER_NAME, SERVER_VERSION } from './version.ts';
