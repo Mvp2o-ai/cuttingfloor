@@ -832,6 +832,7 @@ export class Lifecycle {
       }
     }
     await forgetRecipient(ws, owner, email);
+    await runtime.uploads.forget(owner);
     await ws.blobs.forget(owner);
     await ws.records.forget(owner);
     this.#o.access.forget(owner);

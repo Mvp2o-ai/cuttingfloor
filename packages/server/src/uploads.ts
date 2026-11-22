@@ -436,6 +436,13 @@ export class Uploads {
     await floorChanged(this.#ws, owner);
   }
 
+  /** Drops every upload the owner has, sent or still arriving (the account is deleted). */
+  async forget(owner: string): Promise<void> {
+    for (const id of await this.#records(owner).ids()) {
+      await this.remove(owner, id).catch(() => undefined);
+    }
+  }
+
   /** The blobs the owner's uploads hold (sent or still arriving), for the orphan sweep. */
   async held(owner: string): Promise<BlobKey[]> {
     const out: BlobKey[] = [];

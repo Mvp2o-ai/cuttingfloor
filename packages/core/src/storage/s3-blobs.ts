@@ -86,6 +86,11 @@ export interface S3BlobOptions {
   connections?: number;
   /** A copy larger than this is made in parts. Default 4 GiB (one request copies up to 5). */
   copyPartBytes?: number;
+  /**
+   * Whether the bucket refuses a put with `If-None-Match: *` over an existing object. Default:
+   * asked of the bucket itself when the store is first used.
+   */
+  conditionalWrites?: boolean;
 }
 
 /** What follows a blob's key in the keys of an in-order upload's states (see multipartPart). */
@@ -178,6 +183,7 @@ export class S3BlobStore implements BlobStore {
     this.partBytes = Math.max(S3_MIN_PART_BYTES, options.partBytes ?? 16 * MIB);
     this.concurrency = Math.max(1, options.concurrency ?? 6);
     this.#free = Math.max(1, options.connections ?? 64);
+    this.#conditional = options.conditionalWrites;
     const url = new URL(options.endpoint);
     this.origin = options.pathStyle ? url.origin : `${url.protocol}//${options.bucket}.${url.host}`;
   }
@@ -272,6 +278,21 @@ export class S3BlobStore implements BlobStore {
       );
     }
     await this.conditionalWrites();
+  }
+
+  /**
+   * Makes the bucket when there is none: for a store of one's own to develop or test against
+   * (MinIO). A deployment's bucket is made once, by hand, with its rules.
+   */
+  async createBucket(): Promise<void> {
+    const { sdk, client } = await this.#s3();
+    try {
+      await client.send(new sdk.CreateBucketCommand({ Bucket: this.bucket }));
+    } catch (error) {
+      const name = (error as Error).name;
+      if (name === 'BucketAlreadyOwnedByYou' || name === 'BucketAlreadyExists') return;
+      throw this.#failed('create bucket', this.bucket, error);
+    }
   }
 
   /** Nothing to let go of but idle connections. */
@@ -1066,10 +1087,14 @@ export class S3BlobStore implements BlobStore {
     let held: Buffer[] = before.tail.length ? [before.tail] : [];
     let size = before.tail.length;
     let received = 0;
+    /** Set while the store is being written to: a failure then is the store's, not the sender's. */
+    let storing = false;
     const flush = async (bytes: Buffer) => {
+      storing = true;
       const etag = await this.#part(key, uploadId, next, bytes, bytes.length);
       parts.push([next, etag, bytes.length]);
       next += 1;
+      storing = false;
     };
     let broken: unknown;
     try {
@@ -1091,9 +1116,9 @@ export class S3BlobStore implements BlobStore {
         }
       }
     } catch (error) {
-      // A refusal of the store's own is the caller's to hear; a sender that broke off keeps
-      // what arrived.
-      if (error instanceof CfError || (error as { landed?: unknown })?.landed) throw error;
+      // A failure of the store is the caller's to hear, and nothing of this part is kept; a
+      // sender that broke off keeps what arrived.
+      if (storing) throw error;
       broken = error;
       if (!received) throw error;
     }

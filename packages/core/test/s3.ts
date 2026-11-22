@@ -116,14 +116,16 @@ async function ageBlob(records: Records, key: string, ms: number): Promise<void>
  * the filesystem, or in MongoDB with `mongo` (a database of the test's own).
  */
 export async function s3Stores(
-  options: { mongo?: boolean } = {},
+  options: { mongo?: boolean } & Partial<S3Settings> = {},
 ): Promise<Stores & { blobs: S3BlobStore; root: string; settings: S3Settings }> {
   const base = await mkdtemp(join(tmpdir(), 'cf-stores-s3-'));
   const root = join(base, 'data');
   const work = join(base, 'work');
   await mkdir(work, { recursive: true });
+  const { mongo, ...overrides } = options;
   const bucket = await testBucket();
-  const records = options.mongo ? testRecords({ touchEveryMs: 0 }) : undefined;
+  Object.assign(bucket.settings, overrides);
+  const records = mongo ? testRecords({ touchEveryMs: 0 }) : undefined;
   const ws = new Workspace(root, { ...(records ? { records } : {}), s3: bucket.settings });
   return {
     root,

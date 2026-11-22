@@ -22,6 +22,9 @@ export interface S3Settings {
   partBytes: number;
   concurrency: number;
   connections: number;
+  /** Tests: a copy larger than this is made in parts; whether the bucket takes conditional puts. */
+  copyPartBytes?: number;
+  conditionalWrites?: boolean;
 }
 
 const GIB = 1024 ** 3;
