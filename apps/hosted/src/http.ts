@@ -369,7 +369,10 @@ export function createHttpServer(options: HttpOptions): Server {
         // Files in a bucket are fetched from it: the link is checked here, then answered with
         // a short-lived link to the file itself.
         if (target.blob && runtime.ws.blobs.remote) {
-          await sendBlob(runtime, req, res, target.blob, name, url.searchParams.has('inline'));
+          await sendBlob(runtime, req, res, target.blob, name, {
+            inline: url.searchParams.has('inline'),
+            expires: Number(url.searchParams.get('exp')),
+          });
           return;
         }
         const file = target.file ?? (target.blob && (await runtime.scratchFile(target.blob)));
@@ -700,10 +703,20 @@ async function handleUploadParts(
 }
 
 /**
+ * What the bucket may show in a page rather than hand over as a download: sound, video and
+ * pictures that run no script. Anything else (an SVG, HTML, a document) is a download whatever
+ * the link asks, so a signed link can never make the bucket's origin serve a page.
+ */
+const SHOWN_INLINE = /^(?:audio|video)\/|^image\/(?:png|jpeg|gif|webp|avif|bmp|apng)$/;
+
+/** The longest a browser keeps the redirect: never past the end of our own link. */
+const REDIRECT_MAX_AGE_S = 600;
+
+/**
  * Answers a checked link to a file in the bucket: GET with a redirect to a short-lived link to
  * the file itself (ranges, seeking and resuming are then the bucket's), HEAD with the file's
  * size and type as this server always has. The file is looked up first, so one that has gone
- * says so here.
+ * says so here. `expires` is when the link checked ends (ms).
  */
 async function sendBlob(
   runtime: Runtime,
@@ -711,7 +724,7 @@ async function sendBlob(
   res: ServerResponse,
   blob: string,
   name: string,
-  inline: boolean,
+  link: { inline: boolean; expires: number },
 ): Promise<void> {
   const head = await runtime.ws.blobs.head(blob);
   if (!head) {
@@ -737,13 +750,16 @@ async function sendBlob(
       .end();
     return;
   }
-  const link = await runtime.bucketLink(blob, name, type, inline ? 'inline' : 'attachment');
-  if (!link) {
+  const how = link.inline && SHOWN_INLINE.test(type) ? 'inline' : 'attachment';
+  const location = await runtime.bucketLink(blob, name, type, how);
+  if (!location) {
     res.writeHead(404, { 'content-type': 'text/plain' }).end('gone');
     return;
   }
-  // Kept by the browser for less time than the link it points to lasts.
-  res.writeHead(302, { ...shared, location: link, 'cache-control': 'private, max-age=600' }).end();
+  // Kept by the browser for less time than the bucket's link lasts, and than ours does.
+  const left = Math.floor((link.expires - Date.now()) / 1000);
+  const maxAge = Math.max(0, Math.min(REDIRECT_MAX_AGE_S, left));
+  res.writeHead(302, { ...shared, location, 'cache-control': `private, max-age=${maxAge}` }).end();
 }
 
 /** The request's URL as the client addressed it, for web-standard handlers. */

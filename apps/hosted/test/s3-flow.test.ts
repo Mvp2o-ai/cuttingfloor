@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 // The page functions in the browser test below run in the browser.
 import { execFile } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -534,8 +534,9 @@ describe.each(stores)('files in a bucket, records on $store', ({ store, skip }) 
       );
       const html = await page.text();
       expect(html).toContain('>Download</a>');
+      // A file that is not sound or a picture downloads, whatever the link asks.
       const shown = await fetch(`${url}&inline=1`);
-      expect(shown.headers.get('content-disposition')).toBe('inline');
+      expect(shown.headers.get('content-disposition')).toMatch(/^attachment; /);
       // The MCP resource reads it from the bucket; job.get hands out links that work.
       const read = await client.readResource({ uri: job.result.uri });
       const content = read.contents[0] as { blob?: string; text?: string };
@@ -551,6 +552,42 @@ describe.each(stores)('files in a bucket, records on $store', ({ store, skip }) 
       await n.runtime.ws.blobs.delete(key);
       const gone = await fetch(url, { redirect: 'manual' });
       expect([gone.status, await gone.text()]).toEqual([404, 'gone']);
+    },
+  );
+
+  flow(
+    'a link shows only sound, video and pictures in a page, and is kept no longer than it lasts',
+    async (n, owner) => {
+      const job = 'j_aaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const shown = async (name: string, link?: string) => {
+        await n.runtime.ws.blobs.put(`outputs/${owner}/${job}/${name}`, {
+          bytes: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'),
+        });
+        const url = link ?? (await n.runtime.signOutput(owner, job, name)).url;
+        const hop = await fetch(`${url}&inline=1`, { redirect: 'manual' });
+        const file = await fetch(`${url}&inline=1`);
+        return {
+          disposition: file.headers.get('content-disposition'),
+          cache: hop.headers.get('cache-control'),
+        };
+      };
+      expect(await shown('clip.mp4')).toEqual({
+        disposition: 'inline',
+        cache: 'private, max-age=600',
+      });
+      expect((await shown('still.png')).disposition).toBe('inline');
+      expect((await shown('page.svg')).disposition).toMatch(/^attachment; filename="page.svg"/);
+      expect((await shown('page.html')).disposition).toMatch(/^attachment; /);
+      // A link with half a minute left is kept for no longer than that.
+      const exp = Date.now() + 30_000;
+      const path = `/outputs/${owner}/${job}/end.mp4`;
+      const sig = createHmac('sha256', Buffer.from(URL_SECRET, 'base64'))
+        .update(`${path}\n${exp}`)
+        .digest('base64url');
+      const ending = await shown('end.mp4', `${n.base}${path}?exp=${exp}&sig=${sig}`);
+      const age = Number(/max-age=(\d+)/.exec(ending.cache ?? '')?.[1]);
+      expect(age).toBeGreaterThan(0);
+      expect(age).toBeLessThanOrEqual(30);
     },
   );
 
