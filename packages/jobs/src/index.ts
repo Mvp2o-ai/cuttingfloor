@@ -1,7 +1,12 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
-import { join } from 'node:path';
-import { floorChanged, randomId, type Workspace } from '@cuttingfloor/core';
+import {
+  type Collection,
+  defineCollection,
+  floorChanged,
+  randomId,
+  type Workspace,
+} from '@cuttingfloor/core';
 import { CfError, KEEP_MS, type ToolError } from '@cuttingfloor/schema';
 
 /**
@@ -44,6 +49,27 @@ export interface Job {
 
 export const JOB_TTL_MS = KEEP_MS.job;
 
+/** A job's record: `owners/{owner}/jobs/{job_id}.json` on the filesystem. */
+export const JOBS = defineCollection<Job>({ name: 'jobs', scope: 'owner', fs: { dir: 'jobs' } });
+
+/** That a job was asked to stop, beside its record (`{job_id}.cancel`). */
+export const JOB_CANCELS = defineCollection<{ at: string }>({
+  name: 'job_cancels',
+  scope: 'owner',
+  fs: { dir: 'jobs', ext: '.cancel' },
+});
+
+/** The job an idempotency key started, by a hash of the tool and the key. */
+export const JOB_KEYS = defineCollection<{ job_id: string }>({
+  name: 'job_keys',
+  scope: 'owner',
+  fs: { dir: 'jobs-idem' },
+});
+
+function keyId(tool: string, key: string): string {
+  return createHash('sha256').update(`${tool}\0${key}`).digest('hex').slice(0, 40);
+}
+
 export class FileJobStore {
   readonly #ws: Workspace;
   readonly #listeners = new Set<(job: Job) => void>();
@@ -52,36 +78,34 @@ export class FileJobStore {
     this.#ws = ws;
   }
 
-  #file(owner: string, id: string): string {
+  #jobs(owner: string): Collection<Job> {
+    return this.#ws.records.collection(JOBS, { owner });
+  }
+
+  #id(id: string): string {
     if (!/^j_[0-9a-z]{26}$/.test(id)) throw new CfError('bad_request', `Not a job id: ${id}`);
-    return this.#ws.ownerDir(owner, 'jobs', `${id}.json`);
+    return id;
   }
 
   /**
-   * A cancel asked of a job another server runs. Its own file, written once and never rewritten,
-   * so the running server's next write can't erase it the way it can a status in the record.
+   * A cancel asked of a job another server runs. Its own record, written once and never
+   * rewritten, so the running server's next write can't erase it the way it can a status in the
+   * job's record.
    */
-  #cancelFile(owner: string, id: string): string {
-    return this.#file(owner, id).replace(/\.json$/, '.cancel');
-  }
-
   async requestCancel(owner: string, id: string): Promise<void> {
-    await this.#ws.writeJson(
-      this.#cancelFile(owner, id),
-      { at: new Date().toISOString() },
-      {
-        exclusive: true,
-      },
-    );
+    await this.#ws.records
+      .collection(JOB_CANCELS, { owner })
+      .insertOnce(this.#id(id), { at: new Date().toISOString() });
   }
 
   async cancelRequested(owner: string, id: string): Promise<boolean> {
-    return (await this.#ws.readJson(this.#cancelFile(owner, id))) !== undefined;
+    return (
+      (await this.#ws.records.collection(JOB_CANCELS, { owner }).get(this.#id(id))) !== undefined
+    );
   }
 
-  #idemFile(owner: string, tool: string, key: string): string {
-    const h = createHash('sha256').update(`${tool}\0${key}`).digest('hex').slice(0, 40);
-    return this.#ws.ownerDir(owner, 'jobs-idem', `${h}.json`);
+  #keys(owner: string): Collection<{ job_id: string }> {
+    return this.#ws.records.collection(JOB_KEYS, { owner });
   }
 
   async create(input: {
@@ -105,11 +129,9 @@ export class FileJobStore {
       ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
       ...(input.meta ? { meta: input.meta } : {}),
     };
-    await this.#ws.writeJson(this.#file(job.owner, job.id), job);
+    await this.#jobs(job.owner).put(job.id, job);
     if (input.idempotencyKey) {
-      await this.#ws.writeJson(this.#idemFile(job.owner, job.tool, input.idempotencyKey), {
-        job_id: job.id,
-      });
+      await this.#keys(job.owner).put(keyId(job.tool, input.idempotencyKey), { job_id: job.id });
     }
     await floorChanged(this.#ws, job.owner);
     return job;
@@ -120,7 +142,7 @@ export class FileJobStore {
    * it ended interrupted, busy, failed or cancelled, in which case the caller starts a fresh job.
    */
   async findIdempotent(owner: string, tool: string, key: string): Promise<Job | undefined> {
-    const index = await this.#ws.readJson<{ job_id: string }>(this.#idemFile(owner, tool, key));
+    const index = await this.#keys(owner).get(keyId(tool, key));
     if (!index) return undefined;
     const job = await this.get(index.job_id, owner);
     if (!job || job.status === 'failed' || job.status === 'cancelled') return undefined;
@@ -137,13 +159,13 @@ export class FileJobStore {
   }
 
   async get(id: string, owner: string): Promise<Job | undefined> {
-    const job = await this.#ws.readJson<Job>(this.#file(owner, id));
+    const job = await this.#jobs(owner).get(this.#id(id));
     return job?.owner === owner ? job : undefined;
   }
 
   async update(job: Job, patch: Partial<Omit<Job, 'id' | 'owner'>>): Promise<Job> {
     const next: Job = { ...job, ...patch, lastUpdatedAt: new Date().toISOString() };
-    await this.#ws.writeJson(this.#file(job.owner, job.id), next);
+    await this.#jobs(job.owner).put(this.#id(job.id), next);
     // A status change moves the account's floor; progress and heartbeats don't.
     if (next.status !== job.status) await floorChanged(this.#ws, job.owner);
     for (const listener of this.#listeners) {
@@ -169,13 +191,9 @@ export class FileJobStore {
     owner: string,
     filter: { status?: JobStatus; limit?: number; where?: (job: Job) => boolean } = {},
   ): Promise<Job[]> {
-    const dir = this.#ws.ownerDir(owner, 'jobs');
     const jobs: Job[] = [];
-    for (const name of await this.#ws.list(dir)) {
-      if (!name.endsWith('.json')) continue;
-      const job = await this.#ws.readJson<Job>(join(dir, name));
+    for (const { value: job } of await this.#jobs(owner).find()) {
       if (
-        job &&
         job.owner === owner &&
         (!filter.status || job.status === filter.status) &&
         (!filter.where || filter.where(job))
@@ -189,13 +207,9 @@ export class FileJobStore {
   /** Every owner's jobs still marked working (startup recovery). */
   async working(): Promise<Job[]> {
     const out: Job[] = [];
-    for (const key of await this.#ws.owners()) {
-      const dir = this.#ws.path('owners', key, 'jobs');
-      for (const name of await this.#ws.list(dir)) {
-        const job = name.endsWith('.json')
-          ? await this.#ws.readJson<Job>(join(dir, name))
-          : undefined;
-        if (job?.status === 'working') out.push(job);
+    for (const key of await this.#ws.records.owners()) {
+      for (const { value: job } of await this.#jobs(key).find()) {
+        if (job.status === 'working') out.push(job);
       }
     }
     return out;
@@ -204,21 +218,18 @@ export class FileJobStore {
   /** Deletes finished jobs past their TTL, and their outputs. */
   async sweep(): Promise<number> {
     let n = 0;
-    for (const key of await this.#ws.owners()) {
-      const dir = this.#ws.path('owners', key, 'jobs');
-      for (const name of await this.#ws.list(dir)) {
-        const job = name.endsWith('.json')
-          ? await this.#ws.readJson<Job>(join(dir, name))
-          : undefined;
-        if (!job || job.status === 'working') continue;
+    const { records, blobs } = this.#ws;
+    for (const key of await records.owners()) {
+      for (const { id, value: job } of await this.#jobs(key).find()) {
+        if (job.status === 'working') continue;
         if (Date.parse(job.lastUpdatedAt) + job.ttlMs < Date.now()) {
-          await this.#ws.remove(join(dir, name));
-          await this.#ws.remove(join(dir, `${job.id}.cancel`));
-          await this.#ws.remove(this.#ws.path('owners', key, 'outputs', job.id));
+          await this.#jobs(key).delete(id);
+          await records.collection(JOB_CANCELS, { owner: key }).delete(job.id);
+          await blobs.deletePrefix(blobs.keys.output(key, job.id, ''));
           n += 1;
         }
       }
-      await this.#ws.sweep(this.#ws.path('owners', key, 'jobs-idem'), JOB_TTL_MS);
+      await this.#keys(key).expire(JOB_TTL_MS);
     }
     return n;
   }
