@@ -72,9 +72,11 @@ export class SearchIndexer {
     this.#running = true;
     try {
       for (let next = this.#queue.shift(); next; next = this.#queue.shift()) {
-        await this.#build(next.owner, next.id).catch((error: Error) =>
-          process.stderr.write(`index: ${next?.id}: ${error.message}\n`),
-        );
+        const { owner, id } = next;
+        // The media's copy on this node stays while it is indexed, however long that takes.
+        await this.#media
+          .hold(() => this.#build(owner, id))
+          .catch((error: Error) => process.stderr.write(`index: ${next?.id}: ${error.message}\n`));
         this.#waiting.delete(`${next.owner}/${next.id}`);
       }
     } finally {
@@ -111,6 +113,8 @@ export class SearchIndexer {
         await this.#media.discard(owner, id);
         return;
       }
+      // Where files are not on this server, the index is stored for the others to read.
+      await this.#media.keepDerived(owner, id, ['search']);
       await this.#media.deleteDerived(owner, id, 'search', 'failed.json');
     } catch (error) {
       // A media deleted while it was indexed has no folder left to say so in.

@@ -1,12 +1,15 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { availableParallelism, hostname } from 'node:os';
-import { extname, join } from 'node:path';
+import { extname, isAbsolute, join } from 'node:path';
 import {
+  type BlobKey,
   defineCollection,
   MongoRecords,
   mongoUri,
   ownerKey,
+  type S3Settings,
+  s3SettingsFromEnv,
   TimelineStore,
   Workspace,
 } from '@cuttingfloor/core';
@@ -20,7 +23,9 @@ import {
 import { FileJobStore, type Job, JobRunner } from '@cuttingfloor/jobs';
 import { KEEP } from '@cuttingfloor/schema';
 import { CALLS, CALLS_TTL_MS, type CallEntry, jobEnd, recordCall } from './calls.ts';
+import { Drain } from './drain.ts';
 import { SearchIndexer } from './indexer.ts';
+import { markLive } from './live.ts';
 import { METER, METER_TTL_MS, type MeterEntry, meterJob, meterJudgments } from './meter.ts';
 import { Outputs } from './outputs.ts';
 import { Uploads } from './uploads.ts';
@@ -109,6 +114,42 @@ export interface RuntimeConfig {
    * it is never logged.
    */
   records?: { store: 'mongo'; uri: string; db: string };
+  /**
+   * Files in an S3 bucket instead of under the data root (CUTTINGFLOOR_BLOBS=s3). The data root
+   * then holds this server's caches only. Its keys are secrets: never logged.
+   */
+  s3?: S3Settings;
+  /**
+   * Files in a bucket with records still in JSON files under the data root: for development and
+   * tests only (CUTTINGFLOOR_S3_FILE_RECORDS=1). Files in a bucket are for more than one server,
+   * which only share records in MongoDB, so without this a server refuses to start that way.
+   */
+  s3FileRecords?: boolean;
+  /**
+   * A server beside the one in production, on a copy of its data (CUTTINGFLOOR_STANDBY=1): it
+   * answers requests, and does nothing to the data by itself. No sweep at start or by the hour,
+   * no recovery of jobs, at start or by the minute.
+   */
+  standby?: boolean;
+  /**
+   * Takes no new work from the start (CUTTINGFLOOR_DRAIN=1); a file named `drain` in the data
+   * root does the same with no restart (drain.ts).
+   */
+  drain?: boolean;
+}
+
+/** How long a link to a file in the bucket works: minted per request behind our own links. */
+const BUCKET_LINK_TTL_MS = 3_600_000;
+
+/** Nothing the orphan sweep judges is newer than this: it may be mid-write. */
+const ORPHAN_GRACE_MS = 24 * 3_600_000;
+
+/** A signed output link's target: a blob, or a local file where the user's own file is in place. */
+export interface OutputTarget {
+  /** The name it downloads as. */
+  name: string;
+  blob?: BlobKey;
+  file?: string;
 }
 
 /**
@@ -146,8 +187,14 @@ function recordsFromEnv(env: NodeJS.ProcessEnv): Pick<RuntimeConfig, 'records'> 
   };
 }
 
+/** Where files are kept, from CUTTINGFLOOR_BLOBS: the filesystem unless it says `s3`. */
+function blobsFromEnv(env: NodeJS.ProcessEnv): Pick<RuntimeConfig, 's3'> {
+  const s3 = s3SettingsFromEnv(env);
+  return s3 ? { s3 } : {};
+}
+
 /** The link-signing key from CUTTINGFLOOR_URL_SECRET. The value never appears in the error. */
-function urlSecretKey(value: string): Buffer {
+export function urlSecretKey(value: string): Buffer {
   const text = value.trim();
   const key = /^[A-Za-z0-9+/_-]+={0,2}$/.test(text) ? Buffer.from(text, 'base64') : null;
   if (!key || key.length < 32) {
@@ -213,6 +260,10 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
       : {}),
     ...(env.CUTTINGFLOOR_URL_SECRET ? { urlSecret: env.CUTTINGFLOOR_URL_SECRET } : {}),
     ...recordsFromEnv(env),
+    ...blobsFromEnv(env),
+    ...(env.CUTTINGFLOOR_S3_FILE_RECORDS === '1' ? { s3FileRecords: true } : {}),
+    ...(env.CUTTINGFLOOR_STANDBY === '1' ? { standby: true } : {}),
+    ...(env.CUTTINGFLOOR_DRAIN === '1' ? { drain: true } : {}),
   };
 }
 
@@ -228,6 +279,8 @@ export class Runtime {
   readonly uploads: Uploads;
   /** Files jobs and previews leave for download. */
   readonly outputs: Outputs;
+  /** Whether the server takes new work now (the storage cutover drains it first). */
+  readonly drain: Drain;
   /** Downloaded models, kept across restarts (they are checksummed, not user data). */
   readonly modelsDir: string;
   #secret: Buffer | undefined;
@@ -238,6 +291,11 @@ export class Runtime {
   #onToolCall = new Set<(owner: string, entry: CallEntry) => void>();
 
   constructor(config: RuntimeConfig) {
+    if (config.s3 && !config.records && !config.s3FileRecords) {
+      throw new Error(
+        'CUTTINGFLOOR_BLOBS=s3 needs CUTTINGFLOOR_RECORDS=mongo: a bucket is shared by servers, which share records only in MongoDB (CUTTINGFLOOR_S3_FILE_RECORDS=1 allows files for development and tests)',
+      );
+    }
     this.config = config;
     // On the filesystem a blob's direct link is the server's own signed link to it, for the
     // outputs it serves; nothing else is downloaded.
@@ -251,6 +309,7 @@ export class Runtime {
             }),
           }
         : {}),
+      ...(config.s3 ? { s3: config.s3 } : {}),
       presign: async (key) => {
         const m = /^owners\/([A-Za-z0-9_-]{1,64})\/outputs\/((?:j|f)_[0-9a-z]{26})\/([^/]+)$/.exec(
           key,
@@ -288,25 +347,37 @@ export class Runtime {
         );
       },
       // A job whose render waits for a slot says so, and where it stands.
+      // Every local copy a job is handed stays on this node's disk until the job ends.
       around: (ctx, work) =>
-        watchRenderQueue(
-          {
-            // Waiting for a render slot is not a stall.
-            queued: (ahead) => {
-              ctx.waiting(true);
-              ctx.status(
-                `waiting for a render slot: ${ahead === 0 ? 'next in line' : `${ahead} ahead`} (${renderLoad().limit} renders run at once on this server)`,
-              );
+        this.ws.scratch.hold(() =>
+          watchRenderQueue(
+            {
+              // Waiting for a render slot is not a stall.
+              queued: (ahead) => {
+                ctx.waiting(true);
+                ctx.status(
+                  `waiting for a render slot: ${ahead === 0 ? 'next in line' : `${ahead} ahead`} (${renderLoad().limit} renders run at once on this server)`,
+                );
+              },
+              started: () => {
+                ctx.waiting(false);
+                ctx.status('rendering');
+              },
             },
-            started: () => {
-              ctx.waiting(false);
-              ctx.status('rendering');
-            },
-          },
-          work,
+            work,
+          ),
         ),
     });
     // Uploads take files as big as URL imports may download.
+    this.drain = new Drain({
+      dataDir: this.ws.root,
+      forced: Boolean(config.drain),
+      node: config.node ?? 'local',
+      running: async () =>
+        (await this.jobs.store.working()).filter(
+          (j) => (j.node ?? this.config.node) === this.config.node,
+        ).length,
+    });
     this.uploads = new Uploads(this.ws, {
       secret: () => this.secret(),
       publicUrl: () => this.config.publicUrl,
@@ -322,8 +393,17 @@ export class Runtime {
    */
   async start(options: { sweep?: boolean } = {}): Promise<void> {
     await this.ws.records.ready();
+    await this.ws.blobs.ready();
     await this.secret();
     await this.ws.blobs.deletePrefix(this.ws.blobs.keys.cache('frames'));
+    this.drain.start();
+    // Whether a server serves on this record store, which a storage migration refuses to write.
+    await markLive(this.ws.records, {
+      standby: Boolean(this.config.standby),
+      node: this.config.node ?? 'local',
+      filesystem: this.ws.recordsWithFiles,
+    });
+    if (this.config.standby) return;
     await this.jobs.recover();
     if (options.sweep !== false) {
       await this.#sweepTurn();
@@ -389,6 +469,7 @@ export class Runtime {
   }
 
   stop(): void {
+    this.drain.stop();
     if (this.#sweeper) clearInterval(this.#sweeper);
     if (this.#reaper) clearInterval(this.#reaper);
   }
@@ -400,7 +481,10 @@ export class Runtime {
    */
   async close(withinMs?: number): Promise<void> {
     this.stop();
-    const closed = this.ws.records.close().catch(() => undefined);
+    const closed = Promise.all([
+      this.ws.records.close().catch(() => undefined),
+      this.ws.blobs.close().catch(() => undefined),
+    ]).then(() => undefined);
     if (withinMs === undefined) return closed;
     let timer: NodeJS.Timeout | undefined;
     await Promise.race([
@@ -430,7 +514,9 @@ export class Runtime {
       // And any record whose output went some other way (the job sweep above, an older server).
       await this.outputs.prune(owner);
     }
-    await this.uploads.sweep();
+    await this.uploads.sweep({
+      media: async (owner) => new Set((await this.media.holders(owner)).held.keys()),
+    });
     for (const owner of await records.owners()) {
       await records.collection(LEGACY_USAGE, { owner }).expire(2 * 24 * 3_600_000);
       await records.expireParents(METER, { owner }, METER_TTL_MS);
@@ -439,6 +525,42 @@ export class Runtime {
     await this.#sweepCache();
     // Hosted sign-in steps (apps/hosted funnel.ts), one folder per day.
     await records.expireParents(FUNNEL_DAYS, {}, FUNNEL_TTL_MS);
+    await this.sweepOrphans();
+  }
+
+  /**
+   * Where files are in an object store, what holds a file is counted apart from the file, and a
+   * crash between the two leaves one without the other. Puts that right for every owner: see
+   * `BlobStore.orphans`. Nothing to do on the filesystem.
+   */
+  async sweepOrphans(graceMs = ORPHAN_GRACE_MS): Promise<void> {
+    const { records, blobs } = this.ws;
+    if (!blobs.orphans) return;
+    for (const owner of await records.owners()) {
+      try {
+        // Uploads before media: an import saves its media, then lets go of its upload, so one
+        // between the two reads is seen at least once.
+        const holders = async () => {
+          const uploads = await this.uploads.held(owner);
+          const found = await this.media.holders(owner);
+          for (const { key, taken } of uploads) {
+            // Claimed by a media that names it: counted once, as that media's.
+            if (taken && found.held.has(key)) continue;
+            found.held.set(key, (found.held.get(key) ?? 0) + 1);
+          }
+          return found;
+        };
+        const report = await blobs.orphans(owner, holders, graceMs);
+        if (report.records || report.objects || report.refs || report.marked) {
+          process.stderr.write(
+            `blobs: orphan sweep for ${owner}: ${report.objects} files and ${report.records} records removed, ${report.refs} holder counts set, ${report.marked ?? 0} files marked to check again\n`,
+          );
+        }
+      } catch (error) {
+        // One owner's trouble never stops the sweep.
+        process.stderr.write(`blobs: orphan sweep for ${owner}: ${(error as Error).message}\n`);
+      }
+    }
   }
 
   async secret(): Promise<Buffer> {
@@ -544,6 +666,20 @@ export class Runtime {
     exp: string | null,
     sig: string | null,
   ): Promise<string | undefined> {
+    const target = await this.outputTarget(pathname, exp, sig);
+    if (!target) return undefined;
+    return target.file ?? (target.blob ? this.ws.scratch.materialize(target.blob) : undefined);
+  }
+
+  /**
+   * Checks a signed output URL and names what it is a link to, without fetching it: the blob,
+   * or the local file of a path import. Undefined when invalid or expired.
+   */
+  async outputTarget(
+    pathname: string,
+    exp: string | null,
+    sig: string | null,
+  ): Promise<OutputTarget | undefined> {
     const m = /^\/outputs\/([A-Za-z0-9_-]{1,64})\/((?:j|f|m)_[0-9a-z]{26})\/([^/]+)$/.exec(
       pathname,
     );
@@ -560,8 +696,41 @@ export class Runtime {
     if (id.startsWith('m_')) {
       // An owner key is its own key, so the media library finds the owner's media by it.
       const record = await this.media.find(key, id);
-      return record?.file ? this.media.local(record.file) : undefined;
+      if (!record?.file) return undefined;
+      return isAbsolute(record.file) ? { name, file: record.file } : { name, blob: record.file };
     }
-    return this.outputs.local(key, id, name);
+    return { name, blob: this.outputs.key(key, id, name) };
+  }
+
+  /** A blob as a local file on this server, for an engine (or a hash) to read. */
+  scratchFile(blob: BlobKey): Promise<string> {
+    return this.ws.scratch.materialize(blob);
+  }
+
+  /**
+   * A link straight to a blob in the bucket, for a download (`attachment`, under its name) or
+   * to play in a page (`inline`). Undefined where files are served by this server itself.
+   */
+  async bucketLink(
+    blob: BlobKey,
+    name: string,
+    type: string,
+    how: 'attachment' | 'inline' = 'attachment',
+  ): Promise<string | undefined> {
+    if (!this.ws.blobs.remote) return undefined;
+    const plain = name.replace(/[^\x20-\x7e]|["\\]/g, '_');
+    return this.ws.blobs.presignGet(blob, {
+      ttlMs: BUCKET_LINK_TTL_MS,
+      disposition:
+        how === 'inline'
+          ? 'inline'
+          : `attachment; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+      type,
+    });
+  }
+
+  /** The origin files in the bucket are fetched from, which pages that play them must allow. */
+  get bucketOrigin(): string | undefined {
+    return (this.ws.blobs as { origin?: string }).origin;
   }
 }

@@ -1,13 +1,22 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Workspace } from '@cuttingfloor/core';
 import { FileJobStore, JobRunner } from '@cuttingfloor/jobs';
 import { CfError } from '@cuttingfloor/schema';
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+
+/** Temp folders this file made, removed when it ends. */
+const temps: string[] = [];
+const temp = async (prefix: string) => {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  temps.push(dir);
+  return dir;
+};
+afterAll(() => Promise.all(temps.splice(0).map((d) => rm(d, { recursive: true, force: true }))));
 
 async function setup(concurrency = 1) {
-  const store = new FileJobStore(new Workspace(await mkdtemp(join(tmpdir(), 'cf-jobs-'))));
+  const store = new FileJobStore(new Workspace(await temp('cf-jobs-')));
   return { store, runner: new JobRunner(store, concurrency) };
 }
 

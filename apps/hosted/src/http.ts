@@ -18,6 +18,8 @@ import type { AccountGetResult } from '@cuttingfloor/schema';
 import {
   createServer,
   creditsClaimed,
+  DRAIN_RETRY_SECONDS,
+  drainingError,
   type OwnerLimits,
   outputMime,
   type Runtime,
@@ -324,6 +326,13 @@ export function createHttpServer(options: HttpOptions): Server {
         res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
         return;
       }
+      // Whether the server is draining and how many of its jobs still run: counts only.
+      if (url.pathname === '/healthz/drain') {
+        res
+          .writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+          .end(JSON.stringify(await runtime.drain.status()));
+        return;
+      }
       if (options.openaiChallenge && url.pathname === '/.well-known/openai-apps-challenge') {
         res.writeHead(200, { 'content-type': 'text/plain' }).end(options.openaiChallenge);
         return;
@@ -356,16 +365,30 @@ export function createHttpServer(options: HttpOptions): Server {
         return;
       }
       if (url.pathname.startsWith('/outputs/') && (req.method === 'GET' || req.method === 'HEAD')) {
-        const file = await runtime.verifyOutput(
+        const target = await runtime.outputTarget(
           url.pathname,
           url.searchParams.get('exp'),
           url.searchParams.get('sig'),
         );
-        if (!file) {
+        if (!target) {
           res.writeHead(403, { 'content-type': 'text/plain' }).end(refusedLink(url));
           return;
         }
         const name = decodeURIComponent(url.pathname.split('/').pop() ?? '');
+        // Files in a bucket are fetched from it: the link is checked here, then answered with
+        // a short-lived link to the file itself.
+        if (target.blob && runtime.ws.blobs.remote) {
+          await sendBlob(runtime, req, res, target.blob, name, {
+            inline: url.searchParams.has('inline'),
+            expires: Number(url.searchParams.get('exp')),
+          });
+          return;
+        }
+        const file = target.file ?? (target.blob && (await runtime.scratchFile(target.blob)));
+        if (!file) {
+          res.writeHead(403, { 'content-type': 'text/plain' }).end(refusedLink(url));
+          return;
+        }
         await sendFile(req, res, file, name);
         return;
       }
@@ -374,27 +397,31 @@ export function createHttpServer(options: HttpOptions): Server {
         const filePath = `/outputs/${url.pathname.slice('/watch/'.length)}`;
         const exp = url.searchParams.get('exp');
         const sig = url.searchParams.get('sig');
-        const file = await runtime.verifyOutput(filePath, exp, sig);
-        if (!file) {
+        const target = await runtime.outputTarget(filePath, exp, sig);
+        if (!target) {
           res.writeHead(403, { 'content-type': 'text/plain' }).end(refusedLink(url));
           return;
         }
         const name = decodeURIComponent(filePath.split('/').pop() ?? '');
+        // The page plays the file from where it is served: this server, or the bucket its link
+        // redirects to, which the page must then be allowed to load from.
+        const bucket = target.blob && runtime.ws.blobs.remote ? runtime.bucketOrigin : undefined;
+        const from = bucket ? `'self' ${bucket}` : "'self'";
         res.writeHead(200, {
           'content-type': 'text/html; charset=utf-8',
           'cache-control': 'private, no-store',
           'referrer-policy': 'no-referrer',
           'x-content-type-options': 'nosniff',
-          'content-security-policy':
-            "default-src 'none'; media-src 'self'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+          'content-security-policy': `default-src 'none'; media-src ${from}; img-src ${from}; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`,
         });
         res.end(
           req.method === 'HEAD'
             ? undefined
             : watchPage({
                 name,
-                mime: outputMime(name.includes('.') ? name : file),
+                mime: outputMime(name.includes('.') ? name : (target.file ?? target.blob ?? name)),
                 fileUrl: `${filePath}?${new URLSearchParams({ exp: exp ?? '', sig: sig ?? '' })}`,
+                ...(bucket ? { inline: true } : {}),
                 base: runtime.config.publicUrl,
                 expiresAt: new Date(Number(exp)),
               }),
@@ -463,7 +490,7 @@ function refusedLink(url: URL): string {
 
 const UPLOAD_CORS = {
   'access-control-allow-origin': '*',
-  'access-control-allow-methods': 'PUT, HEAD, GET, OPTIONS',
+  'access-control-allow-methods': 'PUT, POST, HEAD, GET, OPTIONS',
   'access-control-allow-headers': 'content-type, content-range, upload-name',
   'access-control-expose-headers': 'upload-offset, upload-complete',
   'access-control-max-age': '86400',
@@ -483,6 +510,25 @@ async function handleUpload(
     res.writeHead(204, UPLOAD_CORS).end();
     return;
   }
+  // Draining (drain.ts): no bytes are taken; where an upload stands can still be asked.
+  if (runtime.drain.active && req.method !== 'GET' && req.method !== 'HEAD') {
+    req.resume();
+    res
+      .writeHead(503, {
+        ...UPLOAD_CORS,
+        'content-type': 'application/json',
+        'cache-control': 'no-store',
+        'retry-after': String(DRAIN_RETRY_SECONDS),
+        connection: 'close',
+      })
+      .end(
+        JSON.stringify({
+          error: drainingError().message,
+          retry_after_seconds: DRAIN_RETRY_SECONDS,
+        }),
+      );
+    return;
+  }
   const reply = (
     status: number,
     body: Record<string, unknown>,
@@ -498,14 +544,21 @@ async function handleUpload(
     });
     res.end(req.method === 'HEAD' ? undefined : JSON.stringify(body));
   };
+  // The same link with /parts, /parts/{n} or /complete after it sends the file as numbered
+  // parts, several at once (where files are kept in an object store).
+  const sub = /^(\/uploads\/[^/]+\/[^/]+)\/(parts(?:\/(\d{1,5}))?|complete)$/.exec(url.pathname);
   const target = await runtime.uploads.verify(
-    url.pathname,
+    sub ? (sub[1] as string) : url.pathname,
     url.searchParams.get('exp'),
     url.searchParams.get('sig'),
   );
   if (!target) {
     req.resume();
     reply(403, { error: 'invalid or expired upload link; call media.upload for a new one' });
+    return;
+  }
+  if (sub) {
+    await handleUploadParts(runtime, req, target, sub[2] as string, sub[3], url, reply);
     return;
   }
   // Opened in a browser, the link is a page to drop the file on.
@@ -587,6 +640,154 @@ async function handleUpload(
       state,
     );
   }
+}
+
+/**
+ * A file sent as numbered parts of one size, several at once: GET …/parts?bytes=<size> sets it
+ * up and lists the parts that are in, PUT …/parts/{n} sends one, POST …/complete makes them the
+ * file. A server that keeps files on its own disk answers 404, and the sender uses PUT.
+ */
+async function handleUploadParts(
+  runtime: Runtime,
+  req: IncomingMessage,
+  target: { owner: string; id: string },
+  what: string,
+  number: string | undefined,
+  url: URL,
+  reply: (
+    status: number,
+    body: Record<string, unknown>,
+    state?: { received: number; complete: boolean },
+  ) => void,
+): Promise<void> {
+  try {
+    if (what === 'complete') {
+      req.resume();
+      if (req.method !== 'POST') return reply(405, { error: 'POST completes an upload' });
+      const done = await runtime.uploads.completeParts(target.owner, target.id);
+      if (!done.complete) {
+        return reply(
+          409,
+          { error: 'parts are missing; send them, then complete', ...done },
+          { received: done.received, complete: false },
+        );
+      }
+      return reply(
+        200,
+        { ...done, next: `media.import {source: {upload_id: "${done.upload_id}"}}` },
+        done,
+      );
+    }
+    if (number === undefined) {
+      req.resume();
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        return reply(405, { error: 'GET lists the parts of an upload' });
+      }
+      const bytes = url.searchParams.get('bytes');
+      const total = bytes !== null && /^\d{1,15}$/.test(bytes) ? Number(bytes) : undefined;
+      if (bytes !== null && total === undefined) {
+        return reply(400, { error: 'bytes must be the size of the file' });
+      }
+      const sentName = req.headers['upload-name'];
+      let name: string | undefined;
+      try {
+        name = typeof sentName === 'string' ? decodeURIComponent(sentName) : undefined;
+      } catch {
+        name = undefined;
+      }
+      const parts = await runtime.uploads.parts(target.owner, target.id, total, name);
+      if (!parts) {
+        return reply(404, { error: 'this server takes a file whole: PUT it to the upload link' });
+      }
+      return reply(200, { ...parts }, parts);
+    }
+    if (req.method !== 'PUT') {
+      req.resume();
+      return reply(405, { error: 'PUT sends a part' });
+    }
+    const lengthHeader = req.headers['content-length'];
+    req.setTimeout(120_000, () => req.destroy());
+    const parts = await runtime.uploads.receivePart(
+      target.owner,
+      target.id,
+      Number(number),
+      req,
+      lengthHeader === undefined ? null : Number(lengthHeader),
+    );
+    reply(200, { ...parts, part: Number(number) }, parts);
+  } catch (error) {
+    if (!(error instanceof UploadRefused)) throw error;
+    if (!req.complete) req.resume();
+    const state =
+      error.received === undefined
+        ? undefined
+        : { received: error.received, complete: error.complete };
+    reply(
+      error.status,
+      { error: error.message, ...(state ? { received: state.received } : {}) },
+      state,
+    );
+  }
+}
+
+/**
+ * What the bucket may show in a page rather than hand over as a download: sound, video and
+ * pictures that run no script. Anything else (an SVG, HTML, a document) is a download whatever
+ * the link asks, so a signed link can never make the bucket's origin serve a page.
+ */
+const SHOWN_INLINE = /^(?:audio|video)\/|^image\/(?:png|jpeg|gif|webp|avif|bmp|apng)$/;
+
+/** The longest a browser keeps the redirect: never past the end of our own link. */
+const REDIRECT_MAX_AGE_S = 600;
+
+/**
+ * Answers a checked link to a file in the bucket: GET with a redirect to a short-lived link to
+ * the file itself (ranges, seeking and resuming are then the bucket's), HEAD with the file's
+ * size and type as this server always has. The file is looked up first, so one that has gone
+ * says so here. `expires` is when the link checked ends (ms).
+ */
+async function sendBlob(
+  runtime: Runtime,
+  req: IncomingMessage,
+  res: ServerResponse,
+  blob: string,
+  name: string,
+  link: { inline: boolean; expires: number },
+): Promise<void> {
+  const head = await runtime.ws.blobs.head(blob);
+  if (!head) {
+    res.writeHead(404, { 'content-type': 'text/plain' }).end('gone');
+    return;
+  }
+  const type = outputMime(name.includes('.') ? name : blob);
+  const shared = {
+    'x-content-type-options': 'nosniff',
+    'access-control-allow-origin': '*',
+    'access-control-expose-headers': 'content-length, content-range',
+  };
+  if (req.method === 'HEAD') {
+    res
+      .writeHead(200, {
+        ...shared,
+        'content-type': type,
+        'content-length': head.bytes,
+        'accept-ranges': 'bytes',
+        'content-disposition': `attachment; filename="${name.replace(/"/g, '')}"`,
+        'cache-control': 'private, max-age=3600',
+      })
+      .end();
+    return;
+  }
+  const how = link.inline && SHOWN_INLINE.test(type) ? 'inline' : 'attachment';
+  const location = await runtime.bucketLink(blob, name, type, how);
+  if (!location) {
+    res.writeHead(404, { 'content-type': 'text/plain' }).end('gone');
+    return;
+  }
+  // Kept by the browser for less time than the bucket's link lasts, and than ours does.
+  const left = Math.floor((link.expires - Date.now()) / 1000);
+  const maxAge = Math.max(0, Math.min(REDIRECT_MAX_AGE_S, left));
+  res.writeHead(302, { ...shared, location, 'cache-control': `private, max-age=${maxAge}` }).end();
 }
 
 /** The request's URL as the client addressed it, for web-standard handlers. */

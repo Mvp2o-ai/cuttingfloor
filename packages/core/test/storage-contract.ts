@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
@@ -702,6 +702,8 @@ export function scratchContract(backend: string, make: StoresFactory): void {
       const b = await s.scratch.temp('cf-contract-');
       expect(a).not.toBe(b);
       await writeFile(join(a, 'x'), 'x');
+      // The caller removes it.
+      await Promise.all([a, b].map((d) => rm(d, { recursive: true, force: true })));
     });
   });
 }

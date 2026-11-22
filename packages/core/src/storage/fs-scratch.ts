@@ -40,11 +40,15 @@ export class FsScratch implements Scratch {
   }
 
   /** The folder itself, which may not exist yet: the engine makes it as it writes. */
-  async materializeDir(prefix: BlobKey): Promise<string> {
+  async materializeDir(prefix: BlobKey, _options?: { only?: string[] }): Promise<string> {
     return this.#blobs.file(prefix);
   }
 
-  async publishDir(localDir: string, prefix: BlobKey): Promise<void> {
+  async publishDir(
+    localDir: string,
+    prefix: BlobKey,
+    _options?: { only?: string[] },
+  ): Promise<void> {
     const dir = this.#blobs.file(prefix);
     if (localDir === dir) return;
     await cp(localDir, dir, { recursive: true });
@@ -56,5 +60,9 @@ export class FsScratch implements Scratch {
 
   temp(prefix: string): Promise<string> {
     return mkdtemp(join(tmpdir(), prefix));
+  }
+
+  hold<T>(work: () => Promise<T>): Promise<T> {
+    return work();
   }
 }

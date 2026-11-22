@@ -39,14 +39,16 @@ const fake = await vi.hoisted(async () => {
   const names = ['CUTTINGFLOOR_MELT', 'CUTTINGFLOOR_FFMPEG', 'CUTTINGFLOOR_FFPROBE'];
   const saved = Object.fromEntries(names.map((k) => [k, process.env[k]]));
   for (const name of names) process.env[name] = script;
-  return { saved };
+  return { dir, saved };
 });
 
-afterAll(() => {
+afterAll(async () => {
   for (const [k, v] of Object.entries(fake.saved)) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
   }
+  const { rm } = await import('node:fs/promises');
+  await rm(fake.dir, { recursive: true, force: true });
 });
 
 const up = await mongoReachable();

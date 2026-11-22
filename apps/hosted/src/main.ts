@@ -5,7 +5,7 @@ import { configFromEnv, Runtime } from '@cuttingfloor/server';
 import { AccessCheck } from './access.ts';
 import { ADMIN_KEYS, AdminApi } from './admin-api.ts';
 import { AppsSeen } from './apps-seen.ts';
-import { Mailer, ResendProvider } from './email.ts';
+import { ResendProvider } from './email.ts';
 import { recordSignInStep } from './funnel.ts';
 import { createHttpServer, parseApiKeys } from './http.ts';
 import { ScriptKeys } from './keys.ts';
@@ -15,6 +15,7 @@ import { discoverAuthorizationServer, JwtTokenVerifier } from './oauth.ts';
 import { ProviderKeys } from './provider-keys.ts';
 import { Rights } from './rights.ts';
 import { Sequence, WorkosSubscribers } from './sequence.ts';
+import { accountMailer, STANDBY_NOTICE, startBackground } from './standby.ts';
 
 // `cuttingfloor serve`: the long-running HTTP node. Local mode (compose) is one user on
 // loopback; hosted mode requires bearer API keys or OAuth and takes provider keys per tenant.
@@ -66,6 +67,11 @@ if (oauth && issuer)
       (error: Error) => process.stderr.write(`oauth: ${error.message}\n`),
     );
   }, 300_000).unref();
+
+// Beside the server in production, on a copy of its data: it answers requests and does nothing
+// to the data by the clock, and sends no email.
+const standby = Boolean(config.standby);
+if (standby) process.stderr.write(`${STANDBY_NOTICE}\n`);
 
 const runtime = new Runtime(config);
 await runtime.start();
@@ -135,6 +141,7 @@ const unset = Object.entries(sequenceEnv)
 const sequenceOn = !unset.length && Boolean(publicUrl);
 /** The apps each account's requests came from, for the admin API. */
 const apps = new AppsSeen(runtime.ws);
+const mailer = accountMailer(process.env, standby);
 const lifecycle =
   access && ledger && workosKey && stripeKey
     ? new Lifecycle({
@@ -144,6 +151,7 @@ const lifecycle =
         workosKey,
         stripeKey,
         accountUrl,
+        standby,
         ...(sequenceOn
           ? {}
           : {
@@ -154,19 +162,7 @@ const lifecycle =
             }),
         ...(scriptKeys ? { keys: scriptKeys } : {}),
         ...(adminKeys && rights ? { adminKeys, rights } : {}),
-        ...(process.env.RESEND_API_KEY
-          ? {
-              // Account email comes from the same person as the sign-up sequence, when one is set.
-              mailer: new Mailer(process.env.RESEND_API_KEY, {
-                ...(process.env.CUTTINGFLOOR_EMAIL_FROM
-                  ? { from: process.env.CUTTINGFLOOR_EMAIL_FROM }
-                  : {}),
-                ...(process.env.CUTTINGFLOOR_EMAIL_REPLY_TO
-                  ? { replyTo: process.env.CUTTINGFLOOR_EMAIL_REPLY_TO }
-                  : {}),
-              }),
-            }
-          : {}),
+        ...(mailer ? { mailer } : {}),
         ...(process.env.STRIPE_WEBHOOK_SECRET
           ? { stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET }
           : {}),
@@ -178,7 +174,6 @@ const lifecycle =
       })
     : undefined;
 if (lifecycle) {
-  lifecycle.start();
   for (const [name, set] of [
     ['RESEND_API_KEY', process.env.RESEND_API_KEY],
     ['STRIPE_WEBHOOK_SECRET', process.env.STRIPE_WEBHOOK_SECRET],
@@ -187,46 +182,48 @@ if (lifecycle) {
   ] as const)
     if (!set) process.stderr.write(`lifecycle: ${name} unset; that part is off\n`);
 }
-let sequence: Sequence | undefined;
-if (lifecycle && access && workosKey && publicUrl) {
+/** The sign-up sequence, when everything it needs is set. Never asked for on standby. */
+const makeSequence = (): Sequence | undefined => {
+  if (!(lifecycle && access && workosKey && publicUrl)) return undefined;
   const env = sequenceEnv as Record<keyof typeof sequenceEnv, string>;
-  if (unset.length) process.stderr.write(`sequence: off; set ${unset.join(', ')}\n`);
-  else {
-    try {
-      sequence = new Sequence({
-        ws: runtime.ws,
-        subscribers: new WorkosSubscribers(workosKey),
-        provider: new ResendProvider(env.RESEND_API_KEY),
-        from: env.CUTTINGFLOOR_EMAIL_FROM,
-        replyTo: env.CUTTINGFLOOR_EMAIL_REPLY_TO,
-        signer: env.CUTTINGFLOOR_EMAIL_SIGNER,
-        publicUrl,
-        unsubscribeSecret: env.CUTTINGFLOOR_UNSUBSCRIBE_SECRET,
-        followUpAfterMs: followUpHours * 3_600_000,
-        creditsAfterMs: creditsHours * 3_600_000,
-        credits: async (owner) => {
-          const balance = await access.balance(owner);
-          return { left: balance.left, perMonth: balance.per_month, bought: balance.bought };
-        },
-        pollMs: pollSeconds * 1000,
-        templatesDir:
-          process.env.CUTTINGFLOOR_EMAIL_TEMPLATES ??
-          fileURLToPath(new URL('../email/', import.meta.url)),
-        ...(process.env.RESEND_WEBHOOK_SECRET
-          ? { eventsSecret: process.env.RESEND_WEBHOOK_SECRET }
-          : {}),
-      });
-    } catch (error) {
-      process.stderr.write(`sequence: ${(error as Error).message}\n`);
-      process.exit(1);
-    }
-    sequence.start();
-    if (!process.env.RESEND_WEBHOOK_SECRET)
-      process.stderr.write(
-        'sequence: RESEND_WEBHOOK_SECRET unset; bounces and complaints are not heard\n',
-      );
+  if (unset.length) {
+    process.stderr.write(`sequence: off; set ${unset.join(', ')}\n`);
+    return undefined;
   }
-}
+  try {
+    return new Sequence({
+      ws: runtime.ws,
+      subscribers: new WorkosSubscribers(workosKey),
+      provider: new ResendProvider(env.RESEND_API_KEY),
+      from: env.CUTTINGFLOOR_EMAIL_FROM,
+      replyTo: env.CUTTINGFLOOR_EMAIL_REPLY_TO,
+      signer: env.CUTTINGFLOOR_EMAIL_SIGNER,
+      publicUrl,
+      unsubscribeSecret: env.CUTTINGFLOOR_UNSUBSCRIBE_SECRET,
+      followUpAfterMs: followUpHours * 3_600_000,
+      creditsAfterMs: creditsHours * 3_600_000,
+      credits: async (owner) => {
+        const balance = await access.balance(owner);
+        return { left: balance.left, perMonth: balance.per_month, bought: balance.bought };
+      },
+      pollMs: pollSeconds * 1000,
+      templatesDir:
+        process.env.CUTTINGFLOOR_EMAIL_TEMPLATES ??
+        fileURLToPath(new URL('../email/', import.meta.url)),
+      ...(process.env.RESEND_WEBHOOK_SECRET
+        ? { eventsSecret: process.env.RESEND_WEBHOOK_SECRET }
+        : {}),
+    });
+  } catch (error) {
+    process.stderr.write(`sequence: ${(error as Error).message}\n`);
+    process.exit(1);
+  }
+};
+const sequence = startBackground({ standby, lifecycle, sequence: makeSequence });
+if (sequence && !process.env.RESEND_WEBHOOK_SECRET)
+  process.stderr.write(
+    'sequence: RESEND_WEBHOOK_SECRET unset; bounces and complaints are not heard\n',
+  );
 const adminApi =
   lifecycle && access && adminKeys && rights && publicUrl
     ? new AdminApi({

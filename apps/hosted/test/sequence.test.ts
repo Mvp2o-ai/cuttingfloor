@@ -1,12 +1,12 @@
 import { createHmac } from 'node:crypto';
-import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Workspace } from '@cuttingfloor/core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { EmailError, type EmailProvider, type OutboundEmail } from '../src/email.ts';
 import {
   appName,
@@ -19,6 +19,15 @@ import {
   type Subscriber,
   type Subscribers,
 } from '../src/sequence.ts';
+
+/** Temp folders this file made, removed when it ends. */
+const temps: string[] = [];
+const temp = async (prefix: string) => {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  temps.push(dir);
+  return dir;
+};
+afterAll(() => Promise.all(temps.splice(0).map((d) => rm(d, { recursive: true, force: true }))));
 
 // The sign-up sequence against a fake account source and a fake provider: who gets which email
 // when, that nothing goes twice, and that suppression is decided at the moment of sending.
@@ -85,7 +94,7 @@ class FakeProvider implements EmailProvider {
 }
 
 async function setup(overrides: Partial<SequenceOptions> = {}) {
-  const ws = new Workspace(await mkdtemp(join(tmpdir(), 'cf-sequence-')));
+  const ws = new Workspace(await temp('cf-sequence-'));
   const accounts = new FakeAccounts();
   const provider = new FakeProvider();
   const options: SequenceOptions = {
@@ -471,7 +480,7 @@ describe('suppression, at the moment of sending', () => {
 
 describe('templates and configuration', () => {
   it('reads the copy from the template files at every send', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'cf-templates-'));
+    const dir = await temp('cf-templates-');
     for (const name of ['welcome', 'follow-up-no-edit', 'follow-up-first-edit'])
       await writeFile(join(dir, `${name}.txt`), await readFile(join(TEMPLATES, `${name}.txt`)));
     const { ws, accounts, provider, sequence } = await setup({ templatesDir: dir });
@@ -486,7 +495,7 @@ describe('templates and configuration', () => {
   });
 
   it('refuses a template without its unsubscribe link or with an unknown placeholder', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'cf-templates-'));
+    const dir = await temp('cf-templates-');
     await writeFile(join(dir, 'welcome.txt'), 'version: 1\nsubject: Hi\n---\nNo way out.\n');
     await expect(loadTemplate(dir, 'welcome')).rejects.toThrow(/unsubscribe_url/);
     await writeFile(

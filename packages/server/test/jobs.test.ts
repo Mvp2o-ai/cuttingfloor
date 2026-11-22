@@ -27,7 +27,7 @@ const fake = await vi.hoisted(async () => {
   process.env.CUTTINGFLOOR_FFMPEG = script;
   process.env.CUTTINGFLOOR_FFPROBE = script;
   process.env.CF_FAKE_ENGINE_PIDS = pids;
-  return { pids, saved };
+  return { dir, pids, saved };
 });
 
 let env: TestEnv;
@@ -37,11 +37,13 @@ beforeAll(async () => {
   env = await testRuntime({ maxJobs: 1, shortJobs: 0, stallSeconds: 0.5 });
 });
 
-afterAll(() => {
+afterAll(async () => {
   for (const [k, v] of Object.entries(fake.saved)) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
   }
+  const { rm } = await import('node:fs/promises');
+  await rm(fake.dir, { recursive: true, force: true });
 });
 
 /** Every process the stand-in engines started so far (the engine and its helper). */

@@ -17,11 +17,20 @@ export interface Scratch {
   /**
    * A local folder standing for every blob under `prefix`, for an engine that keeps a set of
    * files together (a search index, stems). `publishDir` stores what the engine wrote there.
+   * With `only`, just those names (paths under the folder) are brought up to date, or stored:
+   * for a folder of many large files of which a caller needs one, or none yet (`only: []`, a
+   * folder to write in). On the filesystem the folder is the blobs' own, whatever is asked.
    */
-  materializeDir(prefix: BlobKey): Promise<string>;
-  publishDir(localDir: string, prefix: BlobKey): Promise<void>;
+  materializeDir(prefix: BlobKey, options?: { only?: string[] }): Promise<string>;
+  publishDir(localDir: string, prefix: BlobKey, options?: { only?: string[] }): Promise<void>;
   /** The key of a local path that is already a blob's own file here, or undefined. */
   keyOf(localPath: string): BlobKey | undefined;
   /** A folder for work in progress, on this node only. The caller removes it. */
   temp(prefix: string): Promise<string>;
+  /**
+   * Runs `work` with every local copy it is handed (`materialize`, `materializeDir`, `reserve`)
+   * kept until it settles, however long that is: a long job's source is never removed from
+   * under it to make room. Nothing to keep on the filesystem, where the paths are the blobs.
+   */
+  hold<T>(work: () => Promise<T>): Promise<T>;
 }

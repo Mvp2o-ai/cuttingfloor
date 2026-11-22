@@ -3,6 +3,7 @@
 import { track } from '@vercel/analytics';
 import { useEffect, useRef, useState } from 'react';
 import type { Files, Started } from '../lib/files.ts';
+import { Final, sendFile, uploadOffset } from './send-file.ts';
 
 // Drop or pick files for the agent to use (on a phone, tap to pick from the gallery or files). Each file goes up in parts straight to the
 // server's signed URL and resumes after a dropped connection; the agent then finds it by name.
@@ -12,8 +13,6 @@ import type { Files, Started } from '../lib/files.ts';
 // server has once the user picks the same file again.
 // Each upload is counted (Upload started, Upload, Upload failed) with its kind of file, never
 // its name.
-
-const PART = 16 * 1024 * 1024;
 
 type Sending = {
   key: string;
@@ -48,8 +47,6 @@ const day = (iso: string) =>
     hour: 'numeric',
     minute: '2-digit',
   });
-
-class Final extends Error {}
 
 type WakeLock = { release: () => Promise<void> };
 const wakeLock = () =>
@@ -113,44 +110,12 @@ export function FilesPanel({ initial }: { initial: Files }) {
         throw new Final([body.error, body.hint].filter(Boolean).join('. ') || `HTTP ${res.status}`);
       const url = body.url;
       update(key, { upload_id: body.upload_id });
-      const offset = async () => {
-        const r = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-        if (!r.ok) throw new Final('The upload link stopped working. Drop the file again.');
-        return {
-          at: Number(r.headers.get('upload-offset') || 0),
-          complete: r.headers.get('upload-complete') === 'true',
-        };
+      const hooks = {
+        sent: (sent: number) => update(key, { sent }),
+        note: (note: string) => update(key, { note }),
+        inFlight: inFlight.current,
       };
-      let { at, complete } = resume ? await offset() : { at: 0, complete: false };
-      for (let tries = 0; !complete; ) {
-        const end = Math.min(at + PART, file.size);
-        update(key, { sent: at, note: '' });
-        const cut = new AbortController();
-        inFlight.current.add(cut);
-        try {
-          const r = await fetch(url, {
-            method: 'PUT',
-            headers: { 'content-range': `bytes ${at}-${end - 1}/${file.size}` },
-            body: file.slice(at, end),
-            signal: cut.signal,
-          });
-          const reply = (await r.json().catch(() => ({}))) as { error?: string };
-          if (r.status === 413 || r.status === 403 || r.status === 404)
-            throw new Final(reply.error || 'The server refused the file.');
-          if (!r.ok && r.status !== 409) throw new Error(reply.error || `HTTP ${r.status}`);
-          at = Number(r.headers.get('upload-offset') || end);
-          complete = r.headers.get('upload-complete') === 'true';
-          tries = 0;
-        } catch (error) {
-          // A part cut off because the page came back from the background is not a failure.
-          if (error instanceof Final || (!cut.signal.aborted && ++tries > 5)) throw error;
-          update(key, { note: 'Connection dropped; picking up where it stopped…' });
-          if (!cut.signal.aborted) await new Promise((r) => setTimeout(r, 1000 * tries));
-          ({ at, complete } = await offset());
-        } finally {
-          inFlight.current.delete(cut);
-        }
-      }
+      await sendFile(file, url, hooks, resume ? await uploadOffset(url) : undefined);
       update(key, { sent: file.size, state: 'done', note: '' });
       track('Upload', { kind: kind(file), mb: Math.round(file.size / 1e6) });
     } catch (error) {

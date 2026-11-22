@@ -1,9 +1,18 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SKILL_LIMITS } from '@cuttingfloor/schema';
 import { loadLibrary, parseRelated, parseSkill } from '@cuttingfloor/skills';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+
+/** Temp folders this file made, removed when it ends. */
+const temps: string[] = [];
+const temp = async (prefix: string) => {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  temps.push(dir);
+  return dir;
+};
+afterAll(() => Promise.all(temps.splice(0).map((d) => rm(d, { recursive: true, force: true }))));
 
 // The skills contract (one-mcp's playbook format), and every skill in skills/ against it.
 
@@ -182,7 +191,7 @@ describe('skill files', () => {
 
 describe('a library folder', () => {
   it('loads every file, keeping relations to skills not written yet out of related', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'cf-skills-'));
+    const dir = await temp('cf-skills-');
     await writeFile(
       join(dir, 'add-captions.md'),
       skill({ related: 'reframe-to-vertical:related, trim-it:alternative' }),
@@ -202,7 +211,7 @@ describe('a library folder', () => {
   });
 
   it('fails on a broken file, naming it', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'cf-skills-'));
+    const dir = await temp('cf-skills-');
     await writeFile(join(dir, 'add-captions.md'), skill({ version: 'two' }));
     expect(() => loadLibrary(dir)).toThrow(/^add-captions: version must be a positive number/);
   });

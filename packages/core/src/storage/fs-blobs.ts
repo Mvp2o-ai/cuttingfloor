@@ -52,12 +52,21 @@ export interface FsBlobOptions {
  */
 export class FsBlobStore implements BlobStore {
   readonly keys = FS_BLOB_KEYS;
+  readonly remote = false;
   readonly root: string;
   readonly #presign: FsBlobOptions['presign'];
 
   constructor(root: string, options: FsBlobOptions = {}) {
     this.root = root;
     this.#presign = options.presign;
+  }
+
+  async ready(): Promise<void> {}
+
+  async close(): Promise<void> {}
+
+  async forget(owner: string): Promise<void> {
+    await this.deletePrefix(this.keys.owner(owner));
   }
 
   /** The blob's own file. Only the filesystem stores and FsScratch may ask. */
@@ -266,7 +275,9 @@ export class FsBlobStore implements BlobStore {
     _uploadId: string,
     part: number,
     body: Readable,
+    options: { anyOrder?: boolean } = {},
   ): Promise<BlobPart> {
+    if (options.anyOrder) throw new Error('The filesystem store takes parts in order only');
     const file = this.file(key);
     await mkdir(dirname(file), { recursive: true });
     const before = await stat(file).then(

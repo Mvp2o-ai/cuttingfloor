@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CfError } from '@cuttingfloor/schema';
@@ -19,7 +19,16 @@ import {
   tokenize,
   writeVectors,
 } from '@cuttingfloor/skills';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+
+/** Temp folders this file made, removed when it ends. */
+const temps: string[] = [];
+const temp = async (prefix: string) => {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  temps.push(dir);
+  return dir;
+};
+afterAll(() => Promise.all(temps.splice(0).map((d) => rm(d, { recursive: true, force: true }))));
 
 // Hybrid search: BM25 plus cosine over name + description, never the body. A stand-in embedder
 // maps words to a few meanings, so the semantic half is checked without the model; the model
@@ -195,7 +204,7 @@ describe('stored vectors', () => {
   };
 
   it('round-trips through the file exactly, keyed by slug with a hash of the text', async () => {
-    const file = join(await mkdtemp(join(tmpdir(), 'cf-vectors-')), 'vectors.json');
+    const file = join(await temp('cf-vectors-'), 'vectors.json');
     expect(await writeVectors(SKILLS, standIn, file)).toBe(SKILLS.length);
     const json = JSON.parse(await readFile(file, 'utf8'));
     expect(Object.keys(json.skills).sort()).toEqual(SKILLS.map((s) => s.slug).sort());
@@ -207,7 +216,7 @@ describe('stored vectors', () => {
   });
 
   it('embeds only the query when every vector is stored and current', async () => {
-    const file = join(await mkdtemp(join(tmpdir(), 'cf-vectors-')), 'vectors.json');
+    const file = join(await temp('cf-vectors-'), 'vectors.json');
     await writeVectors(SKILLS, standIn, file);
     const { embedder, seen } = counting();
     const index = await SkillIndex.build(SKILLS, embedder, readVectors(file));
@@ -219,7 +228,7 @@ describe('stored vectors', () => {
   });
 
   it('re-embeds a skill whose text changed, and one with no vector', async () => {
-    const file = join(await mkdtemp(join(tmpdir(), 'cf-vectors-')), 'vectors.json');
+    const file = join(await temp('cf-vectors-'), 'vectors.json');
     await writeVectors(SKILLS.slice(0, 2), standIn, file);
     const edited = SKILLS.map((s) =>
       s.slug === 'reframe-to-vertical' ? { ...s, description: `${s.description} Portrait.` } : s,
@@ -231,7 +240,7 @@ describe('stored vectors', () => {
   });
 
   it('reads a missing, broken or other-model file as no vectors', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'cf-vectors-'));
+    const dir = await temp('cf-vectors-');
     expect(readVectors(join(dir, 'none.json')).size).toBe(0);
     await writeFile(join(dir, 'broken.json'), '{');
     expect(readVectors(join(dir, 'broken.json')).size).toBe(0);
@@ -247,7 +256,7 @@ describe('stored vectors', () => {
   });
 
   it('is unused without a model: keywords only', async () => {
-    const file = join(await mkdtemp(join(tmpdir(), 'cf-vectors-')), 'vectors.json');
+    const file = join(await temp('cf-vectors-'), 'vectors.json');
     await writeVectors(SKILLS, standIn, file);
     const index = await SkillIndex.build(SKILLS, null, readVectors(file));
     expect(index.semantic).toBe(false);

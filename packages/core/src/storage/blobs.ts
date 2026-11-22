@@ -22,6 +22,23 @@ export interface BlobHead {
   sha256?: string;
   /** The content type it was stored with, where the store keeps it. */
   type?: string;
+  /**
+   * The store's own tag of the bytes as written, where it has one (an object store's ETag). It
+   * changes when the blob is written again; it is not a hash to compare content by.
+   */
+  etag?: string;
+}
+
+/** What an orphan sweep put right (see `BlobStore.orphans`). */
+export interface OrphanReport {
+  /** Records removed: their blob had gone. */
+  records: number;
+  /** Blobs removed: nothing held them. */
+  objects: number;
+  /** Holder counts corrected. */
+  refs: number;
+  /** Files first met with nothing naming them: judged a grace later. */
+  marked?: number;
 }
 
 /** Bytes to store: a local file, a stream, or bytes in memory. */
@@ -81,6 +98,17 @@ export interface BlobKeys {
  */
 export interface BlobStore {
   readonly keys: BlobKeys;
+  /**
+   * True where blobs are not files on this node (an object store): a blob is read through
+   * `Scratch`'s copy of it, clients download from the store's own links (`presignGet`), and
+   * shared bytes are counted by holder.
+   */
+  readonly remote: boolean;
+
+  /** Checks the store can be used as configured, and rejects in plain words when it cannot. */
+  ready(): Promise<void>;
+  /** Lets go of connections. The store is not used after it. */
+  close(): Promise<void>;
 
   /**
    * Stores bytes under `key`, replacing what was there. `private` keeps them from other users
@@ -130,6 +158,20 @@ export interface BlobStore {
   expire(prefix: BlobKey, ttlMs: number, keep?: (name: string) => boolean): Promise<string[]>;
   /** Bytes an owner keeps, shared bytes once. */
   usage(owner: string): Promise<number>;
+  /** Removes every blob an owner has, whoever holds it (the account is deleted). */
+  forget(owner: string): Promise<void>;
+  /**
+   * Where what holds a blob is counted apart from the blob (an object store): puts right what a
+   * crash between the two left, for one owner. `holders` reads how many of the owner's media
+   * and unimported uploads name each media file (`held`) and the ids that still have a record
+   * (`media`); it is read again before anything is deleted. Nothing newer than `graceMs` is
+   * judged. Absent where a blob and its holders cannot disagree.
+   */
+  orphans?(
+    owner: string,
+    holders: () => Promise<{ held: Map<BlobKey, number>; media: Set<string> }>,
+    graceMs: number,
+  ): Promise<OrphanReport>;
   /** Bytes under `prefix` that deleting it would free (shared bytes held elsewhere don't count). */
   freeable(prefix: BlobKey): Promise<number>;
 
@@ -144,10 +186,42 @@ export interface BlobStore {
    * (the upload's record), as is how many bytes have landed.
    */
   multipartStart(key: BlobKey, options?: { type?: string }): Promise<string>;
-  /** Stores one part. Parts are numbered from 1 and sent in order. */
-  multipartPart(key: BlobKey, uploadId: string, part: number, body: Readable): Promise<BlobPart>;
+  /**
+   * Stores one part. Parts are numbered from 1 and sent in order, each of any size: a part
+   * continues the blob where the last one ended. `bytes` is the body's length when the caller
+   * knows it. `after` is the part before this one as the store returned it, for a caller that
+   * keeps it (two senders racing for one part then cannot take each other's). A body that
+   * breaks part way may reject with `landed`, the part as far as it was stored.
+   *
+   * With `anyOrder` the caller cuts the blob into parts of one fixed size itself and sends them
+   * in any order, several at once; every part but the last must then be at least 5 MiB. Only an
+   * object store takes these, and an upload is sent one way or the other, never both.
+   */
+  multipartPart(
+    key: BlobKey,
+    uploadId: string,
+    part: number,
+    body: Readable,
+    options?: { bytes?: number; after?: BlobPart; anyOrder?: boolean },
+  ): Promise<BlobPart>;
   /** Makes the parts the blob. */
   multipartComplete(key: BlobKey, uploadId: string, parts: BlobPart[]): Promise<BlobHead>;
   /** Drops the upload and its parts. */
   multipartAbort(key: BlobKey, uploadId: string): Promise<void>;
+  /**
+   * Where the store keeps an upload's parts itself (an object store): the parts it holds, by
+   * number, to set right a record that disagrees with them.
+   */
+  multipartParts?(key: BlobKey, uploadId: string): Promise<BlobPart[]>;
+  /**
+   * Where the store keeps an upload's parts itself: an in-order upload taken back to the
+   * longest run of its parts, from the first, that the store holds as `after` says they were
+   * sent (another sender's bytes may have replaced some). Returns the part to carry on after
+   * (null: from the start) and the bytes that run holds.
+   */
+  multipartRewind?(
+    key: BlobKey,
+    uploadId: string,
+    after: BlobPart | undefined,
+  ): Promise<{ part: BlobPart | null; bytes: number }>;
 }
