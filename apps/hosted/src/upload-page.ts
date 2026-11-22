@@ -95,13 +95,14 @@ export function uploadPage(uploadId: string): string {
 
   // Sends the file as numbered parts, six at once, each sent again by itself if it drops. A
   // reload or another device asks which parts are in and sends the rest. Answers false where
-  // the server takes a file whole (or this one was begun that way): then it is sent in order.
+  // the server takes a file whole (or this one was begun that way, or the server does not know
+  // the parts path): then it is sent in order.
   async function sendParts(file) {
     const begun = await fetch(sub('/parts', '&bytes=' + file.size), { cache: 'no-store', headers: { 'upload-name': encodeURIComponent(file.name) } });
-    if (begun.status === 404 || begun.status === 409 || begun.status === 405) return false;
     const plan = await begun.json().catch(() => ({}));
     if (begun.status === 413) throw Object.assign(new Error(plan.error || 'The file is too big.'), { final: true });
-    if (begun.status === 403) throw gone();
+    // Anything else not taken (a server that takes a file whole, a link it does not know):
+    // sent in order, which says what is wrong if anything is.
     if (!begun.ok || !plan.part_bytes) return false;
     if (plan.complete) return true;
     const size = plan.part_bytes;
