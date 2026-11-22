@@ -1,4 +1,4 @@
-import type { Workspace } from '@cuttingfloor/core';
+import { defineCollection, type Workspace } from '@cuttingfloor/core';
 import { clientName } from './lifecycle.ts';
 
 // The apps an account's requests came from (ChatGPT, Claude, Kazi, a script…), each with when it
@@ -10,6 +10,13 @@ export interface AppSeen {
   first_seen_at: string;
   last_seen_at: string;
 }
+
+/** The apps an account was seen from: one record, id `apps` (`owners/{owner}/apps.json`). */
+export const APPS_SEEN = defineCollection<AppSeen[]>({
+  name: 'account_apps',
+  scope: 'owner',
+  fs: { dir: '' },
+});
 
 export class AppsSeen {
   readonly #ws: Workspace;
@@ -35,7 +42,7 @@ export class AppsSeen {
         const found = all.find((a) => a.name === name);
         if (found) found.last_seen_at = now;
         else all.push({ name, first_seen_at: now, last_seen_at: now });
-        await this.#ws.writeJson(this.#file(owner), all);
+        await this.#ws.records.collection(APPS_SEEN, { owner }).put('apps', all);
       })
       .catch((error: Error) => {
         this.#written.delete(key);
@@ -46,11 +53,10 @@ export class AppsSeen {
   /** The account's apps, most recently seen first. */
   async read(owner: string): Promise<AppSeen[]> {
     const all =
-      (await this.#ws.readJson<AppSeen[]>(this.#file(owner)).catch(() => undefined)) ?? [];
+      (await this.#ws.records
+        .collection(APPS_SEEN, { owner })
+        .get('apps')
+        .catch(() => undefined)) ?? [];
     return all.sort((a, b) => b.last_seen_at.localeCompare(a.last_seen_at));
-  }
-
-  #file(owner: string): string {
-    return this.#ws.ownerDir(owner, 'apps.json');
   }
 }

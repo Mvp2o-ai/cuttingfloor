@@ -1,6 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { join } from 'node:path';
-import { randomId, type Workspace } from '@cuttingfloor/core';
+import {
+  type Collection,
+  type CollectionSpec,
+  defineCollection,
+  randomId,
+  type Workspace,
+} from '@cuttingfloor/core';
 
 // Script keys: bearer keys a signed-in user makes on the account page, so a script reaches /mcp
 // without a browser sign-in. A key acts as its account, with the same plan checks.
@@ -48,9 +53,21 @@ export class ScriptKeys {
   readonly #ws: Workspace;
   readonly #kind: KeyKind;
 
+  /** Whose each key is, by the key's SHA-256: one set for the deployment (`{dir}/{sha256}.json`). */
+  readonly #hashes: CollectionSpec<KeyFile>;
+  /** Each account's keys, by key id (`owners/{owner}/{dir}/{key_id}.json`). */
+  readonly #listed: CollectionSpec<KeyFile>;
+
   constructor(ws: Workspace, kind: KeyKind = SCRIPT_KEYS) {
     this.#ws = ws;
     this.#kind = kind;
+    const name = kind.dir.replaceAll('-', '_');
+    this.#hashes = defineCollection<KeyFile>({ name, scope: 'global', fs: { dir: kind.dir } });
+    this.#listed = defineCollection<KeyFile>({
+      name: `${name}_listed`,
+      scope: 'owner',
+      fs: { dir: kind.dir },
+    });
   }
 
   /** A new key for `owner`: the key itself is in this answer and nowhere else. */
@@ -100,8 +117,8 @@ export class ScriptKeys {
       sha256: digest(key),
       ...(partner ? { partner } : {}),
     };
-    await this.#ws.writeJson(this.#byHash(file.sha256), file, { exclusive: true });
-    await this.#ws.writeJson(this.#byOwner(owner, file.key_id), file);
+    await this.#byHash().insertOnce(file.sha256, file);
+    await this.#byOwner(owner).put(file.key_id, file);
     return { ...view(file), key };
   }
 
@@ -113,10 +130,10 @@ export class ScriptKeys {
   }
 
   async #files(owner: string): Promise<KeyFile[]> {
-    const dir = this.#ws.ownerDir(owner, this.#kind.dir);
+    const listed = this.#byOwner(owner);
     const out: KeyFile[] = [];
-    for (const name of await this.#ws.list(dir)) {
-      const file = await this.#ws.readJson<KeyFile>(join(dir, name)).catch(() => undefined);
+    for (const id of await listed.ids()) {
+      const file = await listed.get(id).catch(() => undefined);
       if (file && Date.parse(file.expires_at) > Date.now()) out.push(file);
     }
     return out;
@@ -125,11 +142,10 @@ export class ScriptKeys {
   /** Stops a key working at once. False when the owner has no such key. */
   async revoke(owner: string, keyId: string): Promise<boolean> {
     if (!/^k_[0-9a-z]{26}$/.test(keyId)) return false;
-    const path = this.#byOwner(owner, keyId);
-    const file = await this.#ws.readJson<KeyFile>(path);
+    const file = await this.#byOwner(owner).get(keyId);
     if (!file) return false;
-    await this.#ws.remove(this.#byHash(file.sha256));
-    await this.#ws.remove(path);
+    await this.#byHash().delete(file.sha256);
+    await this.#byOwner(owner).delete(keyId);
     return true;
   }
 
@@ -139,12 +155,12 @@ export class ScriptKeys {
    * goes as well.
    */
   async removeAll(owner: string): Promise<void> {
-    for (const name of await this.#ws.list(this.#ws.path(this.#kind.dir))) {
-      const path = this.#ws.path(this.#kind.dir, name);
-      const file = await this.#ws.readJson<KeyFile>(path).catch(() => undefined);
-      if (file?.owner === owner) await this.#ws.remove(path);
+    const hashes = this.#byHash();
+    for (const id of await hashes.ids()) {
+      const file = await hashes.get(id).catch(() => undefined);
+      if (file?.owner === owner) await hashes.delete(id);
     }
-    await this.#ws.remove(this.#ws.ownerDir(owner, this.#kind.dir));
+    await this.#byOwner(owner).clear();
   }
 
   /** Whose key this is, or undefined for one never made, revoked or expired. */
@@ -155,7 +171,7 @@ export class ScriptKeys {
   /** The key's owner and listing, or undefined for one never made, revoked or expired. */
   async find(key: string): Promise<(ScriptKeyView & { owner: string }) | undefined> {
     if (!key.startsWith(this.#kind.prefix)) return undefined;
-    const file = await this.#ws.readJson<KeyFile>(this.#byHash(digest(key)));
+    const file = await this.#byHash().get(digest(key));
     if (!file || Date.parse(file.expires_at) <= Date.now()) return undefined;
     return { ...view(file), owner: file.owner };
   }
@@ -163,25 +179,22 @@ export class ScriptKeys {
   /** Removes expired keys' files. */
   async sweep(): Promise<void> {
     const now = Date.now();
-    const expired = async (path: string) => {
-      const file = await this.#ws.readJson<KeyFile>(path).catch(() => undefined);
-      if (file && Date.parse(file.expires_at) <= now) await this.#ws.remove(path);
+    const expired = async (keys: Collection<KeyFile>) => {
+      for (const id of await keys.ids()) {
+        const file = await keys.get(id).catch(() => undefined);
+        if (file && Date.parse(file.expires_at) <= now) await keys.delete(id);
+      }
     };
-    for (const name of await this.#ws.list(this.#ws.path(this.#kind.dir))) {
-      await expired(this.#ws.path(this.#kind.dir, name));
-    }
-    for (const key of await this.#ws.owners()) {
-      const dir = this.#ws.path('owners', key, this.#kind.dir);
-      for (const name of await this.#ws.list(dir)) await expired(join(dir, name));
-    }
+    await expired(this.#byHash());
+    for (const key of await this.#ws.records.owners()) await expired(this.#byOwner(key));
   }
 
-  #byHash(sha256: string): string {
-    return this.#ws.path(this.#kind.dir, `${sha256}.json`);
+  #byHash(): Collection<KeyFile> {
+    return this.#ws.records.collection(this.#hashes);
   }
 
-  #byOwner(owner: string, keyId: string): string {
-    return this.#ws.ownerDir(owner, this.#kind.dir, `${keyId}.json`);
+  #byOwner(owner: string): Collection<KeyFile> {
+    return this.#ws.records.collection(this.#listed, { owner });
   }
 }
 

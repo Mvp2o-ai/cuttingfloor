@@ -261,6 +261,18 @@ export function recordsContract(backend: string, make: StoresFactory): void {
       expect(await s.records.expireParents(things, { owner: 'alice' }, 60_000)).toEqual([]);
     });
 
+    each('clear removes every record of one scope and no other', async ({ records }) => {
+      const hers = records.collection(things, { owner: 'alice' });
+      const his = records.collection(things, { owner: 'bob' });
+      await hers.put('a', { name: 'a' });
+      await hers.put('b', { name: 'b' });
+      await his.put('a', { name: 'his' });
+      await hers.clear();
+      await hers.clear();
+      expect(await hers.ids()).toEqual([]);
+      expect(await his.get('a')).toEqual({ name: 'his' });
+    });
+
     each('ids that could leave the collection are refused', async ({ records }) => {
       const c = records.collection(things, { owner: 'alice' });
       for (const id of ['', '../x', 'a/b', '.hidden']) {

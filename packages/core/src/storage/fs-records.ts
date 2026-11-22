@@ -184,6 +184,12 @@ class FsCollection<T> implements Collection<T> {
     await rm(this.#file(id), { force: true });
   }
 
+  async clear(): Promise<void> {
+    // Among an owner's other things only the records go; a folder of its own goes whole.
+    if (this.#shared) for (const id of await this.ids()) await this.delete(id);
+    else await rm(this.#dir, { recursive: true, force: true });
+  }
+
   async ids(): Promise<string[]> {
     const names = await listDir(this.#dir);
     if (this.#leaf) return names.filter((n) => !n.startsWith('.'));

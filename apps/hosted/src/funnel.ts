@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { Workspace } from '@cuttingfloor/core';
+import { FUNNEL_DAYS } from '@cuttingfloor/server';
 import type { SignInStep } from './http.ts';
 
 // The steps toward sign-in that only this server sees, for the funnel between a visit to the
@@ -19,13 +20,11 @@ export async function recordSignInStep(
   userAgent: string,
 ): Promise<void> {
   const at = new Date().toISOString();
-  await ws.writeJson(
-    ws.path(
-      'funnel',
-      at.slice(0, 10),
-      `${at.slice(11, 19).replaceAll(':', '')}-${randomBytes(4).toString('hex')}.json`,
-    ),
-    { at, step, agent: agentName(userAgent) },
-    { exclusive: true },
-  );
+  await ws.records
+    .collection(FUNNEL_DAYS, { parent: at.slice(0, 10) })
+    .insertOnce(`${at.slice(11, 19).replaceAll(':', '')}-${randomBytes(4).toString('hex')}`, {
+      at,
+      step,
+      agent: agentName(userAgent),
+    });
 }

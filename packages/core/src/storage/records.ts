@@ -69,6 +69,8 @@ export interface Collection<T> {
   compareAndSet(id: string, expected: Partial<T>, set: Partial<T>): Promise<boolean>;
   /** Removes it. A missing one is not an error. */
   delete(id: string): Promise<void>;
+  /** Removes every record of the collection in this scope. */
+  clear(): Promise<void>;
   /** Every id, in no order. */
   ids(): Promise<string[]>;
   /** Every record whose top-level fields equal `where`'s; all of them without it. */
