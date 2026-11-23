@@ -43,6 +43,22 @@ export const AdminFile = z.object({
     .describe(
       'A signed download link for an export, valid for days. Only get_account signs them: null in list pages, and for media',
     ),
+  page_url: z
+    .string()
+    .nullable()
+    .describe(
+      'The watch page that plays the export in any browser, no sign-in: the link to give the user in an email. Valid as download_url is; null where it is',
+    ),
+  watermarked: z
+    .boolean()
+    .describe(
+      'True: the file downloads carrying the cuttingfloor mark until a clean copy is taken (export.release). False: it is clean (released, made before 2026-11-23 11:30 UTC, never marked such as audio or an upload, or a given plan)',
+    ),
+  release_credits: z
+    .number()
+    .nullable()
+    .describe('What a clean copy costs, in credits, while watermarked; null when it is clean'),
+  released_at: nullableTime.describe('When a clean copy was taken; null when none was'),
 });
 
 export const AdminDownload = z.object({
