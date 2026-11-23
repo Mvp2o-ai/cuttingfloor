@@ -250,7 +250,13 @@ export class Lifecycle {
   ): Promise<{ balance: number | null }> {
     const access = await this.#o.access.require(owner);
     const link = access.ledger;
-    if (!link) return { balance: (await this.#o.access.balance(owner, access)).left };
+    // Every account that isn't on a given plan (exempt before this) has a link; without one
+    // nothing is spent, so nothing is released.
+    if (!link)
+      throw new CfError('service_unavailable', 'The clean copy could not be taken just now', {
+        hint: 'Nothing was spent. Call export.release again in a minute',
+        detail: { retry: true, retry_after_seconds: 60 },
+      });
     let spent: LedgerUsage;
     try {
       spent = await this.#o.ledger.usage({
