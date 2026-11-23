@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.68.1
+
+### Patch Changes
+
+- 4fa0a4e: Credit balances read in hundredths, so a quarter-credit balance shows as it is and covers a clean copy of that price.
+
 ## 0.68.0
 
 ### Minor Changes
