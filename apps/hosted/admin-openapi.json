@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "cuttingfloor admin API",
-    "version": "1.6.0",
+    "version": "1.7.0",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -404,7 +404,7 @@
             "type": ["string", "null"]
           },
           "use_case": {
-            "description": "The task the user is looking to complete with cuttingfloor, as their assistant gave it when it claimed the free credits; null when it hasn't",
+            "description": "The task the user is looking to complete with cuttingfloor, as their assistant gave it when it activated the account (credits.claim); null when it hasn't",
             "type": ["string", "null"]
           },
           "use_case_at": {
@@ -418,7 +418,7 @@
                 "type": "null"
               }
             ],
-            "description": "When the assistant activated the free credits"
+            "description": "When the assistant activated the account"
           },
           "use_cases": {
             "type": "array",
@@ -436,7 +436,7 @@
               },
               "required": ["use_case", "at"]
             },
-            "description": "Every task the assistant gave credits.claim, oldest first: the first activated the free credits, later ones are the user's next projects. Empty before a claim"
+            "description": "Every task the assistant gave credits.claim, oldest first: the first activated the account, later ones are the user's next projects. Empty before a claim"
           },
           "sample": {
             "description": "The onboarding sample credits.claim put in their library for that task (e.g. gaming-stream, podcast-interview); null before a claim",
@@ -504,7 +504,7 @@
                 "type": "null"
               }
             ],
-            "description": "A credit is one minute of a server job (an export, a transcript) or 200 visual judgments. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer"
+            "description": "A credit takes one finished minute of a clean copy (export.release); making is free. Before 2026-11-23 a credit was one minute of a server job or 200 visual judgments, so earlier use counts that way. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer"
           },
           "support_messages": {
             "type": "array",
@@ -627,7 +627,7 @@
                   "first_at": {
                     "type": "string",
                     "format": "date-time",
-                    "description": "The first job refused for want of credits"
+                    "description": "The first call refused for want of credits"
                   },
                   "last_at": {
                     "type": "string",
@@ -644,7 +644,7 @@
                 "type": "null"
               }
             ],
-            "description": "Jobs refused because the account had no credits (quota_exceeded), in the last 30 days; null when none"
+            "description": "Calls refused because the account had too few credits (quota_exceeded: jobs before 2026-11-23, clean-copy releases since), in the last 30 days; null when none"
           },
           "spend": {
             "type": "array",
@@ -663,7 +663,35 @@
               },
               "required": ["tool", "credits", "jobs"]
             },
-            "description": "Credits spent per tool since the account began, most first (jobs and judgments)"
+            "description": "Server time per tool since the account began, most first, in credits at the rate before 2026-11-23 (a minute of a job, or 200 judgments). Spent only before then: making is free since"
+          },
+          "releases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "The export or create.* job_id, or the media_id, released"
+                },
+                "released_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "ISO 8601 UTC"
+                },
+                "credits": {
+                  "type": "number",
+                  "description": "Credits spent on the clean copy"
+                },
+                "via": {
+                  "type": "string",
+                  "enum": ["tool", "rest", "page"],
+                  "description": "tool: an agent; rest: an app over /v1"
+                }
+              },
+              "required": ["id", "released_at", "credits", "via"]
+            },
+            "description": "Clean copies taken (export.release), newest first; kept 400 days"
           },
           "purchases": {
             "anyOf": [
@@ -801,6 +829,7 @@
           "activity",
           "out_of_credits",
           "spend",
+          "releases",
           "purchases",
           "apps",
           "files",

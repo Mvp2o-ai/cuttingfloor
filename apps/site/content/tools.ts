@@ -415,6 +415,12 @@ export const TOOLS: ToolEntry[] = [
     longRunning: 'sometimes',
   },
   {
+    name: 'export.release',
+    title: 'Release a clean copy',
+    readOnly: false,
+    longRunning: 'never',
+  },
+  {
     name: 'job.get',
     title: 'Get job',
     readOnly: true,

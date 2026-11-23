@@ -137,6 +137,13 @@ export function freeCreditsFor(createdAt: string): number {
   return FREE_CREDITS;
 }
 
+/**
+ * How the meter weighs judgments (judge.ask, media.seek, look) against running time: 200 make a
+ * credit's minute. Before the gate both were billed; the meter still counts them this way, for
+ * what an account used before it was linked to the ledger, and for analytics.
+ */
+export const JUDGMENTS_PER_CREDIT = 200;
+
 /** A clean copy's price is its finished length in these steps of a minute. */
 export const CLEAN_COPY_STEP = 0.25;
 

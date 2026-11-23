@@ -252,7 +252,7 @@ describe('media.search', () => {
     expect(stretch.matches.dog).toEqual([expect.objectContaining({ start: 20, end: 40 })]);
   });
 
-  it('runs nothing over a credit until the user agrees, and says what would cut it', async () => {
+  it('runs nothing over 200 judgments until the user agrees, and says what would cut it', async () => {
     const owner = 'spender';
     const c = await keyed(owner);
     const seconds = Array.from({ length: 300 }, (_, i) => i * 2);
@@ -268,12 +268,12 @@ describe('media.search', () => {
 
     const held = await search(c, { looks: { dog: 'a dog' } });
     expect(held.searched).toBe(false);
-    expect(held.estimate).toMatchObject({ media: 2, judgments: 301, credits: 1.505 });
+    expect(held.estimate).toMatchObject({ media: 2, judgments: 301, credits: 0 });
     expect(held.estimate.by_kind).toEqual({
       video: { media: 1, judgments: 300 },
       image: { media: 1, judgments: 1 },
     });
-    expect(held.warning).toMatch(/301 keyframes and passages across 2 media, about 1\.505 credits/);
+    expect(held.warning).toMatch(/301 keyframes and passages across 2 media, over the 200/);
     expect(held.warning).toMatch(/Free filters not used yet: kind, media_ids/);
     expect(seen).toHaveLength(0);
 

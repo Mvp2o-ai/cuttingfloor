@@ -16,7 +16,7 @@ export const SEARCH_LIMITS = {
   judgments: 20_000,
 } as const;
 
-/** Why a call that would cost more than a credit runs anyway. */
+/** Why a call over 200 judgments runs anyway. */
 export const SearchCostOverride = z.enum(['user_confirmed', 'user_preapproved']);
 
 export const SEARCHABLE_KINDS = ['video', 'image', 'audio', 'font', 'lut'] as const;
@@ -89,7 +89,7 @@ export const MediaSearchInput = z
       .default(0.5)
       .describe('A keyframe or passage matches a criterion when its probability is at least this'),
     cost_override: SearchCostOverride.optional().describe(
-      'Run a search estimated over 1 credit: user_confirmed (the user saw this estimate and agreed) or user_preapproved (the user said to search whatever it costs)',
+      'Run a search estimated over 200 judgments: user_confirmed (the user saw this estimate and agreed) or user_preapproved (the user said to search however large)',
     ),
     idempotency_key: z.string().min(1).max(200).optional(),
   })
@@ -106,7 +106,7 @@ const Judgments = z.object({
 export const SearchEstimate = z.object({
   media: z.number().int().describe('Media that would be judged'),
   judgments: z.number().int().describe('Keyframes and passages judged: one judgment each'),
-  credits: z.number().describe('judgments at 200 a credit, plus a few seconds of running time'),
+  credits: z.number().describe('Credits it spends: 0, since searching, like all making, is free'),
   by_kind: z.record(z.string(), Judgments).describe('Per kind: media and judgments'),
   largest: z
     .array(
@@ -124,7 +124,7 @@ export const SearchEstimate = z.object({
 export const MediaSearchResult = z.object({
   searched: z
     .boolean()
-    .describe('false: over 1 credit without cost_override; nothing was judged or charged'),
+    .describe('false: over 200 judgments without cost_override; nothing was judged'),
   estimate: SearchEstimate,
   warning: z
     .string()

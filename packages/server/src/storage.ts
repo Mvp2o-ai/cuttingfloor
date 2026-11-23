@@ -107,28 +107,31 @@ export async function listHeld(
   const uploads = allUploads.filter((u) => holds(u.name));
   return {
     next_offset: page.offset + page.limit < media.length ? page.offset + page.limit : null,
-    media: media.slice(page.offset, page.offset + page.limit).map((r) => ({
-      media_id: r.media_id,
-      name: r.name,
-      status: r.status,
-      kind: r.probe?.kind ?? null,
-      duration_seconds: r.probe?.duration ?? null,
-      origin: mediaOrigin(r),
-      from:
-        'upload' in r.source
-          ? 'upload'
-          : 'url' in r.source
-            ? 'url'
-            : 'path' in r.source
-              ? 'path'
-              : 'job' in r.source
-                ? 'render'
-                : 'created',
-      bytes: r.size,
-      created_at: r.created_at,
-      expires_at: r.expires_at,
-      expiry: expiry(Date.parse(r.expires_at), KEEP_THEN.media),
-    })),
+    media: await Promise.all(
+      media.slice(page.offset, page.offset + page.limit).map(async (r) => ({
+        media_id: r.media_id,
+        name: r.name,
+        status: r.status,
+        kind: r.probe?.kind ?? null,
+        duration_seconds: r.probe?.duration ?? null,
+        origin: mediaOrigin(r),
+        from:
+          'upload' in r.source
+            ? 'upload'
+            : 'url' in r.source
+              ? 'url'
+              : 'path' in r.source
+                ? 'path'
+                : 'job' in r.source
+                  ? 'render'
+                  : 'created',
+        bytes: r.size,
+        created_at: r.created_at,
+        expires_at: r.expires_at,
+        expiry: expiry(Date.parse(r.expires_at), KEEP_THEN.media),
+        ...(rt.gate ? await rt.gate.state(owner, r.media_id) : {}),
+      })),
+    ),
     media_count: media.length,
     uploads: uploads
       .slice(0, MEDIA_LIST_LIMIT)

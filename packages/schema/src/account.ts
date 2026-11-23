@@ -1,7 +1,7 @@
 import * as z from 'zod/v4';
 
 // account.get: the signed-in account's plan, credits and top-up, a fact the agent cannot get
-// itself, so it can say what a job will leave before starting it.
+// itself, so it can say whether a clean copy fits before releasing one.
 
 export const AccountGetInput = z.object({});
 
@@ -11,12 +11,12 @@ export const AccountGetResult = z.object({
   plan: z
     .enum(['local', 'free', 'credits', 'enterprise', 'lifetime', 'staff'])
     .describe(
-      'local: a server you run yourself, with no credits. free: the free credits, not topped up yet. credits: pay as you go, has bought credits. enterprise, lifetime, staff: given plans whose credits renew monthly or have no cap',
+      'local: a server you run yourself, with no credits and no mark. free: the free credits, not topped up yet. credits: pay as you go, has bought credits. enterprise, lifetime, staff: given plans, whose files never carry the mark',
     ),
   plan_name: z.string(),
   credits: z.object({
     left: nullableCount.describe(
-      'Credits left; null when there is no cap. At 0, new jobs are refused; editing and previews keep working',
+      'Credits left; null when there is no cap. A credit takes one finished minute of a clean copy (export.release); making is free, so at 0 everything still works and files keep the mark',
     ),
     used: z
       .number()
@@ -76,9 +76,9 @@ export const AccountGetResult = z.object({
 });
 export type AccountGetResult = z.infer<typeof AccountGetResult>;
 
-// credits.claim: records that the account's free credits were claimed (once, with the use
-// case in the user's words), adds the onboarding sample to the library and returns the balance.
-// It grants, spends and gates nothing.
+// credits.claim: activates the account (once, with the use case in the user's words), adds the
+// onboarding sample to the library and returns the balance. Its starting credits come from the
+// ledger when the account is first linked; the claim itself grants and spends nothing.
 
 export const ClaimFreeCreditsInput = z.object({
   use_case: z
@@ -93,7 +93,7 @@ export type ClaimFreeCreditsInput = z.infer<typeof ClaimFreeCreditsInput>;
 export const ClaimFreeCreditsResult = z.object({
   claimed_now: z
     .boolean()
-    .describe('true on the call that claimed them; false when they were already claimed'),
+    .describe('true on the call that activated the account; false when it was already active'),
   message: z.string(),
   credits: AccountGetResult.shape.credits
     .nullable()

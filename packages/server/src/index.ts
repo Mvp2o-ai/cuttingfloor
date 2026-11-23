@@ -7,6 +7,14 @@ export {
   type DrainMarker,
   drainingError,
 } from './drain.ts';
+export {
+  DownloadGate,
+  type GateHooks,
+  type MarkState,
+  RELEASES,
+  type Release,
+  type ReleaseVia,
+} from './gate.ts';
 export { MIGRATION, type MigrationMark, markLive } from './live.ts';
 export {
   admitJob,

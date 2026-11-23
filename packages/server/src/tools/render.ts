@@ -19,6 +19,8 @@ import {
   CfError,
   DEPRECATED_PRESETS,
   DEPRECATED_PRESETS_END,
+  ExportReleaseInput,
+  ExportReleaseResult,
   ExportResult,
   ExportVideoInput,
   expiry,
@@ -394,6 +396,56 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
   );
 
   server.registerTool(
+    'export.release',
+    {
+      title: 'Release a clean copy',
+      description: [
+        "Takes a clean copy of a finished file that carries the cuttingfloor mark (watermarked: true on its export result, media.get or media.list), spending its release_credits once from the user's credits: 1 a finished minute, in quarter-minute steps. Afterwards every link to it (url, page_url, media.get) serves the clean file, and this returns fresh ones.",
+        'Tell the user the price and get their go-ahead first. Releasing again, or a file that never carried the mark, spends nothing. Not enough credits: quota_exceeded, and the marked file still downloads.',
+      ].join(' '),
+      inputSchema: ExportReleaseInput,
+      outputSchema: ExportReleaseResult,
+      annotations: {
+        title: 'Release a clean copy',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    guard(async (args) => {
+      const owner = deps.owner();
+      const ref = { job_id: args.job_id, media_id: args.media_id };
+      const released = rt.gate
+        ? await rt.gate.release(owner, ref, deps.claimGate === false ? 'rest' : 'tool')
+        : {
+            job_id: args.job_id ?? null,
+            credits: 0,
+            price: 0,
+            balance: null,
+            released_at: new Date().toISOString(),
+            file: await releasable(rt, owner, ref),
+          };
+      const { file } = released;
+      const link = file.id.startsWith('m_')
+        ? await rt.signMedia(owner, await rt.media.get(owner, file.id))
+        : await rt.signOutput(owner, file.id, file.name);
+      if (!link) throw new CfError('not_found', `${file.name} has no file to download yet`);
+      return ok({
+        job_id: released.job_id,
+        ...(args.media_id ? { media_id: args.media_id } : {}),
+        credits: released.credits,
+        price: released.price,
+        balance: released.balance,
+        released_at: released.released_at,
+        url: link.url,
+        page_url: link.pageUrl,
+        expires_at: link.expiresAt,
+      });
+    }),
+  );
+
+  server.registerTool(
     'job.get',
     {
       title: 'Get job',
@@ -550,6 +602,27 @@ export async function publish(
     ...(file ? { file } : {}),
     bytes: (await stat(out)).size,
   };
+}
+
+/** A server with no gate (one you run): the file a release names, which is always clean. */
+async function releasable(
+  rt: ServerDeps['runtime'],
+  owner: string,
+  ref: { job_id?: string | undefined; media_id?: string | undefined },
+): Promise<{ id: string; name: string }> {
+  if (ref.media_id) {
+    const record = await rt.media.get(owner, ref.media_id);
+    return { id: record.media_id, name: record.name };
+  }
+  const id = ref.job_id ?? '';
+  const job = await rt.jobs.store.get(id, owner);
+  const made = (job?.result?.structuredContent as { media_id?: string } | undefined)?.media_id;
+  const name = job ? await rt.outputs.file(owner, id) : undefined;
+  if (name) return { id, name };
+  if (made) return releasable(rt, owner, { media_id: made });
+  throw new CfError('not_found', `Job ${id} has no file here`, {
+    hint: 'Exports are kept 7 days. Export the timeline again for a new file',
+  });
 }
 
 export function defaultName(doc: TimelineDoc, id: string): string {

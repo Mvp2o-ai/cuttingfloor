@@ -2,8 +2,6 @@ import { defineCollection } from '@cuttingfloor/core';
 import {
   FREE_CREDITS,
   freeCreditsFor,
-  JUDGMENTS_PER_CREDIT,
-  PACKS,
   PLANS,
   type PlanId,
   SUPPORT_EMAIL,
@@ -19,6 +17,9 @@ import { type Ledger, type LedgerAccount, LedgerConflict, LedgerMissing } from '
  * queues everyone shares (the server's own slots cap the load).
  */
 const OWNER_JOBS = 4;
+
+/** Plans given rather than bought: their files never carry the mark. */
+const GIVEN = new Set<PlanId>(['staff', 'lifetime', 'enterprise']);
 
 // Who may work on the hosted server, and how many credits they have, decided without a database:
 // WorkOS holds the account (when it began, whether its email is verified, a `plan` tag for given
@@ -126,15 +127,14 @@ export class AccessCheck {
     });
   }
 
-  /** The owner's plan as limits on the work they start, with a refusal once no credits are left. */
   /**
-   * `buy`: the refusal may link the account page where credits are bought. Not for ChatGPT, whose
-   * plugin rules allow saying what stopped but not selling credits (the caller knows the client).
+   * The owner's plan as limits on the work they start: jobs at once, largest export, storage.
+   * Credits never stop work (making is free); they buy clean copies (the download gate).
    */
-  async limits(owner: string, options: { buy?: boolean } = {}): Promise<OwnerLimits> {
+  async limits(owner: string, _options: { buy?: boolean } = {}): Promise<OwnerLimits> {
     const access = await this.require(owner);
     const limits = PLANS[access.plan].limits;
-    const out: OwnerLimits = {
+    return {
       jobs: OWNER_JOBS,
       ...(limits.shortSide !== null ? { shortSide: limits.shortSide } : {}),
       ...(limits.storageGb !== null ? { storageBytes: limits.storageGb * 1e9 } : {}),
@@ -142,33 +142,12 @@ export class AccessCheck {
         ? { account: new URL('/pricing', this.#o.accountUrl).href }
         : {}),
     };
-    const balance = await this.balance(owner, access);
-    if (balance.left !== null && balance.left <= 0) {
-      // Information first: say what stopped and link the pricing page. Where the client allows it
-      // (not ChatGPT), also the account page where credits are bought.
-      const plans = new URL('/pricing', this.#o.accountUrl).href;
-      const monthly = balance.renews !== null;
-      // A given plan's month renews on its own: nothing to buy.
-      const buy = options.buy && !monthly ? `${this.#o.accountUrl}#credits` : undefined;
-      const pack = PACKS[0];
-      out.refuseJobs = new CfError(
-        'quota_exceeded',
-        monthly
-          ? `This month's ${balance.per_month} credits are used`
-          : 'This account has no credits left',
-        {
-          hint: `${monthly ? `They renew on ${balance.renews?.slice(0, 10)}. ` : ''}New jobs (exports, imports, analysis, create.*) and judgments (judge.ask) won't start until there are credits again; editing the timeline and previews still work. Ask again after. A credit is one minute of a job running, or ${JUDGMENTS_PER_CREDIT} visual judgments. How credits work: ${plans}${buy && pack ? `. The user can buy more at ${buy}: packs from $${pack.price} for ${pack.credits} credits, one click with a saved card, and they never expire` : ''}`,
-          detail: {
-            credits_left: balance.left,
-            credits_used: balance.used,
-            ...(monthly ? { renews: balance.renews } : {}),
-            plans,
-            ...(buy ? { buy } : {}),
-          },
-        },
-      );
-    }
-    return out;
+  }
+
+  /** Whether the owner is on a given plan (staff, lifetime, enterprise), whose files are never marked. */
+  async exempt(owner: string): Promise<boolean> {
+    const access = await this.get(owner);
+    return access.allowed && GIVEN.has(access.plan);
   }
 
   /** The owner's credits: left, used, and where they came from. */

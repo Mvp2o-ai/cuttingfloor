@@ -44,6 +44,7 @@ export const COLLECTION_RULES: Readonly<Record<string, CollectionRule>> = {
   usage: { skip: 'legacy counts nothing reads or writes; the sweep only removes them' },
   funnel: {},
   downloads: {},
+  export_releases: {},
   account_claims: { only: ['free-credits'] },
   account_claim_tasks: {},
   account_claim_gate: { only: ['claim-gate'] },

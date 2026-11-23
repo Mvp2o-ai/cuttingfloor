@@ -13,6 +13,8 @@ export function watchPage(o: {
   expiresAt: Date;
   /** The file is fetched from a bucket: what plays it asks for it to be shown, not saved. */
   inline?: boolean;
+  /** It carries the cuttingfloor mark: what a clean copy costs. */
+  mark?: { credits: number };
 }): string {
   const name = esc(o.name);
   const href = esc(o.fileUrl);
@@ -63,6 +65,7 @@ ${og}
   h1 { font-size: 16px; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
   .meta { color: var(--muted); font-size: 14px; }
   a { color: var(--accent); }
+  .mark { color: var(--muted); font-size: 14px; margin: 12px 0 0; }
 </style>
 </head>
 <body>
@@ -72,6 +75,7 @@ ${og}
     <h1>${name}</h1>
     <span class="meta"><a href="${href}" download>Download</a> · link works until <time datetime="${o.expiresAt.toISOString()}">${o.expiresAt.toUTCString()}</time></span>
   </footer>
+  ${o.mark ? `<p class="mark">This file carries the cuttingfloor mark. A clean copy is ${o.mark.credits} credit${o.mark.credits === 1 ? '' : 's'}: ask the assistant you made it with for the clean copy, and this link plays and downloads it clean from then on.</p>` : ''}
 </main>
 </body>
 </html>

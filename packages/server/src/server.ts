@@ -1,6 +1,5 @@
 import { existsSync } from 'node:fs';
 import type { CredentialStore } from '@cuttingfloor/credentials';
-import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { type AccountGetResult, KEEPING, span } from '@cuttingfloor/schema';
 import { McpServer } from '@modelcontextprotocol/server';
 import { logToolCalls } from './calls.ts';
@@ -73,7 +72,7 @@ function instructions(config: Runtime['config'], welcome = false): string {
     : '';
   const credits = hosted
     ? `
-Credits: jobs (export, import, analysis, create.*) spend one a minute, judgments (judge.ask, media.seek, look) a bit each; editing and previews are free and still work at 0, where jobs are refused (quota_exceeded): tell the user jobs wait for credits.`
+Credits: making is free (edits, jobs, judgments). Exports, created media and full-size frames download carrying the cuttingfloor mark (watermarked: true); when the user wants it clean, tell them release_credits (1 a finished minute) and, with their go-ahead, export.release. Audio, text and their own uploads are never marked.`
     : '';
   return `${welcome ? `${WELCOME}\n` : ''}cuttingfloor is a headless video editor: media comes in, is cut and finished, and leaves as a download. Work, not storage: ${KEEPING}; links work ${span(config.outputUrlTtlMs)} (re-read for fresh ones). Download finished or approved work (or have the user); if they count on keeping it, say it's temporary. To go on later, keep timeline.get's document (timeline.load) and the files (media.import again). media.delete drops unwanted media.
 Two ways in, often both:
@@ -82,7 +81,7 @@ Two ways in, often both:
 ${INSTRUCTIONS_BODY}${credits}`;
 }
 
-const WELCOME = `This is a new connection: welcome aboard. Ask the user what they'd like to make, then claim their ${FREE_CREDITS} free credits with credits.claim and their answer: it puts a sample video that fits it in their library and plays it here, so they can try an edit right away. The credits never expire.`;
+const WELCOME = `This is a new connection: welcome to cuttingfloor. Ask the user what they'd like to make, then activate their account with credits.claim and their answer: it personalises their start, puts a sample video that fits it in their library and plays it here, so they can try an edit right away.`;
 
 const INSTRUCTIONS_BODY = `Tools are primitives doing exactly what their arguments say; you compose them.
 1. create.* and media.import run long (a task, or a job_id; job.get can wait). Edits, previews and render.frames take a media_id once processing (imported) or complete (created); analysis, judge.ask and create.* need it ready; export waits for it.

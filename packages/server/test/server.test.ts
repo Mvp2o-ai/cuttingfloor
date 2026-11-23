@@ -70,7 +70,8 @@ describe('protocol surface', () => {
     expect(text).not.toContain('a path under');
     expect(text).not.toContain('/samples');
     expect(text).not.toMatch(/start with \d+/);
-    expect(text).toContain('tell the user jobs wait for credits');
+    expect(text).toContain('export.release');
+    expect(text.length).toBeLessThanOrEqual(4096);
     expect(text).not.toContain('/account');
   });
 
@@ -215,6 +216,7 @@ describe('protocol surface', () => {
         'create.upscaled',
         'create.voiceover',
         'edit.batch',
+        'export.release',
         'export.timeline',
         'export.video',
         'filter.add',

@@ -1,6 +1,16 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { constants } from 'node:fs';
-import { mkdir, open, readdir, readFile, rename, rm, stat, utimes } from 'node:fs/promises';
+import {
+  link,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  unlink,
+  utimes,
+} from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 // The filesystem stores' file handling: crash-safe JSON files whose mtime is their last use.
@@ -32,18 +42,23 @@ export async function writeJson(
   await mkdir(dirname(file), { recursive: true });
   const body = `${JSON.stringify(value, null, 2)}\n`;
   if (options.exclusive) {
-    let handle: Awaited<ReturnType<typeof open>>;
-    try {
-      handle = await open(file, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
-      throw error;
-    }
+    // Written whole beside it, then linked into place: the link fails if the file exists, and a
+    // reader never sees it half written.
+    const temp = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+    const handle = await open(temp, 'wx', 0o600);
     try {
       await handle.writeFile(body);
       await handle.sync();
     } finally {
       await handle.close();
+    }
+    try {
+      await link(temp, file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+      throw error;
+    } finally {
+      await unlink(temp).catch(() => undefined);
     }
     return true;
   }

@@ -93,13 +93,13 @@ export const AdminAccount = z.object({
     .string()
     .nullable()
     .describe(
-      "The task the user is looking to complete with cuttingfloor, as their assistant gave it when it claimed the free credits; null when it hasn't",
+      "The task the user is looking to complete with cuttingfloor, as their assistant gave it when it activated the account (credits.claim); null when it hasn't",
     ),
-  use_case_at: nullableTime.describe('When the assistant activated the free credits'),
+  use_case_at: nullableTime.describe('When the assistant activated the account'),
   use_cases: z
     .array(z.object({ use_case: z.string(), at: time }))
     .describe(
-      "Every task the assistant gave credits.claim, oldest first: the first activated the free credits, later ones are the user's next projects. Empty before a claim",
+      "Every task the assistant gave credits.claim, oldest first: the first activated the account, later ones are the user's next projects. Empty before a claim",
     ),
   sample: z
     .string()
@@ -131,7 +131,7 @@ export const AdminAccount = z.object({
     })
     .nullable()
     .describe(
-      'A credit is one minute of a server job (an export, a transcript) or 200 visual judgments. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer',
+      'A credit takes one finished minute of a clean copy (export.release); making is free. Before 2026-11-23 a credit was one minute of a server job or 200 visual judgments, so earlier use counts that way. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer',
     ),
   support_messages: z
     .array(z.object({ at: time, message: z.string() }))
@@ -172,17 +172,29 @@ export const AdminAccount = z.object({
     ),
   out_of_credits: z
     .object({
-      first_at: time.describe('The first job refused for want of credits'),
+      first_at: time.describe('The first call refused for want of credits'),
       last_at: time,
       refusals: z.number(),
     })
     .nullable()
     .describe(
-      'Jobs refused because the account had no credits (quota_exceeded), in the last 30 days; null when none',
+      'Calls refused because the account had too few credits (quota_exceeded: jobs before 2026-11-23, clean-copy releases since), in the last 30 days; null when none',
     ),
   spend: z
     .array(z.object({ tool: z.string(), credits: z.number(), jobs: z.number() }))
-    .describe('Credits spent per tool since the account began, most first (jobs and judgments)'),
+    .describe(
+      'Server time per tool since the account began, most first, in credits at the rate before 2026-11-23 (a minute of a job, or 200 judgments). Spent only before then: making is free since',
+    ),
+  releases: z
+    .array(
+      z.object({
+        id: z.string().describe('The export or create.* job_id, or the media_id, released'),
+        released_at: time,
+        credits: z.number().describe('Credits spent on the clean copy'),
+        via: z.enum(['tool', 'rest', 'page']).describe('tool: an agent; rest: an app over /v1'),
+      }),
+    )
+    .describe('Clean copies taken (export.release), newest first; kept 400 days'),
   purchases: z
     .array(
       z.object({

@@ -6,7 +6,6 @@ import {
   type MediaRecord,
   type PictureIndex,
 } from '@cuttingfloor/engine';
-import { JUDGMENTS_PER_CREDIT } from '@cuttingfloor/plans';
 import {
   CfError,
   type JudgeAnswer,
@@ -29,7 +28,7 @@ import { jevKeyRequired } from './judge.ts';
 // media.search: media.seek across the floor. Free filters first (kind, ids, origin, name,
 // length, time range, and optionally local picture similarity); then Jev judges what is left:
 // each keyframe of each video (picked when the media was indexed) and each image for `looks`,
-// passages of existing transcripts for `says`. A search estimated over a credit runs only with
+// passages of existing transcripts for `says`. A search estimated over 200 judgments runs only with
 // cost_override, so the agent can tell the user first.
 
 type Input = z.infer<typeof MediaSearchInput>;
@@ -38,7 +37,8 @@ type Skip = Result['skipped'][number];
 type Match = Result['matches'][string][number];
 
 /** Credits a search may spend before it waits for the user's say-so (cost_override). */
-const CONFIRM_OVER_CREDITS = 1;
+/** A search judging more than this waits for the user's agreement: it takes a while. */
+const CONFIRM_OVER_JUDGMENTS = 200;
 /** A says passage: about this long, ended at a sentence where one ends. */
 const PASSAGE_SECONDS = 30;
 /** Silence that ends a passage, in seconds. */
@@ -178,8 +178,8 @@ export function registerSearchTools(server: McpServer, deps: ServerDeps): void {
       title: 'Search media by natural language',
       description: [
         "Find moments across all the user's media from what you describe in plain words: media.seek across every file instead of one. looks criteria are judged on pictures: each keyframe of every video (a new keyframe wherever the picture changes, at least every 10 s, picked when the media was indexed) and each image. says criteria are judged on ~30 s passages of transcripts the media already has. You get matches per criterion across files (media, start, end, best moment and its picture), most probable first.",
-        'COST. Each keyframe or passage judged is one judgment, however many criteria (up to 32) it carries; 200 judgments are a credit. Images cost 1 each; a 10-minute video about 50 to 260 by how much its picture changes. Every file the search keeps adds to the cost, so narrow first: kind, media_ids, from, name_contains, duration and from/until_seconds are free and cut what is judged before anything is. candidates is free too: it keeps the N media whose pictures look most like looks by local similarity, far cheaper, though it can drop media where the thing is small or brief. Ask everything you are looking for in one call.',
-        'A search estimated over 1 credit is not run: the result has searched false, the estimate (judgments, credits, by kind, the largest media) and what the free filters could cut, and nothing is charged. Tell the user the cost and run it again with cost_override once they agree.',
+        'SIZE. Each keyframe or passage judged is one judgment, however many criteria (up to 32) it carries; searching spends no credits, but judgments take time. Images take 1 each; a 10-minute video about 50 to 260 by how much its picture changes. Every file the search keeps adds to it, so narrow first: kind, media_ids, from, name_contains, duration and from/until_seconds cut what is judged before anything is. candidates keeps the N media whose pictures look most like looks by local similarity, far quicker, though it can drop media where the thing is small or brief. Ask everything you are looking for in one call.',
+        'A search estimated over 200 judgments is not run: the result has searched false, the estimate (judgments, by kind, the largest media) and what the filters could cut. Tell the user how big it is and run it again with cost_override once they agree.',
         'HOW TO WRITE CRITERIA. As for media.seek: say what a matching picture shows or what the speech says, one judgment each, with {instructions, criteria: {true, false}} examples for accuracy. Pictures are judged at about 512 px, so small detail (a logo in a corner, fine print) can be missed.',
         'skipped lists media the filters kept that were not judged, and why (still indexing after import, no transcript, outside candidates): not found there is not the same as not there. Long-running: returns a task, or a job_id for job.get.',
       ].join('\n'),
@@ -312,7 +312,7 @@ export function registerSearchTools(server: McpServer, deps: ServerDeps): void {
       const estimate: Result['estimate'] = {
         media: judged.length,
         judgments,
-        credits: round(judgments / JUDGMENTS_PER_CREDIT),
+        credits: 0,
         by_kind: byKind,
         largest: [...judged]
           .sort((a, b) => judgmentsOf(b) - judgmentsOf(a))
@@ -352,7 +352,7 @@ export function registerSearchTools(server: McpServer, deps: ServerDeps): void {
       if (!judgments) {
         return doneReply(store, init, ok({ searched: true, ...base, matches: empty }), ctx);
       }
-      if (estimate.credits > CONFIRM_OVER_CREDITS && !args.cost_override) {
+      if (estimate.judgments > CONFIRM_OVER_JUDGMENTS && !args.cost_override) {
         return doneReply(
           store,
           init,
@@ -501,11 +501,11 @@ export function warning(estimate: Result['estimate'], args: Input): string {
     args.candidates === undefined && args.looks && 'candidates',
   ].filter(Boolean);
   return [
-    `Not run: this search would judge ${estimate.judgments} keyframes and passages across ${estimate.media} media, about ${estimate.credits} credits, over the ${CONFIRM_OVER_CREDITS} credit that needs the user's agreement. Nothing was charged.`,
+    `Not run: this search would judge ${estimate.judgments} keyframes and passages across ${estimate.media} media, over the ${CONFIRM_OVER_JUDGMENTS} that need the user's agreement (it is free, but takes a while). Nothing was judged.`,
     `By kind: ${kinds}. The ${top.length} largest (${top.map((l) => `${l.name}: ${l.judgments}`).join('; ')}) are ${topShare} of them.`,
     unused.length
       ? `Free filters not used yet: ${unused.join(', ')}. Whatever they rule out is never judged.`
-      : 'Every free filter is in use: this is what the search costs.',
-    'To run it as estimated, tell the user the cost and call again with cost_override.',
+      : 'Every filter is in use: this is the whole search.',
+    'To run it as estimated, tell the user how big it is and call again with cost_override.',
   ].join(' ');
 }

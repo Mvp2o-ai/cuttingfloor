@@ -2,14 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { defineCollection, TIMELINES } from '@cuttingfloor/core';
 import type { Job } from '@cuttingfloor/jobs';
-import {
-  FREE_CREDITS,
-  JUDGMENTS_PER_CREDIT,
-  LOW_CREDITS,
-  PACKS,
-  PLANS,
-  packOf,
-} from '@cuttingfloor/plans';
+import { FREE_CREDITS, LOW_CREDITS, PACKS, PLANS, packOf } from '@cuttingfloor/plans';
 import { type AccountGetResult, CfError, MediaUploadInput } from '@cuttingfloor/schema';
 import {
   billedSeconds,
@@ -17,11 +10,10 @@ import {
   drainingError,
   listHeld,
   type MeterEntry,
-  meterEntries,
   type Runtime,
   startUpload,
 } from '@cuttingfloor/server';
-import { type Access, type AccessCheck, type Balance, LEDGER_LINKS } from './access.ts';
+import type { Access, AccessCheck, Balance } from './access.ts';
 import type { Mailer } from './email.ts';
 import { dueFiles, expiryMessage, exportOf, type Going } from './expiry-notices.ts';
 import type { ScriptKeys } from './keys.ts';
@@ -67,8 +59,7 @@ import { forgetRecipient } from './sequence.ts';
 //   The credit ledger is the partner's to delete; Stripe keeps its payments.
 
 const NOTICE_TTL_MS = 400 * 24 * 3_600_000;
-// A job's spend is retried for this long after it ended; its marker outlives that.
-const SPEND_RETRY_MS = 30 * 24 * 3_600_000;
+// A release spend's marker, kept until what it crossed has been emailed and a while after.
 const SPENT_TTL_MS = 60 * 24 * 3_600_000;
 // How often new accounts are looked at: a fallback welcome arrives within this of signing up.
 const SWEEP_MS = 10 * 60_000;
@@ -235,58 +226,62 @@ export class Lifecycle {
 
   async #metered(owner: string, entry: MeterEntry, job?: Job): Promise<void> {
     if (!isUser(owner) || this.#o.standby) return;
+    // Jobs spend nothing (making is free); the meter still counts them, for analytics.
     this.#o.access.addSeconds(owner, billedSeconds(entry));
     if (job?.tool === 'export.video') {
       await this.#markOnce(owner, 'first_export_at');
       if (job.status === 'completed' && !job.result?.isError)
         await this.#markOnce(owner, 'first_edit_at');
     }
-    const access = await this.#o.access.get(owner);
-    if (!access.allowed) return;
-    if (access.ledger) return this.#spend(owner, access, entry);
-    const balance = await this.#o.access.balance(owner, access);
-    if (balance.left !== null) await this.#monthUsed(owner, access, balance);
   }
 
   /**
-   * Spends a job's credits on the ledger, once (a marker file remembers it was taken, and the
-   * ledger ignores a job it has), then emails what the spend crossed: running low, out, or what
-   * the ledger's automatic top-up did there. The marker keeps the ledger's answer until the email
-   * is sent, so a server that stops in between sends it on the sweep. A job that ended before the
-   * account was linked is in the balance it carried over.
+   * Spends a clean copy's credits on the ledger under `ref` (the ledger takes a ref once, however
+   * often it is sent), then emails what the spend crossed: running low, out, or what the ledger's
+   * automatic top-up did there. A marker keeps the ledger's answer until the email is sent, so a
+   * server that stops in between sends it on the sweep. Fails closed: a ledger that can't be
+   * reached refuses the release, retryable, and nothing is spent.
    */
-  async #spend(owner: string, access: Access & { allowed: true }, entry: MeterEntry) {
+  async spendRelease(
+    owner: string,
+    ref: string,
+    credits: number,
+    tool: string,
+  ): Promise<{ balance: number | null }> {
+    const access = await this.#o.access.require(owner);
     const link = access.ledger;
-    if (!link || entry.ended_at < link.since) return;
-    const ws = this.#o.runtime.ws;
-    const marks = ws.records.collection(LEDGER_SPENT, { owner });
-    let mark = await marks.get(entry.job_id);
-    if (!mark) {
-      const credits = Math.round((billedSeconds(entry) / 60) * 1000) / 1000;
-      // A job too short to round to a thousandth of a credit costs nothing (the ledger takes none).
-      if (!(credits > 0)) {
-        await marks.put(entry.job_id, { at: new Date().toISOString(), told: true });
-        return;
-      }
-      const spent = await this.#o.ledger.usage({
+    if (!link) return { balance: (await this.#o.access.balance(owner, access)).left };
+    let spent: LedgerUsage;
+    try {
+      spent = await this.#o.ledger.usage({
         account_id: link.account_id,
-        job_id: entry.job_id,
+        job_id: ref,
         credits,
-        tool: entry.tool,
-        finished_at: entry.ended_at,
+        tool,
+        finished_at: new Date().toISOString(),
       });
-      this.#o.access.spent(owner, spent.balance);
-      mark = {
-        at: new Date().toISOString(),
-        told: spent.duplicate || (!spent.crossed && !spent.top_up),
-        crossed: spent.crossed,
-        top_up: spent.top_up,
-      };
-      await marks.put(entry.job_id, mark);
+    } catch (error) {
+      process.stderr.write(`lifecycle: ${owner}: release ${ref}: ${(error as Error).message}\n`);
+      throw new CfError('service_unavailable', 'The clean copy could not be taken just now', {
+        hint: 'Nothing was spent. Call export.release again in a minute',
+        detail: { retry: true, retry_after_seconds: 60 },
+      });
     }
-    if (mark.told) return;
-    await this.#tell(owner, access, entry.job_id, mark);
-    await marks.put(entry.job_id, { ...mark, told: true });
+    this.#o.access.spent(owner, spent.balance);
+    const mark: Spent = {
+      at: new Date().toISOString(),
+      told: spent.duplicate || (!spent.crossed && !spent.top_up),
+      crossed: spent.crossed,
+      top_up: spent.top_up,
+    };
+    const marks = this.#o.runtime.ws.records.collection(LEDGER_SPENT, { owner });
+    await marks.put(ref, mark);
+    if (!mark.told) {
+      void this.#tell(owner, access, ref, mark)
+        .then(() => marks.put(ref, { ...mark, told: true }))
+        .catch((error: Error) => process.stderr.write(`lifecycle: ${owner}: ${error.message}\n`));
+    }
+    return { balance: spent.balance };
   }
 
   /** Emails what a spend crossed, and what automatic top-up did there. */
@@ -329,11 +324,11 @@ export class Lifecycle {
       subject: out ? 'Your credits are used up' : `You have ${left} credits left`,
       lines: [
         out
-          ? 'Your agent has used all its credits.'
-          : `Your agent has ${left} credits left. A credit is one minute of a job running (an export, an import, a transcript), or ${JUDGMENTS_PER_CREDIT} visual judgments.`,
+          ? 'Your credits are used up.'
+          : `You have ${left} credits left. A credit takes one finished minute of a clean copy, without the cuttingfloor mark.`,
         out
-          ? 'Editing still works, and so do previews. New jobs (exports, imports, motion graphics, voiceovers) won’t start until you top up; then ask again.'
-          : 'At zero, new jobs won’t start until you top up. Editing and previews keep working.',
+          ? 'Making still works, all of it: editing, exports, motion graphics, voiceovers. Exports download carrying the cuttingfloor mark; clean copies wait until you top up.'
+          : 'At zero, everything still works and exports download carrying the cuttingfloor mark; clean copies wait until you top up.',
         `Top up on your account page: packs start at $${PACKS[0]?.price} for ${PACKS[0]?.credits} credits, and they never expire. Turn on automatic top-up there and this won't stop you again.`,
       ],
       action: { label: 'Top up', url: `${this.#o.accountUrl}#credits` },
@@ -341,57 +336,21 @@ export class Lifecycle {
   }
 
   /**
-   * Spends the jobs a server could not report when they ended (the ledger was down, the server
-   * restarted): every linked account's jobs of the last SPEND_RETRY_MS without a marker.
+   * Sends what a release's spend crossed when the server stopped before it could (the marker
+   * kept the ledger's answer), and lets old markers go.
    */
-  async #spendMissed(key: string, now: number): Promise<void> {
+  async #tellMissed(key: string): Promise<void> {
     const ws = this.#o.runtime.ws;
     const marks = ws.records.collection(LEDGER_SPENT, { owner: key });
     await marks.expire(SPENT_TTL_MS);
     if (!isUser(key)) return;
-    const link = await ws.records.collection(LEDGER_LINKS, { owner: key }).get('link');
-    if (!link?.account_id || !link.since) return;
-    const from = new Date(Math.max(Date.parse(link.since), now - SPEND_RETRY_MS));
-    let access: (Access & { allowed: true }) | undefined;
-    for await (const entry of meterEntries(ws, key, from)) {
-      const mark = await marks.get(entry.job_id);
-      if (mark?.told) continue;
-      const known = access ?? (await this.#o.access.require(key));
-      access = known;
-      // A given plan has no ledger link: its jobs are never spent, even if it ends later.
-      if (!known.ledger)
-        await marks.put(entry.job_id, { at: new Date().toISOString(), told: true });
-      else await this.#spend(key, known, entry);
+    const waiting = await marks.find({ told: false });
+    if (!waiting.length) return;
+    const access = await this.#o.access.require(key);
+    for (const { id, value } of waiting) {
+      await this.#tell(key, access, id, value);
+      await marks.put(id, { ...value, told: true });
     }
-  }
-
-  /** A given plan's month: email at 80% and 100% of its credits. */
-  async #monthUsed(owner: string, access: Access & { allowed: true }, balance: Balance) {
-    const included = balance.per_month;
-    if (!included) return;
-    const share = balance.used / included;
-    const renews = day(balance.renews ?? balance.since);
-    if (share >= 1)
-      await this.#notify(owner, warningName(balance, 'out'), {
-        to: access.email,
-        subject: 'This month’s credits are used up',
-        lines: [
-          `Your agent has used all ${included} credits for this month.`,
-          'Editing still works, and so do previews. New jobs (exports, imports, motion graphics, voiceovers) won’t start until the credits renew; then ask again.',
-          `They renew on ${renews}.`,
-        ],
-        action: { label: 'Open your account', url: this.#o.accountUrl },
-      });
-    else if (share >= 0.8)
-      await this.#notify(owner, warningName(balance, 'low'), {
-        to: access.email,
-        subject: `You've used ${Math.floor(share * 100)}% of this month’s credits`,
-        lines: [
-          `Your agent has used ${balance.used} of ${included} credits this month; they renew on ${renews}.`,
-          'At the limit, new jobs won’t start until the credits renew. Editing and previews keep working.',
-        ],
-        action: { label: 'See your credits', url: this.#o.accountUrl },
-      });
   }
 
   /** The signed-in account's plan and credits, for account.get and the account page. */
@@ -452,7 +411,7 @@ export class Lifecycle {
     const ws = this.#o.runtime.ws;
     for (const key of await ws.records.owners()) {
       await ws.records.collection(NOTICES, { owner: key }).expire(NOTICE_TTL_MS);
-      await this.#spendMissed(key, now).catch((error: Error) =>
+      await this.#tellMissed(key).catch((error: Error) =>
         process.stderr.write(`lifecycle: ${key}: spend: ${error.message}\n`),
       );
     }
@@ -474,7 +433,7 @@ export class Lifecycle {
           lines: [
             'Your agent can edit video now. Add cuttingfloor to it once: the welcome page has the step for Claude, Claude Code, Cursor, Codex, ChatGPT and Kazi.',
             `The address is ${welcome.serverUrl}/mcp. Your agent opens a sign-in the first time; use this same account.`,
-            `Then ask it for an edit, for example: "Import my video and cut out the pauses and ums." You start with ${FREE_CREDITS} free credits: a credit is one minute of our servers working (an export, a transcript), and editing itself is free. No card, no time limit.`,
+            `Then ask it for an edit, for example: "Import my video and cut out the pauses and ums." Making is free: edits, exports, motion graphics, voiceovers. Exports download carrying the cuttingfloor mark, and a clean copy is one credit a finished minute; your account gets ${FREE_CREDITS} credits when your agent activates it. No card, no time limit.`,
           ],
           action: { label: 'Connect your agent', url: welcome.url },
         });
@@ -1262,15 +1221,6 @@ function same(a: string, b: string): boolean {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
   return x.length === y.length && timingSafeEqual(x, y);
-}
-
-function day(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {

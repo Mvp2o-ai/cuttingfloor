@@ -1,0 +1,307 @@
+import { type BlobKey, defineCollection, floorChanged, OUTPUTS } from '@cuttingfloor/core';
+import { burnMark, type MediaRecord } from '@cuttingfloor/engine';
+import { cleanCopyCredits, GATE_FROM } from '@cuttingfloor/plans';
+import { CfError } from '@cuttingfloor/schema';
+import type { Runtime } from './runtime.ts';
+
+// The download gate (hosted): every picture that leaves through a signed link (an export's file,
+// a created or exported media's file, full-size frames) carries the cuttingfloor mark until its
+// owner releases a clean copy, once, for cleanCopyCredits of its finished length. The mark is
+// burned in at the door, never in the timeline: the server keeps working from the clean file,
+// and the marked copy is made the first time it is asked for, then kept beside it. Audio, text
+// and project files, uploads and URL imports, files made before GATE_FROM and accounts on a
+// given plan never carry it. Locally there is no gate.
+
+/** A release: one per export (or created media, or frame set), id the thing released. */
+export interface Release {
+  id: string;
+  released_at: string;
+  credits: number;
+  /** Finished minutes it was priced at (credits are these at one a minute). */
+  minutes: number;
+  via: ReleaseVia;
+}
+
+export type ReleaseVia = 'tool' | 'rest' | 'page';
+
+export const RELEASES = defineCollection<Release>({
+  name: 'export_releases',
+  scope: 'owner',
+  fs: { dir: 'releases' },
+});
+
+/** What the hosting app answers for the gate: plans and credits live there. */
+export interface GateHooks {
+  /** True for an account on a given plan (staff, lifetime, enterprise): never marked. */
+  exempt(owner: string): Promise<boolean>;
+  /** Credits left, or null for no cap. */
+  balance(owner: string): Promise<number | null>;
+  /** Spends credits once under `ref` however often it is sent; the balance after. */
+  spend(
+    owner: string,
+    ref: string,
+    credits: number,
+    tool: string,
+  ): Promise<{ balance: number | null }>;
+  /** Burns the mark into a local file; the engine's burnMark unless a test stands in. */
+  mark?: (input: string, output: string, seed: string) => Promise<void>;
+}
+
+/** Whether a file carries the mark now, and what a clean copy costs. */
+export interface MarkState {
+  watermarked: boolean;
+  release_credits?: number;
+}
+
+/** A gated file: what releases it and what it costs. */
+interface Gated {
+  /** The id a release is kept under: an export's or create.* job's id, else the file's own. */
+  releaseId: string;
+  credits: number;
+  minutes: number;
+  createdAt: string;
+}
+
+const PICTURE = /^(?:video|image)\//;
+const MARKED_PREFIX = 'cf-marked--';
+
+export class DownloadGate {
+  readonly #rt: Runtime;
+  readonly #hooks: GateHooks;
+  /** Marked copies being made on this server, by blob key: concurrent downloads share one. */
+  readonly #making = new Map<string, Promise<BlobKey>>();
+
+  /** Files made before this are never marked. */
+  readonly #from: number;
+
+  constructor(rt: Runtime, hooks: GateHooks, options: { from?: string } = {}) {
+    this.#rt = rt;
+    this.#hooks = hooks;
+    this.#from = Date.parse(options.from ?? GATE_FROM);
+  }
+
+  /**
+   * What gates a signed file (`j_…`, `f_…` or `m_…`): undefined for one that never carries the
+   * mark (audio, text, an upload or URL import, made before the gate).
+   */
+  async #gated(owner: string, id: string): Promise<Gated | undefined> {
+    const rt = this.#rt;
+    if (id.startsWith('m_')) {
+      const record = await rt.media.find(owner, id);
+      return record ? this.#gatedMedia(record) : undefined;
+    }
+    const output = await rt.ws.records.collection(OUTPUTS, { owner }).get(id);
+    if (id.startsWith('f_')) {
+      if (output?.kind !== 'frames' || !this.#after(output.created_at)) return undefined;
+      return {
+        releaseId: id,
+        credits: cleanCopyCredits(null),
+        minutes: 0,
+        createdAt: output.created_at,
+      };
+    }
+    if (!id.startsWith('j_')) return undefined;
+    const job = await rt.jobs.store.get(id, owner);
+    const result = job?.result?.structuredContent as
+      | { mime_type?: string; duration_seconds?: number; media_id?: string }
+      | undefined;
+    if (output?.kind === 'export') {
+      if (!job || !PICTURE.test(result?.mime_type ?? '') || !this.#after(output.created_at))
+        return undefined;
+      return priced(id, result?.mime_type ?? '', result?.duration_seconds, output.created_at);
+    }
+    // A create.* job: its file is the media it made.
+    if (result?.media_id) {
+      const record = await rt.media.find(owner, result.media_id);
+      return record ? this.#gatedMedia(record) : undefined;
+    }
+    return undefined;
+  }
+
+  async #released(owner: string, releaseId: string): Promise<Release | undefined> {
+    return this.#rt.ws.records.collection(RELEASES, { owner }).get(releaseId);
+  }
+
+  /** Whether the file behind a signed link carries the mark now, and its clean copy's price. */
+  async state(owner: string, id: string): Promise<MarkState> {
+    const gated = await this.#gated(owner, id);
+    if (!gated || (await this.#hooks.exempt(owner))) return { watermarked: false };
+    if (await this.#released(owner, gated.releaseId)) return { watermarked: false };
+    return { watermarked: true, release_credits: gated.credits };
+  }
+
+  /**
+   * The blob a signed link serves: the file itself, or its marked copy (made now if this is its
+   * first download). `marked` says which, so a redirect to the marked copy isn't cached past a
+   * release.
+   */
+  async serve(
+    owner: string,
+    id: string,
+    name: string,
+    source: { blob?: BlobKey; file?: string },
+  ): Promise<{ blob?: BlobKey; file?: string; marked: boolean }> {
+    const state = await this.state(owner, id);
+    if (!state.watermarked) return { ...source, marked: false };
+    const key = this.#rt.outputs.key(owner, id, `${MARKED_PREFIX}${name}`);
+    if (await this.#rt.ws.blobs.head(key)) return { blob: key, marked: true };
+    let making = this.#making.get(key);
+    if (!making) {
+      making = this.#markCopy(key, source, `${owner}/${id}`).finally(() =>
+        this.#making.delete(key),
+      );
+      this.#making.set(key, making);
+    }
+    return { blob: await making, marked: true };
+  }
+
+  async #markCopy(
+    key: BlobKey,
+    source: { blob?: BlobKey; file?: string },
+    seed: string,
+  ): Promise<BlobKey> {
+    const { scratch } = this.#rt.ws;
+    return scratch.hold(async () => {
+      const input = source.file ?? (source.blob ? await scratch.materialize(source.blob) : '');
+      if (!input) throw new CfError('not_found', 'The file has gone');
+      const out = await scratch.reserve(key);
+      await (this.#hooks.mark ?? ((i, o, s) => burnMark(i, o, { seed: s })))(input, out, seed);
+      return scratch.publish(out, key);
+    });
+  }
+
+  /**
+   * Releases a clean copy of an export (by its job id) or of a media made by an export or a
+   * create.* job: spends its price once, then every link to it serves the clean file. A file that
+   * never carried the mark, or one already released, costs nothing.
+   */
+  async release(
+    owner: string,
+    ref: { job_id?: string | undefined; media_id?: string | undefined },
+    via: ReleaseVia,
+  ): Promise<{
+    /** The export or create.* job released; null for a media no job made (a still). */
+    job_id: string | null;
+    credits: number;
+    price: number;
+    balance: number | null;
+    released_at: string;
+    /** The signed file to hand back links for. */
+    file: { id: string; name: string };
+  }> {
+    const rt = this.#rt;
+    const file = await this.#file(owner, ref);
+    const gated = await this.#gated(owner, file.id);
+    const price = gated?.credits ?? 0;
+    const jobId = gated?.releaseId.startsWith('j_') ? gated.releaseId : (ref.job_id ?? null);
+    const now = new Date().toISOString();
+    const free = async () => ({
+      job_id: jobId,
+      credits: 0,
+      price,
+      balance: await this.#hooks.balance(owner),
+      released_at: now,
+      file,
+    });
+    if (!gated || (await this.#hooks.exempt(owner))) return free();
+    const known = await this.#released(owner, gated.releaseId);
+    if (known) return { ...(await free()), released_at: known.released_at };
+    const left = await this.#hooks.balance(owner);
+    if (left !== null && left < price) {
+      throw new CfError(
+        'quota_exceeded',
+        `A clean copy of this file is ${credits(price)}; this account has ${credits(left)}`,
+        {
+          hint: 'The file still downloads with the cuttingfloor mark, and editing and exports keep working. Tell the user the clean copy can be taken once their account has the credits',
+          detail: { price, credits_left: left },
+        },
+      );
+    }
+    const spent = await this.#hooks.spend(
+      owner,
+      `${gated.releaseId}-release`,
+      price,
+      'export.release',
+    );
+    const record: Release = {
+      id: gated.releaseId,
+      released_at: now,
+      credits: price,
+      minutes: gated.minutes,
+      via,
+    };
+    const releases = rt.ws.records.collection(RELEASES, { owner });
+    // Of releases at the same moment one record stands; the ledger spent once under its ref.
+    if (!(await releases.insertOnce(gated.releaseId, record))) {
+      const first = await releases.get(gated.releaseId);
+      if (first) record.released_at = first.released_at;
+    }
+    await floorChanged(rt.ws, owner);
+    return {
+      job_id: jobId,
+      credits: price,
+      price,
+      balance: spent.balance,
+      released_at: record.released_at,
+      file,
+    };
+  }
+
+  /** The signed file a release names: an export's output, or a media's own file. */
+  async #file(
+    owner: string,
+    ref: { job_id?: string | undefined; media_id?: string | undefined },
+  ): Promise<{ id: string; name: string }> {
+    const rt = this.#rt;
+    const gone = (what: string) =>
+      new CfError('not_found', `${what} is not here any more, or was never made`, {
+        hint: 'Exports are kept 7 days. Export the timeline again (or make it again) for a new file, then release that',
+      });
+    if (ref.media_id) {
+      const record = await rt.media.find(owner, ref.media_id);
+      if (!record?.file || record.status !== 'ready') throw gone(`Media ${ref.media_id}`);
+      return { id: record.media_id, name: record.name };
+    }
+    const id = ref.job_id ?? '';
+    const job = await rt.jobs.store.get(id, owner);
+    if (!job) throw gone(`Job ${id}`);
+    const made = (job.result?.structuredContent as { media_id?: string } | undefined)?.media_id;
+    if (made && !(await rt.outputs.file(owner, id))) return this.#file(owner, { media_id: made });
+    const name = await rt.outputs.file(owner, id, (n) => !n.startsWith(MARKED_PREFIX));
+    if (!name) throw gone(`The file of job ${id}`);
+    return { id, name };
+  }
+
+  #after(createdAt: string | undefined): boolean {
+    return Boolean(createdAt) && Date.parse(createdAt ?? '') >= this.#from;
+  }
+
+  /** A media carries the mark when an export, a create.* job or a still made its picture. */
+  #gatedMedia(record: MediaRecord): Gated | undefined {
+    const source = record.source;
+    if (!this.#after(record.created_at) || !record.file || !record.probe) return undefined;
+    if (record.probe.kind !== 'video' && record.probe.kind !== 'image') return undefined;
+    let releaseId: string;
+    if ('job' in source) releaseId = source.job;
+    else if ('created' in source) releaseId = source.job_id ?? record.media_id;
+    else if ('still' in source) releaseId = record.media_id;
+    else return undefined;
+    const mime = record.probe.mime ?? (record.probe.kind === 'image' ? 'image/png' : 'video/mp4');
+    return priced(releaseId, mime, record.probe.duration, record.created_at);
+  }
+}
+
+function priced(
+  releaseId: string,
+  mime: string,
+  seconds: number | null | undefined,
+  createdAt: string,
+): Gated {
+  const still = mime.startsWith('image/') && mime !== 'image/gif';
+  const credits = cleanCopyCredits(still ? null : seconds);
+  return { releaseId, credits, minutes: credits, createdAt };
+}
+
+function credits(n: number): string {
+  return `${n} credit${n === 1 ? '' : 's'}`;
+}

@@ -378,6 +378,7 @@ describe('admin API', () => {
       files: [],
       next_expiry_at: null,
       downloads: [],
+      releases: [],
       email_prefs: { expiry_emails: true, unsubscribed: false, suppressed: null },
     });
     expect(active).toMatchObject({
