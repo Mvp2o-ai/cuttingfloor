@@ -4,7 +4,8 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
-import { Runtime } from '@cuttingfloor/server';
+import type { AccountGetResult } from '@cuttingfloor/schema';
+import { CLAIM_GUIDED, Runtime } from '@cuttingfloor/server';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AccessCheck } from '../src/access.ts';
@@ -22,6 +23,8 @@ const USER = 'user_01ABCDEFGHJKMNPQRSTVWXYZ01';
 let base: string;
 let server: Server;
 let keys: ScriptKeys;
+let runtime: Runtime;
+let lifecycle: Lifecycle;
 
 const users = new Map<string, Record<string, string>>([[USER, {}]]);
 
@@ -44,7 +47,7 @@ beforeAll(async () => {
     return url.hostname === 'api.workos.com' ? workos(url, init) : realFetch(input, init);
   });
   const dir = await mkdtemp(join(tmpdir(), 'cf-first-marks-'));
-  const runtime = new Runtime({
+  runtime = new Runtime({
     dataDir: join(dir, 'data'),
     mode: 'hosted',
     publicUrl: 'http://127.0.0.1:0',
@@ -59,7 +62,7 @@ beforeAll(async () => {
   });
   await runtime.start({ sweep: false });
   keys = new ScriptKeys(runtime.ws);
-  const lifecycle = new Lifecycle({
+  lifecycle = new Lifecycle({
     runtime,
     access: { get: async () => ({ allowed: false }) } as unknown as AccessCheck,
     ledger: new Ledger('http://127.0.0.1:9', 'none'),
@@ -120,5 +123,57 @@ describe('first-use marks', () => {
     expect(used.first_call_at).toBeTruthy();
     expect(used.first_tool_at).toBeTruthy();
     await client.close();
+  });
+
+  it("counts only an account's first-ever connection as having had the welcome", async () => {
+    const ACCOUNT: AccountGetResult = {
+      plan: 'free',
+      plan_name: 'Free',
+      credits: { left: 25, used: 0, free: 25, bought: 0, per_month: null, renews: null },
+      warnings: [],
+      top_up: null,
+      packs: [],
+      limits: { export_short_side: null, storage_gb: null },
+      account_url: null,
+    };
+    const fresh = 'user_01ABCDEFGHJKMNPQRSTVWXYZ04';
+    const old = 'user_01ABCDEFGHJKMNPQRSTVWXYZ05';
+    users.set(fresh, {});
+    users.set(old, { first_call_at: '2026-11-01T00:00:00.000Z' });
+    const welcoming = createHttpServer({
+      runtime,
+      credentials: new LocalCredentialStore({}, false),
+      scriptKeys: keys,
+      access: async () => undefined,
+      account: async () => ACCOUNT,
+      onCall: (owner) => lifecycle.called(owner),
+      firstConnection: (owner) => lifecycle.firstConnection(owner),
+    });
+    await new Promise<void>((r) => welcoming.listen(0, '127.0.0.1', r));
+    const url = new URL(`http://127.0.0.1:${(welcoming.address() as AddressInfo).port}/mcp`);
+    const firstResult = async (owner: string) => {
+      const { key } = await keys.create(owner, 'test');
+      const client = new Client({ name: 'test-app', version: '0' });
+      await client.connect(
+        new StreamableHTTPClientTransport(url, {
+          requestInit: { headers: { authorization: `Bearer ${key}` } },
+        }),
+      );
+      const res = await client.callTool({ name: 'media.list', arguments: {} });
+      await client.close();
+      return (res.content as Array<{ text?: string }>).map((c) => c.text ?? '').join('\n');
+    };
+    const guided = (owner: string) =>
+      runtime.ws.records.collection(CLAIM_GUIDED, { owner }).has('claim-guided');
+    try {
+      // A new account's connection had the welcome fresh: its first result doesn't repeat it.
+      expect(await firstResult(fresh)).not.toContain("aren't activated yet");
+      expect(await guided(fresh)).toBe(true);
+      // An account that connected before may be on a host's cached instructions: its first
+      // result here carries the guidance.
+      expect(await firstResult(old)).toContain("aren't activated yet");
+    } finally {
+      await new Promise((r) => welcoming.close(r));
+    }
   });
 });

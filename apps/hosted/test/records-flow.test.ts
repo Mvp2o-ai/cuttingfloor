@@ -7,7 +7,6 @@ import { floorCursor, type MongoRecords } from '@cuttingfloor/core';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import type { AccountGetResult } from '@cuttingfloor/schema';
 import {
-  CLAIM_GUIDED,
   CLAIMS,
   createServer,
   meterEntries,
@@ -465,48 +464,6 @@ describe.each((['filesystem', 'MongoDB'] as const).filter((store) => store === '
           .insertOnce('free-credits', { claimed: true, use_case: 'x', claimed_at: 'now' });
         await elsewhere.close();
         expect(await instructions()).not.toContain('welcome aboard');
-      } finally {
-        await new Promise((r) => server.close(r));
-      }
-    });
-
-    it("over HTTP, being handed the welcome is the account's one word about its credits", async () => {
-      const owner = 'user_01ABCDEFGHJKMNPQRSTVWXYZ03';
-      const keys = new ScriptKeys(env.runtime.ws);
-      const { key } = await keys.create(owner, 'script');
-      const server = createHttpServer({
-        runtime: env.runtime,
-        credentials: new LocalCredentialStore({}, false),
-        scriptKeys: keys,
-        access: async () => undefined,
-        account: async () => ACCOUNT,
-      });
-      await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-      const url = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`);
-      const connectRemote = async () => {
-        const remote = new Client({ name: 'script', version: '0' });
-        await remote.connect(
-          new StreamableHTTPClientTransport(url, {
-            requestInit: { headers: { authorization: `Bearer ${key}` } },
-          }),
-        );
-        return remote;
-      };
-      const guided = () =>
-        env.runtime.ws.records.collection(CLAIM_GUIDED, { owner }).has('claim-guided');
-      try {
-        // Connecting is enough: no tool call is needed to have been told.
-        expect(await guided()).toBe(false);
-        await (await connectRemote()).close();
-        expect(await guided()).toBe(true);
-        // Its first tool result does not say it again.
-        const remote = await connectRemote();
-        const res = await remote.callTool({ name: 'media.list', arguments: {} });
-        const texts = (res.content as Array<{ type: string; text?: string }>).map(
-          (c) => c.text ?? '',
-        );
-        expect(texts.some((t) => t.includes("aren't activated yet"))).toBe(false);
-        await remote.close();
       } finally {
         await new Promise((r) => server.close(r));
       }

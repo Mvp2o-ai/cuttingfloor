@@ -276,7 +276,12 @@ export class AdminApi {
       first_client: meta.first_client ?? null,
       use_case: claim?.use_case ?? null,
       use_case_at: claim?.claimed_at ?? null,
-      use_cases: tasks.map((t) => t.value).sort((a, b) => a.at.localeCompare(b.at)),
+      // Claims from before every task was kept: the claim's own task stands in.
+      use_cases: tasks.length
+        ? tasks.map((t) => t.value).sort((a, b) => a.at.localeCompare(b.at))
+        : claim
+          ? [{ use_case: claim.use_case, at: claim.claimed_at }]
+          : [],
       sample: shown ? (shown.sample ?? 'animation-short') : null,
       last_used_at: meta.last_used_at ?? null,
       // Only an account already on the ledger: reading one that isn't would join it to the ledger.

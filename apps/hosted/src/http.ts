@@ -70,6 +70,8 @@ export interface HttpOptions {
   account?: (owner: string) => Promise<AccountGetResult>;
   /** Told of each signed-in owner's MCP request (first-call records). */
   onCall?: (owner: string) => void | Promise<void>;
+  /** Whether the owner's request here was the account's first ever (after onCall told of it). */
+  firstConnection?: (owner: string) => Promise<boolean>;
   /** Told the app a signed-in owner's request came from, by its MCP clientInfo name. */
   onApp?: (owner: string, app: string) => void;
   /** Provider keys signed-in users saved on their account page, after any in the request. */
@@ -194,7 +196,12 @@ async function isDiscovery(request: Request): Promise<boolean> {
 export function createHttpServer(options: HttpOptions): Server {
   const { runtime, credentials, oauth } = options;
   /** One MCP server for one request, as `owner` signed in `via`; /mcp and /v1 both use it. */
-  const serverFor = async (owner: string, via: unknown, requestHeaders?: Headers) => {
+  const serverFor = async (
+    owner: string,
+    via: unknown,
+    requestHeaders?: Headers,
+    channel: 'mcp' | 'rest' = 'mcp',
+  ) => {
     const signedIn = via === 'oauth' || via === 'script';
     // Before sign-in only discovery reaches a server; refuse any tool all the same.
     const anonymous = via === 'anonymous';
@@ -227,6 +234,8 @@ export function createHttpServer(options: HttpOptions): Server {
       // ChatGPT's plugin rules forbid selling credits, so its refusals only say what stopped.
       ...(limits ? { limits: () => limits(owner, { buy: !chatgpt(requestHeaders) }) } : {}),
       ...(account ? { account: () => account(owner) } : {}),
+      // Apps call /v1 for their users: no assistant reads a result there.
+      ...(channel === 'rest' ? { firstResultGuidance: false } : {}),
     });
   };
   const handler = createMcpHandler(
@@ -238,7 +247,9 @@ export function createHttpServer(options: HttpOptions): Server {
       ),
     { onerror: (error) => process.stderr.write(`mcp: ${error.message}\n`) },
   );
-  const rest = new RestApi(runtime, (owner, via, headers) => serverFor(owner, via, headers));
+  const rest = new RestApi(runtime, (owner, via, headers) =>
+    serverFor(owner, via, headers, 'rest'),
+  );
   const hashedKeys = [...(options.apiKeys ?? new Map()).entries()].map(([key, owner]) => ({
     digest: createHash('sha256').update(key).digest(),
     owner,
@@ -466,10 +477,17 @@ export function createHttpServer(options: HttpOptions): Server {
       const request = await toWebRequest(req as IncomingMessage & { method: string; url: string });
       const caller = await authenticate(req, res, request, () => isDiscovery(request));
       if (!caller) return;
-      // A connection that is handed the instructions has had the welcome: it counts as the
-      // account's one first word about its free credits, so the first tool result need not say it.
-      if (options.account && (caller.via === 'script' || caller.via === 'oauth'))
-        if (await sendsInstructions(request)) await markWelcomed(runtime, caller.owner);
+      // The account's first-ever connection is handed the welcome by a host that cannot have kept
+      // older instructions, so it is the account's one word about its free credits and the first
+      // tool result need not say it. A later connection may be a host's cached copy: not counted.
+      if (
+        options.account &&
+        options.firstConnection &&
+        (caller.via === 'script' || caller.via === 'oauth') &&
+        (await sendsInstructions(request)) &&
+        (await options.firstConnection(caller.owner))
+      )
+        await markWelcomed(runtime, caller.owner);
       if (options.onApp && (caller.via === 'script' || caller.via === 'oauth')) {
         const app = (await appName(request)) ?? userAgentApp(req.headers['user-agent']);
         if (app) options.onApp(caller.owner, app);

@@ -133,6 +133,8 @@ export function madeByPartner(metadata: Record<string, string> | undefined): boo
 export class Lifecycle {
   #o: LifecycleOptions;
   #seen = new Set<string>();
+  /** Per owner seen: whether its first request here was the account's first ever. */
+  #first = new Map<string, Promise<boolean>>();
   #apps = new Set<string>();
   #tools = new Set<string>();
   /** The UTC day each owner's `last_used_at` was last written by this server. */
@@ -180,10 +182,21 @@ export class Lifecycle {
   async called(owner: string): Promise<void> {
     if (this.#seen.has(owner)) return;
     this.#seen.add(owner);
-    void this.#markOnce(owner, 'first_call_at').catch((error: Error) => {
+    const first = this.#markOnce(owner, 'first_call_at').catch((error: Error) => {
       this.#seen.delete(owner);
+      this.#first.delete(owner);
       process.stderr.write(`lifecycle: ${owner}: ${error.message}\n`);
+      return false;
     });
+    this.#first.set(owner, first);
+  }
+
+  /**
+   * Whether this process saw the account's first-ever request (`first_call_at` was unset when
+   * it came): a connection no host can have kept old instructions for.
+   */
+  firstConnection(owner: string): Promise<boolean> {
+    return this.#first.get(owner) ?? Promise.resolve(false);
   }
 
   /** An owner's tool call ran (not just a sign-in or a tool list): records the first one. */
@@ -595,9 +608,14 @@ export class Lifecycle {
   }
 
   /** Sets a field in the user's WorkOS metadata (the time, by default), if it isn't set yet. */
-  async #markOnce(owner: string, field: string, value = new Date().toISOString()): Promise<void> {
-    if (!isUser(owner) || this.#o.standby) return;
+  async #markOnce(
+    owner: string,
+    field: string,
+    value = new Date().toISOString(),
+  ): Promise<boolean> {
+    if (!isUser(owner) || this.#o.standby) return false;
     const path = `/user_management/users/${encodeURIComponent(owner)}`;
+    let wrote = false;
     await oneWriteAtATime(owner, async () => {
       const user = await this.#workos(path);
       const metadata = (user.metadata ?? {}) as Record<string, string>;
@@ -606,7 +624,9 @@ export class Lifecycle {
         method: 'PUT',
         body: { metadata: { ...metadata, [field]: value } },
       });
+      wrote = true;
     });
+    return wrote;
   }
 
   /**

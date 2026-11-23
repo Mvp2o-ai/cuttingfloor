@@ -47,6 +47,11 @@ export interface ServerDeps {
   /** Hosted: the owner's plan and credits, for account.get. Absent locally: no plan. */
   account?: () => Promise<AccountGetResult>;
   /**
+   * Hosted: false where no assistant reads the results (apps on /v1), so an account's first
+   * result there doesn't use up the free-credits guidance. Default true.
+   */
+  firstResultGuidance?: boolean;
+  /**
    * Hosted: whether the account's free credits are claimed, read with `creditsClaimed` before
    * the server is built, since building it cannot wait for a record store that is not the
    * filesystem. Left out, the filesystem store's record is read in place; on another store the

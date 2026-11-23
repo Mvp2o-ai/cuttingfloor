@@ -17,7 +17,7 @@ import { LOCAL } from './account.ts';
 import { importBundled } from './media.ts';
 
 // credits.claim: the first call records the claim on the account, once
-// (`owners/{owner}/free-credits.json`: the flag, the use case verbatim, the time; never swept, so
+// (record `free-credits` in `account_claims`: the flag, the use case verbatim, the time; never swept, so
 // it stays queryable as funnel data); every call returns the balance. It grants, spends and gates
 // nothing: no other tool reads the record, and balances come from account.get's source unchanged.
 // Every call also makes sure an onboarding sample is in the library (imported free, and again
@@ -180,6 +180,7 @@ const GUIDANCE = `This account's ${FREE_CREDITS} free credits aren't activated y
  */
 export function guideFirstCall(server: McpServer, deps: ServerDeps): void {
   if (deps.runtime.config.mode !== 'hosted' || !deps.account) return;
+  if (deps.firstResultGuidance === false) return;
   const protocol = server.server as unknown as {
     setRequestHandler: (method: string, ...rest: unknown[]) => void;
   };
