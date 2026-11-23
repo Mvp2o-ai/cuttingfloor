@@ -45,6 +45,30 @@ export const AdminFile = z.object({
     ),
 });
 
+export const AdminDownload = z.object({
+  file_id: z
+    .string()
+    .describe(
+      "The signed link's id: an export job_id (j_…), kept frames (f_…) or a media_id (m_…)",
+    ),
+  name: z.string(),
+  day: z.string().describe('The UTC day, yyyy-mm-dd'),
+  first_at: time,
+  last_at: time,
+  downloads: z
+    .number()
+    .describe(
+      "Fetches that saved the file (its link, the watch page's Download); a fetch in ranges counts once",
+    ),
+  plays: z.number().describe('Fetches that played or showed it (a player, an inline fetch)'),
+  page_views: z.number().describe('Times its watch page was opened'),
+  agent: z
+    .string()
+    .describe(
+      "The client of the day's first request, from its User-Agent (e.g. Mozilla, openai-mcp)",
+    ),
+});
+
 export const AdminAccount = z.object({
   id: z.string().describe('The WorkOS user id'),
   email: z.string(),
@@ -180,6 +204,11 @@ export const AdminAccount = z.object({
     ),
   files: z.array(AdminFile).describe('Media and finished exports still kept, soonest to go first'),
   next_expiry_at: nullableTime.describe('When the first of files goes; null when none'),
+  downloads: z
+    .array(AdminDownload)
+    .describe(
+      'What left through signed links, one entry per file and UTC day, newest first; kept 400 days, after the file itself is gone. Recorded from 2026-11-23',
+    ),
   email_prefs: z.object({
     expiry_emails: z.boolean().describe('False when the account turned file reminders off'),
     unsubscribed: z.boolean().describe('Unsubscribed from account email'),
@@ -217,11 +246,13 @@ export const adminSchemas = z.registry<{ id: string }>();
 adminSchemas.add(AdminError, { id: 'Error' });
 adminSchemas.add(AdminMe, { id: 'Me' });
 adminSchemas.add(AdminFile, { id: 'File' });
+adminSchemas.add(AdminDownload, { id: 'Download' });
 adminSchemas.add(AdminAccount, { id: 'Account' });
 adminSchemas.add(AdminAccountList, { id: 'AccountList' });
 
 export type AdminMe = z.infer<typeof AdminMe>;
 export type AdminFile = z.infer<typeof AdminFile>;
+export type AdminDownload = z.infer<typeof AdminDownload>;
 export type AdminAccount = z.infer<typeof AdminAccount>;
 
 /** The named schemas as OpenAPI 3.1 components, each referring to the others by `$ref`. */

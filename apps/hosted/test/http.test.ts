@@ -8,6 +8,7 @@ import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { Runtime } from '@cuttingfloor/server';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { readDownloads, recordDownload } from '../src/downloads.ts';
 import { createHttpServer, parseApiKeys } from '../src/http.ts';
 import { JwtTokenVerifier } from '../src/oauth.ts';
 
@@ -163,6 +164,42 @@ describe('HTTP face', () => {
     expect(file.headers.get('access-control-allow-origin')).toBe('*');
     expect(await file.text()).toBe('not really a video');
     expect((await fetch(page.replace(/sig=[^&]+/, 'sig=AAAA'))).status).toBe(403);
+  });
+
+  it('records what leaves through a signed link: once per file and day, saves, plays and pages apart', async () => {
+    const base = await listen(undefined, undefined, {
+      onDownload: (seen) => void recordDownload(runtime.ws, seen),
+    });
+    const id = 'j_dddddddddddddddddddddddddd';
+    const dir = runtime.ws.ownerDir('carol', 'outputs', id);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'short.mp4'), 'a finished short');
+    const signed = await runtime.signOutput('carol', id, 'short.mp4');
+    const file = `${base}${new URL(signed.url).pathname}${new URL(signed.url).search}`;
+    const page = `${base}${new URL(signed.pageUrl).pathname}${new URL(signed.pageUrl).search}`;
+    const ua = { 'user-agent': 'Mozilla/5.0 (Macintosh)' };
+    expect((await fetch(page, { headers: ua })).status).toBe(200);
+    // The page's player: its first request counts as a play, its later ranges don't.
+    await fetch(file, { headers: { ...ua, 'sec-fetch-dest': 'video', range: 'bytes=0-' } });
+    await fetch(file, { headers: { ...ua, 'sec-fetch-dest': 'video', range: 'bytes=4-' } });
+    // Saved twice, once by an agent's client; a HEAD and a forged link count for nothing.
+    await fetch(file, { headers: ua });
+    await fetch(file, { headers: { 'user-agent': 'openai-mcp/1.0' } });
+    await fetch(file, { method: 'HEAD' });
+    await fetch(file.replace(/sig=[^&]+/, 'sig=AAAA'));
+    await vi.waitFor(async () => {
+      const days = await readDownloads(runtime.ws, 'carol');
+      expect(days).toHaveLength(1);
+      expect(days[0]).toMatchObject({
+        file_id: id,
+        name: 'short.mp4',
+        day: new Date().toISOString().slice(0, 10),
+        downloads: 2,
+        plays: 1,
+        page_views: 1,
+        agent: 'Mozilla',
+      });
+    }, 10_000);
   });
 
   it('hands out working watch and download links when a job is read after its links expired', async () => {

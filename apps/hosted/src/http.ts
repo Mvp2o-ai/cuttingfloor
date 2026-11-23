@@ -34,6 +34,7 @@ import {
   requireBearerAuth,
 } from '@modelcontextprotocol/server';
 import { addressPage, wantsPage } from './address-page.ts';
+import type { DownloadSeen } from './downloads.ts';
 import type { JwtTokenVerifier } from './oauth.ts';
 import { RestApi } from './rest.ts';
 import { aiCatalog, CARD_TYPE, sendDiscovery, serverCard } from './server-card.ts';
@@ -81,6 +82,12 @@ export interface HttpOptions {
    * to sign in). The steps between them and a signed-in call happen at the authorization server.
    */
   onSignInStep?: (step: SignInStep, userAgent: string) => void;
+  /**
+   * Told of each GET of a signed output that checked out: the owner key and file id from its
+   * path, the name, and how (`download` saves it, `play` plays or shows it, `page` opened its
+   * watch page), with the User-Agent and any Range header.
+   */
+  onDownload?: (seen: DownloadSeen) => void;
   /** The token OpenAI's plugin portal asks this host to serve, to prove it owns the domain. */
   openaiChallenge?: string;
 }
@@ -384,6 +391,17 @@ export function createHttpServer(options: HttpOptions): Server {
           return;
         }
         const name = decodeURIComponent(url.pathname.split('/').pop() ?? '');
+        if (req.method === 'GET') {
+          const inline =
+            url.searchParams.has('inline') ||
+            /^(?:video|audio|image)$/.test(String(req.headers['sec-fetch-dest'] ?? ''));
+          options.onDownload?.({
+            ...signedFile(url.pathname, name),
+            how: inline ? 'play' : 'download',
+            userAgent: req.headers['user-agent'] ?? '',
+            range: req.headers.range,
+          });
+        }
         // Files in a bucket are fetched from it: the link is checked here, then answered with
         // a short-lived link to the file itself.
         if (target.blob && runtime.ws.blobs.remote) {
@@ -412,6 +430,12 @@ export function createHttpServer(options: HttpOptions): Server {
           return;
         }
         const name = decodeURIComponent(filePath.split('/').pop() ?? '');
+        if (req.method === 'GET')
+          options.onDownload?.({
+            ...signedFile(filePath, name),
+            how: 'page',
+            userAgent: req.headers['user-agent'] ?? '',
+          });
         // The page plays the file from where it is served: this server, or the bucket its link
         // redirects to, which the page must then be allowed to load from.
         const bucket = target.blob && runtime.ws.blobs.remote ? runtime.bucketOrigin : undefined;
@@ -797,6 +821,15 @@ async function sendBlob(
   const left = Math.floor((link.expires - Date.now()) / 1000);
   const maxAge = Math.max(0, Math.min(REDIRECT_MAX_AGE_S, left));
   res.writeHead(302, { ...shared, location, 'cache-control': `private, max-age=${maxAge}` }).end();
+}
+
+/** The owner key and file id of a signed /outputs/{owner}/{id}/{name} path already checked. */
+function signedFile(
+  pathname: string,
+  name: string,
+): Pick<DownloadSeen, 'owner' | 'file_id' | 'name'> {
+  const [, , owner = '', file_id = ''] = pathname.split('/');
+  return { owner, file_id, name };
 }
 
 /** The request's URL as the client addressed it, for web-standard handlers. */

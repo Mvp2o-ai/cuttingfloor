@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "cuttingfloor admin API",
-    "version": "1.5.0",
+    "version": "1.6.0",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -271,6 +271,59 @@
           }
         },
         "required": ["kind", "id", "name", "expires_at", "download_url"]
+      },
+      "Download": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "The signed link's id: an export job_id (j_…), kept frames (f_…) or a media_id (m_…)"
+          },
+          "name": {
+            "type": "string"
+          },
+          "day": {
+            "type": "string",
+            "description": "The UTC day, yyyy-mm-dd"
+          },
+          "first_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC"
+          },
+          "last_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC"
+          },
+          "downloads": {
+            "type": "number",
+            "description": "Fetches that saved the file (its link, the watch page's Download); a fetch in ranges counts once"
+          },
+          "plays": {
+            "type": "number",
+            "description": "Fetches that played or showed it (a player, an inline fetch)"
+          },
+          "page_views": {
+            "type": "number",
+            "description": "Times its watch page was opened"
+          },
+          "agent": {
+            "type": "string",
+            "description": "The client of the day's first request, from its User-Agent (e.g. Mozilla, openai-mcp)"
+          }
+        },
+        "required": [
+          "file_id",
+          "name",
+          "day",
+          "first_at",
+          "last_at",
+          "downloads",
+          "plays",
+          "page_views",
+          "agent"
+        ]
       },
       "Account": {
         "type": "object",
@@ -693,6 +746,13 @@
             ],
             "description": "When the first of files goes; null when none"
           },
+          "downloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Download"
+            },
+            "description": "What left through signed links, one entry per file and UTC day, newest first; kept 400 days, after the file itself is gone. Recorded from 2026-11-23"
+          },
           "email_prefs": {
             "type": "object",
             "properties": {
@@ -745,6 +805,7 @@
           "apps",
           "files",
           "next_expiry_at",
+          "downloads",
           "email_prefs"
         ]
       },

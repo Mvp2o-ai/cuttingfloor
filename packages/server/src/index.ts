@@ -20,6 +20,8 @@ export { outputMime } from './mime.ts';
 export { HEALTH_URI } from './resources.ts';
 export {
   configFromEnv,
+  DOWNLOADS,
+  type DownloadDay,
   FUNNEL_DAYS,
   Runtime,
   type RuntimeConfig,

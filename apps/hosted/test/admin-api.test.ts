@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { type AccessCheck, linkPath } from '../src/access.ts';
 import { ADMIN_KEYS, AdminApi, adminOpenApi } from '../src/admin-api.ts';
 import { AppsSeen } from '../src/apps-seen.ts';
+import { recordDownload } from '../src/downloads.ts';
 import { createHttpServer } from '../src/http.ts';
 import { ScriptKeys } from '../src/keys.ts';
 import { Ledger } from '../src/ledger.ts';
@@ -208,6 +209,13 @@ beforeAll(async () => {
     owner: ACTIVE,
     message: 'Wanted rounded caption boxes; could not do them.',
   });
+  await recordDownload(runtime.ws, {
+    owner: ACTIVE,
+    file_id: 'j_1',
+    name: 'short.mp4',
+    how: 'download',
+    userAgent: 'openai-mcp/1.0',
+  });
   const calls = runtime.ws.ownerDir(ACTIVE, 'calls');
   await mkdir(calls, { recursive: true });
   await writeFile(
@@ -369,6 +377,7 @@ describe('admin API', () => {
       credits: null,
       files: [],
       next_expiry_at: null,
+      downloads: [],
       email_prefs: { expiry_emails: true, unsubscribed: false, suppressed: null },
     });
     expect(active).toMatchObject({
@@ -439,6 +448,16 @@ describe('admin API', () => {
     expect(files.map((f) => f.kind)).toEqual(['export', 'media']);
     expect(files.every((f) => f.download_url === null)).toBe(true);
     expect(active?.next_expiry_at).toBe(files[0]?.expires_at);
+    expect(active?.downloads).toMatchObject([
+      {
+        file_id: 'j_1',
+        name: 'short.mp4',
+        downloads: 1,
+        plays: 0,
+        page_views: 0,
+        agent: 'openai-mcp',
+      },
+    ]);
 
     const rest = (await (
       await api(`/accounts?limit=2&cursor=${page.next_cursor}`, adminKey)

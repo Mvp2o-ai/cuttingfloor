@@ -5,6 +5,7 @@ import { configFromEnv, Runtime } from '@cuttingfloor/server';
 import { AccessCheck } from './access.ts';
 import { ADMIN_KEYS, AdminApi } from './admin-api.ts';
 import { AppsSeen } from './apps-seen.ts';
+import { recordDownload } from './downloads.ts';
 import { ResendProvider } from './email.ts';
 import { recordSignInStep } from './funnel.ts';
 import { createHttpServer, parseApiKeys } from './http.ts';
@@ -270,6 +271,14 @@ const server = createHttpServer({
           (await adminApi?.route(req, res, url)) ||
           (await sequence?.route(req, res, url)) ||
           lifecycle.route(req, res, url),
+      }
+    : {}),
+  ...(config.mode === 'hosted'
+    ? {
+        onDownload: (seen) =>
+          void recordDownload(runtime.ws, seen).catch((error: Error) =>
+            process.stderr.write(`downloads: ${error.message}\n`),
+          ),
       }
     : {}),
   ...(process.env.CUTTINGFLOOR_OPENAI_CHALLENGE

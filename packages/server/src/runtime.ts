@@ -55,6 +55,35 @@ export const FUNNEL_DAYS = defineCollection<unknown>({
   db: { ttlMs: FUNNEL_TTL_MS + 24 * 3_600_000 },
 });
 
+/**
+ * Hosted: an owner's downloads, one record per file and UTC day (`{file_id}.{yyyy-mm-dd}`;
+ * apps/hosted downloads.ts writes them). Kept as long as sign-in steps.
+ */
+export const DOWNLOADS = defineCollection<DownloadDay>({
+  name: 'downloads',
+  scope: 'owner',
+  fs: { dir: 'downloads' },
+  db: { ttlMs: FUNNEL_TTL_MS },
+});
+
+export interface DownloadDay {
+  /** The signed link's id: an export job (`j_`), kept frames (`f_`) or a media item (`m_`). */
+  file_id: string;
+  name: string;
+  /** The UTC day, yyyy-mm-dd. */
+  day: string;
+  first_at: string;
+  last_at: string;
+  /** Fetches to save the file (the raw link, the page's Download), not counting a player's later ranges. */
+  downloads: number;
+  /** Fetches to play or show it (the watch page's player, an inline fetch). */
+  plays: number;
+  /** Watch pages opened. */
+  page_views: number;
+  /** The client of the day's first request, from its User-Agent (`Mozilla`, `openai-mcp`). */
+  agent: string;
+}
+
 export interface RuntimeConfig {
   /** Data root: timelines, media, jobs, outputs and caches, all with TTLs. */
   dataDir: string;
@@ -521,6 +550,7 @@ export class Runtime {
       await records.collection(LEGACY_USAGE, { owner }).expire(2 * 24 * 3_600_000);
       await records.expireParents(METER, { owner }, METER_TTL_MS);
       await records.log(CALLS, { owner }).expire(CALLS_TTL_MS);
+      await records.collection(DOWNLOADS, { owner }).expire(FUNNEL_TTL_MS);
     }
     await this.#sweepCache();
     // Hosted sign-in steps (apps/hosted funnel.ts), one folder per day.
