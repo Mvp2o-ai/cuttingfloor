@@ -121,7 +121,7 @@ export const FREE_CREDITS = 3;
  * When the download gate began: exports finished before it keep clean links, and accounts made
  * before it started with the free credits of their time.
  */
-export const GATE_FROM = '2026-11-23T14:00:00Z';
+export const GATE_FROM = '2026-11-23T10:00:00Z';
 
 /** Accounts made before this kept the free credits they signed up with. */
 export const GRANDFATHERED = { before: '2026-11-08T00:00:00Z', credits: 100 };
