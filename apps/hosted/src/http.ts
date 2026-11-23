@@ -68,6 +68,8 @@ export interface HttpOptions {
   limits?: (owner: string, options?: { buy?: boolean }) => Promise<OwnerLimits>;
   /** Hosted: a signed-in owner's plan and credits, for account.get (not maintenance keys). */
   account?: (owner: string) => Promise<AccountGetResult>;
+  /** Hosted: whether an account was active before activation existed, so it needs no claim. */
+  activeBefore?: (owner: string) => Promise<boolean>;
   /** Told of each signed-in owner's MCP request (first-call records). */
   onCall?: (owner: string) => void | Promise<void>;
   /** Told the app a signed-in owner's request came from, by its MCP clientInfo name. */
@@ -207,10 +209,16 @@ export function createHttpServer(options: HttpOptions): Server {
     // The welcome a new account's connection gets: on the filesystem createServer reads the
     // claim in place; a database is read here, before the server is built. If it can't be read
     // the connection goes without the welcome, and the call itself says what is wrong.
-    const claimed =
+    // An account active before activation existed is never asked to activate.
+    let claimed =
       account && runtime.config.records
         ? await creditsClaimed(runtime, owner).catch(() => true)
         : undefined;
+    const activeBefore =
+      account && claimed !== true && options.activeBefore
+        ? await options.activeBefore(owner)
+        : false;
+    if (activeBefore) claimed = true;
     return createServer({
       runtime,
       ...(claimed !== undefined ? { claimed } : {}),
@@ -224,7 +232,7 @@ export function createHttpServer(options: HttpOptions): Server {
       ...(limits ? { limits: () => limits(owner, { buy: !chatgpt(requestHeaders) }) } : {}),
       ...(account ? { account: () => account(owner) } : {}),
       // Apps call /v1 for their users: no assistant there can claim.
-      ...(channel === 'rest' ? { claimGate: false } : {}),
+      ...(channel === 'rest' || activeBefore ? { claimGate: false } : {}),
     });
   };
   const handler = createMcpHandler(

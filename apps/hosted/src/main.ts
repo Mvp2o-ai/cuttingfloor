@@ -276,6 +276,7 @@ const server = createHttpServer({
           apps.seen(owner, app);
         },
         account: (owner: string) => lifecycle.account(owner),
+        activeBefore: (owner: string) => lifecycle.activeBefore(owner),
         route: async (req, res, url) =>
           (await adminApi?.route(req, res, url)) ||
           (await sequence?.route(req, res, url)) ||

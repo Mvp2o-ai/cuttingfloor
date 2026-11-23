@@ -111,6 +111,12 @@ export interface LifecycleOptions {
   standby?: boolean;
 }
 
+/**
+ * When accounts began activating with credits.claim (the release that refuses an unclaimed
+ * account's calls): an account that ran a tool before then was already active, claim or not.
+ */
+export const ACTIVATION_FROM = Date.parse('2026-11-23T01:27:36Z');
+
 /** How long a partner's user id stays tied to its account after its last key. */
 const PARTNER_LINK_TTL_MS = 400 * 24 * 3_600_000;
 /** The plan reason on an account a partner made, so we never send it our own welcome. */
@@ -126,6 +132,8 @@ export class Lifecycle {
   #seen = new Set<string>();
   #apps = new Set<string>();
   #tools = new Set<string>();
+  /** Whether each owner was active before activation; the answer never changes. */
+  #activeBefore = new Map<string, boolean>();
   /** The UTC day each owner's `last_used_at` was last written by this server. */
   #usedOn = new Map<string, string>();
   #timer: NodeJS.Timeout | undefined;
@@ -509,6 +517,27 @@ export class Lifecycle {
       list_metadata?: { after?: string | null };
     };
     return { data: list.data ?? [], after: list.list_metadata?.after ?? null };
+  }
+
+  /**
+   * Whether the account ran a tool before activation existed (`first_tool_at` before
+   * ACTIVATION_FROM), so it is active without a claim. Read once per account: a first tool use
+   * still to come is after that date. True when WorkOS can't be read, so the call runs.
+   */
+  async activeBefore(owner: string): Promise<boolean> {
+    const known = this.#activeBefore.get(owner);
+    if (known !== undefined) return known;
+    if (!isUser(owner)) return false;
+    try {
+      const user = await this.#workosUser(owner);
+      const first = Date.parse(user?.metadata?.first_tool_at ?? '');
+      const active = first < ACTIVATION_FROM;
+      this.#activeBefore.set(owner, active);
+      return active;
+    } catch (error) {
+      process.stderr.write(`lifecycle: ${owner}: ${(error as Error).message}\n`);
+      return true;
+    }
   }
 
   /** One WorkOS user, or undefined when there is none with this id. */
