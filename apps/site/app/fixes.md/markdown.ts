@@ -1,5 +1,6 @@
 import { AGENTS } from '../../content/agents.ts';
 import { FIXES, FIXES_UPDATED, fix, fixLead, fixPath } from '../../content/fixes.ts';
+import { toolCallsMarkdown } from '../../content/tool-calls.ts';
 import { abs, doc, list, pageLink } from '../lib/markdown.ts';
 
 // /fixes as Markdown, the index: each question linked to its own page and twin, with the answer's
@@ -29,6 +30,7 @@ export function fixMarkdown(id: string): string | undefined {
       `## What to type\n\n\`\`\`\n${f.prompt}\n\`\`\``,
       f.see ? `See it: [${f.see.label}](${abs(f.see.href)})` : '',
       f.watch ? `Watch it done: [${f.watch.label}](${abs(f.watch.href)})` : '',
+      f.tools ? toolCallsMarkdown(f.tools, 'en') : '',
       `## Do it from your agent\n\n${list(AGENTS.map((a) => pageLink(a.name, `/agents/${a.slug}`)))}\n- ${pageLink('Connect', '/connect')}`,
       `## More fixes\n\n${list(related.map((r) => pageLink(r.problem, fixPath(r))))}\n- ${pageLink('Every fix', '/fixes')}`,
     ]

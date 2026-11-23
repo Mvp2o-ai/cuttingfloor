@@ -2,7 +2,11 @@
 // 2026-11-06), each with what a connected agent does about it and a prompt to paste. Every claim
 // holds for the server as it is: a logo is blurred or covered, never erased, and lip-sync runs on
 // the user's own sync. labs key. Each fix has its own page, /fixes/<id>, titled with the question
-// (answer engines cite the page whose title is the exact question); /fixes is the index.
+// (answer engines cite the page whose title is the exact question); /fixes is the index. Pages
+// about AI clips name several generators in the question and every one in the answer, since
+// people search by the generator they use.
+
+import { GENERATORS_LINE, type ToolCall } from './tool-calls.ts';
 
 export type Fix = {
   /** The page, /fixes/<id>, and the anchor on /fixes that old links point at. */
@@ -18,9 +22,36 @@ export type Fix = {
   watch?: { label: string; href: string };
   /** Three or four other fixes, by id, linked at the foot of the page. */
   related: string[];
+  /** The MCP tool calls the job uses, in order. */
+  tools?: ToolCall[];
 };
 
-export const FIXES_UPDATED = '2026-11-18';
+export const FIXES_UPDATED = '2026-11-23';
+
+const AI_GUIDE = {
+  label: 'How to turn AI video clips into a film',
+  href: '/guides/turn-ai-video-clips-into-a-film',
+};
+const SHORTS_GUIDE = {
+  label: 'How to turn a long video into Shorts with AI',
+  href: '/guides/turn-a-long-video-into-shorts',
+};
+const GAMING_DEMO = {
+  label: 'Turn a gaming stream into Shorts',
+  href: '/demos/turn-a-gaming-stream-into-shorts',
+};
+const BRING: ToolCall = {
+  tool: 'media.upload',
+  does: 'brings in files from your device (media.import takes a link instead)',
+};
+const CHECK: ToolCall = {
+  tool: 'render.frames',
+  does: 'renders frames of the edit so the agent can look before exporting',
+};
+const EXPORT: ToolCall = {
+  tool: 'export.video',
+  does: 'renders the finished MP4 and gives you a download link and a page to watch it',
+};
 
 export const FIXES: Fix[] = [
   {
@@ -195,6 +226,457 @@ export const FIXES: Fix[] = [
       'Give it the script. The agent makes the voice with a time for every word, lays it in, and can caption it and time the cuts to it.',
     prompt: 'Add a calm voiceover reading this script, and caption it.',
     related: ['add-subtitles', 'add-music', 'lip-sync'],
+  },
+  {
+    id: 'edit-ai-video-clips-into-one-video',
+    problem: 'How do I edit Kling, Veo, Sora or Runway clips into one video?',
+    answer: `Give your agent the clips and say the order. Clips from ${GENERATORS_LINE} all work, mixed together. It cuts each clip to its best part, trims the warped frames at the ends, blends the joins, evens out colour and sound, and exports one MP4. Your shots are cut, never regenerated.`,
+    prompt:
+      'Here are my AI clips. Put them in this order, cut the weird frames at the start and end of each, blend the joins, make the colour match, and export one 1080p MP4.',
+    see: AI_GUIDE,
+    related: [
+      'make-a-short-film-from-ai-clips',
+      'add-transitions-between-short-ai-clips',
+      'match-colour-between-ai-clips',
+      'cut-the-warped-frames-at-the-end-of-an-ai-clip',
+    ],
+    tools: [
+      BRING,
+      { tool: 'media.analyze (look)', does: 'answers questions about sampled frames of each clip' },
+      { tool: 'timeline.create', does: 'sets the finished size and frame rate' },
+      { tool: 'edit.batch', does: 'adds every clip in order in one call (clip.add, clip.trim)' },
+      { tool: 'transition.add', does: 'blends each join' },
+      { tool: 'filter.add', does: 'corrects the colour of the clips that are off' },
+      { tool: 'audio.set_gain', does: 'evens out clips that came with sound' },
+      CHECK,
+      {
+        tool: 'qa.check',
+        does: 'measures the render: gaps, missing media, loudness and peak, black or silent stretches',
+      },
+      EXPORT,
+    ],
+  },
+  {
+    id: 'make-a-short-film-from-ai-clips',
+    problem: 'How do I make a short film from Kling, Veo or Sora clips?',
+    answer: `Tell your agent the story and give it the clips, from ${GENERATORS_LINE}. It puts the shots in story order, cuts each on its strongest moment, adds titles and credits, a voiceover if you want one, sound effects and your music, then checks the film and exports it.`,
+    prompt:
+      'Make a short film from these clips. The story: a lost robot finds its way home. Put the shots in story order, add a title at the start and credits at the end, add sound effects and my music, and export it in 16:9.',
+    see: AI_GUIDE,
+    related: [
+      'edit-ai-video-clips-into-one-video',
+      'add-sound-effects-to-ai-video',
+      'make-several-versions-of-an-edit',
+    ],
+    tools: [
+      BRING,
+      {
+        tool: 'media.analyze (look)',
+        does: 'describes what happens in each clip so it can go in story order',
+      },
+      { tool: 'timeline.create', does: 'sets 16:9, the size and frame rate' },
+      { tool: 'clip.add', does: 'lays the shots down in story order' },
+      { tool: 'clip.trim', does: 'cuts each shot to its strongest moment' },
+      { tool: 'transition.add', does: 'blends scene changes' },
+      { tool: 'title.add', does: 'the title card and the credits' },
+      { tool: 'create.voiceover', does: 'a narrator from your script, with a time for each word' },
+      {
+        tool: 'media.import',
+        does: 'brings in a sound effect from the built-in pack by its link',
+      },
+      { tool: 'audio.fade', does: 'fades music in and out' },
+      { tool: 'audio.set_master', does: 'sets the final loudness, with a limiter' },
+      CHECK,
+      EXPORT,
+    ],
+  },
+  {
+    id: 'edit-ai-clips-and-capcut-footage-together',
+    problem: 'How do I edit AI clips and CapCut exports together?',
+    answer: `Export what you made in CapCut as an MP4, then give it to your agent with your clips from ${GENERATORS_LINE}. They go on one timeline at one size and frame rate, so you can cut between them, blend the joins and export one video. CapCut project files themselves can’t be opened.`,
+    prompt:
+      'Here is my CapCut export and three AI clips. Start with the CapCut part, then the clips in this order, blend each join, and export it at 1080p.',
+    see: AI_GUIDE,
+    related: [
+      'edit-ai-video-clips-into-one-video',
+      'mix-different-sizes-and-frame-rates',
+      'add-transitions-between-short-ai-clips',
+    ],
+    tools: [
+      BRING,
+      { tool: 'media.get', does: 'reads each file’s size, frame rate, length and sound' },
+      { tool: 'timeline.create', does: 'sets one size and frame rate for everything' },
+      { tool: 'clip.add', does: 'puts the CapCut part and the clips in order' },
+      { tool: 'clip.set_transform', does: 'crops or zooms a clip that doesn’t fill the frame' },
+      { tool: 'transition.add', does: 'blends the joins' },
+      EXPORT,
+    ],
+  },
+  {
+    id: 'add-transitions-between-short-ai-clips',
+    problem: 'How do I add transitions between short Kling, Veo or Sora clips?',
+    answer:
+      'A blend needs footage past the cut on both sides, and a 5 to 10 second AI clip has little to spare once it is trimmed. Ask for transitions; when one is too long, the server says how many frames each side has and the longest that fits, and your agent uses that. Short dissolves and wipes work best.',
+    prompt:
+      'Add a short dissolve between every clip. If a dissolve doesn’t fit, use the longest one that does.',
+    see: AI_GUIDE,
+    related: [
+      'edit-ai-video-clips-into-one-video',
+      'make-a-short-ai-clip-longer',
+      'cut-the-warped-frames-at-the-end-of-an-ai-clip',
+    ],
+    tools: [
+      {
+        tool: 'transition.add',
+        does: 'adds a dissolve, wipe, push or zoom at a cut; a refusal gives the frames to spare',
+      },
+      { tool: 'transition.set', does: 'changes a transition’s kind or length' },
+      { tool: 'clip.trim', does: 'leaves more footage past a cut when a blend needs it' },
+      {
+        tool: 'export.video (mp4_h264_fast)',
+        does: 'a quick render of the joins to watch them move',
+      },
+    ],
+  },
+  {
+    id: 'match-colour-between-ai-clips',
+    problem: 'How do I make Kling, Veo and Sora clips match in colour?',
+    answer:
+      'Clips from different generations, or different generators, rarely match. Your agent measures each clip’s colour, then adjusts brightness, temperature, saturation and curves on the ones that are off, or puts one look (a LUT) over the whole film, and compares frames side by side before exporting.',
+    prompt:
+      'Make all my clips match in colour, warm and a little dark like a film, and show me a frame from each before you export.',
+    see: AI_GUIDE,
+    related: [
+      'colour-correct',
+      'edit-ai-video-clips-into-one-video',
+      'make-a-short-film-from-ai-clips',
+    ],
+    tools: [
+      {
+        tool: 'media.analyze (colour)',
+        does: 'measures each clip’s colour, channel by channel',
+      },
+      {
+        tool: 'filter.add',
+        does: 'temperature, exposure, saturation or curves on a clip, or a LUT on the whole timeline',
+      },
+      { tool: 'filter.set', does: 'adjusts a correction after looking' },
+      CHECK,
+    ],
+  },
+  {
+    id: 'cut-the-warped-frames-at-the-end-of-an-ai-clip',
+    problem: 'How do I cut the warped frames at the start or end of an AI clip?',
+    answer:
+      'AI clips often warp, morph or freeze in their first or last moments. Your agent looks at frames from the ends of each clip, finds where the picture goes wrong, and trims each clip to the clean part. Say how strict to be, and it shows you the frames it cut at.',
+    prompt:
+      'Check the start and end of every clip for warping or morphing and trim each one to the clean part.',
+    see: AI_GUIDE,
+    related: [
+      'trim-a-video',
+      'add-transitions-between-short-ai-clips',
+      'edit-ai-video-clips-into-one-video',
+    ],
+    tools: [
+      CHECK,
+      {
+        tool: 'judge.ask',
+        does: 'answers a typed question about frames, like whether a face warps',
+      },
+      {
+        tool: 'media.analyze (picture)',
+        does: 'every frame’s brightness and change, which shows sudden jumps',
+      },
+      { tool: 'clip.trim', does: 'cuts each clip to the clean part' },
+    ],
+  },
+  {
+    id: 'make-a-short-ai-clip-longer',
+    problem: 'How do I make a 5-second Kling or Veo clip longer?',
+    answer:
+      'No model makes new footage here. Your agent can slow the clip down, with in-between frames built from its own movement so it stays smooth, hold a frame at the end, or play it forward then backward. For a longer shot from the generator itself, extend it there and bring in the new clip.',
+    prompt:
+      'Make this 5-second clip last 8 seconds: slow it down smoothly and hold the last frame.',
+    see: AI_GUIDE,
+    related: [
+      'speed-up-or-slow-down',
+      'add-transitions-between-short-ai-clips',
+      'make-a-short-film-from-ai-clips',
+    ],
+    tools: [
+      {
+        tool: 'clip.set_speed',
+        does: 'slows the clip; interpolate motion builds in-between frames; reverse plays it backward',
+      },
+      { tool: 'clip.freeze', does: 'holds a frame for as long as you say' },
+      { tool: 'clip.add', does: 'adds the clip again, reversed, for a forward-and-back loop' },
+    ],
+  },
+  {
+    id: 'mix-different-sizes-and-frame-rates',
+    problem: 'How do I edit AI clips with different sizes and frame rates together?',
+    answer:
+      'Pick the size and frame rate of the finished video, for example 1080p at 24 frames a second, wide or vertical. Every clip is fitted into that frame and played at that rate, so 720p, 1080p, square and vertical clips sit on one timeline. Your agent can zoom or crop a clip to fill the frame instead of showing bars.',
+    prompt:
+      'Put all these clips in one 1080p video at 24 fps, and zoom any clip that doesn’t fill the frame so there are no black bars.',
+    see: AI_GUIDE,
+    related: [
+      'edit-ai-clips-and-capcut-footage-together',
+      'make-a-video-vertical',
+      'edit-ai-video-clips-into-one-video',
+    ],
+    tools: [
+      { tool: 'media.get', does: 'reads each clip’s size and frame rate' },
+      { tool: 'timeline.create', does: 'sets the finished size and frame rate' },
+      { tool: 'clip.add', does: 'fits each clip into the frame' },
+      { tool: 'clip.set_transform', does: 'zooms or moves a clip to fill the frame' },
+      {
+        tool: 'clip.set_speed (interpolate)',
+        does: 'smooths a clip with fewer frames a second than the video',
+      },
+    ],
+  },
+  {
+    id: 'add-sound-effects-to-ai-video',
+    problem: 'How do I add sound effects to Kling, Veo or Sora video?',
+    answer:
+      'Most AI clips come silent or with rough sound. Your agent finds the moments that need a sound (a cut, a hit, a reveal), places sound effects there on their own track and sets their levels. A built-in pack covers whooshes, hits, risers, booms, explosions and crowds; for footsteps or ambience, add your own sound files.',
+    prompt:
+      'Add sound effects: a whoosh on every cut, a boom when the title appears, and a riser before the last shot. Keep them under the music.',
+    see: AI_GUIDE,
+    related: ['add-music', 'even-out-the-sound-of-ai-clips', 'make-a-short-film-from-ai-clips'],
+    tools: [
+      {
+        tool: 'media.analyze (scenes, beats)',
+        does: 'finds the cuts and beats where sounds land',
+      },
+      {
+        tool: 'media.import',
+        does: 'brings in a sound from the built-in pack (video://catalog/sound_effects) or your file',
+      },
+      { tool: 'track.add', does: 'an audio track for the effects' },
+      { tool: 'clip.add', does: 'places each sound at its moment' },
+      { tool: 'audio.set_gain', does: 'sets each sound’s level' },
+    ],
+  },
+  {
+    id: 'even-out-the-sound-of-ai-clips',
+    problem: 'How do I even out the sound of Veo and Sora clips?',
+    answer:
+      'Clips that come with their own sound are often at different levels. Your agent measures the loudness of each clip, sets each one’s level so they match, crossfades the sound at the joins and sets the final loudness for where it’s going, with a limiter so nothing clips.',
+    prompt:
+      'The sound jumps between my clips. Make every clip the same loudness, crossfade the sound at each cut, and set it for YouTube.',
+    see: AI_GUIDE,
+    related: ['make-a-video-louder', 'add-sound-effects-to-ai-video', 'add-music'],
+    tools: [
+      { tool: 'media.analyze (loudness)', does: 'measures each clip’s loudness and peak' },
+      { tool: 'audio.set_gain', does: 'sets each clip’s level' },
+      { tool: 'transition.add (crossfade)', does: 'crossfades the sound at a cut' },
+      { tool: 'audio.set_master', does: 'the final loudness, with a limiter' },
+    ],
+  },
+  {
+    id: 'make-several-versions-of-an-edit',
+    problem: 'How do I make a few versions of the same edit?',
+    answer:
+      'Every change makes a new version of the timeline and the old ones stay, so you can ask for a tighter cut, a different ending or other music and keep both. Your agent exports each version, can say what changed between two, and can go back to any earlier one.',
+    prompt:
+      'Keep this cut. Make a second version that’s 20 seconds shorter with a different ending, and export both.',
+    see: AI_GUIDE,
+    related: ['make-a-short-film-from-ai-clips', 'trim-a-video', 'compress-a-video'],
+    tools: [
+      { tool: 'timeline.history', does: 'lists the versions so far' },
+      { tool: 'timeline.diff', does: 'says what changed between two versions' },
+      { tool: 'timeline.get', does: 'the whole edit as a document you can keep' },
+      { tool: 'timeline.load', does: 'brings a kept edit back later' },
+      EXPORT,
+    ],
+  },
+  {
+    id: 'turn-gaming-clips-into-shorts',
+    problem: 'How do I turn gaming clips into Shorts, TikToks and Reels?',
+    answer:
+      'Give your agent your clips (GTA, Fortnite, Call of Duty, Valorant, Minecraft or anything else) and say what to keep. It finds the plays worth showing, cuts each Short, reframes the wide gameplay to vertical, adds captions, sound effects and your music, and exports one MP4 per Short.',
+    prompt:
+      'Turn these gaming clips into three vertical Shorts of the best plays, with captions, a boom on each kill and an airhorn on the win.',
+    see: SHORTS_GUIDE,
+    watch: GAMING_DEMO,
+    related: [
+      'turn-a-long-gameplay-video-into-shorts',
+      'make-a-gaming-montage',
+      'add-a-song-to-gaming-clips',
+    ],
+    tools: [
+      BRING,
+      { tool: 'media.seek', does: 'finds a moment you describe in words, like a win screen' },
+      {
+        tool: 'media.analyze (transcript)',
+        does: 'what was said, with a time for every word',
+      },
+      { tool: 'timeline.create', does: 'a vertical 1080×1920 Short' },
+      { tool: 'clip.set_transform', does: 'reframes the wide gameplay to vertical' },
+      { tool: 'caption.add', does: 'captions that highlight each word' },
+      {
+        tool: 'media.import',
+        does: 'a boom or airhorn from the built-in sound effects',
+      },
+      EXPORT,
+    ],
+  },
+  {
+    id: 'turn-a-livestream-into-shorts',
+    problem: 'How do I turn a Twitch or YouTube livestream into Shorts?',
+    answer:
+      'Download the stream recording and send the file, or a direct link to it; a Twitch or YouTube page link won’t import. Your agent reads what was said, finds the moments you describe in the picture, and cuts them into vertical Shorts with captions, one MP4 each.',
+    prompt:
+      'Here is my stream recording. Find the five funniest moments and make each a vertical Short with captions.',
+    see: SHORTS_GUIDE,
+    watch: GAMING_DEMO,
+    related: [
+      'turn-gaming-clips-into-shorts',
+      'turn-a-long-gameplay-video-into-shorts',
+      'add-subtitles',
+    ],
+    tools: [
+      BRING,
+      { tool: 'media.analyze (transcript, speakers)', does: 'every word, and who said it' },
+      { tool: 'media.search', does: 'finds moments across all your files from a description' },
+      { tool: 'media.seek', does: 'finds a moment you describe in the picture' },
+      { tool: 'clip.add', does: 'takes each moment out of the stream' },
+      { tool: 'clip.set_transform', does: 'reframes to vertical' },
+      { tool: 'caption.add', does: 'captions from the transcript' },
+      EXPORT,
+    ],
+  },
+  {
+    id: 'turn-a-long-gameplay-video-into-shorts',
+    problem: 'How do I turn a long gameplay video with no talking into Shorts?',
+    answer:
+      'Gameplay without talking can’t be cut from a transcript, so your agent finds the action another way: moments you describe in words (“a win screen”, “a car chase”), loud spikes in the sound, and gunshots or explosions it can hear. It cuts each into a vertical Short and exports them.',
+    prompt:
+      'This is 20 minutes of gameplay with no commentary. Find the big fights and explosions and make three vertical Shorts.',
+    see: SHORTS_GUIDE,
+    watch: GAMING_DEMO,
+    related: [
+      'turn-gaming-clips-into-shorts',
+      'turn-a-livestream-into-shorts',
+      'make-a-gaming-montage',
+    ],
+    tools: [
+      { tool: 'media.seek', does: 'finds a moment you describe in the picture' },
+      {
+        tool: 'media.analyze (sounds)',
+        does: 'when gunshots, explosions and other named sounds can be heard',
+      },
+      { tool: 'media.analyze (loudness, scenes)', does: 'loud spikes and big picture changes' },
+      { tool: 'judge.ask', does: 'checks a candidate moment on its frames' },
+      { tool: 'clip.add', does: 'takes each moment out' },
+      { tool: 'clip.set_transform', does: 'reframes to vertical' },
+      EXPORT,
+    ],
+  },
+  {
+    id: 'add-a-song-to-gaming-clips',
+    problem: 'How do I add a song to my gaming clips?',
+    answer:
+      'Send the song with your clips. Your agent finds its beats, cuts the clips on them, lowers or mutes the game sound under the music, and fades the song out at the end. Songs you bring are yours to clear for where you post; cuttingfloor doesn’t make music.',
+    prompt:
+      'Put this song under my clips, cut on the beat, keep the game sound quiet underneath, and fade out at the end.',
+    watch: {
+      label: 'Edit a dance Short to the beat',
+      href: '/demos/edit-a-dance-short-to-the-beat',
+    },
+    related: ['add-music', 'make-a-gaming-montage', 'turn-gaming-clips-into-shorts'],
+    tools: [
+      BRING,
+      { tool: 'media.analyze (beats)', does: 'the tempo and the time of every beat' },
+      { tool: 'clip.add', does: 'places each clip to start on a beat' },
+      { tool: 'audio.set_gain', does: 'turns the game sound down under the song' },
+      { tool: 'audio.fade', does: 'fades the song out' },
+      EXPORT,
+    ],
+  },
+  {
+    id: 'make-a-gaming-montage',
+    problem: 'How do I make a gaming montage?',
+    answer:
+      'Give your agent your best clips and a song. It cuts the plays to the beat, adds speed ramps and slow motion on the big moments, freeze frames, zooms, sound effects like booms and airhorns, and text, then exports it wide for YouTube or vertical for Shorts.',
+    prompt:
+      'Make a montage of these clips to this song: cut on the beat, slow motion on every kill, a freeze frame and a boom on the last one.',
+    see: SHORTS_GUIDE,
+    watch: GAMING_DEMO,
+    related: [
+      'add-a-song-to-gaming-clips',
+      'turn-gaming-clips-into-shorts',
+      'speed-up-or-slow-down',
+    ],
+    tools: [
+      { tool: 'media.analyze (beats)', does: 'the beat times to cut on' },
+      { tool: 'clip.set_speed', does: 'speed ramps and slow motion' },
+      { tool: 'clip.freeze', does: 'a freeze frame on the big moment' },
+      { tool: 'clip.set_animation', does: 'shakes, pulses and zoom-ins' },
+      { tool: 'media.import', does: 'booms and airhorns from the built-in sound effects' },
+      { tool: 'title.add', does: 'text on screen' },
+      EXPORT,
+    ],
+  },
+  {
+    id: 'make-a-tribute-video',
+    problem: 'How do I make a tribute video?',
+    answer:
+      'Bring the photos, clips and a song. Your agent puts them in order, moves slowly across each photo, adds names, dates and a closing card, blends between them and fits it all to the music, then exports it for sharing or for a screen at an event.',
+    prompt:
+      'Make a tribute video from these photos and clips with this song. Slow moves on the photos, gentle dissolves, a title with the name and dates at the start, and a closing card.',
+    related: ['add-music', 'add-text', 'make-a-reel-from-your-best-takes'],
+    tools: [
+      BRING,
+      { tool: 'clip.add', does: 'puts photos and clips in order' },
+      { tool: 'clip.set_transform', does: 'a slow keyframed move across each photo' },
+      { tool: 'transition.add', does: 'dissolves between them' },
+      { tool: 'title.add', does: 'names and dates' },
+      { tool: 'create.motion', does: 'an animated closing card' },
+      { tool: 'media.analyze (beats)', does: 'times the changes to the music' },
+      { tool: 'audio.fade', does: 'fades the song in and out' },
+      EXPORT,
+    ],
+  },
+  {
+    id: 'make-a-reel-from-your-best-takes',
+    problem: 'How do I make a Reel from my best takes?',
+    answer:
+      'Film the same thing a few times and give your agent every take. It compares them, picks the best one for each part and says why, cuts them together vertical, adds captions and music, and exports for Instagram Reels, TikTok or Shorts. You can overrule any pick.',
+    prompt:
+      'Here are all my takes. Pick the best one for each part, tell me why, and cut a vertical Reel with captions.',
+    watch: { label: 'Pick your best take with AI', href: '/demos/pick-your-best-take-with-ai' },
+    related: ['make-a-video-vertical', 'add-subtitles', 'add-music'],
+    tools: [
+      BRING,
+      { tool: 'media.analyze (transcript)', does: 'what was said in each take, word by word' },
+      { tool: 'judge.ask', does: 'compares takes on their frames and scores them' },
+      { tool: 'timeline.create', does: 'a vertical 1080×1920 Reel' },
+      { tool: 'clip.add', does: 'cuts the chosen takes together' },
+      { tool: 'caption.add', does: 'captions that highlight each word' },
+      EXPORT,
+    ],
+  },
+  {
+    id: 'make-a-product-promo-with-voiceover-and-music',
+    problem: 'How do I make a product promo with a voiceover and music?',
+    answer:
+      'Send your product clips or photos, your music and the script. Your agent makes the voiceover from the script in an American or British English voice, or uses your own recording in any language, times the shots to the words, adds captions, lowers the music under the voice and ends on a card.',
+    prompt:
+      'Make a 30-second promo from these product shots with this music. Voiceover reading my script, captions, and end on my logo.',
+    watch: { label: 'Edit a product review Short', href: '/demos/edit-a-product-review-short' },
+    related: ['add-a-voiceover', 'add-music', 'add-subtitles'],
+    tools: [
+      { tool: 'create.voiceover', does: 'the voice from your script, with a time for every word' },
+      BRING,
+      { tool: 'clip.add', does: 'times each shot to the words' },
+      { tool: 'caption.add', does: 'captions from the voiceover’s word times' },
+      { tool: 'audio.set_gain', does: 'keyframes that lower the music under the voice' },
+      { tool: 'create.motion', does: 'an animated end card with your logo' },
+      EXPORT,
+    ],
   },
 ];
 

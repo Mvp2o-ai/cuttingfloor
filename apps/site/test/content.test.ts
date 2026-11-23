@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { DEMOS } from '../content/demos.ts';
 import { FIXES } from '../content/fixes.ts';
 import { GUIDES, guidePath } from '../content/guides.ts';
+import { toolName } from '../content/tool-calls.ts';
+import { TOOLS } from '../content/tools.ts';
 
 // The answers answer engines quote: the fix answers and the guide answers. Each must read like a
 // person wrote it (no filler words), be long enough to stand alone and short enough to quote, and
@@ -97,5 +99,23 @@ describe('links', () => {
       }
     }
     expect(new Set(FIXES.map((f) => f.id)).size).toBe(FIXES.length);
+  });
+});
+
+describe('tool calls', () => {
+  const pages = [
+    ...FIXES.map((f) => ({ where: `/fixes/${f.id}`, tools: f.tools ?? [] })),
+    ...GUIDES.map((g) => ({ where: guidePath(g), tools: g.tools ?? [] })),
+  ].filter((p) => p.tools.length);
+
+  it.each(pages)('$where names only tools the server lists', ({ tools }) => {
+    const names = new Set(TOOLS.map((t) => t.name));
+    expect(tools.map(toolName).filter((n) => !names.has(n))).toEqual([]);
+  });
+
+  it('catches a tool that does not exist', () => {
+    expect(TOOLS.some((t) => t.name === toolName({ tool: 'clip.teleport (x)', does: '' }))).toBe(
+      false,
+    );
   });
 });

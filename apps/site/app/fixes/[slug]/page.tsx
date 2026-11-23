@@ -4,6 +4,7 @@ import { FIXES, FIXES_UPDATED, fix, fixLead, fixPath } from '../../../content/fi
 import { AgentBlock } from '../../agents/block.tsx';
 import { LiveCard } from '../../live-card.tsx';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../../shell.tsx';
+import { ToolCalls } from '../../tool-calls.tsx';
 import { Copy } from '../../walkthroughs/copy.tsx';
 
 // One page per searched question, /fixes/<id>: the question as the H1 and the answer right under
@@ -36,6 +37,8 @@ export default async function FixPage({ params }: Props) {
   if (!f) notFound();
   const path = fixPath(f);
   const related = f.related.flatMap((id) => FIXES.filter((r) => r.id === id));
+  // Sections are numbered in order; the tool calls section shows only when the fix lists them.
+  const at = (k: number) => String(k + (f.tools ? 1 : 0)).padStart(2, '0');
   return (
     <>
       {/* One question, answered by us: FAQPage, as on the guides. QAPage is for questions users
@@ -107,11 +110,13 @@ export default async function FixPage({ params }: Props) {
           </div>
         </section>
 
-        <AgentBlock lang="en" n="02" />
+        {f.tools && <ToolCalls tools={f.tools} lang="en" n="02" />}
+
+        <AgentBlock lang="en" n={at(2)} />
 
         <section className="cell">
           <div className="head">
-            <span className="label">03 / More fixes</span>
+            <span className="label">{at(3)} / More fixes</span>
             <h2 className="display">People also ask.</h2>
           </div>
           <ol className="ledger">

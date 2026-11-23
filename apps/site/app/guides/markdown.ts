@@ -1,6 +1,7 @@
 import { AGENTS } from '../../content/agents.ts';
 import { DEMOS } from '../../content/demos.ts';
 import { guide, guidePath, type Lang } from '../../content/guides.ts';
+import { toolCallsMarkdown } from '../../content/tool-calls.ts';
 import { doc, list, pageLink } from '../lib/markdown.ts';
 
 // Each guide as Markdown, in its own language: /guides/<slug>.md and /es/<slug>.md.
@@ -23,6 +24,7 @@ export const guideMarkdown = (lang: Lang) => (slug: string) => {
     body: [
       `## ${h.steps}\n\n${g.steps.map((s, i) => `${i + 1}. **${s.title}.** ${s.body}`).join('\n')}`,
       `## ${h.say}\n\n\`\`\`\n${g.prompt}\n\`\`\``,
+      g.tools ? toolCallsMarkdown(g.tools, lang) : '',
       `## ${h.agents}\n\n${list(AGENTS.map((a) => pageLink(a.name, `/agents/${a.slug}`)))}\n- ${pageLink('Connect', '/connect')}`,
       demos.length
         ? `## ${h.demos}\n\n${list(demos.map((d) => `${pageLink(d.title, `/demos/${d.slug}`)} (${d.agent})`))}`
