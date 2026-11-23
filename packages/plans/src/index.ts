@@ -1,13 +1,14 @@
 // The hosted plans, in one place: the site's pricing, checkout and account pages and the hosted
-// server's access checks read this file. The billable unit is a credit: one minute of a job
-// running (export, import, transcript, motion graphics, voiceover, cutout, code), which the meter
-// counts as a render minute, or JUDGMENTS_PER_CREDIT visual judgments. Editing the timeline and
-// inline previews are free.
+// server's access checks read this file. Making is free: imports, edits, analysis, exports and
+// create.* spend nothing; only the server's protective limits apply. Every export of a picture
+// (video, GIF, image, a generated clip) downloads free carrying the cuttingfloor mark, and the
+// billable unit is a credit: one finished minute of a clean copy (cleanCopyCredits), taken once
+// per export when the user releases it. Audio, text and project files are never marked.
 //
-// There are no subscriptions. Every account starts with free credits and buys more in packs when
-// it wants them (pay as you go); bought credits never expire. At zero new jobs are refused; editing
-// and previews keep working. A few accounts are given a plan instead (staff, lifetime, enterprise),
-// with credits that renew each month. Costs behind the numbers: plans/pricing.md.
+// There are no subscriptions. Every account starts with a few free credits and buys more in packs
+// when it wants them (pay as you go); bought credits never expire. At zero, making and marked
+// downloads still work; clean copies wait for credits. A few accounts are given a plan instead
+// (staff, lifetime, enterprise), never marked. Costs behind the numbers: plans/pricing.md.
 
 export type PlanId = 'free' | 'credits' | 'enterprise' | 'lifetime' | 'staff';
 
@@ -110,36 +111,43 @@ export function packOf(id: string | null | undefined): Pack | undefined {
 }
 
 /**
- * Credits a new account starts with: no card, no time limit. The one value to change for the free
- * amount: the site, the server, emails and the footage minutes below all follow it.
+ * Credits a new account starts with, granted when it is first linked to the ledger (its first
+ * signed-in call, in practice credits.claim): no card, no time limit. The ledger grants the same
+ * amount for an account cuttingfloor opens.
  */
-export const FREE_CREDITS = 25;
+export const FREE_CREDITS = 3;
 
 /**
- * Judgments a credit pays for (judge.ask, media.seek and media.analyze look ask Jev, one a
- * picture). Jev costs ~$0.000088 a judgment; a credit nets ~$0.132 on the biggest pack after
- * Stripe, so 200 a credit is $0.0176 of it, an 87% margin (render time is 97%).
+ * When the download gate began: exports finished before it keep clean links, and accounts made
+ * before it started with the free credits of their time.
  */
-export const JUDGMENTS_PER_CREDIT = 200;
-
-/**
- * Minutes of footage one credit edits, measured on the hosted server: a transcript costs about 0.3
- * credits a minute of footage and an export about 0.8 a minute of finished video, so a cut that
- * keeps most of the footage takes about 1.2 minutes of it per credit (more when it becomes Shorts).
- */
-export const FOOTAGE_MINUTES_PER_CREDIT = 1.2;
-
-/** Minutes of footage the free credits edit, to the nearest 5: what the sign-up buttons say. */
-export const FREE_FOOTAGE_MINUTES = Math.round((FREE_CREDITS * FOOTAGE_MINUTES_PER_CREDIT) / 5) * 5;
+export const GATE_FROM = '2026-11-23T14:00:00Z';
 
 /** Accounts made before this kept the free credits they signed up with. */
 export const GRANDFATHERED = { before: '2026-11-08T00:00:00Z', credits: 100 };
 
+/** Free credits accounts made from GRANDFATHERED.before until GATE_FROM started with. */
+export const PRE_GATE_FREE_CREDITS = 25;
+
 /** The free credits an account made at `createdAt` starts with. */
 export function freeCreditsFor(createdAt: string): number {
-  return Date.parse(createdAt) < Date.parse(GRANDFATHERED.before)
-    ? GRANDFATHERED.credits
-    : FREE_CREDITS;
+  const at = Date.parse(createdAt);
+  if (at < Date.parse(GRANDFATHERED.before)) return GRANDFATHERED.credits;
+  if (at < Date.parse(GATE_FROM)) return PRE_GATE_FREE_CREDITS;
+  return FREE_CREDITS;
+}
+
+/** A clean copy's price is its finished length in these steps of a minute. */
+export const CLEAN_COPY_STEP = 0.25;
+
+/**
+ * Credits a clean copy costs: one a finished minute, in quarter-minute steps (at least one step).
+ * A still image, or a file with no length, is one step. 4K costs the same as HD.
+ */
+export function cleanCopyCredits(seconds: number | null | undefined): number {
+  if (!seconds || !(seconds > 0)) return CLEAN_COPY_STEP;
+  const steps = Math.max(1, Math.ceil(Math.round(seconds * 1000) / 1000 / (60 * CLEAN_COPY_STEP)));
+  return steps * CLEAN_COPY_STEP;
 }
 
 /**
