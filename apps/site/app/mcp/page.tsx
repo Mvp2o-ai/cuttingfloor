@@ -1,4 +1,3 @@
-import { FREE_CREDITS } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { CLIENTS, MCP_URL } from '../../content/clients.ts';
 import { TOOL_COUNT } from '../../content/tools.ts';
@@ -65,7 +64,7 @@ export default function Mcp() {
             </>,
           ]}
         />
-        <P>Sign in when it asks. You start with {FREE_CREDITS} free credits, no card.</P>
+        <P>Sign in when it asks. Making is free, no card.</P>
       </Part>
       <Part title="Try it before you connect">
         <P>

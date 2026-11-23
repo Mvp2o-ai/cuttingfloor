@@ -1,4 +1,4 @@
-import { FREE_CREDITS, SUPPORT_EMAIL } from '@cuttingfloor/plans';
+import { SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import {
   ALSO,
@@ -329,10 +329,10 @@ export default function Compare() {
               <h2>Try it on your own footage</h2>
               <p>
                 <a href={SIGN_UP}>Connect cuttingfloor to your agent</a> and ask for the edit you
-                want. {FREE_CREDITS} free credits, no card. Or run it yourself from{' '}
-                <a href={REPO_URL}>GitHub</a>, free. Coming from <Product name="CapCut" />,{' '}
-                <Product name="Descript" />, <Product name="VEED" /> or Kapwing? Read the
-                comparison, or see <a href="/alternatives">the alternatives page</a>.
+                want. Making is free, no card. Or run it yourself from <a href={REPO_URL}>GitHub</a>
+                , free. Coming from <Product name="CapCut" />, <Product name="Descript" />,{' '}
+                <Product name="VEED" /> or Kapwing? Read the comparison, or see{' '}
+                <a href="/alternatives">the alternatives page</a>.
               </p>
             </section>
           </div>

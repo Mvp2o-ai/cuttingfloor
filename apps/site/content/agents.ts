@@ -1,4 +1,4 @@
-import { FREE_CREDITS, FREE_FOOTAGE_MINUTES } from '@cuttingfloor/plans';
+import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { CHATGPT_PLANS, CLIENTS, type Client } from './clients.ts';
 import { DEMOS, type Demo } from './demos.ts';
 
@@ -29,7 +29,7 @@ export type Agent = {
   faqs: { q: string; a: string }[];
 };
 
-const TRIAL = `Start free with ${FREE_CREDITS} credits: no card, no time limit, every tool. That’s enough to edit about ${FREE_FOOTAGE_MINUTES} minutes of footage.`;
+const TRIAL = `Making is free: every tool, no card, as many edits and exports as you like. Every export downloads free carrying the cuttingfloor mark; a clean copy costs 1 credit per finished minute, and a new account gets ${FREE_CREDITS} credits when you activate it.`;
 
 export const AGENTS: Agent[] = [
   {
@@ -59,7 +59,7 @@ export const AGENTS: Agent[] = [
       },
       {
         q: 'What does it cost?',
-        a: `Nothing to start: a new account gets ${FREE_CREDITS} free credits, with no card and no time limit. After that you buy credits in packs when you need them.`,
+        a: `${TRIAL} After that you buy credits in packs when you need them.`,
       },
     ],
   },

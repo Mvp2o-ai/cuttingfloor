@@ -51,7 +51,7 @@ export const SERVERS: ServerRow[] = [
       keys: 'Only for lip-sync (your sync. labs key). Self-hosted, the visual-judgment tools also need a TypeSafe key',
       export: 'FCPXML, OTIO and EDL, plus SRT and VTT captions',
       price:
-        'Credits: one minute of a job running. Editing the timeline is free. Self-hosting is free',
+        'Making is free and exports download free carrying the cuttingfloor mark; a clean copy is 1 credit per finished minute. Self-hosting is free and unmarked',
     },
     pick: 'you want your agent to do the whole edit on your own footage, check its own work, and leave you an edit you can still change or open in your editing app.',
   },
