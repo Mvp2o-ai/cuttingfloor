@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.69.1
+
+### Patch Changes
+
+- 14d1744: Accounts that used cuttingfloor before activation existed are never asked to activate: no "isn't activated yet" refusal and no welcome on connecting.
+
 ## 0.69.0
 
 ### Minor Changes
