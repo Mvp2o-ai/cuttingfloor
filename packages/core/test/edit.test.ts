@@ -1561,7 +1561,38 @@ describe('transitions', () => {
         tool: 'transition.add',
         args: { clip_id: 'c4', kind: 'dissolve', duration_frames: 10, mode: 'handles' },
       }),
-    ).toThrow(/too little source past its end/);
+    ).toThrow(/c4 has 0 frames of source past its end, and this 10-frame transition plays 5/);
+    // The refusal says how much source each side has, and the longest transition that fits on
+    // it, so the next call can be right (an agent tried six times on 2026-11-23 without it).
+    const some = edit(
+      start(),
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 190, out: 240 } } },
+      { tool: 'clip.add', args: { track_id: 't1', media_id: AV, source: { in: 20, out: 70 } } },
+    ).doc;
+    let refused: (Error & { hint?: string }) | undefined;
+    try {
+      edit(some, {
+        tool: 'transition.add',
+        args: { clip_id: 'c4', kind: 'dissolve', duration_frames: 30, mode: 'handles' },
+      });
+    } catch (error) {
+      refused = error as Error & { hint?: string };
+    }
+    expect(refused?.message).toMatch(
+      /c4 has 10 frames of source past its end, and this 30-frame transition plays 15/,
+    );
+    expect(refused?.hint).toMatch(/up to 20 frames fits at this cut/);
+    const fits = edit(some, {
+      tool: 'transition.add',
+      args: { clip_id: 'c4', kind: 'dissolve', duration_frames: 20, mode: 'handles' },
+    }).doc;
+    expect(fits.tracks[0]?.transitions).toMatchObject([{ kind: 'dissolve' }]);
+    expect(() =>
+      edit(some, {
+        tool: 'transition.add',
+        args: { clip_id: 'c4', kind: 'dissolve', duration_frames: 21, mode: 'handles' },
+      }),
+    ).toThrow(/can't play/);
   });
 
   it('takes crossfades on audio only, and needs touching clips', () => {
@@ -1573,6 +1604,17 @@ describe('transitions', () => {
         args: { clip_id: 'c4', kind: 'crossfade', duration_frames: 10 },
       }),
     ).toThrow(/out of sync/);
+    // It says how long a crossfade the sound's own handles hold.
+    let overlapped: (Error & { hint?: string }) | undefined;
+    try {
+      edit(two(), {
+        tool: 'transition.add',
+        args: { clip_id: 'c4', kind: 'crossfade', duration_frames: 10 },
+      });
+    } catch (error) {
+      overlapped = error as Error & { hint?: string };
+    }
+    expect(overlapped?.hint).toMatch(/mode: 'handles', up to \d+ frames fits at this cut/);
     const before = two();
     const { doc } = edit(before, {
       tool: 'transition.add',
