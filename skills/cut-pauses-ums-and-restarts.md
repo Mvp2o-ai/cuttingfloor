@@ -5,7 +5,7 @@ version: 9
 type: playbook
 source: system
 author: Ken Wiltshire
-related: add-captions:related, spend-credits-wisely:prerequisite, shorts-style-captions:related
+related: add-captions:related, shorts-style-captions:related
 ---
 
 # Cut pauses, ums and restarts
