@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.69.3
+
+### Patch Changes
+
+- 30feb6c: A transition that can't play says how much source each clip has past the cut and the longest transition that fits on handles there, so the next try can be right.
+
 ## 0.69.2
 
 ### Patch Changes
