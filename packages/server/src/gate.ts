@@ -118,6 +118,11 @@ export class DownloadGate {
     return undefined;
   }
 
+  /** Whether the owner's plan is given; when that can't be told just now, it is not. */
+  async #exempt(owner: string): Promise<boolean> {
+    return this.#hooks.exempt(owner).catch(() => false);
+  }
+
   async #released(owner: string, releaseId: string): Promise<Release | undefined> {
     return this.#rt.ws.records.collection(RELEASES, { owner }).get(releaseId);
   }
@@ -125,7 +130,7 @@ export class DownloadGate {
   /** Whether the file behind a signed link carries the mark now, and its clean copy's price. */
   async state(owner: string, id: string): Promise<MarkState> {
     const gated = await this.#gated(owner, id);
-    if (!gated || (await this.#hooks.exempt(owner))) return { watermarked: false };
+    if (!gated || (await this.#exempt(owner))) return { watermarked: false };
     if (await this.#released(owner, gated.releaseId)) return { watermarked: false };
     return { watermarked: true, release_credits: gated.credits };
   }

@@ -68,9 +68,12 @@ describe('access refusals', () => {
   });
 
   it('marks nothing for a given plan, and everything for a free or paid one', async () => {
-    expect(await new Fixed({ ...allowed, plan: 'staff' }).exempt('u')).toBe(true);
-    expect(await new Fixed({ ...allowed, plan: 'lifetime' }).exempt('u')).toBe(true);
-    expect(await new Fixed(allowed).exempt('u')).toBe(false);
-    expect(await new Fixed({ ...allowed, plan: 'credits' }).exempt('u')).toBe(false);
+    const user = 'user_01GATEACCOUNT0000000000000';
+    expect(await new Fixed({ ...allowed, plan: 'staff' }).exempt(user)).toBe(true);
+    expect(await new Fixed({ ...allowed, plan: 'lifetime' }).exempt(user)).toBe(true);
+    expect(await new Fixed(allowed).exempt(user)).toBe(false);
+    expect(await new Fixed({ ...allowed, plan: 'credits' }).exempt(user)).toBe(false);
+    // A maintenance key's owner is no person's account.
+    expect(await new Fixed(allowed).exempt('ops')).toBe(true);
   });
 });

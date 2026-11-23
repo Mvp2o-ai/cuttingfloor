@@ -10,6 +10,7 @@ import {
 import { CfError } from '@cuttingfloor/schema';
 import { meteredSeconds, type OwnerLimits, type Runtime } from '@cuttingfloor/server';
 import { type Ledger, type LedgerAccount, LedgerConflict, LedgerMissing } from './ledger.ts';
+import { isUser } from './rights.ts';
 
 /**
  * Jobs one account runs at once on a server, whatever its plan; more wait their turn before they
@@ -146,6 +147,8 @@ export class AccessCheck {
 
   /** Whether the owner is on a given plan (staff, lifetime, enterprise), whose files are never marked. */
   async exempt(owner: string): Promise<boolean> {
+    // Not a person's account (a maintenance key's owner): nothing to sell it.
+    if (!isUser(owner)) return true;
     const access = await this.get(owner);
     return access.allowed && GIVEN.has(access.plan);
   }
