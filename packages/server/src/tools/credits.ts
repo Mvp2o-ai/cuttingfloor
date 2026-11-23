@@ -268,7 +268,10 @@ async function findOrImport(deps: ServerDeps, owner: string, useCase: string): P
       ...(job && job.status === 'working' ? { job: { id: job.id, status: job.status } } : {}),
     };
   }
-  const sample = await route(deps, owner, useCase);
+  // A sample already chosen for the account is imported again as it was (its import failed or
+  // its file went), not routed again: the first task picked it.
+  const sample =
+    (named?.sample && sampleBySlug(named.sample)) || (await route(deps, owner, useCase));
   const { record, job } = await importBundled(
     rt,
     owner,

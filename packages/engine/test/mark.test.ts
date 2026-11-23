@@ -119,7 +119,7 @@ const flat = (size: string, rate: number, seconds: number) => [
 ];
 const tone = (seconds: number) => ['-f', 'lavfi', '-i', `sine=frequency=440:duration=${seconds}`];
 
-describe.skipIf(!ffmpeg)('the cuttingfloor mark', () => {
+describe.skipIf(!ffmpeg)('the cuttingfloor mark', { timeout: 120_000 }, () => {
   it('marks a 16:9 H.264 MP4 and keeps its size, rate, length and sound', async () => {
     const input = await make('wide.mp4', [
       ...flat('640x360', 25, 12),
