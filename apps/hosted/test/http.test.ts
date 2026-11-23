@@ -167,8 +167,9 @@ describe('HTTP face', () => {
   });
 
   it('records what leaves through a signed link: once per file and day, saves, plays and pages apart', async () => {
+    const writes: Promise<void>[] = [];
     const base = await listen(undefined, undefined, {
-      onDownload: (seen) => void recordDownload(runtime.ws, seen),
+      onDownload: (seen) => void writes.push(recordDownload(runtime.ws, seen)),
     });
     const id = 'j_dddddddddddddddddddddddddd';
     const dir = runtime.ws.ownerDir('carol', 'outputs', id);
@@ -187,19 +188,18 @@ describe('HTTP face', () => {
     await fetch(file, { headers: { 'user-agent': 'openai-mcp/1.0' } });
     await fetch(file, { method: 'HEAD' });
     await fetch(file.replace(/sig=[^&]+/, 'sig=AAAA'));
-    await vi.waitFor(async () => {
-      const days = await readDownloads(runtime.ws, 'carol');
-      expect(days).toHaveLength(1);
-      expect(days[0]).toMatchObject({
-        file_id: id,
-        name: 'short.mp4',
-        day: new Date().toISOString().slice(0, 10),
-        downloads: 2,
-        plays: 1,
-        page_views: 1,
-        agent: 'Mozilla',
-      });
-    }, 10_000);
+    await Promise.all(writes);
+    const days = await readDownloads(runtime.ws, 'carol');
+    expect(days).toHaveLength(1);
+    expect(days[0]).toMatchObject({
+      file_id: id,
+      name: 'short.mp4',
+      day: new Date().toISOString().slice(0, 10),
+      downloads: 2,
+      plays: 1,
+      page_views: 1,
+      agent: 'Mozilla',
+    });
   }, 20_000);
 
   it('hands out working watch and download links when a job is read after its links expired', async () => {

@@ -260,7 +260,9 @@ async function findOrImport(deps: ServerDeps, owner: string, useCase: string): P
   const onboarding = rt.ws.records.collection(ONBOARDING, { owner });
   const named = await onboarding.get('onboarding');
   const held = named && (await rt.media.find(owner, named.media_id));
-  if (held && held.status !== 'failed') {
+  // Kept once added, even if its import failed: claiming again doesn't import it again (it would
+  // fail the same way). Only a sample that has gone is added again.
+  if (held) {
     const job = held.job_id ? await rt.jobs.store.get(held.job_id, owner) : undefined;
     return {
       slug: named.sample ?? FALLBACK_SAMPLE,
