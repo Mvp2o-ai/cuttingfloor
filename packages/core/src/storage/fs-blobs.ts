@@ -22,6 +22,7 @@ import type {
   BlobStore,
   PresignOptions,
 } from './blobs.ts';
+import { workingCopy } from './blobs.ts';
 import { isMissing, ownerKey, sweepDir, touch, under } from './fs-util.ts';
 
 /** Today's folders under the data root, so a data root made before the stores needs no change. */
@@ -210,7 +211,7 @@ export class FsBlobStore implements BlobStore {
 
   /**
    * Every file under the owner's folder, records included, a shared one once. The server's own
-   * call log is not theirs and does not count.
+   * call log and working copies (proxies, mezzanines) are not theirs and do not count.
    */
   async usage(owner: string): Promise<number> {
     const root = join(this.root, 'owners', ownerKey(owner));
@@ -228,6 +229,8 @@ export class FsBlobStore implements BlobStore {
       if (!e.isFile() || e.parentPath === join(root, 'calls')) continue;
       // Nor is its note of which file each output is.
       if (e.parentPath === join(root, 'outputs-index')) continue;
+      // Nor are the server's working copies of its media.
+      if (workingCopy(join(e.parentPath, e.name))) continue;
       // A file swept between the listing and its stat no longer counts.
       total += await stat(join(e.parentPath, e.name)).then(
         (s) => {

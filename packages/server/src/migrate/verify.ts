@@ -1,6 +1,11 @@
 import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { CollectionSpec, RecordEntry, Workspace } from '@cuttingfloor/core';
+import {
+  type CollectionSpec,
+  type RecordEntry,
+  type Workspace,
+  workingCopy,
+} from '@cuttingfloor/core';
 import { urlKeyFingerprint } from '../url-key.ts';
 import { checkAppReads, checkCarried, checkLiveLinks, type Sample } from './checks.ts';
 import { COLLECTION_RULES, idTag, ownerTag, ownsId, relTag, specKey } from './layout.ts';
@@ -426,7 +431,8 @@ export async function verify(
     const seen = new Set<string>();
     let bytes = 0;
     for (const [rel, entry] of Object.entries(manifest.blobs)) {
-      if (ownerOfRel(rel) !== owner || seen.has(entry.target)) continue;
+      // Working copies are not the owner's storage (`usage` leaves them out).
+      if (ownerOfRel(rel) !== owner || seen.has(entry.target) || workingCopy(rel)) continue;
       seen.add(entry.target);
       // A hard link the filesystem target made: the same bytes as the file it shares.
       if (entry.shared_from && !target.blobs.remote) continue;

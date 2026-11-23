@@ -601,6 +601,19 @@ export function blobStoreContract(backend: string, make: StoresFactory): void {
       expect(await blobs.usage('bob')).toBe(50);
     });
 
+    each('usage leaves out the server’s working copies of media', async ({ blobs }) => {
+      // A 354 MB upload's 4 GB editing proxy filled a 5 GB account (2026-11-23).
+      await blobs.put(blobs.keys.media('alice', 'm_1', 'source.mp4'), { bytes: Buffer.alloc(100) });
+      await blobs.put(blobs.keys.media('alice', 'm_1', 'proxy.mov'), { bytes: Buffer.alloc(900) });
+      await blobs.put(blobs.keys.media('alice', 'm_1', 'mezzanine.mov'), {
+        bytes: Buffer.alloc(800),
+      });
+      // The user's own files count whatever their name.
+      await blobs.put(blobs.keys.output('alice', 'j_1', 'proxy.mov'), { bytes: Buffer.alloc(30) });
+      await blobs.put(blobs.keys.upload('alice', 'u_1', 'proxy.mov'), { bytes: Buffer.alloc(20) });
+      expect(await blobs.usage('alice')).toBe(100 + 30 + 20);
+    });
+
     each('expire removes what is past its time directly under a prefix', async (s) => {
       const { blobs } = s;
       const old = blobs.keys.output('alice', 'j_old', 'a.bin');

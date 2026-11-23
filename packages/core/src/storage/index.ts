@@ -8,6 +8,7 @@ export type {
   OrphanReport,
   PresignOptions,
 } from './blobs.ts';
+export { workingCopy } from './blobs.ts';
 export { FS_BLOB_KEYS, type FsBlobOptions, FsBlobStore } from './fs-blobs.ts';
 export { FS_HOME, FsRecords } from './fs-records.ts';
 export { FsScratch } from './fs-scratch.ts';

@@ -14,6 +14,7 @@ import type {
   OrphanReport,
   PresignOptions,
 } from './blobs.ts';
+import { workingCopy } from './blobs.ts';
 import type { FsBlobStore } from './fs-blobs.ts';
 import { ownerKey } from './fs-util.ts';
 import { type Collection, defineCollection, type Records } from './records.ts';
@@ -1157,11 +1158,13 @@ export class S3BlobStore implements BlobStore {
     return [`media/${key}/`, `derived/${key}/`, `outputs/${key}/`];
   }
 
-  /** Every object under the owner's prefixes, each once however many hold it. */
+  /** Every object under the owner's prefixes but working copies, each once however many hold it. */
   async usage(owner: string): Promise<number> {
     let total = 0;
     for (const prefix of this.#prefixes(owner)) {
-      for (const o of this.#shown(await this.#listed(prefix))) total += o.bytes;
+      for (const o of this.#shown(await this.#listed(prefix))) {
+        if (!workingCopy(o.key)) total += o.bytes;
+      }
     }
     return total;
   }

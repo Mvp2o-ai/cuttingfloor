@@ -108,6 +108,7 @@ export {
   type S3Settings,
   type Scratch,
   s3SettingsFromEnv,
+  workingCopy,
 } from './storage/index.ts';
 export { type Cue, parseSubtitles } from './subtitles.ts';
 export {

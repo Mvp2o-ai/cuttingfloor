@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.69.2
+
+### Patch Changes
+
+- e572694: Storage counts only what the user sends, makes and exports: the server's editing proxies and conformed copies no longer fill an account (a 354 MB upload's 4 GB proxy did).
+
 ## 0.69.1
 
 ### Patch Changes
