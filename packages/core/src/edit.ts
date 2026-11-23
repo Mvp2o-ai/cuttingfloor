@@ -1988,21 +1988,63 @@ function transitionProblem(
   const tpf = ticksPerFrame(doc.sequence.fps);
   const { before, after } = transitionHalves(tr.duration, tpf);
   if (b.duration < after || a.duration < before) return 'it is longer than one of its clips';
-  const short = (c: StoredClip, edge: 'start' | 'end', by: number) => {
-    if (by === 0) return false;
-    const grown = retimed(c, extended(c, edge, by));
-    try {
-      checkSourceRange(doc, grown);
-      return false;
-    } catch {
-      return true;
-    }
-  };
-  if (short(a, 'end', after))
-    return `clip ${a.id} has too little source past its end to play into it`;
-  if (short(b, 'start', before))
-    return `clip ${b.id} has too little source before its start to play into it`;
+  const frames = Math.round(tr.duration / tpf);
+  const room = handleRoom(doc, a, b, tpf, frames);
+  if (room.past < after / tpf)
+    return `clip ${a.id} has ${room.past} frames of source past its end, and this ${frames}-frame transition plays ${after / tpf} of them`;
+  if (room.before < before / tpf)
+    return `clip ${b.id} has ${room.before} frames of source before its start, and this ${frames}-frame transition plays ${before / tpf} of them`;
   return undefined;
+}
+
+/** Whether clip `c` has source for `frames` more frames at `edge`. */
+function hasSource(
+  doc: TimelineDoc,
+  c: StoredClip,
+  edge: 'start' | 'end',
+  frames: number,
+  tpf: number,
+): boolean {
+  if (frames <= 0) return true;
+  try {
+    checkSourceRange(doc, retimed(c, extended(c, edge, frames * tpf)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Source frames past the cut on each side, counted up to `cap`, and the longest transition that
+ * plays on handles alone (its first half before the cut, rounded down).
+ */
+function handleRoom(
+  doc: TimelineDoc,
+  a: StoredClip,
+  b: StoredClip,
+  tpf: number,
+  cap: number,
+): { past: number; before: number; longest: number } {
+  const most = (c: StoredClip, edge: 'start' | 'end') => {
+    let lo = 0;
+    let hi = cap + 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (hasSource(doc, c, edge, mid, tpf)) lo = mid;
+      else hi = mid;
+    }
+    return lo;
+  };
+  const past = most(a, 'end');
+  const before = most(b, 'start');
+  return { past, before, longest: Math.min(2 * past, 2 * before + 1) };
+}
+
+/** The longest transition that plays on handles at a cut, in words for a hint. */
+function handlesFit(longest: number): string {
+  return longest > 0
+    ? `With mode: 'handles', up to ${longest} frames fits at this cut`
+    : "No transition fits on mode: 'handles' at this cut";
 }
 
 /** Refuses a document holding a transition that can't play (timeline.load). */
@@ -2091,8 +2133,10 @@ function putTransition(
   };
   const problem = transitionProblem(doc, cut.track, tr);
   if (problem) {
+    const tpf = ticksPerFrame(doc.sequence.fps);
+    const { longest } = handleRoom(doc, cut.a, cut.b, tpf, Math.round(duration / tpf));
     throw new CfError('bad_request', `The transition can't play: ${problem}`, {
-      hint: "Use a shorter duration, mode: 'overlap', or trim the clips to leave source past the cut",
+      hint: `${handlesFit(longest)}. mode: 'overlap', or trimming the clips, leaves more source past the cut`,
     });
   }
   cut.track.transitions = [...(cut.track.transitions ?? []).filter((t) => t !== existing), tr].sort(
@@ -2136,11 +2180,15 @@ function transitionAdd(doc: TimelineDoc, a: EditArgsOf<'transition.add'>): OpOut
     cuts.push({ track: m.track, a: m.clip, b });
   }
   if (soundOnly && a.mode === 'overlap' && members.some((m) => m.track.kind !== 'audio')) {
+    // How long a crossfade the sound's own handles hold, at the tightest of its cuts.
+    const longest = cuts.length
+      ? Math.min(...cuts.map((c) => handleRoom(doc, c.a, c.b, tpf, a.duration_frames).longest))
+      : undefined;
     throw new CfError(
       'bad_request',
       'A crossfade on linked clips would overlap the sound alone and pull it out of sync with the picture',
       {
-        hint: "Use mode: 'handles' for a sound-only crossfade (it moves nothing), or a video kind such as dissolve to blend picture and sound together",
+        hint: `${longest === undefined ? "mode: 'handles' crossfades the sound alone (it moves nothing)" : `${handlesFit(longest)}, crossfading the sound alone (it moves nothing)`}; a video kind such as dissolve blends picture and sound together, with overlap too`,
       },
     );
   }
