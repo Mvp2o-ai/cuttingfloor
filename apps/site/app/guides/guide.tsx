@@ -5,6 +5,7 @@ import { AgentBlock } from '../agents/block.tsx';
 import { DemoCards } from '../demos/cards.tsx';
 import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
+import { ToolCalls } from '../tool-calls.tsx';
 import { Copy } from '../walkthroughs/copy.tsx';
 
 // One template for every guide, English (/guides/<slug>) or Spanish (/es/<slug>). Nothing here
@@ -90,6 +91,11 @@ export function GuideView({ g }: { g: Guide }) {
   const t = TEXT[g.lang];
   const path = guidePath(g);
   const demos = g.demos.flatMap((slug) => DEMOS.filter((d) => d.slug === slug));
+  // Sections are numbered in the order they show; tool calls and demos only when the guide has them.
+  const shown = ['tools', 'agent', 'demos', 'questions'].filter(
+    (k) => (k !== 'tools' || g.tools) && (k !== 'demos' || demos.length),
+  );
+  const at = (k: string) => String(shown.indexOf(k) + 3).padStart(2, '0');
   return (
     <>
       <JsonLd data={howTo(g)} />
@@ -166,12 +172,16 @@ export function GuideView({ g }: { g: Guide }) {
           </figure>
         </section>
 
-        <AgentBlock lang={g.lang} n="03" />
+        {g.tools && <ToolCalls tools={g.tools} lang={g.lang} n={at('tools')} />}
+
+        <AgentBlock lang={g.lang} n={at('agent')} />
 
         {demos.length > 0 && (
           <section className="cell">
             <div className="head">
-              <span className="label">04 / {t.demos}</span>
+              <span className="label">
+                {at('demos')} / {t.demos}
+              </span>
               <div>
                 <h2 className="display">{t.demosHead}</h2>
                 {t.demosNote && <p className="compare-lede">{t.demosNote}</p>}
@@ -183,7 +193,9 @@ export function GuideView({ g }: { g: Guide }) {
 
         <section className="cell">
           <div className="head">
-            <span className="label">05 / {t.questions}</span>
+            <span className="label">
+              {at('questions')} / {t.questions}
+            </span>
             <h2 className="display">{t.asked}</h2>
           </div>
           <div className="faq">

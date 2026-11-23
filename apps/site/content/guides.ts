@@ -1,4 +1,5 @@
 import { FREE_CREDITS } from '@cuttingfloor/plans';
+import { GENERATORS_LINE, type ToolCall } from './tool-calls.ts';
 
 // One page per job, in the words people search it with: /guides/<slug> in English, /es/<slug> in
 // Spanish. Each says what to do from your own agent (Kazi, Claude or ChatGPT side by side), shows
@@ -27,6 +28,8 @@ export type Guide = {
   /** Demos that show the job, by slug. */
   demos: string[];
   faqs: { q: string; a: string }[];
+  /** The MCP tool calls the job uses, in order. */
+  tools?: ToolCall[];
 };
 
 export const GUIDES: Guide[] = [
@@ -289,6 +292,95 @@ export const GUIDES: Guide[] = [
       {
         q: 'What does it cost?',
         a: `Making is free, no card: importing, analysing, editing and exporting every Short cost nothing, retries included. Exports download free with a cuttingfloor watermark; removing the watermark costs 1 credit per finished minute, so a 40-second Short is 0.75 credit. A new account gets ${FREE_CREDITS} credits when you activate it; after that, credit packs that never expire, on the pricing page.`,
+      },
+    ],
+  },
+  {
+    slug: 'turn-ai-video-clips-into-a-film',
+    lang: 'en',
+    title: 'How to turn Kling, Veo, Sora and Runway clips into a film',
+    metaTitle:
+      'How to turn AI video clips into a film: Kling, Veo, Sora, Runway and more | cuttingfloor',
+    metaDescription:
+      'AI video generators make short clips; your agent edits them into one film. Story order, clean trims, transitions that fit, matched colour, sound effects, music and voiceover, from ChatGPT, Claude or Kazi.',
+    answer: `AI video generators make short clips; editing them into a film is a separate job. Connect cuttingfloor to Kazi, Claude or ChatGPT, give it your clips from ${GENERATORS_LINE}, and say the story. It cuts, blends, matches colour, adds sound and music, and exports one film. Your shots are never regenerated.`,
+    updated: '2026-11-23',
+    steps: [
+      {
+        title: 'Bring the clips',
+        body: 'Attach them in the chat, send links, or drop them on your upload page. Clips from different generators, sizes and frame rates go together; pick the finished size (16:9 for YouTube, 9:16 for Shorts).',
+      },
+      {
+        title: 'Say the story',
+        body: 'The order of the shots, a line on what happens, and how long it should be. Your agent looks at each clip, puts them in order and cuts each to its best part, trimming the warped frames AI clips often have at the start or end.',
+      },
+      {
+        title: 'Ask for the finish',
+        body: 'Transitions, matching colour, sound effects, your music, a voiceover, titles and credits. Short clips leave little footage for a blend, so when a transition is too long the server says the longest that fits and your agent uses it.',
+      },
+      {
+        title: 'Check it, then take the film',
+        body: 'Your agent looks at frames and a quick render before it hands the film over. Ask for changes in words; every version stays, so you can go back. Export an MP4, or the edit as FCPXML, OTIO or EDL to finish in Resolve, Premiere or Final Cut.',
+      },
+    ],
+    prompt:
+      'Make a short film from my AI clips. The story: a lost robot finds its way home. Put the shots in story order, cut the weird frames at the ends, blend the joins, make the colour match, add sound effects and my music, a title and credits, and export it in 16:9 at 1080p.',
+    demos: [],
+    tools: [
+      {
+        tool: 'media.upload',
+        does: 'brings in clips from your device (media.import takes a link)',
+      },
+      { tool: 'media.get', does: 'reads each clip’s size, frame rate, length and sound' },
+      { tool: 'media.analyze (look)', does: 'answers questions about sampled frames of each clip' },
+      { tool: 'timeline.create', does: 'sets the finished size and frame rate' },
+      { tool: 'edit.batch', does: 'many edits in one call: clip.add, clip.trim and the rest' },
+      { tool: 'transition.add', does: 'blends a cut; a refusal gives the longest that fits' },
+      { tool: 'filter.add', does: 'colour corrections on a clip, or a LUT on the whole film' },
+      { tool: 'media.import', does: 'a sound effect from the built-in pack, by its link' },
+      { tool: 'create.voiceover', does: 'a narrator from your script, with a time for each word' },
+      { tool: 'title.add', does: 'the title and the credits' },
+      { tool: 'audio.set_master', does: 'the final loudness, with a limiter' },
+      { tool: 'render.frames', does: 'frames of the edit to look at before exporting' },
+      { tool: 'qa.check', does: 'measures the render: gaps, loudness, black or silent stretches' },
+      {
+        tool: 'export.video',
+        does: 'the finished MP4, with a download link and a page to watch it',
+      },
+      { tool: 'export.timeline', does: 'the edit as FCPXML, OTIO or EDL for another editor' },
+    ],
+    faqs: [
+      {
+        q: 'Which AI video generators does it work with?',
+        a: `Any that gives you a video file: ${GENERATORS_LINE}. They all download as ordinary MP4 or MOV files, and clips from several generators can go in one film.`,
+      },
+      {
+        q: 'My clips are different sizes and frame rates. Is that a problem?',
+        a: 'No. You pick the finished size and frame rate, and every clip is fitted into that frame and played at that rate. Your agent can zoom or crop a clip that doesn’t fill the frame, and smooth one with fewer frames a second.',
+      },
+      {
+        q: 'My clips have no sound. What can I add?',
+        a: 'Your music, a voiceover made from your script, and sound effects. A built-in pack covers whooshes, hits, risers, booms, explosions and crowds; for footsteps or ambience, add your own sound files.',
+      },
+      {
+        q: 'How long can a transition be on a 5-second clip?',
+        a: 'Only as long as the footage past the cut on both sides. Trimmed AI clips have little to spare, so blends are short. When one doesn’t fit, the server says how many frames each side has and the longest that fits.',
+      },
+      {
+        q: 'Will it change my shots?',
+        a: 'No. Nothing is regenerated: your clips are cut, ordered, graded and mixed, and the same edit renders the same film every time.',
+      },
+      {
+        q: 'Can I undo, or keep two versions?',
+        a: 'Yes. Every change makes a new version and the old ones stay, so you can ask for another cut and keep both, or go back to any earlier one.',
+      },
+      {
+        q: 'Can I finish it in Premiere, Resolve or Final Cut?',
+        a: 'Yes. Ask for the edit as FCPXML, OTIO or EDL as well as the MP4, and open it in your editor as the exact cut.',
+      },
+      {
+        q: 'What does it cost?',
+        a: `Making is free, no card: every edit and export, as many times as you like. Exports download free with a cuttingfloor watermark; removing the watermark costs 1 credit per finished minute, and a new account gets ${FREE_CREDITS} credits when you activate it. After that, credit packs that never expire, on the pricing page.`,
       },
     ],
   },
