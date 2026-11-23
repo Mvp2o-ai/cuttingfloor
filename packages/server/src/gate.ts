@@ -135,6 +135,31 @@ export class DownloadGate {
     return { watermarked: true, release_credits: gated.credits };
   }
 
+  /** Credits the owner has now (null: no cap), or undefined when that can't be told just now. */
+  async credits(owner: string): Promise<number | null | undefined> {
+    return this.#hooks.balance(owner).catch(() => undefined);
+  }
+
+  /**
+   * A file's state for the one result that answers for it (an export, media.get): while it is
+   * watermarked, also the owner's credits and the same in words, so the agent can offer the
+   * removal. `readCredits` is read once per result and shared by every file in it.
+   */
+  async described(
+    owner: string,
+    id: string,
+    readCredits?: () => Promise<number | null | undefined>,
+  ): Promise<MarkState & { credits_left?: number | null; watermark_note?: string }> {
+    const state = await this.state(owner, id);
+    if (!state.watermarked || state.release_credits === undefined) return state;
+    const left = await (readCredits ?? (() => this.credits(owner)))();
+    return {
+      ...state,
+      ...(left !== undefined ? { credits_left: left } : {}),
+      watermark_note: watermarkNote(state.release_credits, left),
+    };
+  }
+
   /**
    * The blob a signed link serves: the file itself, or its watermarked copy (made now if this is its
    * first download). `marked` says which, so a redirect to the watermarked copy isn't cached past a
@@ -308,5 +333,24 @@ function priced(
 }
 
 function credits(n: number): string {
-  return `${n} credit${n > 0 && n <= 1 ? '' : 's'}`;
+  return `${n} credit${n === 1 ? '' : 's'}`;
+}
+
+/**
+ * A watermarked file in words, for the agent: the copy is for review, what releasing it costs,
+ * what the user has, and, when that covers it, to offer the release once they have reviewed it.
+ */
+export function watermarkNote(price: number, left: number | null | undefined): string {
+  const short = typeof left === 'number' && left < price;
+  const has =
+    left === undefined
+      ? ''
+      : left === null
+        ? '; this account has no credit cap'
+        : `; this account has ${credits(left)}, ${short ? 'too few' : 'enough'}`;
+  return `This copy has a cuttingfloor watermark, for reviewing, which is free. Releasing it removes the watermark for ${credits(price)}${has}. ${
+    short
+      ? 'The watermarked copy is what downloads until then.'
+      : 'Once the user has reviewed it, offer to release it now.'
+  }`;
 }

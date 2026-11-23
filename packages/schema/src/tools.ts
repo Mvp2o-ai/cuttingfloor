@@ -1267,6 +1267,21 @@ export const MarkFields = {
     ),
 };
 
+/** Hosted, on the result that answers for one watermarked file (an export, media.get). */
+export const MarkNoteFields = {
+  credits_left: z
+    .number()
+    .nullable()
+    .optional()
+    .describe("While watermarked, the user's credits now; null when the account has no credit cap"),
+  watermark_note: z
+    .string()
+    .optional()
+    .describe(
+      'While watermarked, the watermark, its removal price and what the user has, in words',
+    ),
+};
+
 export const MediaInfo = z.object({
   media_id: MediaId,
   name: z.string(),
@@ -1418,6 +1433,7 @@ export type MediaInfo = z.infer<typeof MediaInfo>;
 
 /** media.get: the media, with the measured analyses include asks for in full. */
 export const MediaGetResult = MediaInfo.extend({
+  ...MarkNoteFields,
   speakers: SpeakersAnalysis.optional(),
   voice: VoiceAnalysis.optional(),
   colour: ColourAnalysis.optional(),
@@ -2339,6 +2355,7 @@ export const ExportTimelineResult = z.object({
 export const ExportResult = z.object({
   url: z.string().describe('Signed download URL'),
   ...MarkFields,
+  ...MarkNoteFields,
   page_url: z
     .string()
     .describe(
