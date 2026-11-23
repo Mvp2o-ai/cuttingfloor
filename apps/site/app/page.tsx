@@ -1,4 +1,3 @@
-import { FREE_CREDITS, FREE_FOOTAGE_MINUTES } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { DEMOS } from '../content/demos.ts';
 import { LICENCE } from '../content/facts.ts';
@@ -9,7 +8,7 @@ import { ConnectNow } from './connect-now.tsx';
 import { DemoCards, DemoThumbs } from './demos/cards.tsx';
 import { TryKazi } from './kazi.tsx';
 import { LiveCard } from './live-card.tsx';
-import { FROM_PACK } from './pricing.ts';
+import { CLEAN_PRICE, FROM_PACK } from './pricing.ts';
 import { Prompts } from './prompts.tsx';
 import { FAQS, structuredData } from './seo.ts';
 import { Session } from './session/session.tsx';
@@ -111,7 +110,7 @@ export default function Home() {
               </div>
               <div className="actions">
                 <a className="link-big" href={SIGN_UP}>
-                  Start free — {FREE_FOOTAGE_MINUTES} minutes of footage
+                  Start free
                 </a>
                 <a className="link-big quiet" href="/demos">
                   Watch it edit
@@ -259,11 +258,12 @@ export default function Home() {
           <div className="head">
             <span className="label">07 / Pricing</span>
             <div>
-              <h2 className="display">Pay as you go. Start free.</h2>
+              <h2 className="display">Make for free. Pay for clean copies.</h2>
               <p className="compare-lede">
-                {FREE_CREDITS} free credits, enough to edit {FREE_FOOTAGE_MINUTES} minutes of
-                footage, no card. Then buy credits when you need them, from {FROM_PACK}: they never
-                expire, and there is no subscription. Run it yourself and it is all free.
+                Editing, exports, graphics and voiceovers cost nothing, and retries are free. Every
+                export downloads free carrying the cuttingfloor mark; a clean copy costs{' '}
+                {CLEAN_PRICE}. Credits come in packs from {FROM_PACK}: they never expire, and there
+                is no subscription. Run it yourself and it is all free and unmarked.
               </p>
             </div>
           </div>

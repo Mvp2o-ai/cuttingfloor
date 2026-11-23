@@ -5,7 +5,7 @@ version: 3
 type: playbook
 source: system
 author: Ken Wiltshire
-related: spend-credits-wisely:prerequisite, subject-tracking:related
+related: subject-tracking:related
 ---
 
 # Act on part of the picture

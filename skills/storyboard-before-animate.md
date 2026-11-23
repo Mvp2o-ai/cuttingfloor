@@ -5,7 +5,7 @@ version: 4
 type: playbook
 source: system
 author: Ken Wiltshire
-related: make-motion-graphics:related, spend-credits-wisely:prerequisite
+related: make-motion-graphics:related
 ---
 
 # Storyboard before animate

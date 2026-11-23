@@ -1,11 +1,11 @@
-version: 3
+version: 4
 subject: You're in - start with one clip
 ---
 Hi,
 
 You're set up: your cuttingfloor account works, and your AI can edit video as soon as it's connected.
 
-You have {{credits}} to start with: no card, every tool. A credit is a minute of our servers working (an export, a transcript); editing itself is free.
+Making is free: every tool, no card, as many edits, exports and retries as you like. Every video you export downloads free carrying the cuttingfloor mark. When you want a clean copy without it, that's 1 credit per finished minute, and you get 3 credits when your AI activates your account.
 
 The fastest first step: hand your AI one clip and describe the edit in plain English, the way you'd brief a person. For example: "Cut the pauses and ums out of this and add captions."
 

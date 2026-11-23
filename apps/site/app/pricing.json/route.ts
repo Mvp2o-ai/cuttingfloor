@@ -1,6 +1,6 @@
 import {
+  CLEAN_COPY_STEP,
   FREE_CREDITS,
-  JUDGMENTS_PER_CREDIT,
   LOW_CREDITS,
   PACKS,
   PLANS,
@@ -16,7 +16,7 @@ import {
   REPO_URL,
   SELF_HOST_STEPS,
 } from '../../content/facts.ts';
-import { CREDIT, EVERY_PLAN, JUDGMENT_TOOLS, KEPT_DAYS, TIMELINE_HOURS } from '../pricing.ts';
+import { CREDIT, EVERY_PLAN, KEPT_DAYS, TIMELINE_HOURS } from '../pricing.ts';
 import { SITE_URL } from '../seo.ts';
 
 // /pricing as data, for agents: the plans file's numbers with their units, self-hosting and keys.
@@ -25,32 +25,55 @@ export const dynamic = 'force-static';
 
 export function GET() {
   const body = {
-    schema: 'cuttingfloor.pricing/3',
+    schema: 'cuttingfloor.pricing/4',
     url: `${SITE_URL}/pricing`,
     markdown: `${SITE_URL}/pricing.md`,
     currency: 'USD',
     units: {
       price: 'US dollars, paid once for a pack; nothing renews',
-      credits: `one credit is one minute of a job running (export, import, transcript, graphics, voiceover, cutout), or ${JUDGMENTS_PER_CREDIT} visual judgments (${JUDGMENT_TOOLS.join(', ')}); bought credits never expire`,
-      jobs: 'jobs that run at once; more wait their turn',
+      credits:
+        'one credit is one finished minute of a clean copy (an exported video, GIF or image without the cuttingfloor mark), counted in quarter-minute steps; bought credits never expire',
       short_side_px: 'largest export, as its short side in pixels (1080 is 1080p, 2160 is 4K)',
       storage_gb: 'gigabytes held on the server at once',
       null: 'no limit',
     },
     credit: CREDIT,
     every_plan: EVERY_PLAN,
-    model: 'pay as you go: free credits to start, then credit packs; no subscription',
+    model:
+      'making is free; exports download free carrying the cuttingfloor mark; a clean copy is paid in credits, once per export; credit packs, no subscription',
+    making:
+      'free: imports, edits, analysis, exports, motion graphics and voiceovers spend no credits',
+    marked: {
+      what: 'exported video, GIF and image downloads, and generated clips, at full quality',
+      never: [
+        'audio (WAV, MP3, voiceovers)',
+        'captions and transcripts',
+        'project files (SRT, VTT, FCPXML, OTIO, EDL)',
+        'your own uploads and imports',
+      ],
+    },
+    clean_copy: {
+      credits_per_finished_minute: 1,
+      step_minutes: CLEAN_COPY_STEP,
+      minimum_credits: CLEAN_COPY_STEP,
+      image_credits: CLEAN_COPY_STEP,
+      same_price_4k: true,
+      paid: 'once per export; every later download of it is clean',
+    },
     free_credits: FREE_CREDITS,
+    free_credits_when: 'granted when a new account is activated',
     packs: PACKS.map((p) => ({ id: p.id, price: p.price, credits: p.credits })),
     automatic_top_up: `optional: a chosen pack is bought on the saved card when fewer than ${LOW_CREDITS} credits are left`,
     low_credit_email_below: LOW_CREDITS,
-    overage: 'none: at zero new jobs are refused until a top-up; editing and previews keep working',
+    overage:
+      'none: at zero, making, previews and marked downloads keep working; clean copies wait for credits',
     self_hosted: {
       price: 0,
       licence: LICENCE,
       image: IMAGE,
       same_image_as_hosted: true,
       credits: null,
+      marked: false,
       repository: REPO_URL,
       steps: SELF_HOST_STEPS,
       address: LOCAL_ADDRESS,
@@ -67,7 +90,14 @@ export function GET() {
             : p.id === 'free'
               ? 'every new account'
               : 'credit packs, self-serve',
-        ...(p.id === 'free' ? { credits: FREE_CREDITS, card_required: false, expires: false } : {}),
+        ...(p.id === 'free'
+          ? {
+              credits: FREE_CREDITS,
+              granted: 'at activation',
+              card_required: false,
+              expires: false,
+            }
+          : {}),
         ...(p.id === 'credits' ? { credits: 'as bought', expires: false } : {}),
         // Enterprise limits are agreed on a call, so it publishes none.
         ...(p.sold === 'contact'

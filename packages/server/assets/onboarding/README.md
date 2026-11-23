@@ -1,8 +1,8 @@
 # Onboarding assets
 
-The shelf credits.claim picks from (src/samples.ts holds each clip's card: what it shows, the jobs
-it fits, a first edit to offer). Jev picks the card that fits the user's task; the clip is imported
-into their library without spending credits.
+The shelf credits.claim (activating the account) picks from (src/samples.ts holds each clip's card:
+what it shows, the jobs it fits, a first edit to offer). Jev picks the card that fits the user's
+task; the clip is imported into their library as their own media, never marked.
 
 Ours (generated footage from the site's demos, apps/site/public/demo/<demo>/raw.mp4):
 `gaming-stream.mp4`, `podcast-interview.mp4`, `product-review.mp4`, `real-estate-listing.mp4`,

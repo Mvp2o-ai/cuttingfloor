@@ -1,17 +1,12 @@
-import {
-  FREE_CREDITS,
-  JUDGMENTS_PER_CREDIT,
-  LEGAL_NAME,
-  PLANS,
-  SUPPORT_EMAIL,
-} from '@cuttingfloor/plans';
+import { FREE_CREDITS, LEGAL_NAME, PLANS, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { Items, LegalPage, P, Part } from '../legal.tsx';
+import { CLEAN_PRICE, STEP_CREDITS } from '../pricing.ts';
 
 export const metadata: Metadata = {
   title: 'Terms — cuttingfloor',
   description:
-    'The terms for using cuttingfloor, the hosted video editing server for AI agents: free credits, credit packs, automatic top-up, your content and ours.',
+    'The terms for using cuttingfloor, the hosted video editing server for AI agents: free making, the cuttingfloor mark, clean copies, credit packs, automatic top-up, your content and ours.',
   alternates: { canonical: '/terms', types: { 'text/markdown': '/terms.md' } },
 };
 
@@ -45,13 +40,15 @@ export default function Terms() {
           live.
         </P>
       </Part>
-      <Part title="Free credits and credit packs">
+      <Part title="Free making, clean copies and credit packs">
         <Items
           items={[
-            `Every new account gets ${FREE_CREDITS} free credits, with no card. They don't expire and don't renew.`,
-            'After that, you buy credits in packs, paid once through Stripe. There is no subscription and nothing renews. The prices are on the pricing page.',
-            `A credit is one minute of a job running on our servers (an export, an import, a transcript, motion graphics, a voiceover, a cutout), or ${JUDGMENTS_PER_CREDIT} visual judgments (a model looking at a frame). Editing the timeline and previews are free.`,
-            'Credits you buy never expire. When your credits run out, new jobs stop until you buy more. We never charge for going over.',
+            `Every new account gets ${FREE_CREDITS} free credits when it is activated, with no card. They don't expire and don't renew. Accounts made earlier keep the balance they have.`,
+            'Making is free: importing, editing, analysing, exporting and creating motion graphics and voiceovers spend no credits. Limits that protect our servers, such as file size, storage and how many jobs run at once, still apply.',
+            'Every video, GIF or image you export downloads free, at full quality, carrying the cuttingfloor mark. Audio, captions and transcripts, project files and your own uploads are never marked.',
+            `A clean copy, without the mark, costs credits: ${CLEAN_PRICE}. A still image is ${STEP_CREDITS} credit, and 4K costs the same as HD. You pay once per export, when you take the clean copy; every later download of it is clean while the export is kept.`,
+            'You buy credits in packs, paid once through Stripe. There is no subscription and nothing renews. The prices are on the pricing page.',
+            'Credits you buy never expire. When your credits run out, making and marked downloads keep working; clean copies wait until you buy more. We never charge for going over.',
             'If you turn on automatic top-up, we buy the pack you chose on your saved card whenever your credits run low, and email you a receipt each time. Turn it off any time on your account page.',
             `${PLANS.enterprise.name} is arranged with us directly: write to ${SUPPORT_EMAIL}.`,
             'We may change pack prices. A change applies to packs bought after it; credits you already have keep working.',

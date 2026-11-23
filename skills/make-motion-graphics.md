@@ -6,7 +6,7 @@ type: playbook
 source: system
 author: Sanji Nai-Chien
 author_url: https://www.youtube.com/watch?v=D5qpBbEWTxo
-related: storyboard-before-animate:prerequisite, spend-credits-wisely:prerequisite
+related: storyboard-before-animate:prerequisite
 ---
 
 # Make motion graphics like a pro

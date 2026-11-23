@@ -1,4 +1,4 @@
-import { FREE_CREDITS, SUPPORT_EMAIL } from '@cuttingfloor/plans';
+import { SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { Items, LegalPage, P, Part } from '../legal.tsx';
 
@@ -17,12 +17,18 @@ export default function Refunds() {
       label="Refunds"
       href="/refunds"
       title="Refunds."
-      lede={`Try it free first with ${FREE_CREDITS} credits, no card. If you pay and it isn't working out, here's what we refund.`}
+      lede="Making is free with no card, so you can try everything first. If you pay and it isn't working out, here's what we refund."
     >
       <Part title="Credit packs">
         <P>
           Within 14 days of buying a pack, you can ask for a refund of the credits you haven't used.
           Credits you have used aren't refunded. A refunded pack's credits come off your balance.
+        </P>
+      </Part>
+      <Part title="Clean copies">
+        <P>
+          Credits spent on a clean copy aren't refunded once the clean copy has been downloaded. If
+          a clean copy is broken by a fault on our side, write to us and we put the credits back.
         </P>
       </Part>
       <Part title="Automatic top-up">

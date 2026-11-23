@@ -10,6 +10,7 @@ import {
 } from '../../content/facts.ts';
 import { cell } from '../lib/markdown.ts';
 import {
+  CLEAN_PRICE,
   CREDIT,
   EVERY_PLAN,
   EVERY_PLAN_LEAD,
@@ -29,7 +30,7 @@ export function markdown(): string {
   const body = [
     '# cuttingfloor pricing',
     '',
-    `> Free to self-host: open source under ${LICENCE}, the same Docker image the hosted service runs, on your own machine with no credit limits. Hosted: pay as you go. Start with free credits, no card, then buy credit packs that never expire; no subscription. Everyone has every tool. A credit is a minute of a job running; editing and previews are free. Prices in US dollars.`,
+    `> Hosted: making is free, with every tool and no card, and every exported video, GIF or image downloads free carrying the cuttingfloor mark. A clean copy without the mark costs ${CLEAN_PRICE}, once per export, from credit packs that never expire; no subscription. Free to self-host, unmarked: open source under ${LICENCE}, the same Docker image the hosted service runs, on your own machine. Prices in US dollars.`,
     '',
     `Page: ${SITE_URL}/pricing · JSON: ${SITE_URL}/pricing.json`,
     '',
@@ -89,7 +90,7 @@ export function markdown(): string {
     '',
     '## Self-hosted · Free',
     '',
-    `Open source under ${LICENCE}. One Docker image (${IMAGE}), the same image the hosted service runs. You run it on your own machine, with no credit limits, and bring your own keys for lip-sync and visual judgment.`,
+    `Open source under ${LICENCE}. One Docker image (${IMAGE}), the same image the hosted service runs. You run it on your own machine, unmarked, with no limits and no credits, and bring your own keys for lip-sync and visual judgment.`,
     '',
     '```sh',
     ...SELF_HOST_STEPS,

@@ -1,4 +1,3 @@
-import { JUDGMENTS_PER_CREDIT } from '@cuttingfloor/plans';
 import {
   IMAGE,
   KEYS,
@@ -8,12 +7,12 @@ import {
   REPO_URL,
   SELF_HOST_STEPS,
 } from '../../content/facts.ts';
-import { PLANS, type Plan } from '../pricing.ts';
+import { CLEAN_PRICE, MAKING_FREE, MARKED, NEVER_MARKED, PLANS, type Plan } from '../pricing.ts';
 import { list, table } from './markdown.ts';
 
 // The product facts as Markdown, for every twin and llms.txt that states them.
 
-export const CREDIT_TEXT = `A credit is one minute of a job running on the hosted servers (export, import, transcript, motion graphics, voiceover, cutout), or ${JUDGMENTS_PER_CREDIT} visual judgments. Planning and editing the timeline are free. Everyone has every tool. Pay as you go: buy credit packs when you need them; they never expire and nothing renews. At zero, new jobs won’t start until you top up; nothing is ever billed but the packs you buy.`;
+export const CREDIT_TEXT = `${MAKING_FREE} Everyone has every tool. ${MARKED} A clean copy without the mark costs ${CLEAN_PRICE}; 4K costs the same, and you pay once per export. ${NEVER_MARKED} Pay as you go: buy credit packs when you need them; they never expire and nothing renews. At zero, making and marked downloads keep working; clean copies wait for credits. Nothing is ever billed but the packs you buy.`;
 
 /** "From $5 for 25 credits", "$0, no card", "Talk to us". */
 export const priceText = (p: Plan) =>
@@ -27,7 +26,7 @@ export function plansTable(): string {
       [
         'Self-hosted',
         'Free',
-        'No credit limits',
+        'Unmarked, no limits, no credits',
         'Your machine, the same image',
         `Open source (${LICENCE}). Bring your own keys where needed.`,
       ],

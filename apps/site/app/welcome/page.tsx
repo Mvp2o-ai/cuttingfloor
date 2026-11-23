@@ -31,7 +31,7 @@ export default async function Welcome() {
           <h1 className="display account-head">Connect your agent.</h1>
           <p className="lede">
             {left !== null
-              ? `You have ${left} free credits: every tool, no card. A short video takes less than one. `
+              ? `Making is free with every tool, no card${left > 0 ? `, and you have ${left} credits for clean copies` : ''}. `
               : ''}
             Three steps, about a minute.
           </p>

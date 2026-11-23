@@ -5,7 +5,7 @@ version: 2
 type: playbook
 source: system
 author: Ken Wiltshire
-related: pan-and-scan:prerequisite, spend-credits-wisely:prerequisite, shorts-style-captions:related
+related: pan-and-scan:prerequisite, shorts-style-captions:related
 ---
 
 # Turn a long video into Shorts

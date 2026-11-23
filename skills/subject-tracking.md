@@ -5,7 +5,6 @@ version: 1
 type: playbook
 source: system
 author: Ken Wiltshire
-related: spend-credits-wisely:prerequisite
 ---
 
 # Subject tracking
