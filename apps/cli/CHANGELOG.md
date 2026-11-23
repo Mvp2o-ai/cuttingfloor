@@ -1,5 +1,12 @@
 # cuttingfloor
 
+## 0.68.2
+
+### Patch Changes
+
+- 1792150: Admin API 1.8.0: each file says whether it carries the cuttingfloor mark (watermarked), what a clean copy costs (release_credits), when one was taken (released_at), and its watch page (page_url), so follow-up email can be written from the account alone.
+- 962e3c9: Everything says watermark: exports download with a cuttingfloor watermark, and export.release ("Remove watermark") removes it for credits. Amounts of one credit or less read "credit" (0.75 credit). A day's download record names the earliest request's client even when a later request is written first.
+
 ## 0.68.1
 
 ### Patch Changes
