@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.67.3
+
+### Patch Changes
+
+- 97d76e5: Only an account's first-ever connection counts as having had the free-credits welcome; accounts that connected before (hosts may keep old instructions) get the note on their first tool result. Apps calling /v1 don't use it up, and the admin API's `use_cases` includes claims from before tasks were kept.
+
 ## 0.67.2
 
 ### Patch Changes
