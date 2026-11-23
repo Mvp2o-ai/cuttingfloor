@@ -149,6 +149,11 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
       description: [
         'Render the timeline to a file, at the sequence size and frame rate. Formats: mp4_h264 (MP4), mp4_h264_fast (MP4, quick and small with sound, to watch a cut), mp4_av1 (MP4, AV1/Opus), mov_prores_422hq (MOV), gif (15 fps), wav, mp3. overrides sets another size (a box, aspect kept), fps, bitrate or crf (video://catalog/presets). Scaling up adds no detail: a picture made larger than its source looks soft.',
         `Long-running: returns a task, or {job_id} for job.get. The result links the file (a resource_link to video://jobs/{job_id}/output, which reads as the file, or its signed URL when large), has a signed download URL and a page_url that plays it in any browser (the link to give a person to watch or share), both working for ${Math.round(rt.config.outputUrlTtlMs / 3_600_000)} h (job.get gives fresh ones). The file itself is deleted ${span(KEEP_MS.job)} after the export finishes (kept_until, and expiry in words): save it from url to keep it${rt.config.exportsDir ? `, and the file is in the exports folder (${rt.config.exportsDir})` : ''}.`,
+        ...(rt.gate
+          ? [
+              "A picture export (video, GIF) downloads with a cuttingfloor watermark, for reviewing, which is free, until it is released (export.release, 1 credit a finished minute); the result says when it has one, the price and the user's credits.",
+            ]
+          : []),
         'The server keeps the file 7 days, as a working copy: when the user has a finished piece to keep, offer to save it from the url where they keep their files, and media.import it to use it again.',
         'qa.check measures a render (gaps, frames, loudness) before you export. sha256 and fingerprint tell two renders apart without downloading them (fingerprint matches media.get of the file once imported).',
       ].join(' '),

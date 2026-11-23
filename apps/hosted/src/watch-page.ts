@@ -75,7 +75,7 @@ ${og}
     <h1>${name}</h1>
     <span class="meta"><a href="${href}" download>Download</a> · link works until <time datetime="${o.expiresAt.toISOString()}">${o.expiresAt.toUTCString()}</time></span>
   </footer>
-  ${o.mark ? `<p class="mark">This file has a cuttingfloor watermark. Removing it uses ${o.mark.credits} credit${o.mark.credits > 0 && o.mark.credits <= 1 ? '' : 's'}: ask the assistant you made it with, and this link plays and downloads it without the watermark from then on.</p>` : ''}
+  ${o.mark ? `<p class="mark">This file has a cuttingfloor watermark. Removing it uses ${o.mark.credits} credit${o.mark.credits === 1 ? '' : 's'}: ask the assistant you made it with, and this link plays and downloads it without the watermark from then on.</p>` : ''}
 </main>
 </body>
 </html>

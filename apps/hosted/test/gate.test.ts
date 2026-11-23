@@ -117,11 +117,18 @@ describe('the download gate', () => {
     const { jobId, url, pageUrl } = await exported('alice', 'short.mp4', 'video/mp4', 40);
     const alice = await connect(KEY);
 
-    // The export says so, with its price: 40 s is three quarter-minutes.
+    // The export says so, with its price (40 s is three quarter-minutes) and what the user has.
     const before = (await call(alice, 'job.get', { job_id: jobId })).structuredContent as {
-      result: { watermarked: boolean; release_credits: number };
+      result: { watermarked: boolean; release_credits: number; watermark_note: string };
     };
-    expect(before.result).toMatchObject({ watermarked: true, release_credits: 0.75 });
+    expect(before.result).toMatchObject({
+      watermarked: true,
+      release_credits: 0.75,
+      credits_left: 3,
+    });
+    expect(before.result.watermark_note).toBe(
+      'This copy has a cuttingfloor watermark, for reviewing, which is free. Releasing it removes the watermark for 0.75 credits; this account has 3 credits, enough. Once the user has reviewed it, offer to release it now.',
+    );
 
     // Every way out serves the watermarked copy, made once, and never cached.
     const first = await fetch(url);
@@ -153,6 +160,8 @@ describe('the download gate', () => {
     };
     expect(after.result.watermarked).toBe(false);
     expect(after.result.release_credits).toBeUndefined();
+    expect(after.result).not.toHaveProperty('credits_left');
+    expect(after.result).not.toHaveProperty('watermark_note');
 
     // Again: nothing spent.
     const again = await call(alice, 'export.release', { job_id: jobId });
@@ -164,6 +173,15 @@ describe('the download gate', () => {
     balances.set('poor', 0.5);
     const { jobId, url } = await exported('poor', 'long.mp4', 'video/mp4', 61);
     const poor = await connect(`${KEY}-poor`);
+    // The export already says the balance falls short, with no way to buy in it.
+    const told = (await call(poor, 'job.get', { job_id: jobId })).structuredContent as {
+      result: { credits_left: number; watermark_note: string };
+    };
+    expect(told.result.credits_left).toBe(0.5);
+    expect(told.result.watermark_note).toBe(
+      'This copy has a cuttingfloor watermark, for reviewing, which is free. Releasing it removes the watermark for 1.25 credits; this account has 0.5 credits, too few. The watermarked copy is what downloads until then.',
+    );
+    expect(told.result.watermark_note).not.toMatch(/https?:|buy/i);
     const refused = await call(poor, 'export.release', { job_id: jobId });
     expect(refused.isError).toBe(true);
     expect(refused.structuredContent).toMatchObject({
@@ -197,6 +215,15 @@ describe('the download gate', () => {
     expect(await short.json()).toMatchObject({ code: 'quota_exceeded' });
   });
 
+  it("says in export.video's description that picture exports carry the watermark, inside the cut", async () => {
+    const alice = await connect(KEY);
+    const { tools } = await alice.listTools();
+    const text = tools.find((t) => t.name === 'export.video')?.description ?? '';
+    expect(text).toContain('downloads with a cuttingfloor watermark, for reviewing, which is free');
+    expect(text.length).toBeLessThanOrEqual(4096);
+    await alice.close();
+  });
+
   it('releases with exactly the price left', async () => {
     balances.set('alice', 0.25);
     const { jobId } = await exported('alice', 'tiny.png', 'image/png', 0);
@@ -217,6 +244,20 @@ describe('the download gate', () => {
     exempt.add('staff');
     const given = await exported('staff', 'cut.mp4', 'video/mp4', 30);
     expect(await (await fetch(given.url)).text()).toBe('clean cut.mp4');
+    // Nothing said about a watermark a file doesn't have, nor the user's credits.
+    const staff = await connect(`${KEY}-staff`);
+    for (const [client, id] of [
+      [alice, audio.jobId],
+      [staff, given.jobId],
+    ] as const) {
+      const clean = (await call(client, 'job.get', { job_id: id })).structuredContent as {
+        result: Record<string, unknown>;
+      };
+      expect(clean.result.watermarked).toBe(false);
+      expect(clean.result).not.toHaveProperty('watermark_note');
+      expect(clean.result).not.toHaveProperty('credits_left');
+    }
+    await staff.close();
 
     const gone = await call(alice, 'export.release', { job_id: 'j_00000000000000000000000000' });
     expect(gone.structuredContent).toMatchObject({ code: 'not_found' });

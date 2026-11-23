@@ -659,14 +659,23 @@ export class Runtime {
   async #markState<T>(value: T): Promise<T> {
     const gate = this.gate;
     if (!gate || value === undefined || value === null) return value;
+    // One balance read per owner for the whole answer, however many jobs it lists.
+    const balances = new Map<string, Promise<number | null | undefined>>();
     for (const job of (Array.isArray(value) ? value : [value]) as Array<Partial<Job>>) {
       const out = job?.result?.structuredContent as Record<string, unknown> | undefined;
       if (!job?.id || !job.owner || !out || typeof out.url !== 'string') continue;
-      const state = await gate.state(job.owner, job.id).catch(() => undefined);
+      const owner = job.owner;
+      const readCredits = () => {
+        if (!balances.has(owner)) balances.set(owner, gate.credits(owner));
+        return balances.get(owner) as Promise<number | null | undefined>;
+      };
+      const state = await gate.described(owner, job.id, readCredits).catch(() => undefined);
       if (!state) continue;
       out.watermarked = state.watermarked;
-      if (state.release_credits !== undefined) out.release_credits = state.release_credits;
-      else delete out.release_credits;
+      for (const key of ['release_credits', 'credits_left', 'watermark_note'] as const) {
+        if (state[key] !== undefined) out[key] = state[key];
+        else delete out[key];
+      }
     }
     return value;
   }
