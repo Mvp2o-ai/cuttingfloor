@@ -78,11 +78,9 @@ describe('support.contact', () => {
     expect(await env.runtime.ws.list(env.runtime.ws.ownerDir('user_nobalance', 'meter'))).toEqual(
       [],
     );
-    // Only its own record, the call log every tool writes and the mark of the account's first
-    // result: no meter, ledger or balance file.
+    // Only its own record and the call log every tool writes: no meter, ledger or balance file.
     expect((await env.runtime.ws.list(env.runtime.ws.ownerDir('user_nobalance'))).sort()).toEqual([
       'calls',
-      'claim-guided.json',
       'support-messages',
     ]);
   });

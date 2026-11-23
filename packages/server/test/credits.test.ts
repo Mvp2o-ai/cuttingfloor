@@ -1,6 +1,6 @@
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import type { AccountGetResult } from '@cuttingfloor/schema';
-import { CLAIM_TASKS, createServer } from '@cuttingfloor/server';
+import { CLAIM_REFUSALS, CLAIM_TASKS, createServer } from '@cuttingfloor/server';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -173,45 +173,47 @@ describe('credits.claim', () => {
   });
 });
 
-describe('the first tool result', () => {
-  const GUIDE = /free credits aren't activated yet.*credits\.claim/;
-  const texts = (res: Awaited<ReturnType<typeof call>>) =>
-    res.content.flatMap((c) => (c.type === 'text' ? [String(c.text)] : []));
-
-  it('carries the claim guidance once, on whichever tool comes first, and never again', async () => {
-    const client = await connectWithAccount('user_guided', async () => ACCOUNT);
-    const first = await call(client, 'media.list', {});
-    expect(first.isError).toBe(false);
-    expect(texts(first).some((t) => GUIDE.test(t))).toBe(true);
-    const second = await call(client, 'media.list', {});
-    expect(texts(second).some((t) => GUIDE.test(t))).toBe(false);
-    // A new connection of the same account, claimed or not, is not told again.
-    const again = await connectWithAccount('user_guided', async () => ACCOUNT);
-    expect(texts(await call(again, 'media.list', {})).some((t) => GUIDE.test(t))).toBe(false);
+describe('the claim gate', () => {
+  it("refuses an unclaimed account's calls twice, then lets them run", async () => {
+    const client = await connectWithAccount('user_gated', async () => ACCOUNT);
+    for (let i = 0; i < CLAIM_REFUSALS; i++) {
+      const refused = await call(client, 'media.list', {});
+      expect(refused.isError).toBe(true);
+      expect(refused.structured).toMatchObject({
+        code: 'claim_required',
+        hint: expect.stringContaining('credits.claim'),
+      });
+    }
+    expect((await call(client, 'media.list', {})).isError).toBe(false);
+    // For good: a new connection of the same account is not refused again.
+    const again = await connectWithAccount('user_gated', async () => ACCOUNT);
+    expect((await call(again, 'media.list', {})).isError).toBe(false);
   });
 
-  it("is not shown to an account that has claimed, or in credits.claim's own result", async () => {
-    const claimer = await connectWithAccount('user_claimed_first', async () => ACCOUNT);
-    const claim = await call(claimer, 'credits.claim', { use_case: 'make a trailer' });
-    expect(texts(claim).some((t) => GUIDE.test(t))).toBe(false);
-    expect(texts(await call(claimer, 'media.list', {})).some((t) => GUIDE.test(t))).toBe(false);
-  });
-
-  it('is not shown on a connection without an account, and a refusal does not use it up', async () => {
-    const plain = await connect(env.runtime);
-    expect(texts(await call(plain, 'media.list', {})).some((t) => GUIDE.test(t))).toBe(false);
-    const client = await connectWithAccount('user_refused', async () => ACCOUNT);
-    const bad = await call(client, 'timeline.get', { timeline_id: 'tl_missing' });
-    expect(bad.isError).toBe(true);
-    expect(texts(bad).some((t) => GUIDE.test(t))).toBe(false);
-    expect(texts(await call(client, 'media.list', {})).some((t) => GUIDE.test(t))).toBe(true);
-  });
-
-  it('of calls at once, only one carries it', async () => {
-    const client = await connectWithAccount('user_guided_race', async () => ACCOUNT);
-    const results = await Promise.all(
-      Array.from({ length: 6 }, () => call(client, 'media.list', {})),
+  it('opens at the claim, and never stands in the way of the claim or of support', async () => {
+    const client = await connectWithAccount('user_gate_claims', async () => ACCOUNT);
+    expect((await call(client, 'media.list', {})).isError).toBe(true);
+    expect((await call(client, 'support.contact', { message: 'stuck' })).isError).toBe(false);
+    expect((await call(client, 'credits.claim', { use_case: 'make a trailer' })).isError).toBe(
+      false,
     );
-    expect(results.filter((r) => texts(r).some((t) => GUIDE.test(t)))).toHaveLength(1);
+    expect((await call(client, 'media.list', {})).isError).toBe(false);
+  });
+
+  it('is not there without an account, or where the server is told no one can claim', async () => {
+    const plain = await connect(env.runtime);
+    expect((await call(plain, 'media.list', {})).isError).toBe(false);
+    const server = createServer({
+      runtime: env.runtime,
+      credentials: new LocalCredentialStore({}, false),
+      owner: () => 'user_on_rest',
+      account: async () => ACCOUNT,
+      claimGate: false,
+    });
+    const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverSide);
+    const rest = new Client({ name: 'test', version: '0.0.0' });
+    await rest.connect(clientSide);
+    expect((await call(rest, 'media.list', {})).isError).toBe(false);
   });
 });

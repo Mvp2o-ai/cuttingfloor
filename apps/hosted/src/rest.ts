@@ -45,6 +45,7 @@ const STATUS: Record<ErrorCode, number> = {
   path_not_allowed: 403,
   limit_exceeded: 422,
   quota_exceeded: 402,
+  claim_required: 403,
   subscription_required: 402,
   email_unverified: 403,
   service_unavailable: 503,

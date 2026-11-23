@@ -19,6 +19,7 @@ export const ErrorCode = z.enum([
   'path_not_allowed',
   'limit_exceeded',
   'quota_exceeded',
+  'claim_required',
   'subscription_required',
   'email_unverified',
   'service_unavailable',

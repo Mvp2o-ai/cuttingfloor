@@ -1,15 +1,15 @@
 import { randomBytes } from 'node:crypto';
 import { defineCollection } from '@cuttingfloor/core';
-import { FREE_CREDITS } from '@cuttingfloor/plans';
 import {
   type AccountGetResult,
+  CfError,
   ClaimFreeCreditsInput,
   ClaimFreeCreditsResult,
 } from '@cuttingfloor/schema';
-import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { askJev, JEV_URL } from '../jev.ts';
 import { PLAYER_TOOL_META } from '../player.ts';
-import { guard, ok } from '../result.ts';
+import { guard, ok, toErrorResult } from '../result.ts';
 import type { Runtime } from '../runtime.ts';
 import { FALLBACK_SAMPLE, SAMPLES, type Sample, sampleBySlug, samplePath } from '../samples.ts';
 import type { ServerDeps } from '../server.ts';
@@ -59,13 +59,6 @@ export const CLAIM_TASKS = defineCollection<ClaimedTask>({
   name: 'account_claim_tasks',
   scope: 'owner',
   fs: { dir: 'claim-tasks' },
-});
-
-/** The one time the account's first tool result carried the claim guidance: one record, id `claim-guided`. */
-export const CLAIM_GUIDED = defineCollection<{ at: string; tool: string }>({
-  name: 'account_claim_guided',
-  scope: 'owner',
-  fs: { dir: '' },
 });
 
 /**
@@ -168,19 +161,23 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
   );
 }
 
-/** What the account's first tool result says: a fact about the account and the offer that fits it. */
-const GUIDANCE = `This account's ${FREE_CREDITS} free credits aren't activated yet. Ask the user what they'd like to make, then credits.claim with their answer activates them and puts a sample video that fits it in their library.`;
+/** How many calls are refused for the claim before the account's calls run anyway. */
+export const CLAIM_REFUSALS = 2;
+
+/** Tools that run before a claim: the claim itself, and the way to tell us something is wrong. */
+const BEFORE_CLAIM = new Set(['credits.claim', 'support.contact']);
 
 /**
- * The first tool result an account ever gets carries the claim guidance, once for good: no
- * connection, host or claim state brings it back. Hosts keep the instructions from the day a
- * connector was added; a result is read on every call. A signed-in hosted account only, never
- * one that has claimed, never an error result, and never credits.claim's own. Wraps the request
- * handler the SDK sets when the first tool registers, so it must run before any tool is.
+ * Until the account claims its free credits, its tool calls are refused with `claim_required`
+ * and the way to claim, at most CLAIM_REFUSALS times for good (counted in the records store);
+ * then they run as before, so an assistant that can't or won't claim (an old connector's tool
+ * list without credits.claim) is never stuck. Hosts keep the instructions from the day a
+ * connector was added, so the welcome alone doesn't reach everyone; a refusal does. A signed-in
+ * hosted account only; a store that can't be read lets the call run. Wraps the request handler
+ * the SDK sets when the first tool registers, so it must run before any tool is.
  */
-export function guideFirstCall(server: McpServer, deps: ServerDeps): void {
-  if (deps.runtime.config.mode !== 'hosted' || !deps.account) return;
-  if (deps.firstResultGuidance === false) return;
+export function gateUntilClaimed(server: McpServer, deps: ServerDeps): void {
+  if (deps.runtime.config.mode !== 'hosted' || !deps.account || deps.claimGate === false) return;
   const protocol = server.server as unknown as {
     setRequestHandler: (method: string, ...rest: unknown[]) => void;
   };
@@ -189,58 +186,45 @@ export function guideFirstCall(server: McpServer, deps: ServerDeps): void {
     const handler = rest.pop() as (request: unknown, ctx: unknown) => Promise<unknown>;
     if (method !== 'tools/call') return set(method, ...rest, handler);
     return set(method, ...rest, async (request: unknown, ctx: unknown) => {
-      const result = (await handler(request, ctx)) as CallToolResult;
       const tool = String((request as { params?: { name?: unknown } }).params?.name ?? '');
-      if (result?.isError || tool === 'credits.claim' || !Array.isArray(result?.content))
-        return result;
-      const owner = deps.owner();
-      if (done.get(deps.runtime)?.has(owner)) return result;
-      try {
-        if (await creditsClaimed(deps.runtime, owner)) return markDone(deps.runtime, owner, result);
-        const first = await deps.runtime.ws.records
-          .collection(CLAIM_GUIDED, { owner })
-          .insertOnce('claim-guided', { at: new Date().toISOString(), tool });
-        markDone(deps.runtime, owner, result);
-        return first
-          ? { ...result, content: [...result.content, { type: 'text', text: GUIDANCE }] }
-          : result;
-      } catch (error) {
-        // A store that cannot be read leaves the result as the tool made it.
-        process.stderr.write(`credits.guidance: ${owner}: ${(error as Error).message}\n`);
-        return result;
-      }
+      if (!BEFORE_CLAIM.has(tool) && (await refuse(deps.runtime, deps.owner())))
+        return toErrorResult(
+          new CfError('claim_required', "This account's free credits aren't activated yet.", {
+            hint: `Call credits.claim with the task the user is doing (ask them what they'd like to make if you don't know), then call ${tool} again. It's free and puts a sample video that fits the task in their library.`,
+          }),
+        );
+      return handler(request, ctx);
     });
   };
 }
 
-/**
- * An unclaimed account's connection was handed the welcome (initialize, or discovery in the
- * newer protocol): the same once-ever mark as the first tool result, so a user who connects and
- * never makes a call has had the guidance, and one who does isn't told twice. Never raises.
- */
-export async function markWelcomed(runtime: Runtime, owner: string): Promise<void> {
-  if (done.get(runtime)?.has(owner)) return;
+/** The account's refusals so far: one record, id `claim-gate`. */
+export const CLAIM_GATE = defineCollection<{ refusals: number; first_at: string }>({
+  name: 'account_claim_gate',
+  scope: 'owner',
+  fs: { dir: '' },
+});
+
+/** The accounts this process lets through: claimed, or refused as often as they will be. */
+const open = new WeakMap<Runtime, Set<string>>();
+
+async function refuse(runtime: Runtime, owner: string): Promise<boolean> {
+  if (open.get(runtime)?.has(owner)) return false;
   try {
-    if (!(await creditsClaimed(runtime, owner)))
-      await runtime.ws.records
-        .collection(CLAIM_GUIDED, { owner })
-        .insertOnce('claim-guided', { at: new Date().toISOString(), tool: 'initialize' });
-    const owners = done.get(runtime) ?? new Set<string>();
-    done.set(runtime, owners);
-    owners.add(owner);
+    if (!(await creditsClaimed(runtime, owner))) {
+      const gate = runtime.ws.records.collection(CLAIM_GATE, { owner });
+      await gate.insertOnce('claim-gate', { refusals: 0, first_at: new Date().toISOString() });
+      const after = await gate.update('claim-gate', { inc: { refusals: 1 } });
+      if ((after?.refusals ?? Number.POSITIVE_INFINITY) <= CLAIM_REFUSALS) return true;
+    }
   } catch (error) {
-    process.stderr.write(`credits.guidance: ${owner}: ${(error as Error).message}\n`);
+    process.stderr.write(`credits.gate: ${owner}: ${(error as Error).message}\n`);
+    return false;
   }
-}
-
-/** The accounts this process has settled: claimed, or already shown the guidance. */
-const done = new WeakMap<Runtime, Set<string>>();
-
-function markDone(runtime: Runtime, owner: string, result: CallToolResult): CallToolResult {
-  const owners = done.get(runtime) ?? new Set<string>();
-  done.set(runtime, owners);
+  const owners = open.get(runtime) ?? new Set<string>();
+  open.set(runtime, owners);
   owners.add(owner);
-  return result;
+  return false;
 }
 
 /** The balance as account.get gives it; null when it can't be read, so the claim still answers. */

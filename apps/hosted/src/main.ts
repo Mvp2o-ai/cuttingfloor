@@ -261,7 +261,6 @@ const server = createHttpServer({
   ...(lifecycle
     ? {
         onCall: (owner: string) => lifecycle.called(owner),
-        firstConnection: (owner: string) => lifecycle.firstConnection(owner),
         onApp: (owner: string, app: string) => {
           lifecycle.usedFrom(owner, app);
           apps.seen(owner, app);

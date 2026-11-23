@@ -20,7 +20,6 @@ import {
   creditsClaimed,
   DRAIN_RETRY_SECONDS,
   drainingError,
-  markWelcomed,
   type OwnerLimits,
   outputMime,
   type Runtime,
@@ -70,8 +69,6 @@ export interface HttpOptions {
   account?: (owner: string) => Promise<AccountGetResult>;
   /** Told of each signed-in owner's MCP request (first-call records). */
   onCall?: (owner: string) => void | Promise<void>;
-  /** Whether the owner's request here was the account's first ever (after onCall told of it). */
-  firstConnection?: (owner: string) => Promise<boolean>;
   /** Told the app a signed-in owner's request came from, by its MCP clientInfo name. */
   onApp?: (owner: string, app: string) => void;
   /** Provider keys signed-in users saved on their account page, after any in the request. */
@@ -152,21 +149,6 @@ function userAgentApp(userAgent: string | undefined): string | undefined {
   return /^[\w.-]+/.exec(userAgent ?? '')?.[0];
 }
 
-/** Whether a POST body asks for the server's instructions: initialize, or discovery in the newer protocol. */
-async function sendsInstructions(request: Request): Promise<boolean> {
-  if (request.method !== 'POST') return false;
-  try {
-    const body: unknown = JSON.parse(await request.clone().text());
-    return (Array.isArray(body) ? body : [body]).some((m) =>
-      INSTRUCTION_METHODS.has((m as { method?: unknown } | null)?.method as string),
-    );
-  } catch {
-    return false;
-  }
-}
-
-const INSTRUCTION_METHODS = new Set(['initialize', 'server/discover']);
-
 /** Whether a POST body holds only discovery messages (one, or a 2025-03-26 batch). */
 async function isDiscovery(request: Request): Promise<boolean> {
   if (request.method !== 'POST') return false;
@@ -234,8 +216,8 @@ export function createHttpServer(options: HttpOptions): Server {
       // ChatGPT's plugin rules forbid selling credits, so its refusals only say what stopped.
       ...(limits ? { limits: () => limits(owner, { buy: !chatgpt(requestHeaders) }) } : {}),
       ...(account ? { account: () => account(owner) } : {}),
-      // Apps call /v1 for their users: no assistant reads a result there.
-      ...(channel === 'rest' ? { firstResultGuidance: false } : {}),
+      // Apps call /v1 for their users: no assistant there can claim.
+      ...(channel === 'rest' ? { claimGate: false } : {}),
     });
   };
   const handler = createMcpHandler(
@@ -477,17 +459,6 @@ export function createHttpServer(options: HttpOptions): Server {
       const request = await toWebRequest(req as IncomingMessage & { method: string; url: string });
       const caller = await authenticate(req, res, request, () => isDiscovery(request));
       if (!caller) return;
-      // The account's first-ever connection is handed the welcome by a host that cannot have kept
-      // older instructions, so it is the account's one word about its free credits and the first
-      // tool result need not say it. A later connection may be a host's cached copy: not counted.
-      if (
-        options.account &&
-        options.firstConnection &&
-        (caller.via === 'script' || caller.via === 'oauth') &&
-        (await sendsInstructions(request)) &&
-        (await options.firstConnection(caller.owner))
-      )
-        await markWelcomed(runtime, caller.owner);
       if (options.onApp && (caller.via === 'script' || caller.via === 'oauth')) {
         const app = (await appName(request)) ?? userAgentApp(req.headers['user-agent']);
         if (app) options.onApp(caller.owner, app);
