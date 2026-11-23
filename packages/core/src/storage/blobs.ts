@@ -156,7 +156,10 @@ export interface BlobStore {
    * written or touched more than `ttlMs` ago. `keep` spares names. Returns the names removed.
    */
   expire(prefix: BlobKey, ttlMs: number, keep?: (name: string) => boolean): Promise<string[]>;
-  /** Bytes an owner keeps, shared bytes once. */
+  /**
+   * Bytes an owner keeps, shared bytes once: what they sent or made and their exports. The
+   * server's own working copies of media (proxies, mezzanines: `workingCopy`) don't count.
+   */
   usage(owner: string): Promise<number>;
   /** Removes every blob an owner has, whoever holds it (the account is deleted). */
   forget(owner: string): Promise<void>;
@@ -224,4 +227,13 @@ export interface BlobStore {
     uploadId: string,
     after: BlobPart | undefined,
   ): Promise<{ part: BlobPart | null; bytes: number }>;
+}
+
+/**
+ * A copy the server makes of a media file for its own work (the editing proxy, the conformed
+ * mezzanine) in the media's folder, by the blob's key (or path). Kept and expired with its
+ * media, but not the owner's storage.
+ */
+export function workingCopy(key: string): boolean {
+  return /(?:^|\/)media\/(?:[^/]+\/)*m_[^/]+\/(?:proxy|mezzanine)\.mov$/.test(key);
 }
