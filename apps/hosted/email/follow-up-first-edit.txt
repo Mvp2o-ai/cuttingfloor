@@ -1,4 +1,4 @@
-version: 2
+version: 3
 subject: How was the first edit?
 ---
 Hi,
@@ -10,7 +10,7 @@ You've finished your first edit with cuttingfloor. Two blunt questions:
 
 Just reply to this email, however short. I read every reply.
 
-You have {{credits}} left for the next one.
+The next one is free to make, retries included. You have {{credits}} for clean copies, without the cuttingfloor mark.
 
 {{signer}}
 cuttingfloor
