@@ -40,7 +40,7 @@ import { recipientState } from './sequence.ts';
 //   {user, label} and `POST /account/admin-keys/revoke` {user, key_id}, with the site's own key.
 
 /** The API's version: within v1 it only grows, so every change bumps minor or patch. */
-export const ADMIN_API_VERSION = '1.7.0';
+export const ADMIN_API_VERSION = '1.8.0';
 const BASE = '/admin/v1';
 /** Admin keys: their own prefix and folder, so a script key never opens this API. */
 export const ADMIN_KEYS: KeyKind = { prefix: 'cfa_', dir: 'admin-keys', label: 'Admin key' };
@@ -248,27 +248,41 @@ export class AdminApi {
     ]);
     const now = Date.now();
     const files: File[] = [];
+    const releasedAt = new Map(released.map(({ value: r }) => [r.id, r.released_at]));
+    // Whether a file carries the mark now, and since when it is clean.
+    const mark = async (id: string, releaseId: string) => {
+      const state = rt.gate ? await rt.gate.state(owner, id).catch(() => undefined) : undefined;
+      return {
+        watermarked: state?.watermarked ?? false,
+        release_credits: state?.watermarked ? (state.release_credits ?? null) : null,
+        released_at: releasedAt.get(releaseId) ?? null,
+      };
+    };
     for (const m of media) {
-      if (Date.parse(m.expires_at) > now)
-        files.push({
-          kind: 'media',
-          id: m.media_id,
-          name: m.name,
-          expires_at: m.expires_at,
-          download_url: null,
-        });
+      if (Date.parse(m.expires_at) <= now) continue;
+      const source = (m.source ?? {}) as { job?: string; job_id?: string };
+      files.push({
+        kind: 'media',
+        id: m.media_id,
+        name: m.name,
+        expires_at: m.expires_at,
+        download_url: null,
+        page_url: null,
+        ...(await mark(m.media_id, source.job ?? source.job_id ?? m.media_id)),
+      });
     }
     for (const job of jobs) {
       const going = exportOf(job);
       if (!going?.jobId || going.at <= now) continue;
+      const signed = options.links ? await rt.signOutput(owner, going.jobId, going.name) : null;
       files.push({
         kind: 'export',
         id: going.jobId,
         name: going.name,
         expires_at: new Date(going.at).toISOString(),
-        download_url: options.links
-          ? (await rt.signOutput(owner, going.jobId, going.name)).url
-          : null,
+        download_url: signed?.url ?? null,
+        page_url: signed?.pageUrl ?? null,
+        ...(await mark(going.jobId, going.jobId)),
       });
     }
     files.sort((a, b) => a.expires_at.localeCompare(b.expires_at));

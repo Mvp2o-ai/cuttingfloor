@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "cuttingfloor admin API",
-    "version": "1.7.0",
+    "version": "1.8.0",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -268,9 +268,44 @@
           "download_url": {
             "description": "A signed download link for an export, valid for days. Only get_account signs them: null in list pages, and for media",
             "type": ["string", "null"]
+          },
+          "page_url": {
+            "description": "The watch page that plays the export in any browser, no sign-in: the link to give the user in an email. Valid as download_url is; null where it is",
+            "type": ["string", "null"]
+          },
+          "watermarked": {
+            "type": "boolean",
+            "description": "True: the file downloads carrying the cuttingfloor mark until a clean copy is taken (export.release). False: it is clean (released, made before 2026-11-23 11:30 UTC, never marked such as audio or an upload, or a given plan)"
+          },
+          "release_credits": {
+            "description": "What a clean copy costs, in credits, while watermarked; null when it is clean",
+            "type": ["number", "null"]
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 UTC"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When a clean copy was taken; null when none was"
           }
         },
-        "required": ["kind", "id", "name", "expires_at", "download_url"]
+        "required": [
+          "kind",
+          "id",
+          "name",
+          "expires_at",
+          "download_url",
+          "page_url",
+          "watermarked",
+          "release_credits",
+          "released_at"
+        ]
       },
       "Download": {
         "type": "object",
