@@ -1,0 +1,390 @@
+{
+  "loop": 60,
+  "fps": 24,
+  "fade": 0.8,
+  "pieces": [
+    {
+      "name": "wordmark",
+      "width": 1560,
+      "height": 360,
+      "angles": [-6, 0, 0, 6]
+    },
+    {
+      "name": "badge",
+      "width": 1260,
+      "height": 460,
+      "angles": [-8, -4, 0, 4, 8]
+    },
+    {
+      "name": "ribbon",
+      "width": 1420,
+      "height": 330,
+      "angles": [-16, -12, 12, 16]
+    },
+    {
+      "name": "tiles",
+      "width": 1380,
+      "height": 640,
+      "angles": [-10, -5, 0, 5, 10]
+    },
+    {
+      "name": "seal",
+      "width": 940,
+      "height": 940,
+      "angles": [-20, -10, 0, 10, 20]
+    },
+    {
+      "name": "stacked",
+      "width": 1040,
+      "height": 780,
+      "angles": [-8, 0, 8]
+    }
+  ],
+  "loops": {
+    "landscape": {
+      "file": "loop-landscape.webm",
+      "width": 1920,
+      "height": 1080,
+      "placements": [
+        {
+          "piece": "tiles",
+          "start": 0.5,
+          "end": 4.429,
+          "angle": 0,
+          "size": 0.285,
+          "opacity": 0.319,
+          "zone": 7
+        },
+        {
+          "piece": "wordmark",
+          "start": 5.658,
+          "end": 10.106,
+          "angle": -6,
+          "size": 0.216,
+          "opacity": 0.335,
+          "zone": 1
+        },
+        {
+          "piece": "badge",
+          "start": 10.078,
+          "end": 14.415,
+          "angle": 0,
+          "size": 0.209,
+          "opacity": 0.314,
+          "zone": 5
+        },
+        {
+          "piece": "tiles",
+          "start": 14.625,
+          "end": 18.48,
+          "angle": 5,
+          "size": 0.283,
+          "opacity": 0.32,
+          "zone": 0
+        },
+        {
+          "piece": "wordmark",
+          "start": 20.269,
+          "end": 24.581,
+          "angle": 0,
+          "size": 0.238,
+          "opacity": 0.303,
+          "zone": 8
+        },
+        {
+          "piece": "tiles",
+          "start": 25.608,
+          "end": 29.415,
+          "angle": 10,
+          "size": 0.207,
+          "opacity": 0.337,
+          "zone": 3
+        },
+        {
+          "piece": "stacked",
+          "start": 30.828,
+          "end": 35.085,
+          "angle": 8,
+          "size": 0.287,
+          "opacity": 0.283,
+          "zone": 4
+        },
+        {
+          "piece": "wordmark",
+          "start": 36.269,
+          "end": 40.077,
+          "angle": 0,
+          "size": 0.201,
+          "opacity": 0.345,
+          "zone": 7
+        },
+        {
+          "piece": "ribbon",
+          "start": 40.791,
+          "end": 45.062,
+          "angle": -16,
+          "size": 0.24,
+          "opacity": 0.283,
+          "zone": 8
+        },
+        {
+          "piece": "seal",
+          "start": 45.17,
+          "end": 49.187,
+          "angle": 0,
+          "size": 0.294,
+          "opacity": 0.342,
+          "zone": 6
+        },
+        {
+          "piece": "tiles",
+          "start": 49.728,
+          "end": 54.384,
+          "angle": 5,
+          "size": 0.224,
+          "opacity": 0.348,
+          "zone": 7
+        },
+        {
+          "piece": "badge",
+          "start": 55.519,
+          "end": 59.754,
+          "angle": 4,
+          "size": 0.295,
+          "opacity": 0.328,
+          "zone": 8
+        }
+      ]
+    },
+    "portrait": {
+      "file": "loop-portrait.webm",
+      "width": 1080,
+      "height": 1920,
+      "placements": [
+        {
+          "piece": "tiles",
+          "start": 0.5,
+          "end": 4.429,
+          "angle": 0,
+          "size": 0.285,
+          "opacity": 0.319,
+          "zone": 3
+        },
+        {
+          "piece": "wordmark",
+          "start": 5.658,
+          "end": 10.106,
+          "angle": -6,
+          "size": 0.216,
+          "opacity": 0.335,
+          "zone": 6
+        },
+        {
+          "piece": "badge",
+          "start": 10.078,
+          "end": 14.415,
+          "angle": 0,
+          "size": 0.209,
+          "opacity": 0.314,
+          "zone": 2
+        },
+        {
+          "piece": "tiles",
+          "start": 14.625,
+          "end": 18.48,
+          "angle": 5,
+          "size": 0.283,
+          "opacity": 0.32,
+          "zone": 5
+        },
+        {
+          "piece": "wordmark",
+          "start": 20.269,
+          "end": 24.581,
+          "angle": 0,
+          "size": 0.238,
+          "opacity": 0.303,
+          "zone": 8
+        },
+        {
+          "piece": "tiles",
+          "start": 25.608,
+          "end": 29.415,
+          "angle": 10,
+          "size": 0.207,
+          "opacity": 0.337,
+          "zone": 7
+        },
+        {
+          "piece": "stacked",
+          "start": 30.828,
+          "end": 35.085,
+          "angle": 8,
+          "size": 0.287,
+          "opacity": 0.283,
+          "zone": 0
+        },
+        {
+          "piece": "wordmark",
+          "start": 36.269,
+          "end": 40.077,
+          "angle": 0,
+          "size": 0.201,
+          "opacity": 0.345,
+          "zone": 3
+        },
+        {
+          "piece": "ribbon",
+          "start": 40.791,
+          "end": 45.062,
+          "angle": -16,
+          "size": 0.24,
+          "opacity": 0.283,
+          "zone": 4
+        },
+        {
+          "piece": "seal",
+          "start": 45.17,
+          "end": 49.187,
+          "angle": 0,
+          "size": 0.294,
+          "opacity": 0.342,
+          "zone": 2
+        },
+        {
+          "piece": "tiles",
+          "start": 49.728,
+          "end": 54.384,
+          "angle": 5,
+          "size": 0.224,
+          "opacity": 0.348,
+          "zone": 7
+        },
+        {
+          "piece": "badge",
+          "start": 55.519,
+          "end": 59.754,
+          "angle": 4,
+          "size": 0.295,
+          "opacity": 0.328,
+          "zone": 6
+        }
+      ]
+    },
+    "square": {
+      "file": "loop-square.webm",
+      "width": 1080,
+      "height": 1080,
+      "placements": [
+        {
+          "piece": "tiles",
+          "start": 0.5,
+          "end": 4.429,
+          "angle": 0,
+          "size": 0.285,
+          "opacity": 0.319,
+          "zone": 5
+        },
+        {
+          "piece": "wordmark",
+          "start": 5.658,
+          "end": 10.106,
+          "angle": -6,
+          "size": 0.216,
+          "opacity": 0.335,
+          "zone": 1
+        },
+        {
+          "piece": "badge",
+          "start": 10.078,
+          "end": 14.415,
+          "angle": 0,
+          "size": 0.209,
+          "opacity": 0.314,
+          "zone": 0
+        },
+        {
+          "piece": "tiles",
+          "start": 14.625,
+          "end": 18.48,
+          "angle": 5,
+          "size": 0.283,
+          "opacity": 0.32,
+          "zone": 3
+        },
+        {
+          "piece": "wordmark",
+          "start": 20.269,
+          "end": 24.581,
+          "angle": 0,
+          "size": 0.238,
+          "opacity": 0.303,
+          "zone": 2
+        },
+        {
+          "piece": "tiles",
+          "start": 25.608,
+          "end": 29.415,
+          "angle": 10,
+          "size": 0.207,
+          "opacity": 0.337,
+          "zone": 1
+        },
+        {
+          "piece": "stacked",
+          "start": 30.828,
+          "end": 35.085,
+          "angle": 8,
+          "size": 0.287,
+          "opacity": 0.283,
+          "zone": 3
+        },
+        {
+          "piece": "wordmark",
+          "start": 36.269,
+          "end": 40.077,
+          "angle": 0,
+          "size": 0.201,
+          "opacity": 0.345,
+          "zone": 4
+        },
+        {
+          "piece": "ribbon",
+          "start": 40.791,
+          "end": 45.062,
+          "angle": -16,
+          "size": 0.24,
+          "opacity": 0.283,
+          "zone": 2
+        },
+        {
+          "piece": "seal",
+          "start": 45.17,
+          "end": 49.187,
+          "angle": 0,
+          "size": 0.294,
+          "opacity": 0.342,
+          "zone": 8
+        },
+        {
+          "piece": "tiles",
+          "start": 49.728,
+          "end": 54.384,
+          "angle": 5,
+          "size": 0.224,
+          "opacity": 0.348,
+          "zone": 0
+        },
+        {
+          "piece": "badge",
+          "start": 55.519,
+          "end": 59.754,
+          "angle": 4,
+          "size": 0.295,
+          "opacity": 0.328,
+          "zone": 7
+        }
+      ]
+    }
+  }
+}
