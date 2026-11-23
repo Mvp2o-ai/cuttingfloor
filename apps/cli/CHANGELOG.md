@@ -1,5 +1,15 @@
 # cuttingfloor
 
+## 0.69.0
+
+### Minor Changes
+
+- 4d9312f: A watermarked export says so in words: the copy is for reviewing, which is free; what releasing it costs; and the user's credits (`credits_left`), with the agent told to offer the release once the user has reviewed it. `media.get` says the same for a watermarked created file, and export.video's description states the watermark up front.
+
+### Patch Changes
+
+- 1353a33: The cuttingfloor watermark is denser: a new piece every 2.5 to 3.5 seconds, each on screen about 5, so one or two always show.
+
 ## 0.68.2
 
 ### Patch Changes
