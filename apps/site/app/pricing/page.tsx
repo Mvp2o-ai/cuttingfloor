@@ -31,8 +31,8 @@ import { Breadcrumbs, Footer, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
 // data builds /pricing.md and /pricing.json.
 
 const FREE = FREE_CREDITS;
-const TITLE = 'Pricing: make for free, pay only for clean copies, no subscription';
-const DESCRIPTION = `cuttingfloor, the video editing MCP server: making is free, every tool, no card, and every export downloads free carrying the cuttingfloor mark. A clean copy costs ${CLEAN_PRICE}; credit packs from ${FROM_PACK} never expire, with no subscription. Enterprise by agreement; free to self-host, unmarked (open source, ${LICENCE}).`;
+const TITLE = 'Pricing: make for free, pay only to remove the watermark, no subscription';
+const DESCRIPTION = `cuttingfloor, the video editing MCP server: making is free, every tool, no card, and every export downloads free with a cuttingfloor watermark. Removing the watermark costs ${CLEAN_PRICE}; credit packs from ${FROM_PACK} never expire, with no subscription. Enterprise by agreement; free to self-host, with no watermark (open source, ${LICENCE}).`;
 
 export const metadata: Metadata = {
   title: `${TITLE} | cuttingfloor`,
@@ -100,13 +100,14 @@ export default function Pricing() {
           <span className="mark-b" />
           <Breadcrumbs trail={[{ name: 'Pricing', href: '/pricing' }]} />
           <span className="label">Pricing</span>
-          <h1 className="display">Make for free. Pay for clean copies.</h1>
+          <h1 className="display">Make for free. Pay only to remove the watermark.</h1>
           <p className="lede wt-answer">
             Editing, exports, graphics and voiceovers cost nothing, retries included. Every export
-            downloads free carrying the cuttingfloor mark; a clean copy costs {CLEAN_PRICE}.{' '}
+            downloads free with a cuttingfloor watermark; removing the watermark costs {CLEAN_PRICE}
+            .{' '}
             <em>
               {FREE} credits when you activate your account, then packs from {FROM_PACK}. They never
-              expire and there is no subscription. Or run it yourself, free and unmarked.
+              expire and there is no subscription. Or run it yourself, free, with no watermark.
             </em>
           </p>
           <LiveCard />
@@ -126,8 +127,9 @@ export default function Pricing() {
             <div>
               <h2 className="display">Buy what you take.</h2>
               <p className="compare-lede">
-                A credit is a finished minute of a clean copy. Packs, bought on your account page.
-                Bigger packs cost less a credit. Turn on automatic top-up and you never run out.
+                A credit removes the watermark from one finished minute. Packs, bought on your
+                account page. Bigger packs cost less a credit. Turn on automatic top-up and you
+                never run out.
               </p>
             </div>
           </div>
@@ -208,8 +210,8 @@ export default function Pricing() {
             <div>
               <h2 className="display">What differs.</h2>
               <p className="compare-lede">
-                The mark, credits, size and storage. Your first pack lifts the free storage limit.
-                Prices in US dollars.
+                The watermark, credits, size and storage. Your first pack lifts the free storage
+                limit. Prices in US dollars.
               </p>
             </div>
           </div>
@@ -337,8 +339,8 @@ export default function Pricing() {
               <h2>Self-hosted · Free</h2>
               <p>
                 cuttingfloor is open source under {LICENCE}. It runs in one Docker image ({IMAGE}),
-                the same image the hosted service runs. You run it on your own machine, unmarked,
-                with no limits and no credits, and bring your own keys for lip-sync and visual
+                the same image the hosted service runs. You run it on your own machine, with no
+                watermark, no limits and no credits, and bring your own keys for lip-sync and visual
                 judgment (the table above).
               </p>
               <pre className="pr-steps">

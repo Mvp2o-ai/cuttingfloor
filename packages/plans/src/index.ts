@@ -1,13 +1,13 @@
 // The hosted plans, in one place: the site's pricing, checkout and account pages and the hosted
 // server's access checks read this file. Making is free: imports, edits, analysis, exports and
 // create.* spend nothing; only the server's protective limits apply. Every export of a picture
-// (video, GIF, image, a generated clip) downloads free carrying the cuttingfloor mark, and the
-// billable unit is a credit: one finished minute of a clean copy (cleanCopyCredits), taken once
-// per export when the user releases it. Audio, text and project files are never marked.
+// (video, GIF, image, a generated clip) downloads free with a cuttingfloor watermark, and the
+// billable unit is a credit: one finished minute's watermark removed (cleanCopyCredits), taken once
+// per export when the user releases it. Audio, text and project files are never watermarked.
 //
 // There are no subscriptions. Every account starts with a few free credits and buys more in packs
 // when it wants them (pay as you go); bought credits never expire. At zero, making and marked
-// downloads still work; clean copies wait for credits. A few accounts are given a plan instead
+// downloads still work; removing watermarks waits for credits. A few accounts are given a plan instead
 // (staff, lifetime, enterprise), never marked. Costs behind the numbers: plans/pricing.md.
 
 export type PlanId = 'free' | 'credits' | 'enterprise' | 'lifetime' | 'staff';
@@ -144,11 +144,11 @@ export function freeCreditsFor(createdAt: string): number {
  */
 export const JUDGMENTS_PER_CREDIT = 200;
 
-/** A clean copy's price is its finished length in these steps of a minute. */
+/** Removing a watermark is priced by its finished length in these steps of a minute. */
 export const CLEAN_COPY_STEP = 0.25;
 
 /**
- * Credits a clean copy costs: one a finished minute, in quarter-minute steps (at least one step).
+ * Credits removing the watermark costs: one a finished minute, in quarter-minute steps (at least one step).
  * A still image, or a file with no length, is one step. 4K costs the same as HD.
  */
 export function cleanCopyCredits(seconds: number | null | undefined): number {

@@ -492,7 +492,7 @@ describe('admin API', () => {
     ]);
     const exported = one.files.find((f) => f.kind === 'export');
     expect(exported?.download_url).toMatch(/\/outputs\/.+\/j_1\/short\.mp4\?exp=\d+&sig=/);
-    // What an email links to, and whether the file carries the mark (no gate here: clean).
+    // What an email links to, and whether the file has the watermark (no gate here: clean).
     expect(exported).toMatchObject({
       page_url: expect.stringMatching(/\/watch\/.+\/j_1\/short\.mp4\?exp=\d+&sig=/),
       watermarked: false,

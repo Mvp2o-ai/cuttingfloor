@@ -25,10 +25,11 @@ export default function Refunds() {
           Credits you have used aren't refunded. A refunded pack's credits come off your balance.
         </P>
       </Part>
-      <Part title="Clean copies">
+      <Part title="Removing the watermark">
         <P>
-          Credits spent on a clean copy aren't refunded once the clean copy has been downloaded. If
-          a clean copy is broken by a fault on our side, write to us and we put the credits back.
+          Credits spent removing a watermark aren't refunded once the file has been downloaded
+          without it. If removing the watermark is broken by a fault on our side, write to us and we
+          put the credits back.
         </P>
       </Part>
       <Part title="Automatic top-up">

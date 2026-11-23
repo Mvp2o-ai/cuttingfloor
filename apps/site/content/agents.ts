@@ -29,7 +29,7 @@ export type Agent = {
   faqs: { q: string; a: string }[];
 };
 
-const TRIAL = `Making is free: every tool, no card, as many edits and exports as you like. Every export downloads free carrying the cuttingfloor mark; a clean copy costs 1 credit per finished minute, and a new account gets ${FREE_CREDITS} credits when you activate it.`;
+const TRIAL = `Making is free: every tool, no card, as many edits and exports as you like. Every export downloads free with a cuttingfloor watermark; removing the watermark costs 1 credit per finished minute, and a new account gets ${FREE_CREDITS} credits when you activate it.`;
 
 export const AGENTS: Agent[] = [
   {

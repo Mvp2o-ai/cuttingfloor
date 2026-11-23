@@ -1251,18 +1251,20 @@ const kept = (rule: string) => ({
     .describe('kept_until in words: how long is left, and what keeps it longer or how to keep it'),
 });
 
-/** Hosted: whether a file carries the cuttingfloor mark, and what a clean copy costs. */
+/** Hosted: whether a file has a cuttingfloor watermark, and what removing the watermark costs. */
 export const MarkFields = {
   watermarked: z
     .boolean()
     .optional()
     .describe(
-      'True: the file downloads carrying the cuttingfloor mark; export.release takes a clean copy for release_credits, after which every link to it serves the clean file. Absent or false: the file is clean',
+      'True: the file downloads with a cuttingfloor watermark; export.release removes the watermark for release_credits, after which every link to it serves the clean file. Absent or false: the file is clean',
     ),
   release_credits: z
     .number()
     .optional()
-    .describe('What a clean copy costs, in credits: 1 a finished minute, in quarter-minute steps'),
+    .describe(
+      'What removing the watermark costs, in credits: 1 a finished minute, in quarter-minute steps',
+    ),
 };
 
 export const MediaInfo = z.object({
@@ -2366,7 +2368,7 @@ export const ExportReleaseInput = z
   .object({
     job_id: JobId.optional().describe('An export.video job, or the create.* job that made a media'),
     media_id: MediaId.optional().describe(
-      'A media made by an export, a create.* tool or a still: its own clean copy',
+      'A media made by an export, a create.* tool or a still: removes the watermark from its own file',
     ),
   })
   .refine((v) => Boolean(v.job_id) !== Boolean(v.media_id), {
@@ -2379,7 +2381,7 @@ export const ExportReleaseResult = z.object({
   credits: z
     .number()
     .describe('Credits this call spent: 0 when the file was already released or never marked'),
-  price: z.number().describe("The clean copy's price; 0 for a file that never carries the mark"),
+  price: z.number().describe('What removing the watermark costs; 0 for a file that never has one'),
   balance: z
     .number()
     .nullable()

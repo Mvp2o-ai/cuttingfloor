@@ -32,7 +32,7 @@ export function GET() {
     units: {
       price: 'US dollars, paid once for a pack; nothing renews',
       credits:
-        'one credit is one finished minute of a clean copy (an exported video, GIF or image without the cuttingfloor mark), counted in quarter-minute steps; bought credits never expire',
+        'one credit removes the watermark from one finished minute of an exported video, GIF or image, counted in quarter-minute steps; bought credits never expire',
       short_side_px: 'largest export, as its short side in pixels (1080 is 1080p, 2160 is 4K)',
       storage_gb: 'gigabytes held on the server at once',
       null: 'no limit',
@@ -40,7 +40,7 @@ export function GET() {
     credit: CREDIT,
     every_plan: EVERY_PLAN,
     model:
-      'making is free; exports download free carrying the cuttingfloor mark; a clean copy is paid in credits, once per export; credit packs, no subscription',
+      'making is free; exports download free with a cuttingfloor watermark; removing the watermark is paid in credits, once per export; credit packs, no subscription',
     making:
       'free: imports, edits, analysis, exports, motion graphics and voiceovers spend no credits',
     marked: {
@@ -66,7 +66,7 @@ export function GET() {
     automatic_top_up: `optional: a chosen pack is bought on the saved card when fewer than ${LOW_CREDITS} credits are left`,
     low_credit_email_below: LOW_CREDITS,
     overage:
-      'none: at zero, making, previews and marked downloads keep working; clean copies wait for credits',
+      'none: at zero, making, previews and watermarked downloads keep working; removing watermarks waits for credits',
     self_hosted: {
       price: 0,
       licence: LICENCE,

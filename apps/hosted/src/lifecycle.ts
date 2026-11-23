@@ -236,7 +236,7 @@ export class Lifecycle {
   }
 
   /**
-   * Spends a clean copy's credits on the ledger under `ref` (the ledger takes a ref once, however
+   * Spends the credits for removing a watermark on the ledger under `ref` (the ledger takes a ref once, however
    * often it is sent), then emails what the spend crossed: running low, out, or what the ledger's
    * automatic top-up did there. A marker keeps the ledger's answer until the email is sent, so a
    * server that stops in between sends it on the sweep. Fails closed: a ledger that can't be
@@ -253,7 +253,7 @@ export class Lifecycle {
     // Every account that isn't on a given plan (exempt before this) has a link; without one
     // nothing is spent, so nothing is released.
     if (!link)
-      throw new CfError('service_unavailable', 'The clean copy could not be taken just now', {
+      throw new CfError('service_unavailable', 'The watermark could not be removed just now', {
         hint: 'Nothing was spent. Call export.release again in a minute',
         detail: { retry: true, retry_after_seconds: 60 },
       });
@@ -268,7 +268,7 @@ export class Lifecycle {
       });
     } catch (error) {
       process.stderr.write(`lifecycle: ${owner}: release ${ref}: ${(error as Error).message}\n`);
-      throw new CfError('service_unavailable', 'The clean copy could not be taken just now', {
+      throw new CfError('service_unavailable', 'The watermark could not be removed just now', {
         hint: 'Nothing was spent. Call export.release again in a minute',
         detail: { retry: true, retry_after_seconds: 60 },
       });
@@ -331,10 +331,10 @@ export class Lifecycle {
       lines: [
         out
           ? 'Your credits are used up.'
-          : `You have ${left} credits left. A credit takes one finished minute of a clean copy, without the cuttingfloor mark.`,
+          : `You have ${left} credits left. A credit removes the watermark from one finished minute.`,
         out
-          ? 'Making still works, all of it: editing, exports, motion graphics, voiceovers. Exports download carrying the cuttingfloor mark; clean copies wait until you top up.'
-          : 'At zero, everything still works and exports download carrying the cuttingfloor mark; clean copies wait until you top up.',
+          ? 'Making still works, all of it: editing, exports, motion graphics, voiceovers. Exports download with a cuttingfloor watermark; removing watermarks waits until you top up.'
+          : 'At zero, everything still works and exports download with a cuttingfloor watermark; removing watermarks waits until you top up.',
         `Top up on your account page: packs start at $${PACKS[0]?.price} for ${PACKS[0]?.credits} credits, and they never expire. Turn on automatic top-up there and this won't stop you again.`,
       ],
       action: { label: 'Top up', url: `${this.#o.accountUrl}#credits` },
@@ -439,7 +439,7 @@ export class Lifecycle {
           lines: [
             'Your agent can edit video now. Add cuttingfloor to it once: the welcome page has the step for Claude, Claude Code, Cursor, Codex, ChatGPT and Kazi.',
             `The address is ${welcome.serverUrl}/mcp. Your agent opens a sign-in the first time; use this same account.`,
-            `Then ask it for an edit, for example: "Import my video and cut out the pauses and ums." Making is free: edits, exports, motion graphics, voiceovers. Exports download carrying the cuttingfloor mark, and a clean copy is one credit a finished minute; your account gets ${FREE_CREDITS} credits when your agent activates it. No card, no time limit.`,
+            `Then ask it for an edit, for example: "Import my video and cut out the pauses and ums." Making is free: edits, exports, motion graphics, voiceovers. Exports download with a cuttingfloor watermark, and removing the watermark is one credit a finished minute; your account gets ${FREE_CREDITS} credits when your agent activates it. No card, no time limit.`,
           ],
           action: { label: 'Connect your agent', url: welcome.url },
         });

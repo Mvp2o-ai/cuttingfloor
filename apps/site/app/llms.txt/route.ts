@@ -40,13 +40,13 @@ A free live demo, no sign-up: ${kaziUrl('demos')} opens Kazi in the browser, whi
 
 ## Run it
 
-- Hosted: \`${MCP_ADDRESS}\` (Streamable HTTP, OAuth sign-in). Making is free, every tool, no card; exports download free carrying the cuttingfloor mark, and ${FREE_CREDITS} credits for clean copies come with activating the account. Then pay as you go.
+- Hosted: \`${MCP_ADDRESS}\` (Streamable HTTP, OAuth sign-in). Making is free, every tool, no card; exports download free with a cuttingfloor watermark, and ${FREE_CREDITS} credits for removing watermarks come with activating the account. Then pay as you go.
 - Self-hosted: free and open source (${LICENCE}), one Docker image (\`${IMAGE}\`): \`${SELF_HOST_STEPS.join(' && ')}\`, then connect to \`${LOCAL_ADDRESS}\`. ${pageLink('Self-host', '/self-host')}
 
 ## Pricing
 
 ${PLANS.map((p) => `- ${p.name}: ${priceText(p)}, ${p.included}. ${p.limits}.`).join('\n')}
-- Self-hosted: free (${LICENCE}), unmarked, no limits.
+- Self-hosted: free (${LICENCE}), no watermark, no limits.
 
 ${CREDIT_TEXT} Details: ${pageLink('Pricing', '/pricing')}, [pricing.json](${abs('/pricing.json')})
 

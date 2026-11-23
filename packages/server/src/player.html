@@ -482,7 +482,7 @@
     chip('bytes', bytes(data.bytes));
     if (data.preset) chip('preset', data.preset);
     if (data.expires_at) chip('expires', untilText(data.expires_at), new Date(data.expires_at).toLocaleString());
-    if (data.watermarked) chip('mark', 'Carries the cuttingfloor mark', `A clean copy is ${data.release_credits} credit${data.release_credits === 1 ? '' : 's'}: ask for it in the chat`);
+    if (data.watermarked) chip('mark', 'Watermarked', `Removing it uses ${data.release_credits} credit${data.release_credits > 0 && data.release_credits <= 1 ? "" : "s"}: ask in the chat`);
     return { node: info, chip, chips };
   }
 

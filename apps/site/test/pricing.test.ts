@@ -6,7 +6,7 @@ import { GET as pricingJson } from '../app/pricing.json/route.ts';
 import { CREDIT, SHORT_CREDITS } from '../app/pricing.ts';
 
 // The price every page and machine-readable copy states: making is free, exports carry the
-// cuttingfloor mark, a credit is one finished minute of a clean copy. No copy may keep the old unit.
+// cuttingfloor watermark, a credit is one finished minute without the watermark. No copy may keep the old unit.
 
 const STALE = [
   /minute of (a|the server|our servers)[^.]* (job|working)/i,
@@ -18,10 +18,10 @@ const STALE = [
 ];
 
 describe('pricing facts', () => {
-  it('prices a clean copy in quarter-minute steps', () => {
+  it('prices a watermark-free copy in quarter-minute steps', () => {
     expect(SHORT_CREDITS).toBe('0.75');
     expect(cleanCopyCredits(40)).toBe(0.75);
-    expect(CREDIT.join(' ')).toContain('carrying the cuttingfloor mark');
+    expect(CREDIT.join(' ')).toContain('with a cuttingfloor watermark');
   });
 
   it('publishes the new unit as data', async () => {

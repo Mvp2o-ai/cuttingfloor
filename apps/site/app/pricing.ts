@@ -13,8 +13,8 @@ import { TOOL_COUNT } from '../content/tools.ts';
 
 // The pricing, worded from the one plans file the server enforces (packages/plans). Making is free:
 // imports, edits, analysis, exports and generated graphics and voiceovers. Every exported video,
-// GIF or image downloads free carrying the cuttingfloor mark; the billable unit is a credit, one
-// finished minute of a clean copy (cleanCopyCredits), paid once per export. There are no
+// GIF or image downloads free with a cuttingfloor watermark; the billable unit is a credit, one
+// finished minute's watermark removed (cleanCopyCredits), paid once per export. There are no
 // subscriptions: an account gets a few free credits when it is activated and buys packs when it
 // wants more (pay as you go); bought credits never expire. Every account has every tool.
 
@@ -48,7 +48,7 @@ const SMALLEST = PACKS[0];
 const LARGEST = PACKS.at(-1);
 /** "0.75", "0.25", "1": a number of credits as the site writes it. */
 export const credits = (n: number) => String(Number(n.toFixed(2)));
-/** A 40-second Short's clean copy, the worked example. */
+/** Removing the watermark from a 40-second Short, the worked example. */
 export const SHORT_SECONDS = 40;
 export const SHORT_CREDITS = credits(cleanCopyCredits(SHORT_SECONDS));
 export const STEP_CREDITS = credits(CLEAN_COPY_STEP);
@@ -79,7 +79,7 @@ export const PLANS: Plan[] = SOLD.map((id) => {
       price: '$0',
       per: 'no card',
       amount: 0,
-      included: `Making and marked downloads free; ${FREE_CREDITS} credits for clean copies`,
+      included: `Making and watermarked downloads free; ${FREE_CREDITS} credits for removing watermarks`,
       href: '/start',
     };
   if (p.sold === 'contact')
@@ -127,7 +127,7 @@ export const SELF_HOSTED: Option = {
   per: '',
   amount: 0,
   hosted: false,
-  note: `Open source under ${LICENCE}. The same Docker image the hosted service runs, on your own machine: unmarked, no limits, no credits. Bring your own keys where a feature needs one.`,
+  note: `Open source under ${LICENCE}. The same Docker image the hosted service runs, on your own machine: no watermark, no limits, no credits. Bring your own keys where a feature needs one.`,
   href: '/self-host',
   cta: 'Run it yourself',
 };
@@ -212,11 +212,11 @@ export const ROWS: Row[] = [
     label: 'Downloads',
     cells: {
       'self-hosted': yes('Unmarked'),
-      ...hosted(() => val('Free, carrying the cuttingfloor mark')),
+      ...hosted(() => val('Free, with a cuttingfloor watermark')),
     },
   },
   {
-    label: 'Clean copy, without the mark',
+    label: 'Removing the watermark',
     cells: {
       'self-hosted': yes('Every file, no credits'),
       ...hosted((_, id) =>
@@ -294,27 +294,27 @@ export const EVERY_PLAN = [
   'Previews and frame checks, so your agent sees its own work',
   'Export to MP4, or hand off to Premiere, Final Cut or Resolve',
 ] as const;
-export const EVERY_PLAN_LEAD = `Every account, free included, has all ${TOOL_COUNT} tools, and making is free. You pay only for clean copies.`;
+export const EVERY_PLAN_LEAD = `Every account, free included, has all ${TOOL_COUNT} tools, and making is free. You pay only to remove the watermark.`;
 
 /** Making, in one line: what costs nothing. */
 export const MAKING_FREE =
   'Making is free: import, edit, caption, analyse, export, and create motion graphics and voiceovers as much as you like. Retries cost nothing.';
-/** Downloads, in one line: what carries the mark. */
+/** Downloads, in one line: what has the watermark. */
 export const MARKED =
-  'Every video, GIF or image you export downloads free, at full quality, carrying the cuttingfloor mark.';
+  'Every video, GIF or image you export downloads free, at full quality, with a cuttingfloor watermark.';
 /** What is never marked. */
 export const NEVER_MARKED =
-  'Audio (WAV, MP3, voiceovers), captions and transcripts, project files (SRT, VTT, FCPXML, OTIO, EDL) and your own uploads are never marked.';
+  'Audio (WAV, MP3, voiceovers), captions and transcripts, project files (SRT, VTT, FCPXML, OTIO, EDL) and your own uploads are never watermarked.';
 
 /** What a credit is: the pricing page's ledger, said as separate facts. */
 export const CREDIT = [
   MAKING_FREE,
   MARKED,
-  `A credit buys a clean copy without the mark: ${CLEAN_PRICE}. The least is ${STEP_CREDITS} credit, a still image is ${STEP_CREDITS}, and 4K costs the same as HD. You pay once per export; every later download of it is clean.`,
+  `Removing the watermark costs ${CLEAN_PRICE}. The least is ${STEP_CREDITS} credit, a still image is ${STEP_CREDITS}, and 4K costs the same as HD. You pay once per export; every later download of it is clean.`,
   NEVER_MARKED,
   `A new account gets ${FREE_CREDITS} free credits when you activate it, with no card. After that, buy credits in packs when you need them, from ${FROM_PACK}. They never expire, and there is no subscription.`,
-  `Out of credits, everything keeps working: making, previews and marked downloads. Clean copies wait until you have credits again. We email you when you have fewer than ${LOW_CREDITS} left, and you can turn on automatic top-up so a pack is bought for you.`,
-  'Self-hosted has no credits and no mark: unmarked, no limits, on your own machine.',
+  `Out of credits, everything keeps working: making, previews and watermarked downloads. Removing watermarks waits until you have credits again. We email you when you have fewer than ${LOW_CREDITS} left, and you can turn on automatic top-up so a pack is bought for you.`,
+  'Self-hosted has no credits and no watermark: no limits, on your own machine.',
 ] as const;
 
 /** Hosted: how long things are kept (the server's media TTL, and a timeline's after last use). */
@@ -329,7 +329,7 @@ const free = ALL.free.limits;
 export const PRICING_FAQS = [
   {
     q: 'Can I self-host for free?',
-    a: `Yes. cuttingfloor is open source under ${LICENCE} and runs in one Docker image, the same image the hosted service runs. Clone the repository and run docker compose up -d; your agent connects to ${LOCAL_ADDRESS}. On your own machine there are no credits and no mark: unmarked, no limits. Lip-sync needs your own sync. labs key and visual judgment needs a TypeSafe key; everything else runs in the image with no key.`,
+    a: `Yes. cuttingfloor is open source under ${LICENCE} and runs in one Docker image, the same image the hosted service runs. Clone the repository and run docker compose up -d; your agent connects to ${LOCAL_ADDRESS}. On your own machine there are no credits and no watermark, no limits. Lip-sync needs your own sync. labs key and visual judgment needs a TypeSafe key; everything else runs in the image with no key.`,
   },
   {
     q: 'Do I need my own AI keys?',
@@ -337,7 +337,7 @@ export const PRICING_FAQS = [
   },
   {
     q: 'What happens when credits run out?',
-    a: `Nothing stops. Making, previews and downloads keep working, and your exports still download free carrying the cuttingfloor mark. Clean copies wait until you have credits again; buy more on your account page. You are never charged for anything but the packs you buy. We email you when you have fewer than ${LOW_CREDITS} credits left; turn on automatic top-up and a pack of your choice is bought for you instead.`,
+    a: `Nothing stops. Making, previews and downloads keep working, and your exports still download free with a cuttingfloor watermark. Removing watermarks waits until you have credits again; buy more on your account page. You are never charged for anything but the packs you buy. We email you when you have fewer than ${LOW_CREDITS} credits left; turn on automatic top-up and a pack of your choice is bought for you instead.`,
   },
   {
     q: 'How much do credits cost?',
@@ -345,11 +345,11 @@ export const PRICING_FAQS = [
   },
   {
     q: 'What is a credit?',
-    a: `One finished minute of a clean copy: an export without the cuttingfloor mark. It is counted in quarter-minute steps, so a ${SHORT_SECONDS}-second Short is ${SHORT_CREDITS} credit, a still image ${STEP_CREDITS}, and 4K costs the same as HD. You pay once per export; every later download of it is clean. Making the video costs nothing.`,
+    a: `It removes the watermark from one finished minute of an export. It is counted in quarter-minute steps, so a ${SHORT_SECONDS}-second Short is ${SHORT_CREDITS} credit, a still image ${STEP_CREDITS}, and 4K costs the same as HD. You pay once per export; every later download of it is clean. Making the video costs nothing.`,
   },
   {
-    q: 'What does the cuttingfloor mark look like?',
-    a: `${MARKED} The mark is our name and shapes that fade in and out across the picture, so the video stays watchable to check and share. ${NEVER_MARKED}`,
+    q: 'What does the cuttingfloor watermark look like?',
+    a: `${MARKED} The watermark is our name and shapes that fade in and out across the picture, so the video stays watchable to check and share. ${NEVER_MARKED}`,
   },
   {
     q: 'Is there a subscription to cancel?',
@@ -357,6 +357,6 @@ export const PRICING_FAQS = [
   },
   {
     q: 'Is it free to try?',
-    a: `Yes. Making is free on every account, with no card: every tool, exports up to ${free.shortSide}p and ${free.storageGb} GB of storage, and every export downloads free carrying the cuttingfloor mark. A new account gets ${FREE_CREDITS} credits when you activate it, for clean copies. Or watch the live demo first, with no sign-up.`,
+    a: `Yes. Making is free on every account, with no card: every tool, exports up to ${free.shortSide}p and ${free.storageGb} GB of storage, and every export downloads free with a cuttingfloor watermark. A new account gets ${FREE_CREDITS} credits when you activate it, for removing watermarks. Or watch the live demo first, with no sign-up.`,
   },
 ];

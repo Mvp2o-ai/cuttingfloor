@@ -249,7 +249,7 @@ export class AdminApi {
     const now = Date.now();
     const files: File[] = [];
     const releasedAt = new Map(released.map(({ value: r }) => [r.id, r.released_at]));
-    // Whether a file carries the mark now, and since when it is clean.
+    // Whether a file has the watermark now, and since when it is clean.
     const mark = async (id: string, releaseId: string) => {
       const state = rt.gate ? await rt.gate.state(owner, id).catch(() => undefined) : undefined;
       return {

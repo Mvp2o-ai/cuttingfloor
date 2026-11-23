@@ -174,7 +174,7 @@ const lifecycle =
         ...(providerKeys ? { providerKeys } : {}),
       })
     : undefined;
-// The download gate: pictures leave carrying the mark until their owner releases a clean copy,
+// The download gate: pictures leave with the watermark until their owner removes it,
 // spent through the ledger. Only with plans and credits to go by (the hosted service).
 if (access && lifecycle) {
   runtime.useGate({

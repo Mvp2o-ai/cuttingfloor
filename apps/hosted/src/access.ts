@@ -19,7 +19,7 @@ import { isUser } from './rights.ts';
  */
 const OWNER_JOBS = 4;
 
-/** Plans given rather than bought: their files never carry the mark. */
+/** Plans given rather than bought: their files never have the watermark. */
 const GIVEN = new Set<PlanId>(['staff', 'lifetime', 'enterprise']);
 
 // Who may work on the hosted server, and how many credits they have, decided without a database:
@@ -130,7 +130,7 @@ export class AccessCheck {
 
   /**
    * The owner's plan as limits on the work they start: jobs at once, largest export, storage.
-   * Credits never stop work (making is free); they buy clean copies (the download gate).
+   * Credits never stop work (making is free); they remove watermarks (the download gate).
    */
   async limits(owner: string, _options: { buy?: boolean } = {}): Promise<OwnerLimits> {
     const access = await this.require(owner);
@@ -145,7 +145,7 @@ export class AccessCheck {
     };
   }
 
-  /** Whether the owner is on a given plan (staff, lifetime, enterprise), whose files are never marked. */
+  /** Whether the owner is on a given plan (staff, lifetime, enterprise), whose files are never watermarked. */
   async exempt(owner: string): Promise<boolean> {
     // Not a person's account (a maintenance key's owner): nothing to sell it.
     if (!isUser(owner)) return true;
@@ -434,7 +434,7 @@ function month(now: number): { start: string; end: string } {
   };
 }
 
-// Hundredths: clean copies are priced in quarter credits.
+// Hundredths: removing a watermark is priced in quarter credits.
 const round = (n: number) => Math.round(n * 100) / 100;
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
