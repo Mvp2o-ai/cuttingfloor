@@ -1,12 +1,13 @@
 import { FREE_CREDITS } from '@cuttingfloor/plans';
 import { IMAGE, LICENCE, LOCAL_ADDRESS, REPO_URL } from '../../content/facts.ts';
+import { CLEAN_PRICE } from '../pricing.ts';
 
 // The words on /self-host, shared by the page and its Markdown twin. Checked against README.md and
 // compose.yaml: what compose starts, where files go, what needs memory.
 
 export const SELF_HOST_TITLE = 'Run cuttingfloor yourself: free and open source';
-export const SELF_HOST_DESCRIPTION = `cuttingfloor is open source (${LICENCE}). Run the same Docker image that powers cuttingfloor.ai on your own computer for free, change it to fit how you work, or let us run it for you.`;
-export const SELF_HOST_LEAD = `cuttingfloor is free and open source. One Docker image holds the whole editor: the editing engines, the models and the server your agent connects to. It’s the same image that runs cuttingfloor.ai.`;
+export const SELF_HOST_DESCRIPTION = `cuttingfloor is open source (${LICENCE}). Run the same Docker image that powers cuttingfloor.ai on your own computer for free, unmarked and with no limits, change it to fit how you work, or let us run it for you.`;
+export const SELF_HOST_LEAD = `cuttingfloor is free and open source. One Docker image holds the whole editor: the editing engines, the models and the server your agent connects to. It’s the same image that runs cuttingfloor.ai. On your own computer it is unmarked, with no limits and no credits.`;
 
 export const CONTRIBUTING_URL = `${REPO_URL}/blob/HEAD/CONTRIBUTING.md`;
 export const LICENCE_URL = `${REPO_URL}/blob/HEAD/LICENSE`;
@@ -70,8 +71,13 @@ export const COMPARE: { row: string; hosted: string; self: string }[] = [
   {
     row: 'Render limits',
     hosted:
-      'Free credits to start and credit packs after, plus video size and storage. When credits run out, new jobs won’t start until you have more; you’re never charged for anything but the packs you buy.',
+      'None on making: editing, exports, graphics and voiceovers are free, as much as you like. Video size and storage have limits.',
     self: 'None but your machine. How many jobs run at once follows your computer’s cores, and you can change it.',
+  },
+  {
+    row: 'The cuttingfloor mark',
+    hosted: `Exported videos, GIFs and images download free carrying the cuttingfloor mark. A clean copy costs ${CLEAN_PRICE}, once per export. Audio, captions and project files are never marked.`,
+    self: 'None: unmarked, no limits, no credits.',
   },
   {
     row: 'Keys',
@@ -92,7 +98,7 @@ export const COMPARE: { row: string; hosted: string; self: string }[] = [
   },
   {
     row: 'Cost',
-    hosted: `${FREE_CREDITS} free credits to start, then credit packs that never expire, no subscription. Editing is free; a credit is a minute of a job running.`,
+    hosted: `Making is free. Clean copies cost credits: ${FREE_CREDITS} when you activate your account, then credit packs that never expire, no subscription.`,
     self: 'Free. You pay for your own computer, and for any key you choose to add.',
   },
 ];

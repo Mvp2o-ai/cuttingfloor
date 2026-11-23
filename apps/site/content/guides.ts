@@ -89,7 +89,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: 'What does it cost?',
-        a: `Start free with ${FREE_CREDITS} credits, no card and no time limit. After that, pay as you go: credit packs that never expire, on the pricing page.`,
+        a: `Making is free, no card: every edit and export, as many times as you like. Exports download free carrying the cuttingfloor mark; a clean copy costs 1 credit per finished minute, and a new account gets ${FREE_CREDITS} credits when you activate it. After that, credit packs that never expire, on the pricing page.`,
       },
     ],
   },
@@ -152,7 +152,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: '¿Cuánto cuesta?',
-        a: `Empieza gratis con ${FREE_CREDITS} créditos, sin tarjeta y sin límite de tiempo. Después, pagas solo lo que usas: paquetes de créditos que no caducan, en la página de precios (en inglés).`,
+        a: `Crear es gratis, sin tarjeta: cada edición y cada exportación, las veces que quieras. Las exportaciones se descargan gratis con la marca de cuttingfloor; una copia limpia cuesta 1 crédito por minuto terminado, y una cuenta nueva recibe ${FREE_CREDITS} créditos al activarla. Después, paquetes de créditos que no caducan, en la página de precios (en inglés).`,
       },
     ],
   },
@@ -210,7 +210,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: '¿Cuánto cuesta?',
-        a: `Empieza gratis con ${FREE_CREDITS} créditos, sin tarjeta y sin límite de tiempo. Después, pagas solo lo que usas: paquetes de créditos que no caducan, en la página de precios (en inglés).`,
+        a: `Crear es gratis, sin tarjeta: cada edición y cada exportación, las veces que quieras. Las exportaciones se descargan gratis con la marca de cuttingfloor; una copia limpia cuesta 1 crédito por minuto terminado, y una cuenta nueva recibe ${FREE_CREDITS} créditos al activarla. Después, paquetes de créditos que no caducan, en la página de precios (en inglés).`,
       },
     ],
   },
@@ -288,7 +288,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: 'What does it cost?',
-        a: `Start free with ${FREE_CREDITS} credits, no card and no time limit. A credit is a minute of the server working (importing, analysing, exporting); editing and previews are free, so one import feeds every Short. After that, credit packs that never expire, on the pricing page.`,
+        a: `Making is free, no card: importing, analysing, editing and exporting every Short cost nothing, retries included. Exports download free carrying the cuttingfloor mark; a clean copy costs 1 credit per finished minute, so a 40-second Short is 0.75 credit. A new account gets ${FREE_CREDITS} credits when you activate it; after that, credit packs that never expire, on the pricing page.`,
       },
     ],
   },

@@ -1,4 +1,3 @@
-import { FREE_CREDITS, FREE_FOOTAGE_MINUTES } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import {
   BUILDER_WAYS,
@@ -124,8 +123,7 @@ export default function HowToConnectPage() {
 
         <section className="cell wt-end">
           <p className="wt-links">
-            <a href={SIGN_UP}>Start free: {FREE_FOOTAGE_MINUTES} minutes of footage</a> ·{' '}
-            <a href="/account#api-keys">Your API keys</a> ·{' '}
+            <a href={SIGN_UP}>Start free</a> · <a href="/account#api-keys">Your API keys</a> ·{' '}
             <a href="/connect">Setup for every app</a> · <a href="/self-host">Run it yourself</a>
           </p>
         </section>

@@ -14,12 +14,14 @@ import {
   CLAIMS,
   meterEntries,
   ONBOARDING,
+  RELEASES,
   type Runtime,
   readCalls,
   readSupportMessages,
 } from '@cuttingfloor/server';
 import { type AccessCheck, LEDGER_LINKS } from './access.ts';
 import type { AppsSeen } from './apps-seen.ts';
+import { readDownloads } from './downloads.ts';
 import { exportOf } from './expiry-notices.ts';
 import type { KeyKind, ScriptKeys } from './keys.ts';
 import type { Lifecycle, WorkosUser } from './lifecycle.ts';
@@ -38,7 +40,7 @@ import { recipientState } from './sequence.ts';
 //   {user, label} and `POST /account/admin-keys/revoke` {user, key_id}, with the site's own key.
 
 /** The API's version: within v1 it only grows, so every change bumps minor or patch. */
-export const ADMIN_API_VERSION = '1.5.0';
+export const ADMIN_API_VERSION = '1.7.0';
 const BASE = '/admin/v1';
 /** Admin keys: their own prefix and folder, so a script key never opens this API. */
 export const ADMIN_KEYS: KeyKind = { prefix: 'cfa_', dir: 'admin-keys', label: 'Admin key' };
@@ -208,6 +210,8 @@ export class AdminApi {
       apps,
       purchases,
       shown,
+      downloads,
+      released,
     ] = await Promise.all([
       rt.media.list(owner),
       rt.jobs.store.list(owner, { status: 'completed', limit: 1000 }),
@@ -236,6 +240,11 @@ export class AdminApi {
         .collection(ONBOARDING, { owner })
         .get('onboarding')
         .catch(() => undefined),
+      readDownloads(rt.ws, owner).catch(() => []),
+      rt.ws.records
+        .collection(RELEASES, { owner })
+        .find()
+        .catch(() => []),
     ]);
     const now = Date.now();
     const files: File[] = [];
@@ -294,6 +303,15 @@ export class AdminApi {
       apps,
       files,
       next_expiry_at: files[0]?.expires_at ?? null,
+      downloads,
+      releases: released
+        .map(({ value: r }) => ({
+          id: r.id,
+          released_at: r.released_at,
+          credits: r.credits,
+          via: r.via,
+        }))
+        .sort((a, b) => b.released_at.localeCompare(a.released_at)),
       email_prefs: {
         expiry_emails: meta.expiry_emails !== 'off',
         unsubscribed: prefs.unsubscribed,

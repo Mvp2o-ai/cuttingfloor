@@ -13,8 +13,9 @@ import { createHttpServer } from '../src/http.ts';
 import { Ledger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
 
-// Credits in Kazi's ledger: an account is linked once with the balance it had here, every job
-// that ends after is spent there once, and the ledger's crossings and top-ups become our email.
+// Credits in Kazi's ledger: an account is linked once with the balance it had here, jobs spend
+// nothing (making is free), a clean copy's release is spent there once, and the ledger's
+// crossings and top-ups become our email.
 // WorkOS, Stripe and the ledger are stand-ins here, answering as their APIs do (the ledger as its
 // published fixtures, contract v3); the real ledger runs in scripts/smoke-ledger.ts.
 
@@ -144,7 +145,8 @@ async function ledger(url: URL, init?: RequestInit): Promise<Response> {
         account_id: `ca_${accounts.size + 1}`,
         email: b.email,
         workos_user_id: b.workos_user_id,
-        rows: [{ kind: 'grant', credits: 25, ref: 'grant' }],
+        // An account cuttingfloor opens is granted FREE_CREDITS (Kazi's own keep 25).
+        rows: [{ kind: 'grant', credits: 3, ref: 'grant' }],
         refill: null,
       };
       accounts.set(a.account_id, a);
@@ -305,13 +307,13 @@ describe('credits in the ledger', () => {
     const got = await account(OLD);
     const links = calls.filter((c) => c.path === '/api/credits/account');
     expect(links).toHaveLength(1);
-    // 100 free (made before 2026-11-08), less 6 used, less the ledger's own grant of 25.
+    // 100 free (made before 2026-11-08), less 6 used, less the ledger's own grant of 3.
     expect(links[0]?.body).toEqual({
       email: 'old@example.com',
       workos_user_id: OLD,
       stripe_customer_id: 'cus_old',
       opening: {
-        credits: 69,
+        credits: 91,
         purchases: [
           { payment_intent: 'pi_a', credits: 25 },
           { payment_intent: 'pi_b', credits: 27.5 },
@@ -329,34 +331,34 @@ describe('credits in the ledger', () => {
     expect(calls.filter((c) => c.path === '/api/credits/account')).toHaveLength(1);
   });
 
-  it('spends a job that ends after the link once, and never one from before', async () => {
+  it('spends nothing for jobs, and a release once however often it is sent', async () => {
     await ran(OLD, 'job_after', 120, new Date());
-    await ran(OLD, 'job_blink', 0.02, new Date());
     await lifecycle.sweep();
-    await lifecycle.sweep();
-    expect(usage().map((c) => c.body)).toEqual([
+    expect(usage()).toEqual([]);
+    const first = await lifecycle.spendRelease(OLD, 'j_after-release', 2, 'export.release');
+    const again = await lifecycle.spendRelease(OLD, 'j_after-release', 2, 'export.release');
+    expect(first.balance).toBe(144.5);
+    expect(again.balance).toBe(144.5);
+    expect(usage()[0]?.body).toEqual(
       expect.objectContaining({
         account_id: 'ca_1',
-        job_id: 'job_after',
+        job_id: 'j_after-release',
         credits: 2,
-        tool: 'export.video',
+        tool: 'export.release',
       }),
-    ]);
+    );
+    expect(accounts.get('ca_1')?.rows.filter((r) => r.ref === 'j_after-release')).toHaveLength(1);
     expect((await account(OLD)).account.credits).toMatchObject({ left: 144.5, used: 8 });
-    // A lost marker sends it again; the ledger takes it once and nobody is emailed.
-    await runtime.ws.remove(runtime.ws.ownerDir(OLD, 'ledger-spent', 'job_after.json'));
-    await lifecycle.sweep();
-    expect(usage()).toHaveLength(2);
-    expect(accounts.get('ca_1')?.rows.filter((r) => r.ref === 'job_after')).toHaveLength(1);
     expect(mail).toEqual([]);
   });
 
-  it('emails once when a spend takes the balance low', async () => {
-    await ran(OLD, 'job_long', 140 * 60, new Date());
-    await lifecycle.sweep();
-    expect(mail).toEqual([
-      expect.objectContaining({ to: 'old@example.com', subject: 'You have 4.5 credits left' }),
-    ]);
+  it('emails once when a release takes the balance low', async () => {
+    await lifecycle.spendRelease(OLD, 'j_long-release', 140, 'export.release');
+    await vi.waitFor(() =>
+      expect(mail).toEqual([
+        expect.objectContaining({ to: 'old@example.com', subject: 'You have 4.5 credits left' }),
+      ]),
+    );
   });
 
   it('sets automatic top-up in the ledger, and emails what it bought at the crossing', async () => {
@@ -369,23 +371,23 @@ describe('credits in the ledger', () => {
     expect(accounts.get('ca_1')?.refill).toEqual({ pack: 'cf_credits_10' });
     expect((await account(OLD)).account.top_up.automatic).toBe(true);
     mail.length = 0;
-    await ran(OLD, 'job_out', 300, new Date());
-    await lifecycle.sweep();
-    expect(mail.map((m) => m.subject)).toEqual(['Topped up: 55 credits']);
+    await lifecycle.spendRelease(OLD, 'j_out-release', 5, 'export.release');
+    await vi.waitFor(() => expect(mail.map((m) => m.subject)).toEqual(['Topped up: 55 credits']));
     expect((await account(OLD)).account.credits.left).toBe(54.5);
   });
 
-  it('says when the top-up failed, then that credits are out, and refuses new jobs at zero', async () => {
+  it('says when the top-up failed, then that credits are out, and still starts jobs at zero', async () => {
     cardFails = true;
     mail.length = 0;
-    await ran(OLD, 'job_broke', 60 * 60, new Date());
-    await lifecycle.sweep();
-    expect(mail.map((m) => m.subject)).toEqual([
-      'We couldn’t top up your credits',
-      'Your credits are used up',
-    ]);
+    await lifecycle.spendRelease(OLD, 'j_broke-release', 60, 'export.release');
+    await vi.waitFor(() =>
+      expect(mail.map((m) => m.subject)).toEqual([
+        'We couldn’t top up your credits',
+        'Your credits are used up',
+      ]),
+    );
     const limits = await access.limits(OLD);
-    expect(limits.refuseJobs?.code).toBe('quota_exceeded');
+    expect(limits.refuseJobs).toBeUndefined();
   });
 
   it('tells the ledger about a Stripe customer made after the link, without a second opening', async () => {
@@ -422,13 +424,14 @@ describe('credits in the ledger', () => {
       credits: Record<string, number | null>;
     };
     expect(got.plan).toBe('free');
-    expect(got.credits).toMatchObject({ per_month: null, left: 25 });
+    // Its Kazi grant, plus the 25 its cuttingfloor account (made before the gate) started with,
+    // less the 3 the carry-over counts on the ledger granting.
+    expect(got.credits).toMatchObject({ per_month: null, left: 47 });
     expect(accounts.get('ca_member')?.workos_user_id).toBe(MEMBER);
     const before = usage().length;
-    await ran(MEMBER, 'job_member', 120, new Date());
-    await lifecycle.sweep();
+    await lifecycle.spendRelease(MEMBER, 'j_member-release', 2, 'export.release');
     expect(usage().length).toBe(before + 1);
-    expect((await account(MEMBER)).account.credits).toMatchObject({ used: 2, left: 23 });
+    expect((await account(MEMBER)).account.credits).toMatchObject({ used: 2, left: 45 });
   });
 
   it('refuses when the email has credits with another account, and when the ledger is down', async () => {
@@ -455,18 +458,20 @@ describe('credits in the ledger', () => {
     await ran(CRASHED, 'job_gap', 60, new Date(Date.now() - 1_800_000));
     await account(CRASHED);
     const link = calls.filter((c) => c.path === '/api/credits/account').at(-1);
+    // 25 free (made before the gate), less 1 used, less the ledger's own grant of 3.
     expect(link?.body).toMatchObject({
       workos_user_id: CRASHED,
-      opening: { credits: -1, purchases: [] },
+      opening: { credits: 21, purchases: [] },
     });
     expect(await ws.readJson(linkPath(ws, CRASHED))).toMatchObject({
       since,
       used_before: 1,
       account_id: expect.any(String),
     });
-    // The job that ended after the claim, before the link, is spent.
+    // Jobs spend nothing, whenever they ended.
+    const before = usage().length;
     await lifecycle.sweep();
-    expect(usage().at(-1)?.body).toMatchObject({ job_id: 'job_gap', credits: 1 });
+    expect(usage()).toHaveLength(before);
   });
 
   it('sends the email a spend called for when a server stopped before sending it', async () => {

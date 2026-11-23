@@ -5,13 +5,15 @@ import type { Account } from '../lib/billing.ts';
 import type { Files } from '../lib/files.ts';
 import type { ScriptKey } from '../lib/keys.ts';
 import type { SavedKey } from '../lib/provider-keys.ts';
+import { SHORT_CREDITS, SHORT_SECONDS } from '../pricing.ts';
 import { Prompt } from '../welcome/live.tsx';
 import { FilesPanel } from './files.tsx';
 import { KeysPanel } from './keys.tsx';
 import { ProviderKeysPanel } from './provider-keys.tsx';
 
 // The account page, given everything it shows (page.tsx reads it; preview/ renders fixtures).
-// It reads in the order a new person needs it: what they have (the free credits, said plainly),
+// It reads in the order a new person needs it: what they have (free making, and the credits for
+// clean copies, said plainly),
 // the three steps to a first edit with each one ticked off as it happens, then buying more, with
 // what a careful buyer looks for before paying: the price per credit, that credits never expire,
 // who takes the card, and the refund terms.
@@ -39,7 +41,7 @@ export type AccountProps = {
 const FIRST_PROMPT =
   'Use cuttingfloor: import https://cuttingfloor.ai/demo/interview/raw.mp4, cut out the pauses and ums, add captions, and export it as a 9:16 Short.';
 
-const n = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 1 });
+const n = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 2 });
 
 const day = (iso: string) =>
   new Date(iso).toLocaleDateString('en-US', {
@@ -197,10 +199,10 @@ function lede(a: Account | undefined, refused: string | undefined, email: string
   if (a.credits.renews)
     return `${n(a.credits.per_month ?? 0)} credits every month, renewing ${day(a.credits.renews)}. Nothing to pay.`;
   if ((a.credits.left ?? 0) <= 0)
-    return 'Editing and previews still work. New exports, imports and transcripts start again once you add credits. Credits you buy never expire.';
+    return 'Making still works, and every export downloads free carrying the cuttingfloor mark. Clean copies wait until you add credits. Credits you buy never expire.';
   if (a.plan === 'free' && !a.credits.bought)
-    return 'No card needed. Three steps to your first edit, about a minute.';
-  return 'Credits you buy never expire. Editing and previews are always free.';
+    return 'Making is free, no card needed. Three steps to your first edit, about a minute.';
+  return 'Making is always free. Credits buy clean copies, without the cuttingfloor mark, and never expire.';
 }
 
 function Steps({ progress, email }: { progress: AccountProps['progress']; email: string }) {
@@ -297,11 +299,14 @@ function Balance({ account: a }: { account: Account }) {
       <dl className="acct-facts">
         <div>
           <dt>A credit</dt>
-          <dd>One minute of exporting, importing or transcribing. A short video takes less.</dd>
+          <dd>
+            One finished minute of a clean copy, without the cuttingfloor mark.{' '}
+            {`A ${SHORT_SECONDS}-second Short is ${SHORT_CREDITS}.`}
+          </dd>
         </div>
         <div>
           <dt>Free</dt>
-          <dd>Editing and previews, always.</dd>
+          <dd>Making: editing, exports, graphics and voiceovers, and downloads with the mark.</dd>
         </div>
         {a.plan === 'free' && a.limits.export_short_side !== paid.shortSide ? (
           <div>

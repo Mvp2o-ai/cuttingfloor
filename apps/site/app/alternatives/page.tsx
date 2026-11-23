@@ -1,9 +1,9 @@
-import { FREE_CREDITS, FREE_FOOTAGE_MINUTES } from '@cuttingfloor/plans';
 import type { Metadata } from 'next';
 import { DEMOS, finished, lengths } from '../../content/demos.ts';
 import { Connect } from '../connect.tsx';
 import { Poster } from '../demos/poster.tsx';
 import { LiveCard } from '../live-card.tsx';
+import { CLEAN_PRICE } from '../pricing.ts';
 import { Breadcrumbs, Footer, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
 
 // For people who edit in CapCut, Descript, VEED, Kapwing and editing software like them, and search for
@@ -94,7 +94,7 @@ const FAQS = [
   },
   {
     q: 'What does it cost?',
-    a: `Start free with ${FREE_CREDITS} credits, no card and no time limit; a credit is a minute of a job running. After that, pay as you go: buy credit packs that never expire, with no subscription. See the pricing page.`,
+    a: `Making is free, with no card: editing, exports, graphics and voiceovers, as much as you like. Every export downloads free carrying the cuttingfloor mark; a clean copy costs ${CLEAN_PRICE}, from credit packs that never expire, with no subscription. See the pricing page.`,
   },
 ];
 
@@ -132,7 +132,7 @@ export default function Alternatives() {
           <LiveCard />
           <div className="actions">
             <a className="link-big" href={SIGN_UP}>
-              Start free: {FREE_FOOTAGE_MINUTES} minutes of footage
+              Start free
             </a>
             <a className="link-big quiet" href="/demos">
               Watch it edit

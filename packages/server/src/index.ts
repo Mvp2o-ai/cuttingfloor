@@ -7,6 +7,14 @@ export {
   type DrainMarker,
   drainingError,
 } from './drain.ts';
+export {
+  DownloadGate,
+  type GateHooks,
+  type MarkState,
+  RELEASES,
+  type Release,
+  type ReleaseVia,
+} from './gate.ts';
 export { MIGRATION, type MigrationMark, markLive } from './live.ts';
 export {
   admitJob,
@@ -20,6 +28,8 @@ export { outputMime } from './mime.ts';
 export { HEALTH_URI } from './resources.ts';
 export {
   configFromEnv,
+  DOWNLOADS,
+  type DownloadDay,
   FUNNEL_DAYS,
   Runtime,
   type RuntimeConfig,

@@ -99,14 +99,14 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
     'credits.claim',
     {
-      title: 'Claim free credits',
+      title: 'Activate account',
       description:
-        "Claim the user's free cuttingfloor credits and return their balance. Pass the task the user is looking to complete with cuttingfloor.",
+        "Activate the user's cuttingfloor account with the task they want to do, in their words. Personalises their start: records what they're making, adds a sample video that fits it to their library (playing here) and returns their balance. Once per account; later calls return the balance.",
       inputSchema: ClaimFreeCreditsInput,
       outputSchema: ClaimFreeCreditsResult,
       _meta: PLAYER_TOOL_META,
       annotations: {
-        title: 'Claim free credits',
+        title: 'Activate account',
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,
@@ -150,8 +150,8 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
       const result: ClaimFreeCreditsResult = {
         claimed_now: claimedNow,
         message: claimedNow
-          ? `Free credits claimed${left}.${tryIt} cuttingfloor can do anything CapCut or DaVinci Resolve can; if something gets in the way, tell us with support.contact so we can improve the user's experience.`
-          : `Free credits already claimed${left}.`,
+          ? `Welcome to cuttingfloor: the account is active${left}.${tryIt} Making is free: edits, exports, motion graphics and voiceovers. Exports download carrying the cuttingfloor mark; export.release takes a clean copy for 1 credit a finished minute. cuttingfloor can do anything CapCut or DaVinci Resolve can; if something gets in the way, tell us with support.contact so we can improve the user's experience.`
+          : `The account is already active${left}.`,
         credits: balance,
         media_id: sample?.media_id ?? null,
         ...(sample?.job ? { job_id: sample.job.id, status: sample.job.status } : {}),
@@ -189,7 +189,7 @@ export function gateUntilClaimed(server: McpServer, deps: ServerDeps): void {
       const tool = String((request as { params?: { name?: unknown } }).params?.name ?? '');
       if (!BEFORE_CLAIM.has(tool) && (await refuse(deps.runtime, deps.owner())))
         return toErrorResult(
-          new CfError('claim_required', "This account's free credits aren't activated yet.", {
+          new CfError('claim_required', "This account isn't activated yet.", {
             hint: `Call credits.claim with the task the user is doing (ask them what they'd like to make if you don't know), then call ${tool} again. It's free and puts a sample video that fits the task in their library.`,
           }),
         );
@@ -260,7 +260,9 @@ async function findOrImport(deps: ServerDeps, owner: string, useCase: string): P
   const onboarding = rt.ws.records.collection(ONBOARDING, { owner });
   const named = await onboarding.get('onboarding');
   const held = named && (await rt.media.find(owner, named.media_id));
-  if (held && held.status !== 'failed') {
+  // Kept once added, even if its import failed: claiming again doesn't import it again (it would
+  // fail the same way). Only a sample that has gone is added again.
+  if (held) {
     const job = held.job_id ? await rt.jobs.store.get(held.job_id, owner) : undefined;
     return {
       slug: named.sample ?? FALLBACK_SAMPLE,
@@ -268,7 +270,10 @@ async function findOrImport(deps: ServerDeps, owner: string, useCase: string): P
       ...(job && job.status === 'working' ? { job: { id: job.id, status: job.status } } : {}),
     };
   }
-  const sample = await route(deps, owner, useCase);
+  // A sample already chosen for the account is imported again as it was (its import failed or
+  // its file went), not routed again: the first task picked it.
+  const sample =
+    (named?.sample && sampleBySlug(named.sample)) || (await route(deps, owner, useCase));
   const { record, job } = await importBundled(
     rt,
     owner,

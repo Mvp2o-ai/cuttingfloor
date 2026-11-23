@@ -34,6 +34,7 @@ import {
   requireBearerAuth,
 } from '@modelcontextprotocol/server';
 import { addressPage, wantsPage } from './address-page.ts';
+import type { DownloadSeen } from './downloads.ts';
 import type { JwtTokenVerifier } from './oauth.ts';
 import { RestApi } from './rest.ts';
 import { aiCatalog, CARD_TYPE, sendDiscovery, serverCard } from './server-card.ts';
@@ -81,6 +82,12 @@ export interface HttpOptions {
    * to sign in). The steps between them and a signed-in call happen at the authorization server.
    */
   onSignInStep?: (step: SignInStep, userAgent: string) => void;
+  /**
+   * Told of each GET of a signed output that checked out: the owner key and file id from its
+   * path, the name, and how (`download` saves it, `play` plays or shows it, `page` opened its
+   * watch page), with the User-Agent and any Range header.
+   */
+  onDownload?: (seen: DownloadSeen) => void;
   /** The token OpenAI's plugin portal asks this host to serve, to prove it owns the domain. */
   openaiChallenge?: string;
 }
@@ -384,21 +391,52 @@ export function createHttpServer(options: HttpOptions): Server {
           return;
         }
         const name = decodeURIComponent(url.pathname.split('/').pop() ?? '');
+        if (req.method === 'GET') {
+          const inline =
+            url.searchParams.has('inline') ||
+            /^(?:video|audio|image)$/.test(String(req.headers['sec-fetch-dest'] ?? ''));
+          options.onDownload?.({
+            ...signedFile(url.pathname, name),
+            how: inline ? 'play' : 'download',
+            userAgent: req.headers['user-agent'] ?? '',
+            range: req.headers.range,
+          });
+        }
+        // The download gate: a picture its owner hasn't released goes out carrying the mark
+        // (its marked copy, made on the first ask). Never cached, so a release shows at once.
+        let served: { blob?: string; file?: string; marked: boolean } = {
+          ...target,
+          marked: false,
+        };
+        if (runtime.gate) {
+          const { owner, file_id } = signedFile(url.pathname, name);
+          try {
+            served = await runtime.gate.serve(owner, file_id, name, target);
+          } catch (error) {
+            process.stderr.write(`gate: ${url.pathname}: ${(error as Error).message}\n`);
+            res
+              .writeHead(503, { 'content-type': 'text/plain', 'retry-after': '30' })
+              .end('This file is being prepared. Try again in a moment.');
+            return;
+          }
+        }
+        const cache = served.marked ? 'no-store' : undefined;
         // Files in a bucket are fetched from it: the link is checked here, then answered with
         // a short-lived link to the file itself.
-        if (target.blob && runtime.ws.blobs.remote) {
-          await sendBlob(runtime, req, res, target.blob, name, {
+        if (served.blob && runtime.ws.blobs.remote) {
+          await sendBlob(runtime, req, res, served.blob, name, {
             inline: url.searchParams.has('inline'),
             expires: Number(url.searchParams.get('exp')),
+            ...(cache ? { cache } : {}),
           });
           return;
         }
-        const file = target.file ?? (target.blob && (await runtime.scratchFile(target.blob)));
+        const file = served.file ?? (served.blob && (await runtime.scratchFile(served.blob)));
         if (!file) {
           res.writeHead(403, { 'content-type': 'text/plain' }).end(refusedLink(url));
           return;
         }
-        await sendFile(req, res, file, name);
+        await sendFile(req, res, file, name, cache);
         return;
       }
       // The page that plays a signed output: the same signature as its /outputs/ URL.
@@ -412,9 +450,20 @@ export function createHttpServer(options: HttpOptions): Server {
           return;
         }
         const name = decodeURIComponent(filePath.split('/').pop() ?? '');
+        if (req.method === 'GET')
+          options.onDownload?.({
+            ...signedFile(filePath, name),
+            how: 'page',
+            userAgent: req.headers['user-agent'] ?? '',
+          });
         // The page plays the file from where it is served: this server, or the bucket its link
         // redirects to, which the page must then be allowed to load from.
         const bucket = target.blob && runtime.ws.blobs.remote ? runtime.bucketOrigin : undefined;
+        const mark = runtime.gate
+          ? await runtime.gate
+              .state(signedFile(filePath, name).owner, signedFile(filePath, name).file_id)
+              .catch(() => undefined)
+          : undefined;
         const from = bucket ? `'self' ${bucket}` : "'self'";
         res.writeHead(200, {
           'content-type': 'text/html; charset=utf-8',
@@ -433,6 +482,7 @@ export function createHttpServer(options: HttpOptions): Server {
                 ...(bucket ? { inline: true } : {}),
                 base: runtime.config.publicUrl,
                 expiresAt: new Date(Number(exp)),
+                ...(mark?.watermarked ? { mark: { credits: mark.release_credits ?? 0 } } : {}),
               }),
         );
         return;
@@ -761,7 +811,7 @@ async function sendBlob(
   res: ServerResponse,
   blob: string,
   name: string,
-  link: { inline: boolean; expires: number },
+  link: { inline: boolean; expires: number; cache?: string },
 ): Promise<void> {
   const head = await runtime.ws.blobs.head(blob);
   if (!head) {
@@ -782,7 +832,7 @@ async function sendBlob(
         'content-length': head.bytes,
         'accept-ranges': 'bytes',
         'content-disposition': `attachment; filename="${name.replace(/"/g, '')}"`,
-        'cache-control': 'private, max-age=3600',
+        'cache-control': link.cache ?? 'private, max-age=3600',
       })
       .end();
     return;
@@ -796,7 +846,22 @@ async function sendBlob(
   // Kept by the browser for less time than the bucket's link lasts, and than ours does.
   const left = Math.floor((link.expires - Date.now()) / 1000);
   const maxAge = Math.max(0, Math.min(REDIRECT_MAX_AGE_S, left));
-  res.writeHead(302, { ...shared, location, 'cache-control': `private, max-age=${maxAge}` }).end();
+  res
+    .writeHead(302, {
+      ...shared,
+      location,
+      'cache-control': link.cache ?? `private, max-age=${maxAge}`,
+    })
+    .end();
+}
+
+/** The owner key and file id of a signed /outputs/{owner}/{id}/{name} path already checked. */
+function signedFile(
+  pathname: string,
+  name: string,
+): Pick<DownloadSeen, 'owner' | 'file_id' | 'name'> {
+  const [, , owner = '', file_id = ''] = pathname.split('/');
+  return { owner, file_id, name };
 }
 
 /** The request's URL as the client addressed it, for web-standard handlers. */
@@ -827,6 +892,7 @@ async function sendFile(
   res: ServerResponse,
   file: string,
   name = file.split('/').pop() ?? 'output',
+  cache = 'private, max-age=3600',
 ): Promise<void> {
   let size: number;
   try {
@@ -840,7 +906,7 @@ async function sendFile(
     'content-type': type,
     'accept-ranges': 'bytes',
     'content-disposition': `attachment; filename="${name.replace(/"/g, '')}"`,
-    'cache-control': 'private, max-age=3600',
+    'cache-control': cache,
     'x-content-type-options': 'nosniff',
     // The link is the permission, so a page anywhere may read it: the editor view measures the
     // export's sound from its sandbox. No credentials are involved.

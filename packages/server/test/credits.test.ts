@@ -54,7 +54,7 @@ describe('credits.claim', () => {
     expect(res.structured).toMatchObject({
       claimed_now: true,
       message:
-        "Free credits claimed: 42 left. A sample to try is in the user's library and playing here: a 30-second scene from Big Buck Bunny, an open animated film. Offer this first edit on it, in the user's language and fitted to their task: \"Make this a 15-second vertical teaser with a title card at the start and an end card.\" Offer other edits that fit too, and ask them to send their own clip when they're ready. cuttingfloor can do anything CapCut or DaVinci Resolve can; if something gets in the way, tell us with support.contact so we can improve the user's experience.",
+        "Welcome to cuttingfloor: the account is active: 42 left. A sample to try is in the user's library and playing here: a 30-second scene from Big Buck Bunny, an open animated film. Offer this first edit on it, in the user's language and fitted to their task: \"Make this a 15-second vertical teaser with a title card at the start and an end card.\" Offer other edits that fit too, and ask them to send their own clip when they're ready. Making is free: edits, exports, motion graphics and voiceovers. Exports download carrying the cuttingfloor mark; export.release takes a clean copy for 1 credit a finished minute. cuttingfloor can do anything CapCut or DaVinci Resolve can; if something gets in the way, tell us with support.contact so we can improve the user's experience.",
       credits: ACCOUNT.credits,
       media_id: expect.stringMatching(/^m_/),
       job_id: expect.any(String),
@@ -73,7 +73,7 @@ describe('credits.claim', () => {
       expect(res.isError).toBe(false);
       expect(res.structured).toMatchObject({
         claimed_now: false,
-        message: 'Free credits already claimed: 42 left.',
+        message: 'The account is already active: 42 left.',
         credits: ACCOUNT.credits,
       });
     }
@@ -129,7 +129,7 @@ describe('credits.claim', () => {
     expect(res.isError).toBe(false);
     expect(res.structured).toMatchObject({
       claimed_now: true,
-      message: expect.stringMatching(/^Free credits claimed\. /),
+      message: expect.stringMatching(/^Welcome to cuttingfloor: the account is active\. /),
       credits: null,
     });
   });
@@ -137,12 +137,12 @@ describe('credits.claim', () => {
   it('welcomes a signed-in account in the instructions until its credits are claimed', async () => {
     const before = await connectWithAccount('user_welcome', async () => ACCOUNT);
     expect(before.getInstructions()).toMatch(
-      /^This is a new connection: welcome aboard\. .*credits\.claim/,
+      /^This is a new connection: welcome to cuttingfloor\. .*credits\.claim/,
     );
     await call(before, 'credits.claim', { use_case: 'make a trailer' });
     const after = await connectWithAccount('user_welcome', async () => ACCOUNT);
     expect(after.getInstructions()).not.toContain('credits.claim');
-    expect(after.getInstructions()).not.toContain('welcome aboard');
+    expect(after.getInstructions()).not.toContain('welcome to cuttingfloor');
   });
 
   it('is offered only where there are credits, and never named to a connection without an account', async () => {

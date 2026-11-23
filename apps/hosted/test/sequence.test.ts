@@ -164,14 +164,14 @@ describe('welcome', () => {
     expect(mail?.headers['List-Unsubscribe']).toBe(`<${unsubscribe}>`);
     expect(mail?.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
     expect(mail?.text).not.toContain('{{');
-    expect(mail?.text).toContain('You have 23 free credits to start with');
+    expect(mail?.text).toContain('carrying the cuttingfloor mark');
 
     const [entry] = await logEntries(ws);
     expect(entry).toMatchObject({
       subscriber: id,
       message: 'welcome',
       template: 'welcome',
-      template_version: '3',
+      template_version: '4',
       provider_message_id: 'msg_1',
       outcome: 'sent',
     });
@@ -243,7 +243,7 @@ describe('follow-up', () => {
     expect(mail?.subject).toBe('How was the first edit?');
     const links = mail?.text.match(/https?:\/\/\S+/g) ?? [];
     expect(links).toEqual([sequence.unsubscribeUrl(id)]);
-    expect(mail?.text).toContain('You have 23 free credits left for the next one.');
+    expect(mail?.text).toContain('You have 23 free credits for clean copies');
   });
 
   it('is one email, never both, never a second', async () => {
@@ -259,7 +259,7 @@ describe('follow-up', () => {
       "You're in - start with one clip",
       'Did it work?',
     ]);
-    expect(provider.sent[1]?.text).toContain('You have 23 free credits left, waiting for you.');
+    expect(provider.sent[1]?.text).toContain('Making is free, so trying costs you nothing.');
     const claim = await ws.readJson(ws.ownerDir(id, 'email', 'follow-up.json'));
     expect(claim).toMatchObject({ outcome: 'sent', template: 'follow-up-no-edit' });
   });
@@ -284,7 +284,7 @@ describe('follow-up', () => {
 });
 
 describe('credits reminder', () => {
-  const subject = 'Your cuttingfloor credits are waiting';
+  const subject = 'Your next edit is free to make';
 
   it('goes once, a week in, with the whole credits left and the app the account edits from', async () => {
     const { ws, accounts, provider, options } = await setup();
@@ -297,7 +297,7 @@ describe('credits reminder', () => {
     const reminders = provider.sent.filter((m) => m.subject === subject);
     expect(reminders).toHaveLength(1);
     const text = reminders[0]?.text ?? '';
-    expect(text).toContain('You still have 23 free credits,');
+    expect(text).toContain('you still have 23 free credits for clean copies');
     expect(text).toContain('Pick up where you left off in ChatGPT');
     expect(text).not.toContain('apifunnel');
     expect(text).toContain('https://api.cuttingfloor.ai/openapi.json');
@@ -326,7 +326,7 @@ describe('credits reminder', () => {
     }
   });
 
-  it('goes to nobody with less than one credit left or no balance, and only after a welcome', async () => {
+  it('goes to a balance however small (making is free), never to no balance, and only after a welcome', async () => {
     const { ws, accounts, provider, sequence } = await setup();
     const spent = accounts.add(1, T0);
     const capless = accounts.add(2, T0);
@@ -335,10 +335,9 @@ describe('credits reminder', () => {
     accounts.add(3, T0 - 7 * DAY - HOUR);
     await sequence.tick(T0 + 1000);
     await sequence.tick(T0 + 7 * DAY + 60_000);
-    expect(provider.sent.filter((m) => m.subject === subject)).toHaveLength(0);
+    expect(provider.sent.filter((m) => m.subject === subject)).toHaveLength(1);
     expect(await ws.readJson(ws.ownerDir(spent, 'email', 'credits.json'))).toMatchObject({
-      outcome: 'suppressed',
-      reason: 'no_credits_left',
+      outcome: 'sent',
     });
     expect(await ws.readJson(ws.ownerDir(capless, 'email', 'credits.json'))).toMatchObject({
       outcome: 'suppressed',
@@ -347,8 +346,9 @@ describe('credits reminder', () => {
   });
 
   it('words every kind of balance', () => {
-    expect(creditsPhrase({ left: 20.8, perMonth: null, bought: 0 })).toBe('20 free credits');
-    expect(creditsPhrase({ left: 1.5, perMonth: null, bought: 0 })).toBe('1 free credit');
+    expect(creditsPhrase({ left: 20.8, perMonth: null, bought: 0 })).toBe('20.75 free credits');
+    expect(creditsPhrase({ left: 1.5, perMonth: null, bought: 0 })).toBe('1.5 free credits');
+    expect(creditsPhrase({ left: 1, perMonth: null, bought: 0 })).toBe('1 free credit');
     expect(creditsPhrase({ left: 112, perMonth: null, bought: 100 })).toBe('112 credits');
     expect(creditsPhrase({ left: 899.7, perMonth: 900, bought: 0 })).toBe(
       "899 of this month's 900 credits",
@@ -356,15 +356,15 @@ describe('credits reminder', () => {
     expect(creditsPhrase({ left: null, perMonth: null, bought: 0 })).toBe('unlimited credits');
   });
 
-  it("names the account's own credits in every email, whatever its plan", async () => {
+  it("names the account's own credits after an edit, whatever its plan", async () => {
     const { accounts, provider, sequence } = await setup();
-    const id = accounts.add(1, T0);
+    const id = accounts.add(1, T0, { firstEditAt: new Date(T0 + HOUR).toISOString() });
     accounts.credits.set(id, { left: 899.7, perMonth: 900, bought: 0 });
     await sequence.tick(T0 + 1000);
     await sequence.tick(T0 + 3 * DAY + 60_000);
     expect(provider.sent.map((m) => m.text.match(/You have [^.:,]*/)?.[0])).toEqual([
-      "You have 899 of this month's 900 credits to start with",
-      "You have 899 of this month's 900 credits left",
+      undefined,
+      "You have 899 of this month's 900 credits for clean copies",
     ]);
   });
 
@@ -512,16 +512,13 @@ describe('templates and configuration', () => {
       'credits-app',
       'credits-kazi',
     ] as const)
-      expect((await loadTemplate(TEMPLATES, name)).version).toBe('2');
-    // Version 3 of the welcome, like every email in the sequence, says the account's own credits.
-    expect((await loadTemplate(TEMPLATES, 'welcome')).version).toBe('3');
-    for (const name of [
-      'welcome',
-      'follow-up-no-edit',
-      'follow-up-first-edit',
-      'credits-app',
-      'credits-kazi',
-    ] as const)
+      expect((await loadTemplate(TEMPLATES, name)).version).toBe('3');
+    expect((await loadTemplate(TEMPLATES, 'welcome')).version).toBe('4');
+    // The welcome and the no-edit follow-up go before the account is activated, when it has no
+    // credits yet, so only the emails after an edit say the account's own credits.
+    for (const name of ['welcome', 'follow-up-no-edit'] as const)
+      expect((await loadTemplate(TEMPLATES, name)).body).not.toContain('{{credits}}');
+    for (const name of ['follow-up-first-edit', 'credits-app', 'credits-kazi'] as const)
       expect((await loadTemplate(TEMPLATES, name)).body).toContain('{{credits}}');
   });
 

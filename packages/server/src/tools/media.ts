@@ -1537,6 +1537,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
             })
           : {}),
         ...(link ? { url: link.url, page_url: link.pageUrl, expires_at: link.expiresAt } : {}),
+        ...(rt.gate ? await rt.gate.state(owner, record.media_id) : {}),
         ...making,
       });
     }),

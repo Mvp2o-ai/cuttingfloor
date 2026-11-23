@@ -192,6 +192,10 @@ export const LINES: Record<string, Line> = {
   },
   // Export
   'export.video': { group: 'export', say: 'Render the edit to MP4, MOV, GIF, WAV or MP3.' },
+  'export.release': {
+    group: 'export',
+    say: 'Take a clean copy of a finished file, without the cuttingfloor mark.',
+  },
   'export.timeline': {
     group: 'export',
     say: 'Hand the edit to Final Cut Pro, Premiere or Resolve (FCPXML, OTIO, EDL), or the captions as SRT/VTT.',

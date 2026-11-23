@@ -5,6 +5,7 @@ import { configFromEnv, Runtime } from '@cuttingfloor/server';
 import { AccessCheck } from './access.ts';
 import { ADMIN_KEYS, AdminApi } from './admin-api.ts';
 import { AppsSeen } from './apps-seen.ts';
+import { recordDownload } from './downloads.ts';
 import { ResendProvider } from './email.ts';
 import { recordSignInStep } from './funnel.ts';
 import { createHttpServer, parseApiKeys } from './http.ts';
@@ -173,6 +174,15 @@ const lifecycle =
         ...(providerKeys ? { providerKeys } : {}),
       })
     : undefined;
+// The download gate: pictures leave carrying the mark until their owner releases a clean copy,
+// spent through the ledger. Only with plans and credits to go by (the hosted service).
+if (access && lifecycle) {
+  runtime.useGate({
+    exempt: (owner) => access.exempt(owner),
+    balance: async (owner) => (await access.balance(owner)).left,
+    spend: (owner, ref, credits, tool) => lifecycle.spendRelease(owner, ref, credits, tool),
+  });
+}
 if (lifecycle) {
   for (const [name, set] of [
     ['RESEND_API_KEY', process.env.RESEND_API_KEY],
@@ -270,6 +280,14 @@ const server = createHttpServer({
           (await adminApi?.route(req, res, url)) ||
           (await sequence?.route(req, res, url)) ||
           lifecycle.route(req, res, url),
+      }
+    : {}),
+  ...(config.mode === 'hosted'
+    ? {
+        onDownload: (seen) =>
+          void recordDownload(runtime.ws, seen).catch((error: Error) =>
+            process.stderr.write(`downloads: ${error.message}\n`),
+          ),
       }
     : {}),
   ...(process.env.CUTTINGFLOOR_OPENAI_CHALLENGE

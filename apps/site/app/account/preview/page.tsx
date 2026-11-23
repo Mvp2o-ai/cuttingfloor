@@ -1,4 +1,4 @@
-import { PACKS } from '@cuttingfloor/plans';
+import { FREE_CREDITS, PACKS } from '@cuttingfloor/plans';
 import { notFound } from 'next/navigation';
 import type { Account } from '../../lib/billing.ts';
 import { AccountNav } from '../chrome.tsx';
@@ -17,7 +17,15 @@ function free(over: Partial<Account['credits']> = {}): Account {
   return {
     plan: 'free',
     plan_name: 'Free',
-    credits: { left: 10, used: 0, free: 10, bought: 0, per_month: null, renews: null, ...over },
+    credits: {
+      left: FREE_CREDITS,
+      used: 0,
+      free: FREE_CREDITS,
+      bought: 0,
+      per_month: null,
+      renews: null,
+      ...over,
+    },
     warnings: [{ at_credits: 5, kind: 'low', emailed: false }],
     top_up: { automatic: false, pack: null, below: 5, card_saved: false },
     packs,
@@ -28,7 +36,7 @@ function free(over: Partial<Account['credits']> = {}): Account {
 
 function paid(automatic: boolean): Account {
   return {
-    ...free({ left: 31.5, used: 3.5, bought: 25 }),
+    ...free({ left: 27.25, used: 0.75, bought: 25 }),
     plan: 'credits',
     plan_name: 'Credits',
     top_up: {
@@ -45,13 +53,13 @@ const T = '2026-11-08T10:00:00Z';
 
 const STATES: Record<string, Partial<AccountProps>> = {
   new: { account: free(), progress: {} },
-  connected: { account: free({ left: 9.6, used: 0.4 }), progress: { first_call_at: T } },
+  connected: { account: free(), progress: { first_call_at: T } },
   used: {
-    account: free({ left: 6.2, used: 3.8 }),
+    account: free({ left: 2.25, used: 0.75 }),
     progress: { first_call_at: T, first_edit_at: T, first_export_at: T },
   },
   out: {
-    account: free({ left: 0, used: 10 }),
+    account: free({ left: 0, used: FREE_CREDITS }),
     progress: { first_call_at: T, first_edit_at: T, first_export_at: T },
   },
   bought: {

@@ -178,7 +178,9 @@ describe.each((['filesystem', 'MongoDB'] as const).filter((store) => store === '
     });
 
     it('welcomes the account until its credits are claimed, and claims them once', async () => {
-      expect(client.getInstructions()).toMatch(/^This is a new connection: welcome aboard\./);
+      expect(client.getInstructions()).toMatch(
+        /^This is a new connection: welcome to cuttingfloor\./,
+      );
       const first = await ok<{ claimed_now: boolean; job_id?: string }>(client, 'credits.claim', {
         use_case: 'cut a podcast into clips',
       });
@@ -187,7 +189,9 @@ describe.each((['filesystem', 'MongoDB'] as const).filter((store) => store === '
         use_case: 'something else',
       });
       expect(again.claimed_now).toBe(false);
-      expect((await connect(env.runtime, OWNER)).getInstructions()).not.toContain('welcome aboard');
+      expect((await connect(env.runtime, OWNER)).getInstructions()).not.toContain(
+        'welcome to cuttingfloor',
+      );
       // A server started later (another node, or this one restarted) reads the claim itself.
       const { creditsClaimed } = await import('@cuttingfloor/server');
       expect(await creditsClaimed(env.runtime, OWNER)).toBe(true);
@@ -456,14 +460,16 @@ describe.each((['filesystem', 'MongoDB'] as const).filter((store) => store === '
         return text;
       };
       try {
-        expect(await instructions()).toMatch(/^This is a new connection: welcome aboard\./);
+        expect(await instructions()).toMatch(
+          /^This is a new connection: welcome to cuttingfloor\./,
+        );
         // Claimed through another server on the same store: this one has not seen the claim.
         const elsewhere = new Runtime(env.config);
         await elsewhere.ws.records
           .collection(CLAIMS, { owner })
           .insertOnce('free-credits', { claimed: true, use_case: 'x', claimed_at: 'now' });
         await elsewhere.close();
-        expect(await instructions()).not.toContain('welcome aboard');
+        expect(await instructions()).not.toContain('welcome to cuttingfloor');
       } finally {
         await new Promise((r) => server.close(r));
       }

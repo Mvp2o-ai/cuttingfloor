@@ -59,22 +59,21 @@ describe('access refusals', () => {
     expect(JSON.stringify(error)).not.toContain('/account');
   });
 
-  it('refuses new jobs at 0 credits, says editing still works, and links only the pricing page', async () => {
-    const limits = await new Fixed(allowed, { left: 0, used: 10 }).limits('u');
-    const refusal = limits.refuseJobs;
-    expect(refusal?.code).toBe('quota_exceeded');
-    expect(refusal?.hint).toContain("won't start until there are credits again");
-    expect(refusal?.hint).toContain('previews still work');
-    expect(refusal?.hint).not.toMatch(/\bwait\b/);
-    expect(refusal?.hint).toContain('https://cuttingfloor.ai/pricing');
-    expect(JSON.stringify({ ...refusal, limits })).not.toContain('/account');
+  it('never refuses work for credits: at 0 every job still starts, and no buy link is offered', async () => {
+    for (const buy of [false, true]) {
+      const limits = await new Fixed(allowed, { left: 0, used: 10 }).limits('u', { buy });
+      expect(limits.refuseJobs).toBeUndefined();
+      expect(JSON.stringify(limits)).not.toContain('/account');
+    }
   });
 
-  it('links where to buy credits when the client allows it', async () => {
-    const refusal = (await new Fixed(allowed, { left: 0, used: 10 }).limits('u', { buy: true }))
-      .refuseJobs;
-    expect(refusal?.hint).toContain('https://cuttingfloor.ai/account#credits');
-    expect(refusal?.hint).toContain('packs from $5 for 25 credits');
-    expect(refusal?.detail).toMatchObject({ buy: 'https://cuttingfloor.ai/account#credits' });
+  it('marks nothing for a given plan, and everything for a free or paid one', async () => {
+    const user = 'user_01GATEACCOUNT0000000000000';
+    expect(await new Fixed({ ...allowed, plan: 'staff' }).exempt(user)).toBe(true);
+    expect(await new Fixed({ ...allowed, plan: 'lifetime' }).exempt(user)).toBe(true);
+    expect(await new Fixed(allowed).exempt(user)).toBe(false);
+    expect(await new Fixed({ ...allowed, plan: 'credits' }).exempt(user)).toBe(false);
+    // A maintenance key's owner is no person's account.
+    expect(await new Fixed(allowed).exempt('ops')).toBe(true);
   });
 });

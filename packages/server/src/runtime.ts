@@ -24,6 +24,7 @@ import { FileJobStore, type Job, JobRunner } from '@cuttingfloor/jobs';
 import { KEEP } from '@cuttingfloor/schema';
 import { CALLS, CALLS_TTL_MS, type CallEntry, jobEnd, recordCall } from './calls.ts';
 import { Drain } from './drain.ts';
+import { DownloadGate, type GateHooks, RELEASES } from './gate.ts';
 import { SearchIndexer } from './indexer.ts';
 import { markLive } from './live.ts';
 import { METER, METER_TTL_MS, type MeterEntry, meterJob, meterJudgments } from './meter.ts';
@@ -54,6 +55,35 @@ export const FUNNEL_DAYS = defineCollection<unknown>({
   // A day goes whole, by its newest step: its oldest is up to a day older.
   db: { ttlMs: FUNNEL_TTL_MS + 24 * 3_600_000 },
 });
+
+/**
+ * Hosted: an owner's downloads, one record per file and UTC day (`{file_id}.{yyyy-mm-dd}`;
+ * apps/hosted downloads.ts writes them). Kept as long as sign-in steps.
+ */
+export const DOWNLOADS = defineCollection<DownloadDay>({
+  name: 'downloads',
+  scope: 'owner',
+  fs: { dir: 'downloads' },
+  db: { ttlMs: FUNNEL_TTL_MS },
+});
+
+export interface DownloadDay {
+  /** The signed link's id: an export job (`j_`), kept frames (`f_`) or a media item (`m_`). */
+  file_id: string;
+  name: string;
+  /** The UTC day, yyyy-mm-dd. */
+  day: string;
+  first_at: string;
+  last_at: string;
+  /** Fetches to save the file (the raw link, the page's Download), not counting a player's later ranges. */
+  downloads: number;
+  /** Fetches to play or show it (the watch page's player, an inline fetch). */
+  plays: number;
+  /** Watch pages opened. */
+  page_views: number;
+  /** The client of the day's first request, from its User-Agent (`Mozilla`, `openai-mcp`). */
+  agent: string;
+}
 
 export interface RuntimeConfig {
   /** Data root: timelines, media, jobs, outputs and caches, all with TTLs. */
@@ -283,6 +313,8 @@ export class Runtime {
   readonly drain: Drain;
   /** Downloaded models, kept across restarts (they are checksummed, not user data). */
   readonly modelsDir: string;
+  /** Hosted: the download gate (the mark and clean-copy releases); none locally. */
+  gate: DownloadGate | undefined;
   #secret: Buffer | undefined;
   #sweeper: NodeJS.Timeout | undefined;
   #reaper: NodeJS.Timeout | undefined;
@@ -318,6 +350,7 @@ export class Runtime {
       },
     });
     this.modelsDir = config.modelsDir ?? join(config.dataDir, 'models');
+    this.gate = undefined;
     this.timelines = new TimelineStore(this.ws);
     this.outputs = new Outputs(this.ws);
     this.media = new MediaLibrary(this.ws, {
@@ -521,6 +554,9 @@ export class Runtime {
       await records.collection(LEGACY_USAGE, { owner }).expire(2 * 24 * 3_600_000);
       await records.expireParents(METER, { owner }, METER_TTL_MS);
       await records.log(CALLS, { owner }).expire(CALLS_TTL_MS);
+      await records.collection(DOWNLOADS, { owner }).expire(FUNNEL_TTL_MS);
+      // A release outlives its file (made again, it is a new export), kept like the downloads.
+      await records.collection(RELEASES, { owner }).expire(FUNNEL_TTL_MS);
     }
     await this.#sweepCache();
     // Hosted sign-in steps (apps/hosted funnel.ts), one folder per day.
@@ -576,6 +612,12 @@ export class Runtime {
     return this.#secret;
   }
 
+  /** Turns on the download gate with the hosting app's plans and credits. */
+  useGate(hooks: GateHooks, options: { from?: string } = {}): DownloadGate {
+    this.gate = new DownloadGate(this, hooks, options);
+    return this.gate;
+  }
+
   /**
    * A signed, time-limited download URL for a file under `outputs/{id}/`: a job's output (`j_…`),
    * or frames kept for download (`f_…`). A media id (`m_…`) signs the media's own file.
@@ -607,6 +649,29 @@ export class Runtime {
    * each old expiry time in the value moves to the new one.
    */
   async freshLinks<T>(value: T): Promise<T> {
+    return this.#markState(await this.#freshLinks(value));
+  }
+
+  /**
+   * A finished job (or a list of them) with its file's mark state as it is now: a release after
+   * the job ended clears `watermarked` from what reading it gives.
+   */
+  async #markState<T>(value: T): Promise<T> {
+    const gate = this.gate;
+    if (!gate || value === undefined || value === null) return value;
+    for (const job of (Array.isArray(value) ? value : [value]) as Array<Partial<Job>>) {
+      const out = job?.result?.structuredContent as Record<string, unknown> | undefined;
+      if (!job?.id || !job.owner || !out || typeof out.url !== 'string') continue;
+      const state = await gate.state(job.owner, job.id).catch(() => undefined);
+      if (!state) continue;
+      out.watermarked = state.watermarked;
+      if (state.release_credits !== undefined) out.release_credits = state.release_credits;
+      else delete out.release_credits;
+    }
+    return value;
+  }
+
+  async #freshLinks<T>(value: T): Promise<T> {
     if (value === undefined || value === null) return value;
     const text = JSON.stringify(value);
     const found = [...text.matchAll(SIGNED_LINK)];

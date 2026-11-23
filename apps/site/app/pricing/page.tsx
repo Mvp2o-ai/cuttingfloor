@@ -10,6 +10,7 @@ import {
 } from '../../content/facts.ts';
 import { LiveCard } from '../live-card.tsx';
 import {
+  CLEAN_PRICE,
   CREDIT,
   EVERY_PLAN,
   EVERY_PLAN_LEAD,
@@ -30,8 +31,8 @@ import { Breadcrumbs, Footer, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
 // data builds /pricing.md and /pricing.json.
 
 const FREE = FREE_CREDITS;
-const TITLE = `Pricing: pay as you go, ${FREE} free credits, every tool, no subscription`;
-const DESCRIPTION = `cuttingfloor, the video editing MCP server: start with ${FREE} free credits, no card. Then pay as you go: credit packs from ${FROM_PACK}, which never expire, with no subscription. Every tool for everyone. Enterprise by agreement; free to self-host (open source, ${LICENCE}). A credit is a minute of our servers working; editing and previews are free.`;
+const TITLE = 'Pricing: make for free, pay only for clean copies, no subscription';
+const DESCRIPTION = `cuttingfloor, the video editing MCP server: making is free, every tool, no card, and every export downloads free carrying the cuttingfloor mark. A clean copy costs ${CLEAN_PRICE}; credit packs from ${FROM_PACK} never expire, with no subscription. Enterprise by agreement; free to self-host, unmarked (open source, ${LICENCE}).`;
 
 export const metadata: Metadata = {
   title: `${TITLE} | cuttingfloor`,
@@ -99,19 +100,19 @@ export default function Pricing() {
           <span className="mark-b" />
           <Breadcrumbs trail={[{ name: 'Pricing', href: '/pricing' }]} />
           <span className="label">Pricing</span>
-          <h1 className="display">Pay as you go. Start free.</h1>
+          <h1 className="display">Make for free. Pay for clean copies.</h1>
           <p className="lede wt-answer">
-            {FREE} free credits, no card: enough to edit and export several short videos. Then buy
-            credits when you need them, from {FROM_PACK}.{' '}
+            Editing, exports, graphics and voiceovers cost nothing, retries included. Every export
+            downloads free carrying the cuttingfloor mark; a clean copy costs {CLEAN_PRICE}.{' '}
             <em>
-              They never expire and there is no subscription. A credit is a minute of our servers
-              working; editing and previews are free. Or run it yourself, free.
+              {FREE} credits when you activate your account, then packs from {FROM_PACK}. They never
+              expire and there is no subscription. Or run it yourself, free and unmarked.
             </em>
           </p>
           <LiveCard />
           <div className="actions">
             <a className="link-big" href={SIGN_UP}>
-              Start free: {FREE} credits
+              Start free
             </a>
             <a className="link-big quiet" href={SELF_HOSTED.href}>
               Run it yourself, free
@@ -123,10 +124,10 @@ export default function Pricing() {
           <div className="head">
             <span className="label">01 / Credits</span>
             <div>
-              <h2 className="display">Buy what you use.</h2>
+              <h2 className="display">Buy what you take.</h2>
               <p className="compare-lede">
-                Packs, bought on your account page. Bigger packs cost less a credit. Turn on
-                automatic top-up and you never run out.
+                A credit is a finished minute of a clean copy. Packs, bought on your account page.
+                Bigger packs cost less a credit. Turn on automatic top-up and you never run out.
               </p>
             </div>
           </div>
@@ -207,8 +208,8 @@ export default function Pricing() {
             <div>
               <h2 className="display">What differs.</h2>
               <p className="compare-lede">
-                Credits, speed, size and storage. Your first pack lifts the free limits. Prices in
-                US dollars.
+                The mark, credits, size and storage. Your first pack lifts the free storage limit.
+                Prices in US dollars.
               </p>
             </div>
           </div>
@@ -336,9 +337,9 @@ export default function Pricing() {
               <h2>Self-hosted · Free</h2>
               <p>
                 cuttingfloor is open source under {LICENCE}. It runs in one Docker image ({IMAGE}),
-                the same image the hosted service runs. You run it on your own machine, with no
-                credit limits, and bring your own keys for lip-sync and visual judgment (the table
-                above).
+                the same image the hosted service runs. You run it on your own machine, unmarked,
+                with no limits and no credits, and bring your own keys for lip-sync and visual
+                judgment (the table above).
               </p>
               <pre className="pr-steps">
                 <code>{SELF_HOST_STEPS.join('\n')}</code>

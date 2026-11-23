@@ -5,7 +5,7 @@ version: 3
 type: playbook
 source: system
 author: Ken Wiltshire
-related: spend-credits-wisely:prerequisite, turn-a-long-video-into-shorts:related
+related: turn-a-long-video-into-shorts:related
 ---
 
 # Shorts-style captions

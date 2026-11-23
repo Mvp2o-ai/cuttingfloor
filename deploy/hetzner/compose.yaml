@@ -14,8 +14,10 @@ services:
       CUTTINGFLOOR_MODE: hosted
       CUTTINGFLOOR_MEDIA_ROOTS: ""
       CUTTINGFLOOR_MOTION_URL: http://motion:8790
-      # Exports, imports and analysis at once (plus one slot kept for short jobs): 5 in all.
-      CUTTINGFLOOR_MAX_JOBS: "4"
+      # Exports, imports and analysis at once (plus one slot kept for short jobs): 13 in all. Above
+      # the 8 cores on purpose: much of a job waits on the network, and one account runs at most 4
+      # (OWNER_JOBS), so a burst can't fill the server.
+      CUTTINGFLOOR_MAX_JOBS: "12"
     volumes:
       - /var/lib/cuttingfloor:/data
       # The sign-up sequence's email copy, editable here without a deploy (CUTTINGFLOOR_EMAIL_TEMPLATES).

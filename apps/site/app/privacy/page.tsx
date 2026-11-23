@@ -35,10 +35,10 @@ export default function Privacy() {
         <Items
           items={[
             'Account data: your email, name and how you sign in, and the account id your app signs in with.',
-            'Billing data: your payment history (held by Stripe; we never see your card number) and your credits: the free ones, the packs you bought and what your jobs used.',
+            'Billing data: your payment history (held by Stripe; we never see your card number) and your credits: the free ones, the packs you bought and the clean copies you took with them.',
             'Your content: the files you upload or import, the exports and timelines you make, and what your agent sends each tool: its instructions for that step and any file you attach. We never see your chat.',
             'Data worked out from your content: transcripts, beats, scenes, where faces and speakers are, and a search index of each video’s and picture’s frames (small pictures and number summaries of what they show). Faces and voices are used only to make the edit you asked for, never to identify anyone.',
-            'Usage data: job records (which job ran, for how long), which app you first connected from, which link or ad first brought you (when it was tagged) and when you first edited and exported, and sign-in steps (the time and the app’s name when an app asks how to sign in, without its address).',
+            'Usage data: job records (which job ran, for how long), downloads (which export, the day, whether from its page or its link, and the app), which app you first connected from, which link or ad first brought you (when it was tagged) and when you first edited and exported, and sign-in steps (the time and the app’s name when an app asks how to sign in, without its address).',
             'Technical data: server logs of the IP address a request came from, its time and what it asked for; on the website, visits, pages and the links and buttons clicked, and cookies: one that keeps you signed in and, for 30 days after a tagged link or ad, one that remembers which it was.',
             'Keys you save: a provider key (your sync. labs key), kept encrypted, and keys you make for scripts.',
           ]}

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadLibrary, type Skill } from '@cuttingfloor/skills/library';
 
@@ -10,9 +11,10 @@ export type { Skill };
 /** The last time any skill changed; the sitemap's date for the skill pages. */
 export const SKILLS_UPDATED = '2026-11-04';
 
-// next build runs in apps/site.
-export const SKILLS: Skill[] = loadLibrary(join(process.cwd(), '..', '..', 'skills')).skills.filter(
-  (s) => !s.hidden,
-);
+// next build runs in apps/site; tests run at the repo root.
+const ROOT = existsSync(join(process.cwd(), 'skills'))
+  ? process.cwd()
+  : join(process.cwd(), '..', '..');
+export const SKILLS: Skill[] = loadLibrary(join(ROOT, 'skills')).skills.filter((s) => !s.hidden);
 
 export const skill = (slug: string): Skill | undefined => SKILLS.find((s) => s.slug === slug);

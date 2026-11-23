@@ -61,7 +61,7 @@ export const VERSUS: Versus[] = [
       },
       {
         q: 'Is cuttingfloor free like CapCut?',
-        a: 'Editing the timeline is free and self-hosting is free. The hosted server charges credits, one credit per minute of a job running. CapCut is free for most edits and charges for some effects, cloud storage and its pro tier.',
+        a: 'Making is free on cuttingfloor, and so is self-hosting. Hosted exports download free carrying the cuttingfloor mark; a clean copy costs 1 credit per finished minute. CapCut is free for most edits and charges for some effects, cloud storage and its pro tier.',
       },
     ],
     updated: '2026-11-17',
@@ -150,7 +150,7 @@ export const VERSUS: Versus[] = [
       },
       {
         q: 'How is each priced?',
-        a: 'Compare current pricing on each site rather than here, since plans change. cuttingfloor charges credits for minutes of a job running: editing the timeline is free, and so is self-hosting.',
+        a: 'Compare current pricing on each site rather than here, since plans change. On cuttingfloor making is free and exports download free carrying the cuttingfloor mark; a clean copy costs 1 credit per finished minute, and self-hosting is free and unmarked.',
       },
     ],
     updated: '2026-11-17',
@@ -237,7 +237,7 @@ export const VERSUS: Versus[] = [
       },
       {
         q: 'Which one is cheaper?',
-        a: "They are priced on different things, so the answer depends on volume and on whether you supply footage. cuttingfloor charges credits per minute of a job running and is free self-hosted; check Invideo's current plans on its site.",
+        a: "They are priced on different things, so the answer depends on volume and on whether you supply footage. cuttingfloor is free to make with, charges 1 credit per finished minute of a clean copy, and is free and unmarked self-hosted; check Invideo's current plans on its site.",
       },
     ],
     updated: '2026-11-17',

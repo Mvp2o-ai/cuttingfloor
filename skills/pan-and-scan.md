@@ -5,7 +5,7 @@ version: 3
 type: playbook
 source: system
 author: Ken Wiltshire
-related: subject-tracking:prerequisite, spend-credits-wisely:prerequisite
+related: subject-tracking:prerequisite
 ---
 
 # Pan and scan

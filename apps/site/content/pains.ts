@@ -95,7 +95,7 @@ export const AGENT_PAINS: Pain[] = [
   {
     pain: 'Credits that burn on every retry',
     answer:
-      'Planning, editing and previews are free; only jobs such as exports use credits, and nothing is billed but the packs you buy. Or run it yourself for free.',
+      'Retries cost nothing here: editing, exports, graphics and voiceovers are free, as many times as it takes. Every export downloads free carrying the cuttingfloor mark; you pay only for the clean copy you keep, 1 credit per finished minute. Or run it yourself, free and unmarked.',
     tools: [],
   },
   {
