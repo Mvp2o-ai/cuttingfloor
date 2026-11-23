@@ -4,13 +4,13 @@ A headless video editor for agents, as an MCP server. An agent imports footage, 
 
 - **Every edit returns a new timeline id**, plus a preview image of the result. Timelines are immutable, so going back is just using an older id.
 - **Nothing is stored for you.** Timelines, media and outputs live in a cache with a time limit (24 hours for timelines, 7 days for media and exports). Export to keep work.
-- **One Docker image** runs locally (free) and hosted. Engines (FFmpeg, MLT) ship inside it; Docker is the only thing you install.
+- **One Docker image** runs locally (free, unmarked, no limits) and hosted. Engines (FFmpeg, MLT) ship inside it; Docker is the only thing you install.
 
 > What it covers: import, cutting on words, timing, transitions, titles and captions, audio, effects, analysis (transcripts, beats, faces, tracking, scenes), compositing, motion graphics and stills from HTML, voiceover, cut-outs, stems, stabilizing, upscaling, lip-sync, previews, QA checks, and export to MP4, ProRes, GIF and audio or to Final Cut, Premiere and Resolve (FCPXML, OTIO, EDL). Every tool: [cuttingfloor.ai/features](https://cuttingfloor.ai/features). Use it from [Kazi](https://cuttingfloor.ai/agents/kazi), [Claude](https://cuttingfloor.ai/agents/claude), [ChatGPT](https://cuttingfloor.ai/agents/chatgpt) or [any MCP app](https://cuttingfloor.ai/connect).
 
 ## Use it hosted
 
-Sign up at [cuttingfloor.ai](https://cuttingfloor.ai) (three days free), then add `https://api.cuttingfloor.ai/mcp` as a remote MCP server in Claude, ChatGPT, Cursor, Kazi or any client that takes one. The client opens the sign-in itself (OAuth). Nothing to install; transcription, voiceover, cutouts and rendering run on our servers. The [official MCP Registry entry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.Mvp2o-ai%2Fcuttingfloor/versions/latest) lists the same address.
+Sign up at [cuttingfloor.ai](https://cuttingfloor.ai) (making is free; exported videos carry the cuttingfloor mark until you take a clean copy for credits, [pricing](https://cuttingfloor.ai/pricing)), then add `https://api.cuttingfloor.ai/mcp` as a remote MCP server in Claude, ChatGPT, Cursor, Kazi or any client that takes one. The client opens the sign-in itself (OAuth). Nothing to install; transcription, voiceover, cutouts and rendering run on our servers. The [official MCP Registry entry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.Mvp2o-ai%2Fcuttingfloor/versions/latest) lists the same address.
 
 Code that doesn't speak MCP calls the same tools as plain HTTP with a key from your account page (`cf_…`): `POST https://api.cuttingfloor.ai/v1/<tool>` with the tool's arguments as a JSON object answers its result, and [`/openapi.json`](https://api.cuttingfloor.ai/openapi.json) describes every tool (OpenAPI 3.1). Refusals come back as HTTP error statuses with `{code, message, hint}`.
 
