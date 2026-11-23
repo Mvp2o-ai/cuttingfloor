@@ -121,7 +121,16 @@ async function allFiles(root: string): Promise<string> {
   for (const entry of await readdir(root, { withFileTypes: true, recursive: true })) {
     if (!entry.isFile()) continue;
     const path = join(entry.parentPath, entry.name);
-    if ((await stat(path)).size < 5_000_000) out += (await readFile(path)).toString('latin1');
+    // The server still writes while this reads: a file written whole beside its record and then
+    // moved into place is gone by the time it is read. A file that is gone holds no key.
+    const gone = (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return undefined;
+      throw error;
+    };
+    const size = (await stat(path).catch(gone))?.size;
+    if (size === undefined || size >= 5_000_000) continue;
+    const body = await readFile(path).catch(gone);
+    if (body) out += body.toString('latin1');
   }
   return out;
 }
