@@ -15,7 +15,7 @@ import { toErrorResult } from './result.ts';
 import type { Runtime } from './runtime.ts';
 import { registerTasks } from './tasks.ts';
 import { registerCreateTools } from './tools/create.ts';
-import { claimFile, claimSeen, guideFirstCall, registerCreditTools } from './tools/credits.ts';
+import { claimFile, claimSeen, gateUntilClaimed, registerCreditTools } from './tools/credits.ts';
 import { registerInterchangeTools } from './tools/interchange.ts';
 import { registerJudgeTools } from './tools/judge.ts';
 import { registerListenTools } from './tools/listen.ts';
@@ -47,10 +47,10 @@ export interface ServerDeps {
   /** Hosted: the owner's plan and credits, for account.get. Absent locally: no plan. */
   account?: () => Promise<AccountGetResult>;
   /**
-   * Hosted: false where no assistant reads the results (apps on /v1), so an account's first
-   * result there doesn't use up the free-credits guidance. Default true.
+   * Hosted: false where no assistant can claim (apps on /v1 for their users), so calls there are
+   * never refused for the free-credits claim. Default true.
    */
-  firstResultGuidance?: boolean;
+  claimGate?: boolean;
   /**
    * Hosted: whether the account's free credits are claimed, read with `creditsClaimed` before
    * the server is built, since building it cannot wait for a record store that is not the
@@ -117,7 +117,7 @@ export function createServer(deps: ServerDeps): McpServer {
     { instructions: instructions(deps.runtime.config, unclaimed(deps)) },
   );
   logToolCalls(server, (entry) => deps.runtime.logCall(deps.owner(), entry));
-  guideFirstCall(server, deps);
+  gateUntilClaimed(server, deps);
   compactSchemas(server);
   allowTaskReplies(server);
   drainTools(server, deps.runtime);

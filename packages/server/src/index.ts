@@ -28,11 +28,11 @@ export {
 export { createServer, type ServerDeps } from './server.ts';
 export { listHeld, startUpload, storageOf, storedBytes } from './storage.ts';
 export {
-  CLAIM_GUIDED,
+  CLAIM_GATE,
+  CLAIM_REFUSALS,
   CLAIM_TASKS,
   CLAIMS,
   creditsClaimed,
-  markWelcomed,
   ONBOARDING,
 } from './tools/credits.ts';
 export { readSupportMessages, type SupportMessage } from './tools/support.ts';

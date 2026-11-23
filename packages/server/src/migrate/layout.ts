@@ -45,7 +45,7 @@ export const COLLECTION_RULES: Readonly<Record<string, CollectionRule>> = {
   funnel: {},
   account_claims: { only: ['free-credits'] },
   account_claim_tasks: {},
-  account_claim_guided: { only: ['claim-guided'] },
+  account_claim_gate: { only: ['claim-gate'] },
   account_onboarding: { only: ['onboarding'] },
   account_apps: { only: ['apps'] },
   meter: {},
