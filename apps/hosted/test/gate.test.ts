@@ -197,6 +197,15 @@ describe('the download gate', () => {
     expect(await short.json()).toMatchObject({ code: 'quota_exceeded' });
   });
 
+  it('releases with exactly the price left', async () => {
+    balances.set('alice', 0.25);
+    const { jobId } = await exported('alice', 'tiny.png', 'image/png', 0);
+    const alice = await connect(KEY);
+    const got = await call(alice, 'export.release', { job_id: jobId });
+    expect(got.structuredContent).toMatchObject({ credits: 0.25, balance: 0 });
+    await alice.close();
+  });
+
   it('never marks audio, a given plan, or an export that has gone', async () => {
     balances.set('alice', 2);
     const audio = await exported('alice', 'mix.wav', 'audio/wav', 30);

@@ -434,7 +434,8 @@ function month(now: number): { start: string; end: string } {
   };
 }
 
-const round = (n: number) => Math.round(n * 10) / 10;
+// Hundredths: clean copies are priced in quarter credits.
+const round = (n: number) => Math.round(n * 100) / 100;
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
 /** A payment, in the currency's main unit (dollars, not cents). */
