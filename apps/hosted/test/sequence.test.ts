@@ -326,7 +326,7 @@ describe('credits reminder', () => {
     }
   });
 
-  it('goes to nobody with less than one credit left or no balance, and only after a welcome', async () => {
+  it('goes to a balance however small (making is free), never to no balance, and only after a welcome', async () => {
     const { ws, accounts, provider, sequence } = await setup();
     const spent = accounts.add(1, T0);
     const capless = accounts.add(2, T0);
@@ -335,10 +335,9 @@ describe('credits reminder', () => {
     accounts.add(3, T0 - 7 * DAY - HOUR);
     await sequence.tick(T0 + 1000);
     await sequence.tick(T0 + 7 * DAY + 60_000);
-    expect(provider.sent.filter((m) => m.subject === subject)).toHaveLength(0);
+    expect(provider.sent.filter((m) => m.subject === subject)).toHaveLength(1);
     expect(await ws.readJson(ws.ownerDir(spent, 'email', 'credits.json'))).toMatchObject({
-      outcome: 'suppressed',
-      reason: 'no_credits_left',
+      outcome: 'sent',
     });
     expect(await ws.readJson(ws.ownerDir(capless, 'email', 'credits.json'))).toMatchObject({
       outcome: 'suppressed',
@@ -347,8 +346,9 @@ describe('credits reminder', () => {
   });
 
   it('words every kind of balance', () => {
-    expect(creditsPhrase({ left: 20.8, perMonth: null, bought: 0 })).toBe('20 free credits');
-    expect(creditsPhrase({ left: 1.5, perMonth: null, bought: 0 })).toBe('1 free credit');
+    expect(creditsPhrase({ left: 20.8, perMonth: null, bought: 0 })).toBe('20.75 free credits');
+    expect(creditsPhrase({ left: 1.5, perMonth: null, bought: 0 })).toBe('1.5 free credits');
+    expect(creditsPhrase({ left: 1, perMonth: null, bought: 0 })).toBe('1 free credit');
     expect(creditsPhrase({ left: 112, perMonth: null, bought: 100 })).toBe('112 credits');
     expect(creditsPhrase({ left: 899.7, perMonth: 900, bought: 0 })).toBe(
       "899 of this month's 900 credits",

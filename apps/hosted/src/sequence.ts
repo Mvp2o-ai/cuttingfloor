@@ -211,16 +211,15 @@ export class Sequence {
       const state = await this.#o.subscribers.current(owner);
       const reason = state ? await this.#suppressed(owner, slot, state.email) : 'account_deleted';
       const credits = state && !reason ? await this.#o.credits(owner) : undefined;
-      // Only a balance (free and bought, never expiring) waits; a plan given by the month renews.
+      // Only an account with a balance hears about it; a given plan has nothing to spend. Making is
+      // free, so the reminder goes whatever is left.
       const why =
         reason ??
         (slot !== 'credits' || !credits
           ? undefined
           : credits.left === null || credits.perMonth !== null
             ? 'no_balance'
-            : credits.left < 1
-              ? 'no_credits_left'
-              : undefined);
+            : undefined);
       if (!state || !credits || why) {
         await this.#settle(owner, { ...claim, outcome: 'suppressed', reason: why ?? '' });
         return;
@@ -442,8 +441,10 @@ export async function loadTemplate(dir: string, name: TemplateName): Promise<Tem
  */
 export function creditsPhrase(credits: Credits): string {
   if (credits.left === null) return 'unlimited credits';
-  const left = Math.max(0, Math.floor(credits.left));
-  if (credits.perMonth !== null) return `${left} of this month's ${credits.perMonth} credits`;
+  if (credits.perMonth !== null)
+    return `${Math.max(0, Math.floor(credits.left))} of this month's ${credits.perMonth} credits`;
+  // Clean copies are priced in quarter credits, so a balance reads in quarters too.
+  const left = Math.max(0, Math.floor(credits.left * 4) / 4);
   return `${left} ${credits.bought > 0 ? '' : 'free '}credit${left === 1 ? '' : 's'}`;
 }
 
