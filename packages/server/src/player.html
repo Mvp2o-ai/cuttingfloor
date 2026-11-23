@@ -428,7 +428,7 @@
   function infoStrip(data, kind) {
     const chips = el('div', { class: 'chips' });
     // Chips keep one order however late they arrive (some come from the file's metadata).
-    const ORDER = ['size', 'duration', 'fps', 'bytes', 'preset', 'expires'];
+    const ORDER = ['size', 'duration', 'fps', 'bytes', 'preset', 'expires', 'mark'];
     const chip = (key, text, title) => {
       if (!text || chips.querySelector(`[data-k="${key}"]`)) return;
       const c = el('span', { class: 'chip', 'data-k': key, title: title || null }, text);
@@ -482,6 +482,7 @@
     chip('bytes', bytes(data.bytes));
     if (data.preset) chip('preset', data.preset);
     if (data.expires_at) chip('expires', untilText(data.expires_at), new Date(data.expires_at).toLocaleString());
+    if (data.watermarked) chip('mark', 'Carries the cuttingfloor mark', `A clean copy is ${data.release_credits} credit${data.release_credits === 1 ? '' : 's'}: ask for it in the chat`);
     return { node: info, chip, chips };
   }
 
