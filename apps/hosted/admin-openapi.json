@@ -275,10 +275,10 @@
           },
           "watermarked": {
             "type": "boolean",
-            "description": "True: the file downloads carrying the cuttingfloor mark until a clean copy is taken (export.release). False: it is clean (released, made before 2026-11-23 11:30 UTC, never marked such as audio or an upload, or a given plan)"
+            "description": "True: the file downloads with a cuttingfloor watermark until the watermark is removed (export.release). False: it is clean (released, made before 2026-11-23 11:30 UTC, never watermarked, such as audio or an upload, or a given plan)"
           },
           "release_credits": {
-            "description": "What a clean copy costs, in credits, while watermarked; null when it is clean",
+            "description": "What removing the watermark costs, in credits, while watermarked; null when it is clean",
             "type": ["number", "null"]
           },
           "released_at": {
@@ -292,7 +292,7 @@
                 "type": "null"
               }
             ],
-            "description": "When a clean copy was taken; null when none was"
+            "description": "When the watermark was removed; null when none was"
           }
         },
         "required": [
@@ -539,7 +539,7 @@
                 "type": "null"
               }
             ],
-            "description": "A credit takes one finished minute of a clean copy (export.release); making is free. Before 2026-11-23 a credit was one minute of a server job or 200 visual judgments, so earlier use counts that way. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer"
+            "description": "A credit removes the watermark from one finished minute (export.release); making is free. Before 2026-11-23 a credit was one minute of a server job or 200 visual judgments, so earlier use counts that way. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer"
           },
           "support_messages": {
             "type": "array",
@@ -716,7 +716,7 @@
                 },
                 "credits": {
                   "type": "number",
-                  "description": "Credits spent on the clean copy"
+                  "description": "Credits spent removing the watermark"
                 },
                 "via": {
                   "type": "string",
@@ -726,7 +726,7 @@
               },
               "required": ["id", "released_at", "credits", "via"]
             },
-            "description": "Clean copies taken (export.release), newest first; kept 400 days"
+            "description": "Watermarks removed (export.release), newest first; kept 400 days"
           },
           "purchases": {
             "anyOf": [

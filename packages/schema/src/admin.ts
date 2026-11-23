@@ -52,13 +52,15 @@ export const AdminFile = z.object({
   watermarked: z
     .boolean()
     .describe(
-      'True: the file downloads carrying the cuttingfloor mark until a clean copy is taken (export.release). False: it is clean (released, made before 2026-11-23 11:30 UTC, never marked such as audio or an upload, or a given plan)',
+      'True: the file downloads with a cuttingfloor watermark until the watermark is removed (export.release). False: it is clean (released, made before 2026-11-23 11:30 UTC, never watermarked, such as audio or an upload, or a given plan)',
     ),
   release_credits: z
     .number()
     .nullable()
-    .describe('What a clean copy costs, in credits, while watermarked; null when it is clean'),
-  released_at: nullableTime.describe('When a clean copy was taken; null when none was'),
+    .describe(
+      'What removing the watermark costs, in credits, while watermarked; null when it is clean',
+    ),
+  released_at: nullableTime.describe('When the watermark was removed; null when none was'),
 });
 
 export const AdminDownload = z.object({
@@ -147,7 +149,7 @@ export const AdminAccount = z.object({
     })
     .nullable()
     .describe(
-      'A credit takes one finished minute of a clean copy (export.release); making is free. Before 2026-11-23 a credit was one minute of a server job or 200 visual judgments, so earlier use counts that way. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer',
+      'A credit removes the watermark from one finished minute (export.release); making is free. Before 2026-11-23 a credit was one minute of a server job or 200 visual judgments, so earlier use counts that way. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer',
     ),
   support_messages: z
     .array(z.object({ at: time, message: z.string() }))
@@ -206,11 +208,11 @@ export const AdminAccount = z.object({
       z.object({
         id: z.string().describe('The export or create.* job_id, or the media_id, released'),
         released_at: time,
-        credits: z.number().describe('Credits spent on the clean copy'),
+        credits: z.number().describe('Credits spent removing the watermark'),
         via: z.enum(['tool', 'rest', 'page']).describe('tool: an agent; rest: an app over /v1'),
       }),
     )
-    .describe('Clean copies taken (export.release), newest first; kept 400 days'),
+    .describe('Watermarks removed (export.release), newest first; kept 400 days'),
   purchases: z
     .array(
       z.object({

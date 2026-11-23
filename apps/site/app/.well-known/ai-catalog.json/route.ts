@@ -50,7 +50,7 @@ const CATALOG = {
       identifier: 'urn:air:cuttingfloor.ai:pricing',
       displayName: 'Pricing',
       description:
-        'Pricing as JSON: what is free, what carries the cuttingfloor mark, clean-copy credits, packs and each option’s limits.',
+        'Pricing as JSON: what is free, what has a cuttingfloor watermark, watermark-removal credits, packs and each option’s limits.',
       type: 'application/json',
       url: abs('/pricing.json'),
       publisher: PUBLISHER,

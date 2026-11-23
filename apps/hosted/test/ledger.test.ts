@@ -14,7 +14,7 @@ import { Ledger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
 
 // Credits in Kazi's ledger: an account is linked once with the balance it had here, jobs spend
-// nothing (making is free), a clean copy's release is spent there once, and the ledger's
+// nothing (making is free), a watermark-free copy's release is spent there once, and the ledger's
 // crossings and top-ups become our email.
 // WorkOS, Stripe and the ledger are stand-ins here, answering as their APIs do (the ledger as its
 // published fixtures, contract v3); the real ledger runs in scripts/smoke-ledger.ts.

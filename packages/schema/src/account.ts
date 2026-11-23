@@ -1,7 +1,7 @@
 import * as z from 'zod/v4';
 
 // account.get: the signed-in account's plan, credits and top-up, a fact the agent cannot get
-// itself, so it can say whether a clean copy fits before releasing one.
+// itself, so it can say whether removing a watermark fits before doing it.
 
 export const AccountGetInput = z.object({});
 
@@ -11,12 +11,12 @@ export const AccountGetResult = z.object({
   plan: z
     .enum(['local', 'free', 'credits', 'enterprise', 'lifetime', 'staff'])
     .describe(
-      'local: a server you run yourself, with no credits and no mark. free: the free credits, not topped up yet. credits: pay as you go, has bought credits. enterprise, lifetime, staff: given plans, whose files never carry the mark',
+      'local: a server you run yourself, with no credits and no mark. free: the free credits, not topped up yet. credits: pay as you go, has bought credits. enterprise, lifetime, staff: given plans, whose files never have the watermark',
     ),
   plan_name: z.string(),
   credits: z.object({
     left: nullableCount.describe(
-      'Credits left; null when there is no cap. A credit takes one finished minute of a clean copy (export.release); making is free, so at 0 everything still works and files keep the mark',
+      'Credits left; null when there is no cap. A credit removes the watermark from one finished minute (export.release); making is free, so at 0 everything still works and files keep the mark',
     ),
     used: z
       .number()

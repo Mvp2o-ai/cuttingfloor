@@ -10,11 +10,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHttpServer, parseApiKeys } from '../src/http.ts';
 
 // The download gate through the HTTP face, as clients meet it: a picture export downloads
-// carrying the mark (here a stand-in mark that appends a tag), export.release spends its price
+// with the watermark (here a stand-in mark that appends a tag), export.release spends its price
 // once, and from then on every link serves the clean file.
 
 const KEY = 'gate-key-0123456789abcdefghij';
-const MARK = '\n[cuttingfloor mark]';
+const MARK = '\n[cuttingfloor watermark]';
 let runtime: Runtime;
 let base: string;
 let server: Server;
@@ -123,14 +123,14 @@ describe('the download gate', () => {
     };
     expect(before.result).toMatchObject({ watermarked: true, release_credits: 0.75 });
 
-    // Every way out serves the marked copy, made once, and never cached.
+    // Every way out serves the watermarked copy, made once, and never cached.
     const first = await fetch(url);
     expect(first.headers.get('cache-control')).toBe('no-store');
     expect(await first.text()).toBe(`clean short.mp4${MARK}`);
     expect(await (await fetch(url)).text()).toBe(`clean short.mp4${MARK}`);
     expect(marked).toBe(1);
     const page = await (await fetch(pageUrl)).text();
-    expect(page).toContain('carries the cuttingfloor mark');
+    expect(page).toContain('has a cuttingfloor watermark');
     expect(page).toContain('0.75 credit');
 
     // Released at the same moment from two places: one spend.
@@ -147,7 +147,7 @@ describe('the download gate', () => {
     expect(await (await fetch(url)).text()).toBe('clean short.mp4');
     const fresh = (a.structuredContent.url as string) ?? '';
     expect(await (await fetch(fresh)).text()).toBe('clean short.mp4');
-    expect(await (await fetch(pageUrl)).text()).not.toContain('carries the cuttingfloor mark');
+    expect(await (await fetch(pageUrl)).text()).not.toContain('has a cuttingfloor watermark');
     const after = (await call(alice, 'job.get', { job_id: jobId })).structuredContent as {
       result: { watermarked: boolean; release_credits?: number };
     };
@@ -160,7 +160,7 @@ describe('the download gate', () => {
     await alice.close();
   });
 
-  it('refuses a release the balance does not cover, and the marked file still downloads', async () => {
+  it('refuses a release the balance does not cover, and the watermarked file still downloads', async () => {
     balances.set('poor', 0.5);
     const { jobId, url } = await exported('poor', 'long.mp4', 'video/mp4', 61);
     const poor = await connect(`${KEY}-poor`);

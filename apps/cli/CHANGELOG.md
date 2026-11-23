@@ -4,13 +4,13 @@
 
 ### Patch Changes
 
-- 4fa0a4e: Credit balances read in hundredths, so a quarter-credit balance shows as it is and covers a clean copy of that price.
+- 4fa0a4e: Credit balances read in hundredths, so a quarter-credit balance shows as it is and covers a watermark-free copy of that price.
 
 ## 0.68.0
 
 ### Minor Changes
 
-- de60bd6: Making is free: imports, edits, analysis, exports, create.\* and judgments no longer spend credits, and credits never stop work. Exported video, GIFs, images, created clips and full-size frames download carrying the cuttingfloor mark until the user takes a clean copy with the new export.release tool (also on /v1): 1 credit per finished minute, in quarter-minute steps, once per export. Results, job.get, media.list and media.get say watermarked and release_credits. Audio, text and project files, uploads, files made before the change and given plans are never marked. credits.claim is now "Activate account", and new accounts start with 3 credits. Downloads and releases are recorded, and the admin API lists them.
+- de60bd6: Making is free: imports, edits, analysis, exports, create.\* and judgments no longer spend credits, and credits never stop work. Exported video, GIFs, images, created clips and full-size frames download with a cuttingfloor watermark until the user removes the watermark with the new export.release tool (also on /v1): 1 credit per finished minute, in quarter-minute steps, once per export. Results, job.get, media.list and media.get say watermarked and release_credits. Audio, text and project files, uploads, files made before the change and given plans are never marked. credits.claim is now "Activate account", and new accounts start with 3 credits. Downloads and releases are recorded, and the admin API lists them.
 
 ### Patch Changes
 
@@ -476,7 +476,7 @@
 
 ### Patch Changes
 
-- 206a23c: The new cuttingfloor mark (two triangles, a cut) on the site, the signed-in pages and the file library widget.
+- 206a23c: The new cuttingfloor watermark (two triangles, a cut) on the site, the signed-in pages and the file library widget.
 
 ## 0.38.1
 

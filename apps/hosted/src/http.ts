@@ -402,8 +402,8 @@ export function createHttpServer(options: HttpOptions): Server {
             range: req.headers.range,
           });
         }
-        // The download gate: a picture its owner hasn't released goes out carrying the mark
-        // (its marked copy, made on the first ask). Never cached, so a release shows at once.
+        // The download gate: a picture its owner hasn't released goes out with the watermark
+        // (its watermarked copy, made on the first ask). Never cached, so a release shows at once.
         let served: { blob?: string; file?: string; marked: boolean } = {
           ...target,
           marked: false,

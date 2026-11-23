@@ -89,7 +89,7 @@ export const FAQS = [
   },
   {
     q: 'What happens when my credits run out?',
-    a: 'Nothing stops: editing, previews and exports keep working, and every export still downloads free carrying the cuttingfloor mark. Clean copies wait until you buy more credits on your account page. Packs never expire, nothing renews, and you are never charged for anything else. We email you when you are running low, and automatic top-up can buy a pack for you.',
+    a: 'Nothing stops: editing, previews and exports keep working, and every export still downloads free with a cuttingfloor watermark. Removing watermarks waits until you buy more credits on your account page. Packs never expire, nothing renews, and you are never charged for anything else. We email you when you are running low, and automatic top-up can buy a pack for you.',
   },
   {
     q: 'Can I run it myself for free?',

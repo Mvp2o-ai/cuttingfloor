@@ -44,7 +44,7 @@ export const FIXES: Fix[] = [
     id: 'remove-a-watermark-or-logo',
     problem: 'How do I remove a watermark or logo from a video?',
     answer:
-      'The agent finds the logo, follows it if it moves, and blurs it or covers it with a box or a crop. It does not repaint what was behind it, so a logo in the middle of the picture still shows a blur. It is for marks on footage you have the rights to edit; the cuttingfloor mark on an export comes off with a clean copy.',
+      'The agent finds the logo, follows it if it moves, and blurs it or covers it with a box or a crop. It does not repaint what was behind it, so a logo in the middle of the picture still shows a blur. It is for marks on footage you have the rights to edit; the cuttingfloor watermark on an export comes off when you remove it with credits.',
     prompt: 'Blur the logo in the bottom right corner for the whole video.',
     related: ['blur-a-face', 'remove-the-background', 'add-text'],
   },

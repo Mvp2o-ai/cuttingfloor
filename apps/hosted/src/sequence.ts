@@ -443,9 +443,9 @@ export function creditsPhrase(credits: Credits): string {
   if (credits.left === null) return 'unlimited credits';
   if (credits.perMonth !== null)
     return `${Math.max(0, Math.floor(credits.left))} of this month's ${credits.perMonth} credits`;
-  // Clean copies are priced in quarter credits, so a balance reads in quarters too.
+  // Removing a watermark is priced in quarter credits, so a balance reads in quarters too.
   const left = Math.max(0, Math.floor(credits.left * 4) / 4);
-  return `${left} ${credits.bought > 0 ? '' : 'free '}credit${left === 1 ? '' : 's'}`;
+  return `${left} ${credits.bought > 0 ? '' : 'free '}credit${left > 0 && left <= 1 ? '' : 's'}`;
 }
 
 function render(body: string, values: Record<string, string>): string {

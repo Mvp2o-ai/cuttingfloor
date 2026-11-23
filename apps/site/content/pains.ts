@@ -95,7 +95,7 @@ export const AGENT_PAINS: Pain[] = [
   {
     pain: 'Credits that burn on every retry',
     answer:
-      'Retries cost nothing here: editing, exports, graphics and voiceovers are free, as many times as it takes. Every export downloads free carrying the cuttingfloor mark; you pay only for the clean copy you keep, 1 credit per finished minute. Or run it yourself, free and unmarked.',
+      'Retries cost nothing here: editing, exports, graphics and voiceovers are free, as many times as it takes. Every export downloads free with a cuttingfloor watermark; you pay only to remove the watermark from what you keep, 1 credit per finished minute. Or run it yourself, free, with no watermark.',
     tools: [],
   },
   {

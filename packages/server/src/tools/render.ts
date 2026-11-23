@@ -398,15 +398,15 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
     'export.release',
     {
-      title: 'Release a clean copy',
+      title: 'Remove watermark',
       description: [
-        "Takes a clean copy of a finished file that carries the cuttingfloor mark (watermarked: true on its export result, media.get or media.list), spending its release_credits once from the user's credits: 1 a finished minute, in quarter-minute steps. Afterwards every link to it (url, page_url, media.get) serves the clean file, and this returns fresh ones.",
-        'Tell the user the price and get their go-ahead first. Releasing again, or a file that never carried the mark, spends nothing. Not enough credits: quota_exceeded, and the marked file still downloads.',
+        "Removes the watermark from a finished file that has a cuttingfloor watermark (watermarked: true on its export result, media.get or media.list), spending its release_credits once from the user's credits: 1 a finished minute, in quarter-minute steps. Afterwards every link to it (url, page_url, media.get) serves the clean file, and this returns fresh ones.",
+        'Tell the user the price and get their go-ahead first. Releasing again, or a file that never had the watermark, spends nothing. Not enough credits: quota_exceeded, and the watermarked file still downloads.',
       ].join(' '),
       inputSchema: ExportReleaseInput,
       outputSchema: ExportReleaseResult,
       annotations: {
-        title: 'Release a clean copy',
+        title: 'Remove watermark',
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,

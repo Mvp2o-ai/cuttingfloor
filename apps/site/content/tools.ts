@@ -416,7 +416,7 @@ export const TOOLS: ToolEntry[] = [
   },
   {
     name: 'export.release',
-    title: 'Release a clean copy',
+    title: 'Remove watermark',
     readOnly: false,
     longRunning: 'never',
   },

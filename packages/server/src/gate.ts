@@ -5,10 +5,10 @@ import { CfError } from '@cuttingfloor/schema';
 import type { Runtime } from './runtime.ts';
 
 // The download gate (hosted): every picture that leaves through a signed link (an export's file,
-// a created or exported media's file, full-size frames) carries the cuttingfloor mark until its
-// owner releases a clean copy, once, for cleanCopyCredits of its finished length. The mark is
+// a created or exported media's file, full-size frames) has a cuttingfloor watermark until its
+// owner removes it, once, for cleanCopyCredits of its finished length. The mark is
 // burned in at the door, never in the timeline: the server keeps working from the clean file,
-// and the marked copy is made the first time it is asked for, then kept beside it. Audio, text
+// and the watermarked copy is made the first time it is asked for, then kept beside it. Audio, text
 // and project files, uploads and URL imports, files made before GATE_FROM and accounts on a
 // given plan never carry it. Locally there is no gate.
 
@@ -47,7 +47,7 @@ export interface GateHooks {
   mark?: (input: string, output: string, seed: string) => Promise<void>;
 }
 
-/** Whether a file carries the mark now, and what a clean copy costs. */
+/** Whether a file has the watermark now, and what removing the watermark costs. */
 export interface MarkState {
   watermarked: boolean;
   release_credits?: number;
@@ -71,7 +71,7 @@ export class DownloadGate {
   /** Marked copies being made on this server, by blob key: concurrent downloads share one. */
   readonly #making = new Map<string, Promise<BlobKey>>();
 
-  /** Files made before this are never marked. */
+  /** Files made before this are never watermarked. */
   readonly #from: number;
 
   constructor(rt: Runtime, hooks: GateHooks, options: { from?: string } = {}) {
@@ -127,7 +127,7 @@ export class DownloadGate {
     return this.#rt.ws.records.collection(RELEASES, { owner }).get(releaseId);
   }
 
-  /** Whether the file behind a signed link carries the mark now, and its clean copy's price. */
+  /** Whether the file behind a signed link has the watermark now, and what removing it costs. */
   async state(owner: string, id: string): Promise<MarkState> {
     const gated = await this.#gated(owner, id);
     if (!gated || (await this.#exempt(owner))) return { watermarked: false };
@@ -136,8 +136,8 @@ export class DownloadGate {
   }
 
   /**
-   * The blob a signed link serves: the file itself, or its marked copy (made now if this is its
-   * first download). `marked` says which, so a redirect to the marked copy isn't cached past a
+   * The blob a signed link serves: the file itself, or its watermarked copy (made now if this is its
+   * first download). `marked` says which, so a redirect to the watermarked copy isn't cached past a
    * release.
    */
   async serve(
@@ -176,9 +176,9 @@ export class DownloadGate {
   }
 
   /**
-   * Releases a clean copy of an export (by its job id) or of a media made by an export or a
+   * Removes the watermark from an export (by its job id) or of a media made by an export or a
    * create.* job: spends its price once, then every link to it serves the clean file. A file that
-   * never carried the mark, or one already released, costs nothing.
+   * never had the watermark, or one already released, costs nothing.
    */
   async release(
     owner: string,
@@ -215,9 +215,9 @@ export class DownloadGate {
     if (left !== null && left < price) {
       throw new CfError(
         'quota_exceeded',
-        `A clean copy of this file is ${credits(price)}; this account has ${credits(left)}`,
+        `Removing the watermark from this file uses ${credits(price)}; this account has ${credits(left)}`,
         {
-          hint: 'The file still downloads with the cuttingfloor mark, and editing and exports keep working. Tell the user the clean copy can be taken once their account has the credits',
+          hint: 'The file still downloads with the cuttingfloor watermark, and editing and exports keep working. Tell the user the watermark can be removed once their account has the credits',
           detail: { price, credits_left: left },
         },
       );
@@ -281,7 +281,7 @@ export class DownloadGate {
     return Boolean(createdAt) && Date.parse(createdAt ?? '') >= this.#from;
   }
 
-  /** A media carries the mark when an export, a create.* job or a still made its picture. */
+  /** A media has the watermark when an export, a create.* job or a still made its picture. */
   #gatedMedia(record: MediaRecord): Gated | undefined {
     const source = record.source;
     if (!this.#after(record.created_at) || !record.file || !record.probe) return undefined;
@@ -308,5 +308,5 @@ function priced(
 }
 
 function credits(n: number): string {
-  return `${n} credit${n === 1 ? '' : 's'}`;
+  return `${n} credit${n > 0 && n <= 1 ? '' : 's'}`;
 }

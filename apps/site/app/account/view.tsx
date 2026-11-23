@@ -13,7 +13,7 @@ import { ProviderKeysPanel } from './provider-keys.tsx';
 
 // The account page, given everything it shows (page.tsx reads it; preview/ renders fixtures).
 // It reads in the order a new person needs it: what they have (free making, and the credits for
-// clean copies, said plainly),
+// removing the watermark, said plainly),
 // the three steps to a first edit with each one ticked off as it happens, then buying more, with
 // what a careful buyer looks for before paying: the price per credit, that credits never expire,
 // who takes the card, and the refund terms.
@@ -199,10 +199,10 @@ function lede(a: Account | undefined, refused: string | undefined, email: string
   if (a.credits.renews)
     return `${n(a.credits.per_month ?? 0)} credits every month, renewing ${day(a.credits.renews)}. Nothing to pay.`;
   if ((a.credits.left ?? 0) <= 0)
-    return 'Making still works, and every export downloads free carrying the cuttingfloor mark. Clean copies wait until you add credits. Credits you buy never expire.';
+    return 'Making still works, and every export downloads free with a cuttingfloor watermark. Removing watermarks waits until you add credits. Credits you buy never expire.';
   if (a.plan === 'free' && !a.credits.bought)
     return 'Making is free, no card needed. Three steps to your first edit, about a minute.';
-  return 'Making is always free. Credits buy clean copies, without the cuttingfloor mark, and never expire.';
+  return 'Making is always free. Credits remove the cuttingfloor watermark from finished files, and never expire.';
 }
 
 function Steps({ progress, email }: { progress: AccountProps['progress']; email: string }) {
@@ -300,13 +300,15 @@ function Balance({ account: a }: { account: Account }) {
         <div>
           <dt>A credit</dt>
           <dd>
-            One finished minute of a clean copy, without the cuttingfloor mark.{' '}
+            A credit removes the watermark from one finished minute.{' '}
             {`A ${SHORT_SECONDS}-second Short is ${SHORT_CREDITS}.`}
           </dd>
         </div>
         <div>
           <dt>Free</dt>
-          <dd>Making: editing, exports, graphics and voiceovers, and downloads with the mark.</dd>
+          <dd>
+            Making: editing, exports, graphics and voiceovers, and downloads with the watermark.
+          </dd>
         </div>
         {a.plan === 'free' && a.limits.export_short_side !== paid.shortSide ? (
           <div>

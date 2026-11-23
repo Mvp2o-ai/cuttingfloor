@@ -5,7 +5,7 @@ Hi,
 
 You're set up: your cuttingfloor account works, and your AI can edit video as soon as it's connected.
 
-Making is free: every tool, no card, as many edits, exports and retries as you like. Every video you export downloads free carrying the cuttingfloor mark. When you want a clean copy without it, that's 1 credit per finished minute, and you get 3 credits when your AI activates your account.
+Making is free: every tool, no card, as many edits, exports and retries as you like. Every video you export downloads free with a cuttingfloor watermark. When you want it without the watermark, that's 1 credit per finished minute, and you get 3 credits when your AI activates your account.
 
 The fastest first step: hand your AI one clip and describe the edit in plain English, the way you'd brief a person. For example: "Cut the pauses and ums out of this and add captions."
 

@@ -31,7 +31,7 @@ export default async function Welcome() {
           <h1 className="display account-head">Connect your agent.</h1>
           <p className="lede">
             {left !== null
-              ? `Making is free with every tool, no card${left > 0 ? `, and you have ${left} credits for clean copies` : ''}. `
+              ? `Making is free with every tool, no card${left > 0 ? `, and you have ${left} credits for removing watermarks` : ''}. `
               : ''}
             Three steps, about a minute.
           </p>

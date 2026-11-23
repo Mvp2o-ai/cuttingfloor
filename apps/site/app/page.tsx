@@ -258,12 +258,12 @@ export default function Home() {
           <div className="head">
             <span className="label">07 / Pricing</span>
             <div>
-              <h2 className="display">Make for free. Pay for clean copies.</h2>
+              <h2 className="display">Make for free. Pay only to remove the watermark.</h2>
               <p className="compare-lede">
                 Editing, exports, graphics and voiceovers cost nothing, and retries are free. Every
-                export downloads free carrying the cuttingfloor mark; a clean copy costs{' '}
+                export downloads free with a cuttingfloor watermark; removing the watermark costs{' '}
                 {CLEAN_PRICE}. Credits come in packs from {FROM_PACK}: they never expire, and there
-                is no subscription. Run it yourself and it is all free and unmarked.
+                is no subscription. Run it yourself and it is all free with no watermark.
               </p>
             </div>
           </div>

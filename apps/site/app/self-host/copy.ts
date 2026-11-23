@@ -6,8 +6,8 @@ import { CLEAN_PRICE } from '../pricing.ts';
 // compose.yaml: what compose starts, where files go, what needs memory.
 
 export const SELF_HOST_TITLE = 'Run cuttingfloor yourself: free and open source';
-export const SELF_HOST_DESCRIPTION = `cuttingfloor is open source (${LICENCE}). Run the same Docker image that powers cuttingfloor.ai on your own computer for free, unmarked and with no limits, change it to fit how you work, or let us run it for you.`;
-export const SELF_HOST_LEAD = `cuttingfloor is free and open source. One Docker image holds the whole editor: the editing engines, the models and the server your agent connects to. It’s the same image that runs cuttingfloor.ai. On your own computer it is unmarked, with no limits and no credits.`;
+export const SELF_HOST_DESCRIPTION = `cuttingfloor is open source (${LICENCE}). Run the same Docker image that powers cuttingfloor.ai on your own computer for free, with no watermark and no limits, change it to fit how you work, or let us run it for you.`;
+export const SELF_HOST_LEAD = `cuttingfloor is free and open source. One Docker image holds the whole editor: the editing engines, the models and the server your agent connects to. It’s the same image that runs cuttingfloor.ai. On your own computer it is with no watermark, no limits and no credits.`;
 
 export const CONTRIBUTING_URL = `${REPO_URL}/blob/HEAD/CONTRIBUTING.md`;
 export const LICENCE_URL = `${REPO_URL}/blob/HEAD/LICENSE`;
@@ -75,9 +75,9 @@ export const COMPARE: { row: string; hosted: string; self: string }[] = [
     self: 'None but your machine. How many jobs run at once follows your computer’s cores, and you can change it.',
   },
   {
-    row: 'The cuttingfloor mark',
-    hosted: `Exported videos, GIFs and images download free carrying the cuttingfloor mark. A clean copy costs ${CLEAN_PRICE}, once per export. Audio, captions and project files are never marked.`,
-    self: 'None: unmarked, no limits, no credits.',
+    row: 'The cuttingfloor watermark',
+    hosted: `Exported videos, GIFs and images download free with a cuttingfloor watermark. Removing the watermark costs ${CLEAN_PRICE}, once per export. Audio, captions and project files are never watermarked.`,
+    self: 'None: no watermark, no limits, no credits.',
   },
   {
     row: 'Keys',
@@ -98,7 +98,7 @@ export const COMPARE: { row: string; hosted: string; self: string }[] = [
   },
   {
     row: 'Cost',
-    hosted: `Making is free. Clean copies cost credits: ${FREE_CREDITS} when you activate your account, then credit packs that never expire, no subscription.`,
+    hosted: `Making is free. Removing the watermark costs credits: ${FREE_CREDITS} when you activate your account, then credit packs that never expire, no subscription.`,
     self: 'Free. You pay for your own computer, and for any key you choose to add.',
   },
 ];

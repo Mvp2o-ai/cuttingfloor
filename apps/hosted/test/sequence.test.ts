@@ -164,7 +164,7 @@ describe('welcome', () => {
     expect(mail?.headers['List-Unsubscribe']).toBe(`<${unsubscribe}>`);
     expect(mail?.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
     expect(mail?.text).not.toContain('{{');
-    expect(mail?.text).toContain('carrying the cuttingfloor mark');
+    expect(mail?.text).toContain('with a cuttingfloor watermark');
 
     const [entry] = await logEntries(ws);
     expect(entry).toMatchObject({
@@ -243,7 +243,7 @@ describe('follow-up', () => {
     expect(mail?.subject).toBe('How was the first edit?');
     const links = mail?.text.match(/https?:\/\/\S+/g) ?? [];
     expect(links).toEqual([sequence.unsubscribeUrl(id)]);
-    expect(mail?.text).toContain('You have 23 free credits for clean copies');
+    expect(mail?.text).toContain('You have 23 free credits for removing watermarks');
   });
 
   it('is one email, never both, never a second', async () => {
@@ -297,7 +297,7 @@ describe('credits reminder', () => {
     const reminders = provider.sent.filter((m) => m.subject === subject);
     expect(reminders).toHaveLength(1);
     const text = reminders[0]?.text ?? '';
-    expect(text).toContain('you still have 23 free credits for clean copies');
+    expect(text).toContain('you still have 23 free credits for removing watermarks');
     expect(text).toContain('Pick up where you left off in ChatGPT');
     expect(text).not.toContain('apifunnel');
     expect(text).toContain('https://api.cuttingfloor.ai/openapi.json');
@@ -364,7 +364,7 @@ describe('credits reminder', () => {
     await sequence.tick(T0 + 3 * DAY + 60_000);
     expect(provider.sent.map((m) => m.text.match(/You have [^.:,]*/)?.[0])).toEqual([
       undefined,
-      "You have 899 of this month's 900 credits for clean copies",
+      "You have 899 of this month's 900 credits for removing watermarks",
     ]);
   });
 

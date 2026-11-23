@@ -3,7 +3,7 @@ subject: Your next edit is free to make
 ---
 Hi,
 
-Thanks for trying cuttingfloor. Making is free: come back and finish an edit whenever you're ready, and try it again as often as it takes. Every export downloads free carrying the cuttingfloor mark, and you still have {{credits}} for clean copies without it.
+Thanks for trying cuttingfloor. Making is free: come back and finish an edit whenever you're ready, and try it again as often as it takes. Every export downloads free with a cuttingfloor watermark, and you still have {{credits}} for removing watermarks without it.
 
 Pick up where you left off in {{app}}: cuttingfloor is already connected there, so just ask it to edit a video. If it isn't, add https://api.cuttingfloor.ai/mcp as a connector.
 

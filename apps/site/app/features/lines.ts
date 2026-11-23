@@ -194,7 +194,7 @@ export const LINES: Record<string, Line> = {
   'export.video': { group: 'export', say: 'Render the edit to MP4, MOV, GIF, WAV or MP3.' },
   'export.release': {
     group: 'export',
-    say: 'Take a clean copy of a finished file, without the cuttingfloor mark.',
+    say: 'Remove the cuttingfloor watermark from a finished file.',
   },
   'export.timeline': {
     group: 'export',

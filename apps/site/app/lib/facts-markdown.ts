@@ -12,7 +12,7 @@ import { list, table } from './markdown.ts';
 
 // The product facts as Markdown, for every twin and llms.txt that states them.
 
-export const CREDIT_TEXT = `${MAKING_FREE} Everyone has every tool. ${MARKED} A clean copy without the mark costs ${CLEAN_PRICE}; 4K costs the same, and you pay once per export. ${NEVER_MARKED} Pay as you go: buy credit packs when you need them; they never expire and nothing renews. At zero, making and marked downloads keep working; clean copies wait for credits. Nothing is ever billed but the packs you buy.`;
+export const CREDIT_TEXT = `${MAKING_FREE} Everyone has every tool. ${MARKED} Removing the watermark costs ${CLEAN_PRICE}; 4K costs the same, and you pay once per export. ${NEVER_MARKED} Pay as you go: buy credit packs when you need them; they never expire and nothing renews. At zero, making and watermarked downloads keep working; removing watermarks waits for credits. Nothing is ever billed but the packs you buy.`;
 
 /** "From $5 for 25 credits", "$0, no card", "Talk to us". */
 export const priceText = (p: Plan) =>

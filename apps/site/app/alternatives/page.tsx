@@ -94,7 +94,7 @@ const FAQS = [
   },
   {
     q: 'What does it cost?',
-    a: `Making is free, with no card: editing, exports, graphics and voiceovers, as much as you like. Every export downloads free carrying the cuttingfloor mark; a clean copy costs ${CLEAN_PRICE}, from credit packs that never expire, with no subscription. See the pricing page.`,
+    a: `Making is free, with no card: editing, exports, graphics and voiceovers, as much as you like. Every export downloads free with a cuttingfloor watermark; removing the watermark costs ${CLEAN_PRICE}, from credit packs that never expire, with no subscription. See the pricing page.`,
   },
 ];
 

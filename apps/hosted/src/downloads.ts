@@ -46,11 +46,29 @@ export async function recordDownload(ws: Workspace, seen: DownloadSeen): Promise
     agent: agentName(seen.userAgent),
   };
   first[field] = 1;
-  // The day's first request writes the record; the others add to it (one that went between
-  // the two, by expiring, is written again).
+  // Whichever request's write lands first makes the record; the others add to it (one that went
+  // between the two, by expiring, is written again).
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (await days.insertOnce(id, first)) return;
-    if (await days.update(id, { set: { last_at: at }, inc: { [field]: 1 } })) return;
+    const now = await days.update(id, { set: { last_at: at }, inc: { [field]: 1 } });
+    if (!now) continue;
+    // Writes land in any order, so the earliest request names the day's first client, not the
+    // first write: a later request whose write won the race gives way.
+    let known = now;
+    while (at < known.first_at) {
+      if (
+        await days.compareAndSet(
+          id,
+          { first_at: known.first_at },
+          { first_at: at, agent: first.agent },
+        )
+      )
+        break;
+      const again = await days.get(id);
+      if (!again) break;
+      known = again;
+    }
+    return;
   }
 }
 
