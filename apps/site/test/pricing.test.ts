@@ -1,7 +1,7 @@
 import { cleanCopyCredits, FREE_CREDITS } from '@cuttingfloor/plans';
 import { describe, expect, it } from 'vitest';
-import { GET as llmsFull } from '../app/llms-full.txt/route.ts';
 import { GET as llms } from '../app/llms.txt/route.ts';
+import { GET as llmsFull } from '../app/llms-full.txt/route.ts';
 import { GET as pricingJson } from '../app/pricing.json/route.ts';
 import { CREDIT, SHORT_CREDITS } from '../app/pricing.ts';
 
