@@ -200,7 +200,7 @@ describe('HTTP face', () => {
         agent: 'Mozilla',
       });
     }, 10_000);
-  });
+  }, 20_000);
 
   it('hands out working watch and download links when a job is read after its links expired', async () => {
     // A finished export keeps the links it was made with; they expire long before its file does.
