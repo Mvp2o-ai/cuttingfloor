@@ -205,14 +205,17 @@ interface Placement {
   zone: number;
 }
 
-/** When each piece shows: fades in, holds, fades out; a new one every 4–6 s. */
+/**
+ * When each piece shows: fades in, holds, fades out; a new one every 2.5–3.5 s, each on screen
+ * about 5 s, so one or two are always showing and the picture is never without a piece.
+ */
 function timeline(rand: () => number): Array<Omit<Placement, 'zone'>> {
   for (;;) {
     const out: Array<Omit<Placement, 'zone'>> = [];
     let t = 0.5;
     let last = '';
     while (true) {
-      const hold = 2.2 + rand() * 1.2;
+      const hold = 3.2 + rand() * 1;
       const end = t + FADE + hold + FADE;
       if (end > LOOP - 0.2) break;
       let piece = last;
@@ -227,12 +230,12 @@ function timeline(rand: () => number): Array<Omit<Placement, 'zone'>> {
         opacity: round(0.25 + rand() * 0.1),
       });
       last = piece;
-      t += 4 + rand() * 2;
+      t += 2.5 + rand();
     }
-    // The seam: the gap from the last piece's end round to the first's start is a usual one.
+    // The seam: round from the last piece's end to the first's start, only a moment is empty.
     const seam = LOOP - (out.at(-1)?.end ?? 0) + (out[0]?.start ?? 0);
     const kinds = new Set(out.map((p) => p.piece));
-    if (seam >= 0.6 && seam <= 2 && kinds.size === PIECES.length) return out;
+    if (seam >= 0.3 && seam <= 0.8 && kinds.size === PIECES.length) return out;
   }
 }
 
