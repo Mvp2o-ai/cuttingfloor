@@ -84,6 +84,20 @@ export class Ledger {
     return this.#call('PUT', '/api/credits/refill', { account_id: accountId, pack });
   }
 
+  /**
+   * A one-time link that opens Kazi signed in as this person, with cuttingfloor connected to this
+   * same account, on the playbook share `share_code` (the same key, as both sides are ours).
+   * `name` names a Kazi account made for them; one they already have keeps its own.
+   */
+  handoff(body: {
+    email: string;
+    workos_user_id: string;
+    share_code: string;
+    name?: string;
+  }): Promise<{ url: string; expires_at: string }> {
+    return this.#call('POST', '/api/partner/cuttingfloor/handoff', body);
+  }
+
   async #call<T>(method: string, path: string, body?: unknown): Promise<T> {
     const res = await fetch(`${this.#url}${path}`, {
       method,
