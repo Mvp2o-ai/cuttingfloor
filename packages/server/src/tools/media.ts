@@ -796,6 +796,12 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
             process.stderr.write(`media.import: upload record kept: ${error.message}\n`);
           });
       }
+      // A library sound's url counts as a use of it (sounds.list order popular).
+      if ('url' in source && rt.sharing) {
+        rt.sharing.used(owner, source.url).catch((error: Error) => {
+          process.stderr.write(`sounds: use not counted: ${error.message}\n`);
+        });
+      }
       const job = await startIngest(rt, owner, record, admit, {
         ...(room === undefined ? {} : { room }),
         ...(args.idempotency_key ? { idempotencyKey: args.idempotency_key } : {}),

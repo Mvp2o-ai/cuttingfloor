@@ -65,6 +65,28 @@
   .done .bar i { width: 100%; }
   .done .state { color: var(--key-hi); font-weight: 600; }
   .bad .state { color: var(--red); }
+  /* Sharing a sent sound in the community pack: off until the person turns it on. */
+  .share { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 12px; background: var(--bg-2); }
+  .switch { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .switch i { flex: none; width: 34px; height: 20px; border-radius: 20px; background: var(--rule-2); position: relative; transition: background .15s; }
+  .switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--ink); transition: transform .15s; }
+  .switch input:checked + i { background: var(--key); }
+  .switch input:checked + i::after { transform: translateX(14px); background: #04170a; }
+  .switch input:focus-visible + i { outline: 2px solid var(--key); outline-offset: 2px; }
+  .switch b { display: block; font-size: 13.5px; }
+  .switch small { display: block; color: var(--mute); font-size: 12px; }
+  .fields { display: flex; flex-direction: column; gap: 8px; }
+  .fields label { display: flex; flex-direction: column; gap: 4px; color: var(--mute); font-size: 11.5px; }
+  .fields input, .fields textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--rule-2); border-radius: 8px; padding: 7px 9px; }
+  .fields textarea { min-height: 54px; resize: vertical; }
+  .fields input:focus, .fields textarea:focus { outline: none; border-color: var(--key); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row > label { flex: 1 1 140px; }
+  .fine { color: var(--mute); font-size: 11.5px; }
+  .shared { color: var(--key-hi); font-weight: 600; }
+  .share .pill { align-self: flex-start; border: 0; }
+  .share .pill[disabled] { opacity: .6; cursor: default; }
   .foot { padding: 8px 14px; border-top: 1px solid var(--rule); color: var(--mute); font-size: 11.5px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
   .foot button { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 </style>
@@ -87,13 +109,33 @@
         <!-- Video and pictures only, so a phone offers its camera roll first. -->
         <label class="pill">Choose a video or photo<input type="file" id="pick" accept="video/*,image/*"></label>
         <!-- No filter: anything else is taken too (music, a recording, a font, a LUT, a document). -->
-        <label class="other">Or any other file<input type="file" id="other"></label>
+        <label class="other">Or a sound, or any other file<input type="file" id="other"></label>
       </div>
       <div class="going" id="going" hidden>
         <div class="name" id="name"></div>
         <div class="bar"><i id="fill"></i></div>
         <div class="line"><span class="state" id="state"></span><span class="mono" id="count"></span></div>
       </div>
+      <form class="share" id="share" hidden novalidate>
+        <label class="switch">
+          <input type="checkbox" id="share-on">
+          <i aria-hidden="true"></i>
+          <span><b>Share as a community sound</b><small>A small way to give back: other creators can find it and use it in their edits.</small></span>
+        </label>
+        <div class="fields" id="share-fields" hidden>
+          <label>Name<input id="s-name" maxlength="80" required></label>
+          <label>What it is<textarea id="s-desc" maxlength="500" required placeholder="The hook from my track, a bass drop at 0:04"></textarea></label>
+          <div class="row">
+            <label>Category<input id="s-cat" maxlength="60" list="s-cats" required placeholder="Music"></label>
+            <label>Tags<input id="s-tags" maxlength="200" placeholder="hype, drop, edm"></label>
+          </div>
+          <label>Credit as<input id="s-author" maxlength="60" placeholder="Your first name"></label>
+          <datalist id="s-cats"></datalist>
+          <span class="fine">Share only sounds that are yours to share. You can take it down from your upload page, and sounds people report are taken down.</span>
+          <button type="submit" class="pill" id="s-go">Share</button>
+          <span class="fine" id="s-note" role="status"></span>
+        </div>
+      </form>
     </div>
     <div class="foot">
       <span id="note">Waiting for the chat app…</span>
@@ -124,7 +166,8 @@
   const openLink = (url) => request('ui/open-link', { url }).catch(() => window.open(url, '_blank', 'noopener'));
 
   // ---------- the upload ----------
-  const S = { upload: null, busy: false, sent: false };
+  const S = { upload: null, busy: false, sent: false, audio: false, shared: null };
+  const AUDIO = /\.(mp3|wav|m4a|aac|flac|ogg|opus)$/i;
   const size = (n) => n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${(n / 1e6).toFixed(1)} MB`;
   const note = (text) => { $('#note').textContent = text; };
 
@@ -158,6 +201,7 @@
       return again(`${file.name} is ${size(file.size)}; this takes up to ${size(up.max_bytes)}.`);
     }
     S.busy = true;
+    S.audio = /^audio\//.test(file.type) || AUDIO.test(file.name);
     going(file.name, 'Sending…');
     progress(0, file.size);
     note('Keep this chat open until it is sent.');
@@ -205,6 +249,7 @@
     S.sent = true;
     going(name, 'Sent', 'done');
     $('#page').hidden = true;
+    if (S.audio) offerShare(name);
     const text = `I sent “${name}” to cuttingfloor (upload_id ${S.upload.upload_id}). Import it.`;
     if (host.caps.message) {
       try {
@@ -218,6 +263,59 @@
     }
     note('It is in. Tell the chat you sent it.');
   }
+
+  // ---------- sharing a sent sound (off unless the person turns it on) ----------
+  const CATEGORIES = ['Trending sounds', 'Music', 'Meme and hype', 'Voice and quotes'];
+  function offerShare(name) {
+    $('#share').hidden = false;
+    $('#s-name').value = name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').slice(0, 80);
+    const list = $('#s-cats');
+    const add = (c) => { if (![...list.options].some((o) => o.value === c)) list.append(new Option(c, c)); };
+    CATEGORIES.forEach(add);
+    fetch(new URL('/sounds?limit=1', S.upload.url).href).then((r) => r.ok ? r.json() : null).then((d) => {
+      for (const c of d?.categories || []) add(c.category);
+    }, () => {});
+  }
+  $('#share-on').addEventListener('change', (e) => {
+    $('#share-fields').hidden = !e.target.checked || !!S.shared;
+  });
+  $('#share').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (S.shared) return;
+    const say = (t) => { $('#s-note').textContent = t; };
+    const body = {
+      name: $('#s-name').value.trim(),
+      description: $('#s-desc').value.trim(),
+      category: $('#s-cat').value.trim(),
+      tags: $('#s-tags').value.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 10),
+      ...($('#s-author').value.trim() ? { author: $('#s-author').value.trim() } : {}),
+    };
+    if (!body.name || !body.description || !body.category) return say('Give it a name, say what it is and pick a category.');
+    $('#s-go').disabled = true;
+    say('Sharing…');
+    try {
+      const u = new URL(S.upload.url);
+      u.pathname += '/share';
+      const r = await fetch(u.href, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.sound) throw new Error([d.error, d.hint].filter(Boolean).join('. ') || `HTTP ${r.status}`);
+      S.shared = d.sound;
+      $('#share-fields').hidden = true;
+      $('#share-on').disabled = true;
+      const done = document.createElement('span');
+      done.className = 'shared';
+      done.textContent = `Shared: “${d.sound.name}” is a community sound now. Thank you.`;
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'other';
+      link.textContent = 'See it';
+      link.addEventListener('click', () => openLink(`https://cuttingfloor.ai/community-sounds?sound=${encodeURIComponent(d.sound.sound_id)}`));
+      $('#share').append(done, link);
+    } catch (error) {
+      $('#s-go').disabled = false;
+      say(error.message || String(error));
+    }
+  });
 
   function onResult(result) {
     if (!result) return;
@@ -237,7 +335,13 @@
     note(days >= 1 ? `A file sent here waits ${days} day${days === 1 ? '' : 's'} to be brought into an edit.` : '');
     // A view shown again (the chat reopened) finds what already arrived.
     offset(data.url).then(({ at, complete }) => {
-      if (complete) { S.sent = true; going(data.name || 'Your file', 'Sent', 'done'); $('#page').hidden = true; note('This file is already in.'); }
+      if (complete) {
+        S.sent = true;
+        going(data.name || 'Your file', 'Sent', 'done');
+        $('#page').hidden = true;
+        note('This file is already in.');
+        if (data.name && AUDIO.test(data.name)) offerShare(data.name);
+      }
       else if (at > 0) note(`${size(at)} is already here. Choose the same file and the rest is sent.`);
     }, (error) => {
       // The frame may not be let through to the server: the page behind the url still is.

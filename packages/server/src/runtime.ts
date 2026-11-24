@@ -8,6 +8,8 @@ import {
   MongoRecords,
   mongoUri,
   ownerKey,
+  PublicBucket,
+  type PublicFiles,
   type S3Settings,
   s3SettingsFromEnv,
   TimelineStore,
@@ -15,6 +17,7 @@ import {
 } from '@cuttingfloor/core';
 import {
   CLAP_MODEL,
+  clapSounds,
   clapTexts,
   MEDIA_TTL_MS,
   MediaLibrary,
@@ -23,7 +26,7 @@ import {
   watchRenderQueue,
 } from '@cuttingfloor/engine';
 import { FileJobStore, type Job, JobRunner } from '@cuttingfloor/jobs';
-import { KEEP } from '@cuttingfloor/schema';
+import { CfError, KEEP, type LibrarySound, type SoundShareInput } from '@cuttingfloor/schema';
 import { CALLS, CALLS_TTL_MS, type CallEntry, jobEnd, recordCall } from './calls.ts';
 import { Drain } from './drain.ts';
 import { DownloadGate, type GateHooks, RELEASES } from './gate.ts';
@@ -31,7 +34,13 @@ import { SearchIndexer } from './indexer.ts';
 import { markLive } from './live.ts';
 import { METER, METER_TTL_MS, type MeterEntry, meterJob, meterJudgments } from './meter.ts';
 import { Outputs } from './outputs.ts';
-import { MongoSoundLibrary, RemoteSoundLibrary, type SoundLibrary } from './sound-library.ts';
+import {
+  MongoSoundLibrary,
+  RemoteSoundLibrary,
+  SOUND_FILES,
+  type SoundLibrary,
+} from './sound-library.ts';
+import { SoundSharing } from './sound-share.ts';
 import { Uploads } from './uploads.ts';
 
 /**
@@ -177,6 +186,13 @@ export interface RuntimeConfig {
   sounds?: string;
   /** Where the sound library's files are (CUTTINGFLOOR_SOUNDS_FILES): views play them from there. */
   soundFiles?: string;
+  /**
+   * The public bucket shared sounds go to (CUTTINGFLOOR_SOUNDS_BUCKET, default
+   * cuttingfloor-sounds, with the CUTTINGFLOOR_S3_* address and keys), where the library is this
+   * server's own. Tests give the files instead.
+   */
+  soundsBucket?: string;
+  soundShareFiles?: PublicFiles;
 }
 
 /** The hosted server, whose sound library every other server reads by default. */
@@ -309,6 +325,9 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     ...(env.CUTTINGFLOOR_STANDBY === '1' ? { standby: true } : {}),
     ...(env.CUTTINGFLOOR_DRAIN === '1' ? { drain: true } : {}),
     ...(env.CUTTINGFLOOR_SOUNDS?.trim() ? { sounds: env.CUTTINGFLOOR_SOUNDS.trim() } : {}),
+    ...(env.CUTTINGFLOOR_SOUNDS_BUCKET?.trim()
+      ? { soundsBucket: env.CUTTINGFLOOR_SOUNDS_BUCKET.trim() }
+      : {}),
     ...(env.CUTTINGFLOOR_SOUNDS_FILES?.trim()
       ? { soundFiles: env.CUTTINGFLOOR_SOUNDS_FILES.trim() }
       : {}),
@@ -335,6 +354,8 @@ export class Runtime {
   gate: DownloadGate | undefined;
   /** What sounds.list reads: the library in the record database, or the hosted one. */
   sounds: SoundLibrary;
+  /** Sharing sounds into the community pack, where the library is this server's own. */
+  sharing: SoundSharing | undefined;
   #secret: Buffer | undefined;
   #sweeper: NodeJS.Timeout | undefined;
   #reaper: NodeJS.Timeout | undefined;
@@ -382,11 +403,38 @@ export class Runtime {
         embed: clapTexts,
         model: CLAP_MODEL,
       });
+      const s3 = config.s3;
+      const files =
+        config.soundShareFiles ??
+        (s3
+          ? new PublicBucket({
+              endpoint: s3.endpoint,
+              region: s3.region,
+              bucket: config.soundsBucket ?? 'cuttingfloor-sounds',
+              accessKeyId: s3.accessKeyId,
+              secretAccessKey: s3.secretAccessKey,
+              pathStyle: s3.pathStyle,
+              files: config.soundFiles ?? SOUND_FILES,
+            })
+          : undefined);
+      this.sharing = files
+        ? new SoundSharing({
+            db: () => records.database(),
+            files,
+            embed: async (file, signal) => {
+              const [vector] = await clapSounds([file], { signal });
+              if (!vector) throw new Error('No embedding');
+              return vector;
+            },
+            model: CLAP_MODEL,
+          })
+        : undefined;
     } else {
       if (!/^https?:\/\/./.test(sounds)) {
         throw new Error('CUTTINGFLOOR_SOUNDS must be mongo or an http(s) url');
       }
       this.sounds = new RemoteSoundLibrary(sounds);
+      this.sharing = undefined;
     }
     this.timelines = new TimelineStore(this.ws);
     this.outputs = new Outputs(this.ws);
@@ -811,6 +859,49 @@ export class Runtime {
       return isAbsolute(record.file) ? { name, file: record.file } : { name, blob: record.file };
     }
     return { name, blob: this.outputs.key(key, id, name) };
+  }
+
+  /**
+   * Shares one of the owner's files in the community pack: a sent file by its upload_id (also
+   * once an import has made it a media), or a media of theirs.
+   */
+  async shareSound(
+    owner: string,
+    from: { upload_id: string } | { media_id: string },
+    meta: SoundShareInput,
+    signal: AbortSignal,
+  ): Promise<LibrarySound> {
+    if (!this.sharing) {
+      throw new CfError('service_unavailable', 'Sounds are shared on cuttingfloor.ai only');
+    }
+    return this.sharing.share(owner, await this.#shareable(owner, from), meta, signal);
+  }
+
+  async #shareable(
+    owner: string,
+    from: { upload_id: string } | { media_id: string },
+  ): Promise<string> {
+    if ('media_id' in from) {
+      const record = await this.media.get(owner, from.media_id);
+      if (!record.file) throw new CfError('not_found', `Media ${from.media_id} has no file`);
+      return this.media.local(record.file);
+    }
+    try {
+      const sent = await this.uploads.take(owner, from.upload_id);
+      return sent.file ?? (await this.scratchFile(sent.blob));
+    } catch (error) {
+      if (!(error instanceof CfError) || error.code !== 'not_found') throw error;
+    }
+    // Imported since it was sent: the media it became.
+    const media = (await this.media.list(owner)).find(
+      (m) => 'upload' in m.source && m.source.upload === from.upload_id,
+    );
+    if (!media?.file) {
+      throw new CfError('not_found', `Upload ${from.upload_id} not found`, {
+        hint: 'Send the file again',
+      });
+    }
+    return this.media.local(media.file);
   }
 
   /** A blob as a local file on this server, for an engine (or a hash) to read. */

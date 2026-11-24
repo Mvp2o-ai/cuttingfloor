@@ -43,6 +43,17 @@ export function uploadPage(uploadId: string): string {
   #status { min-height: 1.5em; }
   .done { color: var(--accent); font-weight: 600; }
   code { font-size: 14px; }
+  /* Sharing a sent sound as a community sound: off until turned on. */
+  #share { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+  #share .on { display: flex; gap: 10px; align-items: flex-start; border: 0; padding: 0; text-align: left; cursor: pointer; }
+  #share .on input { display: inline; margin-top: 4px; width: 18px; height: 18px; accent-color: var(--accent); }
+  #share small { display: block; color: var(--muted); }
+  #fields { display: grid; gap: 10px; margin-top: 14px; }
+  #fields label.f { display: grid; gap: 4px; border: 0; padding: 0; text-align: left; color: var(--muted); font-size: 14px; cursor: default; }
+  #fields input, #fields textarea { display: block; font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  #fields textarea { min-height: 60px; }
+  #fields button { justify-self: start; font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 10px 18px; background: var(--accent); color: #04170a; cursor: pointer; }
+  .fine { color: var(--muted); font-size: 14px; margin: 0; }
 </style>
 </head>
 <body>
@@ -56,6 +67,20 @@ export function uploadPage(uploadId: string): string {
   </label>
   <div class="bar" hidden><div></div></div>
   <div id="status" role="status" aria-live="polite"></div>
+  <form id="share" hidden novalidate>
+    <label class="on"><input type="checkbox" id="share-on"><span><strong>Share as a community sound</strong><small>A small way to give back: other creators can find it and use it in their edits, free.</small></span></label>
+    <div id="fields" hidden>
+      <label class="f">Name<input id="s-name" maxlength="80"></label>
+      <label class="f">What it is<textarea id="s-desc" maxlength="500" placeholder="The hook from my track, a bass drop at 0:04"></textarea></label>
+      <label class="f">Category<input id="s-cat" maxlength="60" list="s-cats" placeholder="Music"></label>
+      <label class="f">Tags<input id="s-tags" maxlength="200" placeholder="hype, drop, edm"></label>
+      <label class="f">Credit as<input id="s-author" maxlength="60" placeholder="Your first name"></label>
+      <datalist id="s-cats"><option value="Trending sounds"><option value="Music"><option value="Meme and hype"><option value="Voice and quotes"></datalist>
+      <p class="fine">Share only sounds that are yours to share. You can take it down from your upload page, and sounds people report are taken down.</p>
+      <button type="submit" id="s-go">Share</button>
+      <p class="fine" id="s-note" role="status"></p>
+    </div>
+  </form>
 </main>
 <script>
 (() => {
@@ -202,6 +227,7 @@ export function uploadPage(uploadId: string): string {
       fill.style.width = '100%';
       say('Sent. Go back to the chat and say it’s in. (Upload ' + id + ')', true);
       drop.hidden = true;
+      if (/^audio//.test(file.type) || AUDIO.test(file.name)) offerShare(file.name);
     } catch (error) {
       say(error.message || String(error));
     } finally {
@@ -211,6 +237,47 @@ export function uploadPage(uploadId: string): string {
       lock = undefined;
     }
   }
+
+  // ---------- sharing a sent sound (off unless the person turns it on) ----------
+  const AUDIO = /.(mp3|wav|m4a|aac|flac|ogg|opus)$/i;
+  const shareForm = document.getElementById('share');
+  const $s = (sel) => document.getElementById(sel);
+  function offerShare(name) {
+    shareForm.hidden = false;
+    $s('s-name').value = name.replace(/.[^.]+$/, '').replace(/[_-]+/g, ' ').slice(0, 80);
+  }
+  $s('share-on').addEventListener('change', (e) => { $s('fields').hidden = !e.target.checked; });
+  shareForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const note = (t) => { $s('s-note').textContent = t; };
+    const body = {
+      name: $s('s-name').value.trim(),
+      description: $s('s-desc').value.trim(),
+      category: $s('s-cat').value.trim(),
+      tags: $s('s-tags').value.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 10),
+    };
+    if ($s('s-author').value.trim()) body.author = $s('s-author').value.trim();
+    if (!body.name || !body.description || !body.category) return note('Give it a name, say what it is and pick a category.');
+    $s('s-go').disabled = true;
+    note('Sharing…');
+    try {
+      const r = await fetch(sub('/share'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.sound) throw new Error([d.error, d.hint].filter(Boolean).join('. ') || 'HTTP ' + r.status);
+      shareForm.innerHTML = '';
+      const done = document.createElement('p');
+      done.className = 'done';
+      done.textContent = 'Shared as a community sound: “' + d.sound.name + '”. Thank you. ';
+      const a = document.createElement('a');
+      a.href = 'https://cuttingfloor.ai/community-sounds?sound=' + encodeURIComponent(d.sound.sound_id);
+      a.textContent = 'See it';
+      done.append(a);
+      shareForm.append(done);
+    } catch (error) {
+      $s('s-go').disabled = false;
+      note(error.message || String(error));
+    }
+  });
 
   pick.addEventListener('change', () => pick.files[0] && send(pick.files[0]));
   drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });

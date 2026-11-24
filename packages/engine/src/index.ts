@@ -124,6 +124,7 @@ export {
   selectedPicture,
   selectionPass,
 } from './selection.ts';
+export { soundLevels } from './sound-levels.ts';
 export {
   CLAP_DIMENSIONS,
   CLAP_MODEL,
