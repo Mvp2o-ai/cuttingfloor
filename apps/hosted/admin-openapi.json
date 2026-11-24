@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "cuttingfloor admin API",
-    "version": "1.9.0",
+    "version": "1.10.0",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -270,7 +270,11 @@
             "type": ["string", "null"]
           },
           "page_url": {
-            "description": "The watch page that plays the export in any browser, no sign-in: the link to give the user in an email. Valid as download_url is; null where it is",
+            "description": "The watch page that plays the export in any browser, no sign-in: the link to give the user in an email. While watermarked it shows the price and their credits, and its button removes the watermark; opening the page spends nothing, so a mail scanner checking the link is harmless. Valid as download_url is; null where it is",
+            "type": ["string", "null"]
+          },
+          "final_url": {
+            "description": "While watermarked, the final copy: opening it spends release_credits once, then downloads the clean file. For a chat or an app the user taps in, not an email (a mail scanner opening it would spend): email page_url instead. Null where download_url is, and when the file is clean",
             "type": ["string", "null"]
           },
           "watermarked": {
@@ -302,6 +306,7 @@
           "expires_at",
           "download_url",
           "page_url",
+          "final_url",
           "watermarked",
           "release_credits",
           "released_at"

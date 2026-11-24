@@ -12,6 +12,7 @@ import {
   type CallEntry,
   CLAIM_TASKS,
   CLAIMS,
+  finalLink,
   meterEntries,
   ONBOARDING,
   RELEASES,
@@ -40,7 +41,7 @@ import { recipientState } from './sequence.ts';
 //   {user, label} and `POST /account/admin-keys/revoke` {user, key_id}, with the site's own key.
 
 /** The API's version: within v1 it only grows, so every change bumps minor or patch. */
-export const ADMIN_API_VERSION = '1.9.0';
+export const ADMIN_API_VERSION = '1.10.0';
 const BASE = '/admin/v1';
 /** Admin keys: their own prefix and folder, so a script key never opens this API. */
 export const ADMIN_KEYS: KeyKind = { prefix: 'cfa_', dir: 'admin-keys', label: 'Admin key' };
@@ -268,6 +269,7 @@ export class AdminApi {
         expires_at: m.expires_at,
         download_url: null,
         page_url: null,
+        final_url: null,
         ...(await mark(m.media_id, source.job ?? source.job_id ?? m.media_id)),
       });
     }
@@ -275,6 +277,7 @@ export class AdminApi {
       const going = exportOf(job);
       if (!going?.jobId || going.at <= now) continue;
       const signed = options.links ? await rt.signOutput(owner, going.jobId, going.name) : null;
+      const marked = await mark(going.jobId, going.jobId);
       files.push({
         kind: 'export',
         id: going.jobId,
@@ -282,7 +285,8 @@ export class AdminApi {
         expires_at: new Date(going.at).toISOString(),
         download_url: signed?.url ?? null,
         page_url: signed?.pageUrl ?? null,
-        ...(await mark(going.jobId, going.jobId)),
+        final_url: signed && marked.watermarked ? (finalLink(signed.url) ?? null) : null,
+        ...marked,
       });
     }
     files.sort((a, b) => a.expires_at.localeCompare(b.expires_at));

@@ -473,18 +473,24 @@ export function createHttpServer(options: HttpOptions): Server {
         // The page plays the file from where it is served: this server, or the bucket its link
         // redirects to, which the page must then be allowed to load from.
         const bucket = target.blob && runtime.ws.blobs.remote ? runtime.bucketOrigin : undefined;
+        const { owner } = signedFile(filePath, name);
         const mark = runtime.gate
           ? await runtime.gate
-              .state(signedFile(filePath, name).owner, signedFile(filePath, name).file_id)
+              .state(owner, signedFile(filePath, name).file_id)
               .catch(() => undefined)
           : undefined;
+        const query = new URLSearchParams({ exp: exp ?? '', sig: sig ?? '' });
+        const left =
+          mark?.watermarked && req.method === 'GET'
+            ? await runtime.gate?.credits(owner)
+            : undefined;
         const from = bucket ? `'self' ${bucket}` : "'self'";
         res.writeHead(200, {
           'content-type': 'text/html; charset=utf-8',
           'cache-control': 'private, no-store',
           'referrer-policy': 'no-referrer',
           'x-content-type-options': 'nosniff',
-          'content-security-policy': `default-src 'none'; media-src ${from}; img-src ${from}; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`,
+          'content-security-policy': `default-src 'none'; media-src ${from}; img-src ${from}; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'`,
         });
         res.end(
           req.method === 'HEAD'
@@ -492,11 +498,19 @@ export function createHttpServer(options: HttpOptions): Server {
             : watchPage({
                 name,
                 mime: outputMime(name.includes('.') ? name : (target.file ?? target.blob ?? name)),
-                fileUrl: `${filePath}?${new URLSearchParams({ exp: exp ?? '', sig: sig ?? '' })}`,
+                fileUrl: `${filePath}?${query}`,
                 ...(bucket ? { inline: true } : {}),
                 base: runtime.config.publicUrl,
                 expiresAt: new Date(Number(exp)),
-                ...(mark?.watermarked ? { mark: { credits: mark.release_credits ?? 0 } } : {}),
+                ...(mark?.watermarked
+                  ? {
+                      mark: {
+                        credits: mark.release_credits ?? 0,
+                        left,
+                        finalUrl: `/final/${url.pathname.slice('/watch/'.length)}?${query}`,
+                      },
+                    }
+                  : {}),
               }),
         );
         return;
@@ -504,8 +518,12 @@ export function createHttpServer(options: HttpOptions): Server {
       // The final copy: the same signature as its /outputs/ URL. Opening it removes the watermark
       // (the file's release_credits, once; a file already released or never marked spends
       // nothing), then sends the browser to the file, now clean. Too few credits: a page saying
-      // so, and nothing spent. HEAD spends nothing.
-      if (url.pathname.startsWith('/final/') && (req.method === 'GET' || req.method === 'HEAD')) {
+      // so, and nothing spent. HEAD spends nothing. A POST is the watch page's button: the same,
+      // then back to that page, which now plays the clean file.
+      if (
+        url.pathname.startsWith('/final/') &&
+        (req.method === 'GET' || req.method === 'HEAD' || req.method === 'POST')
+      ) {
         const filePath = `/outputs/${url.pathname.slice('/final/'.length)}`;
         const exp = url.searchParams.get('exp');
         const sig = url.searchParams.get('sig');
@@ -522,7 +540,7 @@ export function createHttpServer(options: HttpOptions): Server {
           : file_id.startsWith('j_')
             ? { job_id: file_id }
             : undefined;
-        if (req.method === 'GET' && runtime.gate && ref) {
+        if (req.method !== 'HEAD' && runtime.gate && ref) {
           try {
             await runtime.gate.release(owner, ref, 'page');
           } catch (error) {
@@ -551,7 +569,13 @@ export function createHttpServer(options: HttpOptions): Server {
             return;
           }
         }
-        res.writeHead(302, { location: file, 'cache-control': 'private, no-store' }).end();
+        const back = `/watch/${url.pathname.slice('/final/'.length)}?${new URLSearchParams({ exp: exp ?? '', sig: sig ?? '' })}`;
+        res
+          .writeHead(req.method === 'POST' ? 303 : 302, {
+            location: req.method === 'POST' ? back : file,
+            'cache-control': 'private, no-store',
+          })
+          .end();
         return;
       }
       if (url.pathname.startsWith('/uploads/')) {

@@ -9,6 +9,7 @@ export {
 } from './drain.ts';
 export {
   DownloadGate,
+  finalLink,
   type GateHooks,
   type MarkState,
   RELEASES,
