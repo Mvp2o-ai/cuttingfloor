@@ -45,7 +45,7 @@ export const EDITING_PAINS: Pain[] = [
   {
     pain: 'Music, sound effects and levels',
     answer:
-      'Lowers the music under speech, splits a voice from its music, rides levels with keyframes and masters to a measured loudness.',
+      'Finds sound effects you describe in a free library, lowers the music under speech, splits a voice from its music, rides levels with keyframes and masters to a measured loudness.',
     tools: ['audio.set_gain', 'create.stems', 'audio.set_master', 'qa.check'],
   },
   {

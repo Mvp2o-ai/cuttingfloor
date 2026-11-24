@@ -296,6 +296,72 @@ export const GUIDES: Guide[] = [
     ],
   },
   {
+    slug: 'add-sound-effects-to-shorts',
+    lang: 'en',
+    title: 'How to add sound effects to your Shorts with AI',
+    metaTitle: 'Add sound effects to your Shorts, Reels and TikToks with AI | cuttingfloor',
+    metaDescription:
+      'Describe a sound in plain words and your agent finds it in a free library of about 20,000 sound effects, lets you hear it in the chat and puts it on the moment. From ChatGPT, Claude or Kazi.',
+    answer:
+      'Connect cuttingfloor to the AI you already use (ChatGPT, Claude or Kazi), send your Short and describe the sounds you want: “a whoosh on every cut”, “footsteps on gravel while I walk”. Your agent finds the closest sounds in a free library of about 20,000, lets you hear them in the chat, puts each on its moment and sets its level.',
+    updated: '2026-11-23',
+    steps: [
+      {
+        title: 'Connect your agent once',
+        body: 'Add cuttingfloor to ChatGPT, Claude or Kazi (below). It takes a minute, and you sign in the first time.',
+      },
+      {
+        title: 'Send your Short',
+        body: 'Attach it in the chat, send a link, or drop it on your upload page. Silent AI clips, a talking video or gameplay all work.',
+      },
+      {
+        title: 'Describe the sounds and where they go',
+        body: 'Say it the way you’d say it to an editor: “a whoosh on every cut”, “a punch sound when he hits the bag”, “rain on a window under the whole scene”, “an airhorn on the win”. You don’t need a sound’s name; describe how it sounds.',
+      },
+      {
+        title: 'Listen, pick, then get the file',
+        body: 'Your agent can show the sounds it found in a player in the chat: press play on each, search for another, and pick one. It places your picks on their moments, keeps them under your voice, and exports the Short. Ask for changes in words (“louder boom”, “a different whoosh”).',
+      },
+    ],
+    prompt:
+      'Add sound effects to my Short: a whoosh on every cut, footsteps on gravel while I walk, a big boom when the title comes up and a crowd cheering at the end. Let me hear the boom options first, and keep everything under my voice.',
+    demos: ['turn-a-gaming-stream-into-shorts'],
+    faqs: [
+      {
+        q: 'Where do the sounds come from?',
+        a: 'A sound effects library of about 20,000 sounds that comes with cuttingfloor: real recordings, all CC0 or public domain. They’re free to use in anything you make, with nothing to credit or license.',
+      },
+      {
+        q: 'What kinds of sounds are there?',
+        a: 'Footsteps, punches and impacts, whooshes, rain, wind, thunder and other weather, cars and other vehicles, animals, crowds, applause and laughter, doors, glass, weapons and explosions, tools, bells, interface and game sounds, and meme and hype hits like a boom, an airhorn or a record scratch.',
+      },
+      {
+        q: 'Do I need to know what a sound is called?',
+        a: 'No. Describe it in plain words (“a giant stomping”, “a door slamming in a big hall”). Your agent finds the closest sounds by their names and by how they actually sound, so a description works even when no sound has those words in its name.',
+      },
+      {
+        q: 'Can I hear a sound before it goes in?',
+        a: 'Yes. Your agent can bring up a player in the chat with a play button and a waveform for each sound, a search box and the categories, so you can listen and pick. On a phone, ask “play me that sound” and it comes up as a big play button.',
+      },
+      {
+        q: 'What can I ask for?',
+        a: '“A punch sound on every hit.” “A whoosh when the text flies in.” “A reveal sound when the product shows up.” “Footsteps under the walk.” “City traffic under the whole scene, quiet.” “A record scratch when I stop talking.” “Five options for a boom; let me hear them.”',
+      },
+      {
+        q: 'Will the sounds drown out my voice?',
+        a: 'No. Your agent sets each sound’s level and keeps them under your voice or music. If one is too loud or too quiet, say so and it changes just that one.',
+      },
+      {
+        q: 'Is there music in the library?',
+        a: 'No, it’s sound effects only. For music, send your own song and your agent fits it under the video.',
+      },
+      {
+        q: 'Can I use my own sound files?',
+        a: 'Yes. Send them like any other file and your agent places them the same way, next to sounds from the library.',
+      },
+    ],
+  },
+  {
     slug: 'turn-ai-video-clips-into-a-film',
     lang: 'en',
     title: 'How to turn Kling, Veo, Sora and Runway clips into a film',
@@ -337,7 +403,10 @@ export const GUIDES: Guide[] = [
       { tool: 'edit.batch', does: 'many edits in one call: clip.add, clip.trim and the rest' },
       { tool: 'transition.add', does: 'blends a cut; a refusal gives the longest that fits' },
       { tool: 'filter.add', does: 'colour corrections on a clip, or a LUT on the whole film' },
-      { tool: 'media.import', does: 'a sound effect from the built-in pack, by its link' },
+      {
+        tool: 'media.import',
+        does: 'a sound effect found in the sound library (sounds.list), or your own file',
+      },
       { tool: 'create.voiceover', does: 'a narrator from your script, with a time for each word' },
       { tool: 'title.add', does: 'the title and the credits' },
       { tool: 'audio.set_master', does: 'the final loudness, with a limiter' },
@@ -360,7 +429,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: 'My clips have no sound. What can I add?',
-        a: 'Your music, a voiceover made from your script, and sound effects. A built-in pack covers whooshes, hits, risers, booms, explosions and crowds; for footsteps or ambience, add your own sound files.',
+        a: 'Your music, a voiceover made from your script, and sound effects. Describe a sound (“footsteps on gravel”, “wind through trees”, “a deep boom”) and your agent finds it in a free library of about 20,000 sound effects, which you can hear in the chat before it goes in. Your own sound files work too.',
       },
       {
         q: 'How long can a transition be on a 5-second clip?',
