@@ -34,7 +34,8 @@ beforeAll(async () => {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
     asked.push(JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>);
-    if (pick === 'down') return res.writeHead(503).end('{}');
+    // Down for good: the client retries, told to retry at once (Retry-After: 0), then falls back.
+    if (pick === 'down') return res.writeHead(503, { 'retry-after': '0' }).end('{}');
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(
       JSON.stringify({
@@ -90,7 +91,10 @@ describe('credits.claim sample router', () => {
 
   it('falls back to Big Buck Bunny when Jev is down or names no card', async () => {
     pick = 'down';
+    const before = asked.length;
     const down = await claimAs('user_down', 'a wedding film');
+    // The first ask and three retries, each at once as Retry-After said.
+    expect(asked.length - before).toBe(4);
     expect(down.structured.message).toContain('Big Buck Bunny');
     expect(await shown('user_down')).toMatchObject({ sample: 'animation-short' });
     pick = 'no-such-card';
