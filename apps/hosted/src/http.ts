@@ -410,6 +410,7 @@ export function createHttpServer(options: HttpOptions): Server {
             how: inline ? 'play' : 'download',
             userAgent: req.headers['user-agent'] ?? '',
             range: req.headers.range,
+            via: url.searchParams.get('via') ?? undefined,
           });
         }
         // The download gate: a picture its owner hasn't released goes out with the watermark

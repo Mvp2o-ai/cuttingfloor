@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { MCP_APP_MIME, mediaOrigins, viewUi } from './player.ts';
+import { FINAL_COPY_JS, MCP_APP_MIME, mediaOrigins, viewUi } from './player.ts';
 import type { ServerDeps } from './server.ts';
 import { SERVER_VERSION } from './version.ts';
 
@@ -50,8 +50,8 @@ export function registerEditor(server: McpServer, deps: ServerDeps): void {
   );
 }
 
-// The page is editor.html next to this file; only the version is filled in.
-const EDITOR_HTML = readFileSync(new URL('./editor.html', import.meta.url), 'utf8').replace(
-  '__VERSION__',
-  SERVER_VERSION,
-);
+// The page is editor.html next to this file, with the version and the shared Download control
+// (final-copy.js) filled in.
+const EDITOR_HTML = readFileSync(new URL('./editor.html', import.meta.url), 'utf8')
+  .replace('__VERSION__', SERVER_VERSION)
+  .replace('__FINAL_COPY__', () => FINAL_COPY_JS);

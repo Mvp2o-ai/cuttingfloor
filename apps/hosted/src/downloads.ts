@@ -18,6 +18,8 @@ export interface DownloadSeen {
   userAgent: string;
   /** The request's Range header, if any: a later range of a fetch already counted is skipped. */
   range?: string | undefined;
+  /** Where the link was used from, when it says (`via=view`: a chat view's Download button). */
+  via?: string | undefined;
 }
 
 const FIELD = { download: 'downloads', play: 'plays', page: 'page_views' } as const;
@@ -46,11 +48,16 @@ export async function recordDownload(ws: Workspace, seen: DownloadSeen): Promise
     agent: agentName(seen.userAgent),
   };
   first[field] = 1;
+  const viewSave = seen.how === 'download' && seen.via === 'view';
+  if (viewSave) first.from_view = 1;
   // Whichever request's write lands first makes the record; the others add to it (one that went
   // between the two, by expiring, is written again).
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (await days.insertOnce(id, first)) return;
-    const now = await days.update(id, { set: { last_at: at }, inc: { [field]: 1 } });
+    const now = await days.update(id, {
+      set: { last_at: at },
+      inc: { [field]: 1, ...(viewSave ? { from_view: 1 } : {}) },
+    });
     if (!now) continue;
     // Writes land in any order, so the earliest request names the day's first client, not the
     // first write: a later request whose write won the race gives way.

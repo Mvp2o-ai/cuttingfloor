@@ -28,4 +28,17 @@ describe('download records', () => {
       page_views: 1,
     });
   });
+
+  it("counts a save from a chat view's Download button apart", async () => {
+    const ws = new Workspace(await mkdtemp(join(tmpdir(), 'cf-downloads-')));
+    const seen = { owner: 'o', file_id: 'j_y', name: 'short.mp4', userAgent: 'Mozilla/5.0' };
+    await recordDownload(ws, { ...seen, how: 'download', via: 'view' });
+    await recordDownload(ws, { ...seen, how: 'download' });
+    await recordDownload(ws, { ...seen, how: 'play', via: 'view' });
+    expect((await readDownloads(ws, 'o'))[0]).toMatchObject({
+      downloads: 2,
+      plays: 1,
+      from_view: 1,
+    });
+  });
 });

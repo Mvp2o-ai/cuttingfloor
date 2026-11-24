@@ -326,6 +326,7 @@
 <div class="tip" id="tip"></div>
 <div class="toast" id="toast"></div>
 <script>
+__FINAL_COPY__
 (() => {
   const VERSION = '__VERSION__';
   const root = document.getElementById('root');
@@ -495,6 +496,7 @@
 
   // ---------- the view ----------
   let ui = null;
+  let saver = null;
   function build() {
     root.innerHTML = `
     <div class="card">
@@ -507,7 +509,7 @@
           <button class="pill" id="sendAgent" type="button" title="Write a note about this moment into the chat" hidden>${ICON.agent}<span>Send to chat</span></button>
           <button class="pill narrow-hide" id="copyLink" type="button" title="Copy a link anyone can open" disabled>${ICON.link}<span>Copy link</span></button>
           <button class="pill narrow-hide" id="openPage" type="button" title="Open the watch page" disabled>${ICON.open}<span>Open</span></button>
-          <button class="pill" id="download" type="button" title="Download the file" disabled>${ICON.down}<span>Download</span></button>
+          <span id="dlSlot"></span>
           <button class="pill" id="miniBtn" type="button" title="Hide or show the timeline and inspector (E)">${ICON.panel}<span id="miniText">Hide editor</span></button>
           <button class="pill primary" id="fullBtn" type="button" title="Full screen" hidden>${ICON.max}</button>
         </div>
@@ -600,12 +602,9 @@
       $('#tlName').textContent = 'Export';
     }
     const f = S.file;
-    for (const id of ['#copyLink', '#openPage', '#download']) $(id).disabled = !f;
-    if (f) {
-      $('#openPage').disabled = !f.page_url;
-      const exp = f.expires_at ? untilText(f.expires_at) : null;
-      $('#download').title = `Download the file${f.preset ? ` (${f.preset})` : ''}${exp ? `, ${exp}` : ''}`;
-    }
+    for (const id of ['#copyLink', '#openPage']) $(id).disabled = !f;
+    if (f) $('#openPage').disabled = !f.page_url;
+    saver?.set(f);
     $('#sendAgent').hidden = !(host.caps.message || navigator.clipboard);
     $('#fullBtn').hidden = !host.modes.includes('fullscreen');
     $('#fullBtn').innerHTML = host.mode === 'fullscreen' ? ICON.min : ICON.max;
@@ -1290,15 +1289,26 @@
       try { await navigator.clipboard.writeText(url); toast('Link copied'); $('#copyLink').classList.add('done'); setTimeout(() => $('#copyLink').classList.remove('done'), 1500); } catch { openLink(url); }
     };
     $('#openPage').onclick = () => S.file?.page_url && openLink(S.file.page_url);
-    $('#download').onclick = () => {
-      const f = S.file;
-      if (!f) return;
-      const fallback = () => openLink(f.url);
-      if (!host.caps.downloadFile) return fallback();
-      const name = (S.view?.name || 'export').replace(/[^\w .-]+/g, '').trim() || 'export';
-      request('ui/download-file', { contents: [{ type: 'resource_link', uri: f.url, name, mimeType: f.mime_type || undefined }] })
-        .then((r) => { if (r?.isError) fallback(); }, fallback);
-    };
+    // Download: a watermarked export offers the final copy (watermark removed) or the review copy.
+    saver = window.cfFinalCopy({
+      btnClass: 'pill',
+      icon: ICON.down,
+      callTool,
+      save: (f) => {
+        // The link this button fetches says so (via=view), so its downloads count apart.
+        let url = f.url;
+        try { const u = new URL(url); u.searchParams.set('via', 'view'); url = u.href; } catch {}
+        const fallback = () => openLink(url);
+        if (!host.caps.downloadFile) return fallback();
+        const name = (S.view?.name || 'export').replace(/[^\w .-]+/g, '').trim() || 'export';
+        request('ui/download-file', { contents: [{ type: 'resource_link', uri: url, name, mimeType: f.mime_type || undefined }] })
+          .then((r) => { if (r?.isError) fallback(); }, fallback);
+      },
+      openLink,
+      toast,
+      onReleased: (f) => { S.file = f; paintHeader(); },
+    });
+    $('#dlSlot').replaceWith(saver.node);
     $('#fullBtn').onclick = async () => {
       const want = host.mode === 'fullscreen' ? 'inline' : 'fullscreen';
       try {
