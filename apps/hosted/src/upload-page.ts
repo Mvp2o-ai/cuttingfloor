@@ -227,7 +227,7 @@ export function uploadPage(uploadId: string): string {
       fill.style.width = '100%';
       say('Sent. Go back to the chat and say it’s in. (Upload ' + id + ')', true);
       drop.hidden = true;
-      if (/^audio//.test(file.type) || AUDIO.test(file.name)) offerShare(file.name);
+      if (file.type.startsWith('audio/') || AUDIO.test(file.name)) offerShare(file.name);
     } catch (error) {
       say(error.message || String(error));
     } finally {
@@ -239,12 +239,12 @@ export function uploadPage(uploadId: string): string {
   }
 
   // ---------- sharing a sent sound (off unless the person turns it on) ----------
-  const AUDIO = /.(mp3|wav|m4a|aac|flac|ogg|opus)$/i;
+  const AUDIO = /[.](mp3|wav|m4a|aac|flac|ogg|opus)$/i;
   const shareForm = document.getElementById('share');
   const $s = (sel) => document.getElementById(sel);
   function offerShare(name) {
     shareForm.hidden = false;
-    $s('s-name').value = name.replace(/.[^.]+$/, '').replace(/[_-]+/g, ' ').slice(0, 80);
+    $s('s-name').value = name.replace(/[.][^.]+$/, '').replace(/[_-]+/g, ' ').slice(0, 80);
   }
   $s('share-on').addEventListener('change', (e) => { $s('fields').hidden = !e.target.checked; });
   shareForm.addEventListener('submit', async (e) => {
