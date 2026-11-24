@@ -125,6 +125,10 @@ export {
   selectionPass,
 } from './selection.ts';
 export {
+  CLAP_DIMENSIONS,
+  CLAP_MODEL,
+  clapSounds,
+  clapTexts,
   detectSounds,
   type FrameScores,
   listenFor,

@@ -7,6 +7,10 @@
 //           × 255) per 40 ms frame per AudioSet-strong class, frame-major.
 //   listen: FlexSED over the same windows, for query embeddings from the CLAP text encoder:
 //           one byte per frame per query, frame-major.
+//   embed:  CLAP embeddings (512 floats each) of texts, or of sounds (48 kHz mono, at most
+//           10 s a window; a longer sound is the mean of its windows), one after another as
+//           float32 in the output file. Texts and sounds land in one space, so a description
+//           finds a sound by how it sounds.
 //   stems:  Demucs v4 over 7.8 s segments of 44.1 kHz stereo, overlapped by a quarter and
 //           blended with triangular weights (as demucs.apply does), normalised by the mix's
 //           mean and spread; writes a 32-bit float WAV per stem asked for.
@@ -23,6 +27,16 @@ type Job =
       clapModel: string;
       texts: string[];
       input: string;
+      output: string;
+      threads: number;
+    }
+  | {
+      mode: 'embed';
+      clapDir: string;
+      clapModel: string;
+      texts?: string[];
+      /** Raw float32 48 kHz mono files. */
+      sounds?: string[];
       output: string;
       threads: number;
     }
@@ -122,7 +136,11 @@ async function sed(job: Extract<Job, { mode: 'sed' }>): Promise<void> {
 }
 
 /** CLAP text embeddings, one text at a time (padding a batch moves them slightly). */
-async function embed(job: Extract<Job, { mode: 'listen' }>): Promise<Float32Array> {
+async function embed(job: {
+  clapDir: string;
+  clapModel: string;
+  texts?: string[];
+}): Promise<Float32Array> {
   const { env, AutoTokenizer, ClapTextModelWithProjection } = await import(
     '@huggingface/transformers'
   );
@@ -134,8 +152,9 @@ async function embed(job: Extract<Job, { mode: 'listen' }>): Promise<Float32Arra
     dtype: 'fp32',
   });
   const dims = 512;
-  const out = new Float32Array(job.texts.length * dims);
-  for (const [i, text] of job.texts.entries()) {
+  const texts = job.texts ?? [];
+  const out = new Float32Array(texts.length * dims);
+  for (const [i, text] of texts.entries()) {
     const { text_embeds } = await model(tokenizer([text], { truncation: true }));
     const v = text_embeds.data as Float32Array;
     if (v.length !== dims) throw new Error(`CLAP gave ${v.length} dimensions, not ${dims}`);
@@ -143,6 +162,55 @@ async function embed(job: Extract<Job, { mode: 'listen' }>): Promise<Float32Arra
   }
   await model.dispose();
   return out;
+}
+
+const CLAP_RATE = 48_000;
+const CLAP_WINDOW = 10 * CLAP_RATE;
+/** The most windows a long sound is embedded from, spread across it. */
+const CLAP_WINDOWS = 6;
+
+async function embedAll(job: Extract<Job, { mode: 'embed' }>): Promise<void> {
+  const fd = openSync(job.output, 'w');
+  try {
+    if (job.texts?.length) writeSync(fd, new Uint8Array((await embed(job)).buffer));
+    if (job.sounds?.length) {
+      const { env, AutoProcessor, ClapAudioModelWithProjection } = await import(
+        '@huggingface/transformers'
+      );
+      env.localModelPath = job.clapDir;
+      env.allowLocalModels = true;
+      env.allowRemoteModels = false;
+      const processor = await AutoProcessor.from_pretrained(job.clapModel);
+      const model = await ClapAudioModelWithProjection.from_pretrained(job.clapModel, {
+        dtype: 'fp32',
+      });
+      for (const [i, file] of job.sounds.entries()) {
+        const input = openSync(file, 'r');
+        const total = Math.floor(fstatSync(input).size / 4);
+        const count = Math.max(1, Math.min(CLAP_WINDOWS, Math.ceil(total / CLAP_WINDOW)));
+        // Windows spread evenly from the start to the end of the sound.
+        const step = count > 1 ? (total - CLAP_WINDOW) / (count - 1) : 0;
+        const sum = new Float32Array(512);
+        for (let w = 0; w < count; w++) {
+          const at = Math.round(w * step);
+          const wave = readFloats(input, total, at, Math.min(CLAP_WINDOW, total - at));
+          const { audio_embeds } = await model(await processor(wave));
+          const v = audio_embeds.data as Float32Array;
+          if (v.length !== 512) throw new Error(`CLAP gave ${v.length} dimensions, not 512`);
+          let norm = 0;
+          for (const x of v) norm += x * x;
+          norm = Math.sqrt(norm) || 1;
+          for (let d = 0; d < 512; d++) sum[d] = (sum[d] ?? 0) + (v[d] ?? 0) / norm;
+        }
+        closeSync(input);
+        writeSync(fd, new Uint8Array(sum.buffer));
+        say((i + 1) / job.sounds.length);
+      }
+      await model.dispose();
+    }
+  } finally {
+    closeSync(fd);
+  }
 }
 
 async function listen(job: Extract<Job, { mode: 'listen' }>): Promise<void> {
@@ -282,6 +350,7 @@ const job = JSON.parse(process.argv[2] ?? '{}') as Job;
 try {
   if (job.mode === 'sed') await sed(job);
   else if (job.mode === 'listen') await listen(job);
+  else if (job.mode === 'embed') await embedAll(job);
   else if (job.mode === 'stems') await stems(job);
   else throw new Error(`unknown mode ${(job as { mode?: string }).mode}`);
 } catch (error) {

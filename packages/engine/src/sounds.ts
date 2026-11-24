@@ -164,10 +164,11 @@ async function worker(
   job: Record<string, unknown>,
   signal: AbortSignal,
   onProgress?: (fraction: number) => void,
+  heavy = true,
 ): Promise<void> {
   try {
     await run(process.execPath, [WORKER, JSON.stringify({ threads: threads(), ...job })], {
-      heavy: true,
+      heavy,
       signal,
       timeoutMs: 4 * 60 * 60_000,
       onLine: (line) => {
@@ -286,6 +287,87 @@ export async function listenFor(
       data,
       start: options.from ?? 0,
     };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * The CLAP checkpoint whose text and audio encoders embed into one space: a sound library
+ * sound's embedding and a query's are compared only when both carry this name.
+ */
+export const CLAP_MODEL = 'clap-htsat-unfused-c28f2883';
+
+/** Floats in one CLAP embedding. */
+export const CLAP_DIMENSIONS = 512;
+
+function split(data: Buffer, count: number): number[][] {
+  const all = new Float32Array(data.buffer, data.byteOffset, data.byteLength / 4);
+  if (all.length !== count * CLAP_DIMENSIONS) {
+    throw new CfError('engine_error', `CLAP gave ${all.length} floats for ${count} embeddings`);
+  }
+  return Array.from({ length: count }, (_, i) =>
+    Array.from(all.subarray(i * CLAP_DIMENSIONS, (i + 1) * CLAP_DIMENSIONS)),
+  );
+}
+
+/**
+ * CLAP embeddings of texts, in the space `clapSounds` puts sounds in. Light: it runs beside the
+ * heavy work rather than waiting for a slot.
+ */
+export async function clapTexts(texts: string[], signal: AbortSignal): Promise<number[][]> {
+  if (!texts.length) return [];
+  const dir = await mkdtemp(join(tmpdir(), 'cf-embed-'));
+  try {
+    const out = join(dir, 'embeds.f32');
+    await worker(
+      {
+        mode: 'embed',
+        clapDir: MODELS,
+        clapModel: 'Xenova/clap-htsat-unfused',
+        texts,
+        output: out,
+      },
+      signal,
+      undefined,
+      false,
+    );
+    return split(await readFile(out), texts.length);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * CLAP embeddings of sound files: each from up to six 10 s windows spread across it, averaged.
+ * Each file must hold sound.
+ */
+export async function clapSounds(
+  files: string[],
+  options: { signal: AbortSignal; onProgress?: (fraction: number) => void },
+): Promise<number[][]> {
+  if (!files.length) return [];
+  const dir = await mkdtemp(join(tmpdir(), 'cf-embed-'));
+  try {
+    const raws: string[] = [];
+    for (const [i, file] of files.entries()) {
+      const raw = join(dir, `${i}.f32`);
+      await decode(file, raw, { rate: 48_000, channels: 1 }, options.signal);
+      raws.push(raw);
+    }
+    const out = join(dir, 'embeds.f32');
+    await worker(
+      {
+        mode: 'embed',
+        clapDir: MODELS,
+        clapModel: 'Xenova/clap-htsat-unfused',
+        sounds: raws,
+        output: out,
+      },
+      options.signal,
+      options.onProgress,
+    );
+    return split(await readFile(out), files.length);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

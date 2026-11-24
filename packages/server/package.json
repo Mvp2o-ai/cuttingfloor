@@ -20,6 +20,7 @@
     "@cuttingfloor/engine": "workspace:*",
     "@cuttingfloor/skills": "workspace:*",
     "@modelcontextprotocol/client": "2.3.1",
-    "@cuttingfloor/plans": "workspace:*"
+    "@cuttingfloor/plans": "workspace:*",
+    "mongodb": "7.9.1"
   }
 }

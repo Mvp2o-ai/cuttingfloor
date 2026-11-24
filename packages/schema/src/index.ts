@@ -12,6 +12,7 @@ export * from './motion.ts';
 export * from './search.ts';
 export * from './sequence.ts';
 export * from './skills.ts';
+export * from './sound-library.ts';
 export * from './sounds.ts';
 export * from './support.ts';
 export * from './text.ts';

@@ -5,14 +5,35 @@
 # none.
 #
 #   scripts/test-mongo.sh         start it (does nothing when it already runs)
-#   scripts/test-mongo.sh stop    stop and remove it
+#   scripts/test-mongo.sh stop    stop and remove it (and the Atlas one)
+#   scripts/test-mongo.sh atlas   start MongoDB's Atlas image instead, on 127.0.0.1:27018: Atlas
+#                                 Search and Vector Search, for the sound library's suite
 set -euo pipefail
+
+if [ "${1:-start}" = atlas ]; then
+  atlas=cuttingfloor-test-atlas
+  if [ -z "$(docker ps -q -f "name=^${atlas}$")" ]; then
+    docker rm -f "$atlas" >/dev/null 2>&1 || true
+    docker run -d --rm --name "$atlas" -p "127.0.0.1:${CUTTINGFLOOR_TEST_ATLAS_PORT:-27018}:27017" \
+      mongodb/mongodb-atlas-local:8.0 >/dev/null
+  fi
+  for _ in $(seq 1 180); do
+    # The image's own health check waits for search (mongot) as well as the database.
+    if [ "$(docker inspect -f '{{.State.Health.Status}}' "$atlas" 2>/dev/null)" = healthy ]; then
+      echo "MongoDB with Atlas Search for tests on mongodb://127.0.0.1:${CUTTINGFLOOR_TEST_ATLAS_PORT:-27018}/?directConnection=true"
+      exit 0
+    fi
+    sleep 1
+  done
+  echo "MongoDB's Atlas image did not become ready" >&2
+  exit 1
+fi
 
 name=cuttingfloor-test-mongo
 port=${CUTTINGFLOOR_TEST_MONGODB_PORT:-27017}
 
 if [ "${1:-start}" = stop ]; then
-  docker rm -f "$name" >/dev/null 2>&1 || true
+  docker rm -f "$name" cuttingfloor-test-atlas >/dev/null 2>&1 || true
   echo "stopped $name"
   exit 0
 fi

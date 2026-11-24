@@ -16,6 +16,7 @@ import {
 } from '@cuttingfloor/credentials';
 import type { AccountGetResult } from '@cuttingfloor/schema';
 import {
+  answerSounds,
   createServer,
   creditsClaimed,
   DRAIN_RETRY_SECONDS,
@@ -497,6 +498,19 @@ export function createHttpServer(options: HttpOptions): Server {
       }
       if (url.pathname.startsWith('/uploads/')) {
         await handleUpload(runtime, req, res, url);
+        return;
+      }
+      // The sound library, public: what sounds.list reads on servers with no library of their own.
+      if (url.pathname === '/sounds' && (req.method === 'GET' || req.method === 'HEAD')) {
+        const abort = new AbortController();
+        res.on('close', () => abort.abort());
+        const { status, body } = await answerSounds(runtime.sounds, url.searchParams, abort.signal);
+        res.writeHead(status, {
+          'content-type': 'application/json',
+          'access-control-allow-origin': '*',
+          'cache-control': status === 200 ? 'public, max-age=300' : 'no-store',
+        });
+        res.end(req.method === 'HEAD' ? undefined : JSON.stringify(body));
         return;
       }
       if (options.route && (await options.route(req, res, url))) return;
