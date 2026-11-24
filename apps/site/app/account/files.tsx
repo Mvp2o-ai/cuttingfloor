@@ -4,6 +4,7 @@ import { track } from '@vercel/analytics';
 import { useEffect, useRef, useState } from 'react';
 import type { Files, Started } from '../lib/files.ts';
 import { Final, sendFile, uploadOffset } from './send-file.ts';
+import { SHAREABLE, ShareSound } from './share-sound.tsx';
 
 // Drop or pick files for the agent to use (on a phone, tap to pick from the gallery or files). Each file goes up in parts straight to the
 // server's signed URL and resumes after a dropped connection; the agent then finds it by name.
@@ -248,6 +249,9 @@ export function FilesPanel({ initial }: { initial: Files }) {
                     ? s.note
                     : s.note || `${size(s.sent)} of ${size(s.size)}`}
               </span>
+              {s.state === 'done' && s.upload_id && SHAREABLE.test(s.name) ? (
+                <ShareSound from={{ upload_id: s.upload_id }} fileName={s.name} />
+              ) : null}
               {s.state === 'failed' && s.upload_id && !s.refused ? (
                 <button type="button" className="link file-resume" onClick={() => retry(s)}>
                   Resume
@@ -311,6 +315,9 @@ export function FilesPanel({ initial }: { initial: Files }) {
                   {size(u.received_bytes)} · kept until {day(u.expires_at)} unless your agent uses
                   it
                 </span>
+                {SHAREABLE.test(u.name) && !here.has(u.upload_id) ? (
+                  <ShareSound from={{ upload_id: u.upload_id }} fileName={u.name} />
+                ) : null}
               </li>
             ))}
           </ul>
@@ -327,6 +334,9 @@ export function FilesPanel({ initial }: { initial: Files }) {
                 <span className="file-note">
                   {m.bytes ? `${size(m.bytes)} · ` : ''}kept until {day(m.expires_at)}
                 </span>
+                {m.kind === 'audio' && m.from === 'upload' && m.status === 'ready' ? (
+                  <ShareSound from={{ media_id: m.media_id }} fileName={m.name} />
+                ) : null}
               </li>
             ))}
           </ul>

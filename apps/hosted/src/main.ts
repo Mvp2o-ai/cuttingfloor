@@ -183,6 +183,8 @@ if (access && lifecycle) {
     spend: (owner, ref, credits, tool) => lifecycle.spendRelease(owner, ref, credits, tool),
   });
 }
+// A shared sound with no name given is credited to its sharer's first name.
+if (lifecycle && runtime.sharing) runtime.sharing.author = (owner) => lifecycle.soundAuthor(owner);
 if (lifecycle) {
   for (const [name, set] of [
     ['RESEND_API_KEY', process.env.RESEND_API_KEY],

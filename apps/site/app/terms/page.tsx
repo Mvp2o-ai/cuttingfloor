@@ -79,6 +79,23 @@ export default function Terms() {
           place to store files.
         </P>
       </Part>
+      <Part title="Sounds you share">
+        <P>
+          Community sounds are free: nothing is bought or sold. Sharing an audio file of yours as a
+          community sound is your choice, off unless you turn it on. Once shared, it is public:
+          anyone can play it on the <a href="/community-sounds">community sounds</a> page, and
+          anyone using cuttingfloor can put it in their edits, free, credited to the name you give.
+          You can take it down any time from that page; edits already made with it keep it.
+        </P>
+        <P>
+          Share only sounds you made or have the right to share this way. We don't check them before
+          they appear. If a sound is yours and was shared without your permission, or it breaks the{' '}
+          <a href="/acceptable-use">acceptable use policy</a>, report it on its page or write to{' '}
+          {mail} with the sound's link: we take it down. Sounds several people report are held back
+          until we look at them, and we close the accounts of people who keep sharing sounds that
+          aren't theirs.
+        </P>
+      </Part>
       <Part title="Using it fairly">
         <P>
           Follow the <a href="/acceptable-use">acceptable use policy</a>. We may pause or close an

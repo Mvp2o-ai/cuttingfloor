@@ -110,6 +110,11 @@ export {
   s3SettingsFromEnv,
   workingCopy,
 } from './storage/index.ts';
+export {
+  PublicBucket,
+  type PublicBucketOptions,
+  type PublicFiles,
+} from './storage/public-bucket.ts';
 export { type Cue, parseSubtitles } from './subtitles.ts';
 export {
   framesToTicks,

@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cuttingfloor sounds</title>
+<style>
+  /*
+   * The sound library: sounds.list's result as rows to play, each drawn as its waveform from the
+   * file itself, with a search and the categories to narrow it. Sounds listed by id (a sound the
+   * user asked to hear) come up as large cards with one big play button each. It wears
+   * cuttingfloor's own colours, like the library and the player.
+   */
+  :root {
+    --bg: #0e0d0b;
+    --bg-2: #161511;
+    --bg-3: #1d1b17;
+    --ink: #eee8dc;
+    --mute: #8f887c;
+    --rule: #2a2722;
+    --rule-2: #3a362f;
+    --key: #00b140;
+    --key-hi: #19c957;
+    --gold: #d9a845;
+    --red: #e0573f;
+    --wave: #57514a;
+    --radius: 14px;
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --list-h: 460px;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  /* biome-ignore lint/complexity/noImportantStyles: hidden must beat every display rule below */
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: transparent; }
+  body { font: 13px/1.45 var(--font); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--key); outline-offset: 2px; }
+  svg { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .grow { flex: 1; }
+
+  .card { background: var(--bg); border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
+
+  /* Header: the mark and the wordmark, then how big the library is. */
+  .head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--rule); }
+  .brand { display: flex; align-items: center; gap: 9px; white-space: nowrap; min-width: 0; }
+  .marker { width: 16px; height: 16px; flex: none; fill: var(--key); }
+  .wm { font-weight: 800; font-size: 17px; letter-spacing: -0.02em; }
+  .wm b { color: var(--key); font-weight: 800; margin-left: 4px; }
+  .sub { font: 600 10.5px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--mute); padding-left: 10px; border-left: 1px solid var(--rule-2); }
+  .count { color: var(--mute); font: 500 11.5px/1 var(--mono); white-space: nowrap; }
+
+  /* Search */
+  .search { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
+  .field { position: relative; flex: 1; min-width: 0; }
+  .field svg { position: absolute; left: 11px; top: 50%; translate: 0 -50%; color: var(--mute); pointer-events: none; }
+  .field input { width: 100%; height: 38px; padding: 0 36px 0 34px; border-radius: 10px; border: 1px solid var(--rule-2); background: var(--bg-2); color: var(--ink); font: inherit; font-size: 14px; }
+  .field input::placeholder { color: var(--mute); }
+  .field input::-webkit-search-cancel-button { display: none; }
+  .field .clear { position: absolute; right: 6px; top: 50%; translate: 0 -50%; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; color: var(--mute); }
+  .field .clear:hover { color: var(--ink); background: var(--bg-3); }
+  .busy { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--rule-2); border-top-color: var(--key); animation: spin .7s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Categories: one line that scrolls sideways. */
+  .chips { display: flex; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--rule); overflow-x: auto; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--rule-2); font-size: 12px; color: var(--mute); white-space: nowrap; flex: none; }
+  .chip .n { font: 600 10.5px/1 var(--mono); opacity: .75; }
+  .chip:hover { color: var(--ink); }
+  .chip[aria-pressed="true"] { color: var(--ink); border-color: var(--key); background: color-mix(in srgb, var(--key) 14%, transparent); }
+
+  .note { padding: 8px 14px; font-size: 12px; color: var(--gold); border-bottom: 1px solid var(--rule); background: color-mix(in srgb, var(--gold) 8%, transparent); }
+  .ctx { display: flex; align-items: center; gap: 8px; padding: 8px 14px 6px; font: 600 10.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--mute); }
+
+  /* The rows */
+  .list { overflow-y: auto; max-height: var(--list-h); min-height: 140px; scrollbar-width: thin; }
+  .row { display: grid; grid-template-columns: 40px minmax(0, 1fr) minmax(110px, 320px) auto; gap: 12px; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--rule); }
+  .row:hover { background: var(--bg-2); }
+  .row.on { background: var(--bg-3); box-shadow: inset 3px 0 0 var(--key); }
+  .play { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--bg-3); border: 1px solid var(--rule-2); color: var(--ink); transition: background .15s, transform .1s; }
+  .play svg { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+  .play:hover { background: color-mix(in srgb, var(--key) 22%, var(--bg-3)); }
+  .play:active { transform: scale(.94); }
+  .on .play { background: var(--key); border-color: transparent; color: #04170a; }
+  .row .t { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .s { display: flex; gap: 6px; align-items: center; color: var(--mute); font-size: 11.5px; white-space: nowrap; overflow: hidden; }
+  .row .s .dot { opacity: .5; }
+  .wave { height: 34px; width: 100%; display: block; cursor: pointer; }
+  .match { display: inline-flex; align-items: center; gap: 5px; font: 600 10.5px/1 var(--mono); color: var(--mute); }
+  .match .bar { width: 34px; height: 4px; border-radius: 4px; background: var(--rule-2); overflow: hidden; }
+  .match .bar i { display: block; height: 100%; background: var(--key); }
+  .match.words { color: var(--key); }
+  .use { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--rule-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .use:hover:not(:disabled) { background: var(--bg-3); border-color: var(--key); }
+  .use svg { width: 14px; height: 14px; }
+  .more { display: flex; justify-content: center; padding: 12px; }
+  .more button { height: 32px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--rule-2); font-weight: 600; font-size: 12px; }
+  .more button:hover:not(:disabled) { background: var(--bg-3); }
+  .empty { color: var(--mute); padding: 30px 16px; text-align: center; }
+  .empty b { display: block; color: var(--ink); font-size: 14px; margin-bottom: 4px; }
+  .dots { display: flex; gap: 6px; justify-content: center; }
+  .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--key); animation: blink 1s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay: .15s; } .dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes blink { 50% { opacity: .2; } }
+
+  /* Sounds asked for by id: big cards, one big play button each. */
+  .hero { padding: 14px; display: grid; gap: 12px; }
+  .big { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 16px; align-items: center; padding: 16px; border: 1px solid var(--rule); border-radius: 12px; background: var(--bg-2); }
+  .big.on { border-color: var(--key); }
+  .big .play { width: 72px; height: 72px; background: var(--key); color: #04170a; border: 0; box-shadow: 0 6px 24px color-mix(in srgb, var(--key) 35%, transparent); }
+  .big .play svg { width: 26px; height: 26px; }
+  .big .play:hover { background: var(--key-hi); }
+  .big h3 { margin: 0 0 3px; font-size: 16px; line-height: 1.3; overflow-wrap: anywhere; }
+  .big p { margin: 0 0 10px; color: var(--mute); font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .big .wave { height: 54px; }
+  .big .meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; color: var(--mute); font-size: 11.5px; }
+
+  .foot { padding: 7px 14px; border-top: 1px solid var(--rule); color: var(--mute); font-size: 11.5px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .toast { position: fixed; left: 50%; bottom: 18px; translate: -50% 0; background: var(--ink); color: var(--bg); padding: 8px 13px; border-radius: 10px; font-size: 12.5px; max-width: calc(100% - 32px); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
+  .toast.on { opacity: 1; }
+
+  /* A host that gives the frame a fixed height: the list takes what is left. */
+  .fill body, .fill #root { height: 100%; }
+  .fill .card { height: 100vh; }
+  .fill .list { flex: 1 1 auto; max-height: none; }
+
+  /* A phone: the waveform goes under the name, Use keeps only its icon. */
+  @media (max-width: 640px) {
+    .sub, .count { display: none; }
+    .row { grid-template-columns: 44px minmax(0, 1fr) auto; row-gap: 4px; padding: 10px 12px; }
+    .row .play { grid-column: 1; grid-row: 1 / span 2; width: 44px; height: 44px; }
+    .row .txt { grid-column: 2; grid-row: 1; }
+    .row .wave { grid-column: 2; grid-row: 2; height: 26px; }
+    .row .act { grid-column: 3; grid-row: 1 / span 2; }
+    .use { width: 38px; height: 38px; padding: 0; justify-content: center; }
+    .use span { display: none; }
+    .big { grid-template-columns: 60px minmax(0, 1fr); padding: 14px; gap: 12px; }
+    .big .play { width: 60px; height: 60px; }
+    .list { max-height: 420px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion has to beat every rule above */
+    *, *::before, *::after { animation-duration: .001s !important; animation-iteration-count: 1 !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div class="toast" id="toast"></div>
+<script>
+(() => {
+  const VERSION = '__VERSION__';
+  const root = document.getElementById('root');
+  const html = document.documentElement;
+
+  // ---------- host protocol (MCP Apps, ui/*) ----------
+  let nextId = 1;
+  const pending = new Map();
+  const host = { caps: {}, ready: false };
+  const send = (msg) => window.parent.postMessage(msg, '*');
+  const request = (method, params) => new Promise((resolve, reject) => {
+    const id = nextId++;
+    pending.set(id, { resolve, reject });
+    send({ jsonrpc: '2.0', id, method, params });
+  });
+  const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
+  async function callTool(name, args) {
+    const r = await request('tools/call', { name, arguments: args });
+    if (r?.isError) {
+      const t = r.content?.find((c) => c?.type === 'text')?.text;
+      throw new Error(r.structuredContent?.message || t || `${name} failed`);
+    }
+    return r?.structuredContent;
+  }
+  function applyContext(ctx) {
+    if (!ctx) return;
+    const dims = ctx.containerDimensions;
+    if (dims) html.classList.toggle('fill', !!dims.height);
+  }
+
+  // ---------- helpers ----------
+  const $ = (sel, scope = document) => scope.querySelector(sel);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  let toastT = 0;
+  function toast(text) { const t = $('#toast'); t.textContent = text; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2400); }
+  const ICON = {
+    play: '<svg viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24"><rect x="6" y="4" width="4.5" height="16" rx="1"/><rect x="13.5" y="4" width="4.5" height="16" rx="1"/></svg>',
+    search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+    clear: '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+    chat: '<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+    copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  };
+  function secs(s) {
+    if (s == null) return '';
+    if (s < 10) return `${s.toFixed(1)} s`;
+    const t = Math.round(s);
+    return t < 60 ? `${t} s` : `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+  }
+  const number = (n) => (n ?? 0).toLocaleString();
+
+  // ---------- state ----------
+  // args: the arguments the shown sounds were listed with (from the tool call, or this view's own).
+  const S = { data: null, sounds: [], args: {}, toolArgs: {}, error: null, loading: false, hero: false };
+
+  function setData(data, args, append) {
+    S.data = data;
+    S.error = null;
+    S.args = args || {};
+    S.sounds = append ? [...S.sounds, ...(data.sounds || [])] : data.sounds || [];
+    // Sounds asked for by id (a few the user wants to hear) come up as big cards.
+    S.hero = !!S.args.sound_ids && S.sounds.length > 0 && S.sounds.length <= 4;
+    paint();
+  }
+
+  // ---------- the view ----------
+  function build() {
+    root.innerHTML = `
+    <div class="card">
+      <div class="head">
+        <div class="brand"><svg class="marker" viewBox="0 0 32 32" aria-hidden="true"><path d="M4.4 4.4H24.4L4.4 24.4Z"/><path d="M27.6 7.6V27.6H7.6Z"/></svg><span class="wm">cuttingfloor<b>ai</b></span><span class="sub">Sound effects</span></div>
+        <div class="grow"></div>
+        <span class="count" id="count"></span>
+      </div>
+      <form class="search" id="search" hidden>
+        <div class="field">${ICON.search}<input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Describe a sound: footsteps on gravel, a roar…" aria-label="Describe a sound"><button class="clear" id="clear" type="button" aria-label="Clear" hidden>${ICON.clear}</button></div>
+        <span class="busy" id="busy" hidden></span>
+      </form>
+      <div class="chips" id="chips" role="toolbar" aria-label="Categories" hidden></div>
+      <div class="note" id="note" hidden></div>
+      <div id="body"></div>
+      <div class="foot"><span>CC0 and public-domain sounds: free to use in anything</span><span class="grow"></span><span id="packs"></span></div>
+    </div>`;
+    const q = $('#q');
+    let typing = 0;
+    q.addEventListener('input', () => {
+      $('#clear').hidden = !q.value;
+      clearTimeout(typing);
+      typing = setTimeout(() => search(), 450);
+    });
+    $('#search').addEventListener('submit', (e) => { e.preventDefault(); clearTimeout(typing); search(); q.blur(); });
+    $('#clear').onclick = () => { q.value = ''; $('#clear').hidden = true; search(); q.focus(); };
+    $('#chips').addEventListener('click', (e) => {
+      const b = e.target.closest('.chip'); if (!b) return;
+      search({ category: b.dataset.c || undefined });
+    });
+    $('#body').addEventListener('click', onClick);
+    $('#body').addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const plays = [...document.querySelectorAll('#body .play')];
+      const i = plays.indexOf(document.activeElement);
+      if (i < 0) return;
+      e.preventDefault();
+      plays[Math.max(0, Math.min(plays.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))]?.focus();
+    });
+  }
+
+  function paint() {
+    const d = S.data;
+    const total = d?.categories?.reduce((n, c) => n + c.sounds, 0) ?? 0;
+    $('#count').textContent = d ? `${number(total)} sounds` : '';
+    $('#packs').textContent = d?.packs?.length ? `${d.packs.length} pack${d.packs.length === 1 ? '' : 's'}` : '';
+    $('#search').hidden = !host.caps.serverTools;
+    if (document.activeElement !== $('#q')) $('#q').value = S.args.query || '';
+    $('#clear').hidden = !$('#q').value;
+    paintChips();
+    $('#note').hidden = !d?.note;
+    $('#note').textContent = d?.note || '';
+    paintBody();
+  }
+  function paintChips() {
+    const cats = S.data?.categories || [];
+    const box = $('#chips');
+    box.hidden = !cats.length || !host.caps.serverTools || S.hero;
+    const on = S.args.category || '';
+    box.innerHTML = [`<button class="chip" type="button" data-c="" aria-pressed="${!on}">All</button>`, ...cats.map((c) => `<button class="chip" type="button" data-c="${esc(c.category)}" aria-pressed="${on === c.category}">${esc(c.category)} <span class="n">${number(c.sounds)}</span></button>`)].join('');
+  }
+  function useButton(s) {
+    return host.caps.message
+      ? `<button class="use" type="button" data-use="${esc(s.sound_id)}" title="Use in the chat" aria-label="Use ${esc(s.name)} in the chat">${ICON.chat}<span>Use</span></button>`
+      : `<button class="use" type="button" data-copy="${esc(s.sound_id)}" title="Copy its link" aria-label="Copy the link to ${esc(s.name)}">${ICON.copy}<span>Link</span></button>`;
+  }
+  function matchHtml(s) {
+    if (s.similarity == null && s.keyword_match == null) return '';
+    const pct = Math.round(Math.max(0, Math.min(1, ((s.similarity ?? 0.5) - 0.5) * 2)) * 100);
+    return `<span class="match${s.keyword_match ? ' words' : ''}" title="${s.keyword_match ? 'Its words match. ' : ''}How close it sounds: ${pct}%"><span class="bar"><i style="width:${pct}%"></i></span>${s.keyword_match ? 'words' : ''}</span>`;
+  }
+  function rowHtml(s) {
+    const on = player.id === s.sound_id;
+    return `<div class="row${on ? ' on' : ''}" data-id="${esc(s.sound_id)}">
+      <button class="play" type="button" data-play="${esc(s.sound_id)}" aria-label="${on && player.playing ? 'Pause' : 'Play'} ${esc(s.name)}">${on && player.playing ? ICON.pause : ICON.play}</button>
+      <span class="txt" style="min-width:0"><span class="t" title="${esc(s.description || s.name)}">${esc(s.name)}</span><span class="s"><span>${esc(s.category)}</span><span class="dot">·</span><span class="mono">${secs(s.seconds)}</span>${matchHtml(s) ? `<span class="dot">·</span>${matchHtml(s)}` : ''}</span></span>
+      <canvas class="wave" data-wave="${esc(s.sound_id)}" aria-hidden="true"></canvas>
+      <span class="act">${useButton(s)}</span>
+    </div>`;
+  }
+  function bigHtml(s) {
+    const on = player.id === s.sound_id;
+    return `<div class="big${on ? ' on' : ''}" data-id="${esc(s.sound_id)}">
+      <button class="play" type="button" data-play="${esc(s.sound_id)}" aria-label="${on && player.playing ? 'Pause' : 'Play'} ${esc(s.name)}">${on && player.playing ? ICON.pause : ICON.play}</button>
+      <div style="min-width:0"><h3>${esc(s.name)}</h3>${s.description && s.description !== s.name ? `<p>${esc(s.description)}</p>` : ''}
+        <canvas class="wave" data-wave="${esc(s.sound_id)}" aria-hidden="true"></canvas>
+        <div class="meta"><span>${esc(s.category)}</span><span class="mono">${secs(s.seconds)}</span><span>${esc(s.licence)}</span><span class="grow"></span>${useButton(s)}</div></div>
+    </div>`;
+  }
+  function paintBody() {
+    const body = $('#body');
+    if (S.error) { body.innerHTML = `<div class="list"><div class="empty"><b>The sounds did not load</b>${esc(S.error)}</div></div>`; return; }
+    if (!S.data) { body.innerHTML = '<div class="list"><div class="empty"><div class="dots"><i></i><i></i><i></i></div></div></div>'; return; }
+    if (!S.sounds.length) {
+      body.innerHTML = `<div class="list"><div class="empty"><b>No sounds here</b>${S.args.query ? 'Try other words, or fewer of them.' : 'Ask in the chat for a sound you want.'}</div></div>`;
+      return;
+    }
+    if (S.hero) {
+      body.innerHTML = `<div class="hero">${S.sounds.map(bigHtml).join('')}</div>`;
+    } else {
+      const head = S.args.query
+        ? `<div class="ctx">${S.data.searched ? 'Closest to' : 'Library'} “${esc(S.args.query)}”${S.args.category ? ` · ${esc(S.args.category)}` : ''}</div>`
+        : `<div class="ctx">${S.args.category ? esc(S.args.category) : 'All sounds'}${S.data.total != null ? ` · ${number(S.data.total)}` : ''}</div>`;
+      const more = S.data.next_offset != null && host.caps.serverTools ? `<div class="more"><button type="button" id="more">More sounds</button></div>` : '';
+      // More sounds keep the place in the list.
+      const top = $('#list')?.scrollTop || 0;
+      body.innerHTML = `<div class="list" id="list">${head}${S.sounds.map(rowHtml).join('')}${more}</div>`;
+      $('#list').scrollTop = top;
+    }
+    waves.observe();
+  }
+
+  // ---------- playing ----------
+  // One sound at a time, from one audio element. A tap is what lets a phone play it.
+  const audio = new Audio();
+  audio.preload = 'auto';
+  const player = { id: null, playing: false };
+  const soundOf = (id) => S.sounds.find((s) => s.sound_id === id);
+  function setPlaying(id, playing) {
+    const was = player.id;
+    player.id = id;
+    player.playing = playing;
+    for (const id2 of new Set([was, id])) {
+      if (!id2) continue;
+      for (const el of document.querySelectorAll(`[data-id="${CSS.escape(id2)}"]`)) {
+        const on = id2 === id;
+        el.classList.toggle('on', on);
+        const b = el.querySelector('.play');
+        const s = soundOf(id2);
+        if (b) { b.innerHTML = on && playing ? ICON.pause : ICON.play; b.setAttribute('aria-label', `${on && playing ? 'Pause' : 'Play'} ${s?.name || ''}`); }
+      }
+      waves.draw(id2);
+    }
+  }
+  function play(id, at) {
+    const s = soundOf(id); if (!s) return;
+    if (player.id === id && at == null) {
+      if (audio.paused) audio.play().catch(() => {}); else audio.pause();
+      return;
+    }
+    if (player.id !== id) { audio.src = s.url; }
+    if (at != null && Number.isFinite(audio.duration)) audio.currentTime = at * audio.duration;
+    else if (at != null) audio.addEventListener('loadedmetadata', () => { audio.currentTime = at * audio.duration; }, { once: true });
+    setPlaying(id, true);
+    audio.play().catch((e) => {
+      setPlaying(id, false);
+      if (e?.name !== 'AbortError') toast('It did not play. The chat app may block sound here.');
+    });
+  }
+  audio.addEventListener('play', () => { setPlaying(player.id, true); tick(); });
+  audio.addEventListener('pause', () => setPlaying(player.id, false));
+  audio.addEventListener('ended', () => { setPlaying(player.id, false); waves.draw(player.id); });
+  audio.addEventListener('error', () => { if (player.id) { toast('That sound did not load.'); setPlaying(player.id, false); } });
+  function tick() {
+    if (!player.id || audio.paused) return;
+    waves.draw(player.id);
+    requestAnimationFrame(tick);
+  }
+
+  // ---------- waveforms ----------
+  // Each sound's own peaks, decoded from its file when its row comes into view (a few at once).
+  const waves = (() => {
+    const peaks = new Map(); // sound_id -> Float32Array, or 'busy' / 'none'
+    const queue = [];
+    let running = 0;
+    let ctx = null;
+    const seen = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const id = e.target.dataset.wave;
+        seen.unobserve(e.target);
+        if (!peaks.has(id)) { peaks.set(id, 'busy'); queue.push(id); pump(); }
+      }
+    }, { rootMargin: '200px' });
+    function pump() {
+      while (running < 3 && queue.length) {
+        const id = queue.shift();
+        const s = soundOf(id);
+        if (!s) continue;
+        running++;
+        load(s).then((p) => peaks.set(id, p), () => peaks.set(id, 'none')).finally(() => { running--; draw(id); pump(); });
+      }
+    }
+    async function load(s) {
+      ctx ??= new (window.AudioContext || window.webkitAudioContext)();
+      const r = await fetch(s.url);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const buf = await ctx.decodeAudioData(await r.arrayBuffer());
+      const bars = 160;
+      const out = new Float32Array(bars);
+      const ch = buf.getChannelData(0);
+      const per = Math.max(1, Math.floor(ch.length / bars));
+      for (let b = 0; b < bars; b++) {
+        let m = 0;
+        for (let i = b * per, end = Math.min(ch.length, i + per); i < end; i += 4) { const v = Math.abs(ch[i]); if (v > m) m = v; }
+        out[b] = m;
+      }
+      const top = Math.max(...out) || 1;
+      return out.map((v) => v / top);
+    }
+    function draw(id) {
+      if (!id) return;
+      for (const c of document.querySelectorAll(`canvas[data-wave="${CSS.escape(id)}"]`)) {
+        const w = c.clientWidth, h = c.clientHeight;
+        if (!w || !h) continue;
+        const dpr = window.devicePixelRatio || 1;
+        if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+        const g = c.getContext('2d');
+        g.setTransform(dpr, 0, 0, dpr, 0, 0);
+        g.clearRect(0, 0, w, h);
+        const css = getComputedStyle(html);
+        const base = css.getPropertyValue('--wave').trim();
+        const key = css.getPropertyValue('--key').trim();
+        const p = peaks.get(id);
+        const done = player.id === id && Number.isFinite(audio.duration) && audio.duration > 0 ? audio.currentTime / audio.duration : -1;
+        if (!(p instanceof Float32Array)) {
+          // Not drawn yet, or the file can't be read here: a quiet line.
+          g.fillStyle = base;
+          g.fillRect(0, h / 2 - 1, w, 2);
+          if (done >= 0) { g.fillStyle = key; g.fillRect(0, h / 2 - 1, w * done, 2); }
+          continue;
+        }
+        const n = Math.max(12, Math.floor(w / 3));
+        const bw = w / n;
+        for (let i = 0; i < n; i++) {
+          const v = p[Math.floor((i / n) * p.length)] || 0;
+          const bh = Math.max(2, v * (h - 2));
+          g.fillStyle = done >= 0 && i / n <= done ? key : base;
+          g.fillRect(i * bw, (h - bh) / 2, Math.max(1, bw - 1), bh);
+        }
+      }
+    }
+    return {
+      observe() { for (const c of document.querySelectorAll('canvas[data-wave]')) { draw(c.dataset.wave); if (!peaks.has(c.dataset.wave)) seen.observe(c); } },
+      draw,
+      redrawAll() { for (const c of document.querySelectorAll('canvas[data-wave]')) draw(c.dataset.wave); },
+    };
+  })();
+  new ResizeObserver(() => waves.redrawAll()).observe(root);
+
+  // ---------- actions ----------
+  async function onClick(e) {
+    const p = e.target.closest('[data-play]');
+    if (p) return play(p.dataset.play);
+    const w = e.target.closest('canvas[data-wave]');
+    if (w) {
+      const r = w.getBoundingClientRect();
+      return play(w.dataset.wave, Math.max(0, Math.min(0.999, (e.clientX - r.left) / r.width)));
+    }
+    if (e.target.closest('#more')) return loadMore(e.target.closest('#more'));
+    const u = e.target.closest('[data-use]');
+    if (u) {
+      const s = soundOf(u.dataset.use); if (!s) return;
+      // The one thing that starts a turn: a message from the person, naming the sound they picked.
+      const text = `Use the sound “${s.name}” (sound_id ${s.sound_id}, ${secs(s.seconds)}): ${s.url}`;
+      try {
+        const r = await request('ui/message', { role: 'user', content: [{ type: 'text', text }] });
+        if (r?.isError) throw new Error('refused');
+        toast('Sent to the chat');
+      } catch {
+        try { await navigator.clipboard.writeText(s.url); toast('Copied its link instead'); } catch { toast(s.url); }
+      }
+      return;
+    }
+    const c = e.target.closest('[data-copy]');
+    if (c) {
+      const s = soundOf(c.dataset.copy); if (!s) return;
+      try { await navigator.clipboard.writeText(s.url); toast('Copied its link'); } catch { toast(s.url); }
+    }
+  }
+
+  // The view's own searches: what is in the box and the category picked, from the first page.
+  let asked = 0;
+  async function search(change = {}) {
+    if (!host.caps.serverTools) return;
+    const query = $('#q').value.trim();
+    const args = { ...(query ? { query } : {}), ...('category' in change ? (change.category ? { category: change.category } : {}) : S.args.category ? { category: S.args.category } : {}), limit: 20 };
+    const mine = ++asked;
+    $('#busy').hidden = false;
+    try {
+      const r = await callTool('sounds.list', args);
+      if (mine === asked) setData(r, args);
+    } catch (e) {
+      if (mine === asked) toast(`The search did not run: ${e.message}`);
+    } finally {
+      if (mine === asked) $('#busy').hidden = true;
+    }
+  }
+  async function loadMore(button) {
+    if (S.data?.next_offset == null) return;
+    button.disabled = true;
+    button.textContent = 'Loading…';
+    try {
+      const args = { ...S.args, offset: S.data.next_offset };
+      const r = await callTool('sounds.list', args);
+      const keep = S.args;
+      setData(r, { ...keep }, true);
+    } catch (e) {
+      toast(`More did not load: ${e.message}`);
+      button.disabled = false;
+      button.textContent = 'More sounds';
+    }
+  }
+
+  function onResult(result) {
+    if (!result) return;
+    let data = result.structuredContent;
+    if (!data && Array.isArray(result.content)) {
+      const t = result.content.find((c) => c?.type === 'text');
+      try { data = t && JSON.parse(t.text); } catch {}
+    }
+    if (result.isError || !data) {
+      S.error = data?.message || result.content?.find((c) => c?.type === 'text')?.text || 'sounds.list failed.';
+      return paint();
+    }
+    setData(data, S.toolArgs);
+  }
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== window.parent) return;
+    const msg = event.data;
+    if (msg?.jsonrpc !== '2.0') return;
+    if (msg.id !== undefined && pending.has(msg.id) && !msg.method) {
+      const p = pending.get(msg.id);
+      pending.delete(msg.id);
+      if (msg.error) p.reject(new Error(msg.error.message || 'error'));
+      else p.resolve(msg.result);
+      return;
+    }
+    const params = msg.params || {};
+    // The call's arguments come before its result: they say what the result is a page of.
+    if (msg.method === 'ui/notifications/tool-input') S.toolArgs = params.arguments || {};
+    else if (msg.method === 'ui/notifications/tool-result') whenReady(() => onResult(params));
+    else if (msg.method === 'ui/notifications/host-context-changed') applyContext(params);
+    else if (msg.method === 'ui/resource-teardown' && msg.id !== undefined) {
+      audio.pause();
+      send({ jsonrpc: '2.0', id: msg.id, result: {} });
+    }
+  });
+
+  const queue = [];
+  function whenReady(fn) { if (host.ready) fn(); else queue.push(fn); }
+
+  new ResizeObserver(() => {
+    notify('ui/notifications/size-changed', { width: Math.ceil(html.scrollWidth), height: Math.ceil(root.getBoundingClientRect().height) });
+  }).observe(root);
+
+  build();
+  paint();
+  request('ui/initialize', {
+    appInfo: { name: 'cuttingfloor-sounds', version: VERSION },
+    appCapabilities: {},
+    protocolVersion: '2026-01-26',
+  }).then((r) => {
+    host.caps = r?.hostCapabilities || {};
+    applyContext(r?.hostContext);
+  }, () => {}).finally(() => {
+    host.ready = true;
+    notify('ui/notifications/initialized', {});
+    for (const fn of queue.splice(0)) fn();
+    paint();
+  });
+})();
+</script>
+</body>
+</html>

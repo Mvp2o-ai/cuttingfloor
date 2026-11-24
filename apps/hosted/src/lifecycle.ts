@@ -23,6 +23,7 @@ import { type ProviderKeys, SAVABLE } from './provider-keys.ts';
 import { savedCard } from './purchase.ts';
 import type { Rights } from './rights.ts';
 import { forgetRecipient } from './sequence.ts';
+import { jsonBody, share } from './sound-routes.ts';
 
 // What happens around an account as it is used, still without a database:
 // - WorkOS metadata records the first signed-in request (`first_call_at`: connecting counts; the
@@ -671,7 +672,68 @@ export class Lifecycle {
       await this.#keysRoute(req, res, url);
       return true;
     }
+    if (url.pathname === '/account/sounds' || url.pathname === '/account/sounds/remove') {
+      await this.#soundsRoute(req, res, url);
+      return true;
+    }
     return false;
+  }
+
+  /**
+   * The sounds the account shared in the community pack. GET ?user= lists them; POST {user,
+   * upload_id or media_id, name, description, tags, category, author?} shares one of its files;
+   * POST /remove {user, sound_id} takes one down.
+   */
+  async #soundsRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
+    const sharing = this.#o.runtime.sharing;
+    if (!sharing) return json(res, 503, { error: 'sound sharing is off on this server' });
+    if (req.method === 'GET' && url.pathname === '/account/sounds') {
+      const owner = url.searchParams.get('user') ?? '';
+      if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+      return json(res, 200, { sounds: await sharing.mine(owner) });
+    }
+    if (req.method !== 'POST') return json(res, 405, { error: 'GET or POST' });
+    const body = (await jsonBody(req)) as
+      | { user?: unknown; upload_id?: unknown; media_id?: unknown; sound_id?: unknown }
+      | undefined;
+    if (!body) return json(res, 400, { error: 'body must be JSON' });
+    const owner = typeof body.user === 'string' ? body.user : '';
+    if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+    if (url.pathname === '/account/sounds/remove') {
+      const id = typeof body.sound_id === 'string' ? body.sound_id : '';
+      const removed = await sharing.unshare(owner, id);
+      return json(
+        res,
+        removed ? 200 : 404,
+        removed ? { removed: true } : { error: 'no such sound' },
+      );
+    }
+    const from =
+      typeof body.upload_id === 'string'
+        ? { upload_id: body.upload_id }
+        : typeof body.media_id === 'string'
+          ? { media_id: body.media_id }
+          : undefined;
+    if (!from) return json(res, 400, { error: 'name the file: upload_id or media_id' });
+    const abort = new AbortController();
+    res.on('close', () => abort.abort());
+    const { user: _, upload_id: __, media_id: ___, ...meta } = body as Record<string, unknown>;
+    const answer = await share(this.#o.runtime, owner, from, meta, abort.signal);
+    return json(res, answer.status, answer.body);
+  }
+
+  /**
+   * The name a shared sound is credited to when its sharer gives none: their first name and the
+   * first letter of their last, from their account; null when the account has no name.
+   */
+  async soundAuthor(owner: string): Promise<string | null> {
+    if (!isUser(owner)) return null;
+    const user = await this.#workosUser(owner);
+    const first = user?.first_name?.trim();
+    if (!first) return null;
+    const last = user?.last_name?.trim();
+    return last ? `${first} ${last[0]?.toUpperCase()}.` : first;
   }
 
   /**
@@ -1225,6 +1287,8 @@ export const PARTNER_LINKS = defineCollection<{ email?: string; owner?: string }
 export interface WorkosUser {
   id: string;
   email: string;
+  first_name?: string | null;
+  last_name?: string | null;
   email_verified?: boolean;
   created_at: string;
   metadata?: Record<string, string>;

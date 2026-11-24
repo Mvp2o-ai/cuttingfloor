@@ -39,6 +39,7 @@ import type { DownloadSeen } from './downloads.ts';
 import type { JwtTokenVerifier } from './oauth.ts';
 import { RestApi } from './rest.ts';
 import { aiCatalog, CARD_TYPE, sendDiscovery, serverCard } from './server-card.ts';
+import { jsonBody, report, share } from './sound-routes.ts';
 import { uploadPage } from './upload-page.ts';
 import { watchPage } from './watch-page.ts';
 
@@ -513,6 +514,34 @@ export function createHttpServer(options: HttpOptions): Server {
         res.end(req.method === 'HEAD' ? undefined : JSON.stringify(body));
         return;
       }
+      // A report on a shared sound, from anyone (the community sounds page).
+      const reported = /^\/sounds\/([a-z0-9-]{1,80})\/report$/.exec(url.pathname);
+      if (reported) {
+        const cors = {
+          'access-control-allow-origin': '*',
+          'access-control-allow-methods': 'POST, OPTIONS',
+          'access-control-allow-headers': 'content-type',
+          'access-control-max-age': '86400',
+        };
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204, cors).end();
+          return;
+        }
+        if (req.method !== 'POST') {
+          req.resume();
+          res.writeHead(405, { ...cors, allow: 'POST, OPTIONS' }).end();
+          return;
+        }
+        const { status, body } = await report(runtime, req, reported[1] as string);
+        res
+          .writeHead(status, {
+            ...cors,
+            'content-type': 'application/json',
+            'cache-control': 'no-store',
+          })
+          .end(JSON.stringify(body));
+        return;
+      }
       if (options.route && (await options.route(req, res, url))) return;
       // The same tools as plain HTTP: POST /v1/<tool>, described at /openapi.json.
       if (rest.handles(url)) {
@@ -626,8 +655,11 @@ async function handleUpload(
     res.end(req.method === 'HEAD' ? undefined : JSON.stringify(body));
   };
   // The same link with /parts, /parts/{n} or /complete after it sends the file as numbered
-  // parts, several at once (where files are kept in an object store).
-  const sub = /^(\/uploads\/[^/]+\/[^/]+)\/(parts(?:\/(\d{1,5}))?|complete)$/.exec(url.pathname);
+  // parts, several at once (where files are kept in an object store); with /share, the sent
+  // sound goes in the community pack of the sound library.
+  const sub = /^(\/uploads\/[^/]+\/[^/]+)\/(parts(?:\/(\d{1,5}))?|complete|share)$/.exec(
+    url.pathname,
+  );
   const target = await runtime.uploads.verify(
     sub ? (sub[1] as string) : url.pathname,
     url.searchParams.get('exp'),
@@ -637,6 +669,22 @@ async function handleUpload(
     req.resume();
     reply(403, { error: 'invalid or expired upload link; call media.upload for a new one' });
     return;
+  }
+  if (sub?.[2] === 'share') {
+    if (req.method !== 'POST') {
+      req.resume();
+      return reply(405, { error: 'POST {name, description, tags, category, author} shares it' });
+    }
+    const abort = new AbortController();
+    res.on('close', () => abort.abort());
+    const { status, body } = await share(
+      runtime,
+      target.owner,
+      { upload_id: target.id },
+      await jsonBody(req),
+      abort.signal,
+    );
+    return reply(status, body);
   }
   if (sub) {
     await handleUploadParts(runtime, req, target, sub[2] as string, sub[3], url, reply);

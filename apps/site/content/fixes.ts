@@ -32,6 +32,10 @@ const AI_GUIDE = {
   label: 'How to turn AI video clips into a film',
   href: '/guides/turn-ai-video-clips-into-a-film',
 };
+const SOUNDS_GUIDE = {
+  label: 'How to add sound effects to your Shorts with AI',
+  href: '/guides/add-sound-effects-to-shorts',
+};
 const SHORTS_GUIDE = {
   label: 'How to turn a long video into Shorts with AI',
   href: '/guides/turn-a-long-video-into-shorts',
@@ -280,10 +284,8 @@ export const FIXES: Fix[] = [
       { tool: 'transition.add', does: 'blends scene changes' },
       { tool: 'title.add', does: 'the title card and the credits' },
       { tool: 'create.voiceover', does: 'a narrator from your script, with a time for each word' },
-      {
-        tool: 'media.import',
-        does: 'brings in a sound effect from the built-in pack by its link',
-      },
+      { tool: 'sounds.list', does: 'finds sounds by description; the user hears them in the chat' },
+      { tool: 'media.import', does: 'brings in the sounds picked' },
       { tool: 'audio.fade', does: 'fades music in and out' },
       { tool: 'audio.set_master', does: 'sets the final loudness, with a limiter' },
       CHECK,
@@ -440,10 +442,10 @@ export const FIXES: Fix[] = [
     id: 'add-sound-effects-to-ai-video',
     problem: 'How do I add sound effects to Kling, Veo or Sora video?',
     answer:
-      'Most AI clips come silent or with rough sound. Your agent finds the moments that need a sound (a cut, a hit, a reveal), places sound effects there on their own track and sets their levels. A built-in pack covers whooshes, hits, risers, booms, explosions and crowds; for footsteps or ambience, add your own sound files.',
+      'Most AI clips come silent or with rough sound. Your agent finds the moments that need a sound (a cut, a hit, a reveal), finds each sound you describe in a free library of about 20,000 sound effects, places them on their own track and sets their levels. Footsteps, ambience, whooshes and booms are all there; you can hear them in the chat first.',
     prompt:
       'Add sound effects: a whoosh on every cut, a boom when the title appears, and a riser before the last shot. Keep them under the music.',
-    see: AI_GUIDE,
+    see: SOUNDS_GUIDE,
     related: ['add-music', 'even-out-the-sound-of-ai-clips', 'make-a-short-film-from-ai-clips'],
     tools: [
       {
@@ -452,7 +454,7 @@ export const FIXES: Fix[] = [
       },
       {
         tool: 'media.import',
-        does: 'brings in a sound from the built-in pack (video://catalog/sound_effects) or your file',
+        does: 'brings in a sound picked with sounds.list, or your file',
       },
       { tool: 'track.add', does: 'an audio track for the effects' },
       { tool: 'clip.add', does: 'places each sound at its moment' },
@@ -463,10 +465,10 @@ export const FIXES: Fix[] = [
     id: 'add-sound-effects-to-hailuo-video',
     problem: 'How do I add sound effects to Hailuo (MiniMax) videos?',
     answer:
-      'If your Hailuo clips came out silent, give them to your agent and say where sounds should go. It finds the cuts and moments, places sound effects on their own track, sets each level and keeps them under music or a voice. Built-in sounds cover whooshes, hits, risers, booms, explosions and crowds; your own sound files work too.',
+      'If your Hailuo clips came out silent, give them to your agent and say where sounds should go. It finds the cuts and moments, places sound effects on their own track, sets each level and keeps them under music or a voice. Describe each sound and it finds the closest in a free library of about 20,000; your own sound files work too.',
     prompt:
       'These Hailuo clips are silent. Add a whoosh on every cut, a boom when the robot lands, a riser before the last shot, and keep it all under the music.',
-    see: AI_GUIDE,
+    see: SOUNDS_GUIDE,
     related: [
       'add-sound-effects-to-ai-video',
       'even-out-the-sound-of-ai-clips',
@@ -482,7 +484,7 @@ export const FIXES: Fix[] = [
       { tool: 'media.analyze (scenes)', does: 'the times of every cut' },
       {
         tool: 'media.import',
-        does: 'brings in a sound from the built-in sound effects (video://catalog/sound_effects) or your own file',
+        does: 'brings in a sound picked with sounds.list, or your own file',
       },
       { tool: 'track.add', does: 'an audio track for the effects' },
       { tool: 'clip.add', does: 'places each sound at its moment' },
@@ -548,10 +550,8 @@ export const FIXES: Fix[] = [
       { tool: 'timeline.create', does: 'a vertical 1080×1920 Short' },
       { tool: 'clip.set_transform', does: 'reframes the wide gameplay to vertical' },
       { tool: 'caption.add', does: 'captions that highlight each word' },
-      {
-        tool: 'media.import',
-        does: 'a boom or airhorn from the built-in sound effects',
-      },
+      { tool: 'sounds.list', does: 'finds a boom or an airhorn in the sound library' },
+      { tool: 'media.import', does: 'brings in the sound picked' },
       EXPORT,
     ],
   },
@@ -647,7 +647,8 @@ export const FIXES: Fix[] = [
       { tool: 'clip.set_speed', does: 'speed ramps and slow motion' },
       { tool: 'clip.freeze', does: 'a freeze frame on the big moment' },
       { tool: 'clip.set_animation', does: 'shakes, pulses and zoom-ins' },
-      { tool: 'media.import', does: 'booms and airhorns from the built-in sound effects' },
+      { tool: 'sounds.list', does: 'finds booms and airhorns in the sound library' },
+      { tool: 'media.import', does: 'brings in the sounds picked' },
       { tool: 'title.add', does: 'text on screen' },
       EXPORT,
     ],

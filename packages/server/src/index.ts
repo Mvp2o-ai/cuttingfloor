@@ -43,6 +43,7 @@ export {
   MongoSoundLibrary,
   prepareSoundLibrary,
   RemoteSoundLibrary,
+  SOUND_FILES,
   SOUND_PACKS,
   SOUNDS,
   type SoundDoc,
@@ -50,6 +51,12 @@ export {
   type SoundPackDoc,
   soundSearchIndexes,
 } from './sound-library.ts';
+export {
+  prepareCommunity,
+  REPORTS_TO_HOLD,
+  SHARED_LICENCE,
+  SoundSharing,
+} from './sound-share.ts';
 export { listHeld, startUpload, storageOf, storedBytes } from './storage.ts';
 export {
   CLAIM_GATE,

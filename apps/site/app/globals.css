@@ -4927,3 +4927,238 @@ figure.allow-access {
   margin-top: 6px;
   font-size: 13px;
 }
+
+/* Sharing one of the user's audio files as a community sound: a switch, off until turned on. */
+.share-sound {
+  flex-basis: 100%;
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+.share-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.share-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.share-switch i {
+  flex: none;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 20px;
+  background: var(--rule-2, var(--rule));
+  transition: background 0.15s var(--ease);
+}
+.share-switch i::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ink);
+  transition: transform 0.15s var(--ease);
+}
+.share-switch input:checked + i {
+  background: var(--key);
+}
+.share-switch input:checked + i::after {
+  transform: translateX(14px);
+  background: var(--bg);
+}
+.share-switch input:focus-visible + i {
+  outline: 2px solid var(--key);
+  outline-offset: 2px;
+}
+.share-switch small {
+  display: block;
+  color: var(--mute);
+}
+.share-fields {
+  display: grid;
+  gap: 8px;
+}
+.share-fields label {
+  display: grid;
+  gap: 4px;
+  color: var(--mute);
+  font-size: 14px;
+}
+.share-fields input,
+.share-fields textarea {
+  font: inherit;
+  color: var(--ink);
+  background: var(--bg-2);
+  border: 1px solid var(--rule);
+  padding: 8px 10px;
+}
+.share-fields textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+.share-fields input:focus,
+.share-fields textarea:focus {
+  outline: none;
+  border-color: var(--key);
+}
+.share-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.share-row label {
+  flex: 1 1 160px;
+}
+.share-fine {
+  margin: 0;
+  color: var(--mute);
+  font-size: 14px;
+}
+.share-sound-done {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  color: var(--key);
+}
+.share-fields .buy {
+  justify-self: start;
+}
+
+/* Community sounds: a row per sound, played in the page. */
+.csound-body {
+  max-width: 760px;
+}
+.csound-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin: 8px 0 28px;
+}
+.csound-share .share-sound {
+  flex-basis: 100%;
+}
+.csound-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.csound-search {
+  flex: 1 1 240px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--bg-2);
+  border: 1px solid var(--rule);
+  padding: 10px 12px;
+}
+.csound-search:focus {
+  outline: none;
+  border-color: var(--key);
+}
+.csound-order {
+  display: flex;
+  gap: 4px;
+}
+.csound-order button {
+  font: inherit;
+  color: var(--mute);
+  background: none;
+  border: 1px solid var(--rule);
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.csound-order button.on {
+  color: var(--ink);
+  border-color: var(--key);
+}
+.sound-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sound {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  gap: 4px 14px;
+  align-items: start;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.sound-play {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--rule);
+  background: var(--bg-2);
+  color: var(--ink);
+  font-size: 15px;
+  cursor: pointer;
+}
+.sound-play.on,
+.sound-play:hover {
+  border-color: var(--key);
+  color: var(--key);
+}
+.sound-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.sound-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.sound-meta,
+.sound-desc {
+  color: var(--mute);
+  font-size: 14px;
+}
+.sound-actions {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  font-size: 14px;
+}
+.sound-actions .link {
+  color: var(--key);
+}
+.sound-actions .sound-quiet {
+  color: var(--mute);
+}
+.sound-report {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.sound-report input {
+  flex: 1;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--bg-2);
+  border: 1px solid var(--rule);
+  padding: 6px 8px;
+}
+.csound-more {
+  margin-top: 16px;
+}
+@media (max-width: 560px) {
+  .sound {
+    grid-template-columns: 44px 1fr;
+  }
+  .sound-actions {
+    grid-column: 2;
+    display: flex;
+    gap: 16px;
+    justify-items: start;
+  }
+}

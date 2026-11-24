@@ -1,6 +1,7 @@
 import {
   CfError,
   type LibrarySound,
+  POPULAR_DAYS,
   SOUNDS_SEARCH_DEPTH,
   SoundsListInput as SoundsListInputSchema,
   SoundsListResult,
@@ -8,7 +9,7 @@ import {
 import type { Collection, Db, Document } from 'mongodb';
 
 // The sound library: sound effects from CC0 and public-domain packs, one MongoDB document each
-// (collection `sounds`), their files in a public bucket. scripts/sounds loads packs into it.
+// (collection `sounds`), their files, as their packs published them, in a public bucket. scripts/sounds loads packs into it.
 //
 // A query is searched two ways at once and the two rankings fused (reciprocal rank fusion):
 //   words: Atlas Search (BM25) over name, tags, category and description, forgiving one typo;
@@ -35,6 +36,7 @@ export interface SoundDoc {
   seconds: number;
   channels: number;
   loudness_lufs: number | null;
+  peak_dbtp: number | null;
   url: string;
   licence: string;
   author: string | null;
@@ -46,6 +48,18 @@ export interface SoundDoc {
   embedding: number[];
   embedding_model: string;
   added_at: Date;
+  /** The community pack: the account that shared it (never shown). */
+  owner?: string;
+  /** The community pack: the file's fingerprint, so one file is shared once. */
+  fingerprint?: string;
+}
+
+export interface SoundUseDoc {
+  sound_id: string;
+  owner: string;
+  /** The day it was used (UTC, YYYY-MM-DD): one use per account per day. */
+  day: string;
+  at: Date;
 }
 
 /** A pack as the library keeps it. */
@@ -56,8 +70,13 @@ export interface SoundPackDoc {
   added_at: Date;
 }
 
+/** Where the hosted library's files are: a public bucket (CUTTINGFLOOR_SOUNDS_FILES elsewhere). */
+export const SOUND_FILES = 'https://cuttingfloor-sounds.fsn1.your-objectstorage.com';
+
 export const SOUNDS = 'sounds';
 export const SOUND_PACKS = 'sound_packs';
+/** Imports of library sounds, one per sound, account and day (sound-share.ts). */
+export const SOUND_USES = 'sound_uses';
 export const SOUNDS_TEXT_INDEX = 'sounds_text';
 export const SOUNDS_VECTOR_INDEX = 'sounds_vector';
 
@@ -104,6 +123,8 @@ export async function prepareSoundLibrary(db: Db, dimensions: number): Promise<v
   const sounds = db.collection<SoundDoc>(SOUNDS);
   await sounds.createIndex({ category: 1, name: 1, _id: 1 });
   await sounds.createIndex({ pack: 1, category: 1, name: 1, _id: 1 });
+  await sounds.createIndex({ added_at: -1, _id: 1 });
+  await sounds.createIndex({ pack: 1, added_at: -1, _id: 1 });
   const have = new Set(
     (await sounds.listSearchIndexes().toArray()).map((i) => (i as { name: string }).name),
   );
@@ -113,9 +134,17 @@ export async function prepareSoundLibrary(db: Db, dimensions: number): Promise<v
 }
 
 /** Fields a result shows; the embedding stays in the database. */
-const SHOWN = { embedding: 0, embedding_model: 0, key: 0, bytes: 0, added_at: 0 } as const;
+const SHOWN = {
+  embedding: 0,
+  embedding_model: 0,
+  key: 0,
+  bytes: 0,
+  owner: 0,
+  fingerprint: 0,
+} as const;
 
-function shown(doc: Document): LibrarySound {
+/** A sound as a result shows it. */
+export function librarySound(doc: Document): LibrarySound {
   const d = doc as SoundDoc;
   return {
     sound_id: d._id,
@@ -127,10 +156,12 @@ function shown(doc: Document): LibrarySound {
     seconds: d.seconds,
     channels: d.channels,
     loudness_lufs: d.loudness_lufs,
+    peak_dbtp: d.peak_dbtp ?? null,
     url: d.url,
     licence: d.licence,
     author: d.author,
     source_url: d.source_url,
+    ...(d.added_at instanceof Date ? { added_at: d.added_at.toISOString() } : {}),
   };
 }
 
@@ -168,6 +199,8 @@ export function fuseRankings(rankings: string[][]): string[] {
 
 /** How long the categories and packs are kept before they are counted again. */
 const FACETS_TTL_MS = 10 * 60_000;
+/** How long the most used sounds are kept before they are counted again. */
+const POPULAR_TTL_MS = 5 * 60_000;
 /** How long which search indexes answer is kept before it is asked again. */
 const INDEXES_TTL_MS = 60_000;
 /** Query embeddings kept, most recent last. */
@@ -194,6 +227,7 @@ export class MongoSoundLibrary implements SoundLibrary {
   readonly #embeddings = new Map<string, number[]>();
   #embedding = 0;
   #indexes: { at: number; value: Promise<Set<string>> } | undefined;
+  #popular: { at: number; value: Promise<Array<{ id: string; uses: number }>> } | undefined;
 
   constructor(options: MongoSoundLibraryOptions) {
     this.#o = options;
@@ -205,6 +239,25 @@ export class MongoSoundLibrary implements SoundLibrary {
 
   async list(args: SoundsListInputSchema, signal: AbortSignal): Promise<SoundsListResult> {
     const facets = await this.#facetsNow();
+    if (args.sound_ids) {
+      const docs = await (await this.#sounds())
+        .find({ _id: { $in: args.sound_ids } }, { projection: SHOWN })
+        .toArray();
+      const byId = new Map(docs.map((d) => [d._id, d]));
+      const found = args.sound_ids.flatMap((id) => {
+        const d = byId.get(id);
+        return d ? [librarySound(d)] : [];
+      });
+      const missing = args.sound_ids.filter((id) => !byId.has(id));
+      return SoundsListResult.parse({
+        searched: false,
+        ...(missing.length ? { note: `No sound has the id ${missing.join(', ')}` } : {}),
+        sounds: found,
+        next_offset: null,
+        total: found.length,
+        ...facets,
+      });
+    }
     if (args.query) {
       const found = await this.#search(args, args.query, signal);
       if (found) return SoundsListResult.parse({ ...found, ...facets });
@@ -220,12 +273,17 @@ export class MongoSoundLibrary implements SoundLibrary {
     }
     const sounds = await this.#sounds();
     const [docs, total] = await Promise.all([
-      sounds
-        .find(filter, { projection: SHOWN })
-        .sort({ category: 1, name: 1, _id: 1 })
-        .skip(args.offset)
-        .limit(args.limit)
-        .toArray(),
+      args.order === 'popular'
+        ? this.#popularPage(sounds, filter, args)
+        : sounds
+            .find(filter, { projection: SHOWN })
+            .sort(
+              args.order === 'newest' ? { added_at: -1, _id: 1 } : { category: 1, name: 1, _id: 1 },
+            )
+            .skip(args.offset)
+            .limit(args.limit)
+            .toArray()
+            .then((d) => d.map(librarySound)),
       sounds.countDocuments(filter),
     ]);
     const next = args.offset + docs.length;
@@ -234,7 +292,7 @@ export class MongoSoundLibrary implements SoundLibrary {
       ...(args.query
         ? { note: 'The search could not run just now, so this is the library in order' }
         : {}),
-      sounds: docs.map(shown),
+      sounds: docs,
       next_offset: next < total ? next : null,
       total,
       ...facets,
@@ -265,7 +323,10 @@ export class MongoSoundLibrary implements SoundLibrary {
     const page = ranked.slice(args.offset, args.offset + args.limit);
     const docs = page.length
       ? await sounds
-          .find({ _id: { $in: page } }, { projection: { key: 0, bytes: 0, added_at: 0 } })
+          .find(
+            { _id: { $in: page } },
+            { projection: { key: 0, bytes: 0, owner: 0, fingerprint: 0 } },
+          )
           .toArray()
       : [];
     const byId = new Map(docs.map((d) => [d._id, d]));
@@ -283,7 +344,7 @@ export class MongoSoundLibrary implements SoundLibrary {
         if (!d) return [];
         return [
           {
-            ...shown(d),
+            ...librarySound(d),
             ...(vector && d.embedding_model === this.#o.model
               ? { similarity: similarity(vector, d.embedding) }
               : {}),
@@ -316,10 +377,21 @@ export class MongoSoundLibrary implements SoundLibrary {
           $search: {
             index: SOUNDS_TEXT_INDEX,
             compound: {
+              // Exact words first; a word one letter off (a typo) counts for much less, so
+              // "stomping" finds stomping before "stop".
               should: [
-                { text: { query, path: 'name', fuzzy, score: { boost: { value: 3 } } } },
-                { text: { query, path: 'tags', fuzzy, score: { boost: { value: 2 } } } },
-                { text: { query, path: ['category', 'description'], fuzzy } },
+                { text: { query, path: 'name', score: { boost: { value: 6 } } } },
+                { text: { query, path: 'tags', score: { boost: { value: 4 } } } },
+                {
+                  text: {
+                    query,
+                    path: ['category', 'description'],
+                    score: { boost: { value: 2 } },
+                  },
+                },
+                {
+                  text: { query, path: ['name', 'tags'], fuzzy, score: { boost: { value: 0.5 } } },
+                },
               ],
               minimumShouldMatch: 1,
               ...(filter.length ? { filter } : {}),
@@ -359,6 +431,49 @@ export class MongoSoundLibrary implements SoundLibrary {
       ])
       .toArray();
     return docs.map((d) => d._id);
+  }
+
+  /**
+   * A page of the library by uses over the popular window, most first; past the used sounds,
+   * the rest newest first.
+   */
+  async #popularPage(
+    sounds: Collection<SoundDoc>,
+    filter: Document,
+    args: SoundsListInputSchema,
+  ): Promise<LibrarySound[]> {
+    const ranked = await this.#popularNow();
+    const uses = new Map(ranked.map((r) => [r.id, r.uses]));
+    const ids = ranked.map((r) => r.id);
+    const used = await sounds
+      .find({ ...filter, _id: { $in: ids } }, { projection: SHOWN })
+      .toArray();
+    const byId = new Map(used.map((d) => [d._id, d]));
+    const order = ids.filter((id) => byId.has(id));
+    const page = order.slice(args.offset, args.offset + args.limit).map((id) => ({
+      ...librarySound(byId.get(id) as Document),
+      uses: uses.get(id) ?? 0,
+    }));
+    if (page.length === args.limit) return page;
+    const rest = await sounds
+      .find({ ...filter, _id: { $nin: ids } }, { projection: SHOWN })
+      .sort({ added_at: -1, _id: 1 })
+      .skip(Math.max(0, args.offset - order.length))
+      .limit(args.limit - page.length)
+      .toArray();
+    return [...page, ...rest.map((d) => ({ ...librarySound(d), uses: 0 }))];
+  }
+
+  /** The most used sounds, counted again after POPULAR_TTL_MS. */
+  #popularNow(): Promise<Array<{ id: string; uses: number }>> {
+    if (!this.#popular || Date.now() - this.#popular.at > POPULAR_TTL_MS) {
+      const value = this.#o.db().then((db) => popularSounds(db, SOUNDS_SEARCH_DEPTH));
+      value.catch(() => {
+        if (this.#popular?.value === value) this.#popular = undefined;
+      });
+      this.#popular = { at: Date.now(), value };
+    }
+    return this.#popular.value;
   }
 
   /** The search indexes that answer queries now, asked again after a minute. */
@@ -443,10 +558,13 @@ export class MongoSoundLibrary implements SoundLibrary {
   }
 }
 
-/** The query string of GET /sounds for these arguments. */
+/** The query string of GET /sounds for these arguments (a list as one value per item). */
 export function soundsQuery(args: Partial<SoundsListInputSchema>): URLSearchParams {
   const q = new URLSearchParams();
-  for (const [k, v] of Object.entries(args)) if (v !== undefined) q.set(k, String(v));
+  for (const [k, v] of Object.entries(args)) {
+    if (Array.isArray(v)) for (const item of v) q.append(k, String(item));
+    else if (v !== undefined) q.set(k, String(v));
+  }
   return q;
 }
 
@@ -454,7 +572,8 @@ export function soundsQuery(args: Partial<SoundsListInputSchema>): URLSearchPara
 export function soundsArgs(params: URLSearchParams): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of params) {
-    out[k] = ['limit', 'offset', 'max_seconds', 'min_seconds'].includes(k) ? Number(v) : v;
+    if (k === 'sound_ids') out[k] = [...((out[k] as string[] | undefined) ?? []), v];
+    else out[k] = ['limit', 'offset', 'max_seconds', 'min_seconds'].includes(k) ? Number(v) : v;
   }
   return out;
 }
@@ -530,4 +649,23 @@ export async function answerSounds(
       body: { error: { code: 'service_unavailable', message: 'The sound library did not answer' } },
     };
   }
+}
+
+/** The ids of the sounds most used over the last POPULAR_DAYS days, most first, with uses. */
+export async function popularSounds(
+  db: Db,
+  depth: number,
+): Promise<Array<{ id: string; uses: number }>> {
+  const since = new Date(Date.now() - POPULAR_DAYS * 86_400_000);
+  const ranked = await db
+    .collection<SoundUseDoc>(SOUND_USES)
+    .aggregate<{ _id: string; uses: number }>([
+      { $match: { at: { $gte: since } } },
+      { $group: { _id: { sound: '$sound_id', owner: '$owner' } } },
+      { $group: { _id: '$_id.sound', uses: { $sum: 1 } } },
+      { $sort: { uses: -1, _id: 1 } },
+      { $limit: depth },
+    ])
+    .toArray();
+  return ranked.map((r) => ({ id: r._id, uses: r.uses }));
 }

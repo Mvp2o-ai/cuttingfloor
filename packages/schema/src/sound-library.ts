@@ -1,13 +1,20 @@
 import * as z from 'zod/v4';
 
 // sounds.list: the sound library (sound effects from CC0 and public-domain packs, kept by
-// cuttingfloor) by page, or ranked by a sound described in words.
+// cuttingfloor, and the community pack: sounds people shared) by page, or ranked by a sound
+// described in words. SoundShareInput: what a person gives to share a sound of theirs.
 
 /** Most sounds in one page. */
 export const SOUNDS_LIST_LIMIT = 50;
 
 /** How deep a search ranks: offset plus limit never goes past it. */
 export const SOUNDS_SEARCH_DEPTH = 500;
+
+/** The pack of sounds people shared. */
+export const COMMUNITY_PACK = 'community';
+
+/** How far back `popular` counts uses. */
+export const POPULAR_DAYS = 7;
 
 export const SoundsListInput = z.object({
   query: z
@@ -17,7 +24,15 @@ export const SoundsListInput = z.object({
     .max(300)
     .optional()
     .describe(
-      'A sound in words ("footsteps on gravel", "a giant stomping", "rain on a window", "crowd cheering"): the closest sounds first, matched on their names and tags and on how they sound. Left out: the library in order, by category then name.',
+      'A sound in words ("footsteps on gravel", "a giant stomping", "rain on a window", "crowd cheering"): the closest sounds first, matched on their names and tags and on how they sound. Left out: the library in order (order).',
+    ),
+  sound_ids: z
+    .array(z.string().min(1).max(200))
+    .min(1)
+    .max(SOUNDS_LIST_LIMIT)
+    .optional()
+    .describe(
+      'Only these sounds, in this order (sound_id from an earlier result): to show the user particular sounds so they can hear them',
     ),
   category: z
     .string()
@@ -31,6 +46,12 @@ export const SoundsListInput = z.object({
     .max(100)
     .optional()
     .describe('Only sounds from this pack (packs in the result lists them)'),
+  order: z
+    .enum(['category', 'popular', 'newest'])
+    .default('category')
+    .describe(
+      `Without query: category (by category, then name), popular (most used in edits over the last ${POPULAR_DAYS} days, then newest) or newest (latest added first)`,
+    ),
   max_seconds: z.number().positive().optional().describe('Only sounds this long or shorter'),
   min_seconds: z.number().min(0).optional().describe('Only sounds this long or longer'),
   limit: z
@@ -57,13 +78,17 @@ export const LibrarySound = z.object({
   pack: z.string(),
   seconds: z.number().describe('Length'),
   channels: z.number().int(),
-  loudness_lufs: z
-    .number()
-    .nullable()
-    .describe('Integrated loudness as stored (peaks are set to -1 dBTP; levels are left to you)'),
-  url: z.string().describe('The file (FLAC), for media.import'),
-  licence: z.string().describe('CC0 or public domain'),
-  author: z.string().nullable(),
+  loudness_lufs: z.number().nullable().describe('Integrated loudness of the file, measured'),
+  peak_dbtp: z.number().nullable().describe('True peak of the file, measured'),
+  url: z
+    .string()
+    .describe('The file exactly as its pack published it (WAV, OGG, FLAC…), for media.import'),
+  licence: z
+    .string()
+    .describe(
+      `CC0 or public domain; in the ${COMMUNITY_PACK} pack, "Shared by its uploader": a person shared it and vouches for it, not cuttingfloor`,
+    ),
+  author: z.string().nullable().describe('Who made it or, in the community pack, who shared it'),
   source_url: z.string().nullable().describe('Where the pack published it'),
   similarity: z
     .number()
@@ -75,6 +100,12 @@ export const LibrarySound = z.object({
     .boolean()
     .optional()
     .describe("Searched: whether query's words match its name, tags, category or description"),
+  uses: z
+    .number()
+    .int()
+    .optional()
+    .describe(`order popular: edits that used it in the last ${POPULAR_DAYS} days`),
+  added_at: z.string().optional().describe('When it was added (ISO 8601)'),
 });
 
 export const SoundsListResult = z.object({
@@ -108,6 +139,23 @@ export const SoundsListResult = z.object({
     .describe('Every pack in the library, its licence and where it comes from'),
 });
 
+/** Longest sound the community pack takes. */
+export const SHARED_SOUND_SECONDS = 180;
+
+/** Largest file the community pack takes. */
+export const SHARED_SOUND_BYTES = 25 * 1024 ** 2;
+
+/** What a person gives to share one of their sounds in the community pack. */
+export const SoundShareInput = z.object({
+  name: z.string().trim().min(1).max(80),
+  description: z.string().trim().min(1).max(500),
+  tags: z.array(z.string().trim().min(1).max(30)).max(10).default([]),
+  category: z.string().trim().min(1).max(60),
+  /** The name it is credited to; left out, the account's first name. */
+  author: z.string().trim().min(1).max(60).optional(),
+});
+
 export type SoundsListInput = z.infer<typeof SoundsListInput>;
+export type SoundShareInput = z.infer<typeof SoundShareInput>;
 export type LibrarySound = z.infer<typeof LibrarySound>;
 export type SoundsListResult = z.infer<typeof SoundsListResult>;

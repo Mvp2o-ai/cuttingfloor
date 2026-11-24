@@ -3,6 +3,7 @@ import { BatchResult, CfError, EditResult, QaCheckResult, withJob } from '@cutti
 import { TASKS_EXTENSION_ID_V2 } from '@modelcontextprotocol/ext-tasks/core/v2';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import * as z from 'zod/v4';
+import { SOUND_FILES } from '../src/index.ts';
 import { call, connect, ok, SEQ_720P25, settled, type TestEnv, testRuntime } from './helpers.ts';
 
 const anyResult = z.object({}).passthrough();
@@ -37,9 +38,10 @@ const anyResult = z.object({}).passthrough();
  * tool always answers with job_id and status, a finished job's result inside, and media.import
  * also names its {upload} answer, the media with no job yet (497 737 measured), and to 520 000
  * for when each file goes (kept_until and expiry on media and exports, the keeping policy in the
- * descriptions; 502 440 measured).
+ * descriptions; 502 440 measured), and to 530 000 for sounds.list, the sound library (523 003
+ * measured).
  */
-const BUDGET_BYTES = 520_000;
+const BUDGET_BYTES = 530_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -242,6 +244,7 @@ describe('protocol surface', () => {
         'render.frames',
         'skills.get',
         'skills.search',
+        'sounds.list',
         'text.set',
         'timeline.create',
         'timeline.diff',
@@ -289,6 +292,7 @@ describe('protocol surface', () => {
         'render.frames',
         'skills.get',
         'skills.search',
+        'sounds.list',
         'timeline.diff',
         'timeline.get',
         'timeline.history',
@@ -335,7 +339,7 @@ describe('protocol surface', () => {
     );
   });
 
-  it('offers the editor on export.video, the player on media.get and media.import, the library on media.list and the upload box on media.upload', async () => {
+  it('offers the editor on export.video, the player on media.get and media.import, the library on media.list, the upload box on media.upload and the sounds on sounds.list', async () => {
     const client = await connect(env.runtime);
     const { tools } = await client.listTools();
     const views = Object.fromEntries(
@@ -349,6 +353,7 @@ describe('protocol surface', () => {
       'media.import': 'ui://cuttingfloor/player',
       'media.list': 'ui://cuttingfloor/library',
       'media.upload': 'ui://cuttingfloor/upload',
+      'sounds.list': 'ui://cuttingfloor/sounds',
     });
     // Everything the views call stays callable from a view (no visibility limits it to the model).
     for (const name of [
@@ -359,6 +364,7 @@ describe('protocol surface', () => {
       'media.get',
       'media.list',
       'media.upload',
+      'sounds.list',
     ]) {
       const tool = tools.find((t) => t.name === name);
       expect((tool?._meta as { ui?: { visibility?: string[] } })?.ui?.visibility).toBeUndefined();
@@ -382,6 +388,12 @@ describe('protocol surface', () => {
       ],
       // The upload box only sends the file.
       ['ui://cuttingfloor/upload', { connectDomains: [origin] }, {}],
+      // The sounds play, and their waveforms are read, from the library's bucket.
+      [
+        'ui://cuttingfloor/sounds',
+        { resourceDomains: [SOUND_FILES], connectDomains: [SOUND_FILES] },
+        clipboard,
+      ],
     ] as const) {
       expect(resources.find((r) => r.uri === uri)?.mimeType).toBe('text/html;profile=mcp-app');
       const res = await client.readResource({ uri });
