@@ -607,8 +607,8 @@ export class Lifecycle {
   /**
    * The routes the site and Stripe call: `POST /stripe/webhook`, `GET /account/usage`,
    * `POST /account/top-up`, `GET /account/media`, `POST /account/uploads`, and `GET`/`POST /account/keys` and
-   * `POST /account/keys/revoke`, and partners' `POST /partner/keys` and `DELETE /partner/users`.
-   * Returns false for any other path.
+   * `POST /account/keys/revoke`, `POST /account/kazi-handoff`, and partners' `POST /partner/keys`
+   * and `DELETE /partner/users`. Returns false for any other path.
    */
   async route(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     // On standby: nothing that charges, deletes an account or acts on a payment.
@@ -670,6 +670,10 @@ export class Lifecycle {
     }
     if (url.pathname === '/account/keys' || url.pathname === '/account/keys/revoke') {
       await this.#keysRoute(req, res, url);
+      return true;
+    }
+    if (url.pathname === '/account/kazi-handoff' && req.method === 'POST') {
+      await this.#kaziHandoffRoute(req, res);
       return true;
     }
     if (url.pathname === '/account/sounds' || url.pathname === '/account/sounds/remove') {
@@ -792,6 +796,49 @@ export class Lifecycle {
       return json(res, 200, made);
     } catch (error) {
       return json(res, 409, { error: (error as Error).message });
+    }
+  }
+
+  /**
+   * Someone who just signed up on the site goes on into Kazi: POST {user, share_code} answers
+   * Kazi's one-time link `{url, expires_at}`, signed in as them with cuttingfloor connected to this
+   * account. The email and its verification come from WorkOS here, never from the caller, and an
+   * unverified one is refused (403), since Kazi signs in whoever has it.
+   */
+  async #kaziHandoffRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
+    let body: { user?: unknown; share_code?: unknown };
+    try {
+      body = JSON.parse(await readBody(req, 16 * 1024));
+    } catch {
+      return json(res, 400, { error: 'body must be JSON: {user, share_code}' });
+    }
+    const owner = typeof body.user === 'string' ? body.user : '';
+    if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+    const share = typeof body.share_code === 'string' ? body.share_code : '';
+    if (!/^[A-Za-z0-9]{4,32}$/.test(share))
+      return json(res, 400, { error: 'share_code must be a Kazi share code' });
+    let user: { email?: string; email_verified?: boolean };
+    try {
+      user = (await this.#workos(`/user_management/users/${encodeURIComponent(owner)}`)) as {
+        email?: string;
+        email_verified?: boolean;
+      };
+    } catch (error) {
+      process.stderr.write(`lifecycle: ${owner}: kazi handoff: ${(error as Error).message}\n`);
+      return json(res, 503, { error: 'the account could not be read just now' });
+    }
+    if (!user.email || !user.email_verified) return json(res, 403, { error: 'email_unverified' });
+    try {
+      const link = await this.#o.ledger.handoff({
+        email: user.email,
+        workos_user_id: owner,
+        share_code: share,
+      });
+      return json(res, 200, { url: link.url, expires_at: link.expires_at });
+    } catch (error) {
+      process.stderr.write(`lifecycle: ${owner}: kazi handoff: ${(error as Error).message}\n`);
+      return json(res, 502, { error: 'Kazi could not open a link just now' });
     }
   }
 
