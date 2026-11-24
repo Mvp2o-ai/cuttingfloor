@@ -7,9 +7,11 @@ import { KAZI_LINKS } from '../kazi.tsx';
 // connected to this account and the live demo open (no guest limit; it's their account). Accounts
 // made on the site with no agent of their own did nothing at all, while those made inside an AI
 // app got to work. The server asks Kazi for a one-time link (the key that does it stays there);
-// when Kazi can't answer, the welcome page that connects an agent, as before.
+// when Kazi can't answer, the welcome page that connects an agent, as before. Someone who signed
+// in to an older account on the sign-up screen gets that page too: only a new account goes on.
 export async function GET() {
   const { user } = await withAuth({ ensureSignedIn: true });
+  if (Date.now() - Date.parse(user.createdAt) > 10 * 60_000) redirect('/welcome');
   const key = process.env.CUTTINGFLOOR_ACCOUNT_KEY;
   const server = process.env.CUTTINGFLOOR_SERVER_URL ?? 'https://api.cuttingfloor.ai';
   let url: string | undefined;
