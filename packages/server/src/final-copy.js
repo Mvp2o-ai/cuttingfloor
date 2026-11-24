@@ -33,7 +33,7 @@
   const ACCOUNT = 'https://cuttingfloor.ai/account';
 
   const n = (x) => String(Math.round(x * 100) / 100);
-  const credits = (x) => `${n(x)} credit${x > 0 && x <= 1 ? '' : 's'}`;
+  const credits = (x) => `${n(x)} credit${x === 1 ? '' : 's'}`;
 
   /** What export.release takes for this file: its media, or the job its signed link names. */
   function releaseRef(file) {

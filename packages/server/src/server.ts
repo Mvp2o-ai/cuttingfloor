@@ -74,7 +74,7 @@ function instructions(config: Runtime['config'], welcome = false): string {
     : '';
   const credits = hosted
     ? `
-Credits: making is free (edits, jobs, judgments). Exports, created media and full-size frames download with a cuttingfloor watermark, for review (watermarked: true); once the user has reviewed one, offer to release it (release_credits, 1 a finished minute; credits_left says what they have) and, with their go-ahead, export.release. Audio, text and their own uploads are never watermarked.`
+Credits: making is free (edits, jobs, judgments). Exports, created media and full-size frames come as two links (watermarked: true): url, the review copy with a cuttingfloor watermark, free; final_url, the clean copy, which spends release_credits (1 a finished minute) once when opened. Give the user both, with the price and credits_left; export.release also removes it. Audio, text and their own uploads are never watermarked.`
     : '';
   return `${welcome ? `${WELCOME}\n` : ''}cuttingfloor is a headless video editor: media comes in, is cut and finished, and leaves as a download. Work, not storage: ${KEEPING}; links work ${span(config.outputUrlTtlMs)} (re-read for fresh ones). Download finished or approved work (or have the user); if they count on keeping it, say it's temporary. To go on later, keep timeline.get's document (timeline.load) and the files (media.import again). media.delete drops unwanted media.
 Two ways in, often both:

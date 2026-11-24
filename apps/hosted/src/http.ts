@@ -36,6 +36,7 @@ import {
 } from '@modelcontextprotocol/server';
 import { addressPage, wantsPage } from './address-page.ts';
 import type { DownloadSeen } from './downloads.ts';
+import { finalShortPage } from './final-page.ts';
 import type { JwtTokenVerifier } from './oauth.ts';
 import { RestApi } from './rest.ts';
 import { aiCatalog, CARD_TYPE, sendDiscovery, serverCard } from './server-card.ts';
@@ -94,6 +95,8 @@ export interface HttpOptions {
   onDownload?: (seen: DownloadSeen) => void;
   /** The token OpenAI's plugin portal asks this host to serve, to prove it owns the domain. */
   openaiChallenge?: string;
+  /** The site's account page, where credits are bought (the final-copy link's short page). */
+  accountUrl?: string;
 }
 
 export type SignInStep = 'challenged' | 'metadata';
@@ -496,6 +499,59 @@ export function createHttpServer(options: HttpOptions): Server {
                 ...(mark?.watermarked ? { mark: { credits: mark.release_credits ?? 0 } } : {}),
               }),
         );
+        return;
+      }
+      // The final copy: the same signature as its /outputs/ URL. Opening it removes the watermark
+      // (the file's release_credits, once; a file already released or never marked spends
+      // nothing), then sends the browser to the file, now clean. Too few credits: a page saying
+      // so, and nothing spent. HEAD spends nothing.
+      if (url.pathname.startsWith('/final/') && (req.method === 'GET' || req.method === 'HEAD')) {
+        const filePath = `/outputs/${url.pathname.slice('/final/'.length)}`;
+        const exp = url.searchParams.get('exp');
+        const sig = url.searchParams.get('sig');
+        const target = await runtime.outputTarget(filePath, exp, sig);
+        if (!target) {
+          res.writeHead(403, { 'content-type': 'text/plain' }).end(refusedLink(url));
+          return;
+        }
+        const name = decodeURIComponent(filePath.split('/').pop() ?? '');
+        const file = `${filePath}?${new URLSearchParams({ exp: exp ?? '', sig: sig ?? '' })}`;
+        const { owner, file_id } = signedFile(filePath, name);
+        const ref = file_id.startsWith('m_')
+          ? { media_id: file_id }
+          : file_id.startsWith('j_')
+            ? { job_id: file_id }
+            : undefined;
+        if (req.method === 'GET' && runtime.gate && ref) {
+          try {
+            await runtime.gate.release(owner, ref, 'page');
+          } catch (error) {
+            const detail = (error as { detail?: { price?: number; credits_left?: number } }).detail;
+            if ((error as { code?: string }).code === 'quota_exceeded' && detail) {
+              res.writeHead(402, {
+                'content-type': 'text/html; charset=utf-8',
+                'cache-control': 'private, no-store',
+                'referrer-policy': 'no-referrer',
+              });
+              res.end(
+                finalShortPage({
+                  name,
+                  price: detail.price ?? 0,
+                  left: detail.credits_left ?? 0,
+                  reviewUrl: file,
+                  accountUrl: options.accountUrl ?? 'https://cuttingfloor.ai/account',
+                }),
+              );
+              return;
+            }
+            process.stderr.write(`final: ${url.pathname}: ${(error as Error).message}\n`);
+            res
+              .writeHead(503, { 'content-type': 'text/plain', 'retry-after': '30' })
+              .end('The final copy could not be made just now. Try the link again in a moment.');
+            return;
+          }
+        }
+        res.writeHead(302, { location: file, 'cache-control': 'private, no-store' }).end();
         return;
       }
       if (url.pathname.startsWith('/uploads/')) {
