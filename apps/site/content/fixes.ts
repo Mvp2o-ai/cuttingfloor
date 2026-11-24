@@ -460,6 +460,38 @@ export const FIXES: Fix[] = [
     ],
   },
   {
+    id: 'add-sound-effects-to-hailuo-video',
+    problem: 'How do I add sound effects to Hailuo (MiniMax) videos?',
+    answer:
+      'If your Hailuo clips came out silent, give them to your agent and say where sounds should go. It finds the cuts and moments, places sound effects on their own track, sets each level and keeps them under music or a voice. Built-in sounds cover whooshes, hits, risers, booms, explosions and crowds; your own sound files work too.',
+    prompt:
+      'These Hailuo clips are silent. Add a whoosh on every cut, a boom when the robot lands, a riser before the last shot, and keep it all under the music.',
+    see: AI_GUIDE,
+    related: [
+      'add-sound-effects-to-ai-video',
+      'even-out-the-sound-of-ai-clips',
+      'edit-ai-video-clips-into-one-video',
+      'add-music',
+    ],
+    tools: [
+      BRING,
+      {
+        tool: 'media.analyze (look)',
+        does: 'finds the moments that need a sound, like a landing or a door',
+      },
+      { tool: 'media.analyze (scenes)', does: 'the times of every cut' },
+      {
+        tool: 'media.import',
+        does: 'brings in a sound from the built-in sound effects (video://catalog/sound_effects) or your own file',
+      },
+      { tool: 'track.add', does: 'an audio track for the effects' },
+      { tool: 'clip.add', does: 'places each sound at its moment' },
+      { tool: 'audio.set_gain', does: 'sets each sound’s level, and lowers it under a voice' },
+      { tool: 'audio.fade', does: 'softens a sound in or out' },
+      EXPORT,
+    ],
+  },
+  {
     id: 'even-out-the-sound-of-ai-clips',
     problem: 'How do I even out the sound of Veo and Sora clips?',
     answer:
