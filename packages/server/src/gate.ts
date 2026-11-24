@@ -149,14 +149,19 @@ export class DownloadGate {
     owner: string,
     id: string,
     readCredits?: () => Promise<number | null | undefined>,
-  ): Promise<MarkState & { credits_left?: number | null; watermark_note?: string }> {
+    url?: string,
+  ): Promise<
+    MarkState & { final_url?: string; credits_left?: number | null; watermark_note?: string }
+  > {
     const state = await this.state(owner, id);
     if (!state.watermarked || state.release_credits === undefined) return state;
     const left = await (readCredits ?? (() => this.credits(owner)))();
+    const final = url ? finalLink(url) : undefined;
     return {
       ...state,
+      ...(final ? { final_url: final } : {}),
       ...(left !== undefined ? { credits_left: left } : {}),
-      watermark_note: watermarkNote(state.release_credits, left),
+      watermark_note: watermarkNote(state.release_credits, left, Boolean(final)),
     };
   }
 
@@ -337,10 +342,25 @@ function credits(n: number): string {
 }
 
 /**
- * A watermarked file in words, for the agent: the copy is for review, what releasing it costs,
- * what the user has, and, when that covers it, to offer the release once they have reviewed it.
+ * The final copy's link beside a signed download (/outputs/… → /final/…, same signature): opening
+ * it releases the file (its release_credits, once), then downloads the clean file.
  */
-export function watermarkNote(price: number, left: number | null | undefined): string {
+export function finalLink(url: string): string | undefined {
+  const u = new URL(url);
+  if (!u.pathname.startsWith('/outputs/')) return undefined;
+  u.pathname = `/final/${u.pathname.slice('/outputs/'.length)}`;
+  return u.href;
+}
+
+/**
+ * A watermarked file in words, for the agent: url is the free review copy, final_url the clean
+ * copy (when there is one), what it costs and what the user has; give the user both.
+ */
+export function watermarkNote(
+  price: number,
+  left: number | null | undefined,
+  final = false,
+): string {
   const short = typeof left === 'number' && left < price;
   const has =
     left === undefined
@@ -348,6 +368,10 @@ export function watermarkNote(price: number, left: number | null | undefined): s
       : left === null
         ? '; this account has no credit cap'
         : `; this account has ${credits(left)}, ${short ? 'too few' : 'enough'}`;
+  if (final)
+    return `url is the review copy, with a cuttingfloor watermark, free. final_url is the final copy without it: opening it uses ${credits(price)} once${has}${
+      short ? ', and shows how to get more' : ''
+    }. Give the user both links, with the price and their credits beside final_url.`;
   return `This copy has a cuttingfloor watermark, for reviewing, which is free. Releasing it removes the watermark for ${credits(price)}${has}. ${
     short
       ? 'The watermarked copy is what downloads until then.'

@@ -1257,7 +1257,7 @@ export const MarkFields = {
     .boolean()
     .optional()
     .describe(
-      'True: the file downloads with a cuttingfloor watermark; export.release removes the watermark for release_credits, after which every link to it serves the clean file. Absent or false: the file is clean',
+      'True: url is the review copy, with a cuttingfloor watermark; final_url (or export.release) removes the watermark for release_credits, after which every link to it serves the clean file. Absent or false: the file is clean',
     ),
   release_credits: z
     .number()
@@ -1269,6 +1269,12 @@ export const MarkFields = {
 
 /** Hosted, on the result that answers for one watermarked file (an export, media.get). */
 export const MarkNoteFields = {
+  final_url: z
+    .string()
+    .optional()
+    .describe(
+      "While watermarked, the final copy: opening it spends release_credits once from the user's credits, then downloads the file without the watermark (too few credits: a page saying how to get more). Give it to the user beside url, with the price and credits_left",
+    ),
   credits_left: z
     .number()
     .nullable()

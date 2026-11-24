@@ -756,13 +756,26 @@ export class Runtime {
         if (!balances.has(owner)) balances.set(owner, gate.credits(owner));
         return balances.get(owner) as Promise<number | null | undefined>;
       };
-      const state = await gate.described(owner, job.id, readCredits).catch(() => undefined);
+      const state = await gate
+        .described(owner, job.id, readCredits, out.url)
+        .catch(() => undefined);
       if (!state) continue;
+      // The stored text block is this same JSON; it changes with it, so a client reading only
+      // the text (a Tasks result) sees the same facts.
+      const before = JSON.stringify(out);
       out.watermarked = state.watermarked;
-      for (const key of ['release_credits', 'credits_left', 'watermark_note'] as const) {
+      for (const key of [
+        'release_credits',
+        'final_url',
+        'credits_left',
+        'watermark_note',
+      ] as const) {
         if (state[key] !== undefined) out[key] = state[key];
         else delete out[key];
       }
+      const content = (job.result as { content?: Array<{ type: string; text?: string }> }).content;
+      for (const c of content ?? [])
+        if (c.type === 'text' && c.text === before) c.text = JSON.stringify(out);
     }
     return value;
   }

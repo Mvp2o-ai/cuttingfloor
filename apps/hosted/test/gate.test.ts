@@ -92,7 +92,10 @@ async function exported(owner: string, name: string, mime: string, seconds: numb
   await store.update(job, {
     status: 'completed',
     progress: 1,
-    result: { content: [], structuredContent: result } as never,
+    result: {
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+      structuredContent: result,
+    } as never,
   });
   return { jobId: job.id, url: signed.url, pageUrl: signed.pageUrl };
 }
@@ -127,8 +130,11 @@ describe('the download gate', () => {
       credits_left: 3,
     });
     expect(before.result.watermark_note).toBe(
-      'This copy has a cuttingfloor watermark, for reviewing, which is free. Releasing it removes the watermark for 0.75 credits; this account has 3 credits, enough. Once the user has reviewed it, offer to release it now.',
+      'url is the review copy, with a cuttingfloor watermark, free. final_url is the final copy without it: opening it uses 0.75 credits once; this account has 3 credits, enough. Give the user both links, with the price and their credits beside final_url.',
     );
+    // Both links, in the text a client reads as well as the structured result.
+    const finalUrl = (before.result as unknown as { final_url: string }).final_url;
+    expect(finalUrl.startsWith(`${base}/final/alice/${jobId}/short.mp4?`)).toBe(true);
 
     // Every way out serves the watermarked copy, made once, and never cached.
     const first = await fetch(url);
@@ -179,7 +185,7 @@ describe('the download gate', () => {
     };
     expect(told.result.credits_left).toBe(0.5);
     expect(told.result.watermark_note).toBe(
-      'This copy has a cuttingfloor watermark, for reviewing, which is free. Releasing it removes the watermark for 1.25 credits; this account has 0.5 credits, too few. The watermarked copy is what downloads until then.',
+      'url is the review copy, with a cuttingfloor watermark, free. final_url is the final copy without it: opening it uses 1.25 credits once; this account has 0.5 credits, too few, and shows how to get more. Give the user both links, with the price and their credits beside final_url.',
     );
     expect(told.result.watermark_note).not.toMatch(/https?:|buy/i);
     const refused = await call(poor, 'export.release', { job_id: jobId });
@@ -191,6 +197,53 @@ describe('the download gate', () => {
     expect(JSON.stringify(refused.structuredContent)).not.toMatch(/https?:|buy/i);
     expect(balances.get('poor')).toBe(0.5);
     expect(await (await fetch(url)).text()).toBe(`clean long.mp4${MARK}`);
+    await poor.close();
+  });
+
+  it('removes the watermark when its final link is opened, once; too few credits spend nothing', async () => {
+    balances.set('alice', 2);
+    const { jobId } = await exported('alice', 'final.mp4', 'video/mp4', 30);
+    const alice = await connect(KEY);
+    const read = await alice.callTool({ name: 'job.get', arguments: { job_id: jobId } });
+    const text =
+      (read.content as Array<{ type: string; text?: string }>).find((c) => c.type === 'text')
+        ?.text ?? '';
+    const finalUrl = (read.structuredContent as { result: { final_url: string } }).result.final_url;
+    expect(text).toContain(finalUrl);
+    // A HEAD (a link check) spends nothing.
+    expect((await fetch(finalUrl, { method: 'HEAD', redirect: 'manual' })).status).toBe(302);
+    expect(balances.get('alice')).toBe(2);
+    // Opening it spends the price once and sends the browser to the file, now clean.
+    const opened = await fetch(finalUrl, { redirect: 'manual' });
+    expect(opened.status).toBe(302);
+    const location = new URL(opened.headers.get('location') ?? '', base).href;
+    expect(location).toContain(`/outputs/alice/${jobId}/final.mp4?`);
+    expect(await (await fetch(location)).text()).toBe('clean final.mp4');
+    expect(balances.get('alice')).toBe(1.5);
+    expect((await fetch(finalUrl, { redirect: 'manual' })).status).toBe(302);
+    expect(balances.get('alice')).toBe(1.5);
+    const after = (await call(alice, 'job.get', { job_id: jobId })).structuredContent as {
+      result: Record<string, unknown>;
+    };
+    expect(after.result.watermarked).toBe(false);
+    expect(after.result).not.toHaveProperty('final_url');
+    await alice.close();
+
+    // Too few: a page with the price and what the account has, and the review copy; nothing spent.
+    balances.set('poor', 0.25);
+    const short = await exported('poor', 'short-of.mp4', 'video/mp4', 30);
+    const poor = await connect(`${KEY}-poor`);
+    const told = (await call(poor, 'job.get', { job_id: short.jobId })).structuredContent as {
+      result: { final_url: string };
+    };
+    const page = await fetch(told.result.final_url, { redirect: 'manual' });
+    expect(page.status).toBe(402);
+    const html = await page.text();
+    expect(html).toContain('needs 0.5 credits');
+    expect(html).toContain('this account has 0.25 credits');
+    expect(html).toContain('Get credits');
+    expect(balances.get('poor')).toBe(0.25);
+    expect(await (await fetch(short.url)).text()).toBe(`clean short-of.mp4${MARK}`);
     await poor.close();
   });
 

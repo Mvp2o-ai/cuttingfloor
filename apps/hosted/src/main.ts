@@ -293,6 +293,7 @@ const server = createHttpServer({
           ),
       }
     : {}),
+  accountUrl,
   ...(process.env.CUTTINGFLOOR_OPENAI_CHALLENGE
     ? { openaiChallenge: process.env.CUTTINGFLOOR_OPENAI_CHALLENGE.trim() }
     : {}),
