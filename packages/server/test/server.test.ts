@@ -401,6 +401,9 @@ describe('protocol surface', () => {
       expect(page.mimeType).toBe('text/html;profile=mcp-app');
       expect(page.text).toContain("'ui/initialize'");
       expect(page.text).not.toContain('__VERSION__');
+      expect(page.text).not.toContain('__FINAL_COPY__');
+      // The player and the editor carry the shared Download control (final or review copy).
+      if (/player|editor/.test(uri)) expect(page.text).toContain('cfFinalCopy');
       // Claude refuses a view whose domain isn't its own hash form, so only ChatGPT gets one.
       const ui = { csp, ...permissions, prefersBorder: false };
       expect(page._meta).toEqual({ ui });

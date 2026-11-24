@@ -80,6 +80,10 @@ export const AdminDownload = z.object({
     ),
   plays: z.number().describe('Fetches that played or showed it (a player, an inline fetch)'),
   page_views: z.number().describe('Times its watch page was opened'),
+  from_view: z
+    .number()
+    .optional()
+    .describe("Of the saves, those from a chat view's Download button"),
   agent: z
     .string()
     .describe(

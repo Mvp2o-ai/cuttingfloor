@@ -8,6 +8,9 @@ import { SERVER_VERSION } from './version.ts';
  * the signed file in the chat. While an import still runs it says so; it also follows a job
  * handle with job.get and plays the result when it lands. export.video shows the editor instead.
  */
+/** The Download control the player and the editor share, inlined into each page. */
+export const FINAL_COPY_JS = readFileSync(new URL('./final-copy.js', import.meta.url), 'utf8');
+
 export const PLAYER_URI = 'ui://cuttingfloor/player';
 export const MCP_APP_MIME = 'text/html;profile=mcp-app';
 
@@ -81,8 +84,8 @@ export function registerPlayer(server: McpServer, deps: ServerDeps): void {
   );
 }
 
-// The page is player.html next to this file; only the version is filled in.
-const PLAYER_HTML = readFileSync(new URL('./player.html', import.meta.url), 'utf8').replace(
-  '__VERSION__',
-  SERVER_VERSION,
-);
+// The page is player.html next to this file, with the version and the shared Download control
+// (final-copy.js) filled in.
+const PLAYER_HTML = readFileSync(new URL('./player.html', import.meta.url), 'utf8')
+  .replace('__VERSION__', SERVER_VERSION)
+  .replace('__FINAL_COPY__', () => FINAL_COPY_JS);

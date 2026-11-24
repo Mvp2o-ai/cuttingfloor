@@ -223,6 +223,7 @@
 <body>
 <div id="root"></div>
 <script>
+__FINAL_COPY__
 (() => {
   const VERSION = '__VERSION__';
   const root = document.getElementById('root');
@@ -471,8 +472,26 @@
         icon('open'), el('span', { class: 'lbl' }, 'Open')));
     }
     if (data.url) {
-      acts.append(el('button', { class: 'act primary', title: 'Download the file', onclick: () => download(data, name) },
-        icon('down'), el('span', { class: 'lbl' }, 'Download')));
+      // Download: a watermarked file offers the final copy (watermark removed) or the review copy.
+      const saver = window.cfFinalCopy({
+        btnClass: 'act primary',
+        icon: icon('down').outerHTML,
+        callTool: async (tool, args) => {
+          const r = await request('tools/call', { name: tool, arguments: args });
+          if (r?.isError) throw new Error(r.structuredContent?.message || r.content?.find((c) => c?.type === 'text')?.text || `${tool} failed`);
+          return r?.structuredContent;
+        },
+        save: (f) => download(f, name),
+        openLink,
+        toast: say,
+        onReleased: (f) => {
+          Object.assign(data, f);
+          delete data.watermarked;
+          chips.querySelector('[data-k="mark"]')?.remove();
+        },
+      });
+      saver.set(data);
+      acts.append(saver.node);
     }
     info.append(acts);
     if (data.width && data.height) chip('size', `${data.width}×${data.height}`);
@@ -482,15 +501,28 @@
     chip('bytes', bytes(data.bytes));
     if (data.preset) chip('preset', data.preset);
     if (data.expires_at) chip('expires', untilText(data.expires_at), new Date(data.expires_at).toLocaleString());
-    if (data.watermarked) chip('mark', 'Watermarked', `Removing it uses ${data.release_credits} credit${data.release_credits > 0 && data.release_credits <= 1 ? "" : "s"}: ask in the chat`);
+    if (data.watermarked) chip('mark', 'Watermarked', 'The review copy. Download final removes the watermark.');
     return { node: info, chip, chips };
   }
 
+  // A message over the picture for a moment (the stage's toast), e.g. what a release spent.
+  let sayT = 0;
+  function say(text) {
+    const t = document.querySelector('.toast');
+    if (!t) return;
+    t.textContent = text; t.classList.add('on');
+    clearTimeout(sayT); sayT = setTimeout(() => t.classList.remove('on'), 2600);
+  }
+
+  // The link a view's own button fetches says so (via=view), so its downloads count apart.
+  const fromView = (url) => { try { const u = new URL(url); u.searchParams.set('via', 'view'); return u.href; } catch { return url; } };
+
   function download(data, name) {
-    const fallback = () => openLink(data.url);
+    const url = fromView(data.url);
+    const fallback = () => openLink(url);
     if (!host.caps.downloadFile) return fallback();
     request('ui/download-file', {
-      contents: [{ type: 'resource_link', uri: data.url, name, mimeType: data.mime_type || undefined }],
+      contents: [{ type: 'resource_link', uri: url, name, mimeType: data.mime_type || undefined }],
     }).then((r) => { if (r?.isError) fallback(); }, fallback);
   }
 

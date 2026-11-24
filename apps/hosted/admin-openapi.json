@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "cuttingfloor admin API",
-    "version": "1.8.0",
+    "version": "1.9.0",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -342,6 +342,10 @@
           "page_views": {
             "type": "number",
             "description": "Times its watch page was opened"
+          },
+          "from_view": {
+            "description": "Of the saves, those from a chat view's Download button",
+            "type": "number"
           },
           "agent": {
             "type": "string",

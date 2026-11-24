@@ -93,6 +93,8 @@ export interface DownloadDay {
   plays: number;
   /** Watch pages opened. */
   page_views: number;
+  /** Of the saves, those from a chat view's Download button (its link carries via=view). */
+  from_view?: number;
   /** The client of the day's first request, from its User-Agent (`Mozilla`, `openai-mcp`). */
   agent: string;
 }
