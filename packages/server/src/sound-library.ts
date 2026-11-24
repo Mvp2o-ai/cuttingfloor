@@ -340,10 +340,21 @@ export class MongoSoundLibrary implements SoundLibrary {
           $search: {
             index: SOUNDS_TEXT_INDEX,
             compound: {
+              // Exact words first; a word one letter off (a typo) counts for much less, so
+              // "stomping" finds stomping before "stop".
               should: [
-                { text: { query, path: 'name', fuzzy, score: { boost: { value: 3 } } } },
-                { text: { query, path: 'tags', fuzzy, score: { boost: { value: 2 } } } },
-                { text: { query, path: ['category', 'description'], fuzzy } },
+                { text: { query, path: 'name', score: { boost: { value: 6 } } } },
+                { text: { query, path: 'tags', score: { boost: { value: 4 } } } },
+                {
+                  text: {
+                    query,
+                    path: ['category', 'description'],
+                    score: { boost: { value: 2 } },
+                  },
+                },
+                {
+                  text: { query, path: ['name', 'tags'], fuzzy, score: { boost: { value: 0.5 } } },
+                },
               ],
               minimumShouldMatch: 1,
               ...(filter.length ? { filter } : {}),
