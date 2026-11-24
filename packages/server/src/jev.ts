@@ -147,7 +147,7 @@ export async function askJev(req: JevRequest): Promise<JevReply> {
     }
     const detail = await res.text().catch(() => '');
     if ((res.status === 429 || res.status >= 500) && attempt < 3) {
-      await pause(attempt, req.signal);
+      await pause(attempt, req.signal, retryAfterMs(res.headers.get('retry-after')));
       continue;
     }
     if (res.status === 401 || res.status === 403) {
@@ -185,9 +185,18 @@ export async function askJev(req: JevRequest): Promise<JevReply> {
   }
 }
 
-function pause(attempt: number, signal: AbortSignal): Promise<void> {
+/** The wait a Retry-After header asks for (seconds or an HTTP date), capped; null without one. */
+export function retryAfterMs(header: string | null): number | null {
+  if (header === null || header.trim() === '') return null;
+  const seconds = Number(header);
+  const ms = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - Date.now();
+  return Number.isNaN(ms) ? null : Math.min(Math.max(ms, 0), 30_000);
+}
+
+/** Waits before another attempt: what the service asked for, else 0.5 s doubling each time. */
+function pause(attempt: number, signal: AbortSignal, asked: number | null = null): Promise<void> {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(resolve, 500 * 2 ** attempt);
+    const t = setTimeout(resolve, asked ?? 500 * 2 ** attempt);
     signal.addEventListener(
       'abort',
       () => {
