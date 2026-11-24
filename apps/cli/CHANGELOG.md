@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.69.4
+
+### Patch Changes
+
+- 9cc97fd: Judgments wait as long as the judgment service's Retry-After asks before retrying a busy or failed call, instead of a fixed backoff.
+
 ## 0.69.3
 
 ### Patch Changes
