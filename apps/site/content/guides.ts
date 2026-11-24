@@ -404,9 +404,10 @@ export const GUIDES: Guide[] = [
       { tool: 'transition.add', does: 'blends a cut; a refusal gives the longest that fits' },
       { tool: 'filter.add', does: 'colour corrections on a clip, or a LUT on the whole film' },
       {
-        tool: 'media.import',
-        does: 'a sound effect found in the sound library (sounds.list), or your own file',
+        tool: 'sounds.list',
+        does: 'finds sound effects by description; the user hears them in the chat',
       },
+      { tool: 'media.import', does: 'brings in the sound effect picked, or your own file' },
       { tool: 'create.voiceover', does: 'a narrator from your script, with a time for each word' },
       { tool: 'title.add', does: 'the title and the credits' },
       { tool: 'audio.set_master', does: 'the final loudness, with a limiter' },
