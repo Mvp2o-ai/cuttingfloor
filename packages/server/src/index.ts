@@ -16,7 +16,6 @@ export {
   type Release,
   type ReleaseVia,
 } from './gate.ts';
-export { MIGRATION, type MigrationMark, markLive } from './live.ts';
 export {
   admitJob,
   billedSeconds,
@@ -69,5 +68,4 @@ export {
 } from './tools/credits.ts';
 export { readSupportMessages, type SupportMessage } from './tools/support.ts';
 export { UPLOADS, UploadRefused, type UploadState, Uploads } from './uploads.ts';
-export { serverUrlKey, urlKeyFingerprint } from './url-key.ts';
 export { SERVER_NAME, SERVER_VERSION } from './version.ts';

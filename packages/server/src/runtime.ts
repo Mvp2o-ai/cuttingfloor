@@ -31,7 +31,6 @@ import { CALLS, CALLS_TTL_MS, type CallEntry, jobEnd, recordCall } from './calls
 import { Drain } from './drain.ts';
 import { DownloadGate, type GateHooks, RELEASES } from './gate.ts';
 import { SearchIndexer } from './indexer.ts';
-import { markLive } from './live.ts';
 import { METER, METER_TTL_MS, type MeterEntry, meterJob, meterJudgments } from './meter.ts';
 import { Outputs } from './outputs.ts';
 import {
@@ -517,12 +516,6 @@ export class Runtime {
     await this.secret();
     await this.ws.blobs.deletePrefix(this.ws.blobs.keys.cache('frames'));
     this.drain.start();
-    // Whether a server serves on this record store, which a storage migration refuses to write.
-    await markLive(this.ws.records, {
-      standby: Boolean(this.config.standby),
-      node: this.config.node ?? 'local',
-      filesystem: this.ws.recordsWithFiles,
-    });
     if (this.config.standby) return;
     await this.jobs.recover();
     if (options.sweep !== false) {
