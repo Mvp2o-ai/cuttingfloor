@@ -47,7 +47,13 @@ export const AdminFile = z.object({
     .string()
     .nullable()
     .describe(
-      'The watch page that plays the export in any browser, no sign-in: the link to give the user in an email. Valid as download_url is; null where it is',
+      'The watch page that plays the export in any browser, no sign-in: the link to give the user in an email. While watermarked it shows the price and their credits, and its button removes the watermark; opening the page spends nothing, so a mail scanner checking the link is harmless. Valid as download_url is; null where it is',
+    ),
+  final_url: z
+    .string()
+    .nullable()
+    .describe(
+      'While watermarked, the final copy: opening it spends release_credits once, then downloads the clean file. For a chat or an app the user taps in, not an email (a mail scanner opening it would spend): email page_url instead. Null where download_url is, and when the file is clean',
     ),
   watermarked: z
     .boolean()

@@ -13,8 +13,13 @@ export function watchPage(o: {
   expiresAt: Date;
   /** The file is fetched from a bucket: what plays it asks for it to be shown, not saved. */
   inline?: boolean;
-  /** It has a cuttingfloor watermark: what removing the watermark costs. */
-  mark?: { credits: number };
+  /**
+   * It has a cuttingfloor watermark: what removing it costs, the credits the account has
+   * (undefined when that can't be told, null for no cap), and the final-copy link the page's
+   * button posts to. Only the button spends: opening the page (a mail scanner checking an emailed
+   * link, say) spends nothing.
+   */
+  mark?: { credits: number; left?: number | null | undefined; finalUrl: string };
 }): string {
   const name = esc(o.name);
   const href = esc(o.fileUrl);
@@ -66,6 +71,8 @@ ${og}
   .meta { color: var(--muted); font-size: 14px; }
   a { color: var(--accent); }
   .mark { color: var(--muted); font-size: 14px; margin: 12px 0 0; }
+  form { margin: 12px 0 0; }
+  button { font: inherit; font-weight: 600; padding: 10px 16px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -75,11 +82,18 @@ ${og}
     <h1>${name}</h1>
     <span class="meta"><a href="${href}" download>Download</a> · link works until <time datetime="${o.expiresAt.toISOString()}">${o.expiresAt.toUTCString()}</time></span>
   </footer>
-  ${o.mark ? `<p class="mark">This file has a cuttingfloor watermark. Removing it uses ${o.mark.credits} credit${o.mark.credits === 1 ? '' : 's'}: ask the assistant you made it with, and this link plays and downloads it without the watermark from then on.</p>` : ''}
+  ${o.mark ? markBlock(o.mark) : ''}
 </main>
 </body>
 </html>
 `;
+}
+
+function markBlock(mark: { credits: number; left?: number | null | undefined; finalUrl: string }) {
+  const credits = (n: number) => `${Math.round(n * 100) / 100} credit${n === 1 ? '' : 's'}`;
+  const has = typeof mark.left === 'number' ? `; you have ${credits(mark.left)}` : '';
+  return `<p class="mark">This file has a cuttingfloor watermark. Removing it uses ${credits(mark.credits)}${has}. From then on this link plays and downloads it without the watermark.</p>
+  <form method="post" action="${esc(mark.finalUrl)}"><button type="submit">Remove the watermark · ${credits(mark.credits)}</button></form>`;
 }
 
 export function esc(s: string): string {

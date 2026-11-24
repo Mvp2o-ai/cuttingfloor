@@ -247,6 +247,49 @@ describe('the download gate', () => {
     await poor.close();
   });
 
+  it('removes the watermark from the watch page by its button only; opening the page spends nothing', async () => {
+    balances.set('alice', 2);
+    const { jobId, url, pageUrl } = await exported('alice', 'mailed.mp4', 'video/mp4', 40);
+    // A mail scanner opening the emailed link: the page, with the price and the balance.
+    const page = await (await fetch(pageUrl)).text();
+    expect(page).toContain('Removing it uses 0.75 credits; you have 2 credits.');
+    const action = /<form method="post" action="([^"]+)"/.exec(page)?.[1]?.replaceAll('&amp;', '&');
+    expect(action).toMatch(new RegExp(`^/final/alice/${jobId}/mailed\\.mp4\\?exp=\\d+&sig=`));
+    expect(balances.get('alice')).toBe(2);
+    // The button: spends once, then back to the page, which now plays the clean file.
+    const pressed = await fetch(new URL(action ?? '', base), {
+      method: 'POST',
+      redirect: 'manual',
+    });
+    expect(pressed.status).toBe(303);
+    expect(new URL(pressed.headers.get('location') ?? '', base).pathname).toBe(
+      new URL(pageUrl).pathname,
+    );
+    expect(balances.get('alice')).toBe(1.25);
+    const after = await (await fetch(pageUrl)).text();
+    expect(after).not.toContain('<form');
+    expect(await (await fetch(url)).text()).toBe('clean mailed.mp4');
+    expect(
+      (await fetch(new URL(action ?? '', base), { method: 'POST', redirect: 'manual' })).status,
+    ).toBe(303);
+    expect(balances.get('alice')).toBe(1.25);
+
+    // Too few: the button answers the page with the price, the balance and Get credits.
+    balances.set('poor', 0.25);
+    const short = await exported('poor', 'mailed-short.mp4', 'video/mp4', 40);
+    const shortPage = await (await fetch(short.pageUrl)).text();
+    const shortAction = /<form method="post" action="([^"]+)"/
+      .exec(shortPage)?.[1]
+      ?.replaceAll('&amp;', '&');
+    const refused = await fetch(new URL(shortAction ?? '', base), {
+      method: 'POST',
+      redirect: 'manual',
+    });
+    expect(refused.status).toBe(402);
+    expect(await refused.text()).toContain('Get credits');
+    expect(balances.get('poor')).toBe(0.25);
+  });
+
   it('releases over /v1 as apps call it, the same once-only spend', async () => {
     balances.set('alice', 1);
     const { jobId, url } = await exported('alice', 'still.png', 'image/png', 0);
