@@ -170,16 +170,23 @@ describe('JobRunner', () => {
     await a.settled(live.id);
     expect(await store.get(live.id, 'o')).toMatchObject({ status: 'cancelled' });
 
-    // A job whose server died: b ends it only once its heartbeat is stale.
-    const orphan = await store.create({ owner: 'o', tool: 't' });
-    await store.update(orphan, { node: 'c' });
-    expect(await b.recover({ startup: false })).toBe(0);
-    await new Promise((r) => setTimeout(r, 450));
-    expect(await b.recover({ startup: false })).toBe(1);
-    expect(await store.get(orphan.id, 'o')).toMatchObject({
-      status: 'completed',
-      result: { structuredContent: { code: 'interrupted' } },
-    });
+    // A job whose server died: b ends it only once its heartbeat is stale. The clock moves only
+    // when the test moves it, so a slow machine can't age the heartbeat between the two checks.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const orphan = await store.create({ owner: 'o', tool: 't' });
+      await store.update(orphan, { node: 'c' });
+      vi.setSystemTime(Date.now() + 399);
+      expect(await b.recover({ startup: false })).toBe(0);
+      vi.setSystemTime(Date.now() + 2);
+      expect(await b.recover({ startup: false })).toBe(1);
+      expect(await store.get(orphan.id, 'o')).toMatchObject({
+        status: 'completed',
+        result: { structuredContent: { code: 'interrupted' } },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
 
     // A server restarting under its old name ends its own jobs at once.
     const mine = await store.create({ owner: 'o', tool: 't' });
