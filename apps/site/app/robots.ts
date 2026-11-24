@@ -5,7 +5,7 @@ import { SITE_URL } from './seo.ts';
 // and the agents that fetch for a user are named so the intent is plain, and training crawlers are
 // welcome too: the code is open source. The signed-in routes are nobody's business, and /md/ is
 // the internal address of twins that are public at <page>.md.
-const DISALLOW = ['/api/', '/callback', '/account', '/welcome', '/start', '/md/'];
+const DISALLOW = ['/api/', '/callback', '/account', '/welcome', '/kazi', '/start', '/md/'];
 
 const AGENTS = [
   'OAI-SearchBot',
