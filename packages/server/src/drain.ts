@@ -8,7 +8,7 @@ import { CfError } from '@cuttingfloor/schema';
 // new uploads answer 503 with Retry-After. Turned on by CUTTINGFLOOR_DRAIN=1 at start, or with no
 // restart by a file named `drain` in the data root (`touch /var/lib/cuttingfloor/drain`), and
 // off again by removing it. While draining the server keeps a marker beside it, `draining`,
-// with how many jobs still run, which the migration's final pass reads.
+// with how many jobs still run.
 
 /** The file in the data root that turns draining on while it exists. */
 export const DRAIN_SWITCH = 'drain';
