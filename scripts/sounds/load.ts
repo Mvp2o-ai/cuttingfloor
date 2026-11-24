@@ -1,6 +1,7 @@
-// Loads a pack into the sound library (packages/server/src/sound-library.ts): each sound is
-// trimmed of silence at its ends, its peak set to -1 dBTP, encoded as FLAC, embedded with CLAP's
-// audio encoder, put in the public sounds bucket and recorded in MongoDB. Run in the cuttingfloor
+// Loads a pack into the sound library (packages/server/src/sound-library.ts): each sound's file,
+// exactly as its pack published it, goes to the public sounds bucket; its length, channels,
+// loudness and true peak are measured, it is embedded with CLAP's audio encoder, and it is
+// recorded in MongoDB. Run in the cuttingfloor
 // image (FFmpeg and the CLAP model are there), on a pack a fetch script prepared:
 //
 //   node --env-file=cuttingfloor.env scripts/sounds/load.ts <pack dir> [--limit N]
@@ -19,7 +20,7 @@ import { createReadStream } from 'node:fs';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { extname, join, resolve } from 'node:path';
 import {
   BIN,
   CLAP_DIMENSIONS,
@@ -57,7 +58,9 @@ interface Entry {
 
 const LICENCES = new Set(['CC0', 'Public domain']);
 /** Sounds embedded in one CLAP run (one model load). */
-const BATCH = 32;
+const BATCH = 64;
+/** Sounds prepared, and stored, at once (CUTTINGFLOOR_SOUNDS_JOBS). */
+const JOBS = Math.max(1, Number(process.env.CUTTINGFLOOR_SOUNDS_JOBS) || 4);
 /** The longest sound kept: longer ones are ambiences cut to this. */
 const MOST_SECONDS = 120;
 
@@ -178,6 +181,8 @@ async function measure(
       '-hide_banner',
       '-nostdin',
       '-nostats',
+      '-t',
+      String(MOST_SECONDS),
       '-i',
       `file:${file}`,
       '-af',
@@ -200,156 +205,152 @@ async function measure(
   return { lufs: num(lufs), peak: num(peak), seconds: Number(stdout.trim()) || 0 };
 }
 
+interface Ready {
+  entry: Entry;
+  file: string;
+  seconds: number;
+  channels: number;
+  lufs: number | null;
+  peak: number;
+  bytes: number;
+}
+
+/** Audio types by extension, for the bucket. */
+const TYPES: Record<string, string> = {
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.flac': 'audio/flac',
+  '.mp3': 'audio/mpeg',
+};
+
+/** Runs the tasks, at most `jobs` at once; results in their order. */
+async function pool<T>(tasks: Array<() => Promise<T>>, jobs: number): Promise<T[]> {
+  const out: T[] = new Array(tasks.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(jobs, tasks.length) }, async () => {
+      while (next < tasks.length) {
+        const i = next++;
+        out[i] = await (tasks[i] as () => Promise<T>)();
+      }
+    }),
+  );
+  return out;
+}
+
 let loaded = 0;
 let skipped = 0;
-for (let at = 0; at < todo.length; at += BATCH) {
-  const batch = todo.slice(at, at + BATCH);
-  const ready: Array<{
-    entry: Entry;
-    flac: string;
-    seconds: number;
-    channels: number;
-    lufs: number | null;
-    bytes: number;
-  }> = [];
-  for (const entry of batch) {
-    const source = resolve(base, entry.file);
-    if (!source.startsWith(`${base}/`)) throw new Error(`${entry.id}: file outside the pack`);
-    const trimmed = join(work, `${entry.id}.trim.wav`);
-    const flac = join(work, `${entry.id}.flac`);
-    try {
-      // Silence off both ends (below -60 dBFS), at most two channels, the longest kept length.
-      await run(
-        BIN.ffmpeg,
-        [
-          '-hide_banner',
-          '-nostdin',
-          '-v',
-          'error',
-          '-i',
-          `file:${source}`,
-          '-vn',
-          '-map',
-          '0:a:0',
-          '-t',
-          String(MOST_SECONDS),
-          '-af',
-          'silenceremove=start_periods=1:start_threshold=-60dB:start_silence=0.02,areverse,silenceremove=start_periods=1:start_threshold=-60dB:start_silence=0.05,areverse',
-          '-ac',
-          '2',
-          '-c:a',
-          'pcm_f32le',
-          '-y',
-          trimmed,
-        ],
-        { timeoutMs: 10 * 60_000 },
-      );
-      const probe = await run(
-        BIN.ffprobe,
-        [
-          '-v',
-          'error',
-          '-select_streams',
-          'a:0',
-          '-show_entries',
-          'stream=channels',
-          '-of',
-          'csv=p=0',
-          `file:${source}`,
-        ],
-        { timeoutMs: 60_000 },
-      );
-      const channels = Math.min(2, Number(probe.stdout.trim()) || 1);
-      const before = await measure(trimmed);
-      if (before.seconds < 0.05 || before.peak === null || before.peak < -70) {
-        skipped++;
-        process.stderr.write(`skip ${entry.id}: silent or empty\n`);
-        continue;
-      }
-      const gain = -1 - before.peak;
-      await run(
-        BIN.ffmpeg,
-        [
-          '-hide_banner',
-          '-nostdin',
-          '-v',
-          'error',
-          '-i',
-          `file:${trimmed}`,
-          '-af',
-          `volume=${gain.toFixed(2)}dB`,
-          '-ac',
-          String(channels),
-          '-c:a',
-          'flac',
-          '-sample_fmt',
-          's16',
-          '-y',
-          flac,
-        ],
-        { timeoutMs: 10 * 60_000 },
-      );
-      ready.push({
-        entry,
-        flac,
-        seconds: Math.round(before.seconds * 100) / 100,
-        channels,
-        lufs: before.lufs === null ? null : Math.round((before.lufs + gain) * 10) / 10,
-        bytes: (await stat(flac)).size,
-      });
-    } catch (error) {
+
+/**
+ * One sound as its pack published it: its length, channels, loudness and true peak measured,
+ * the file itself untouched. Undefined when it holds no sound.
+ */
+async function prepare(entry: Entry): Promise<Ready | undefined> {
+  const file = resolve(base, entry.file);
+  if (!file.startsWith(`${base}/`)) throw new Error(`${entry.id}: file outside the pack`);
+  try {
+    const probe = await run(
+      BIN.ffprobe,
+      [
+        '-v',
+        'error',
+        '-select_streams',
+        'a:0',
+        '-show_entries',
+        'stream=channels',
+        '-of',
+        'csv=p=0',
+        `file:${file}`,
+      ],
+      { timeoutMs: 60_000 },
+    );
+    const channels = Number(probe.stdout.trim()) || 1;
+    const facts = await measure(file);
+    if (facts.seconds <= 0 || facts.peak === null) {
       skipped++;
-      process.stderr.write(`skip ${entry.id}: ${(error as Error).message.slice(0, 200)}\n`);
-    } finally {
-      await rm(trimmed, { force: true });
+      process.stderr.write(`skip ${entry.id}: no sound in it\n`);
+      return undefined;
     }
+    return {
+      entry,
+      file,
+      seconds: Math.round(facts.seconds * 100) / 100,
+      channels,
+      // Integrated loudness needs 0.4 s of sound; FFmpeg reports its floor, -70, for less.
+      lufs: facts.lufs === null || facts.lufs <= -70 ? null : Math.round(facts.lufs * 10) / 10,
+      peak: Math.round(facts.peak * 10) / 10,
+      bytes: (await stat(file)).size,
+    };
+  } catch (error) {
+    skipped++;
+    process.stderr.write(`skip ${entry.id}: ${(error as Error).message.slice(0, 200)}\n`);
+    return undefined;
   }
+}
+
+const prepareBatch = async (batch: Entry[]) =>
+  (
+    await pool(
+      batch.map((e) => () => prepare(e)),
+      JOBS,
+    )
+  ).filter((r): r is Ready => !!r);
+
+// While one batch is embedded and stored, the next is prepared.
+let preparing = prepareBatch(todo.slice(0, BATCH));
+for (let at = 0; at < todo.length; at += BATCH) {
+  const ready = await preparing;
+  preparing = prepareBatch(todo.slice(at + BATCH, at + 2 * BATCH));
   if (!ready.length) continue;
   const embeddings = await clapSounds(
-    ready.map((r) => r.flac),
+    ready.map((r) => r.file),
     { signal: new AbortController().signal },
   );
-  for (const [i, r] of ready.entries()) {
-    const id = `${pack.id}-${r.entry.id}`;
-    const key = `${pack.id}/${r.entry.id}.flac`;
-    await s3.send(
-      new sdk.PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        Body: createReadStream(r.flac),
-        ContentLength: r.bytes,
-        ContentType: 'audio/flac',
-        CacheControl: 'public, max-age=31536000, immutable',
-      }),
-    );
-    await sounds.replaceOne(
-      { _id: id },
-      {
-        name: r.entry.name,
-        description: r.entry.description,
-        tags: r.entry.tags,
-        category: r.entry.category,
-        pack: pack.id,
-        seconds: r.seconds,
-        channels: r.channels,
-        loudness_lufs: r.lufs,
-        url: `${filesAt}/${key}`,
-        licence: r.entry.licence,
-        author: r.entry.author,
-        source_url: r.entry.source_url,
-        key,
-        bytes: r.bytes,
-        embedding: embeddings[i] as number[],
-        embedding_model: CLAP_MODEL,
-        added_at: new Date(),
-      },
-      { upsert: true },
-    );
-    await rm(r.flac, { force: true });
-    loaded++;
-  }
+  await pool(
+    ready.map((r, i) => async () => {
+      const id = `${pack.id}-${r.entry.id}`;
+      const ext = extname(r.file).toLowerCase();
+      const key = `${pack.id}/${r.entry.id}${ext}`;
+      await s3.send(
+        new sdk.PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: createReadStream(r.file),
+          ContentLength: r.bytes,
+          ContentType: TYPES[ext] ?? 'application/octet-stream',
+          CacheControl: 'public, max-age=31536000, immutable',
+        }),
+      );
+      await sounds.replaceOne(
+        { _id: id },
+        {
+          name: r.entry.name,
+          description: r.entry.description,
+          tags: r.entry.tags,
+          category: r.entry.category,
+          pack: pack.id,
+          seconds: r.seconds,
+          channels: r.channels,
+          loudness_lufs: r.lufs,
+          peak_dbtp: r.peak,
+          url: `${filesAt}/${key}`,
+          licence: r.entry.licence,
+          author: r.entry.author,
+          source_url: r.entry.source_url,
+          key,
+          bytes: r.bytes,
+          embedding: embeddings[i] as number[],
+          embedding_model: CLAP_MODEL,
+          added_at: new Date(),
+        },
+        { upsert: true },
+      );
+      loaded++;
+    }),
+    JOBS,
+  );
   process.stdout.write(
-    `${pack.id}: ${loaded} loaded, ${skipped} skipped, ${todo.length - at - batch.length} left\n`,
+    `${pack.id}: ${loaded} loaded, ${skipped} skipped, ${Math.max(0, todo.length - at - BATCH)} left\n`,
   );
 }
 await rm(work, { recursive: true, force: true });

@@ -8,7 +8,7 @@ import {
 import type { Collection, Db, Document } from 'mongodb';
 
 // The sound library: sound effects from CC0 and public-domain packs, one MongoDB document each
-// (collection `sounds`), their files in a public bucket. scripts/sounds loads packs into it.
+// (collection `sounds`), their files, as their packs published them, in a public bucket. scripts/sounds loads packs into it.
 //
 // A query is searched two ways at once and the two rankings fused (reciprocal rank fusion):
 //   words: Atlas Search (BM25) over name, tags, category and description, forgiving one typo;
@@ -35,6 +35,7 @@ export interface SoundDoc {
   seconds: number;
   channels: number;
   loudness_lufs: number | null;
+  peak_dbtp: number | null;
   url: string;
   licence: string;
   author: string | null;
@@ -130,6 +131,7 @@ function shown(doc: Document): LibrarySound {
     seconds: d.seconds,
     channels: d.channels,
     loudness_lufs: d.loudness_lufs,
+    peak_dbtp: d.peak_dbtp ?? null,
     url: d.url,
     licence: d.licence,
     author: d.author,

@@ -62,6 +62,7 @@ const sound = (id: string, name: string, kind: Kind, more: Partial<SoundDoc> = {
   seconds: 2,
   channels: 1,
   loudness_lufs: -20,
+  peak_dbtp: -3,
   url: `https://sounds.example/${id}.flac`,
   licence: 'CC0',
   author: null,

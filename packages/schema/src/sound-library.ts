@@ -65,11 +65,11 @@ export const LibrarySound = z.object({
   pack: z.string(),
   seconds: z.number().describe('Length'),
   channels: z.number().int(),
-  loudness_lufs: z
-    .number()
-    .nullable()
-    .describe('Integrated loudness as stored (peaks are set to -1 dBTP; levels are left to you)'),
-  url: z.string().describe('The file (FLAC), for media.import'),
+  loudness_lufs: z.number().nullable().describe('Integrated loudness of the file, measured'),
+  peak_dbtp: z.number().nullable().describe('True peak of the file, measured'),
+  url: z
+    .string()
+    .describe('The file exactly as its pack published it (WAV, OGG, FLAC…), for media.import'),
   licence: z.string().describe('CC0 or public domain'),
   author: z.string().nullable(),
   source_url: z.string().nullable().describe('Where the pack published it'),
