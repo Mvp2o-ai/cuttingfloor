@@ -818,11 +818,13 @@ export class Lifecycle {
     const share = typeof body.share_code === 'string' ? body.share_code : '';
     if (!/^[A-Za-z0-9]{4,32}$/.test(share))
       return json(res, 400, { error: 'share_code must be a Kazi share code' });
-    let user: { email?: string; email_verified?: boolean };
+    let user: { email?: string; email_verified?: boolean; first_name?: string; last_name?: string };
     try {
       user = (await this.#workos(`/user_management/users/${encodeURIComponent(owner)}`)) as {
         email?: string;
         email_verified?: boolean;
+        first_name?: string;
+        last_name?: string;
       };
     } catch (error) {
       process.stderr.write(`lifecycle: ${owner}: kazi handoff: ${(error as Error).message}\n`);
@@ -830,10 +832,12 @@ export class Lifecycle {
     }
     if (!user.email || !user.email_verified) return json(res, 403, { error: 'email_unverified' });
     try {
+      const name = [user.first_name, user.last_name].filter((part) => part?.trim()).join(' ');
       const link = await this.#o.ledger.handoff({
         email: user.email,
         workos_user_id: owner,
         share_code: share,
+        ...(name ? { name } : {}),
       });
       return json(res, 200, { url: link.url, expires_at: link.expires_at });
     } catch (error) {

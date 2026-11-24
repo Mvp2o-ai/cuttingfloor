@@ -23,7 +23,17 @@ let base: string;
 let server: Server;
 
 const users = new Map([
-  [VERIFIED, { id: VERIFIED, email: 'maker@example.com', email_verified: true, metadata: {} }],
+  [
+    VERIFIED,
+    {
+      id: VERIFIED,
+      email: 'maker@example.com',
+      email_verified: true,
+      first_name: 'Ada',
+      last_name: 'Okafor',
+      metadata: {},
+    },
+  ],
   [UNVERIFIED, { id: UNVERIFIED, email: 'who@example.com', email_verified: false, metadata: {} }],
 ]);
 const asked: Array<{ auth: string | null; body: Record<string, unknown> }> = [];
@@ -114,7 +124,12 @@ describe('kazi handoff', () => {
     expect(asked).toEqual([
       {
         auth: `Bearer ${KAZI_KEY}`,
-        body: { email: 'maker@example.com', workos_user_id: VERIFIED, share_code: 'PsFVYwBiOA' },
+        body: {
+          email: 'maker@example.com',
+          workos_user_id: VERIFIED,
+          share_code: 'PsFVYwBiOA',
+          name: 'Ada Okafor',
+        },
       },
     ]);
   });
