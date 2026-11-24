@@ -175,6 +175,8 @@ export interface RuntimeConfig {
    * record database when records are in MongoDB, else the hosted library.
    */
   sounds?: string;
+  /** Where the sound library's files are (CUTTINGFLOOR_SOUNDS_FILES): views play them from there. */
+  soundFiles?: string;
 }
 
 /** The hosted server, whose sound library every other server reads by default. */
@@ -307,6 +309,9 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     ...(env.CUTTINGFLOOR_STANDBY === '1' ? { standby: true } : {}),
     ...(env.CUTTINGFLOOR_DRAIN === '1' ? { drain: true } : {}),
     ...(env.CUTTINGFLOOR_SOUNDS?.trim() ? { sounds: env.CUTTINGFLOOR_SOUNDS.trim() } : {}),
+    ...(env.CUTTINGFLOOR_SOUNDS_FILES?.trim()
+      ? { soundFiles: env.CUTTINGFLOOR_SOUNDS_FILES.trim() }
+      : {}),
   };
 }
 

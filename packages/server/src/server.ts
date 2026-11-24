@@ -12,6 +12,7 @@ import { registerPlayer } from './player.ts';
 import { registerResources } from './resources.ts';
 import { toErrorResult } from './result.ts';
 import type { Runtime } from './runtime.ts';
+import { registerSoundsView } from './sounds-view.ts';
 import { registerTasks } from './tasks.ts';
 import { registerCreateTools } from './tools/create.ts';
 import { claimFile, claimSeen, gateUntilClaimed, registerCreditTools } from './tools/credits.ts';
@@ -23,6 +24,7 @@ import { registerRenderTools } from './tools/render.ts';
 import { registerSearchTools } from './tools/search.ts';
 import { registerSeekTools } from './tools/seek.ts';
 import { registerSkillTools } from './tools/skills.ts';
+import { registerSoundTools } from './tools/sounds.ts';
 import { registerSupportTools } from './tools/support.ts';
 import { registerTimelineTools } from './tools/timeline.ts';
 import { registerUpload } from './upload.ts';
@@ -76,7 +78,7 @@ Credits: making is free (edits, jobs, judgments). Exports, created media and ful
     : '';
   return `${welcome ? `${WELCOME}\n` : ''}cuttingfloor is a headless video editor: media comes in, is cut and finished, and leaves as a download. Work, not storage: ${KEEPING}; links work ${span(config.outputUrlTtlMs)} (re-read for fresh ones). Download finished or approved work (or have the user); if they count on keeping it, say it's temporary. To go on later, keep timeline.get's document (timeline.load) and the files (media.import again). media.delete drops unwanted media.
 Two ways in, often both:
-- Make new: create.motion (animated HTML, alpha), .still (HTML to PNG), .matte (solid, gradient), .voiceover (speech, timed words); a picture the user shows is a reference to rebuild in HTML, not import. Remake: create.cutout, .stabilized, .upscaled, .lipsync (user's provider key). Music isn't made (it's the user's files); meme and hype sound effects to import: video://catalog/sound_effects.
+- Make new: create.motion (animated HTML, alpha), .still (HTML to PNG), .matte (solid, gradient), .voiceover (speech, timed words); a picture the user shows is a reference to rebuild in HTML, not import. Remake: create.cutout, .stabilized, .upscaled, .lipsync (user's provider key). Music isn't made (it's the user's files). Sound effects to add (footsteps, impacts, ambiences, whooshes, meme hits…): sounds.list finds them by description.
 - Edit theirs: media.import a URL${roots.length ? `, a path under ${roots.join(', ')}` : ''}, an upload_id or a small data: URI${samples}. A file on their device, or attached but not handed to you: media.upload, an upload box in the chat (or a link)${config.uploadPage ? `, or they drop it on their upload page, ${config.uploadPage}` : ''}. Sent files: media.list.
 ${INSTRUCTIONS_BODY}${credits}`;
 }
@@ -127,12 +129,14 @@ export function createServer(deps: ServerDeps): McpServer {
   registerPlayer(server, deps);
   registerEditor(server, deps);
   registerLibrary(server, deps);
+  registerSoundsView(server, deps);
   registerUpload(server, deps);
   registerTimelineTools(server, deps);
   registerMediaTools(server, deps);
   registerSeekTools(server, deps);
   registerSearchTools(server, deps);
   registerListenTools(server, deps);
+  registerSoundTools(server, deps);
   registerJudgeTools(server, deps);
   registerCreateTools(server, deps);
   registerRenderTools(server, deps);

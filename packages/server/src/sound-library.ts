@@ -56,6 +56,9 @@ export interface SoundPackDoc {
   added_at: Date;
 }
 
+/** Where the hosted library's files are: a public bucket (CUTTINGFLOOR_SOUNDS_FILES elsewhere). */
+export const SOUND_FILES = 'https://cuttingfloor-sounds.fsn1.your-objectstorage.com';
+
 export const SOUNDS = 'sounds';
 export const SOUND_PACKS = 'sound_packs';
 export const SOUNDS_TEXT_INDEX = 'sounds_text';
@@ -205,6 +208,25 @@ export class MongoSoundLibrary implements SoundLibrary {
 
   async list(args: SoundsListInputSchema, signal: AbortSignal): Promise<SoundsListResult> {
     const facets = await this.#facetsNow();
+    if (args.sound_ids) {
+      const docs = await (await this.#sounds())
+        .find({ _id: { $in: args.sound_ids } }, { projection: SHOWN })
+        .toArray();
+      const byId = new Map(docs.map((d) => [d._id, d]));
+      const found = args.sound_ids.flatMap((id) => {
+        const d = byId.get(id);
+        return d ? [shown(d)] : [];
+      });
+      const missing = args.sound_ids.filter((id) => !byId.has(id));
+      return SoundsListResult.parse({
+        searched: false,
+        ...(missing.length ? { note: `No sound has the id ${missing.join(', ')}` } : {}),
+        sounds: found,
+        next_offset: null,
+        total: found.length,
+        ...facets,
+      });
+    }
     if (args.query) {
       const found = await this.#search(args, args.query, signal);
       if (found) return SoundsListResult.parse({ ...found, ...facets });
@@ -443,10 +465,13 @@ export class MongoSoundLibrary implements SoundLibrary {
   }
 }
 
-/** The query string of GET /sounds for these arguments. */
+/** The query string of GET /sounds for these arguments (a list as one value per item). */
 export function soundsQuery(args: Partial<SoundsListInputSchema>): URLSearchParams {
   const q = new URLSearchParams();
-  for (const [k, v] of Object.entries(args)) if (v !== undefined) q.set(k, String(v));
+  for (const [k, v] of Object.entries(args)) {
+    if (Array.isArray(v)) for (const item of v) q.append(k, String(item));
+    else if (v !== undefined) q.set(k, String(v));
+  }
   return q;
 }
 
@@ -454,7 +479,8 @@ export function soundsQuery(args: Partial<SoundsListInputSchema>): URLSearchPara
 export function soundsArgs(params: URLSearchParams): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of params) {
-    out[k] = ['limit', 'offset', 'max_seconds', 'min_seconds'].includes(k) ? Number(v) : v;
+    if (k === 'sound_ids') out[k] = [...((out[k] as string[] | undefined) ?? []), v];
+    else out[k] = ['limit', 'offset', 'max_seconds', 'min_seconds'].includes(k) ? Number(v) : v;
   }
   return out;
 }

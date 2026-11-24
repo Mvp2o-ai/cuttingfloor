@@ -43,6 +43,7 @@ export {
   MongoSoundLibrary,
   prepareSoundLibrary,
   RemoteSoundLibrary,
+  SOUND_FILES,
   SOUND_PACKS,
   SOUNDS,
   type SoundDoc,

@@ -103,6 +103,10 @@ export const LINES: Record<string, Line> = {
     group: 'audio',
     say: 'Find when a sound you describe can be heard: laughter, a cough, applause.',
   },
+  'sounds.list': {
+    group: 'audio',
+    say: 'Search a library of free sound effects by describing the sound: footsteps, rain, a roar.',
+  },
   'media.correlate': {
     group: 'audio',
     say: 'Find how far apart two recordings are, to line up a camera and a mic.',

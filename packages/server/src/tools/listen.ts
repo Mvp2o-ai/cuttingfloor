@@ -106,9 +106,9 @@ export function registerListenTools(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
     'media.listen',
     {
-      title: 'Find sounds by description',
+      title: 'Find sounds in media by description',
       description: [
-        'Find when something can be heard in a video or audio file, or in an edit as it plays, from what you describe in plain words, so you go straight to it instead of listening to it all: laughter, applause, a cough, a door slamming, a phone ringing, a dog barking, music starting, someone typing, a car passing. Name each sound and say what it is; you get back the stretches of time where each one can be heard, with the moment it is clearest.',
+        'Find when something can be heard in a video or audio file, or in an edit as it plays, from what you describe in plain words, so you go straight to it instead of listening to it all: laughter, applause, a cough, a door slamming, a phone ringing, a dog barking, music starting, someone typing, a car passing. Name each sound and say what it is; you get back the stretches of time where each one can be heard, with the moment it is clearest. Sound effects to add to an edit come from sounds.list.',
         'Use it to:',
         '- Find reactions and moments: where the crew or the audience laughs, where people clap or cheer, a gasp, a scream.',
         '- Find trouble to cut or cover: a cough, a sneeze, a phone going off, a door, a siren, wind on the microphone, a click or a bump.',
@@ -123,7 +123,7 @@ export function registerListenTools(server: McpServer, deps: ServerDeps): void {
       inputSchema: MediaListenInput,
       outputSchema: withJob(MediaListenResult),
       annotations: {
-        title: 'Find sounds by description',
+        title: 'Find sounds in media by description',
         // A long run queues a job, which counts as a write.
         readOnlyHint: false,
         destructiveHint: false,

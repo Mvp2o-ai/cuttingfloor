@@ -332,9 +332,15 @@ export const TOOLS: ToolEntry[] = [
   },
   {
     name: 'media.listen',
-    title: 'Find sounds by description',
+    title: 'Find sounds in media by description',
     readOnly: false,
     longRunning: 'always',
+  },
+  {
+    name: 'sounds.list',
+    title: 'List and search sound effects',
+    readOnly: true,
+    longRunning: 'never',
   },
   {
     name: 'judge.ask',

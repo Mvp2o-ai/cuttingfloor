@@ -204,7 +204,7 @@ const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<u
   sound_effects: {
     title: 'Sound effects',
     body: {
-      note: `Meme and hype sounds to put on an audio track: media.import {source: {url}} with the url here, then clip.add. CC0 or made by cuttingfloor, free to use. Each is about -14 LUFS at its loudest.`,
+      note: `A few meme and hype sounds to put on an audio track: media.import {source: {url}} with the url here, then clip.add. CC0 or made by cuttingfloor, free to use. Each is about -14 LUFS at its loudest. The whole sound library (footsteps, impacts, ambiences, weather, crowds, creatures, vehicles…) is sounds.list, searched by description.`,
       sounds: Object.fromEntries(
         Object.entries(SOUND_EFFECTS).map(([name, s]) => [
           name,

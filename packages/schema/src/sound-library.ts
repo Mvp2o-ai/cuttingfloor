@@ -19,6 +19,14 @@ export const SoundsListInput = z.object({
     .describe(
       'A sound in words ("footsteps on gravel", "a giant stomping", "rain on a window", "crowd cheering"): the closest sounds first, matched on their names and tags and on how they sound. Left out: the library in order, by category then name.',
     ),
+  sound_ids: z
+    .array(z.string().min(1).max(200))
+    .min(1)
+    .max(SOUNDS_LIST_LIMIT)
+    .optional()
+    .describe(
+      'Only these sounds, in this order (sound_id from an earlier result): to show the user particular sounds so they can hear them',
+    ),
   category: z
     .string()
     .min(1)
