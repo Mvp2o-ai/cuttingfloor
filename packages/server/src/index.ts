@@ -31,11 +31,25 @@ export {
   DOWNLOADS,
   type DownloadDay,
   FUNNEL_DAYS,
+  HOSTED_SOUNDS,
   Runtime,
   type RuntimeConfig,
   urlSecretKey,
 } from './runtime.ts';
 export { createServer, type ServerDeps } from './server.ts';
+export {
+  answerSounds,
+  fuseRankings,
+  MongoSoundLibrary,
+  prepareSoundLibrary,
+  RemoteSoundLibrary,
+  SOUND_PACKS,
+  SOUNDS,
+  type SoundDoc,
+  type SoundLibrary,
+  type SoundPackDoc,
+  soundSearchIndexes,
+} from './sound-library.ts';
 export { listHeld, startUpload, storageOf, storedBytes } from './storage.ts';
 export {
   CLAIM_GATE,

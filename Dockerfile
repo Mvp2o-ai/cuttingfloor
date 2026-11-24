@@ -103,13 +103,17 @@ RUN cd /tmp && /venv/bin/python -I /src/export-sed.py /src/sed /ckpt/frame_mn10.
  && /venv/bin/python -I /src/export-flexsed.py /src/flexsed /ckpt/flexsed.pt /models/sounds/flexsed.onnx \
  && /venv/bin/python -I /src/export-demucs.py /ckpt/htdemucs.th /models/sounds/htdemucs.onnx
 # The CLAP text encoder FlexSED was trained with (laion/clap-htsat-unfused, Apache-2.0) in the
-# Transformers.js layout, to turn the words of a media.listen query into its embedding.
+# Transformers.js layout, to turn the words of a media.listen query into its embedding, and the
+# same checkpoint's audio encoder, which embeds sound library sounds into the space a
+# sounds.list query is embedded in.
 ARG CLAP_REVISION=c28f2883575e590e04d3146ff0713c2448d691ba
 ARG CLAP_CONFIG_SHA256=39c6d90fe29cf2cce650dd5c92c38a1e35b130d9ce0bb98585222ad687ad979b
 ARG CLAP_TOKENIZER_SHA256=dc239041d98de27ffc3975473a1a23e3db4c937b23c138c38bbc66588bd247e5
 ARG CLAP_TOKENIZER_CONFIG_SHA256=2c964a338683aec3695ea37687271e75b40905233f5d2a5bbb9be8cb40c4d0a0
 ARG CLAP_SPECIAL_TOKENS_SHA256=06e405a36dfe4b9604f484f6a1e619af1a7f7d09e34a8555eb0b77b66318067f
 ARG CLAP_TEXT_ONNX_SHA256=6df7c51f2d78e236a03f2b816e613d538c815639d13644fe7c2124f439da9648
+ARG CLAP_PREPROCESSOR_SHA256=9739f58296aa6f9ac18008fd0150fb2649bc554985fbde86d0a4041c882ac753
+ARG CLAP_AUDIO_ONNX_SHA256=a1c2b43c44f71e0fa841a4b86700886c199bf87699ea45632c4d831bc6c88957
 RUN dir=/models/Xenova/clap-htsat-unfused && mkdir -p "$dir/onnx" \
  && fetch() { \
       curl -fsSL -o "$dir/$1" "https://huggingface.co/Xenova/clap-htsat-unfused/resolve/$CLAP_REVISION/$1" \
@@ -119,7 +123,9 @@ RUN dir=/models/Xenova/clap-htsat-unfused && mkdir -p "$dir/onnx" \
  && fetch tokenizer.json "$CLAP_TOKENIZER_SHA256" \
  && fetch tokenizer_config.json "$CLAP_TOKENIZER_CONFIG_SHA256" \
  && fetch special_tokens_map.json "$CLAP_SPECIAL_TOKENS_SHA256" \
- && fetch onnx/text_model.onnx "$CLAP_TEXT_ONNX_SHA256"
+ && fetch onnx/text_model.onnx "$CLAP_TEXT_ONNX_SHA256" \
+ && fetch preprocessor_config.json "$CLAP_PREPROCESSOR_SHA256" \
+ && fetch onnx/audio_model.onnx "$CLAP_AUDIO_ONNX_SHA256"
 
 # Real-ESRGAN's compact general model, realesr-general-x4v3 (BSD-3-Clause, xinntao/Real-ESRGAN
 # release v0.2.5.0), for create.upscaled: exported to ONNX with the stage above's PyTorch

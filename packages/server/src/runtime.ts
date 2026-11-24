@@ -14,6 +14,8 @@ import {
   Workspace,
 } from '@cuttingfloor/core';
 import {
+  CLAP_MODEL,
+  clapTexts,
   MEDIA_TTL_MS,
   MediaLibrary,
   renderLoad,
@@ -29,6 +31,7 @@ import { SearchIndexer } from './indexer.ts';
 import { markLive } from './live.ts';
 import { METER, METER_TTL_MS, type MeterEntry, meterJob, meterJudgments } from './meter.ts';
 import { Outputs } from './outputs.ts';
+import { MongoSoundLibrary, RemoteSoundLibrary, type SoundLibrary } from './sound-library.ts';
 import { Uploads } from './uploads.ts';
 
 /**
@@ -166,7 +169,16 @@ export interface RuntimeConfig {
    * root does the same with no restart (drain.ts).
    */
   drain?: boolean;
+  /**
+   * The sound library sounds.list reads (CUTTINGFLOOR_SOUNDS): `mongo`, the one in this
+   * server's record database; or the base url of a server that serves GET /sounds. Default: the
+   * record database when records are in MongoDB, else the hosted library.
+   */
+  sounds?: string;
 }
+
+/** The hosted server, whose sound library every other server reads by default. */
+export const HOSTED_SOUNDS = 'https://api.cuttingfloor.ai';
 
 /** How long a link to a file in the bucket works: minted per request behind our own links. */
 const BUCKET_LINK_TTL_MS = 3_600_000;
@@ -294,6 +306,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeConf
     ...(env.CUTTINGFLOOR_S3_FILE_RECORDS === '1' ? { s3FileRecords: true } : {}),
     ...(env.CUTTINGFLOOR_STANDBY === '1' ? { standby: true } : {}),
     ...(env.CUTTINGFLOOR_DRAIN === '1' ? { drain: true } : {}),
+    ...(env.CUTTINGFLOOR_SOUNDS?.trim() ? { sounds: env.CUTTINGFLOOR_SOUNDS.trim() } : {}),
   };
 }
 
@@ -315,6 +328,8 @@ export class Runtime {
   readonly modelsDir: string;
   /** Hosted: the download gate (the mark and clean-copy releases); none locally. */
   gate: DownloadGate | undefined;
+  /** What sounds.list reads: the library in the record database, or the hosted one. */
+  sounds: SoundLibrary;
   #secret: Buffer | undefined;
   #sweeper: NodeJS.Timeout | undefined;
   #reaper: NodeJS.Timeout | undefined;
@@ -351,6 +366,23 @@ export class Runtime {
     });
     this.modelsDir = config.modelsDir ?? join(config.dataDir, 'models');
     this.gate = undefined;
+    const sounds = config.sounds ?? (config.records ? 'mongo' : HOSTED_SOUNDS);
+    if (sounds === 'mongo') {
+      const records = this.ws.records;
+      if (!(records instanceof MongoRecords)) {
+        throw new Error('CUTTINGFLOOR_SOUNDS=mongo needs CUTTINGFLOOR_RECORDS=mongo');
+      }
+      this.sounds = new MongoSoundLibrary({
+        db: () => records.database(),
+        embed: clapTexts,
+        model: CLAP_MODEL,
+      });
+    } else {
+      if (!/^https?:\/\/./.test(sounds)) {
+        throw new Error('CUTTINGFLOOR_SOUNDS must be mongo or an http(s) url');
+      }
+      this.sounds = new RemoteSoundLibrary(sounds);
+    }
     this.timelines = new TimelineStore(this.ws);
     this.outputs = new Outputs(this.ws);
     this.media = new MediaLibrary(this.ws, {
