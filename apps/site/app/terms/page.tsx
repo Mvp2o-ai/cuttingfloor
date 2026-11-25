@@ -46,7 +46,7 @@ export default function Terms() {
             `Every new account gets ${FREE_CREDITS} free credits when it is activated, with no card. They don't expire and don't renew. Accounts made earlier keep the balance they have.`,
             'Making is free: importing, editing, analysing, exporting and creating motion graphics and voiceovers spend no credits. Limits that protect our servers, such as file size, storage and how many jobs run at once, still apply.',
             'Every video, GIF or image you export downloads free, at full quality, with a cuttingfloor watermark. Audio, captions and transcripts, project files and your own uploads are never watermarked.',
-            `Removing the watermark costs credits: ${CLEAN_PRICE}. A still image is ${STEP_CREDITS} credit, and 4K costs the same as HD. You pay once per export, when you remove the watermark; every later download of it is clean while the export is kept.`,
+            `Removing the watermark costs ${CLEAN_PRICE}. A still image is ${STEP_CREDITS} credit, and 4K costs the same as HD. You pay once per export, when you remove the watermark; every later download of it is clean while the export is kept.`,
             'You buy credits in packs, paid once through Stripe. There is no subscription and nothing renews. The prices are on the pricing page.',
             'Credits you buy never expire. When your credits run out, making and watermarked downloads keep working; removing watermarks waits until you buy more. We never charge for going over.',
             'If you turn on automatic top-up, we buy the pack you chose on your saved card whenever your credits run low, and email you a receipt each time. Turn it off any time on your account page.',

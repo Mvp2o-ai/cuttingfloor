@@ -343,7 +343,7 @@ export class Lifecycle {
       lines: [
         out
           ? 'Your credits are used up.'
-          : `You have ${left} credits left. A credit removes the watermark from one finished minute.`,
+          : `You have ${left} credits left. Credits remove watermarks, priced by each video's length.`,
         out
           ? 'Making still works, all of it: editing, exports, motion graphics, voiceovers. Exports download with a cuttingfloor watermark; removing watermarks waits until you top up.'
           : 'At zero, everything still works and exports download with a cuttingfloor watermark; removing watermarks waits until you top up.',
@@ -451,7 +451,7 @@ export class Lifecycle {
           lines: [
             'Your agent can edit video now. Add cuttingfloor to it once: the welcome page has the step for Claude, Claude Code, Cursor, Codex, ChatGPT and Kazi.',
             `The address is ${welcome.serverUrl}/mcp. Your agent opens a sign-in the first time; use this same account.`,
-            `Then ask it for an edit, for example: "Import my video and cut out the pauses and ums." Making is free: edits, exports, motion graphics, voiceovers. Exports download with a cuttingfloor watermark, and removing the watermark is one credit a finished minute; your account gets ${FREE_CREDITS} credits when your agent activates it. No card, no time limit.`,
+            `Then ask it for an edit, for example: "Import my video and cut out the pauses and ums." Making is free: edits, exports, motion graphics, voiceovers. Exports download with a cuttingfloor watermark, and removing the watermark costs credits, priced by the video's length; your account gets ${FREE_CREDITS} credits when your agent activates it. No card, no time limit.`,
           ],
           action: { label: 'Connect your agent', url: welcome.url },
         });

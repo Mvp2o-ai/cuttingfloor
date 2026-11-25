@@ -118,7 +118,7 @@
         <label class="fc-opt"><input type="radio" name="fc-copy" value="review"${choice === 'review' ? ' checked' : ''}>
           <b>Review copy</b><span>Watermarked · free</span></label>
         <details class="fc-why"><summary>What's the difference?</summary>
-          <p>The review copy is for watching and sharing for feedback, so it carries a small cuttingfloor mark. The final copy is the one to post: it uses 1 credit a finished minute, once, and after that every link to this file is clean.</p></details>`;
+          <p>The review copy is for watching and sharing for feedback, so it carries a small cuttingfloor mark. The final copy is the one to post: it uses credits once, priced by its length, and after that every link to this file is clean.</p></details>`;
       for (const r of menu.querySelectorAll('input')) {
         r.onchange = () => {
           choice = r.value;

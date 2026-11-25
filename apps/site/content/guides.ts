@@ -92,7 +92,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: 'What does it cost?',
-        a: `Making is free, no card: every edit and export, as many times as you like. Exports download free with a cuttingfloor watermark; removing the watermark costs 1 credit per finished minute, and a new account gets ${FREE_CREDITS} credits when you activate it. After that, credit packs that never expire, on the pricing page.`,
+        a: `Making is free, no card: every edit and export, as many times as you like. Exports download free with a cuttingfloor watermark; removing the watermark costs credits, priced by the video's length, and a new account gets ${FREE_CREDITS} credits when you activate it. After that, credit packs that never expire, on the pricing page.`,
       },
     ],
   },
@@ -291,7 +291,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: 'What does it cost?',
-        a: `Making is free, no card: importing, analysing, editing and exporting every Short cost nothing, retries included. Exports download free with a cuttingfloor watermark; removing the watermark costs 1 credit per finished minute, so a 40-second Short is 0.75 credit. A new account gets ${FREE_CREDITS} credits when you activate it; after that, credit packs that never expire, on the pricing page.`,
+        a: `Making is free, no card: importing, analysing, editing and exporting every Short cost nothing, retries included. Exports download free with a cuttingfloor watermark; removing the watermark costs credits, priced by length: a 40-second Short is 0.75 credit. A new account gets ${FREE_CREDITS} credits when you activate it; after that, credit packs that never expire, on the pricing page.`,
       },
     ],
   },
@@ -450,7 +450,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: 'What does it cost?',
-        a: `Making is free, no card: every edit and export, as many times as you like. Exports download free with a cuttingfloor watermark; removing the watermark costs 1 credit per finished minute, and a new account gets ${FREE_CREDITS} credits when you activate it. After that, credit packs that never expire, on the pricing page.`,
+        a: `Making is free, no card: every edit and export, as many times as you like. Exports download free with a cuttingfloor watermark; removing the watermark costs credits, priced by the video's length, and a new account gets ${FREE_CREDITS} credits when you activate it. After that, credit packs that never expire, on the pricing page.`,
       },
     ],
   },

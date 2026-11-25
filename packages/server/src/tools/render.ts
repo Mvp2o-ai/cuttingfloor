@@ -151,7 +151,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         `Long-running: returns a task, or {job_id} for job.get. The result links the file (a resource_link to video://jobs/{job_id}/output, which reads as the file, or its signed URL when large), has a signed download URL and a page_url that plays it in any browser (the link to give a person to watch or share), both working for ${Math.round(rt.config.outputUrlTtlMs / 3_600_000)} h (job.get gives fresh ones). The file itself is deleted ${span(KEEP_MS.job)} after the export finishes (kept_until, and expiry in words): save it from url to keep it${rt.config.exportsDir ? `, and the file is in the exports folder (${rt.config.exportsDir})` : ''}.`,
         ...(rt.gate
           ? [
-              "A picture export (video, GIF) downloads with a cuttingfloor watermark, for reviewing, which is free, until it is released (export.release, 1 credit a finished minute); the result says when it has one, the price and the user's credits.",
+              "A picture export (video, GIF) downloads with a cuttingfloor watermark, for reviewing, which is free, until it is released (export.release, priced by length); the result says when it has one, the price and the user's credits.",
             ]
           : []),
         'The server keeps the file 7 days, as a working copy: when the user has a finished piece to keep, offer to save it from the url where they keep their files, and media.import it to use it again.',
@@ -405,7 +405,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Remove watermark',
       description: [
-        "Removes the watermark from a finished file that has a cuttingfloor watermark (watermarked: true on its export result, media.get or media.list), spending its release_credits once from the user's credits: 1 a finished minute, in quarter-minute steps. Afterwards every link to it (url, page_url, media.get) serves the clean file, and this returns fresh ones.",
+        "Removes the watermark from a finished file that has a cuttingfloor watermark (watermarked: true on its export result, media.get or media.list), spending its release_credits (priced by length) once from the user's credits. Afterwards every link to it (url, page_url, media.get) serves the clean file, and this returns fresh ones.",
         'Tell the user the price and get their go-ahead first. Releasing again, or a file that never had the watermark, spends nothing. Not enough credits: quota_exceeded, and the watermarked file still downloads.',
       ].join(' '),
       inputSchema: ExportReleaseInput,

@@ -2,8 +2,8 @@
 // server's access checks read this file. Making is free: imports, edits, analysis, exports and
 // create.* spend nothing; only the server's protective limits apply. Every export of a picture
 // (video, GIF, image, a generated clip) downloads free with a cuttingfloor watermark, and the
-// billable unit is a credit: one finished minute's watermark removed (cleanCopyCredits), taken once
-// per export when the user releases it. Audio, text and project files are never watermarked.
+// billable unit is a credit: removing the watermark is priced by finished length (cleanCopyCredits),
+// taken once per export when the user releases it. Audio, text and project files are never watermarked.
 //
 // There are no subscriptions. Every account starts with a few free credits and buys more in packs
 // when it wants them (pay as you go); bought credits never expire. At zero, making and marked
@@ -146,15 +146,28 @@ export const JUDGMENTS_PER_CREDIT = 200;
 
 /** Removing a watermark is priced by its finished length in these steps of a minute. */
 export const CLEAN_COPY_STEP = 0.25;
+/** Finished minutes at the full rate (a credit a minute); every minute after costs half. */
+export const CLEAN_COPY_FULL_MINUTES = 5;
 
-/**
- * Credits removing the watermark costs: one a finished minute, in quarter-minute steps (at least one step).
- * A still image, or a file with no length, is one step. 4K costs the same as HD.
- */
-export function cleanCopyCredits(seconds: number | null | undefined): number {
+/** Finished minutes a clean copy is priced on: quarter-minute steps, at least one. */
+export function cleanCopyMinutes(seconds: number | null | undefined): number {
   if (!seconds || !(seconds > 0)) return CLEAN_COPY_STEP;
   const steps = Math.max(1, Math.ceil(Math.round(seconds * 1000) / 1000 / (60 * CLEAN_COPY_STEP)));
   return steps * CLEAN_COPY_STEP;
+}
+
+/**
+ * Credits removing the watermark costs, by finished length in quarter-minute steps (at least one):
+ * a credit a minute for the first CLEAN_COPY_FULL_MINUTES, half a credit a minute after, rounded
+ * up to a quarter credit. A still image, or a file with no length, is one step. 4K costs the same
+ * as HD. Only this function knows the rate; everything a user or agent reads gives the price of
+ * the file in front of them (release_credits), never the formula.
+ */
+export function cleanCopyCredits(seconds: number | null | undefined): number {
+  const minutes = cleanCopyMinutes(seconds);
+  const full = Math.min(minutes, CLEAN_COPY_FULL_MINUTES);
+  const credits = full + (minutes - full) / 2;
+  return Math.ceil(credits / CLEAN_COPY_STEP) * CLEAN_COPY_STEP;
 }
 
 /**

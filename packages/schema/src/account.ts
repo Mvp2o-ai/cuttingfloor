@@ -16,7 +16,7 @@ export const AccountGetResult = z.object({
   plan_name: z.string(),
   credits: z.object({
     left: nullableCount.describe(
-      'Credits left; null when there is no cap. A credit removes the watermark from one finished minute (export.release); making is free, so at 0 everything still works and files keep the mark',
+      'Credits left; null when there is no cap. Credits remove watermarks (export.release, priced by finished length); making is free, so at 0 everything still works and files keep the mark',
     ),
     used: z
       .number()

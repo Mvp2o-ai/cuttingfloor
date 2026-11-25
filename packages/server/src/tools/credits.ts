@@ -157,7 +157,7 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
       const result: ClaimFreeCreditsResult = {
         claimed_now: claimedNow,
         message: claimedNow
-          ? `Welcome to cuttingfloor: the account is active${left}.${tryIt} Making is free: edits, exports, motion graphics and voiceovers. Exports download with a cuttingfloor watermark; export.release removes the watermark for 1 credit a finished minute. cuttingfloor can do anything CapCut or DaVinci Resolve can; if something gets in the way, tell us with support.contact so we can improve the user's experience.`
+          ? `Welcome to cuttingfloor: the account is active${left}.${tryIt} Making is free: edits, exports, motion graphics and voiceovers. Exports download with a cuttingfloor watermark; export.release removes the watermark for credits, priced by length. cuttingfloor can do anything CapCut or DaVinci Resolve can; if something gets in the way, tell us with support.contact so we can improve the user's experience.`
           : `The account is already active${left}.`,
         credits: balance,
         media_id: sample?.media_id ?? null,
