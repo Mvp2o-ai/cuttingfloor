@@ -39,9 +39,16 @@ function markAssets(): Manifest {
 /** Clips shorter than this get one held piece: the loop has gaps between its pieces. */
 const SHORTEST_LOOPED = 8;
 
+// The review copy's cards (scripts/build-cards.ts): before the video, that it is a review copy
+// and making is free; after it, how to get the clean copy. Seconds each, and their fade.
+export const REVIEW_CARDS = { open: 3, end: 4 } as const;
+const CARD_FADE = 0.3;
+
 export interface MarkOptions {
   /** Picks where the loop starts, or which piece a still gets (the file's id). */
   seed: string;
+  /** Put the opening and end cards around a video (not a still, a GIF or one with alpha). */
+  cards?: boolean;
   signal?: AbortSignal;
 }
 
@@ -59,6 +66,11 @@ interface Stream {
   color_primaries?: string;
   nb_frames?: string;
   duration?: string;
+  r_frame_rate?: string;
+  sample_aspect_ratio?: string;
+  sample_rate?: string;
+  channels?: number;
+  channel_layout?: string;
   disposition?: { attached_pic?: number };
   side_data_list?: Array<{ rotation?: number }>;
   tags?: Record<string, string>;
@@ -125,9 +137,7 @@ export async function burnMark(input: string, output: string, opts: MarkOptions)
   let graph: string;
   if (looped) {
     const m = markAssets();
-    const aspect = width / height;
-    const shape = aspect > 1.2 ? 'landscape' : aspect < 1 / 1.2 ? 'portrait' : 'square';
-    const loop = m.loops[shape] as Manifest['loops'][string];
+    const loop = m.loops[shapeOf(width, height)] as Manifest['loops'][string];
     // Start where a piece is fully in, so the first frame carries the mark.
     const first = loop.placements[Math.floor(rand() * loop.placements.length)] as Placement;
     const offset = first.start + m.fade;
@@ -158,11 +168,61 @@ export async function burnMark(input: string, output: string, opts: MarkOptions)
       `[0:v][m]overlay=${piece.x}:${piece.y}:shortest=1${overlayFormat(v.pix_fmt)}`;
   }
 
-  const enc = encoder(codec, v, extname(output).toLowerCase(), alphaWebm);
-  graph += enc.tail ? `,${enc.tail}[v]` : '[v]';
+  const ext = extname(output).toLowerCase();
+  const enc = encoder(codec, v, ext, alphaWebm);
+  const audio = streams.find((s) => s.codec_type === 'audio');
+  const cards =
+    opts.cards &&
+    !still &&
+    !gif &&
+    !alphaWebm &&
+    !/^(yuva|rgba|argb|bgra|abgr|gbrap)/.test(v.pix_fmt ?? '');
+  if (cards) {
+    const shape = shapeOf(width, height);
+    const rate = v.r_frame_rate && !v.r_frame_rate.startsWith('0') ? v.r_frame_rate : '25';
+    const sar = /^[1-9]\d*:[1-9]\d*$/.test(v.sample_aspect_ratio ?? '')
+      ? v.sample_aspect_ratio
+      : '1';
+    const card = (name: string, seconds: number, n: number) => {
+      args.push(
+        '-loop',
+        '1',
+        '-framerate',
+        rate,
+        '-t',
+        String(seconds),
+        '-i',
+        `file:${ASSETS}cards/${name}-${shape}.png`,
+      );
+      return (
+        `[${n}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,` +
+        `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=0x080A09,setsar=${sar},format=yuv420p,` +
+        `fade=t=in:d=${CARD_FADE},fade=t=out:st=${seconds - CARD_FADE}:d=${CARD_FADE}[${name}]`
+      );
+    };
+    graph += `,setsar=${sar}[main];${card('open', REVIEW_CARDS.open, 2)};${card('end', REVIEW_CARDS.end, 3)}`;
+    if (audio) {
+      const sr = Number(audio.sample_rate) || 48_000;
+      const layout = audio.channel_layout ?? (audio.channels === 1 ? 'mono' : 'stereo');
+      const quiet = (seconds: number, label: string) =>
+        `anullsrc=r=${sr}:cl=${layout},atrim=duration=${seconds}[${label}]`;
+      graph +=
+        `;${quiet(REVIEW_CARDS.open, 'a0')};${quiet(REVIEW_CARDS.end, 'a2')}` +
+        `;[0:a]aformat=sample_rates=${sr}:channel_layouts=${layout}[a1]` +
+        `;[open][a0][main][a1][end][a2]concat=n=3:v=1:a=1[cv][ca]`;
+    } else {
+      graph += ';[open][main][end]concat=n=3:v=1:a=0[cv]';
+    }
+    graph += enc.tail ? `;[cv]${enc.tail}[v]` : ';[cv]null[v]';
+  } else {
+    graph += enc.tail ? `,${enc.tail}[v]` : '[v]';
+  }
   args.push('-filter_complex', graph, '-map', '[v]');
   if (still) {
     args.push('-frames:v', '1', '-update', '1');
+  } else if (cards) {
+    // The cards' silence joins the sound, so it is encoded again, in the container's own codec.
+    if (audio) args.push('-map', '[ca]', ...audioCodec(audio.codec_name ?? '', ext));
   } else {
     args.push('-map', '0:a?', '-c:a', 'copy', '-fps_mode', 'passthrough');
   }
@@ -175,9 +235,22 @@ export async function burnMark(input: string, output: string, opts: MarkOptions)
   const seconds = Number.isFinite(duration) ? duration : 0;
   await run(BIN.ffmpeg, args, {
     heavy: true,
-    timeoutMs: 120_000 + seconds * 10_000,
+    timeoutMs: 120_000 + (seconds + REVIEW_CARDS.open + REVIEW_CARDS.end) * 10_000,
     ...(signal ? { signal } : {}),
   });
+}
+
+/** The canvas a loop or card is drawn for: landscape, portrait or square. */
+function shapeOf(width: number, height: number): 'landscape' | 'portrait' | 'square' {
+  const aspect = width / height;
+  return aspect > 1.2 ? 'landscape' : aspect < 1 / 1.2 ? 'portrait' : 'square';
+}
+
+/** Sound encoded again (after the cards join it): PCM stays PCM, else the container's codec. */
+function audioCodec(codec: string, ext: string): string[] {
+  if (codec.startsWith('pcm_')) return ['-c:a', codec];
+  if (ext === '.webm') return ['-c:a', 'libopus', '-b:a', '192k'];
+  return ['-c:a', 'aac', '-b:a', '256k'];
 }
 
 /** One piece for a still, a GIF or a short clip: which, how big, at what angle, where. */

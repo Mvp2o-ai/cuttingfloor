@@ -33,7 +33,7 @@ export {
 export { directDownloadUrl, download, isBlockedAddress, readableSize } from './fetch.ts';
 export { fontMeasure, loadFace, type Measure } from './fontmetrics.ts';
 export { type ClipPlacement, clipPlacements, type PixelBox } from './geometry.ts';
-export { burnMark, type MarkOptions } from './mark.ts';
+export { burnMark, type MarkOptions, REVIEW_CARDS } from './mark.ts';
 export {
   fingerprint,
   fingerprintBlob,

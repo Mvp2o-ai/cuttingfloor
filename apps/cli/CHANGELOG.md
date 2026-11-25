@@ -1,5 +1,17 @@
 # cuttingfloor
 
+## 0.75.0
+
+### Minor Changes
+
+- d5a0dd2: A watermarked video now opens on a card saying it is a review copy (making is free, keep editing) and ends on one saying how to get the clean copy; on its watch page, the button that removes the watermark shows over the picture while the end card plays.
+
+## 0.74.5
+
+### Patch Changes
+
+- 2d27c52: The sign-up handoff into Kazi activates the account with the demo clip while Kazi makes the link, instead of before, so the link comes back sooner.
+
 ## 0.74.4
 
 ### Patch Changes

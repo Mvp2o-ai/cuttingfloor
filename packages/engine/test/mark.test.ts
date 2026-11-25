@@ -3,7 +3,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { burnMark } from '@cuttingfloor/engine';
+import { burnMark, REVIEW_CARDS } from '@cuttingfloor/engine';
 import { describe, expect, it } from 'vitest';
 
 // The cuttingfloor mark burnt into a finished file: it is there to see, and the file is
@@ -270,6 +270,74 @@ describe.skipIf(!ffmpeg)('the cuttingfloor mark', { timeout: 120_000 }, () => {
       expect(await facts(output)).toMatchObject(expected);
       expect(changed(await frame(input, 0), await frame(output, 0))).toBeGreaterThan(0.005);
     }
+  });
+
+  it('opens and ends a video on the review cards, the sound silent under them and in sync', async () => {
+    const input = await make('carded.mp4', [
+      ...flat('360x640', 30, 10),
+      ...tone(10),
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      '-shortest',
+    ]);
+    const output = join(dir, 'carded-marked.mp4');
+    await burnMark(input, output, { seed: 'media_cards', cards: true });
+    const before = await facts(input);
+    const after = await facts(output);
+    expect(after).toMatchObject({
+      codec: 'h264',
+      width: 360,
+      height: 640,
+      rate: '30/1',
+      audio: 'aac',
+    });
+    const added = REVIEW_CARDS.open + REVIEW_CARDS.end;
+    expect(after.frames).toBe(before.frames + added * 30);
+    expect(Math.abs(after.duration - before.duration - added)).toBeLessThan(0.1);
+    // The cards are the brand's near-black, the video its own blue between them.
+    const dark = (f: Buffer) => (f[0] ?? 255) < 40 && (f[1] ?? 255) < 40 && (f[2] ?? 255) < 40;
+    expect(dark(await frame(output, 1.5))).toBe(true);
+    expect(dark(await frame(output, REVIEW_CARDS.open + 5))).toBe(false);
+    expect(dark(await frame(output, after.duration - 1.5))).toBe(true);
+    // Silence under each card; the tone exactly where the video is.
+    const { stderr } = await exec('ffmpeg', [
+      '-nostats',
+      '-i',
+      output,
+      '-af',
+      'silencedetect=n=-50dB:d=0.5',
+      '-f',
+      'null',
+      '-',
+    ]);
+    const ends = [...stderr.matchAll(/silence_end: ([\d.]+)/g)].map((m) => Number(m[1]));
+    const starts = [...stderr.matchAll(/silence_start: ([\d.]+)/g)].map((m) => Number(m[1]));
+    expect(ends[0]).toBeCloseTo(REVIEW_CARDS.open, 1);
+    expect(starts[1]).toBeCloseTo(REVIEW_CARDS.open + before.duration, 0);
+  });
+
+  it('leaves a still, a GIF and a video without sound fine with cards asked for', async () => {
+    const quiet = await make('carded-quiet.mp4', [
+      ...flat('640x360', 25, 4),
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+    ]);
+    const out = join(dir, 'carded-quiet-marked.mp4');
+    await burnMark(quiet, out, { seed: 'media_q', cards: true });
+    expect(await facts(out)).toMatchObject({
+      audio: null,
+      frames: (4 + REVIEW_CARDS.open + REVIEW_CARDS.end) * 25,
+    });
+    const png = await make('carded.png', [...flat('320x320', 1, 1), '-frames:v', '1']);
+    const stillOut = join(dir, 'carded-marked.png');
+    await burnMark(png, stillOut, { seed: 'media_p', cards: true });
+    expect(await facts(stillOut)).toMatchObject({ width: 320, height: 320, frames: 1 });
   });
 
   it('stops when cancelled', async () => {

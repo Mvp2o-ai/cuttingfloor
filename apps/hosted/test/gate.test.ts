@@ -1,10 +1,11 @@
+import { createHash } from 'node:crypto';
 import { copyFile, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
-import { Runtime } from '@cuttingfloor/server';
+import { REVIEW_CARDS, Runtime } from '@cuttingfloor/server';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHttpServer, parseApiKeys } from '../src/http.ts';
@@ -256,6 +257,15 @@ describe('the download gate', () => {
     const action = /<form method="post" action="([^"]+)"/.exec(page)?.[1]?.replaceAll('&amp;', '&');
     expect(action).toMatch(new RegExp(`^/final/alice/${jobId}/mailed\\.mp4\\?exp=\\d+&sig=`));
     expect(balances.get('alice')).toBe(2);
+    // The same button over the picture while the end card plays, by the page's one allowed script.
+    const over = /<form id="over"[^>]* action="([^"]+)"[^>]*hidden>/.exec(page)?.[1];
+    expect(over?.replaceAll('&amp;', '&')).toBe(action);
+    expect(page).toContain(`data-end="${REVIEW_CARDS.end}"`);
+    const script = /<script>([\s\S]*?)<\/script>/.exec(page)?.[1] ?? '';
+    const csp = (await fetch(pageUrl)).headers.get('content-security-policy');
+    expect(csp).toContain(
+      `script-src 'sha256-${createHash('sha256').update(script).digest('base64')}'`,
+    );
     // The button: spends once, then back to the page, which now plays the clean file.
     const pressed = await fetch(new URL(action ?? '', base), {
       method: 'POST',
