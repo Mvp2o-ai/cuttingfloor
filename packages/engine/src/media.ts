@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { open, realpath, stat } from 'node:fs/promises';
 import { basename, extname, isAbsolute, join, sep } from 'node:path';
 import {
@@ -137,6 +137,19 @@ export const MEDIA_INDEX = defineCollection<{ media_id: string }>({
   fs: { dir: 'media-index' },
 });
 
+/**
+ * Which media, in any account, a URL with given bytes was imported as (by `#sourceKey`), so
+ * another account fetching the same URL and getting the same bytes copies what the server made
+ * of them rather than making it again. Keyed by the URL as well as the bytes, so a lookup tells
+ * a caller nothing about files it could not fetch itself.
+ */
+export const MEDIA_BY_SOURCE = defineCollection<{ owner: string; media_id: string }>({
+  name: 'media_by_source',
+  scope: 'global',
+  fs: { dir: 'media-by-source' },
+  db: { ttlMs: MEDIA_TTL_MS },
+});
+
 /** Why a media is gone, so a later lookup can say so. */
 export const MEDIA_GONE = defineCollection<{ reason: 'deleted' | 'expired'; at: string }>({
   name: 'gone',
@@ -241,6 +254,36 @@ export class MediaLibrary {
 
   #index(owner: string): Collection<{ media_id: string }> {
     return this.#ws.records.collection(MEDIA_INDEX, { owner });
+  }
+
+  #bySource(): Collection<{ owner: string; media_id: string }> {
+    return this.#ws.records.collection(MEDIA_BY_SOURCE);
+  }
+
+  /** A URL import's entry in MEDIA_BY_SOURCE, or undefined for any other source. */
+  #sourceKey(record: MediaRecord): string | undefined {
+    if (!('url' in record.source) || !record.fingerprint) return undefined;
+    return createHash('sha256').update(`${record.source.url}\0${record.fingerprint}`).digest('hex');
+  }
+
+  /** The ready media another account made from the same URL and bytes, while it lives. */
+  async #fromSource(
+    owner: string,
+    record: MediaRecord,
+  ): Promise<{ owner: string; record: MediaRecord } | undefined> {
+    const key = this.#sourceKey(record);
+    const entry = key ? await this.#bySource().get(key) : undefined;
+    if (!entry || entry.owner === owner) return undefined;
+    // Read without touching it: one account's imports don't keep another's media alive.
+    const stored = await this.#records(entry.owner).get(this.#id(entry.media_id));
+    if (!stored || stored.status !== 'ready' || stored.fingerprint !== record.fingerprint) {
+      return undefined;
+    }
+    const known = this.#keyed(stored);
+    for (const ref of [known.mezzanine, known.proxy]) {
+      if (ref && !(isBlob(ref) && (await this.#held(ref)))) return undefined;
+    }
+    return { owner: entry.owner, record: known };
   }
 
   /** The key of one of the media's own files (source, mezzanine, proxy). */
@@ -739,6 +782,14 @@ export class MediaLibrary {
       if (known && known.media_id !== record.media_id && known.status === 'ready') {
         return await this.#share(owner, record, known, progress);
       }
+      // The same URL and bytes another account imported: copy what the server made of them.
+      const elsewhere = await this.#fromSource(owner, record);
+      if (elsewhere) {
+        const copied = await this.#copyFrom(owner, record, elsewhere, progress).catch(
+          () => undefined,
+        );
+        if (copied) return copied;
+      }
       // A web font (WOFF, WOFF2) is used as the TrueType or OpenType font it packs.
       const unpacked = await unwrapWebFont(
         file,
@@ -761,6 +812,7 @@ export class MediaLibrary {
       record.status = 'processing';
       await this.save(owner, record);
       await this.#index(owner).put(record.fingerprint, { media_id: record.media_id });
+      const sourceKey = this.#sourceKey(record);
 
       const p = record.probe;
       /** The proxy made here, as a local file. */
@@ -808,6 +860,9 @@ export class MediaLibrary {
       }
       record.status = 'ready';
       await this.save(owner, record);
+      if (sourceKey) {
+        await this.#bySource().put(sourceKey, { owner, media_id: record.media_id });
+      }
       progress(1, 'ready');
       this.config.onReady?.(owner, record);
       return record;
@@ -880,6 +935,43 @@ export class MediaLibrary {
     record.status = 'ready';
     await this.save(owner, record);
     await this.#index(owner).put(record.fingerprint as string, { media_id: record.media_id });
+    progress(1, 'ready');
+    this.config.onReady?.(owner, record);
+    return record;
+  }
+
+  /**
+   * Makes a record the same file as `from`, another account's ready media of the same URL and
+   * bytes: copies of its conformed file and proxy under this media's own keys (nothing held
+   * across accounts) and what its import measured. Only what an import makes comes along, never
+   * what the other account asked of it since (its analyses, search index or name).
+   */
+  async #copyFrom(
+    owner: string,
+    record: MediaRecord,
+    from: { owner: string; record: MediaRecord },
+    progress: Progress,
+  ): Promise<MediaRecord> {
+    progress(0.5, 'same file as one imported before, copying what was made of it');
+    const { blobs } = this.#ws;
+    const known = from.record;
+    const copy = async (ref: string | null): Promise<BlobKey | null> => {
+      if (!isBlob(ref)) return null;
+      const to = this.#key(owner, record.media_id, basename(ref));
+      await blobs.copy(ref, to);
+      return to;
+    };
+    record.size = known.size;
+    record.probe = known.probe;
+    record.conform = known.conform;
+    record.mezzanine = await copy(known.mezzanine);
+    record.proxy = await copy(known.proxy);
+    record.analysis = known.analysis;
+    record.status = 'ready';
+    await this.save(owner, record);
+    await this.#index(owner).put(record.fingerprint as string, { media_id: record.media_id });
+    const key = this.#sourceKey(record);
+    if (key) await this.#bySource().put(key, { owner, media_id: record.media_id });
     progress(1, 'ready');
     this.config.onReady?.(owner, record);
     return record;
@@ -976,6 +1068,7 @@ export class MediaLibrary {
 
   async sweep(ttlMs = MEDIA_TTL_MS): Promise<number> {
     let n = 0;
+    await this.#bySource().expire(ttlMs);
     for (const owner of await this.#ws.records.owners()) {
       const before = n;
       // In an object store a media's own files are found through its record, which is gone by

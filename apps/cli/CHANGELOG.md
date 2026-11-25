@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.74.1
+
+### Patch Changes
+
+- 78a71c8: A URL another account already imported, with the same bytes, is ready sooner: the server copies the proxy and measurements it already made instead of making them again.
+
 ## 0.74.0
 
 ### Minor Changes
