@@ -807,17 +807,20 @@ export class Lifecycle {
    */
   async #kaziHandoffRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
-    let body: { user?: unknown; share_code?: unknown };
+    let body: { user?: unknown; share_code?: unknown; via?: unknown };
     try {
       body = JSON.parse(await readBody(req, 16 * 1024));
     } catch {
-      return json(res, 400, { error: 'body must be JSON: {user, share_code}' });
+      return json(res, 400, { error: 'body must be JSON: {user, share_code, via?}' });
     }
     const owner = typeof body.user === 'string' ? body.user : '';
     if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
     const share = typeof body.share_code === 'string' ? body.share_code : '';
     if (!/^[A-Za-z0-9]{4,32}$/.test(share))
       return json(res, 400, { error: 'share_code must be a Kazi share code' });
+    // The AI app they came from (chatgpt, claude): a hint for Kazi, so a bad one is left out.
+    const via =
+      typeof body.via === 'string' && /^[a-z0-9-]{1,32}$/.test(body.via) ? body.via : undefined;
     let user: { email?: string; email_verified?: boolean; first_name?: string; last_name?: string };
     try {
       user = (await this.#workos(`/user_management/users/${encodeURIComponent(owner)}`)) as {
@@ -838,6 +841,7 @@ export class Lifecycle {
         workos_user_id: owner,
         share_code: share,
         ...(name ? { name } : {}),
+        ...(via ? { via } : {}),
       });
       return json(res, 200, { url: link.url, expires_at: link.expires_at });
     } catch (error) {

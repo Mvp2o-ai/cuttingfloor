@@ -115,7 +115,7 @@ const handoff = (body: unknown, key = ACCOUNT_KEY) =>
 describe('kazi handoff', () => {
   it('asks Kazi, with its key, for a link as the WorkOS email and answers it', async () => {
     asked.length = 0;
-    const res = await handoff({ user: VERIFIED, share_code: 'PsFVYwBiOA' });
+    const res = await handoff({ user: VERIFIED, share_code: 'PsFVYwBiOA', via: 'chatgpt' });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       url: 'https://app.apifunnel.ai/handoff/tok123',
@@ -129,9 +129,17 @@ describe('kazi handoff', () => {
           workos_user_id: VERIFIED,
           share_code: 'PsFVYwBiOA',
           name: 'Ada Okafor',
+          via: 'chatgpt',
         },
       },
     ]);
+  });
+
+  it('leaves out a via that is not an app name, and still answers', async () => {
+    asked.length = 0;
+    const res = await handoff({ user: VERIFIED, share_code: 'PsFVYwBiOA', via: '../Evil App' });
+    expect(res.status).toBe(200);
+    expect(asked[0]?.body).not.toHaveProperty('via');
   });
 
   it('refuses a caller without the site key, a bad body or an unverified email, without asking Kazi', async () => {
