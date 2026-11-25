@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.74.5
+
+### Patch Changes
+
+- 2d27c52: The sign-up handoff into Kazi activates the account with the demo clip while Kazi makes the link, instead of before, so the link comes back sooner.
+
 ## 0.74.4
 
 ### Patch Changes
