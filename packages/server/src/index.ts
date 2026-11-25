@@ -59,6 +59,7 @@ export {
 } from './sound-share.ts';
 export { listHeld, startUpload, storageOf, storedBytes } from './storage.ts';
 export {
+  activateWithDemo,
   CLAIM_GATE,
   CLAIM_REFUSALS,
   CLAIM_TASKS,

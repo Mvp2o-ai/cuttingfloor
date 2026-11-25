@@ -5,6 +5,7 @@ import type { Job } from '@cuttingfloor/jobs';
 import { FREE_CREDITS, LOW_CREDITS, PACKS, PLANS, packOf } from '@cuttingfloor/plans';
 import { type AccountGetResult, CfError, MediaUploadInput } from '@cuttingfloor/schema';
 import {
+  activateWithDemo,
   billedSeconds,
   DRAIN_RETRY_SECONDS,
   drainingError,
@@ -64,6 +65,8 @@ const NOTICE_TTL_MS = 400 * 24 * 3_600_000;
 const SPENT_TTL_MS = 60 * 24 * 3_600_000;
 // How often new accounts are looked at: a fallback welcome arrives within this of signing up.
 const SWEEP_MS = 10 * 60_000;
+/** The task a sign-up through the Kazi demo is activated with: the demo's own. */
+const KAZI_DEMO_TASK = 'Kazi live demo: give the Big Buck Bunny ending a happier ending';
 // The hour (UTC) the day's file reminders go: afternoon in Europe, morning in the Americas.
 const EXPIRY_HOUR_UTC = 15;
 
@@ -834,6 +837,12 @@ export class Lifecycle {
       return json(res, 503, { error: 'the account could not be read just now' });
     }
     if (!user.email || !user.email_verified) return json(res, 403, { error: 'email_unverified' });
+    // Activated now, with the demo's clip in their library, so Kazi's first call finds it ready
+    // instead of importing it. Kazi's own credits.claim still activates them if this fails.
+    await activateWithDemo(this.#o.runtime, owner, KAZI_DEMO_TASK, 'kazi-demo').catch(
+      (error: Error) =>
+        process.stderr.write(`lifecycle: ${owner}: kazi demo clip: ${error.message}\n`),
+    );
     try {
       const name = [user.first_name, user.last_name].filter((part) => part?.trim()).join(' ');
       const link = await this.#o.ledger.handoff({

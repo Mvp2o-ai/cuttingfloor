@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.74.4
+
+### Patch Changes
+
+- 54dd96d: Signing up through the Kazi live demo activates the account with the demo's clip already in its library, so the demo opens on it at once instead of importing it.
+
 ## 0.74.3
 
 ### Patch Changes
