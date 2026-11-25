@@ -182,6 +182,8 @@ if (access && lifecycle) {
     exempt: (owner) => access.exempt(owner),
     balance: async (owner) => (await access.balance(owner)).left,
     spend: (owner, ref, credits, tool) => lifecycle.spendRelease(owner, ref, credits, tool),
+    // The QR code on a review copy's cards: the site's page where the owner signs in to release it.
+    releasePage: (id) => new URL(`/r/${id}`, accountUrl).href,
   });
 }
 // A shared sound with no name given is credited to its sharer's first name.

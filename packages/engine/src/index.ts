@@ -6,6 +6,7 @@
 
 export { type Loudness, measureMix, renderMix, renderWaveform } from './audio.ts';
 export { analyseBeats, type Beats, estimateTempo, onsetEnvelope, trackBeats } from './beats.ts';
+export { CARD_QR, type CardShape } from './card-qr.ts';
 export { compositeFor, rotoFilters } from './composite.ts';
 export { crossCorrelate, fft, type Offset } from './correlate.ts';
 export { gradientPosition, type MatteSpec, renderMatte } from './create.ts';
