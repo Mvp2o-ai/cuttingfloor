@@ -837,21 +837,24 @@ export class Lifecycle {
       return json(res, 503, { error: 'the account could not be read just now' });
     }
     if (!user.email || !user.email_verified) return json(res, 403, { error: 'email_unverified' });
-    // Activated now, with the demo's clip in their library, so Kazi's first call finds it ready
-    // instead of importing it. Kazi's own credits.claim still activates them if this fails.
-    await activateWithDemo(this.#o.runtime, owner, KAZI_DEMO_TASK, 'kazi-demo').catch(
+    // Activated with the demo's clip in their library while Kazi makes the link, and done before
+    // the link is answered, so Kazi's first call finds it ready instead of importing it. Kazi's
+    // own credits.claim still activates them if this fails.
+    const activated = activateWithDemo(this.#o.runtime, owner, KAZI_DEMO_TASK, 'kazi-demo').catch(
       (error: Error) =>
         process.stderr.write(`lifecycle: ${owner}: kazi demo clip: ${error.message}\n`),
     );
     try {
       const name = [user.first_name, user.last_name].filter((part) => part?.trim()).join(' ');
-      const link = await this.#o.ledger.handoff({
-        email: user.email,
-        workos_user_id: owner,
-        share_code: share,
-        ...(name ? { name } : {}),
-        ...(via ? { via } : {}),
-      });
+      const link = await this.#o.ledger
+        .handoff({
+          email: user.email,
+          workos_user_id: owner,
+          share_code: share,
+          ...(name ? { name } : {}),
+          ...(via ? { via } : {}),
+        })
+        .finally(() => activated);
       return json(res, 200, { url: link.url, expires_at: link.expires_at });
     } catch (error) {
       process.stderr.write(`lifecycle: ${owner}: kazi handoff: ${(error as Error).message}\n`);
