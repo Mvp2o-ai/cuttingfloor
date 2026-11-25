@@ -88,6 +88,7 @@ beforeAll(async () => {
     accountOf: (owner) => (owner === USER ? 'acct_1' : undefined),
     flushMs: 60_000,
     retryMs: [10, 10],
+    maxPending: 2,
   });
   runtime.onToolCall((owner, entry) => activity.called(owner, entry));
   server = createHttpServer({
@@ -159,5 +160,20 @@ describe('tool activity', () => {
     await activity.flush();
     expect(requests - before).toBe(1);
     expect([...recorded.values()].some((c) => c.workos_user_id === GONE)).toBe(false);
+  });
+
+  it('keeps at most a few batches waiting while Kazi is down, dropping the rest', async () => {
+    const before = requests;
+    failNext = 100;
+    const client = await connect(USER);
+    for (let i = 0; i < 3; i++) {
+      await client.callTool({ name: 'media.list', arguments: {} });
+      void activity.flush();
+    }
+    await client.close();
+    await activity.flush();
+    failNext = 0;
+    // Two batches held, each tried three times; the third was never sent.
+    expect(requests - before).toBe(6);
   });
 });

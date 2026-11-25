@@ -14,6 +14,8 @@ import { isUser } from './rights.ts';
 const BATCH = 100;
 const FLUSH_MS = 30_000;
 const RETRY_MS = [2_000, 10_000];
+/** Batches waiting their turn at most; past it, during a long outage, new ones are dropped. */
+const MAX_PENDING = 50;
 
 export interface ActivityOptions {
   ledger: Pick<Ledger, 'activity'>;
@@ -21,6 +23,7 @@ export interface ActivityOptions {
   accountOf?: (owner: string) => string | undefined;
   flushMs?: number;
   retryMs?: number[];
+  maxPending?: number;
 }
 
 export class Activity {
@@ -29,6 +32,7 @@ export class Activity {
   /** The app each owner's latest request said it was. */
   readonly #clients = new Map<string, { name: string; from: 'client_info' | 'user_agent' }>();
   #sending: Promise<unknown> = Promise.resolve();
+  #pending = 0;
   #timer: NodeJS.Timeout | undefined;
 
   constructor(options: ActivityOptions) {
@@ -88,8 +92,15 @@ export class Activity {
     if (!calls.length) return;
     const account_id = this.#o.accountOf?.(owner);
     const body = { workos_user_id: owner, ...(account_id ? { account_id } : {}), calls };
+    if (this.#pending >= (this.#o.maxPending ?? MAX_PENDING)) {
+      process.stderr.write(`activity: ${owner}: ${calls.length} calls dropped: Kazi is behind\n`);
+      return;
+    }
     // One batch at a time, so a slow Kazi never has many requests open.
-    this.#sending = this.#sending.then(() => this.#post(owner, body));
+    this.#pending++;
+    this.#sending = this.#sending
+      .then(() => this.#post(owner, body))
+      .finally(() => this.#pending--);
   }
 
   async #post(owner: string, body: Parameters<Ledger['activity']>[0]): Promise<void> {
