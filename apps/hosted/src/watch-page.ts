@@ -1,3 +1,14 @@
+import { createHash } from 'node:crypto';
+
+// While a watermarked video's end card plays (the last `data-end` seconds) or once it has ended,
+// the button that removes the watermark shows over the picture, where the card points to it.
+const SCRIPT = `const v=document.querySelector('video[data-end]'),o=document.getElementById('over');
+if(v&&o){const e=Number(v.dataset.end),f=()=>{o.hidden=!(v.ended||(v.duration>0&&v.duration-v.currentTime<=e))};
+for(const k of ['timeupdate','seeked','ended','play'])v.addEventListener(k,f)}`;
+
+/** The CSP source that lets the page's one script run, and nothing else. */
+export const WATCH_SCRIPT_SRC = `'sha256-${createHash('sha256').update(SCRIPT).digest('base64')}'`;
+
 /**
  * The page a signed /watch/… link opens: the file played (or shown) in the browser, with a
  * download link. It is what an agent gives a person to watch or share an export; the link works
@@ -19,7 +30,13 @@ export function watchPage(o: {
    * button posts to. Only the button spends: opening the page (a mail scanner checking an emailed
    * link, say) spends nothing.
    */
-  mark?: { credits: number; left?: number | null | undefined; finalUrl: string };
+  mark?: {
+    credits: number;
+    left?: number | null | undefined;
+    finalUrl: string;
+    /** Seconds of the end card a watermarked video closes on. */
+    endCard?: number;
+  };
 }): string {
   const name = esc(o.name);
   const href = esc(o.fileUrl);
@@ -28,7 +45,7 @@ export function watchPage(o: {
   const kind = o.mime.split('/')[0];
   const player =
     kind === 'video'
-      ? `<video src="${src}" controls playsinline preload="metadata"></video>`
+      ? `<video src="${src}" controls playsinline preload="metadata"${o.mark?.endCard ? ` data-end="${o.mark.endCard}"` : ''}></video>`
       : kind === 'audio'
         ? `<audio src="${src}" controls preload="metadata"></audio>`
         : kind === 'image'
@@ -60,7 +77,10 @@ ${og}
   body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg);
     font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 16px; }
   main { width: 100%; max-width: 960px; }
-  .stage { background: var(--stage); border-radius: 12px; overflow: hidden; display: grid; place-items: center; }
+  .stage { position: relative; background: var(--stage); border-radius: 12px; overflow: hidden; display: grid; place-items: center; }
+  .over { position: absolute; left: 0; right: 0; bottom: 64px; margin: 0; display: flex; justify-content: center; }
+  .over[hidden] { display: none; }
+  .over button { font-size: 18px; padding: 14px 22px; box-shadow: 0 6px 24px rgba(0,0,0,.45); }
   video, img { display: block; max-width: 100%; max-height: 80vh; }
   /* Over checks: what is transparent shows as checks, a background baked into the file as itself. */
   img, video { background: repeating-conic-gradient(#ccc 0 25%, #fff 0 50%) 50% / 16px 16px; }
@@ -77,20 +97,26 @@ ${og}
 </head>
 <body>
 <main>
-  <div class="stage">${player}</div>
+  <div class="stage">${player}${o.mark && kind === 'video' ? overButton(o.mark) : ''}</div>
   <footer>
     <h1>${name}</h1>
     <span class="meta"><a href="${href}" download>Download</a> · link works until <time datetime="${o.expiresAt.toISOString()}">${o.expiresAt.toUTCString()}</time></span>
   </footer>
   ${o.mark ? markBlock(o.mark) : ''}
 </main>
+${o.mark && kind === 'video' ? `<script>${SCRIPT}</script>` : ''}
 </body>
 </html>
 `;
 }
 
+const credits = (n: number) => `${Math.round(n * 100) / 100} credit${n === 1 ? '' : 's'}`;
+
+function overButton(mark: { credits: number; finalUrl: string }) {
+  return `<form id="over" class="over" method="post" action="${esc(mark.finalUrl)}" hidden><button type="submit">Remove the watermark · ${credits(mark.credits)}</button></form>`;
+}
+
 function markBlock(mark: { credits: number; left?: number | null | undefined; finalUrl: string }) {
-  const credits = (n: number) => `${Math.round(n * 100) / 100} credit${n === 1 ? '' : 's'}`;
   const has = typeof mark.left === 'number' ? `; you have ${credits(mark.left)}` : '';
   return `<p class="mark">This file has a cuttingfloor watermark. Removing it uses ${credits(mark.credits)}${has}. From then on this link plays and downloads it without the watermark.</p>
   <form method="post" action="${esc(mark.finalUrl)}"><button type="submit">Remove the watermark · ${credits(mark.credits)}</button></form>`;

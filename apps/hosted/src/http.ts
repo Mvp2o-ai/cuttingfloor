@@ -23,6 +23,7 @@ import {
   drainingError,
   type OwnerLimits,
   outputMime,
+  REVIEW_CARDS,
   type Runtime,
   UploadRefused,
 } from '@cuttingfloor/server';
@@ -42,7 +43,7 @@ import { RestApi } from './rest.ts';
 import { aiCatalog, CARD_TYPE, sendDiscovery, serverCard } from './server-card.ts';
 import { jsonBody, report, share } from './sound-routes.ts';
 import { uploadPage } from './upload-page.ts';
-import { watchPage } from './watch-page.ts';
+import { WATCH_SCRIPT_SRC, watchPage } from './watch-page.ts';
 
 export interface HttpOptions {
   runtime: Runtime;
@@ -490,7 +491,7 @@ export function createHttpServer(options: HttpOptions): Server {
           'cache-control': 'private, no-store',
           'referrer-policy': 'no-referrer',
           'x-content-type-options': 'nosniff',
-          'content-security-policy': `default-src 'none'; media-src ${from}; img-src ${from}; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'`,
+          'content-security-policy': `default-src 'none'; media-src ${from}; img-src ${from}; style-src 'unsafe-inline'; script-src ${WATCH_SCRIPT_SRC}; base-uri 'none'; form-action 'self'`,
         });
         res.end(
           req.method === 'HEAD'
@@ -508,6 +509,7 @@ export function createHttpServer(options: HttpOptions): Server {
                         credits: mark.release_credits ?? 0,
                         left,
                         finalUrl: `/final/${url.pathname.slice('/watch/'.length)}?${query}`,
+                        endCard: REVIEW_CARDS.end,
                       },
                     }
                   : {}),
