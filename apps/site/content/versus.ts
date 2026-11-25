@@ -61,7 +61,7 @@ export const VERSUS: Versus[] = [
       },
       {
         q: 'Is cuttingfloor free like CapCut?',
-        a: 'Making is free on cuttingfloor, and so is self-hosting. Hosted exports download free with a cuttingfloor watermark; removing the watermark costs 1 credit per finished minute. CapCut is free for most edits and charges for some effects, cloud storage and its pro tier.',
+        a: 'Making is free on cuttingfloor, and so is self-hosting. Hosted exports download free with a cuttingfloor watermark; removing the watermark costs credits, priced by length. CapCut is free for most edits and charges for some effects, cloud storage and its pro tier.',
       },
     ],
     updated: '2026-11-17',
@@ -150,7 +150,7 @@ export const VERSUS: Versus[] = [
       },
       {
         q: 'How is each priced?',
-        a: 'Compare current pricing on each site rather than here, since plans change. On cuttingfloor making is free and exports download free with a cuttingfloor watermark; removing the watermark costs 1 credit per finished minute, and self-hosting is free, with no watermark.',
+        a: 'Compare current pricing on each site rather than here, since plans change. On cuttingfloor making is free and exports download free with a cuttingfloor watermark; removing the watermark costs credits, priced by length, and self-hosting is free, with no watermark.',
       },
     ],
     updated: '2026-11-17',
@@ -237,7 +237,7 @@ export const VERSUS: Versus[] = [
       },
       {
         q: 'Which one is cheaper?',
-        a: "They are priced on different things, so the answer depends on volume and on whether you supply footage. cuttingfloor is free to make with, charges 1 credit per finished minute to remove the watermark, and is free with no watermark when self-hosted; check Invideo's current plans on its site.",
+        a: "They are priced on different things, so the answer depends on volume and on whether you supply footage. cuttingfloor is free to make with, charges credits by length to remove the watermark, and is free with no watermark when self-hosted; check Invideo's current plans on its site.",
       },
     ],
     updated: '2026-11-17',

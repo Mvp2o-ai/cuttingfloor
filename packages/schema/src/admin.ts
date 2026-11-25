@@ -159,7 +159,7 @@ export const AdminAccount = z.object({
     })
     .nullable()
     .describe(
-      'A credit removes the watermark from one finished minute (export.release); making is free. Before 2026-11-23 a credit was one minute of a server job or 200 visual judgments, so earlier use counts that way. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer',
+      'Credits remove watermarks (export.release, priced by finished length); making is free. Before 2026-11-23 a credit was one minute of a server job or 200 visual judgments, so earlier use counts that way. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer',
     ),
   support_messages: z
     .array(z.object({ at: time, message: z.string() }))

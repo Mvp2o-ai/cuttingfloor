@@ -1262,9 +1262,7 @@ export const MarkFields = {
   release_credits: z
     .number()
     .optional()
-    .describe(
-      'What removing the watermark costs, in credits: 1 a finished minute, in quarter-minute steps',
-    ),
+    .describe('What removing the watermark costs, in credits (priced by finished length)'),
 };
 
 /** Hosted, on the result that answers for one watermarked file (an export, media.get). */

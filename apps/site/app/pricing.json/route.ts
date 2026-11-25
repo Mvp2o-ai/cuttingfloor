@@ -25,14 +25,14 @@ export const dynamic = 'force-static';
 
 export function GET() {
   const body = {
-    schema: 'cuttingfloor.pricing/4',
+    schema: 'cuttingfloor.pricing/5',
     url: `${SITE_URL}/pricing`,
     markdown: `${SITE_URL}/pricing.md`,
     currency: 'USD',
     units: {
       price: 'US dollars, paid once for a pack; nothing renews',
       credits:
-        'one credit removes the watermark from one finished minute of an exported video, GIF or image, counted in quarter-minute steps; bought credits never expire',
+        'credits remove the watermark from an exported video, GIF or image, priced by its finished length; each file states its price (release_credits); bought credits never expire',
       short_side_px: 'largest export, as its short side in pixels (1080 is 1080p, 2160 is 4K)',
       storage_gb: 'gigabytes held on the server at once',
       null: 'no limit',
@@ -53,8 +53,7 @@ export function GET() {
       ],
     },
     clean_copy: {
-      credits_per_finished_minute: 1,
-      step_minutes: CLEAN_COPY_STEP,
+      priced_by: 'finished length; each file states its price as release_credits',
       minimum_credits: CLEAN_COPY_STEP,
       image_credits: CLEAN_COPY_STEP,
       same_price_4k: true,

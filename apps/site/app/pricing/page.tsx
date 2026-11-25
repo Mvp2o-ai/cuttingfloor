@@ -127,7 +127,7 @@ export default function Pricing() {
             <div>
               <h2 className="display">Buy what you take.</h2>
               <p className="compare-lede">
-                A credit removes the watermark from one finished minute. Packs, bought on your
+                Credits remove the watermark, priced by each video's length. Packs, bought on your
                 account page. Bigger packs cost less a credit. Turn on automatic top-up and you
                 never run out.
               </p>

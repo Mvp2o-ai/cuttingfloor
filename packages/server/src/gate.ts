@@ -3,7 +3,7 @@ import { burnMark, type MediaRecord } from '@cuttingfloor/engine';
 
 export { REVIEW_CARDS } from '@cuttingfloor/engine';
 
-import { cleanCopyCredits, GATE_FROM } from '@cuttingfloor/plans';
+import { cleanCopyCredits, cleanCopyMinutes, GATE_FROM } from '@cuttingfloor/plans';
 import { CfError } from '@cuttingfloor/schema';
 import type { Runtime } from './runtime.ts';
 
@@ -21,7 +21,7 @@ export interface Release {
   id: string;
   released_at: string;
   credits: number;
-  /** Finished minutes it was priced at (credits are these at one a minute). */
+  /** Finished minutes it was priced at (cleanCopyMinutes). */
   minutes: number;
   via: ReleaseVia;
 }
@@ -343,8 +343,13 @@ function priced(
   createdAt: string,
 ): Gated {
   const still = mime.startsWith('image/') && mime !== 'image/gif';
-  const credits = cleanCopyCredits(still ? null : seconds);
-  return { releaseId, credits, minutes: credits, createdAt };
+  const length = still ? null : seconds;
+  return {
+    releaseId,
+    credits: cleanCopyCredits(length),
+    minutes: cleanCopyMinutes(length),
+    createdAt,
+  };
 }
 
 function credits(n: number): string {

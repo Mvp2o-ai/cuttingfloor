@@ -13,8 +13,8 @@ import { TOOL_COUNT } from '../content/tools.ts';
 
 // The pricing, worded from the one plans file the server enforces (packages/plans). Making is free:
 // imports, edits, analysis, exports and generated graphics and voiceovers. Every exported video,
-// GIF or image downloads free with a cuttingfloor watermark; the billable unit is a credit, one
-// finished minute's watermark removed (cleanCopyCredits), paid once per export. There are no
+// GIF or image downloads free with a cuttingfloor watermark; removing it costs credits priced by
+// finished length (cleanCopyCredits, the only place the rate lives), paid once per export. There are no
 // subscriptions: an account gets a few free credits when it is activated and buys packs when it
 // wants more (pay as you go); bought credits never expire. Every account has every tool.
 
@@ -53,7 +53,7 @@ export const SHORT_SECONDS = 40;
 export const SHORT_CREDITS = credits(cleanCopyCredits(SHORT_SECONDS));
 export const STEP_CREDITS = credits(CLEAN_COPY_STEP);
 /** The clean-copy price in one line. */
-export const CLEAN_PRICE = `1 credit per finished minute, in quarter-minute steps (a ${SHORT_SECONDS}-second Short is ${SHORT_CREDITS} credit)`;
+export const CLEAN_PRICE = `credits, priced by the video's length (a ${SHORT_SECONDS}-second Short is ${SHORT_CREDITS} credit)`;
 
 /** "$5 for 25 credits". */
 export const FROM_PACK = SMALLEST ? `$${SMALLEST.price} for ${SMALLEST.credits} credits` : '';
@@ -345,7 +345,7 @@ export const PRICING_FAQS = [
   },
   {
     q: 'What is a credit?',
-    a: `It removes the watermark from one finished minute of an export. It is counted in quarter-minute steps, so a ${SHORT_SECONDS}-second Short is ${SHORT_CREDITS} credit, a still image ${STEP_CREDITS}, and 4K costs the same as HD. You pay once per export; every later download of it is clean. Making the video costs nothing.`,
+    a: `Credits remove the watermark from an export. The price depends on the video's length and is shown on each video before you pay: a ${SHORT_SECONDS}-second Short is ${SHORT_CREDITS} credit, a still image ${STEP_CREDITS}, and 4K costs the same as HD. You pay once per export; every later download of it is clean. Making the video costs nothing.`,
   },
   {
     q: 'What does the cuttingfloor watermark look like?',

@@ -300,7 +300,7 @@ function Balance({ account: a }: { account: Account }) {
         <div>
           <dt>A credit</dt>
           <dd>
-            A credit removes the watermark from one finished minute.{' '}
+            Credits remove the watermark, priced by each video's length.{' '}
             {`A ${SHORT_SECONDS}-second Short is ${SHORT_CREDITS}.`}
           </dd>
         </div>
