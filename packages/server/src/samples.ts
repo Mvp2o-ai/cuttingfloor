@@ -80,9 +80,24 @@ export const SAMPLES: Sample[] = [
   },
 ];
 
+/**
+ * Clips a demo of ours opens with, registered on purpose and never offered by the router: the
+ * account is activated with one when it signs up through that demo, so the clip is in its library
+ * before the demo starts. Another demo video is another entry and its file under assets/onboarding/.
+ */
+export const DEMO_CLIPS: Sample[] = [
+  {
+    slug: 'kazi-demo',
+    file: 'big-buck-bunny-ending.mp4',
+    shows: 'the last minute of Big Buck Bunny, an open animated film',
+    fits: '',
+    starter: 'Give this ending a happier ending.',
+  },
+];
+
 /** A sample's file on disk. */
 export const samplePath = (sample: Sample) =>
   fileURLToPath(new URL(`../assets/onboarding/${sample.file}`, import.meta.url));
 
 export const sampleBySlug = (slug: string | undefined) =>
-  SAMPLES.find((s) => s.slug === slug) ?? (SAMPLES.at(-1) as Sample);
+  [...SAMPLES, ...DEMO_CLIPS].find((s) => s.slug === slug) ?? (SAMPLES.at(-1) as Sample);

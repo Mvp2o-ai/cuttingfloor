@@ -11,7 +11,14 @@ import { askJev, JEV_URL } from '../jev.ts';
 import { PLAYER_TOOL_META } from '../player.ts';
 import { guard, ok, toErrorResult } from '../result.ts';
 import type { Runtime } from '../runtime.ts';
-import { FALLBACK_SAMPLE, SAMPLES, type Sample, sampleBySlug, samplePath } from '../samples.ts';
+import {
+  DEMO_CLIPS,
+  FALLBACK_SAMPLE,
+  SAMPLES,
+  type Sample,
+  sampleBySlug,
+  samplePath,
+} from '../samples.ts';
 import type { ServerDeps } from '../server.ts';
 import { LOCAL } from './account.ts';
 import { importBundled } from './media.ts';
@@ -235,6 +242,44 @@ async function credits(deps: ServerDeps): Promise<AccountGetResult['credits'] | 
   } catch {
     return null;
   }
+}
+
+/**
+ * Activates an account on its own behalf with one of our demo clips (DEMO_CLIPS) as its
+ * onboarding clip, for someone signing up through that demo: the claim is recorded with the
+ * demo's task and the clip starts importing into their library, so the demo's first call
+ * (credits.claim) finds both and answers at once. An account already active keeps its claim, and
+ * one already holding an onboarding clip keeps that clip.
+ */
+export async function activateWithDemo(
+  runtime: Runtime,
+  owner: string,
+  useCase: string,
+  slug: string,
+): Promise<{ media_id: string }> {
+  const sample = DEMO_CLIPS.find((s) => s.slug === slug);
+  if (!sample) throw new Error(`no demo clip ${slug}`);
+  const at = new Date().toISOString();
+  const claim: FreeCreditsClaim = { claimed: true, use_case: useCase, claimed_at: at };
+  if (await runtime.ws.records.collection(CLAIMS, { owner }).insertOnce('free-credits', claim)) {
+    await runtime.ws.records
+      .collection(CLAIM_TASKS, { owner })
+      .put(`${at.replace(/\D/g, '')}${randomBytes(3).toString('hex')}`, { use_case: useCase, at });
+  }
+  sawClaim(runtime, owner);
+  const onboarding = runtime.ws.records.collection(ONBOARDING, { owner });
+  const named = await onboarding.get('onboarding');
+  const held = named && (await runtime.media.find(owner, named.media_id));
+  if (held) return { media_id: held.media_id };
+  const { record } = await importBundled(
+    runtime,
+    owner,
+    samplePath(sample),
+    sample.file,
+    'onboarding',
+  );
+  await onboarding.put('onboarding', { media_id: record.media_id, sample: sample.slug });
+  return { media_id: record.media_id };
 }
 
 /**

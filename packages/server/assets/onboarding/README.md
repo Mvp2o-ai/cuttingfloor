@@ -12,3 +12,9 @@ Ours (generated footage from the site's demos, apps/site/public/demo/<demo>/raw.
 H.264 and AAC. (c) copyright 2008, Blender Foundation / www.bigbuckbunny.org, licensed under
 Creative Commons Attribution 3.0 (https://creativecommons.org/licenses/by/3.0/). Cut from
 Blender's `big_buck_bunny_720p_h264.mov`; the credit is also in the file's metadata.
+
+Demo clips (src/samples.ts `DEMO_CLIPS`, never routed): an account signing up through one of our
+demos is activated with its clip. `big-buck-bunny-ending.mp4`, the Kazi live demo's clip: the last
+minute (59 seconds) of Big Buck Bunny, 640×360, the same bytes Kazi's demo link served
+(sha256 dd9a49ff…). (c) copyright 2008, Blender Foundation / www.bigbuckbunny.org, licensed under
+Creative Commons Attribution 3.0; the licence is also in the file's metadata.
