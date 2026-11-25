@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.77.1
+
+### Patch Changes
+
+- dd160ec: Activating an account names the skills that fit the user's task (searched the way skills.search does), so the agent can read the method before it starts.
+
 ## 0.77.0
 
 ### Minor Changes
