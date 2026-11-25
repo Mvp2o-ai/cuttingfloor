@@ -28,14 +28,17 @@ let activity: Activity;
 const recorded = new Map<string, ActivityCall & { workos_user_id: string; account_id?: string }>();
 let requests = 0;
 let failNext = 0;
+// While set, Kazi answers nothing until it resolves (a slow Kazi, without racing a timer).
+let hold: Promise<void> | undefined;
 
 const realFetch = globalThis.fetch;
-function kazi(url: URL, init?: RequestInit): Response {
+async function kazi(url: URL, init?: RequestInit): Promise<Response> {
   if (url.pathname !== '/api/credits/activity' || init?.method !== 'POST')
     return Response.json({ error: 'not found' }, { status: 404 });
   if (new Headers(init.headers).get('authorization') !== `Bearer ${LEDGER_KEY}`)
     return Response.json({ error: 'unauthorized' }, { status: 401 });
   requests++;
+  await hold;
   if (failNext > 0) {
     failNext--;
     return Response.json({ error: 'down' }, { status: 503 });
@@ -165,12 +168,18 @@ describe('tool activity', () => {
   it('keeps at most a few batches waiting while Kazi is down, dropping the rest', async () => {
     const before = requests;
     failNext = 100;
+    let release = () => {};
+    hold = new Promise((resolve) => {
+      release = resolve;
+    });
     const client = await connect(USER);
     for (let i = 0; i < 3; i++) {
       await client.callTool({ name: 'media.list', arguments: {} });
       void activity.flush();
     }
     await client.close();
+    hold = undefined;
+    release();
     await activity.flush();
     failNext = 0;
     // Two batches held, each tried three times; the third was never sent.

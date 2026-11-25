@@ -69,7 +69,7 @@ interface Gated {
 const PICTURE = /^(?:video|image)\//;
 const MARKED_PREFIX = 'cf-marked--';
 /** Marked copies made with the opening and end cards; older ones (without) are made again. */
-const CARDS_VERSION = 'cards1--';
+const CARDS_VERSION = 'cards2--';
 
 export class DownloadGate {
   readonly #rt: Runtime;

@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.75.1
+
+### Patch Changes
+
+- b693abf: The review copy's cards say "release a clean copy" with cuttingfloor instead of asking an assistant to remove the watermark; marked copies are made again with the new cards.
+
 ## 0.75.0
 
 ### Minor Changes
