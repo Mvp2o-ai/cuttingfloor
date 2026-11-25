@@ -12,6 +12,16 @@ import { guard, ok } from '../result.ts';
 // skills.search and skills.get: how to compose the tools for a common job, written down once
 // (skills/*.md). Not editing primitives; discovery of how to use them (AGENTS.md).
 
+/** The skills that fit a request in the user's words, best first (as skills.search finds them). */
+export async function matchingSkills(
+  query: string,
+): Promise<Array<{ slug: string; name: string; description: string }>> {
+  const { index } = await skills();
+  return (await index.search(query, index.list().length))
+    .filter((m) => m.score >= SKILL_MATCH_MIN)
+    .map((m) => ({ slug: m.slug, name: m.name, description: m.description }));
+}
+
 export function registerSkillTools(server: McpServer): void {
   // Start loading now, so the first search does not wait for the model. A broken library
   // surfaces as the tools' error, not as an unhandled rejection.
@@ -36,12 +46,8 @@ export function registerSkillTools(server: McpServer): void {
     guard(async (args) => {
       const { index } = await skills();
       const all = index.list();
-      const hits = args.query
-        ? (await index.search(args.query, all.length)).filter((m) => m.score >= SKILL_MATCH_MIN)
-        : [];
-      const answer = hits.length
-        ? hits.map((m) => ({ slug: m.slug, name: m.name, description: m.description }))
-        : all;
+      const hits = args.query ? await matchingSkills(args.query) : [];
+      const answer = hits.length ? hits : all;
       const next = args.offset + args.limit;
       return ok({
         matched: hits.length > 0,
