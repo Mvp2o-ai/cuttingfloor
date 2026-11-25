@@ -1,5 +1,12 @@
 # cuttingfloor
 
+## 0.77.2
+
+### Patch Changes
+
+- d03c9db: job.get asked about the same running job again and again with no wait (a polling loop) is paced: after a few quick repeats each ask waits a little longer, up to 10 s, and still answers the moment the job ends. An edit.batch op whose arguments don't fit now says the op's whole argument shape.
+- e86c818: Voiceovers work again on a fresh server: the voice model's source re-packed its archive, and its new checksum is pinned.
+
 ## 0.77.1
 
 ### Patch Changes
