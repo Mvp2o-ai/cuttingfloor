@@ -52,7 +52,17 @@ import {
   sourcesFor,
   timelineImage,
 } from '../render.ts';
-import { doneReply, guard, jobFor, jobReply, jobView, ok, waitForChange } from '../result.ts';
+import {
+  answered,
+  doneReply,
+  guard,
+  jobFor,
+  jobReply,
+  jobView,
+  ok,
+  pacedWait,
+  waitForChange,
+} from '../result.ts';
 import type { ServerDeps } from '../server.ts';
 
 /** QA on a timeline this short answers inline; longer ones become a job. */
@@ -468,13 +478,16 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
         });
       }
       const ids = args.job_id ? [args.job_id] : [...new Set(args.job_ids)];
+      const wait = pacedWait(owner, ids, args.wait_seconds);
       await waitForChange(
         rt.jobs.store,
         owner,
         ids,
-        args.wait_seconds,
+        wait.seconds,
         (ctx as { mcpReq?: { signal?: AbortSignal } }).mcpReq?.signal,
+        wait.paced,
       );
+      answered(owner, ids);
       // One job is read for its result; many at once are a status check, kept small.
       const mode = args.result ?? (args.job_id ? 'full' : 'summary');
       const view = (job: Job) => jobView(job, { result: mode, estimate: rt.jobs.estimate(job.id) });

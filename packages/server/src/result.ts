@@ -271,7 +271,10 @@ export function jobView(
 }
 
 /** What a wait watches: a job's status, so it answers when a job ends, not at each step. */
-const stateOf = (job: Job | undefined) => (job ? job.status : '');
+const statusOf = (job: Job | undefined) => (job ? job.status : '');
+/** A job as a paced wait sees it: any step of progress or new message counts as a change. */
+const stepOf = (job: Job | undefined) =>
+  job ? `${job.status}\n${job.progress ?? ''}\n${job.statusMessage ?? ''}` : '';
 
 /** How often a wait rereads the job files, for jobs another server runs. */
 const WAIT_POLL_MS = 1000;
@@ -281,14 +284,55 @@ const WAIT_POLL_MS = 1000;
  * and returns at once if none is working (a finished job will not change). Hears this server's own
  * writes as they happen, and rereads the files for jobs other servers run.
  */
+/**
+ * Pacing for code that asks about the same jobs over and over without waiting (seen: 447 asks in a
+ * row, 0.1 s apart). A few quick repeats pass untouched; past PACE_FREE in a row, each ask for the
+ * same jobs within PACE_GAP_MS of the last answer is held, PACE_STEP_SECONDS longer each time up
+ * to PACE_MAX_SECONDS. A held ask answers at the job's next change of any kind (a step of
+ * progress, a new message, its end), and nothing waits for a job that isn't running, so only a
+ * loop slows down and a progress bar keeps moving.
+ * In memory: a restart forgets it, which costs nothing.
+ */
+export const PACE_FREE = 5;
+export const PACE_GAP_MS = 2000;
+export const PACE_STEP_SECONDS = 2;
+export const PACE_MAX_SECONDS = 10;
+const paced = new Map<string, { at: number; streak: number }>();
+
+/** The wait a job.get for `ids` gets: what it asked for, or more while it is looping. */
+export function pacedWait(
+  owner: string,
+  ids: string[],
+  asked: number,
+  now = Date.now(),
+): { seconds: number; paced: boolean } {
+  const key = `${owner}\n${[...ids].sort().join(',')}`;
+  const last = paced.get(key);
+  const streak = last && now - last.at < PACE_GAP_MS ? last.streak + 1 : 0;
+  if (paced.size > 10_000) paced.clear();
+  paced.set(key, { at: now, streak });
+  const over = streak - PACE_FREE;
+  const pace = over > 0 ? Math.min(PACE_MAX_SECONDS, over * PACE_STEP_SECONDS) : 0;
+  return pace > asked ? { seconds: pace, paced: true } : { seconds: asked, paced: false };
+}
+
+/** Marks when an answer for `ids` went out, so the next ask is timed from it. */
+export function answered(owner: string, ids: string[], now = Date.now()): void {
+  const entry = paced.get(`${owner}\n${[...ids].sort().join(',')}`);
+  if (entry) entry.at = now;
+}
+
 export async function waitForChange(
   store: FileJobStore,
   owner: string,
   ids: string[],
   seconds: number,
   signal?: AbortSignal,
+  /** Also end at any step of progress (a paced ask, so a progress bar keeps moving). */
+  steps = false,
 ): Promise<void> {
   if (!(seconds > 0)) return;
+  const stateOf = steps ? stepOf : statusOf;
   const first = await Promise.all(ids.map((id) => store.get(id, owner)));
   if (!first.some((j) => j?.status === 'working')) return;
   const before = new Map(ids.map((id, i) => [id, stateOf(first[i])]));
