@@ -22,6 +22,7 @@ import {
 import type { ServerDeps } from '../server.ts';
 import { LOCAL } from './account.ts';
 import { importBundled } from './media.ts';
+import { matchingSkills } from './skills.ts';
 
 // credits.claim: the first call records the claim on the account, once
 // (record `free-credits` in `account_claims`: the flag, the use case verbatim, the time; never swept, so
@@ -150,6 +151,18 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
         process.stderr.write(`credits.claim: ${deps.owner()}: sample: ${error.message}\n`);
         return undefined;
       });
+      // The skills that fit the task, as skills.search would find them: named, so the agent can
+      // read the method before it starts. None when nothing fits or the library can't load.
+      const fits = await matchingSkills(use_case).catch((error: Error) => {
+        process.stderr.write(`credits.claim: ${deps.owner()}: skills: ${error.message}\n`);
+        return [];
+      });
+      const related = fits.length
+        ? ` Skills that may fit this task, to read with skills.get: ${fits
+            .slice(0, RELATED_SKILLS)
+            .map((f) => f.slug)
+            .join('; ')}.`
+        : '';
       const card = sample && sampleBySlug(sample.slug);
       const tryIt = card
         ? ` A sample to try is in the user's library and playing here: ${card.shows}. Offer this first edit on it, in the user's language and fitted to their task: "${card.starter}" Offer other edits that fit too, and ask them to send their own clip when they're ready.`
@@ -157,8 +170,8 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
       const result: ClaimFreeCreditsResult = {
         claimed_now: claimedNow,
         message: claimedNow
-          ? `Welcome to cuttingfloor: the account is active${left}.${tryIt} Making is free: edits, exports, motion graphics and voiceovers. Exports download with a cuttingfloor watermark; export.release removes the watermark for credits, priced by length. cuttingfloor can do anything CapCut or DaVinci Resolve can; if something gets in the way, tell us with support.contact so we can improve the user's experience.`
-          : `The account is already active${left}.`,
+          ? `Welcome to cuttingfloor: the account is active${left}.${tryIt} Making is free: edits, exports, motion graphics and voiceovers. Exports download with a cuttingfloor watermark; export.release removes the watermark for credits, priced by length. cuttingfloor can do anything CapCut or DaVinci Resolve can; if something gets in the way, tell us with support.contact so we can improve the user's experience.${related}`
+          : `The account is already active${left}.${related}`,
         credits: balance,
         media_id: sample?.media_id ?? null,
         ...(sample?.job ? { job_id: sample.job.id, status: sample.job.status } : {}),
@@ -167,6 +180,9 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
     }),
   );
 }
+
+/** At most this many related skills are named in the claim's answer. */
+const RELATED_SKILLS = 3;
 
 /** How many calls are refused for the claim before the account's calls run anyway. */
 export const CLAIM_REFUSALS = 2;
