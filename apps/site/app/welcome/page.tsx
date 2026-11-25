@@ -3,6 +3,7 @@ import { AccountNav } from '../account/chrome.tsx';
 import { Connect } from '../connect.tsx';
 import { TryKazi } from '../kazi.tsx';
 import { accountOf, workos } from '../lib/billing.ts';
+import { AppCard } from '../mobile-app.tsx';
 import { FirstCall, Prompt } from './live.tsx';
 
 export const dynamic = 'force-dynamic';
@@ -45,8 +46,11 @@ export default async function Welcome() {
               account ({user.email}).
             </p>
           </div>
+          <AppCard place="welcome" />
           <Connect />
-          <TryKazi place="welcome" label="No agent yet? Try it live in Kazi, free" />
+          <div className="not-ios">
+            <TryKazi place="welcome" label="No agent yet? Try it live in Kazi, free" />
+          </div>
         </section>
 
         <section className="cell">

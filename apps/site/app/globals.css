@@ -202,14 +202,13 @@ a {
 .live-strip:hover b {
   text-decoration: underline;
 }
-/* The iPhone app strip (phones only): dark under the green one, so the two read apart. */
-.live-strip.app-strip {
-  background: var(--bg-2);
-  color: var(--ink);
-  border-bottom: 1px solid var(--rule);
+/* Device: iPhone and iPad visitors are led to the app (from.tsx sets html[data-device]; mobile-app.tsx
+   has the variants). Everything is still in the page; CSS shows the right one. */
+html:not([data-device="ios"]) .only-ios {
+  display: none !important;
 }
-.live-strip.app-strip b {
-  color: var(--key);
+html[data-device="ios"] .not-ios {
+  display: none !important;
 }
 
 /* From: what leads depends on where the visitor came from (from.tsx). Every variant is in the
@@ -4852,6 +4851,64 @@ figure.allow-access {
 }
 
 /* ---------- the iPhone app (mobile-app.tsx) ---------- */
+
+/* The first screen on an iPhone or iPad: the app, voice first. */
+.app-hero {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+.app-hero .lede {
+  margin: 0;
+}
+.app-hero .app-shots {
+  margin-top: 8px;
+}
+.app-points {
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+.app-points b {
+  color: var(--key);
+}
+.app-get {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.store-badge {
+  display: inline-block;
+  line-height: 0;
+}
+.store-badge img {
+  display: block;
+  width: 150px;
+  height: auto;
+}
+.app-qr {
+  background: #fff;
+  border-radius: 8px;
+  padding: 4px;
+}
+/* In place of the Kazi phone way in, on the pages that offered it. */
+.app-card {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--key);
+  border-radius: 12px;
+}
+.app-card b {
+  display: block;
+  font-size: 18px;
+}
+.app-card p {
+  margin: 8px 0 14px;
+  color: var(--mute);
+}
 
 .app-body {
   display: grid;

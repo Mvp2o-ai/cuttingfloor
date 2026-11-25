@@ -1,6 +1,7 @@
 import { Analytics } from '@vercel/analytics/next';
 import type { Metadata } from 'next';
 import { Archivo, JetBrains_Mono, Ubuntu, VT323 } from 'next/font/google';
+import { APP_ID } from '../content/app.ts';
 import { Clicks } from './clicks.tsx';
 import { FromScript } from './from.tsx';
 import { DESCRIPTION, SITE_URL, TITLE } from './seo.ts';
@@ -15,6 +16,8 @@ const kazi = Ubuntu({ subsets: ['latin'], weight: '700', variable: '--font-kazi'
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
+  // Safari's Smart App Banner on iPhone (the strip under the nav covers in-app browsers, which skip it).
+  itunes: { appId: APP_ID },
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: '/' },

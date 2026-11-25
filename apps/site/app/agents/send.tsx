@@ -1,6 +1,7 @@
 'use client';
 
 import { kaziUrl } from '../kazi.tsx';
+import { AppCard } from '../mobile-app.tsx';
 
 // Not seo.ts: it pulls the pricing and tool tables into the browser bundle.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cuttingfloor.ai';
@@ -39,34 +40,41 @@ export function SendToSelf({ lang = 'en', app }: { lang?: 'en' | 'es'; app?: str
   const url = `${SITE_URL}/connect`;
   const mail = `mailto:?subject=${encodeURIComponent(t.subject)}&body=${encodeURIComponent(`${t.body} ${url}`)}`;
   return (
-    <div className="send-later">
-      <p className="wt-links">
-        {t.lead(app)}{' '}
-        <a
-          className="copy"
-          href={kaziUrl('phone')}
-          rel="noopener"
-          data-track={app ? `Try in Kazi: ${app}` : 'Try in Kazi'}
-        >
-          {t.kazi}
-        </a>
-      </p>
-      <p className="wt-links">{t.kaziHow}</p>
-      <p className="wt-links">
-        {t.later}{' '}
-        <a
-          className="copy"
-          href={mail}
-          data-track="Send me the setup"
-          onClick={(event) => {
-            if (!navigator.share) return;
-            event.preventDefault();
-            navigator.share({ title: t.subject, text: t.body, url }).catch(() => {});
-          }}
-        >
-          {t.button}
-        </a>
-      </p>
-    </div>
+    <>
+      {/* iPhone and iPad visitors get the app, which edits by voice; the Kazi way in is for the rest. */}
+      <AppCard
+        place={app ? `agents-${app.toLowerCase().replace(/\s+/g, '-')}` : 'agents'}
+        lang={lang}
+      />
+      <div className="send-later not-ios">
+        <p className="wt-links">
+          {t.lead(app)}{' '}
+          <a
+            className="copy"
+            href={kaziUrl('phone')}
+            rel="noopener"
+            data-track={app ? `Try in Kazi: ${app}` : 'Try in Kazi'}
+          >
+            {t.kazi}
+          </a>
+        </p>
+        <p className="wt-links">{t.kaziHow}</p>
+        <p className="wt-links">
+          {t.later}{' '}
+          <a
+            className="copy"
+            href={mail}
+            data-track="Send me the setup"
+            onClick={(event) => {
+              if (!navigator.share) return;
+              event.preventDefault();
+              navigator.share({ title: t.subject, text: t.body, url }).catch(() => {});
+            }}
+          >
+            {t.button}
+          </a>
+        </p>
+      </div>
+    </>
   );
 }

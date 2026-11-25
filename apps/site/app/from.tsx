@@ -6,6 +6,11 @@
 // script below sets <html data-from> before the first paint. ChatGPT tags its links with
 // utm_source=chatgpt.com; Claude's arrive with a claude.ai referrer. The tag is only on the first
 // page, so the tab remembers it. `?from=chatgpt` or `?from=claude` previews a variant.
+//
+// The same script sets <html data-device> to `ios` (an iPhone or iPod, or an iPad, whose desktop
+// user agent says Macintosh but which has a touch screen) or `android`. iOS visitors are led to the
+// app (mobile-app.tsx); the app is the one thing the page changes for a device, and what they do not
+// need (the Kazi phone way in) is `.not-ios`.
 
 export const AGENT_SOURCES = ['chatgpt', 'claude'] as const;
 export type AgentSource = (typeof AGENT_SOURCES)[number];
@@ -17,6 +22,10 @@ if(/chatgpt|openai/.test(u)||/(^|\\.)(chatgpt|openai)\\.com$/.test(r))f='chatgpt
 else if(/claude|anthropic/.test(u)||/(^|\\.)claude\\.(ai|com)$/.test(r))f='claude';
 try{s=sessionStorage;if(f)s.setItem('cf-from',f);else f=s.getItem('cf-from')||''}catch(e){}
 if(f==='chatgpt'||f==='claude')document.documentElement.dataset.from=f;
+var ua=navigator.userAgent||'',d='';
+if(/iPhone|iPad|iPod/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1))d='ios';
+else if(/Android/.test(ua))d='android';
+if(d)document.documentElement.dataset.device=d;
 })()`;
 
 /** In <head>, so the right variant shows on the first paint. */

@@ -9,7 +9,7 @@ import { ConnectNow } from './connect-now.tsx';
 import { DemoCards, DemoThumbs } from './demos/cards.tsx';
 import { TryKazi } from './kazi.tsx';
 import { LiveCard } from './live-card.tsx';
-import { AppSection } from './mobile-app.tsx';
+import { AppHero, AppSection } from './mobile-app.tsx';
 import { FROM_PACK } from './pricing.ts';
 import { Prompts } from './prompts.tsx';
 import { FAQS, structuredData } from './seo.ts';
@@ -75,6 +75,7 @@ export default function Home() {
       <Nav />
 
       <main className="frame">
+        <AppHero />
         <section className="cell hero marks">
           <span className="mark-b" />
           <h1 className="leader rise">

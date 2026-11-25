@@ -1,4 +1,4 @@
-import { APP_LEAD } from '../../content/app.ts';
+import { APP_LEAD, APP_NAME, appStoreUrl } from '../../content/app.ts';
 import { CAPS } from '../../content/capabilities.ts';
 import { DEMOS, lengths } from '../../content/demos.ts';
 import { LICENCE } from '../../content/facts.ts';
@@ -111,7 +111,7 @@ ${list(DEMOS.map((d) => `${pageLink(d.title, `/demos/${d.slug}`)}: ${d.descripti
 
 ## On your phone
 
-${APP_LEAD} The iPhone app is in beta: ${pageLink('join through TestFlight', '/app')}.
+${APP_LEAD} ${APP_NAME} is on the App Store for iPhone: [get it](${appStoreUrl('index-md')}), or read ${pageLink('about the app', '/app')}.
 
 ## Questions
 

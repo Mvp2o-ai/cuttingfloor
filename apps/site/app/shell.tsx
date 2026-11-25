@@ -1,5 +1,6 @@
 import { LEGAL_NAME, SUPPORT_EMAIL } from '@cuttingfloor/plans';
 import cli from '../../cli/package.json' with { type: 'json' };
+import { APP_SUBTITLE, appStoreUrl } from '../content/app.ts';
 import { NOT_FROM_AGENT, onlyFrom } from './from.tsx';
 import { kaziUrl } from './kazi.tsx';
 import { DOCS_URL, SITE_URL } from './seo.ts';
@@ -63,7 +64,7 @@ export function Nav({ cta = 'Start free', strip = true }: { cta?: string; strip?
       {strip ? (
         <>
           <a
-            className="live-strip"
+            className="live-strip not-ios"
             href={LIVE_DEMO}
             rel="noopener"
             data-track="Live demo: strip"
@@ -103,7 +104,7 @@ export function Nav({ cta = 'Start free', strip = true }: { cta?: string; strip?
           {(['ChatGPT', 'Claude'] as const).map((name) => (
             <a
               key={name}
-              className="live-strip on-phone"
+              className="live-strip on-phone not-ios"
               href={PHONE_KAZI}
               rel="noopener"
               data-track={`From ${name}: phone strip`}
@@ -115,12 +116,17 @@ export function Nav({ cta = 'Start free', strip = true }: { cta?: string; strip?
               <small>Free. {name} adds cuttingfloor on a computer; Kazi works right here.</small>
             </a>
           ))}
-          {/* The iPhone app, for everyone on a phone, so it is above the fold there. */}
-          <a className="live-strip on-phone app-strip" href="/app" data-track="App: phone strip">
+          {/* The iPhone app, to iPhone and iPad visitors on every page, in place of the Kazi strips. */}
+          <a
+            className="live-strip only-ios"
+            href={appStoreUrl('strip')}
+            rel="noopener"
+            data-track="App Store: strip"
+          >
             <b>
-              Get the iPhone app <span aria-hidden="true">→</span>
+              {APP_SUBTITLE}: get the iPhone app <span aria-hidden="true">→</span>
             </b>
-            <small>Beta, through TestFlight. Send videos and say the edit, on the go.</small>
+            <small>Say the edit and watch it happen on your phone.</small>
           </a>
         </>
       ) : null}
