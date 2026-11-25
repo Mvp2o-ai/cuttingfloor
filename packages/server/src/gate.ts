@@ -1,5 +1,8 @@
 import { type BlobKey, defineCollection, floorChanged, OUTPUTS } from '@cuttingfloor/core';
 import { burnMark, type MediaRecord } from '@cuttingfloor/engine';
+
+export { REVIEW_CARDS } from '@cuttingfloor/engine';
+
 import { cleanCopyCredits, GATE_FROM } from '@cuttingfloor/plans';
 import { CfError } from '@cuttingfloor/schema';
 import type { Runtime } from './runtime.ts';
@@ -10,7 +13,8 @@ import type { Runtime } from './runtime.ts';
 // burned in at the door, never in the timeline: the server keeps working from the clean file,
 // and the watermarked copy is made the first time it is asked for, then kept beside it. Audio, text
 // and project files, uploads and URL imports, files made before GATE_FROM and accounts on a
-// given plan never carry it. Locally there is no gate.
+// given plan never carry it. A watermarked video also opens on a card saying it is a review copy
+// and ends on one saying how to get the clean copy (REVIEW_CARDS). Locally there is no gate.
 
 /** A release: one per export (or created media, or frame set), id the thing released. */
 export interface Release {
@@ -64,6 +68,8 @@ interface Gated {
 
 const PICTURE = /^(?:video|image)\//;
 const MARKED_PREFIX = 'cf-marked--';
+/** Marked copies made with the opening and end cards; older ones (without) are made again. */
+const CARDS_VERSION = 'cards1--';
 
 export class DownloadGate {
   readonly #rt: Runtime;
@@ -178,7 +184,7 @@ export class DownloadGate {
   ): Promise<{ blob?: BlobKey; file?: string; marked: boolean }> {
     const state = await this.state(owner, id);
     if (!state.watermarked) return { ...source, marked: false };
-    const key = this.#rt.outputs.key(owner, id, `${MARKED_PREFIX}${name}`);
+    const key = this.#rt.outputs.key(owner, id, `${MARKED_PREFIX}${CARDS_VERSION}${name}`);
     if (await this.#rt.ws.blobs.head(key)) return { blob: key, marked: true };
     let making = this.#making.get(key);
     if (!making) {
@@ -200,7 +206,11 @@ export class DownloadGate {
       const input = source.file ?? (source.blob ? await scratch.materialize(source.blob) : '');
       if (!input) throw new CfError('not_found', 'The file has gone');
       const out = await scratch.reserve(key);
-      await (this.#hooks.mark ?? ((i, o, s) => burnMark(i, o, { seed: s })))(input, out, seed);
+      await (this.#hooks.mark ?? ((i, o, s) => burnMark(i, o, { seed: s, cards: true })))(
+        input,
+        out,
+        seed,
+      );
       return scratch.publish(out, key);
     });
   }
