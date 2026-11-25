@@ -43,13 +43,13 @@ const CARDS = {
   open: {
     eyebrow: 'Review copy',
     title: 'Keep editing until it’s right.',
-    body: 'Making is free and unlimited: change it as often as you like. When it’s finished, remove the watermark.',
+    body: 'Making is free and unlimited: change it as often as you like. When it’s finished, release a clean copy.',
     foot: '',
   },
   end: {
     eyebrow: 'Ready to post it?',
     title: 'Get the clean copy.',
-    body: 'Press <b>Remove the watermark</b> on this video’s page, or ask your assistant to remove it.',
+    body: 'Press <b>Remove the watermark</b> on this video’s page, or tell your assistant to use cuttingfloor to release a clean copy.',
     foot: 'cuttingfloor.ai',
   },
 } as const;
