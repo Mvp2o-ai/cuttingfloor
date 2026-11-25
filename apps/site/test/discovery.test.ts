@@ -76,12 +76,14 @@ describe('the proxy', () => {
   });
 
   it('still sends signed-in pages through sign-in, whatever they accept', async () => {
-    for (const accept of [undefined, 'text/markdown']) {
-      const req = new NextRequest('https://cuttingfloor.ai/account', {
-        headers: accept ? { accept } : {},
-      });
-      expect((await proxy(req, {} as never))?.headers.get('location')).toBe('/sign-in');
-    }
+    // The release page a review copy's QR code opens: only its owner, signed in, may release it.
+    for (const path of ['/account', '/r/j_01KAB3XYZ7Q8RSTUVW12345678'])
+      for (const accept of [undefined, 'text/markdown']) {
+        const req = new NextRequest(`https://cuttingfloor.ai${path}`, {
+          headers: accept ? { accept } : {},
+        });
+        expect((await proxy(req, {} as never))?.headers.get('location')).toBe('/sign-in');
+      }
   });
 });
 

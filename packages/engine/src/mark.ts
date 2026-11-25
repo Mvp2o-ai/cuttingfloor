@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CfError } from '@cuttingfloor/schema';
+import { CARD_QR, writeCardQr } from './card-qr.ts';
 import { BIN, heavyThreads, run } from './exec.ts';
 
 // The cuttingfloor mark: what every exported picture carries until its clean copy is paid for.
@@ -49,6 +51,8 @@ export interface MarkOptions {
   seed: string;
   /** Put the opening and end cards around a video (not a still, a GIF or one with alpha). */
   cards?: boolean;
+  /** With cards: the link their QR code opens (the file's release page). */
+  qr?: string;
   signal?: AbortSignal;
 }
 
@@ -177,8 +181,11 @@ export async function burnMark(input: string, output: string, opts: MarkOptions)
     !gif &&
     !alphaWebm &&
     !/^(yuva|rgba|argb|bgra|abgr|gbrap)/.test(v.pix_fmt ?? '');
+  const qrFile = cards && opts.qr ? `${output}.qr.ppm` : undefined;
   if (cards) {
     const shape = shapeOf(width, height);
+    const box = CARD_QR[shape];
+    if (qrFile && opts.qr) await writeCardQr(opts.qr, box.size, qrFile);
     const rate = v.r_frame_rate && !v.r_frame_rate.startsWith('0') ? v.r_frame_rate : '25';
     const sar = /^[1-9]\d*:[1-9]\d*$/.test(v.sample_aspect_ratio ?? '')
       ? v.sample_aspect_ratio
@@ -192,15 +199,19 @@ export async function burnMark(input: string, output: string, opts: MarkOptions)
         '-t',
         String(seconds),
         '-i',
-        `file:${ASSETS}cards/${name}-${shape}.png`,
+        `file:${ASSETS}cards/${name}-${shape}${qrFile ? '-qr' : ''}.png`,
       );
       return (
-        `[${n}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,` +
+        `[${n}:v]${qrFile ? `[q${name}]overlay=${box.x}:${box.y},` : ''}scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,` +
         `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=0x080A09,setsar=${sar},format=yuv420p,` +
         `fade=t=in:d=${CARD_FADE},fade=t=out:st=${seconds - CARD_FADE}:d=${CARD_FADE}[${name}]`
       );
     };
     graph += `,setsar=${sar}[main];${card('open', REVIEW_CARDS.open, 2)};${card('end', REVIEW_CARDS.end, 3)}`;
+    if (qrFile) {
+      args.push('-i', `file:${qrFile}`);
+      graph += ';[4:v]format=rgb24,split=2[qopen][qend]';
+    }
     if (audio) {
       const sr = Number(audio.sample_rate) || 48_000;
       const layout = audio.channel_layout ?? (audio.channels === 1 ? 'mono' : 'stereo');
@@ -233,11 +244,15 @@ export async function burnMark(input: string, output: string, opts: MarkOptions)
   }
   args.push(`file:${output}`);
   const seconds = Number.isFinite(duration) ? duration : 0;
-  await run(BIN.ffmpeg, args, {
-    heavy: true,
-    timeoutMs: 120_000 + (seconds + REVIEW_CARDS.open + REVIEW_CARDS.end) * 10_000,
-    ...(signal ? { signal } : {}),
-  });
+  try {
+    await run(BIN.ffmpeg, args, {
+      heavy: true,
+      timeoutMs: 120_000 + (seconds + REVIEW_CARDS.open + REVIEW_CARDS.end) * 10_000,
+      ...(signal ? { signal } : {}),
+    });
+  } finally {
+    if (qrFile) await rm(qrFile, { force: true });
+  }
 }
 
 /** The canvas a loop or card is drawn for: landscape, portrait or square. */

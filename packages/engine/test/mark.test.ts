@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { burnMark, REVIEW_CARDS } from '@cuttingfloor/engine';
+import jsQRModule from 'jsqr';
 import { describe, expect, it } from 'vitest';
 
 // The cuttingfloor mark burnt into a finished file: it is there to see, and the file is
@@ -110,6 +111,13 @@ function changed(a: Buffer, b: Buffer): number {
   }
   return n / (a.length / 4);
 }
+
+// jsqr is CommonJS: its default export is the module under Node's resolution, the function in Vitest.
+const jsQR = ((jsQRModule as unknown as { default?: unknown }).default ?? jsQRModule) as (
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+) => { data: string } | null;
 
 const flat = (size: string, rate: number, seconds: number) => [
   '-f',
@@ -318,6 +326,28 @@ describe.skipIf(!ffmpeg)('the cuttingfloor mark', { timeout: 120_000 }, () => {
     const starts = [...stderr.matchAll(/silence_start: ([\d.]+)/g)].map((m) => Number(m[1]));
     expect(ends[0]).toBeCloseTo(REVIEW_CARDS.open, 1);
     expect(starts[1]).toBeCloseTo(REVIEW_CARDS.open + before.duration, 0);
+  });
+
+  it('puts a QR code that opens the release page on both cards, readable at phone size', async () => {
+    const input = await make('coded.mp4', [
+      ...flat('720x1280', 30, 2),
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+    ]);
+    const output = join(dir, 'coded-marked.mp4');
+    const link = 'https://cuttingfloor.ai/r/j_01KAB3XYZ7Q8RSTUVW12345678';
+    await burnMark(input, output, { seed: 'media_coded', cards: true, qr: link });
+    const { duration } = await facts(output);
+    for (const t of [1.5, duration - 1.5]) {
+      const rgba = await frame(output, t);
+      expect(jsQR(new Uint8ClampedArray(rgba), 720, 1280)?.data).toBe(link);
+    }
+    // Without a link the cards carry no code.
+    const plain = join(dir, 'coded-plain.mp4');
+    await burnMark(input, plain, { seed: 'media_coded', cards: true });
+    expect(jsQR(new Uint8ClampedArray(await frame(plain, 1.5)), 720, 1280)).toBeNull();
   });
 
   it('leaves a still, a GIF and a video without sound fine with cards asked for', async () => {

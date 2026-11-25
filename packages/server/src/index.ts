@@ -16,6 +16,7 @@ export {
   REVIEW_CARDS,
   type Release,
   type ReleaseVia,
+  refOf,
 } from './gate.ts';
 export {
   admitJob,

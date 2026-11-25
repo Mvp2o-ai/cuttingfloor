@@ -12,6 +12,7 @@ import {
   listHeld,
   type MeterEntry,
   type Runtime,
+  refOf,
   startUpload,
 } from '@cuttingfloor/server';
 import type { Access, AccessCheck, Balance } from './access.ts';
@@ -683,7 +684,68 @@ export class Lifecycle {
       await this.#soundsRoute(req, res, url);
       return true;
     }
+    if (url.pathname === '/account/release' && (req.method === 'GET' || req.method === 'POST')) {
+      await this.#releaseRoute(req, res, url);
+      return true;
+    }
     return false;
+  }
+
+  /**
+   * One watermarked file, for the site's release page (the QR code on a review copy's cards):
+   * GET ?user=&file= says what it is, its price and the user's credits, with fresh links; POST
+   * {user, file} removes its watermark. Only the owner's own file is found: another account's id
+   * answers 404, the same as one that has gone.
+   */
+  async #releaseRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
+    const rt = this.#o.runtime;
+    const gate = rt.gate;
+    if (!gate) return json(res, 503, { error: 'watermarks are off on this server' });
+    let owner = url.searchParams.get('user') ?? '';
+    let id = url.searchParams.get('file') ?? '';
+    if (req.method === 'POST') {
+      let body: { user?: unknown; file?: unknown };
+      try {
+        body = JSON.parse(await readBody(req, 16 * 1024));
+      } catch {
+        return json(res, 400, { error: 'body must be JSON: {user, file}' });
+      }
+      owner = typeof body.user === 'string' ? body.user : '';
+      id = typeof body.file === 'string' ? body.file : '';
+    }
+    if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+    const ref = refOf(id);
+    if (!ref) return json(res, 404, { error: 'no such file' });
+    try {
+      const file = await gate.lookup(owner, id);
+      if (!file) return json(res, 404, { error: 'no such file' });
+      let spent: number | undefined;
+      if (req.method === 'POST') {
+        try {
+          spent = (await gate.release(owner, ref, 'page')).credits;
+        } catch (error) {
+          if (!(error instanceof CfError) || error.code !== 'quota_exceeded') throw error;
+          return json(res, 402, { error: error.message, ...(error.detail ?? {}) });
+        }
+      }
+      const state = await gate.state(owner, file.id);
+      const left = await gate.credits(owner);
+      const links = await rt.signOutput(owner, file.id, file.name);
+      return json(res, 200, {
+        file: file.id,
+        name: file.name,
+        watermarked: state.watermarked,
+        release_credits: state.watermarked ? (state.release_credits ?? null) : null,
+        credits_left: left ?? null,
+        url: links.url,
+        page_url: links.pageUrl,
+        ...(spent !== undefined ? { spent } : {}),
+      });
+    } catch (error) {
+      process.stderr.write(`lifecycle: ${owner}: release ${id}: ${(error as Error).message}\n`);
+      return json(res, 503, { error: 'the file could not be read just now' });
+    }
   }
 
   /**

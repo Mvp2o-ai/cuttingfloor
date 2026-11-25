@@ -48,7 +48,12 @@ export interface GateHooks {
     tool: string,
   ): Promise<{ balance: number | null }>;
   /** Burns the mark into a local file; the engine's burnMark unless a test stands in. */
-  mark?: (input: string, output: string, seed: string) => Promise<void>;
+  mark?: (input: string, output: string, seed: string, qr?: string) => Promise<void>;
+  /**
+   * The page where the owner signs in and releases a file, by its id: what the QR code on a
+   * review copy's cards opens. Without it the cards carry no code.
+   */
+  releasePage?: (id: string) => string;
 }
 
 /** Whether a file has the watermark now, and what removing the watermark costs. */
@@ -69,7 +74,7 @@ interface Gated {
 const PICTURE = /^(?:video|image)\//;
 const MARKED_PREFIX = 'cf-marked--';
 /** Marked copies made with the opening and end cards; older ones (without) are made again. */
-const CARDS_VERSION = 'cards2--';
+const CARDS_VERSION = 'cards3--';
 
 export class DownloadGate {
   readonly #rt: Runtime;
@@ -188,7 +193,7 @@ export class DownloadGate {
     if (await this.#rt.ws.blobs.head(key)) return { blob: key, marked: true };
     let making = this.#making.get(key);
     if (!making) {
-      making = this.#markCopy(key, source, `${owner}/${id}`).finally(() =>
+      making = this.#markCopy(key, source, `${owner}/${id}`, id).finally(() =>
         this.#making.delete(key),
       );
       this.#making.set(key, making);
@@ -200,17 +205,18 @@ export class DownloadGate {
     key: BlobKey,
     source: { blob?: BlobKey; file?: string },
     seed: string,
+    id: string,
   ): Promise<BlobKey> {
     const { scratch } = this.#rt.ws;
+    const qr = refOf(id) ? this.#hooks.releasePage?.(id) : undefined;
     return scratch.hold(async () => {
       const input = source.file ?? (source.blob ? await scratch.materialize(source.blob) : '');
       if (!input) throw new CfError('not_found', 'The file has gone');
       const out = await scratch.reserve(key);
-      await (this.#hooks.mark ?? ((i, o, s) => burnMark(i, o, { seed: s, cards: true })))(
-        input,
-        out,
-        seed,
-      );
+      await (
+        this.#hooks.mark ??
+        ((i, o, s, q) => burnMark(i, o, { seed: s, cards: true, ...(q ? { qr: q } : {}) }))
+      )(input, out, seed, qr);
       return scratch.publish(out, key);
     });
   }
@@ -290,6 +296,21 @@ export class DownloadGate {
       released_at: record.released_at,
       file,
     };
+  }
+
+  /**
+   * The owner's file a link id names (an export job `j_…` or a media `m_…`), with its name, or
+   * undefined when the id is not the owner's or the file has gone.
+   */
+  async lookup(owner: string, id: string): Promise<{ id: string; name: string } | undefined> {
+    const ref = refOf(id);
+    if (!ref) return undefined;
+    try {
+      return await this.#file(owner, ref);
+    } catch (error) {
+      if (error instanceof CfError && error.code === 'not_found') return undefined;
+      throw error;
+    }
   }
 
   /** The signed file a release names: an export's output, or a media's own file. */
@@ -392,4 +413,11 @@ export function watermarkNote(
       ? 'The watermarked copy is what downloads until then.'
       : 'Once the user has reviewed it, offer to release it now.'
   }`;
+}
+
+/** What a link id names for a release: a media (`m_…`) or an export job (`j_…`). */
+export function refOf(id: string): { media_id: string } | { job_id: string } | undefined {
+  if (/^m_[A-Za-z0-9_-]+$/.test(id)) return { media_id: id };
+  if (/^j_[A-Za-z0-9_-]+$/.test(id)) return { job_id: id };
+  return undefined;
 }
