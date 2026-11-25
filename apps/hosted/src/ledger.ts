@@ -1,7 +1,7 @@
 // The credit ledger, which Kazi keeps for both products: one balance per person, whichever site
 // they buy on or spend on. cuttingfloor links an account to it once (carrying the balance it had
-// here), reads the balance, reports each finished job's credits, and sets automatic top-up, which
-// the ledger runs. Packs bought on our site reach the ledger through Stripe, not through us.
+// here), reads the balance, reports each finished job's credits and every tool call (activity.ts),
+// and sets automatic top-up, which the ledger runs. Packs bought on our site reach the ledger through Stripe, not through us.
 // Server to server, with a bearer key whose hash Kazi holds.
 
 /** An account in the ledger, as every call that names one answers. */
@@ -45,6 +45,23 @@ export class LedgerConflict extends Error {}
 /** The ledger has no account by that id (it was removed): link again. */
 export class LedgerMissing extends Error {}
 
+/** The ledger refused the request's shape: sending it again won't help. */
+export class LedgerRefused extends Error {}
+
+/** A tool call, as Kazi's admin page counts it (activity contract v1). */
+export interface ActivityCall {
+  /** Unique per call; a batch sent again is counted once. */
+  id: string;
+  tool: string;
+  /** The app the call came from (its MCP clientInfo name), when it said. */
+  client?: string;
+  ok: boolean;
+  at: string;
+  duration_ms: number;
+  /** A failed call's error code, never its message. */
+  error?: string;
+}
+
 export class Ledger {
   #url: string;
   #key: string;
@@ -77,6 +94,15 @@ export class Ledger {
     finished_at: string;
   }): Promise<LedgerUsage> {
     return this.#call('POST', '/api/credits/usage', body);
+  }
+
+  /** Tells Kazi about an account's tool calls, 1 to 100 at a time. */
+  activity(body: {
+    workos_user_id: string;
+    account_id?: string;
+    calls: ActivityCall[];
+  }): Promise<{ recorded: number; duplicates: number }> {
+    return this.#call('POST', '/api/credits/activity', body);
   }
 
   /** The pack bought on its own when the balance runs low, or null for off. */
@@ -113,6 +139,7 @@ export class Ledger {
     const out = (await res.json().catch(() => ({}))) as T & { error?: string };
     if (res.status === 409) throw new LedgerConflict(out.error ?? 'link conflict');
     if (res.status === 404) throw new LedgerMissing(out.error ?? 'no such account');
+    if (res.status === 400) throw new LedgerRefused(out.error ?? 'bad request');
     if (!res.ok) throw new Error(`ledger ${method} ${path.split('?')[0]}: ${res.status}`);
     return out;
   }

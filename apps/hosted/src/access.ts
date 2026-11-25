@@ -248,6 +248,12 @@ export class AccessCheck {
     if (hit) hit.account = { ...hit.account, balance };
   }
 
+  /** The owner's ledger account as last checked here, without asking anyone. */
+  linkedAccount(owner: string): string | undefined {
+    const value = this.#cache.get(owner)?.value;
+    return value?.allowed ? value.ledger?.account_id : undefined;
+  }
+
   /** The owner's access, cached briefly; a refusal is rechecked soon so a change shows. */
   async get(owner: string): Promise<Access> {
     const hit = this.#cache.get(owner);
