@@ -76,8 +76,8 @@ export interface HttpOptions {
   activeBefore?: (owner: string) => Promise<boolean>;
   /** Told of each signed-in owner's MCP request (first-call records). */
   onCall?: (owner: string) => void | Promise<void>;
-  /** Told the app a signed-in owner's request came from, by its MCP clientInfo name. */
-  onApp?: (owner: string, app: string) => void;
+  /** Told the app a signed-in owner's request came from: its clientInfo name, else User-Agent's. */
+  onApp?: (owner: string, app: string, from?: 'client_info' | 'user_agent') => void;
   /** Provider keys signed-in users saved on their account page, after any in the request. */
   savedKeys?: SavedKeys;
   /** Routes of the hosting app (billing webhooks, account data); true when it answered. */
@@ -644,8 +644,9 @@ export function createHttpServer(options: HttpOptions): Server {
       const caller = await authenticate(req, res, request, () => isDiscovery(request));
       if (!caller) return;
       if (options.onApp && (caller.via === 'script' || caller.via === 'oauth')) {
-        const app = (await appName(request)) ?? userAgentApp(req.headers['user-agent']);
-        if (app) options.onApp(caller.owner, app);
+        const named = await appName(request);
+        const app = named ?? userAgentApp(req.headers['user-agent']);
+        if (app) options.onApp(caller.owner, app, named ? 'client_info' : 'user_agent');
       }
       const response = await handler.fetch(request, {
         authInfo: {

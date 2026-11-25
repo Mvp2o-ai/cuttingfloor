@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import { configFromEnv, Runtime } from '@cuttingfloor/server';
 import { AccessCheck } from './access.ts';
+import { Activity } from './activity.ts';
 import { ADMIN_KEYS, AdminApi } from './admin-api.ts';
 import { AppsSeen } from './apps-seen.ts';
 import { recordDownload } from './downloads.ts';
@@ -194,6 +195,15 @@ if (lifecycle) {
   ] as const)
     if (!set) process.stderr.write(`lifecycle: ${name} unset; that part is off\n`);
 }
+// Every signed-in account's tool calls, told to Kazi for its admin page. Not from a standby copy.
+const activity =
+  lifecycle && access && ledger && !standby
+    ? new Activity({ ledger, accountOf: (owner) => access.linkedAccount(owner) })
+    : undefined;
+if (activity) {
+  runtime.onToolCall((owner, entry) => activity.called(owner, entry));
+  activity.start();
+}
 /** The sign-up sequence, when everything it needs is set. Never asked for on standby. */
 const makeSequence = (): Sequence | undefined => {
   if (!(lifecycle && access && workosKey && publicUrl)) return undefined;
@@ -273,7 +283,8 @@ const server = createHttpServer({
   ...(lifecycle
     ? {
         onCall: (owner: string) => lifecycle.called(owner),
-        onApp: (owner: string, app: string) => {
+        onApp: (owner: string, app: string, from?: 'client_info' | 'user_agent') => {
+          activity?.usedFrom(owner, app, from);
           lifecycle.usedFrom(owner, app);
           apps.seen(owner, app);
         },
@@ -318,12 +329,16 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     lifecycle?.stop();
     sequence?.stop();
+    activity?.stop();
     runtime.stop();
     // The record store closes after the requests in flight have ended (they still read and
     // write it), handing its leases back so another server takes the periodic work over.
     // Whatever the database does, the process is gone a second after the 5 s cutoff.
     const end = () =>
-      void runtime.close(1000).then(
+      void Promise.all([
+        runtime.close(1000),
+        Promise.race([activity?.flush(), new Promise((resolve) => setTimeout(resolve, 1000))]),
+      ]).then(
         () => process.exit(0),
         () => process.exit(0),
       );
