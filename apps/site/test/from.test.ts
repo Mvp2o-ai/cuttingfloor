@@ -11,12 +11,12 @@ function visit(search: string, referrer = '') {
     { href: 'https://app.apifunnel.ai/s/PsFVYwBiOA' },
     { href: 'https://app.apifunnel.ai/s/2XDlD9QfXx?x=1' },
   ];
+  const handlers = new Map<string, (e: unknown) => void>();
   const page = {
     cookie: '',
     referrer,
     documentElement: { dataset: {} as Record<string, string> },
-    addEventListener: (_: string, run: () => void) => run(),
-    querySelectorAll: () => links,
+    addEventListener: (type: string, run: (e: unknown) => void) => handlers.set(type, run),
   };
   runInNewContext(DETECT, {
     URL,
@@ -28,6 +28,14 @@ function visit(search: string, referrer = '') {
       setItem: store.set.bind(store),
     },
   });
+  // Each link opened, by click, middle click or the menu, after the page has loaded (as on a
+  // page reached by a client-side navigation): the text inside it is what is clicked.
+  for (const [i, link] of links.entries()) {
+    const target = {
+      closest: (sel: string) => (sel.includes('app.apifunnel.ai/s/') ? link : null),
+    };
+    handlers.get(['click', 'auxclick'][i] ?? 'click')?.({ target });
+  }
   return { from: page.documentElement.dataset.from, cookie: page.cookie, links };
 }
 

@@ -6,7 +6,8 @@
 // script below sets <html data-from> before the first paint. ChatGPT tags its links with
 // utm_source=chatgpt.com; Claude's arrive with a claude.ai referrer. The tag is only on the first
 // page, so the tab remembers it. `?from=chatgpt` or `?from=claude` previews a variant.
-// Kazi is told too: its guest demo links get `?via=<app>`, and a cookie carries it through sign-up
+// Kazi is told too: its guest demo links get `?via=<app>` as they are opened (any page, however
+// it was reached), and a cookie carries it through sign-up
 // to /kazi, which hands it on (the app's name only, for an hour).
 
 export const AGENT_SOURCES = ['chatgpt', 'claude'] as const;
@@ -23,9 +24,9 @@ else if(/claude|anthropic/.test(u)||/(^|\\.)claude\\.(ai|com)$/.test(r))f='claud
 try{s=sessionStorage;if(f)s.setItem('cf-from',f);else f=s.getItem('cf-from')||''}catch(e){}
 if(f==='chatgpt'||f==='claude'){document.documentElement.dataset.from=f;
 document.cookie='cf-from='+f+';path=/;max-age=3600;samesite=lax;secure';
-document.addEventListener('DOMContentLoaded',function(){
-document.querySelectorAll('a[href^="https://app.apifunnel.ai/s/"]').forEach(function(a){
-var l=new URL(a.href);l.searchParams.set('via',f);a.href=l.href})})}
+var v=function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href^="https://app.apifunnel.ai/s/"]');
+if(a){var l=new URL(a.href);l.searchParams.set('via',f);a.href=l.href}};
+['click','auxclick','contextmenu'].forEach(function(t){document.addEventListener(t,v,true)})}
 })()`;
 
 /** In <head>, so the right variant shows on the first paint. */

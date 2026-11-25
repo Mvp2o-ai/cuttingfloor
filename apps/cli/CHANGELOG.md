@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.74.3
+
+### Patch Changes
+
+- 755ccfe: A Kazi demo link opened from any page, including one reached without a full page load, tells Kazi which AI app the visitor came from.
+
 ## 0.74.2
 
 ### Patch Changes
