@@ -1,5 +1,14 @@
 # cuttingfloor
 
+## 0.77.5
+
+### Patch Changes
+
+- 96e65af: An AI short film demo on the site, and AI-generated clips in the onboarding samples: tasks about Kling, Runway, Sora or Veo clips, AI short films and trailers now start with six AI clips of a lighthouse keeper on a stormy night instead of Big Buck Bunny.
+- 74650ba: A cinematic car edit demo on the site, and a car clip in the onboarding samples: car, motorbike, action and cinematic tasks now start with five phone clips of a car on a coast road instead of the dance takes.
+- de95918: A lyric video demo on the site, and an original song in the onboarding samples: tasks about lyric videos and lyric Shorts, words on screen in time with a song, karaoke-style text, and music promos and song teasers for an artist or band now start with a singer's own song played over her raw phone clips instead of Big Buck Bunny.
+- b21f761: A product promo demo on the site, and product photos in the onboarding samples: tasks about promos and ads made from photos or product images, book and product launches, slideshows with a voiceover, WhatsApp Status and Instagram promos and A/B versions with different hooks now start with six photos of a pottery studio's new mugs and the seller's own voiceover instead of the product review or Big Buck Bunny.
+
 ## 0.77.4
 
 ### Patch Changes
