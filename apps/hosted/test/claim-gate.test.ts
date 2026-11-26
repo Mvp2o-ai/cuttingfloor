@@ -11,8 +11,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AccessCheck } from '../src/access.ts';
 import { createHttpServer } from '../src/http.ts';
 import { ScriptKeys } from '../src/keys.ts';
-import { Ledger } from '../src/ledger.ts';
 import { ACTIVATION_FROM, Lifecycle } from '../src/lifecycle.ts';
+import { testLedger } from './test-ledger.ts';
 
 // Activation (credits.claim) is for new accounts. One that ran a tool before activation existed
 // was refused "This account isn't activated yet" on 2026-11-23 (three returning users); it must
@@ -66,7 +66,7 @@ beforeAll(async () => {
   const lifecycle = new Lifecycle({
     runtime,
     access: { get: async () => ({ allowed: false }) } as unknown as AccessCheck,
-    ledger: new Ledger('http://127.0.0.1:9', 'none'),
+    ledger: testLedger(),
     workosKey: 'sk_test_none',
     stripeKey: 'sk_test_none',
     accountUrl: 'https://cuttingfloor.ai/account',

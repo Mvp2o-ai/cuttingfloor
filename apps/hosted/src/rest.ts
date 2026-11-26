@@ -4,6 +4,7 @@ import { ErrorCode, type ToolError } from '@cuttingfloor/schema';
 import { type Runtime, SERVER_VERSION } from '@cuttingfloor/server';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, type McpServer } from '@modelcontextprotocol/server';
+import { type AppCredits, AppleOtherAccount, AppleRejected } from './apple.ts';
 
 // The tools as plain HTTP for code that doesn't speak MCP: POST /v1/<tool> with the arguments as
 // the JSON body answers the tool's result, and /openapi.json describes every tool from the same
@@ -11,6 +12,15 @@ import { InMemoryTransport, type McpServer } from '@modelcontextprotocol/server'
 // (same checks, metering, jobs and results), over an in-memory connection, so the two can't drift.
 
 type Caller = { owner: string; via: string };
+
+/** The phone app's credits (apple.ts): not tools, but plain account routes on /v1. */
+export interface AppCreditsRoutes {
+  credits(owner: string): Promise<AppCredits>;
+  purchase(
+    owner: string,
+    signed: string,
+  ): Promise<{ credits_added: number; balance: number | null }>;
+}
 type ToolInfo = {
   name: string;
   title?: string;
@@ -67,14 +77,17 @@ export class RestApi {
     via: string,
     headers?: Headers,
   ) => McpServer | Promise<McpServer>;
+  readonly #credits: AppCreditsRoutes | undefined;
   #tools: Promise<ToolInfo[]> | undefined;
 
   constructor(
     runtime: Runtime,
     serverFor: (owner: string, via: string, headers?: Headers) => McpServer | Promise<McpServer>,
+    credits?: AppCreditsRoutes,
   ) {
     this.#runtime = runtime;
     this.#serverFor = serverFor;
+    this.#credits = credits;
   }
 
   handles(url: URL): boolean {
@@ -103,7 +116,7 @@ export class RestApi {
       const tools = await this.#listTools();
       const body = JSON.stringify(
         url.pathname === '/openapi.json'
-          ? openApi(tools, this.#runtime.config.publicUrl)
+          ? openApi(tools, this.#runtime.config.publicUrl, Boolean(this.#credits))
           : {
               tools: tools.map((t) => ({
                 name: t.name,
@@ -123,6 +136,8 @@ export class RestApi {
     }
     if (url.pathname === '/v1/floor.changes')
       return this.#floorChanges(req, res, url, authenticate);
+    if (url.pathname === '/v1/credits' || url.pathname === '/v1/credits/apple')
+      return this.#appCredits(req, res, url, authenticate);
     const name = decodeURIComponent(url.pathname.slice('/v1/'.length));
     const tool = (await this.#listTools()).find((t) => t.name === name);
     if (!tool) {
@@ -240,6 +255,74 @@ export class RestApi {
     if (!res.writableEnded && !res.destroyed) send(res, 200, answer);
   }
 
+  /**
+   * GET /v1/credits: the account's balance as the phone app shows it, the App Store packs and the
+   * appAccountToken its purchases carry. POST /v1/credits/apple {signed_transaction}: records one
+   * App Store purchase (StoreKit 2 jwsRepresentation) once, answering {credits_added, balance}.
+   */
+  async #appCredits(
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    authenticate: (request: Request) => Promise<Caller | undefined>,
+  ): Promise<void> {
+    const credits = this.#credits;
+    const apple = url.pathname === '/v1/credits/apple';
+    if (req.method !== (apple ? 'POST' : 'GET')) return refuse(req, res, apple ? 'POST' : 'GET');
+    if (!credits) {
+      req.resume();
+      return send(res, 404, { code: 'not_found', message: 'No credits on this server' });
+    }
+    const headers = new Headers();
+    for (const [k, v] of Object.entries(req.headers))
+      if (typeof v === 'string') headers.set(k, v);
+      else if (Array.isArray(v)) headers.set(k, v.join(', '));
+    const caller = await authenticate(
+      new Request(new URL(url.pathname, this.#runtime.config.publicUrl), {
+        method: req.method,
+        headers,
+      }),
+    );
+    if (!caller) {
+      req.resume();
+      return;
+    }
+    try {
+      if (!apple) return send(res, 200, await credits.credits(caller.owner));
+      let signed: unknown;
+      try {
+        signed = (JSON.parse(await readBody(req, 64 * 1024)) as { signed_transaction?: unknown })
+          ?.signed_transaction;
+      } catch {
+        signed = undefined;
+      }
+      if (typeof signed !== 'string' || !signed)
+        return send(res, 400, {
+          code: 'bad_request',
+          message: 'The body is {"signed_transaction": StoreKit\'s jwsRepresentation}',
+        });
+      return send(res, 200, await credits.purchase(caller.owner, signed));
+    } catch (error) {
+      if (error instanceof AppleOtherAccount)
+        return send(res, 403, { code: 'bad_request', message: error.message });
+      if (error instanceof AppleRejected)
+        return send(res, 400, { code: 'bad_request', message: error.message });
+      const e = error as { code?: ErrorCode; message?: string; hint?: string };
+      if (e.code && e.code in STATUS)
+        return send(res, STATUS[e.code], {
+          code: e.code,
+          message: e.message,
+          ...(e.hint ? { hint: e.hint } : {}),
+        });
+      process.stderr.write(`rest: ${url.pathname}: ${(error as Error).message}\n`);
+      return send(res, 503, {
+        code: 'service_unavailable',
+        message: 'Credits could not be read just now',
+        hint: 'Try again in a minute',
+      });
+    }
+  }
+
   /** A data: URI import is the largest body a call takes. */
   #bodyLimit(): number {
     return Math.ceil(this.#runtime.config.inlineMaxBytes * 1.4) + 1024 ** 2;
@@ -351,7 +434,11 @@ function refuse(req: IncomingMessage, res: ServerResponse, allow: string): void 
  * The OpenAPI 3.1 document: one POST operation per tool, its input and output schemas from
  * tools/list. Each tool schema's own `$defs` move into components, named after the tool.
  */
-export function openApi(tools: ToolInfo[], publicUrl: string): Record<string, unknown> {
+export function openApi(
+  tools: ToolInfo[],
+  publicUrl: string,
+  credits = false,
+): Record<string, unknown> {
   const schemas: Record<string, unknown> = { Error: ERROR_SCHEMA };
   const paths: Record<string, unknown> = {};
   for (const tool of tools) {
@@ -426,6 +513,7 @@ export function openApi(tools: ToolInfo[], publicUrl: string): Record<string, un
       },
     },
   };
+  if (credits) Object.assign(paths, CREDITS_PATHS);
   return {
     openapi: '3.1.0',
     info: {
@@ -438,7 +526,13 @@ Long work (imports, analysis, renders, exports) answers at once with a job_id: P
     },
     servers: [{ url: publicUrl }],
     security: [{ apiKey: [] }],
-    tags: [...new Set([...tools.map((t) => t.name.split('.')[0]), 'floor'])].map((name) => ({
+    tags: [
+      ...new Set([
+        ...tools.map((t) => t.name.split('.')[0]),
+        'floor',
+        ...(credits ? ['credits'] : []),
+      ]),
+    ].map((name) => ({
       name,
     })),
     paths,
@@ -460,6 +554,110 @@ Long work (imports, analysis, renders, exports) answers at once with a job_id: P
     },
   };
 }
+
+const APPLE_PACK = {
+  type: 'object',
+  properties: {
+    product_id: {
+      type: 'string',
+      description: 'The App Store product (ai.cuttingfloor.app.<pack>)',
+    },
+    credits: { type: 'number', description: 'Credits it adds' },
+  },
+  required: ['product_id', 'credits'],
+  additionalProperties: false,
+};
+
+/** The phone app's credit routes: account routes, not tools. */
+const CREDITS_PATHS = {
+  '/v1/credits': {
+    get: {
+      operationId: 'credits_get',
+      summary: 'Credits, as the phone app shows them',
+      description:
+        "Not a tool: for the Cutting Floor AI app. The account's balance (null on a given plan, which has no cap), whether it is low or out, the App Store packs, and the appAccountToken to set on each StoreKit purchase so it lands on this account.",
+      tags: ['credits'],
+      responses: {
+        '200': {
+          description: "The account's credits",
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  balance: { type: ['number', 'null'] },
+                  unmetered: { type: 'boolean' },
+                  low: { type: 'boolean' },
+                  out: { type: 'boolean' },
+                  apple_products: { type: 'array', items: APPLE_PACK },
+                  apple_account_token: { type: 'string', format: 'uuid' },
+                },
+                required: [
+                  'balance',
+                  'unmetered',
+                  'low',
+                  'out',
+                  'apple_products',
+                  'apple_account_token',
+                ],
+                additionalProperties: false,
+              },
+            },
+          },
+        },
+        '4XX': { $ref: '#/components/responses/Error' },
+        '5XX': { $ref: '#/components/responses/Error' },
+      },
+    },
+  },
+  '/v1/credits/apple': {
+    post: {
+      operationId: 'credits_apple',
+      summary: 'Record an App Store purchase',
+      description:
+        "Not a tool: for the Cutting Floor AI app. Checks one StoreKit transaction against Apple's certificates and adds its pack's credits once; the same transaction again adds 0. Finish the transaction only after a 200. A transaction made with another account's appAccountToken answers 403.",
+      tags: ['credits'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                signed_transaction: {
+                  type: 'string',
+                  description: "StoreKit 2's Transaction.jwsRepresentation",
+                },
+              },
+              required: ['signed_transaction'],
+              additionalProperties: false,
+            },
+          },
+        },
+      },
+      responses: {
+        '200': {
+          description: 'Recorded',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  credits_added: { type: 'number', description: '0 when it was recorded before' },
+                  balance: { type: ['number', 'null'] },
+                },
+                required: ['credits_added', 'balance'],
+                additionalProperties: false,
+              },
+            },
+          },
+        },
+        '4XX': { $ref: '#/components/responses/Error' },
+        '5XX': { $ref: '#/components/responses/Error' },
+      },
+    },
+  },
+};
 
 const ERROR_SCHEMA = {
   type: 'object',

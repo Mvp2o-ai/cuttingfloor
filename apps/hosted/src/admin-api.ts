@@ -20,7 +20,7 @@ import {
   readCalls,
   readSupportMessages,
 } from '@cuttingfloor/server';
-import { type AccessCheck, LEDGER_LINKS } from './access.ts';
+import type { AccessCheck } from './access.ts';
 import type { AppsSeen } from './apps-seen.ts';
 import { readDownloads } from './downloads.ts';
 import { exportOf } from './expiry-notices.ts';
@@ -59,7 +59,7 @@ type File = AdminFile;
 export interface AdminApiOptions {
   runtime: Runtime;
   lifecycle: Pick<Lifecycle, 'usersPage' | 'user'>;
-  access: Pick<AccessCheck, 'balance' | 'payments'>;
+  access: Pick<AccessCheck, 'balance' | 'payments' | 'opened'>;
   /** The apps each account used. */
   apps: Pick<AppsSeen, 'read'>;
   /** Admin keys (cfa_…). */
@@ -230,10 +230,7 @@ export class AdminApi {
     ] = await Promise.all([
       rt.media.list(owner),
       rt.jobs.store.list(owner, { status: 'completed', limit: 1000 }),
-      rt.ws.records
-        .collection(LEDGER_LINKS, { owner })
-        .get('link')
-        .catch(() => undefined),
+      this.#o.access.opened(owner).catch(() => undefined),
       recipientState(rt.ws, owner, user.email),
       // credits.claim's record: the use case the assistant gave.
       rt.ws.records
@@ -332,7 +329,7 @@ export class AdminApi {
           : [],
       sample: shown ? (shown.sample ?? 'animation-short') : null,
       last_used_at: meta.last_used_at ?? null,
-      // Only an account already on the ledger: reading one that isn't would join it to the ledger.
+      // Only an account already on the ledger: reading one that isn't would open it.
       credits: linked ? await this.#credits(owner) : null,
       support_messages: messages,
       activity: activity(calls),

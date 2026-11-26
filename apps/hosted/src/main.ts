@@ -1,17 +1,20 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { MongoRecords } from '@cuttingfloor/core';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
+import { LOW_CREDITS } from '@cuttingfloor/plans';
 import { configFromEnv, Runtime } from '@cuttingfloor/server';
 import { AccessCheck } from './access.ts';
-import { Activity } from './activity.ts';
 import { ADMIN_KEYS, AdminApi } from './admin-api.ts';
+import { AppleCredits } from './apple.ts';
 import { AppsSeen } from './apps-seen.ts';
 import { recordDownload } from './downloads.ts';
 import { ResendProvider } from './email.ts';
 import { recordSignInStep } from './funnel.ts';
 import { createHttpServer, parseApiKeys } from './http.ts';
+import { Kazi } from './kazi.ts';
 import { ScriptKeys } from './keys.ts';
-import { Ledger } from './ledger.ts';
+import { FileLedger, type Ledger, MongoLedger } from './ledger.ts';
 import { Lifecycle } from './lifecycle.ts';
 import { discoverAuthorizationServer, JwtTokenVerifier } from './oauth.ts';
 import { ProviderKeys } from './provider-keys.ts';
@@ -78,25 +81,35 @@ if (standby) process.stderr.write(`${STANDBY_NOTICE}\n`);
 const runtime = new Runtime(config);
 await runtime.start();
 
-// Plan checks for signed-in users: WorkOS holds the account, Kazi's credit ledger the balance
-// (Stripe the packs an account bought before it was linked). Signing in without them would let
-// everyone in, so hosted mode won't start that way.
+// Plan checks for signed-in users: WorkOS holds the account, the credit ledger the balance (in
+// the record database; files for a single server), Stripe the packs. Signing in without them would
+// let everyone in, so hosted mode won't start that way.
 const workosKey = process.env.WORKOS_API_KEY;
 const stripeKey = process.env.STRIPE_SECRET_KEY;
-const ledgerUrl = process.env.KAZI_CREDITS_URL;
-const ledgerKey = process.env.KAZI_CREDITS_KEY;
-if (oauth && (!workosKey || !stripeKey || !ledgerUrl || !ledgerKey)) {
+if (oauth && (!workosKey || !stripeKey)) {
   process.stderr.write(
-    "OAuth sign-in needs WORKOS_API_KEY, STRIPE_SECRET_KEY, KAZI_CREDITS_URL and KAZI_CREDITS_KEY, to check each account's plan and credits\n",
+    "OAuth sign-in needs WORKOS_API_KEY and STRIPE_SECRET_KEY, to check each account's plan and credits\n",
   );
   process.exit(1);
 }
 const accountUrl = process.env.CUTTINGFLOOR_ACCOUNT_URL ?? 'https://cuttingfloor.ai/account';
-const ledger = ledgerUrl && ledgerKey ? new Ledger(ledgerUrl, ledgerKey) : undefined;
+const records = runtime.ws.records;
+const ledger: Ledger =
+  records instanceof MongoRecords
+    ? new MongoLedger({ db: () => records.database(), low: LOW_CREDITS })
+    : new FileLedger({ records, low: LOW_CREDITS });
 const access =
-  oauth && workosKey && stripeKey && ledger
+  oauth && workosKey && stripeKey
     ? new AccessCheck({ workosKey, stripeKey, ledger, accountUrl, ws: runtime.ws })
     : undefined;
+// Kazi's partner API, for the hand-off into Kazi after a sign-up here (optional). The variables
+// keep the names they had when Kazi also kept our credits: the same key opens its partner API.
+const kazi =
+  process.env.KAZI_CREDITS_URL && process.env.KAZI_CREDITS_KEY
+    ? new Kazi(process.env.KAZI_CREDITS_URL, process.env.KAZI_CREDITS_KEY)
+    : undefined;
+// The Cutting Floor AI app's credits and App Store purchases.
+const apple = access ? new AppleCredits({ ledger, access }) : undefined;
 // Keys users make on the account page for scripts: only where accounts are checked.
 const scriptKeys = access ? new ScriptKeys(runtime.ws) : undefined;
 // The admin API's keys and cuttingfloor's own rights table (who is an admin).
@@ -145,11 +158,13 @@ const sequenceOn = !unset.length && Boolean(publicUrl);
 const apps = new AppsSeen(runtime.ws);
 const mailer = accountMailer(process.env, standby);
 const lifecycle =
-  access && ledger && workosKey && stripeKey
+  access && workosKey && stripeKey
     ? new Lifecycle({
         runtime,
         access,
         ledger,
+        ...(kazi ? { kazi } : {}),
+        ...(apple ? { apple } : {}),
         workosKey,
         stripeKey,
         accountUrl,
@@ -176,7 +191,7 @@ const lifecycle =
       })
     : undefined;
 // The download gate: pictures leave with the watermark until their owner removes it,
-// spent through the ledger. Only with plans and credits to go by (the hosted service).
+// spent on the credit ledger. Only with plans and credits to go by (the hosted service).
 if (access && lifecycle) {
   runtime.useGate({
     exempt: (owner) => access.exempt(owner),
@@ -196,15 +211,6 @@ if (lifecycle) {
     ['CUTTINGFLOOR_KEY_SECRET', process.env.CUTTINGFLOOR_KEY_SECRET],
   ] as const)
     if (!set) process.stderr.write(`lifecycle: ${name} unset; that part is off\n`);
-}
-// Every signed-in account's tool calls, told to Kazi for its admin page. Not from a standby copy.
-const activity =
-  lifecycle && access && ledger && !standby
-    ? new Activity({ ledger, accountOf: (owner) => access.linkedAccount(owner) })
-    : undefined;
-if (activity) {
-  runtime.onToolCall((owner, entry) => activity.called(owner, entry));
-  activity.start();
 }
 /** The sign-up sequence, when everything it needs is set. Never asked for on standby. */
 const makeSequence = (): Sequence | undefined => {
@@ -286,12 +292,12 @@ const server = createHttpServer({
   ...(lifecycle
     ? {
         onCall: (owner: string) => lifecycle.called(owner),
-        onApp: (owner: string, app: string, from?: 'client_info' | 'user_agent') => {
-          activity?.usedFrom(owner, app, from);
+        onApp: (owner: string, app: string) => {
           lifecycle.usedFrom(owner, app);
           apps.seen(owner, app);
         },
         account: (owner: string) => lifecycle.account(owner),
+        ...(apple ? { credits: apple } : {}),
         activeBefore: (owner: string) => lifecycle.activeBefore(owner),
         route: async (req, res, url) =>
           (await adminApi?.route(req, res, url)) ||
@@ -332,16 +338,12 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     lifecycle?.stop();
     sequence?.stop();
-    activity?.stop();
     runtime.stop();
     // The record store closes after the requests in flight have ended (they still read and
     // write it), handing its leases back so another server takes the periodic work over.
     // Whatever the database does, the process is gone a second after the 5 s cutoff.
     const end = () =>
-      void Promise.all([
-        runtime.close(1000),
-        Promise.race([activity?.flush(), new Promise((resolve) => setTimeout(resolve, 1000))]),
-      ]).then(
+      void runtime.close(1000).then(
         () => process.exit(0),
         () => process.exit(0),
       );

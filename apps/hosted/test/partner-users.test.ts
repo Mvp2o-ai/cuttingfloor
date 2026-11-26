@@ -10,8 +10,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AccessCheck } from '../src/access.ts';
 import { createHttpServer } from '../src/http.ts';
 import { ScriptKeys } from '../src/keys.ts';
-import { Ledger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
+import { testLedger } from './test-ledger.ts';
 
 // Deleting a partner's user (DELETE /partner/users): when someone deletes their account in the
 // partner's app (one-mcp, for Kazi and the Cutting Floor AI app), the same login's account here
@@ -97,7 +97,7 @@ beforeAll(async () => {
   const lifecycle = new Lifecycle({
     runtime,
     access: { get: async () => free, forget: () => undefined } as unknown as AccessCheck,
-    ledger: new Ledger('http://127.0.0.1:9', 'none'),
+    ledger: testLedger(),
     workosKey: 'sk_test_none',
     stripeKey: 'sk_test_none',
     accountUrl: 'https://cuttingfloor.ai/account',

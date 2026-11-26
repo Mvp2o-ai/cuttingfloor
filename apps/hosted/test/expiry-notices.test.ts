@@ -5,8 +5,8 @@ import { Runtime } from '@cuttingfloor/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AccessCheck } from '../src/access.ts';
 import type { Mailer } from '../src/email.ts';
-import { Ledger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
+import { testLedger } from './test-ledger.ts';
 
 // The file reminder: one email a day naming files going in about 3 days or within a day, off
 // once the account turns it off on its account page.
@@ -44,7 +44,7 @@ beforeAll(async () => {
   lifecycle = new Lifecycle({
     runtime,
     access: { get: async () => ({ allowed: false }) } as unknown as AccessCheck,
-    ledger: new Ledger('http://127.0.0.1:9', 'none'),
+    ledger: testLedger(),
     workosKey: 'sk_test_none',
     stripeKey: 'sk_test_none',
     accountUrl: 'https://cuttingfloor.ai/account',

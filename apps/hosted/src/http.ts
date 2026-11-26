@@ -40,7 +40,7 @@ import type { DownloadSeen } from './downloads.ts';
 import { finalShortPage } from './final-page.ts';
 import type { JwtTokenVerifier } from './oauth.ts';
 import { referralLink } from './referral.ts';
-import { RestApi } from './rest.ts';
+import { type AppCreditsRoutes, RestApi } from './rest.ts';
 import { isUser } from './rights.ts';
 import { aiCatalog, CARD_TYPE, sendDiscovery, serverCard } from './server-card.ts';
 import { jsonBody, report, share } from './sound-routes.ts';
@@ -74,6 +74,8 @@ export interface HttpOptions {
   limits?: (owner: string, options?: { buy?: boolean }) => Promise<OwnerLimits>;
   /** Hosted: a signed-in owner's plan and credits, for account.get (not maintenance keys). */
   account?: (owner: string) => Promise<AccountGetResult>;
+  /** Hosted: the phone app's credits and App Store purchases (GET /v1/credits, POST /v1/credits/apple). */
+  credits?: AppCreditsRoutes;
   /** Hosted: whether an account was active before activation existed, so it needs no claim. */
   activeBefore?: (owner: string) => Promise<boolean>;
   /** Told of each signed-in owner's MCP request (first-call records). */
@@ -252,8 +254,10 @@ export function createHttpServer(options: HttpOptions): Server {
       ),
     { onerror: (error) => process.stderr.write(`mcp: ${error.message}\n`) },
   );
-  const rest = new RestApi(runtime, (owner, via, headers) =>
-    serverFor(owner, via, headers, 'rest'),
+  const rest = new RestApi(
+    runtime,
+    (owner, via, headers) => serverFor(owner, via, headers, 'rest'),
+    options.credits,
   );
   const hashedKeys = [...(options.apiKeys ?? new Map()).entries()].map(([key, owner]) => ({
     digest: createHash('sha256').update(key).digest(),

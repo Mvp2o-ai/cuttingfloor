@@ -11,10 +11,10 @@ import { ADMIN_KEYS, AdminApi } from '../src/admin-api.ts';
 import { AppsSeen } from '../src/apps-seen.ts';
 import { createHttpServer } from '../src/http.ts';
 import { ScriptKeys } from '../src/keys.ts';
-import { Ledger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
 import { referralCode } from '../src/referral.ts';
 import { Rights } from '../src/rights.ts';
+import { testLedger } from './test-ledger.ts';
 
 // Every account has its own link. A shared watch page credits the owner with it; someone who
 // opens it and signs up keeps the code as `referred_by` (the site's /callback writes it into the
@@ -95,11 +95,12 @@ beforeAll(async () => {
   const access = {
     balance: async () => ({ plan: 'free', left: 3, used: 0, free: 3, bought: 0 }),
     payments: async () => [],
+    opened: async () => undefined,
   } as unknown as AccessCheck;
   const lifecycle = new Lifecycle({
     runtime,
     access,
-    ledger: new Ledger('http://127.0.0.1:9', 'none'),
+    ledger: testLedger(),
     workosKey: 'sk_test_none',
     stripeKey: 'sk_test_none',
     accountUrl: 'https://cuttingfloor.ai/account',
