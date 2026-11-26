@@ -65,10 +65,11 @@ export const SAMPLES: Sample[] = [
   {
     slug: 'dance-takes',
     file: 'dance-takes.mp4',
-    shows: 'a 34-second dance routine filmed in several takes',
-    fits: 'dance, choreography, music performances and covers, fitness, cutting a person’s takes together on the beat',
+    shows:
+      'a 60-second dance routine filmed in six takes from different angles (wide, waist-up, low from the floor, side, feet, close-up) in a parking garage at night, with only room sound',
+    fits: 'dance and choreography videos, dance challenges and trends, TikTok and Reels dance edits, cutting one routine filmed from several angles or takes together on the beat, music performances and covers, fitness',
     starter:
-      'Cut these takes together on the beat into one vertical video, switching takes on the big moves.',
+      'Cut these six takes into one vertical dance video: open on the final point, switch angles on the big moves, slow down into the spin and punch in on the hits.',
   },
   {
     slug: 'car-takes',
