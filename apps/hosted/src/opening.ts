@@ -1,58 +1,78 @@
 import { defineCollection, type Records } from '@cuttingfloor/core';
-import { FREE_CREDITS, packOf, taggedPlan } from '@cuttingfloor/plans';
+import { packOf, taggedPlan } from '@cuttingfloor/plans';
 import * as z from 'zod/v4';
 import { appleEntryId, appleRefundId } from './apple.ts';
-import { type CreditEntry, type Ledger, type NewEntry, totals } from './ledger.ts';
-import { customerPayments, paymentEntries } from './stripe-credits.ts';
+import { type Ledger, type NewEntry, totals } from './ledger.ts';
 
-// The split from Kazi's shared ledger, run once at the cutover by scripts/ledger-opening.ts and
-// checked by scripts/ledger-reconcile.ts. Neither is a mode of the server.
+// The split from Kazi's shared ledger, run by scripts/ledger-opening.ts and checked by
+// scripts/ledger-reconcile.ts. Neither is a mode of the server.
 //
-// Kazi hands over every account cuttingfloor opened in its ledger, as it stood at `taken_at`: the
-// balance, the refill pack, whether Kazi called it unmetered, and its rows. Each becomes an
-// account here with:
-// - its payments and refunds (Stripe payment intents and refunds, App Store transactions) and its
-//   releases, under their own ids, so the same payment or release arriving again is a duplicate;
-// - `opening:<Kazi account id>`: the rest of the balance, so the account holds exactly what Kazi
-//   said;
-// - what it used here before the shared ledger (its old link's `used_before`), for the page.
-// Payments in Stripe after `taken_at` that Kazi never saw are added too. `unmetered` becomes a
-// WorkOS `plan: lifetime` tag (an account that has a plan tag already keeps it). Accounts linked to
-// Kazi's ledger that Kazi did not hand over (accounts Kazi opened) start with the activation grant
-// and nothing carried. Everything is idempotent: run it again and it adds only what is missing.
-// Without --apply it writes nothing and prints what it would do.
+// Kazi exports every account with a WorkOS user id (`kazi-handoff/1`, one-mcp's one-off script,
+// agreed as contract v1). Its `balance` is the number: each account opens here holding exactly that,
+// negative or not, as `opening:<Kazi account id>`, written once (entries are append-only). Its rows
+// are for audit and to avoid counting twice: a payment row with an id of its own (a Stripe payment
+// intent or refund, an App Store transaction) is entered under that id and carved out of the
+// opening, so the account still holds exactly `balance` and the same payment arriving again here is
+// a duplicate. Every other row (grants, Kazi's openings, releases) is only counted.
+//
+// An account the import opens never gets the activation grant or the carry-over from before any
+// ledger: those come only when the server opens an account itself, and an open account is never
+// opened again. An account already open here before the import (a sign-in raced it) is not
+// touched; it is reported.
+//
+// A later export (run 2, after Kazi stops handling cuttingfloor) adds only payment rows it hasn't
+// seen. Kazi's balance for an account may move only by those rows; any other change between runs
+// is a mismatch. So is a file whose accounts, balance sum, row count or member count differ from
+// its `totals`. Mismatches are printed and exit 1: they go to Ken. Every Kazi member listed in
+// `kazi_unmetered` (staff or lifetime, linked to us or not) gets a WorkOS `plan: lifetime` tag on
+// the user with that email, unless it has a plan tag already; a member with no WorkOS user is
+// printed and left. Without --apply nothing is written.
 
-/**
- * The hand-off as Kazi will send it. PROVISIONAL: one-mcp owns the format and it is not agreed
- * yet; only `parseHandoff` knows its shape, so a different one changes that function alone.
- */
 const HandoffRow = z.object({
   kind: z.string(),
-  /** Signed: what the row added to the balance. */
-  credits: z.number(),
-  /** The payment intent, refund, App Store transaction, or `<job>-release`. */
-  ref: z.string().optional(),
-  /** `stripe`, `apple`, `cuttingfloor`… */
   source: z.string().optional(),
+  /** Signed: what the row added to Kazi's balance. */
+  credits: z.number(),
+  ref: z.string().nullable().optional(),
   at: z.string().optional(),
+  meta: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 const HandoffAccount = z.object({
   account_id: z.string().min(1),
-  workos_user_id: z.string().nullable().optional(),
-  email: z.string().optional(),
-  balance: z.number(),
-  refill_pack: z.string().nullable().optional(),
-  unmetered: z.boolean().optional(),
+  workos_user_id: z.string().nullable(),
+  email: z.string().nullable().optional(),
+  kazi_user_id: z.string().nullable().optional(),
+  unmetered: z.boolean(),
   apple_account_token: z.string().nullable().optional(),
-  rows: z.array(HandoffRow).optional(),
+  stripe_customer_id: z.string().nullable().optional(),
+  refill_pack: z.string().nullable().optional(),
+  balance: z.number(),
+  rows: z.array(HandoffRow),
 });
 const HandoffFile = z.object({
-  format: z.string().optional(),
-  taken_at: z.string(),
+  format: z.literal('kazi-handoff/1'),
+  exported_at: z.string(),
+  run: z.number().int().positive(),
   accounts: z.array(HandoffAccount),
+  /** Kazi's staff and lifetime members, to tag lifetime here. */
+  kazi_unmetered: z
+    .array(
+      z.object({
+        kazi_user_id: z.string().nullable().optional(),
+        email: z.string(),
+        reason: z.string().optional(),
+      }),
+    )
+    .optional(),
+  totals: z.object({
+    accounts: z.number(),
+    balance_sum: z.number(),
+    rows: z.number(),
+    kazi_unmetered: z.number().optional(),
+  }),
 });
 
-/** One account as the import works with it, whatever shape the hand-off came in. */
+/** One account as the import works with it. */
 export interface HandedAccount {
   kazi_id: string;
   owner: string | null;
@@ -61,74 +81,97 @@ export interface HandedAccount {
   refill: string | null;
   unmetered: boolean;
   apple_account_token: string | null;
-  /** The rows that become entries of their own here, ids already ours. */
-  entries: NewEntry[];
-  /** Rows folded into the opening entry (grants, Kazi's own spends, adjustments). */
-  folded: number;
+  stripe_customer_id: string | null;
+  /** Payment rows with ids of their own, entered under them. */
+  payments: NewEntry[];
+  /** Rows only counted: grants, Kazi's openings, releases. */
+  counted: number;
 }
 
 export interface Handoff {
-  taken_at: string;
+  exported_at: string;
+  run: number;
   accounts: HandedAccount[];
+  /** Kazi's staff and lifetime members, by email. */
+  unmetered: { email: string; reason: string }[];
+  /** Where the file disagrees with its own `totals`. */
+  mismatches: string[];
 }
 
-/** Reads Kazi's hand-off file (see HandoffFile) into what the import needs. */
+/** Reads a `kazi-handoff/1` file; the only place that knows its shape. */
 export function parseHandoff(json: unknown): Handoff {
   const file = HandoffFile.parse(json);
-  const taken = new Date(file.taken_at);
-  if (Number.isNaN(taken.getTime())) throw new Error('taken_at is not a time');
+  const exported = new Date(file.exported_at);
+  if (Number.isNaN(exported.getTime())) throw new Error('exported_at is not a time');
+  const at = exported.toISOString();
+  const mismatches: string[] = [];
+  const rows = file.accounts.reduce((n, a) => n + a.rows.length, 0);
+  const sum = round(file.accounts.reduce((n, a) => n + a.balance, 0));
+  if (file.accounts.length !== file.totals.accounts)
+    mismatches.push(
+      `the file has ${file.accounts.length} accounts, its totals say ${file.totals.accounts}`,
+    );
+  if (Math.abs(sum - file.totals.balance_sum) > 1e-6)
+    mismatches.push(`its balances sum to ${sum}, its totals say ${file.totals.balance_sum}`);
+  if (rows !== file.totals.rows)
+    mismatches.push(`it has ${rows} rows, its totals say ${file.totals.rows}`);
+  const members = file.kazi_unmetered ?? [];
+  if (file.totals.kazi_unmetered !== undefined && members.length !== file.totals.kazi_unmetered)
+    mismatches.push(
+      `it lists ${members.length} unmetered members, its totals say ${file.totals.kazi_unmetered}`,
+    );
   return {
-    taken_at: taken.toISOString(),
+    exported_at: at,
+    run: file.run,
+    mismatches,
+    unmetered: members.map((m) => ({
+      email: m.email.trim().toLowerCase(),
+      reason: m.reason ?? 'unmetered',
+    })),
     accounts: file.accounts.map((a) => {
-      const entries: NewEntry[] = [];
-      let folded = 0;
-      for (const row of a.rows ?? []) {
-        const entry = rowEntry({ ...row, at: row.at ?? taken.toISOString() });
-        if (entry) entries.push(entry);
-        else folded++;
+      const payments: NewEntry[] = [];
+      let counted = 0;
+      for (const row of a.rows) {
+        const entry = paymentEntry(row, at);
+        if (entry) payments.push(entry);
+        else counted++;
       }
       return {
         kazi_id: a.account_id,
-        owner: a.workos_user_id ?? null,
+        owner: a.workos_user_id,
         email: a.email ?? null,
         balance: a.balance,
         refill: a.refill_pack ?? null,
-        unmetered: a.unmetered ?? false,
+        unmetered: a.unmetered,
         apple_account_token: a.apple_account_token?.toLowerCase() ?? null,
-        entries,
-        folded,
+        stripe_customer_id: a.stripe_customer_id ?? null,
+        payments,
+        counted,
       };
     }),
   };
 }
 
-/** A row that is a payment, refund or release becomes its own entry; anything else is folded. */
-function rowEntry(row: z.infer<typeof HandoffRow>): NewEntry | undefined {
+/** A payment or refund row with an id of its own, as our entry; undefined for any other row. */
+function paymentEntry(row: z.infer<typeof HandoffRow>, exported: string): NewEntry | undefined {
   const ref = row.ref ?? '';
-  const at = row.at ? { at: new Date(row.at).toISOString() } : {};
-  const kind = row.kind;
-  if ((kind === 'purchase' || kind === 'refund') && (row.source === 'apple' || /^\d+$/.test(ref))) {
+  const at = new Date(row.at ?? exported).toISOString();
+  if (row.kind !== 'purchase' && row.kind !== 'refund') return undefined;
+  if (row.source === 'apple') {
     const tx = ref.replace(/^refund:/, '');
+    if (!/^\d+$/.test(tx)) return undefined;
     return {
-      id: kind === 'purchase' ? appleEntryId(tx) : appleRefundId(tx),
-      kind,
+      id: row.kind === 'purchase' ? appleEntryId(tx) : appleRefundId(tx),
+      kind: row.kind,
       credits: row.credits,
       reason: 'App Store, carried from Kazi',
-      ...at,
+      at,
     };
   }
-  if (kind === 'purchase' && ref.startsWith('pi_'))
-    return { id: ref, kind, credits: row.credits, payment_intent: ref, ...at };
-  if (kind === 'refund' && ref.startsWith('re_'))
-    return { id: ref, kind, credits: row.credits, ...at };
-  if ((kind === 'usage' || kind === 'release' || kind === 'spend') && ref.endsWith('-release'))
-    return {
-      id: ref,
-      kind: 'spend',
-      credits: -Math.abs(row.credits),
-      tool: 'export.release',
-      ...at,
-    };
+  if (row.kind === 'purchase' && /^pi_\w+$/.test(ref))
+    return { id: ref, kind: 'purchase', credits: row.credits, payment_intent: ref, at };
+  if (row.kind === 'refund' && /^re_\w+$/.test(ref))
+    return { id: ref, kind: 'refund', credits: row.credits, at };
   return undefined;
 }
 
@@ -146,140 +189,163 @@ export const LEDGER_LINKS = defineCollection<{
 export interface ImportOptions {
   handoff: Handoff;
   ledger: Ledger;
-  /** The record store the server uses: the old links to Kazi's ledger are read from it. */
+  /** The server's record store: the old links to Kazi's ledger are read from it. */
   records: Records;
   workosKey: string;
-  stripeKey: string;
   /** Writes; without it only prints. */
   apply: boolean;
   log: (line: string) => void;
 }
 
-/** What the import did (or would do). */
 export interface ImportReport {
   opened: number;
-  topped: number;
+  added: number;
   lifetime: number;
-  started: number;
-  problems: string[];
+  /** Accounts without a WorkOS user id: Kazi's alone. */
+  skipped: number;
+  mismatches: string[];
 }
 
 export async function importHandoff(o: ImportOptions): Promise<ImportReport> {
-  const report: ImportReport = { opened: 0, topped: 0, lifetime: 0, started: 0, problems: [] };
-  const problem = (line: string) => {
-    report.problems.push(line);
-    o.log(`! ${line}`);
+  const report: ImportReport = { opened: 0, added: 0, lifetime: 0, skipped: 0, mismatches: [] };
+  const mismatch = (line: string) => {
+    report.mismatches.push(line);
+    o.log(`MISMATCH ${line}`);
   };
   const verb = o.apply ? '' : 'would ';
+  o.log(
+    `kazi-handoff/1 run ${o.handoff.run}, exported ${o.handoff.exported_at}: ${o.handoff.accounts.length} accounts, balances sum to ${round(o.handoff.accounts.reduce((n, a) => n + a.balance, 0))}, ${o.handoff.unmetered.length} unmetered members`,
+  );
+  for (const line of o.handoff.mismatches) mismatch(line);
   const handed = new Set<string>();
+  const tagged = new Set<string>();
+  /** Tags the user lifetime, once, unless a plan tag is there already. */
+  const lifetime = async (user: WorkosUser, why: string) => {
+    if (tagged.has(user.id)) return;
+    tagged.add(user.id);
+    const tag = user.metadata?.plan;
+    if (taggedPlan(tag)) {
+      o.log(`${user.id} (${user.email}): ${why}, already plan ${tag}; left as it is`);
+      return;
+    }
+    o.log(`${verb}tag ${user.id} (${user.email}) plan lifetime (${why})`);
+    if (o.apply) await tagLifetime(o.workosKey, user.id, user.metadata ?? {});
+    report.lifetime++;
+  };
   for (const a of o.handoff.accounts) {
-    if (!a.owner || !/^user_[0-9A-Z]{26}$/.test(a.owner)) {
-      problem(`${a.kazi_id}: no WorkOS user id; not carried`);
+    if (!a.owner) {
+      // App Store packs are cuttingfloor's money whoever opened the account.
+      const apple = a.payments.filter((e) => e.id.startsWith('apple'));
+      if (apple.length || a.apple_account_token)
+        mismatch(
+          `${a.kazi_id}: no WorkOS user id, but ${apple.length} App Store rows${a.apple_account_token ? ' and an App Store token' : ''}`,
+        );
+      else o.log(`skip ${a.kazi_id}: no WorkOS user id (Kazi's alone)`);
+      report.skipped++;
       continue;
     }
-    handed.add(a.owner);
+    if (!/^user_[0-9A-Z]{26}$/.test(a.owner)) {
+      mismatch(`${a.kazi_id}: ${a.owner} is not a WorkOS user id`);
+      continue;
+    }
     const owner = a.owner;
+    handed.add(owner);
     const user = await workosUser(o.workosKey, owner);
     if (!user) {
-      problem(`${a.kazi_id} ${owner}: no such WorkOS user; not carried`);
+      mismatch(`${a.kazi_id} ${owner}: no such WorkOS user`);
       continue;
     }
-    const link = await o.records
-      .collection(LEDGER_LINKS, { owner })
-      .get('link')
-      .catch(() => undefined);
-    const customer = user.metadata?.stripe_customer_id || undefined;
-    // Payments Kazi never saw: made after it took the hand-off.
-    const later: NewEntry[] = [];
-    if (customer)
-      for (const pi of await customerPayments(o.stripeKey, customer))
-        for (const e of await paymentEntries(o.stripeKey, pi)) {
-          const handedOver = a.entries.some((h) => h.id === e.id);
-          if (handedOver) continue;
-          if ((e.at ?? '') > o.handoff.taken_at) later.push(e);
-          else
-            problem(`${owner}: Stripe ${e.id} (${e.credits}) is before the hand-off but not in it`);
-        }
-    const opening = Math.round((a.balance - sum(a.entries)) * 1e6) / 1e6;
-    const entries: NewEntry[] = [
-      {
-        id: `opening:${a.kazi_id}`,
-        kind: 'opening',
-        credits: opening,
-        at: o.handoff.taken_at,
-        reason: `balance in Kazi's ledger at the split (${a.balance}), less what is entered beside it`,
-      },
-      ...a.entries,
-    ];
-    const refill = a.refill && packOf(a.refill) ? { pack: a.refill } : null;
-    if (a.refill && !refill) problem(`${owner}: refill pack ${a.refill} is not ours; left off`);
+    const openingId = `opening:${a.kazi_id}`;
     const known = await o.ledger.get(owner);
+    const have = known ? await o.ledger.entries(owner) : [];
     if (!known) {
+      const link = await o.records
+        .collection(LEDGER_LINKS, { owner })
+        .get('link')
+        .catch(() => undefined);
+      const refill = a.refill && packOf(a.refill) ? { pack: a.refill } : null;
+      if (a.refill && !refill) mismatch(`${owner}: refill pack ${a.refill} is not ours`);
+      // The payments carved out, so the account holds exactly Kazi's balance.
+      const opening = round(a.balance - a.payments.reduce((n, e) => n + e.credits, 0));
       o.log(
-        `${verb}open ${owner} (${a.email ?? user.email}): balance ${a.balance} = opening ${opening} + ${a.entries.length} entries${refill ? `, refill ${refill.pack}` : ''}${link?.used_before ? `, used before ${link.used_before}` : ''}${later.length ? `, ${later.length} later payments` : ''}`,
+        `${verb}open ${owner} (${a.email ?? user.email}) at ${a.balance}: ${openingId} ${opening}${a.payments.length ? ` + ${a.payments.length} payments` : ''}, ${a.counted} rows counted${refill ? `, refill ${refill.pack}` : ''}${a.apple_account_token ? ', App Store token kept' : ''}`,
       );
       if (o.apply)
         await o.ledger.open(owner, async () => ({
           used_before: link?.used_before ?? 0,
           refill,
-          ...(customer ? { stripe_customer_id: customer } : {}),
+          ...(a.stripe_customer_id ? { stripe_customer_id: a.stripe_customer_id } : {}),
           ...(a.apple_account_token ? { apple_account_token: a.apple_account_token } : {}),
-          entries,
+          entries: [
+            {
+              id: openingId,
+              kind: 'opening',
+              credits: opening,
+              at: o.handoff.exported_at,
+              reason: `balance in Kazi's ledger at the split (${a.balance}), less payments entered beside it`,
+            },
+            ...a.payments,
+          ],
         }));
       report.opened++;
-    }
-    // Run again, or opened since: only what is missing goes in.
-    const have = new Set(known ? (await o.ledger.entries(owner)).map((e) => e.id) : []);
-    for (const e of [...(known ? entries : []), ...later]) {
-      if (have.has(e.id)) {
-        if (e.id.startsWith('opening:')) {
-          const stored = (await o.ledger.entries(owner)).find((x) => x.id === e.id);
-          if (stored && Math.abs(stored.credits - e.credits) > 1e-6)
-            problem(`${owner}: ${e.id} is ${stored.credits} here, the hand-off says ${e.credits}`);
-        }
-        continue;
+    } else if (!have.some((e) => e.id === openingId)) {
+      // Opened here first (a sign-in got in before the import): its grant would stack on Kazi's
+      // balance, so it is left for Ken.
+      mismatch(
+        `${owner}: already open here without ${openingId} (${have.map((e) => e.id).join(', ')}); not carried`,
+      );
+      continue;
+    } else {
+      // A later run: only payments it hasn't seen, and Kazi's balance may have moved only by them.
+      const ids = new Set(have.map((e) => e.id));
+      const fresh = a.payments.filter((e) => !ids.has(e.id));
+      for (const e of fresh) {
+        o.log(`${verb}add ${owner} ${e.kind} ${e.id} ${e.credits}`);
+        if (o.apply) await o.ledger.credit(owner, e);
+        report.added++;
       }
-      if (e.kind === 'spend') {
-        problem(`${owner}: release ${e.id} is missing and can only go in when the account opens`);
-        continue;
-      }
-      o.log(`${verb}add ${owner} ${e.kind} ${e.id} ${e.credits}`);
-      if (o.apply) await o.ledger.credit(owner, e);
-      report.topped++;
+      const carried = carriedBalance(have, openingId, a) + sum(fresh);
+      if (Math.abs(carried - a.balance) > 1e-6)
+        mismatch(
+          `${owner}: Kazi's balance is ${a.balance}, its opening and payments here come to ${round(carried)}`,
+        );
     }
-    if (a.unmetered) {
-      const tag = user.metadata?.plan;
-      if (taggedPlan(tag)) o.log(`${owner}: unmetered in Kazi, already plan ${tag}; left as it is`);
-      else {
-        o.log(`${verb}tag ${owner} plan lifetime (unmetered in Kazi)`);
-        if (o.apply) await tagLifetime(o.workosKey, owner, user.metadata ?? {});
-        report.lifetime++;
-      }
-    }
+    if (a.unmetered) await lifetime(user, 'unmetered in Kazi');
   }
-  // Accounts linked to Kazi's ledger that Kazi did not hand over: Kazi opened them, so they start
-  // as a new account does here, with nothing carried.
-  for (const owner of await o.records.owners()) {
+  for (const member of o.handoff.unmetered) {
+    const found = await workosUsersByEmail(o.workosKey, member.email);
+    if (!found.length) o.log(`${member.email}: Kazi ${member.reason}, no WorkOS user; left`);
+    for (const user of found) await lifetime(user, `Kazi ${member.reason}`);
+  }
+  for (const owner of await linkedNotHanded(o.records, handed))
+    mismatch(`${owner}: linked to Kazi's ledger but not in the hand-off`);
+  o.log(
+    `${o.apply ? 'done' : 'dry run'}: ${report.opened} opened, ${report.added} payments added, ${report.lifetime} tagged lifetime, ${report.skipped} skipped (no WorkOS user), ${report.mismatches.length} mismatches`,
+  );
+  return report;
+}
+
+/** What the hand-off's own entries come to here: the opening and the payments it carried. */
+function carriedBalance(
+  entries: readonly { id: string; credits: number }[],
+  openingId: string,
+  a: HandedAccount,
+): number {
+  const ids = new Set([openingId, ...a.payments.map((e) => e.id)]);
+  return sum(entries.filter((e) => ids.has(e.id)));
+}
+
+async function linkedNotHanded(records: Records, handed: Set<string>): Promise<string[]> {
+  const out: string[] = [];
+  for (const owner of await records.owners()) {
     if (!/^user_[0-9A-Z]{26}$/.test(owner) || handed.has(owner)) continue;
-    const link = await o.records
+    const link = await records
       .collection(LEDGER_LINKS, { owner })
       .get('link')
       .catch(() => undefined);
-    if (!link?.account_id || (await o.ledger.get(owner))) continue;
-    o.log(
-      `${verb}start ${owner} (Kazi's ${link.account_id}, not handed over) with ${FREE_CREDITS}`,
-    );
-    if (o.apply)
-      await o.ledger.open(owner, async () => ({
-        used_before: link.used_before ?? 0,
-        entries: [{ id: 'grant:activation', kind: 'grant', credits: FREE_CREDITS }],
-      }));
-    report.started++;
+    if (link?.account_id) out.push(owner);
   }
-  o.log(
-    `${o.apply ? 'done' : 'dry run'}: ${report.opened} opened, ${report.topped} entries added, ${report.lifetime} tagged lifetime, ${report.started} started fresh, ${report.problems.length} problems`,
-  );
-  return report;
+  return out;
 }
 
 /** One difference between our ledger and the hand-off, or within our ledger. */
@@ -289,15 +355,16 @@ export interface Difference {
 }
 
 /**
- * Compares our ledger with the hand-off: each handed account's balance as it stood at `taken_at`
- * (its entries up to then) against Kazi's, accounts missing either way, and every account's
+ * Compares our ledger with a hand-off: the file against its own totals; each account's opening
+ * and carried payments against Kazi's balance; accounts missing either way; and every account's
  * stored balance and totals against its entries summed again.
  */
 export async function reconcile(o: {
   handoff: Handoff;
   ledger: Ledger;
+  records?: Records;
 }): Promise<{ checked: number; differences: Difference[] }> {
-  const differences: Difference[] = [];
+  const differences: Difference[] = o.handoff.mismatches.map((what) => ({ owner: 'file', what }));
   const handed = new Map<string, HandedAccount>();
   for (const a of o.handoff.accounts) if (a.owner) handed.set(a.owner, a);
   const ours = new Set(await o.ledger.owners());
@@ -307,17 +374,26 @@ export async function reconcile(o: {
       continue;
     }
     const entries = await o.ledger.entries(owner);
-    const then = totals(entries.filter((e) => e.at <= o.handoff.taken_at)).balance;
-    if (Math.abs(then - a.balance) > 1e-6)
+    const openingId = `opening:${a.kazi_id}`;
+    if (!entries.some((e) => e.id === openingId)) {
+      differences.push({ owner, what: `has no ${openingId}` });
+      continue;
+    }
+    if (entries.some((e) => e.id === 'grant:activation' || e.id === 'opening:carry'))
+      differences.push({ owner, what: 'carries Kazi’s balance and a grant or carry-over of ours' });
+    const carried = round(carriedBalance(entries, openingId, a));
+    if (Math.abs(carried - a.balance) > 1e-6)
       differences.push({
         owner,
-        what: `balance at the split is ${then} here, ${a.balance} in Kazi’s ledger`,
+        what: `Kazi’s balance is ${a.balance}, its opening and payments here come to ${carried}`,
       });
   }
+  if (o.records)
+    for (const owner of await linkedNotHanded(o.records, new Set(handed.keys())))
+      differences.push({ owner, what: 'linked to Kazi’s ledger but not in the hand-off' });
   for (const owner of ours) {
     const account = await o.ledger.get(owner);
-    const entries = await o.ledger.entries(owner);
-    const summed = totals(entries);
+    const summed = totals(await o.ledger.entries(owner));
     for (const field of Object.keys(summed) as (keyof typeof summed)[])
       if (account && Math.abs(account[field] - summed[field]) > 1e-6)
         differences.push({
@@ -328,8 +404,8 @@ export async function reconcile(o: {
   return { checked: ours.size, differences };
 }
 
-const sum = (entries: readonly Pick<CreditEntry, 'credits'>[] | NewEntry[]) =>
-  entries.reduce((n, e) => n + e.credits, 0);
+const round = (n: number) => Math.round(n * 1e6) / 1e6;
+const sum = (entries: readonly { credits: number }[]) => entries.reduce((n, e) => n + e.credits, 0);
 
 interface WorkosUser {
   id: string;
@@ -337,13 +413,20 @@ interface WorkosUser {
   metadata?: Record<string, string>;
 }
 
+async function workosUsersByEmail(key: string, email: string): Promise<WorkosUser[]> {
+  const res = await fetch(
+    `https://api.workos.com/user_management/users?${new URLSearchParams({ email })}`,
+    { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000) },
+  );
+  if (!res.ok) throw new Error(`WorkOS users by email: ${res.status}`);
+  const list = (await res.json()) as { data?: WorkosUser[] };
+  return (list.data ?? []).filter((u) => u.email.toLowerCase() === email);
+}
+
 async function workosUser(key: string, id: string): Promise<WorkosUser | undefined> {
   const res = await fetch(
     `https://api.workos.com/user_management/users/${encodeURIComponent(id)}`,
-    {
-      headers: { authorization: `Bearer ${key}` },
-      signal: AbortSignal.timeout(10_000),
-    },
+    { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000) },
   );
   if (res.status === 404) return undefined;
   if (!res.ok) throw new Error(`WorkOS user ${id}: ${res.status}`);
