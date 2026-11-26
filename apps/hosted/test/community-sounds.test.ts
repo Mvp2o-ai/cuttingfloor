@@ -11,9 +11,9 @@ import { Runtime, SoundSharing } from '@cuttingfloor/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AccessCheck } from '../src/access.ts';
 import { createHttpServer } from '../src/http.ts';
-import { Ledger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
 import { mongoReachable, TEST_MONGODB_URI, testDatabase } from './mongo.ts';
+import { testLedger } from './test-ledger.ts';
 
 // Community sounds over HTTP, as the upload box, the upload page and the site use them: a sent
 // sound shared from its signed upload link (the link is the proof it is the sender's), listed
@@ -82,7 +82,7 @@ describe.skipIf(!ready)('community sounds over HTTP', { timeout: 60_000 }, () =>
     const lifecycle = new Lifecycle({
       runtime,
       access,
-      ledger: new Ledger('http://127.0.0.1:9', 'none'),
+      ledger: testLedger(),
       workosKey: 'sk_test_none',
       stripeKey: 'sk_test_none',
       accountUrl: 'https://cuttingfloor.ai/account',

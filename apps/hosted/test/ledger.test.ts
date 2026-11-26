@@ -1,44 +1,42 @@
-import { mkdtemp } from 'node:fs/promises';
+import { createHmac } from 'node:crypto';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { MongoRecords } from '@cuttingfloor/core';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
-import type { CfError } from '@cuttingfloor/schema';
+import { LOW_CREDITS } from '@cuttingfloor/plans';
 import { type MeterEntry, Runtime } from '@cuttingfloor/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { AccessCheck, linkPath } from '../src/access.ts';
+import { AccessCheck } from '../src/access.ts';
 import type { Mailer } from '../src/email.ts';
 import { createHttpServer } from '../src/http.ts';
-import { Ledger } from '../src/ledger.ts';
+import { FileLedger, type Ledger, MongoLedger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
+import { MONGO_TEST_TIMEOUT_MS, mongoReachable, TEST_MONGODB_URI, testDatabase } from './mongo.ts';
 
-// Credits in Kazi's ledger: an account is linked once with the balance it had here, jobs spend
-// nothing (making is free), a watermark-free copy's release is spent there once, and the ledger's
-// crossings and top-ups become our email.
-// WorkOS, Stripe and the ledger are stand-ins here, answering as their APIs do (the ledger as its
-// published fixtures, contract v3); the real ledger runs in scripts/smoke-ledger.ts.
+// Credits in cuttingfloor's own ledger, through the routes the site, Stripe and the release page
+// call: an account opens once (the activation grant, and an old account's carried balance and
+// packs), making spends nothing, a clean copy is spent once and never past zero, a crossing is
+// emailed or tops up on the saved card (once, and a failure is not retried), and Stripe's events
+// and checkout's return credit packs and take back refunds once. WorkOS and Stripe are stand-ins
+// answering as their APIs do. The whole suite runs on the filesystem ledger and on MongoDB
+// (scripts/test-mongo.sh).
 
 const ACCOUNT_KEY = 'account-key-0123456789abcdef';
-const LEDGER_KEY = 'ledger-key-0123456789abcdef';
+const SECRET = 'whsec_test_0123456789';
+const NEW = 'user_01NEWACCOUNT00000000000001';
 const OLD = 'user_01OLDACCOUNT00000000000001';
 const LIFETIME = 'user_01LIFETIME0000000000000001';
-const TAKEN = 'user_01TAKENEMAIL00000000000001';
-const CRASHED = 'user_01CRASHED00000000000000001';
-const DOWN = 'user_01LEDGERDOWN00000000000001';
-const MEMBER = 'user_01KAZIMEMBER00000000000001';
-let base: string;
-let server: Server;
-let runtime: Runtime;
-let access: AccessCheck;
-let lifecycle: Lifecycle;
-const mail: { to: string; subject: string }[] = [];
+const MARK = '\n[cuttingfloor watermark]';
 
 // The stand-in WorkOS: users by id.
 const users = new Map<
   string,
   { email: string; created_at: string; metadata: Record<string, string> }
 >([
+  [NEW, { email: 'new@example.com', created_at: '2026-11-25T00:00:00.000Z', metadata: {} }],
   [
     OLD,
     {
@@ -55,160 +53,106 @@ const users = new Map<
       metadata: { plan: 'lifetime' },
     },
   ],
-  [TAKEN, { email: 'taken@example.com', created_at: '2026-11-09T00:00:00.000Z', metadata: {} }],
-  [CRASHED, { email: 'crashed@example.com', created_at: '2026-11-09T00:00:00.000Z', metadata: {} }],
-  [DOWN, { email: 'down@example.com', created_at: '2026-11-09T00:00:00.000Z', metadata: {} }],
-  [MEMBER, { email: 'member@example.com', created_at: '2026-11-09T00:00:00.000Z', metadata: {} }],
 ]);
 
-// The stand-in Stripe: the old account's payments. A cuttingfloor pack, one refunded by half, and
-// a Kazi payment that is not ours.
-const charge = (amount: number, amount_refunded = 0) => ({ amount, amount_refunded });
-const payments = [
-  {
-    id: 'pi_a',
-    status: 'succeeded',
-    metadata: { app: 'cuttingfloor', credits: '25' },
-    latest_charge: charge(500),
-  },
-  {
-    id: 'pi_b',
-    status: 'succeeded',
-    metadata: { app: 'cuttingfloor', credits: '55' },
-    latest_charge: charge(1000, 500),
-  },
-  {
-    id: 'pi_c',
-    status: 'succeeded',
-    metadata: { app: 'kazi', credits: '25' },
-    latest_charge: charge(500),
-  },
-  {
-    id: 'pi_d',
-    status: 'requires_payment_method',
-    metadata: { app: 'cuttingfloor', credits: '25' },
-  },
-];
-
-// The stand-in ledger, as contract v3 and its fixtures describe it.
-interface Account {
-  account_id: string;
-  email: string;
-  /** Unset on a Kazi account nobody has linked yet. */
-  workos_user_id?: string;
-  stripe_customer_id?: string;
-  unmetered?: boolean;
-  rows: { kind: string; credits: number; ref: string }[];
-  refill: { pack: string } | null;
-}
-const accounts = new Map<string, Account>();
-const calls: { method: string; path: string; body?: Record<string, unknown> }[] = [];
-let ledgerDown = false;
-let cardFails = false;
-const PACK_CREDITS: Record<string, [number, number]> = { cf_credits_10: [55, 10] };
-
-const sum = (a: Account, kind?: string) =>
-  a.rows.filter((r) => !kind || r.kind === kind).reduce((n, r) => n + r.credits, 0);
-const body = (a: Account) => ({
-  account_id: a.account_id,
-  balance: sum(a),
-  granted_total: sum(a, 'grant'),
-  opening_total: sum(a, 'opening'),
-  bought_total: sum(a, 'purchase'),
-  used_total: -sum(a, 'usage'),
-  unmetered: a.unmetered ?? false,
-  refill: a.refill,
-});
-
-async function ledger(url: URL, init?: RequestInit): Promise<Response> {
-  const reply = (b: unknown, status = 200) => Response.json(b, { status });
-  if (ledgerDown) return reply({ error: 'internal error' }, 500);
-  if (init?.headers && new Headers(init.headers).get('authorization') !== `Bearer ${LEDGER_KEY}`)
-    return reply({ error: 'unauthorized' }, 401);
-  const req = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : undefined;
-  calls.push({ method: init?.method ?? 'GET', path: url.pathname, ...(req ? { body: req } : {}) });
-  const find = (id: unknown) => accounts.get(String(id));
-  if (url.pathname === '/api/credits/account') {
-    const b = req as {
-      email: string;
-      workos_user_id: string;
-      stripe_customer_id?: string;
-      opening?: { credits: number; purchases: { payment_intent: string; credits: number }[] };
-    };
-    let a = [...accounts.values()].find((x) => x.workos_user_id === b.workos_user_id);
-    if (!a) {
-      const byEmail = [...accounts.values()].find((x) => x.email === b.email);
-      if (byEmail?.workos_user_id)
-        return reply({ error: `${b.email} is linked to another cuttingfloor account` }, 409);
-      if (byEmail) byEmail.workos_user_id = b.workos_user_id;
-      a = byEmail ?? {
-        account_id: `ca_${accounts.size + 1}`,
-        email: b.email,
-        workos_user_id: b.workos_user_id,
-        // An account cuttingfloor opens is granted FREE_CREDITS (Kazi's own keep 25).
-        rows: [{ kind: 'grant', credits: 3, ref: 'grant' }],
-        refill: null,
-      };
-      accounts.set(a.account_id, a);
-    }
-    if (b.stripe_customer_id) a.stripe_customer_id = b.stripe_customer_id;
-    const refs = new Set(a.rows.map((r) => r.ref));
-    if (b.opening && !refs.has(`opening:${b.workos_user_id}`)) {
-      if (b.opening.credits)
-        a.rows.push({
-          kind: 'opening',
-          credits: b.opening.credits,
-          ref: `opening:${b.workos_user_id}`,
-        });
-      for (const p of b.opening.purchases)
-        if (!refs.has(p.payment_intent))
-          a.rows.push({ kind: 'purchase', credits: p.credits, ref: p.payment_intent });
-    }
-    return reply(body(a));
-  }
-  if (url.pathname === '/api/credits/balance') {
-    const a = find(url.searchParams.get('account_id'));
-    return a ? reply(body(a)) : reply({ error: 'credit account not found' }, 404);
-  }
-  if (url.pathname === '/api/credits/refill') {
-    const a = find(req?.account_id);
-    if (!a) return reply({ error: 'credit account not found' }, 404);
-    a.refill = req?.pack ? { pack: String(req.pack) } : null;
-    return reply(body(a));
-  }
-  if (url.pathname === '/api/credits/usage') {
-    const a = find(req?.account_id);
-    if (!a) return reply({ error: 'credit account not found' }, 404);
-    const ref = String(req?.job_id);
-    if (a.rows.some((r) => r.ref === ref))
-      return reply({ balance: sum(a), duplicate: true, crossed: null, top_up: null });
-    const before = sum(a);
-    a.rows.push({ kind: 'usage', credits: -Number(req?.credits), ref });
-    const after = sum(a);
-    const crossed = before > 0 && after <= 0 ? 'out' : before >= 5 && after < 5 ? 'low' : null;
-    let top_up: Record<string, unknown> | null = null;
-    if (crossed && a.refill) {
-      const [credits, price] = PACK_CREDITS[a.refill.pack] ?? [0, 0];
-      if (cardFails)
-        top_up = { ok: false, pack: a.refill.pack, credits, price, message: 'no card is saved' };
-      else {
-        a.rows.push({ kind: 'purchase', credits, ref: `top-up:${ref}` });
-        top_up = {
-          ok: true,
-          pack: a.refill.pack,
-          credits,
-          price,
-          card: { brand: 'visa', last4: '4242' },
-          balance: sum(a),
-        };
-      }
-    }
-    return reply({ balance: sum(a), duplicate: false, crossed, top_up });
-  }
-  return reply({ error: 'not found' }, 404);
+interface Pi {
+  id: string;
+  status: string;
+  created: number;
+  amount_received: number;
+  customer: string;
+  metadata: Record<string, string>;
 }
 
-function workos(url: URL): Response {
+/** The stand-in Stripe's state, fresh for each store's run. */
+function stripeState() {
+  const pi = (
+    id: string,
+    customer: string,
+    credits: number,
+    cents: number,
+    owner: string,
+    app = 'cuttingfloor',
+  ): Pi => ({
+    id,
+    status: 'succeeded',
+    created: 1_762_000_000,
+    amount_received: cents,
+    customer,
+    metadata: { app, credits: String(credits), pack: 'cf_credits_x', workos_user_id: owner },
+  });
+  return {
+    payments: [
+      pi('pi_a', 'cus_old', 25, 500, OLD),
+      pi('pi_b', 'cus_old', 55, 1000, OLD),
+      // Kazi's, on the shared Stripe account: never ours.
+      pi('pi_kazi', 'cus_old', 25, 500, OLD, 'kazi'),
+      { ...pi('pi_failed', 'cus_old', 25, 0, OLD), status: 'requires_payment_method' },
+    ] as Pi[],
+    refunds: [
+      {
+        id: 're_b',
+        payment_intent: 'pi_b',
+        amount: 500,
+        status: 'succeeded',
+        created: 1_762_000_100,
+      },
+    ],
+    charges: [] as Record<string, string>[],
+    cardFails: false,
+  };
+}
+
+let stripe = stripeState();
+
+function stripeApi(url: URL, init?: RequestInit): Response {
+  const json = (b: unknown, status = 200) => Response.json(b, { status });
+  const path = url.pathname;
+  if (path === '/v1/payment_intents' && init?.method === 'POST') {
+    const form = Object.fromEntries(new URLSearchParams(String(init.body)));
+    stripe.charges.push(form);
+    if (stripe.cardFails) return json({ error: { message: 'Your card was declined.' } }, 402);
+    const key = new Headers(init.headers).get('idempotency-key') ?? '';
+    const id = `pi_top_${key.replace(/[^a-z0-9]/gi, '').slice(-12)}`;
+    if (!stripe.payments.some((p) => p.id === id))
+      stripe.payments.push({
+        id,
+        status: 'succeeded',
+        created: Math.floor(Date.now() / 1000),
+        amount_received: Number(form.amount),
+        customer: String(form.customer),
+        metadata: {
+          app: String(form['metadata[app]']),
+          credits: String(form['metadata[credits]']),
+          pack: String(form['metadata[pack]']),
+          workos_user_id: String(form['metadata[workos_user_id]']),
+        },
+      });
+    return json({ id, status: 'succeeded' });
+  }
+  if (path === '/v1/payment_intents')
+    return json({
+      data: stripe.payments.filter((p) => p.customer === url.searchParams.get('customer')),
+      has_more: false,
+    });
+  if (path.startsWith('/v1/payment_intents/')) {
+    const found = stripe.payments.find((p) => p.id === path.split('/').pop());
+    return found ? json(found) : json({ error: { message: 'No such payment_intent' } }, 404);
+  }
+  if (path === '/v1/refunds')
+    return json({
+      data: stripe.refunds.filter(
+        (r) => r.payment_intent === url.searchParams.get('payment_intent'),
+      ),
+    });
+  if (path === '/v1/payment_methods')
+    return json({ data: [{ id: 'pm_1', card: { brand: 'visa', last4: '4242' } }] });
+  if (path === '/v1/checkout/sessions/cs_test_1')
+    return json({ id: 'cs_test_1', payment_intent: 'pi_checkout' });
+  return json({ error: { message: 'not found' } }, 404);
+}
+
+function workosApi(url: URL): Response {
   const id = decodeURIComponent(url.pathname.split('/').pop() ?? '');
   const user = users.get(id);
   return user
@@ -216,285 +160,408 @@ function workos(url: URL): Response {
     : Response.json({}, { status: 404 });
 }
 
-function stripe(url: URL): Response {
-  if (url.pathname === '/v1/payment_intents')
-    return Response.json({ data: payments, has_more: false });
-  if (url.pathname === '/v1/payment_methods') return Response.json({ data: [] });
-  return Response.json({}, { status: 404 });
-}
-
 const realFetch = globalThis.fetch;
-
-/** Writes a meter entry as the runtime does when a job ends. */
-async function ran(owner: string, job_id: string, seconds: number, ended: Date) {
-  const ws = runtime.ws;
-  const ended_at = ended.toISOString();
-  const entry: MeterEntry = {
-    job_id,
-    tool: 'export.video',
-    started_at: ended_at,
-    ended_at,
-    seconds,
-  };
-  await ws.writeJson(ws.ownerDir(owner, 'meter', ended_at.slice(0, 7), `${job_id}.json`), entry);
-}
-
-const usage = () => calls.filter((c) => c.path === '/api/credits/usage');
-const account = async (user: string) =>
-  (await (
-    await fetch(`${base}/account/usage?user=${user}&fresh=1`, {
-      headers: { authorization: `Bearer ${ACCOUNT_KEY}` },
-    })
-  ).json()) as { account: { credits: Record<string, number>; top_up: { automatic: boolean } } };
-
-beforeAll(async () => {
+beforeAll(() => {
   vi.stubGlobal('fetch', (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
-    if (url.hostname === 'ledger.test') return ledger(url, init);
-    if (url.hostname === 'api.workos.com') return workos(url);
-    if (url.hostname === 'api.stripe.com') return stripe(url);
+    if (url.hostname === 'api.workos.com') return workosApi(url);
+    if (url.hostname === 'api.stripe.com') return stripeApi(url, init);
     return realFetch(input, init);
   });
-  const dir = await mkdtemp(join(tmpdir(), 'cf-ledger-'));
-  runtime = new Runtime({
-    dataDir: join(dir, 'data'),
-    mode: 'hosted',
-    publicUrl: 'http://127.0.0.1:0',
-    mediaRoots: [],
-    exportsDir: null,
-    maxJobs: 1,
-    outputUrlTtlMs: 60_000,
-    maxDownloadBytes: 1024,
-    allowPrivateUrls: false,
-    inlineMaxBytes: 1024,
-    motionUrl: null,
-  });
-  await runtime.start({ sweep: false });
-  const options = { workosKey: 'sk_test_none', stripeKey: 'sk_test_none' };
-  const ledgerClient = new Ledger('https://ledger.test', LEDGER_KEY);
-  const accountUrl = 'https://cuttingfloor.ai/account';
-  access = new AccessCheck({ ...options, ledger: ledgerClient, accountUrl, ws: runtime.ws });
-  lifecycle = new Lifecycle({
-    runtime,
-    access,
-    ledger: ledgerClient,
-    ...options,
-    accountUrl,
-    accountKey: ACCOUNT_KEY,
-    mailer: {
-      send: async (m: { to: string; subject: string }) => void mail.push(m),
-    } as unknown as Mailer,
-  });
-  server = createHttpServer({
-    runtime,
-    credentials: new LocalCredentialStore({}, false),
-    apiKeys: new Map([['maintenance-key-0123456789abcdef', 'ops']]),
-    route: (req, res, url) => lifecycle.route(req, res, url),
-  });
-  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  // Six minutes of jobs before the ledger.
-  await ran(OLD, 'job_before', 360, new Date(Date.now() - 86_400_000));
 });
+afterAll(() => vi.unstubAllGlobals());
 
-afterAll(() => {
-  server.close();
-  vi.unstubAllGlobals();
-});
+const sign = (body: string, t = Math.floor(Date.now() / 1000), secret = SECRET) =>
+  `t=${t},v1=${createHmac('sha256', secret).update(`${t}.${body}`).digest('hex')}`;
 
-describe('credits in the ledger', () => {
-  it('links an account once, carrying its balance and each pack it bought', async () => {
-    const got = await account(OLD);
-    const links = calls.filter((c) => c.path === '/api/credits/account');
-    expect(links).toHaveLength(1);
-    // 100 free (made before 2026-11-08), less 6 used, less the ledger's own grant of 3.
-    expect(links[0]?.body).toEqual({
-      email: 'old@example.com',
-      workos_user_id: OLD,
-      stripe_customer_id: 'cus_old',
-      opening: {
-        credits: 91,
-        purchases: [
-          { payment_intent: 'pi_a', credits: 25 },
-          { payment_intent: 'pi_b', credits: 27.5 },
-        ],
-      },
+const stores: [
+  string,
+  (runtime: Runtime) => Promise<{ ledger: Ledger; close: () => Promise<void> }>,
+  boolean,
+][] = [
+  [
+    'filesystem',
+    async (runtime) => ({
+      ledger: new FileLedger({ records: runtime.ws.records, low: LOW_CREDITS }),
+      close: async () => undefined,
+    }),
+    true,
+  ],
+  [
+    'MongoDB',
+    async () => {
+      const records = new MongoRecords({ uri: TEST_MONGODB_URI, db: testDatabase() });
+      return {
+        ledger: new MongoLedger({ db: () => records.database(), low: LOW_CREDITS }),
+        close: async () => {
+          await (await records.database()).dropDatabase();
+          await records.close();
+        },
+      };
+    },
+    await mongoReachable(),
+  ],
+];
+
+for (const [name, makeLedger, up] of stores) {
+  describe.skipIf(!up)(`credits on the ${name} ledger`, { timeout: MONGO_TEST_TIMEOUT_MS }, () => {
+    let base: string;
+    let server: Server;
+    let runtime: Runtime;
+    let ledger: Ledger;
+    let lifecycle: Lifecycle;
+    let close: () => Promise<void>;
+    const mail: { to: string; subject: string }[] = [];
+
+    beforeAll(async () => {
+      stripe = stripeState();
+      const dir = await mkdtemp(join(tmpdir(), 'cf-ledger-'));
+      runtime = new Runtime({
+        dataDir: join(dir, 'data'),
+        mode: 'hosted',
+        publicUrl: 'http://127.0.0.1:0',
+        mediaRoots: [],
+        exportsDir: null,
+        maxJobs: 1,
+        outputUrlTtlMs: 600_000,
+        maxDownloadBytes: 1024,
+        allowPrivateUrls: false,
+        inlineMaxBytes: 1024,
+        motionUrl: null,
+      });
+      await runtime.start({ sweep: false });
+      ({ ledger, close } = await makeLedger(runtime));
+      const options = { workosKey: 'sk_test_none', stripeKey: 'sk_test_none' };
+      const accountUrl = 'https://cuttingfloor.ai/account';
+      const access = new AccessCheck({ ...options, ledger, accountUrl, ws: runtime.ws });
+      lifecycle = new Lifecycle({
+        runtime,
+        access,
+        ledger,
+        ...options,
+        accountUrl,
+        accountKey: ACCOUNT_KEY,
+        stripeWebhookSecret: SECRET,
+        mailer: {
+          send: async (m: { to: string; subject: string }) => void mail.push(m),
+        } as unknown as Mailer,
+      });
+      // The gate as main.ts wires it, with a stand-in for burning the mark.
+      runtime.useGate(
+        {
+          exempt: (owner) => access.exempt(owner),
+          balance: async (owner) => (await access.balance(owner)).left,
+          spend: (owner, ref, credits, tool) => lifecycle.spendRelease(owner, ref, credits, tool),
+          mark: async (input, output) =>
+            writeFile(output, `${await readFile(input, 'utf8')}${MARK}`),
+        },
+        { from: '2000-01-01T00:00:00Z' },
+      );
+      server = createHttpServer({
+        runtime,
+        credentials: new LocalCredentialStore({}, false),
+        apiKeys: new Map([['maintenance-key-0123456789abcdef', 'ops']]),
+        route: (req, res, url) => lifecycle.route(req, res, url),
+      });
+      await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+      base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      (runtime.config as { publicUrl: string }).publicUrl = base;
+      // Six minutes of jobs before any ledger.
+      await ran(OLD, 'job_before', 360, new Date(Date.now() - 86_400_000));
     });
-    // The page shows it as before: free + bought - used = left.
-    expect(got.account.credits).toMatchObject({ left: 146.5, free: 100, bought: 52.5, used: 6 });
-    const link = await runtime.ws.readJson<{ account_id: string; used_before: number }>(
-      linkPath(runtime.ws, OLD),
-    );
-    expect(link).toMatchObject({ account_id: 'ca_1', used_before: 6 });
-    // Read again, it is not linked again.
-    await account(OLD);
-    expect(calls.filter((c) => c.path === '/api/credits/account')).toHaveLength(1);
-  });
 
-  it('spends nothing for jobs, and a release once however often it is sent', async () => {
-    await ran(OLD, 'job_after', 120, new Date());
-    await lifecycle.sweep();
-    expect(usage()).toEqual([]);
-    const first = await lifecycle.spendRelease(OLD, 'j_after-release', 2, 'export.release');
-    const again = await lifecycle.spendRelease(OLD, 'j_after-release', 2, 'export.release');
-    expect(first.balance).toBe(144.5);
-    expect(again.balance).toBe(144.5);
-    expect(usage()[0]?.body).toEqual(
-      expect.objectContaining({
-        account_id: 'ca_1',
-        job_id: 'j_after-release',
-        credits: 2,
-        tool: 'export.release',
-      }),
-    );
-    expect(accounts.get('ca_1')?.rows.filter((r) => r.ref === 'j_after-release')).toHaveLength(1);
-    expect((await account(OLD)).account.credits).toMatchObject({ left: 144.5, used: 8 });
-    expect(mail).toEqual([]);
-  });
-
-  it('emails once when a release takes the balance low', async () => {
-    await lifecycle.spendRelease(OLD, 'j_long-release', 140, 'export.release');
-    await vi.waitFor(() =>
-      expect(mail).toEqual([
-        expect.objectContaining({ to: 'old@example.com', subject: 'You have 4.5 credits left' }),
-      ]),
-    );
-  });
-
-  it('sets automatic top-up in the ledger, and emails what it bought at the crossing', async () => {
-    const res = await fetch(`${base}/account/top-up`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${ACCOUNT_KEY}` },
-      body: JSON.stringify({ user: OLD, pack: 'cf_credits_10' }),
+    afterAll(async () => {
+      server.close();
+      await close();
     });
-    expect(res.status).toBe(200);
-    expect(accounts.get('ca_1')?.refill).toEqual({ pack: 'cf_credits_10' });
-    expect((await account(OLD)).account.top_up.automatic).toBe(true);
-    mail.length = 0;
-    await lifecycle.spendRelease(OLD, 'j_out-release', 5, 'export.release');
-    await vi.waitFor(() => expect(mail.map((m) => m.subject)).toEqual(['Topped up: 55 credits']));
-    expect((await account(OLD)).account.credits.left).toBe(54.5);
-  });
 
-  it('says when the top-up failed, then that credits are out, and still starts jobs at zero', async () => {
-    cardFails = true;
-    mail.length = 0;
-    await lifecycle.spendRelease(OLD, 'j_broke-release', 60, 'export.release');
-    await vi.waitFor(() =>
-      expect(mail.map((m) => m.subject)).toEqual([
-        'We couldn’t top up your credits',
-        'Your credits are used up',
-      ]),
-    );
-    const limits = await access.limits(OLD);
-    expect(limits.refuseJobs).toBeUndefined();
-  });
+    async function ran(owner: string, job_id: string, seconds: number, ended: Date) {
+      const ws = runtime.ws;
+      const ended_at = ended.toISOString();
+      const entry: MeterEntry = {
+        job_id,
+        tool: 'export.video',
+        started_at: ended_at,
+        ended_at,
+        seconds,
+      };
+      await ws.writeJson(
+        ws.ownerDir(owner, 'meter', ended_at.slice(0, 7), `${job_id}.json`),
+        entry,
+      );
+    }
 
-  it('tells the ledger about a Stripe customer made after the link, without a second opening', async () => {
-    const user = users.get(OLD);
-    if (user) user.metadata.stripe_customer_id = 'cus_new';
-    await account(OLD);
-    const last = calls.filter((c) => c.path === '/api/credits/account').at(-1);
-    expect(last?.body).toEqual({
-      email: 'old@example.com',
-      workos_user_id: OLD,
-      stripe_customer_id: 'cus_new',
-    });
-    expect(accounts.get('ca_1')?.stripe_customer_id).toBe('cus_new');
-  });
+    /** A finished video export of `seconds`, as export.video leaves one. */
+    async function exported(owner: string, seconds: number): Promise<string> {
+      const store = runtime.jobs.store;
+      const job = await store.create({ owner, tool: 'export.video' });
+      await runtime.outputs.write(owner, job.id, 'cut.mp4', 'clean cut', 'export');
+      const signed = await runtime.signOutput(owner, job.id, 'cut.mp4');
+      await store.update(job, {
+        status: 'completed',
+        progress: 1,
+        result: {
+          content: [],
+          structuredContent: { url: signed.url, mime_type: 'video/mp4', duration_seconds: seconds },
+        } as never,
+      });
+      return job.id;
+    }
 
-  it('leaves a given plan out of the ledger', async () => {
-    const before = calls.length;
-    await ran(LIFETIME, 'job_life', 600, new Date());
-    expect((await account(LIFETIME)).account.credits).toMatchObject({ per_month: 900 });
-    await lifecycle.sweep();
-    expect(calls.length).toBe(before);
-  });
-
-  it('does not give lifetime to a Kazi member the ledger calls unmetered: it has a balance like anyone', async () => {
-    accounts.set('ca_member', {
-      account_id: 'ca_member',
-      email: 'member@example.com',
-      rows: [{ kind: 'grant', credits: 25, ref: 'grant' }],
-      refill: null,
-      unmetered: true,
-    });
-    const got = (await account(MEMBER)).account as unknown as {
-      plan: string;
-      credits: Record<string, number | null>;
+    const account = async (user: string) =>
+      (await (
+        await fetch(`${base}/account/usage?user=${user}&fresh=1`, {
+          headers: { authorization: `Bearer ${ACCOUNT_KEY}` },
+        })
+      ).json()) as {
+        account: {
+          plan: string;
+          credits: Record<string, number | null>;
+          top_up: { automatic: boolean } | null;
+        };
+      };
+    const release = async (user: string, file: string) => {
+      const res = await fetch(`${base}/account/release`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${ACCOUNT_KEY}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ user, file }),
+      });
+      return { status: res.status, body: (await res.json()) as Record<string, unknown> };
     };
-    expect(got.plan).toBe('free');
-    // Its Kazi grant, plus the 25 its cuttingfloor account (made before the gate) started with,
-    // less the 3 the carry-over counts on the ledger granting.
-    expect(got.credits).toMatchObject({ per_month: null, left: 47 });
-    expect(accounts.get('ca_member')?.workos_user_id).toBe(MEMBER);
-    const before = usage().length;
-    await lifecycle.spendRelease(MEMBER, 'j_member-release', 2, 'export.release');
-    expect(usage().length).toBe(before + 1);
-    expect((await account(MEMBER)).account.credits).toMatchObject({ used: 2, left: 45 });
-  });
+    const webhook = (event: unknown, signature?: string) => {
+      const body = JSON.stringify(event);
+      return fetch(`${base}/stripe/webhook`, {
+        method: 'POST',
+        body,
+        headers: { 'stripe-signature': signature ?? sign(body) },
+      });
+    };
+    const balance = async (user: string) => (await ledger.get(user))?.balance;
 
-  it('refuses when the email has credits with another account, and when the ledger is down', async () => {
-    accounts.set('ca_other', {
-      account_id: 'ca_other',
-      email: 'taken@example.com',
-      workos_user_id: 'user_01SOMEONEELSE0000000000001',
-      rows: [],
-      refill: null,
+    it('opens a new account with the activation grant, once', async () => {
+      const got = await account(NEW);
+      expect(got.account.credits).toMatchObject({ left: 3, free: 3, bought: 0, used: 0 });
+      await account(NEW);
+      expect((await ledger.entries(NEW)).map((e) => e.id)).toEqual(['grant:activation']);
     });
-    const taken = (await access.get(TAKEN).catch((e) => e)) as CfError;
-    expect(taken.hint).toContain('another cuttingfloor account');
-    ledgerDown = true;
-    const down = (await access.get(DOWN).catch((e) => e)) as CfError;
-    expect(down.code).toBe('service_unavailable');
-    expect(down.detail).toMatchObject({ retry: true });
-    ledgerDown = false;
-  });
 
-  it('links from the moment it claimed, after a server stopped between claiming and linking', async () => {
-    const ws = runtime.ws;
-    const since = new Date(Date.now() - 3_600_000).toISOString();
-    await ws.writeJson(linkPath(ws, CRASHED), { since, used_before: 1 });
-    await ran(CRASHED, 'job_gap', 60, new Date(Date.now() - 1_800_000));
-    await account(CRASHED);
-    const link = calls.filter((c) => c.path === '/api/credits/account').at(-1);
-    // 25 free (made before the gate), less 1 used, less the ledger's own grant of 3.
-    expect(link?.body).toMatchObject({
-      workos_user_id: CRASHED,
-      opening: { credits: 21, purchases: [] },
+    it('opens an old account with what it had here: free credits less use, and each pack less refunds', async () => {
+      const got = await account(OLD);
+      // 3 granted, 100 free less 6 used less the 3 carried as the grant, 25 + 55 bought, half of 55 refunded.
+      expect(got.account.credits).toMatchObject({ left: 146.5, free: 100, bought: 52.5, used: 6 });
+      expect(got.account.plan).toBe('credits');
+      const ids = (await ledger.entries(OLD)).map((e) => e.id).sort();
+      expect(ids).toEqual(['grant:activation', 'opening:carry', 'pi_a', 'pi_b', 're_b']);
     });
-    expect(await ws.readJson(linkPath(ws, CRASHED))).toMatchObject({
-      since,
-      used_before: 1,
-      account_id: expect.any(String),
-    });
-    // Jobs spend nothing, whenever they ended.
-    const before = usage().length;
-    await lifecycle.sweep();
-    expect(usage()).toHaveLength(before);
-  });
 
-  it('sends the email a spend called for when a server stopped before sending it', async () => {
-    const ws = runtime.ws;
-    await ran(CRASHED, 'job_untold', 60, new Date());
-    await ws.writeJson(ws.ownerDir(CRASHED, 'ledger-spent', 'job_untold.json'), {
-      at: new Date().toISOString(),
-      told: false,
-      crossed: 'low',
-      top_up: null,
+    it('spends nothing for jobs, and a clean copy once, however often or at once it is asked for', async () => {
+      await ran(OLD, 'job_after', 120, new Date());
+      await lifecycle.sweep();
+      expect(await balance(OLD)).toBe(146.5);
+      const file = await exported(OLD, 120);
+      const both = await Promise.all([release(OLD, file), release(OLD, file)]);
+      expect(both.map((r) => r.status)).toEqual([200, 200]);
+      const again = await release(OLD, file);
+      expect(again.status).toBe(200);
+      expect(await balance(OLD)).toBe(144.5);
+      expect((await ledger.entries(OLD)).filter((e) => e.kind === 'spend')).toHaveLength(1);
+      expect((await account(OLD)).account.credits).toMatchObject({ left: 144.5, used: 8 });
+      expect(mail).toEqual([]);
     });
-    mail.length = 0;
-    const before = usage().length;
-    await lifecycle.sweep();
-    expect(usage()).toHaveLength(before);
-    expect(mail).toEqual([
-      expect.objectContaining({
-        to: 'crashed@example.com',
-        subject: expect.stringMatching(/credits left/),
-      }),
-    ]);
-    expect(
-      await ws.readJson(ws.ownerDir(CRASHED, 'ledger-spent', 'job_untold.json')),
-    ).toMatchObject({ told: true });
+
+    it('refuses a clean copy the balance can’t cover, and spends nothing', async () => {
+      const file = await exported(NEW, 600);
+      const refused = await release(NEW, file);
+      expect(refused.status).toBe(402);
+      expect(refused.body).toMatchObject({ price: 7.5, credits_left: 3 });
+      expect(await balance(NEW)).toBe(3);
+    });
+
+    it('emails once when a release takes the balance low', async () => {
+      // 140 credits: 5 full minutes, then 270 at half.
+      const file = await exported(OLD, 275 * 60);
+      expect((await release(OLD, file)).status).toBe(200);
+      expect(await balance(OLD)).toBe(4.5);
+      await vi.waitFor(() =>
+        expect(mail).toEqual([
+          expect.objectContaining({ to: 'old@example.com', subject: 'You have 4.5 credits left' }),
+        ]),
+      );
+    });
+
+    it('keeps automatic top-up, and buys the pack once at the crossing', async () => {
+      const res = await fetch(`${base}/account/top-up`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${ACCOUNT_KEY}` },
+        body: JSON.stringify({ user: OLD, pack: 'cf_credits_10' }),
+      });
+      expect(res.status).toBe(200);
+      expect((await ledger.get(OLD))?.refill).toEqual({ pack: 'cf_credits_10' });
+      expect((await account(OLD)).account.top_up?.automatic).toBe(true);
+      mail.length = 0;
+      const file = await exported(OLD, 4.5 * 60);
+      expect((await release(OLD, file)).status).toBe(200);
+      await vi.waitFor(() => expect(mail.map((m) => m.subject)).toEqual(['Topped up: 55 credits']));
+      expect(stripe.charges).toHaveLength(1);
+      expect(stripe.charges[0]).toMatchObject({
+        amount: '1000',
+        customer: 'cus_old',
+        off_session: 'true',
+        'metadata[app]': 'cuttingfloor',
+        'metadata[workos_user_id]': OLD,
+      });
+      expect(await balance(OLD)).toBe(55);
+      // Stripe's own event for that charge changes nothing more.
+      const charged = stripe.payments.at(-1);
+      await webhook({
+        id: 'evt_top',
+        type: 'payment_intent.succeeded',
+        data: { object: { object: 'payment_intent', id: charged?.id } },
+      });
+      expect(await balance(OLD)).toBe(55);
+    });
+
+    it('says when the top-up failed, then that credits are out, and never charges again for it', async () => {
+      stripe.cardFails = true;
+      mail.length = 0;
+      const file = await exported(OLD, 55 * 60); // 5 + 25: 30 credits
+      expect((await release(OLD, file)).status).toBe(200);
+      const rest = await exported(OLD, ((await balance(OLD)) ?? 0) * 60 * 2 - 5 * 60); // the rest, to zero
+      expect((await release(OLD, rest)).status).toBe(200);
+      expect(await balance(OLD)).toBe(0);
+      await vi.waitFor(() =>
+        expect(mail.map((m) => m.subject)).toEqual([
+          'We couldn’t top up your credits',
+          'Your credits are used up',
+        ]),
+      );
+      const charges = stripe.charges.length;
+      await lifecycle.sweep();
+      expect(stripe.charges.length).toBe(charges);
+      stripe.cardFails = false;
+    });
+
+    it('credits a pack from Stripe’s event once, and takes back a refund', async () => {
+      const bad = await webhook(
+        { id: 'evt_x', type: 'payment_intent.succeeded', data: { object: {} } },
+        't=1,v1=00',
+      );
+      expect(bad.status).toBe(400);
+      stripe.payments.push({
+        id: 'pi_new',
+        status: 'succeeded',
+        created: Math.floor(Date.now() / 1000),
+        amount_received: 500,
+        customer: 'cus_new',
+        metadata: { app: 'cuttingfloor', credits: '25', pack: 'cf_credits_5', workos_user_id: NEW },
+      });
+      const event = {
+        id: 'evt_1',
+        type: 'payment_intent.succeeded',
+        data: { object: { object: 'payment_intent', id: 'pi_new' } },
+      };
+      const res = await webhook(event);
+      expect(await res.json()).toMatchObject({ received: true, credited: 25, balance: 28 });
+      await webhook(event);
+      expect(await balance(NEW)).toBe(28);
+      expect((await account(NEW)).account).toMatchObject({
+        plan: 'credits',
+        credits: { bought: 25, left: 28 },
+      });
+      // Kazi's payment on the shared account is not ours.
+      const kazi = await webhook({
+        id: 'evt_k',
+        type: 'payment_intent.succeeded',
+        data: { object: { object: 'payment_intent', id: 'pi_kazi' } },
+      });
+      expect(await kazi.json()).toEqual({ ignored: true });
+      stripe.refunds.push({
+        id: 're_new',
+        payment_intent: 'pi_new',
+        amount: 500,
+        status: 'succeeded',
+        created: Math.floor(Date.now() / 1000),
+      });
+      const refund = {
+        id: 'evt_2',
+        type: 'charge.refunded',
+        data: { object: { object: 'charge', payment_intent: 'pi_new' } },
+      };
+      await webhook(refund);
+      await webhook(refund);
+      expect(await balance(NEW)).toBe(3);
+      expect((await ledger.entries(NEW)).map((e) => e.id).sort()).toEqual([
+        'grant:activation',
+        'pi_new',
+        're_new',
+      ]);
+    });
+
+    it('credits a checkout as it returns to the account page, only for its own account', async () => {
+      stripe.payments.push({
+        id: 'pi_checkout',
+        status: 'succeeded',
+        created: Math.floor(Date.now() / 1000),
+        amount_received: 1000,
+        customer: 'cus_new',
+        metadata: {
+          app: 'cuttingfloor',
+          credits: '55',
+          pack: 'cf_credits_10',
+          workos_user_id: NEW,
+        },
+      });
+      const post = (body: unknown) =>
+        fetch(`${base}/account/payments`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${ACCOUNT_KEY}` },
+          body: JSON.stringify(body),
+        });
+      expect((await post({ user: OLD, checkout_session: 'cs_test_1' })).status).toBe(404);
+      expect(await (await post({ user: NEW, checkout_session: 'cs_test_1' })).json()).toEqual({
+        credited: 55,
+        balance: 58,
+      });
+      expect(await (await post({ user: NEW, payment_intent: 'pi_checkout' })).json()).toEqual({
+        credited: 0,
+        balance: 58,
+      });
+      const event = {
+        id: 'evt_3',
+        type: 'payment_intent.succeeded',
+        data: { object: { object: 'payment_intent', id: 'pi_checkout' } },
+      };
+      await webhook(event);
+      expect(await balance(NEW)).toBe(58);
+    });
+
+    it('leaves a given plan out of the ledger', async () => {
+      expect((await account(LIFETIME)).account.credits).toMatchObject({ per_month: 900 });
+      expect(await ledger.get(LIFETIME)).toBeUndefined();
+    });
+
+    it('sends the email a spend called for when a server stopped before sending it', async () => {
+      await runtime.ws.writeJson(
+        runtime.ws.ownerDir(NEW, 'ledger-spent', 'j_untold-release.json'),
+        {
+          at: new Date().toISOString(),
+          told: false,
+          crossed: 'low',
+        },
+      );
+      mail.length = 0;
+      await lifecycle.sweep();
+      expect(mail).toEqual([
+        expect.objectContaining({
+          to: 'new@example.com',
+          subject: expect.stringMatching(/credits left/),
+        }),
+      ]);
+      expect(
+        await runtime.ws.readJson(
+          runtime.ws.ownerDir(NEW, 'ledger-spent', 'j_untold-release.json'),
+        ),
+      ).toMatchObject({ told: true });
+    });
   });
-});
+}

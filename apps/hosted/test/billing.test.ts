@@ -9,8 +9,8 @@ import { Runtime } from '@cuttingfloor/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessCheck } from '../src/access.ts';
 import { createHttpServer } from '../src/http.ts';
-import { Ledger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
+import { testLedger } from './test-ledger.ts';
 
 // The routes the site and Stripe call. Only what needs no live account is checked here: who may
 // call them. The account rules themselves run against the real WorkOS and Stripe in
@@ -38,7 +38,7 @@ beforeAll(async () => {
   });
   await runtime.start({ sweep: false });
   const options = { workosKey: 'sk_test_none', stripeKey: 'sk_test_none' };
-  const ledger = new Ledger('http://127.0.0.1:9', 'none');
+  const ledger = testLedger();
   const access = new AccessCheck({
     ...options,
     ledger,

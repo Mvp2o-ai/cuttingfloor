@@ -11,8 +11,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AccessCheck } from '../src/access.ts';
 import { createHttpServer } from '../src/http.ts';
 import { ScriptKeys } from '../src/keys.ts';
-import { Ledger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
+import { testLedger } from './test-ledger.ts';
 
 // Script keys: the account page makes one through the site, a script calls /mcp with it as that
 // account (with the account's checks), and a revoked key stops at once. The account checks are a
@@ -48,7 +48,7 @@ beforeAll(async () => {
   const lifecycle = new Lifecycle({
     runtime,
     access: {} as AccessCheck,
-    ledger: new Ledger('http://127.0.0.1:9', 'none'),
+    ledger: testLedger(),
     workosKey: 'sk_test_none',
     stripeKey: 'sk_test_none',
     accountUrl: 'https://cuttingfloor.ai/account',

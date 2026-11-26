@@ -136,13 +136,13 @@ describe('a standby server’s lifecycle', () => {
       addSeconds: () => void seen.push('addSeconds'),
       get: async () => {
         seen.push('get');
-        return { allowed: true, ledger: { account_id: 'ca_1', since: '2000-01-01' } };
+        return { allowed: true, plan: 'free' };
       },
     } as unknown as AccessCheck;
     const ledger = {
-      usage: async () => {
-        seen.push('usage');
-        return { balance: 0, duplicate: false, crossed: null, top_up: null };
+      spend: async () => {
+        seen.push('spend');
+        return { balance: 0, duplicate: false, crossed: null };
       },
     } as unknown as Ledger;
     const make = (standby: boolean) =>

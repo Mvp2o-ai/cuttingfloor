@@ -11,9 +11,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AccessCheck } from '../src/access.ts';
 import { createHttpServer } from '../src/http.ts';
 import { ScriptKeys } from '../src/keys.ts';
-import { Ledger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
 import { WorkosSubscribers } from '../src/sequence.ts';
+import { testLedger } from './test-ledger.ts';
 
 // Partner keys: a partner (one-mcp, for the Cutting Floor AI app) gets a script key for its user
 // by email, and the key calls /mcp and /v1 as that account. WorkOS is a stand-in here, answering
@@ -95,7 +95,7 @@ beforeAll(async () => {
   const lifecycle = new Lifecycle({
     runtime,
     access: { get: async () => free, forget: () => undefined } as unknown as AccessCheck,
-    ledger: new Ledger('http://127.0.0.1:9', 'none'),
+    ledger: testLedger(),
     workosKey: 'sk_test_none',
     stripeKey: 'sk_test_none',
     accountUrl: 'https://cuttingfloor.ai/account',
