@@ -23,7 +23,10 @@ import { type Ledger, type NewEntry, totals } from './ledger.ts';
 // A later export (run 2, after our deploy) adds every row with a ref of its own that run 1 didn't
 // have: payments, and releases our old server reported to Kazi between run 1 and the deploy (a
 // release already spent here since is a duplicate). Kazi's balance must equal the opening and those
-// rows; any other change is a mismatch. So is a file whose accounts, balance sum, row count or member count differ from
+// rows; any other change is a mismatch, except on an account that is also a Kazi user, whose
+// balance Kazi's own use moves after run 1 (only that its rows by ref are all here is checked, and
+// the difference is printed). An account that signed up between the runs (open here with only our
+// grant, its Kazi rows only a grant) is printed, not flagged. So is a file whose accounts, balance sum, row count or member count differ from
 // its `totals`. Mismatches are printed and exit 1: they go to Ken. Every Kazi member listed in
 // `kazi_unmetered` (staff or lifetime, linked to us or not) gets a WorkOS `plan: lifetime` tag on
 // the user with that email, unless it has a plan tag already; a member with no WorkOS user is
@@ -87,6 +90,13 @@ export interface HandedAccount {
   payments: NewEntry[];
   /** Rows only counted: grants, Kazi's own openings. */
   counted: number;
+  /**
+   * The account is also a Kazi user: from run 2 on, Kazi's own use moves its balance (Kazi's rows
+   * are not in the file), so only its rows by ref are checked.
+   */
+  kazi_user: boolean;
+  /** Its rows are only grants, nothing spent: an account opened in Kazi's ledger and never used. */
+  grant_only: boolean;
 }
 
 export interface Handoff {
@@ -148,6 +158,8 @@ export function parseHandoff(json: unknown): Handoff {
         stripe_customer_id: a.stripe_customer_id ?? null,
         payments,
         counted,
+        kazi_user: Boolean(a.kazi_user_id),
+        grant_only: a.rows.every((row) => row.kind === 'grant'),
       };
     }),
   };
@@ -299,6 +311,12 @@ export async function importHandoff(o: ImportOptions): Promise<ImportReport> {
         }));
       report.opened++;
     } else if (!have.some((e) => e.id === openingId)) {
+      if (o.handoff.run >= 2 && signedUpInWindow(have, a)) {
+        // Signed up between run 1 and our deploy: Kazi's ledger opened it with the free grant,
+        // ours opened it since with ours, and it spent nothing in between.
+        o.log(`${owner}: signed up between the runs; open here with our grant, nothing carried`);
+        continue;
+      }
       // Opened here first (a sign-in got in before the import): its grant would stack on Kazi's
       // balance, so it is left for Ken.
       mismatch(
@@ -315,10 +333,17 @@ export async function importHandoff(o: ImportOptions): Promise<ImportReport> {
         report.added++;
       }
       const carried = carriedBalance(have, openingId, a) + sum(fresh);
-      if (Math.abs(carried - a.balance) > 1e-6)
-        mismatch(
-          `${owner}: Kazi's balance is ${a.balance}, its opening and rows here come to ${round(carried)}`,
-        );
+      if (o.apply && fresh.length) {
+        const now = new Set((await o.ledger.entries(owner)).map((e) => e.id));
+        for (const e of fresh) if (!now.has(e.id)) mismatch(`${owner}: ${e.id} was not carried`);
+      }
+      if (Math.abs(carried - a.balance) > 1e-6) {
+        const line = `${owner}: Kazi's balance is ${a.balance}, its opening and rows here come to ${round(carried)}`;
+        // Kazi's own use moves a Kazi user's balance; it is Kazi's, not ours.
+        if (a.kazi_user && o.handoff.run >= 2)
+          o.log(`${line} (Kazi user: Kazi's own use, not checked)`);
+        else mismatch(line);
+      }
     }
     if (a.unmetered) await lifetime(user, 'unmetered in Kazi');
   }
@@ -333,6 +358,11 @@ export async function importHandoff(o: ImportOptions): Promise<ImportReport> {
     `${o.apply ? 'done' : 'dry run'}: ${report.opened} opened, ${report.added} rows added, ${report.lifetime} tagged lifetime, ${report.skipped} skipped (no WorkOS user), ${report.mismatches.length} mismatches`,
   );
   return report;
+}
+
+/** Opened here with only our grant, and Kazi's rows show only a grant: a sign-up in the window. */
+function signedUpInWindow(entries: readonly { id: string }[], a: HandedAccount): boolean {
+  return entries.length === 1 && entries[0]?.id === 'grant:activation' && a.grant_only;
 }
 
 /** What the hand-off's own entries come to here: the opening and the rows it carried by ref. */
@@ -373,8 +403,10 @@ export async function reconcile(o: {
   handoff: Handoff;
   ledger: Ledger;
   records?: Records;
-}): Promise<{ checked: number; differences: Difference[] }> {
+}): Promise<{ checked: number; differences: Difference[]; notes: Difference[] }> {
   const differences: Difference[] = o.handoff.mismatches.map((what) => ({ owner: 'file', what }));
+  /** What is printed but stops nothing. */
+  const notes: Difference[] = [];
   const handed = new Map<string, HandedAccount>();
   for (const a of o.handoff.accounts) if (a.owner) handed.set(a.owner, a);
   const ours = new Set(await o.ledger.owners());
@@ -386,14 +418,19 @@ export async function reconcile(o: {
     const entries = await o.ledger.entries(owner);
     const openingId = `opening:${a.kazi_id}`;
     if (!entries.some((e) => e.id === openingId)) {
-      differences.push({ owner, what: `has no ${openingId}` });
+      if (o.handoff.run >= 2 && signedUpInWindow(entries, a))
+        notes.push({ owner, what: 'signed up between the runs; open here with our grant' });
+      else differences.push({ owner, what: `has no ${openingId}` });
       continue;
     }
+    const ids = new Set(entries.map((e) => e.id));
+    for (const e of a.payments)
+      if (!ids.has(e.id)) differences.push({ owner, what: `${e.id} is not carried` });
     if (entries.some((e) => e.id === 'grant:activation' || e.id === 'opening:carry'))
       differences.push({ owner, what: 'carries Kazi’s balance and a grant or carry-over of ours' });
     const carried = round(carriedBalance(entries, openingId, a));
     if (Math.abs(carried - a.balance) > 1e-6)
-      differences.push({
+      (a.kazi_user && o.handoff.run >= 2 ? notes : differences).push({
         owner,
         what: `Kazi’s balance is ${a.balance}, its opening and rows here come to ${carried}`,
       });
@@ -411,7 +448,7 @@ export async function reconcile(o: {
           what: `${field} is ${account[field]}, its entries sum to ${summed[field]}`,
         });
   }
-  return { checked: ours.size, differences };
+  return { checked: ours.size, differences, notes };
 }
 
 const round = (n: number) => Math.round(n * 1e6) / 1e6;

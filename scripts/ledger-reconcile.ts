@@ -21,7 +21,8 @@ if (!file) {
 const handoff = parseHandoff(JSON.parse(await readFile(file, 'utf8')));
 const { records, ledger, close } = ledgerFromEnv();
 try {
-  const { checked, differences } = await reconcile({ handoff, ledger, records });
+  const { checked, differences, notes } = await reconcile({ handoff, ledger, records });
+  for (const n of notes) process.stdout.write(`note ${n.owner}: ${n.what}\n`);
   for (const d of differences) process.stdout.write(`${d.owner}: ${d.what}\n`);
   process.stdout.write(
     `${checked} accounts checked against ${handoff.accounts.length} handed over: ${differences.length} differences\n`,
