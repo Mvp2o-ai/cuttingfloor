@@ -23,7 +23,7 @@ import { registerMediaTools } from './tools/media.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { registerSearchTools } from './tools/search.ts';
 import { registerSeekTools } from './tools/seek.ts';
-import { registerSkillTools } from './tools/skills.ts';
+import { QA_SKILL, registerSkillTools } from './tools/skills.ts';
 import { registerSoundTools } from './tools/sounds.ts';
 import { registerSupportTools } from './tools/support.ts';
 import { registerTimelineTools } from './tools/timeline.ts';
@@ -96,7 +96,7 @@ const INSTRUCTIONS_BODY = `Tools are primitives doing exactly what their argumen
  Overlays: a higher video track, then set_transform, set_mask, set_blend, set_animation. Names: video://catalog/{name}; a wrong one is refused with the list.
  Facts: media.analyze (transcript, beats, faces, track…) to cut by words (clip.add source {words}) or beats, caption (caption.add in_clip), reframe, pin to a tracked object; judge.ask answers typed questions (yes/no, choice, score, box) on text, JSON and pictures, look across sampled frames; media.seek finds a moment from plain words.
 3. Look: preview "inline", render.frames; for motion and sound, export a range with mp4_h264_fast.
-4. qa.check, then export.video: a download url and a browser page_url for the user (MP4, ProRes, GIF, WAV, MP3; sequence size unless overridden). export.timeline: FCPXML, OTIO, EDL, SRT, VTT.
+4. Before anything goes to the user to review, check it against their request with the QA skill (skills.get ${QA_SKILL}), which measures with qa.check. Then export.video: a download url and a browser page_url for the user (MP4, ProRes, GIF, WAV, MP3; sequence size unless overridden). export.timeline: FCPXML, OTIO, EDL, SRT, VTT.
 Skills: methods for common jobs; skills.search in the user's words, then skills.get.
 Time is frames at the sequence rate; ranges end-exclusive.`;
 

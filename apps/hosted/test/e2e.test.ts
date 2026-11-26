@@ -1374,7 +1374,12 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       });
       const done = await waitJob(jobId, 400_000);
       expect(done.status).toBe('completed');
-      expect((await waitJob(exported.job_id, 400_000)).status).toBe('completed');
+      const delivered = await waitJob(exported.job_id, 400_000);
+      expect(delivered.status).toBe('completed');
+      // A copy for the user to review points the assistant to the QA skill first.
+      expect((delivered.result as { qa_note?: string }).qa_note).toContain(
+        'how-to-qa-a-video-or-image-edit-before-delivery',
+      );
       for (const frame of [0, 2, 4]) {
         const res = await render(frame);
         expect(res.isError).toBe(false);
@@ -1572,6 +1577,8 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
         mime_type: 'video/mp4',
         uri: `video://jobs/${started.job_id}/output`,
       });
+      // The assistant's own review render is not a delivery.
+      expect(done.result).not.toHaveProperty('qa_note');
       // What a host sees: links to the file, marked for the model, one fetchable over https.
       const got = await client.callTool({ name: 'job.get', arguments: { job_id: started.job_id } });
       const links = (got.content as Array<Record<string, unknown>>).filter(
