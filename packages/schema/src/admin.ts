@@ -108,6 +108,35 @@ export const AdminAccount = z.object({
     .describe(
       'The partner that made the account for its own user (e.g. the Cutting Floor AI app); null when the person signed up here',
     ),
+  referral: z
+    .object({
+      code: z
+        .string()
+        .describe(
+          "The account's own referral code, made from its id; it never changes and carries nothing personal",
+        ),
+      link: z.string().describe("The account's link, https://cuttingfloor.ai/r/<code>"),
+      referred_by: z
+        .string()
+        .nullable()
+        .describe(
+          "The code of the link that brought this account, kept at sign-up (the link's 30-day cookie); null when none did",
+        ),
+      referred_by_account: z
+        .string()
+        .nullable()
+        .describe('The account that code belongs to; null when none, or no account has it'),
+      referred: z
+        .object({
+          signed_up: z.number().describe("Accounts made through this account's link"),
+          used_a_tool: z.number().describe('Of those, accounts that ran a tool (first_tool_at)'),
+          exported: z
+            .number()
+            .describe('Of those, accounts that started an export (first_export_at)'),
+        })
+        .describe("Who this account's link brought, as of the account list (up to a minute old)"),
+    })
+    .describe("The account's own link, the link that brought it, and who its link brought"),
   first_call_at: nullableTime.describe('First signed-in request (connecting an app counts)'),
   first_tool_at: nullableTime.describe('First tool call that ran; null means never used'),
   first_edit_at: nullableTime.describe(

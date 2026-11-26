@@ -39,7 +39,9 @@ import { addressPage, wantsPage } from './address-page.ts';
 import type { DownloadSeen } from './downloads.ts';
 import { finalShortPage } from './final-page.ts';
 import type { JwtTokenVerifier } from './oauth.ts';
+import { referralLink } from './referral.ts';
 import { RestApi } from './rest.ts';
+import { isUser } from './rights.ts';
 import { aiCatalog, CARD_TYPE, sendDiscovery, serverCard } from './server-card.ts';
 import { jsonBody, report, share } from './sound-routes.ts';
 import { uploadPage } from './upload-page.ts';
@@ -501,6 +503,15 @@ export function createHttpServer(options: HttpOptions): Server {
                 mime: outputMime(name.includes('.') ? name : (target.file ?? target.blob ?? name)),
                 fileUrl: `${filePath}?${query}`,
                 ...(bucket ? { inline: true } : {}),
+                // An account's file credits its owner's link; a self-hosted one has no account.
+                ...(isUser(owner)
+                  ? {
+                      madeWith: referralLink(
+                        owner,
+                        options.accountUrl ?? 'https://cuttingfloor.ai/account',
+                      ),
+                    }
+                  : {}),
                 base: runtime.config.publicUrl,
                 expiresAt: new Date(Number(exp)),
                 ...(mark?.watermarked
