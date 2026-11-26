@@ -11,8 +11,9 @@ import { importHandoff, LEDGER_LINKS, parseHandoff, reconcile } from '../src/ope
 // The split from Kazi's ledger (scripts/ledger-opening.ts, scripts/ledger-reconcile.ts) on a
 // `kazi-handoff/1` file: every account with a WorkOS user opens at exactly Kazi's balance (a
 // negative one too), App Store payments under their own ids, never with our activation grant or
-// the old carry-over on top; a dry run writes nothing; run 2 adds only new payments and reports any
-// other change; the file is checked against its own totals; reconcile finds no difference until
+// the old carry-over on top; a dry run writes nothing; run 2 adds the rows with refs of their own
+// that run 1 didn't have (payments, and releases Kazi took in between, which a release already
+// spent here doesn't double) and reports any other change; the file is checked against its own totals; reconcile finds no difference until
 // there is one. WorkOS is a stand-in.
 
 const EXPORTED = '2026-12-01T10:00:00.000Z';
@@ -209,17 +210,23 @@ describe('the split from Kazi’s ledger', () => {
     expect(report.mismatches).toEqual([]);
     expect(await ledger.get(A)).toMatchObject({
       balance: 95,
-      opening_total: 40,
+      // 95 less the App Store pack, plus the release: both entered by their refs.
+      opening_total: 48,
       bought_total: 55,
-      used_total: 0,
+      used_total: 8,
       used_before: 6,
       apple_account_token: 'a1b2c3d4-0000-4000-8000-000000000000',
     });
     expect((await ledger.entries(A)).map((e) => e.id).sort()).toEqual([
       'apple:2000000000000001',
+      'j_1-release',
       'opening:ca_1',
     ]);
-    expect(await ledger.get(B)).toMatchObject({ balance: -1.0234, opening_total: -1.0234 });
+    expect(await ledger.get(B)).toMatchObject({
+      balance: -1.0234,
+      opening_total: 0,
+      used_total: 1.0234,
+    });
     expect(await ledger.owners()).toEqual(expect.not.arrayContaining(['ca_3']));
     // B once (unmetered on its account and listed), D by its email; neither had a plan.
     expect(puts).toEqual([
@@ -259,22 +266,29 @@ describe('the split from Kazi’s ledger', () => {
     });
   });
 
-  it('run 2 adds only new payments, and reports a balance that moved any other way', async () => {
+  it('run 2 adds every new row with its own ref, releases too, and reports a balance that moved any other way', async () => {
+    // After our deploy, A's clean copy of j_4 is spent here; Kazi's ledger, before the deploy, took
+    // j_3 and j_4 (our old server reported both), and an App Store pack came in.
+    await ledger.spend(A, { id: 'j_4-release', credits: 1, tool: 'export.release' });
     const a2 = {
       ...a1,
-      balance: 150,
+      balance: 147,
       rows: [
         ...a1.rows,
         { kind: 'purchase', source: 'apple', credits: 55, ref: '2000000000000002' },
+        { kind: 'usage', source: 'cuttingfloor', credits: -2, ref: 'j_3-release' },
+        { kind: 'usage', source: 'cuttingfloor', credits: -1, ref: 'j_4-release' },
       ],
     };
     const b2 = { ...b1, balance: 2 };
     const { report } = await run(handoff(2, [a2, b2, kaziOnly]), true);
-    expect(report.added).toBe(1);
+    expect(report.added).toBe(2);
     expect(report.mismatches).toEqual([
-      `${B}: Kazi's balance is 2, its opening and payments here come to -1.0234`,
+      `${B}: Kazi's balance is 2, its opening and rows here come to -1.0234`,
     ]);
-    expect((await ledger.get(A))?.balance).toBe(150);
+    // opening 48 + 55 - 8 (run 1) + 55 - 2 - 1 (run 2): j_4 once, not twice.
+    expect(await ledger.get(A)).toMatchObject({ balance: 147, used_total: 11 });
+    expect((await ledger.entries(A)).filter((e) => e.id === 'j_4-release')).toHaveLength(1);
     expect((await ledger.get(B))?.balance).toBe(-1.0234);
     const { differences } = await reconcile({
       handoff: parseHandoff(handoff(2, [a2, b2, kaziOnly])),
@@ -282,8 +296,20 @@ describe('the split from Kazi’s ledger', () => {
       records: ws.records,
     });
     expect(differences).toEqual([
-      { owner: B, what: 'Kazi’s balance is 2, its opening and payments here come to -1.0234' },
+      { owner: B, what: 'Kazi’s balance is 2, its opening and rows here come to -1.0234' },
     ]);
+    // A release Kazi took that the balance doesn't show is a mismatch too.
+    const off = {
+      ...a2,
+      rows: [
+        ...a2.rows,
+        { kind: 'usage', source: 'cuttingfloor', credits: -3, ref: 'j_5-release' },
+      ],
+    };
+    const { report: again } = await run(handoff(2, [off]), false);
+    expect(again.mismatches).toContain(
+      `${A}: Kazi's balance is 147, its opening and rows here come to 144`,
+    );
   });
 
   it('leaves an account a sign-in opened first, an unhanded link and stray App Store money for Ken', async () => {

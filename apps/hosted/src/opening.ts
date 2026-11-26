@@ -9,20 +9,21 @@ import { type Ledger, type NewEntry, totals } from './ledger.ts';
 //
 // Kazi exports every account with a WorkOS user id (`kazi-handoff/1`, one-mcp's one-off script,
 // agreed as contract v1). Its `balance` is the number: each account opens here holding exactly that,
-// negative or not, as `opening:<Kazi account id>`, written once (entries are append-only). Its rows
-// are for audit and to avoid counting twice: a payment row with an id of its own (a Stripe payment
-// intent or refund, an App Store transaction) is entered under that id and carved out of the
-// opening, so the account still holds exactly `balance` and the same payment arriving again here is
-// a duplicate. Every other row (grants, Kazi's openings, releases) is only counted.
+// negative or not. A row with a ref of its own (a Stripe payment intent or refund, an App Store
+// transaction, a release `<job>-release`) is entered under that id, so the same payment or release
+// arriving here again is a duplicate, not a second credit or charge; the rest of the balance is
+// `opening:<Kazi account id>`, written once (entries are append-only). Every other row (grants,
+// Kazi's own openings) is only counted.
 //
 // An account the import opens never gets the activation grant or the carry-over from before any
 // ledger: those come only when the server opens an account itself, and an open account is never
 // opened again. An account already open here before the import (a sign-in raced it) is not
 // touched; it is reported.
 //
-// A later export (run 2, after Kazi stops handling cuttingfloor) adds only payment rows it hasn't
-// seen. Kazi's balance for an account may move only by those rows; any other change between runs
-// is a mismatch. So is a file whose accounts, balance sum, row count or member count differ from
+// A later export (run 2, after our deploy) adds every row with a ref of its own that run 1 didn't
+// have: payments, and releases our old server reported to Kazi between run 1 and the deploy (a
+// release already spent here since is a duplicate). Kazi's balance must equal the opening and those
+// rows; any other change is a mismatch. So is a file whose accounts, balance sum, row count or member count differ from
 // its `totals`. Mismatches are printed and exit 1: they go to Ken. Every Kazi member listed in
 // `kazi_unmetered` (staff or lifetime, linked to us or not) gets a WorkOS `plan: lifetime` tag on
 // the user with that email, unless it has a plan tag already; a member with no WorkOS user is
@@ -82,9 +83,9 @@ export interface HandedAccount {
   unmetered: boolean;
   apple_account_token: string | null;
   stripe_customer_id: string | null;
-  /** Payment rows with ids of their own, entered under them. */
+  /** Rows with refs of their own (payments, refunds, releases), entered under them. */
   payments: NewEntry[];
-  /** Rows only counted: grants, Kazi's openings, releases. */
+  /** Rows only counted: grants, Kazi's own openings. */
   counted: number;
 }
 
@@ -152,10 +153,19 @@ export function parseHandoff(json: unknown): Handoff {
   };
 }
 
-/** A payment or refund row with an id of its own, as our entry; undefined for any other row. */
+/** A row with a ref of its own (payment, refund, release), as our entry; undefined for any other. */
 function paymentEntry(row: z.infer<typeof HandoffRow>, exported: string): NewEntry | undefined {
   const ref = row.ref ?? '';
   const at = new Date(row.at ?? exported).toISOString();
+  if ((row.kind === 'usage' || row.kind === 'spend') && /^[\w.:-]+-release$/.test(ref))
+    return {
+      id: ref,
+      kind: 'spend',
+      credits: -Math.abs(row.credits),
+      tool: 'export.release',
+      reason: "spent in Kazi's ledger before the split",
+      at,
+    };
   if (row.kind !== 'purchase' && row.kind !== 'refund') return undefined;
   if (row.source === 'apple') {
     const tx = ref.replace(/^refund:/, '');
@@ -265,10 +275,10 @@ export async function importHandoff(o: ImportOptions): Promise<ImportReport> {
         .catch(() => undefined);
       const refill = a.refill && packOf(a.refill) ? { pack: a.refill } : null;
       if (a.refill && !refill) mismatch(`${owner}: refill pack ${a.refill} is not ours`);
-      // The payments carved out, so the account holds exactly Kazi's balance.
+      // The rows entered beside it carved out, so the account holds exactly Kazi's balance.
       const opening = round(a.balance - a.payments.reduce((n, e) => n + e.credits, 0));
       o.log(
-        `${verb}open ${owner} (${a.email ?? user.email}) at ${a.balance}: ${openingId} ${opening}${a.payments.length ? ` + ${a.payments.length} payments` : ''}, ${a.counted} rows counted${refill ? `, refill ${refill.pack}` : ''}${a.apple_account_token ? ', App Store token kept' : ''}`,
+        `${verb}open ${owner} (${a.email ?? user.email}) at ${a.balance}: ${openingId} ${opening}${a.payments.length ? ` + ${a.payments.length} rows by ref` : ''}, ${a.counted} rows counted${refill ? `, refill ${refill.pack}` : ''}${a.apple_account_token ? ', App Store token kept' : ''}`,
       );
       if (o.apply)
         await o.ledger.open(owner, async () => ({
@@ -282,7 +292,7 @@ export async function importHandoff(o: ImportOptions): Promise<ImportReport> {
               kind: 'opening',
               credits: opening,
               at: o.handoff.exported_at,
-              reason: `balance in Kazi's ledger at the split (${a.balance}), less payments entered beside it`,
+              reason: `balance in Kazi's ledger at the split (${a.balance}), less the rows entered beside it`,
             },
             ...a.payments,
           ],
@@ -296,7 +306,7 @@ export async function importHandoff(o: ImportOptions): Promise<ImportReport> {
       );
       continue;
     } else {
-      // A later run: only payments it hasn't seen, and Kazi's balance may have moved only by them.
+      // A later run: only rows it hasn't seen, and Kazi's balance may have moved only by them.
       const ids = new Set(have.map((e) => e.id));
       const fresh = a.payments.filter((e) => !ids.has(e.id));
       for (const e of fresh) {
@@ -307,7 +317,7 @@ export async function importHandoff(o: ImportOptions): Promise<ImportReport> {
       const carried = carriedBalance(have, openingId, a) + sum(fresh);
       if (Math.abs(carried - a.balance) > 1e-6)
         mismatch(
-          `${owner}: Kazi's balance is ${a.balance}, its opening and payments here come to ${round(carried)}`,
+          `${owner}: Kazi's balance is ${a.balance}, its opening and rows here come to ${round(carried)}`,
         );
     }
     if (a.unmetered) await lifetime(user, 'unmetered in Kazi');
@@ -320,12 +330,12 @@ export async function importHandoff(o: ImportOptions): Promise<ImportReport> {
   for (const owner of await linkedNotHanded(o.records, handed))
     mismatch(`${owner}: linked to Kazi's ledger but not in the hand-off`);
   o.log(
-    `${o.apply ? 'done' : 'dry run'}: ${report.opened} opened, ${report.added} payments added, ${report.lifetime} tagged lifetime, ${report.skipped} skipped (no WorkOS user), ${report.mismatches.length} mismatches`,
+    `${o.apply ? 'done' : 'dry run'}: ${report.opened} opened, ${report.added} rows added, ${report.lifetime} tagged lifetime, ${report.skipped} skipped (no WorkOS user), ${report.mismatches.length} mismatches`,
   );
   return report;
 }
 
-/** What the hand-off's own entries come to here: the opening and the payments it carried. */
+/** What the hand-off's own entries come to here: the opening and the rows it carried by ref. */
 function carriedBalance(
   entries: readonly { id: string; credits: number }[],
   openingId: string,
@@ -356,7 +366,7 @@ export interface Difference {
 
 /**
  * Compares our ledger with a hand-off: the file against its own totals; each account's opening
- * and carried payments against Kazi's balance; accounts missing either way; and every account's
+ * and carried rows against Kazi's balance; accounts missing either way; and every account's
  * stored balance and totals against its entries summed again.
  */
 export async function reconcile(o: {
@@ -385,7 +395,7 @@ export async function reconcile(o: {
     if (Math.abs(carried - a.balance) > 1e-6)
       differences.push({
         owner,
-        what: `Kazi’s balance is ${a.balance}, its opening and payments here come to ${carried}`,
+        what: `Kazi’s balance is ${a.balance}, its opening and rows here come to ${carried}`,
       });
   }
   if (o.records)
