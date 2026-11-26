@@ -21,6 +21,14 @@ export const KAZI_LINKS = {
   // The general demos link until the stream demo gets a guest chat of its own (every demo link
   // stages the same sample clip today).
   'demo-stream': 'PsFVYwBiOA',
+  // The general demos link until the car demo gets a guest chat of its own.
+  'demo-car': 'PsFVYwBiOA',
+  // The general demos link until the AI short film demo gets a guest chat of its own.
+  'demo-film': 'PsFVYwBiOA',
+  // The general demos link until the photo promo demo gets a guest chat of its own.
+  'demo-promo': 'PsFVYwBiOA',
+  // The general demos link until the lyric video demo gets a guest chat of its own.
+  'demo-lyric': 'PsFVYwBiOA',
 } as const satisfies Record<string, string>;
 
 export type KaziPlace = keyof typeof KAZI_LINKS;
