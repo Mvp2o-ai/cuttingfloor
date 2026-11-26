@@ -1,7 +1,8 @@
-// Compares our credit ledger with Kazi's hand-off: each handed account's balance at the split
-// against Kazi's, accounts missing either way, and every account's stored balance and totals
-// against its entries summed again. Prints each difference; exits 1 when there is any (a
-// difference stops the cutover and goes to Ken).
+// Compares our credit ledger with Kazi's hand-off (`kazi-handoff/1`): the file against its own
+// totals, each account's opening and carried payments against Kazi's balance, accounts missing
+// either way (and linked to Kazi but not handed over), no grant or carry-over beside an opening,
+// and every account's stored balance and totals against its entries summed again. Prints each
+// difference; exits 1 when there is any (a difference stops the cutover and goes to Ken).
 //
 //   node scripts/ledger-reconcile.ts <handoff.json>
 //
@@ -18,9 +19,9 @@ if (!file) {
   process.exit(2);
 }
 const handoff = parseHandoff(JSON.parse(await readFile(file, 'utf8')));
-const { ledger, close } = ledgerFromEnv();
+const { records, ledger, close } = ledgerFromEnv();
 try {
-  const { checked, differences } = await reconcile({ handoff, ledger });
+  const { checked, differences } = await reconcile({ handoff, ledger, records });
   for (const d of differences) process.stdout.write(`${d.owner}: ${d.what}\n`);
   process.stdout.write(
     `${checked} accounts checked against ${handoff.accounts.length} handed over: ${differences.length} differences\n`,
