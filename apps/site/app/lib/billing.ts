@@ -2,11 +2,12 @@ import 'server-only';
 import { type Pack, packOf } from '@cuttingfloor/plans';
 import type { AccountGetResult } from '@cuttingfloor/schema';
 
-// The account's credits, without a database: WorkOS holds the user (a `plan` tag for given plans,
-// `stripe_customer_id`), Kazi's credit ledger holds the balance and automatic top-up, and Stripe
-// the payments that reach the ledger. The MCP server reads the ledger (apps/hosted/src/access.ts);
-// this page reads and sets it through the server, as account.get gives it, so the two never
-// disagree and the site never calls the ledger itself.
+// The account's credits: WorkOS holds the user (a `plan` tag for given plans,
+// `stripe_customer_id`), cuttingfloor's credit ledger on the MCP server holds the balance and
+// automatic top-up (apps/hosted/src/ledger.ts), and Stripe the payments the server credits. This
+// page reads and sets them through the server, as account.get gives them, so the two never
+// disagree and the site never touches the ledger itself. cuttingfloor's credits are its own:
+// Kazi keeps its own balance.
 
 export type Account = AccountGetResult;
 
@@ -81,6 +82,27 @@ export async function accountStatus(
   }
 }
 
+/**
+ * Credits a payment that just went through (a one-click buy's payment intent, or the checkout
+ * session it returned from), so the page shows it at once instead of when Stripe's event
+ * arrives. Either way the server credits a payment once; a failure here only waits for the event.
+ */
+export async function creditPayment(
+  userId: string,
+  payment: { payment_intent: string } | { checkout_session: string },
+): Promise<void> {
+  const key = process.env.CUTTINGFLOOR_ACCOUNT_KEY;
+  const server = process.env.CUTTINGFLOOR_SERVER_URL ?? 'https://api.cuttingfloor.ai';
+  if (!key) return;
+  await fetch(`${server}/account/payments`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ user: userId, ...payment }),
+    cache: 'no-store',
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => undefined);
+}
+
 /** Sets automatic top-up (a pack's id, or null for off) through the MCP server. */
 export async function setTopUp(userId: string, pack: string | null): Promise<void> {
   const key = env('CUTTINGFLOOR_ACCOUNT_KEY');
@@ -140,7 +162,7 @@ export async function priceFor(pack: Pack): Promise<string> {
   return price.id;
 }
 
-/** What a payment for a pack carries: the ledger credits the account named by its WorkOS id. */
+/** What a payment for a pack carries: the server credits the account named by its WorkOS id. */
 export function packMetadata(pack: Pack, userId: string, prefix: string): Record<string, string> {
   return {
     [`${prefix}[app]`]: 'cuttingfloor',
@@ -164,12 +186,13 @@ export async function savedCard(
 }
 
 /**
- * One click: charges a pack to the saved card with the person here. True when it went through;
- * false when the card needs them (a bank check, a decline), and Checkout takes over.
+ * One click: charges a pack to the saved card with the person here. The payment intent when it
+ * went through; undefined when the card needs them (a bank check, a decline), and Checkout takes
+ * over.
  */
 export async function buyOnSavedCard(userId: string, customer: string, pack: Pack, nonce: string) {
   const card = await savedCard(customer);
-  if (!card) return false;
+  if (!card) return undefined;
   try {
     const pi = await stripe(
       '/v1/payment_intents',
@@ -186,8 +209,8 @@ export async function buyOnSavedCard(userId: string, customer: string, pack: Pac
       },
       { 'idempotency-key': `${userId}:buy:${nonce}` },
     );
-    return pi.status === 'succeeded';
+    return pi.status === 'succeeded' ? String(pi.id) : undefined;
   } catch {
-    return false;
+    return undefined;
   }
 }
