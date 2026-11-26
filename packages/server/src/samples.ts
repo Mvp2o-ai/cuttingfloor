@@ -66,9 +66,18 @@ export const SAMPLES: Sample[] = [
     slug: 'dance-takes',
     file: 'dance-takes.mp4',
     shows: 'a 34-second dance routine filmed in several takes',
-    fits: 'dance, music and performances, fitness, choreography, beat-synced edits, cutting between takes',
+    fits: 'dance, choreography, music performances and covers, fitness, cutting a person’s takes together on the beat',
     starter:
       'Cut these takes together on the beat into one vertical video, switching takes on the big moves.',
+  },
+  {
+    slug: 'car-takes',
+    file: 'car-takes.mp4',
+    shows:
+      'a 36-second set of five phone clips of a dark sports car on a coast road at sunset, flat colours, with wind and engine sound',
+    fits: 'car, motorbike and supercar edits, skate, surf and action sports, cinematic edits, speed ramps, road trips and drone b-roll, colour grading, making phone footage look cinematic',
+    starter:
+      'Make a 20-second cinematic Short from these clips: a hook in the first second, speed ramps on the best moments, cuts on the beat, a moody colour grade, whooshes and a title.',
   },
   {
     slug: FALLBACK_SAMPLE,
