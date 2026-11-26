@@ -98,6 +98,15 @@ export const SAMPLES: Sample[] = [
       'Make a 20-second promo for Reels from these photos: open on a hook, move every photo, put the key words on screen as they are said, end on the price and a call to action, then make a second version that opens with the offer.',
   },
   {
+    slug: 'lyric-video',
+    file: 'song-and-footage.mp4',
+    shows:
+      'a 38-second original pop song with clear sung words, played over six raw phone clips of the singer in her home music room at night, with no words on screen, no grade and no cuts to the beat',
+    fits: 'lyric videos and lyric Shorts: the words of a song on screen in time with the singing, karaoke-style text, music promos and song teasers for an artist, rapper or band on Reels, TikTok and Shorts, a new single or release announced with its lyrics',
+    starter:
+      'Make a 30-second lyric Short of this song: every line on screen as she sings it, the key words big, the words moving with the beat, the footage cut to the beat with a warm grade, and the hook line as the big moment.',
+  },
+  {
     slug: FALLBACK_SAMPLE,
     file: 'big-buck-bunny.mp4',
     shows: 'a 30-second scene from Big Buck Bunny, an open animated film',
