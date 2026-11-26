@@ -25,6 +25,8 @@ export const KAZI_LINKS = {
   'demo-car': 'PsFVYwBiOA',
   // The general demos link until the AI short film demo gets a guest chat of its own.
   'demo-film': 'PsFVYwBiOA',
+  // The general demos link until the photo promo demo gets a guest chat of its own.
+  'demo-promo': 'PsFVYwBiOA',
 } as const satisfies Record<string, string>;
 
 export type KaziPlace = keyof typeof KAZI_LINKS;

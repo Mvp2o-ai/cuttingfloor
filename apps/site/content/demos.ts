@@ -1034,6 +1034,107 @@ const STREAM: Demo = {
   ],
 };
 
+// A small pottery studio's six product photos of a new mug collection, a recorded voiceover and an
+// original music track (generated, edited for real by cuttingfloor), cut into a promo in two versions.
+const PROMO: Demo = {
+  id: 'promo',
+  slug: 'make-a-product-promo-from-photos',
+  title: 'Make a product promo video from photos, with two different openings',
+  description:
+    'A small pottery studio gives Claude six photos of its new mugs, a recorded voiceover and an original music track. cuttingfloor turns them into a 22-second promo for Reels and WhatsApp Status, with every photo moving, the key words on screen, the price and a call to action, then a second version that opens with the offer to test against it.',
+  steps: [
+    'Looked at all six photos and read the voiceover word by word.',
+    'Opened on the problem, “Your morning coffee deserves better”, with a quick push in so something moves in the first second.',
+    'Cut the mug out of the hands-and-coffee photo and moved it faster than the background, so the still photo looks 3D.',
+    'Gave every photo its own move: a slow push in, a turn on the flat lay, a slide down the glaze, a pull back that reveals all four mugs.',
+    'Changed photo on every line of the voice, and tightened the pauses between lines.',
+    'Put the key words on screen as she says them: “deserves better”, “Ember collection”, “made by hand”, “the same”, “gift-boxed”.',
+    'Ended on the offer, $28 each or all four for $90 with free shipping this week, then “Tap the link” held long enough to act on.',
+    'Laid the original music under the voice, quieter while she talks and up again at the end, with a cup set down at the start and a soft whoosh into the reveal and the offer.',
+    'Made the voice loud and even for phones, with peaks under −1 dB.',
+    'Made a second, 18-second version that opens with the offer instead, for testing which opening sells better.',
+  ],
+  uploaded: '2026-11-26',
+  moments: [
+    { name: 'Hook: your coffee deserves better', start: 0, end: 3.73 },
+    { name: 'The Ember collection', start: 3.73, end: 5.17 },
+    { name: 'Made by hand', start: 5.17, end: 8.5 },
+    { name: 'No two the same', start: 8.5, end: 12.57 },
+    { name: 'Gift-boxed', start: 12.57, end: 14.63 },
+    { name: 'All four for $90', start: 14.63, end: 19.03 },
+    { name: 'Tap the link', start: 19.03, end: 22.1 },
+  ],
+  agent: 'Claude',
+  raw: {
+    src: '/demo/promo/raw.mp4',
+    poster: '/demo/promo/raw.jpg',
+    label: 'promo-stills.mp4 · 0:22',
+    seconds: 21.6,
+    captions: '/demo/promo/raw.vtt',
+  },
+  extra: [
+    {
+      src: '/demo/promo/offer-first.mp4',
+      poster: '/demo/promo/offer-first.jpg',
+      label: 'ember-mugs-offer-first.mp4 · 0:18',
+      seconds: 18.5,
+      captions: '/demo/promo/offer-first.vtt',
+      caption: 'The second version, opening with the offer',
+    },
+  ],
+  transcript: [
+    { text: 'Your morning coffee deserves better than a mug from the supermarket.' },
+    { text: 'Meet the Ember collection.' },
+    { text: 'Four new glazes, each one made by hand in our little studio.' },
+    { text: 'The glaze pools and drips in the kiln, so no two mugs are ever the same.' },
+    { text: 'They come gift-boxed, ready to give.' },
+    { text: 'Twenty-eight dollars each, or all four for ninety.' },
+    { text: 'Free shipping this week only.' },
+    { text: 'Tap the link and pick yours.' },
+  ],
+  turns: [
+    {
+      prompt:
+        'I make mugs and sell them on Instagram and WhatsApp. Here are six photos of my new collection, my voice recording and a music track. Make me a short promo for Reels and Status with the price at the end, and a second version with a different opening so I can see which one sells better.',
+      reply:
+        'I’ll open the first one on the problem your voice starts with, give every photo its own move, put the key words on screen as you say them, and end on your offer and “Tap the link”. The second one opens straight on the price and free shipping.',
+      calls: [
+        { fn: 'skills.search', note: 'checked for a method for photo promos' },
+        { fn: 'media.import', note: 'six photos, the voice and the music' },
+        { fn: 'render.frames', note: 'checked the cut-out mug' },
+        { fn: 'media.analyze', note: 'the beats of the music' },
+        { fn: 'media.get', note: 'every word of the voice, timed' },
+        { fn: 'create.cutout', note: 'the mug and hands, for a 3D move' },
+        { fn: 'sounds.list', note: 'a cup set down, a soft whoosh' },
+        { fn: 'create.motion', note: 'the words on screen, the price and the call to action' },
+        { fn: 'timeline.create', note: 'vertical, 30 fps' },
+        {
+          fn: 'edit.batch',
+          note: 'nine shots with moves, the voice tightened, the music under it',
+        },
+        {
+          fn: 'render.frames',
+          note: 'split a long close-up and fixed text running off the screen',
+        },
+        { fn: 'qa.check', note: 'loudness and peaks' },
+        { fn: 'audio.set_master', note: 'louder for phones, peaks under −1 dB' },
+        { fn: 'export.video', note: 'vertical, 0:22' },
+        { fn: 'edit.batch', note: 'the second version: the offer first' },
+        { fn: 'export.video', note: 'vertical, 0:18' },
+      ],
+      status: 'Moving your photos and timing the words…',
+      done: 'Both versions are ready. The first, 22 seconds, opens on “Your morning coffee deserves better” and ends on all four for $90 with free shipping and “Tap the link”. The second, 18 seconds, opens on the price. Post one to Reels and the other to Status and see which brings more orders. Want a square one for the feed too?',
+      video: {
+        src: '/demo/promo/cut.mp4',
+        poster: '/demo/promo/cut.jpg',
+        label: 'ember-mugs-problem-first.mp4 · 0:22',
+        seconds: 22.1,
+        captions: '/demo/promo/cut.vtt',
+      },
+    },
+  ],
+};
+
 // Six AI-generated clips of a lighthouse keeper on a stormy night, out of order (generated footage,
 // edited for real by cuttingfloor).
 const FILM: Demo = {
@@ -1215,6 +1316,7 @@ const CAR: Demo = {
 };
 
 export const DEMOS: Demo[] = [
+  PROMO,
   FILM,
   CAR,
   STREAM,
