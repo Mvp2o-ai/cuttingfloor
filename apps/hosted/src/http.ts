@@ -74,7 +74,7 @@ export interface HttpOptions {
   limits?: (owner: string, options?: { buy?: boolean }) => Promise<OwnerLimits>;
   /** Hosted: a signed-in owner's plan and credits, for account.get (not maintenance keys). */
   account?: (owner: string) => Promise<AccountGetResult>;
-  /** Hosted: the phone app's credits and App Store purchases (GET /v1/credits, POST /v1/credits/apple). */
+  /** Hosted: the phone app's credits and App Store purchases (POST /v1/credits.get, /v1/credits.apple). */
   credits?: AppCreditsRoutes;
   /** Hosted: whether an account was active before activation existed, so it needs no claim. */
   activeBefore?: (owner: string) => Promise<boolean>;

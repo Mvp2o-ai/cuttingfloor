@@ -4,7 +4,7 @@
 //   ssh root@<server> 'cd /opt/cuttingfloor && docker compose exec -T cuttingfloor node scripts/smoke-ledger.ts'
 //
 // Makes a throwaway account and a script key for it, checks that its ledger account opened with
-// the activation grant and nothing else, that /v1/credits shows it as the phone app reads it, that
+// the activation grant and nothing else, that credits.get shows it as the phone app reads it, that
 // automatic top-up is set and cleared in the ledger, and that the balance equals its entries.
 // Moves no money. Deletes the account, its key, its data and its ledger account after.
 
@@ -90,13 +90,17 @@ try {
 
   step('the phone app’s view');
   const phone = (await (
-    await fetch(`${server}/v1/credits`, { headers: { authorization: `Bearer ${key}` } })
+    await fetch(`${server}/v1/credits.get`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: '{}',
+    })
   ).json()) as { balance?: number; apple_products?: unknown[]; apple_account_token?: string };
   expect(
     phone.balance === FREE_CREDITS &&
       Boolean(phone.apple_products?.length) &&
       /^[0-9a-f-]{36}$/.test(phone.apple_account_token ?? ''),
-    `GET /v1/credits answers the balance, packs and token (${JSON.stringify(phone)})`,
+    `credits.get answers the balance, packs and token (${JSON.stringify(phone)})`,
   );
 
   step('automatic top-up lives in the ledger');

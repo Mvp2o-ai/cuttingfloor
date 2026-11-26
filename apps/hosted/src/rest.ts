@@ -136,7 +136,7 @@ export class RestApi {
     }
     if (url.pathname === '/v1/floor.changes')
       return this.#floorChanges(req, res, url, authenticate);
-    if (url.pathname === '/v1/credits' || url.pathname === '/v1/credits/apple')
+    if (url.pathname === '/v1/credits.get' || url.pathname === '/v1/credits.apple')
       return this.#appCredits(req, res, url, authenticate);
     const name = decodeURIComponent(url.pathname.slice('/v1/'.length));
     const tool = (await this.#listTools()).find((t) => t.name === name);
@@ -256,9 +256,12 @@ export class RestApi {
   }
 
   /**
-   * GET /v1/credits: the account's balance as the phone app shows it, the App Store packs and the
-   * appAccountToken its purchases carry. POST /v1/credits/apple {signed_transaction}: records one
-   * App Store purchase (StoreKit 2 jwsRepresentation) once, answering {credits_added, balance}.
+   * POST /v1/credits.get {}: the account's balance as the phone app shows it, the App Store packs
+   * and the appAccountToken its purchases carry. POST /v1/credits.apple {signed_transaction}:
+   * records one App Store purchase (StoreKit 2 jwsRepresentation) once, answering
+   * {credits_added, balance}; another account's purchase answers 403 `forbidden`. POST and dotted
+   * names, as floor.changes: the app reaches /v1 only through one-mcp's pass-through, which
+   * forwards POST to dotted operation names with the user's key.
    */
   async #appCredits(
     req: IncomingMessage,
@@ -267,8 +270,8 @@ export class RestApi {
     authenticate: (request: Request) => Promise<Caller | undefined>,
   ): Promise<void> {
     const credits = this.#credits;
-    const apple = url.pathname === '/v1/credits/apple';
-    if (req.method !== (apple ? 'POST' : 'GET')) return refuse(req, res, apple ? 'POST' : 'GET');
+    const apple = url.pathname === '/v1/credits.apple';
+    if (req.method !== 'POST') return refuse(req, res, 'POST');
     if (!credits) {
       req.resume();
       return send(res, 404, { code: 'not_found', message: 'No credits on this server' });
@@ -288,7 +291,10 @@ export class RestApi {
       return;
     }
     try {
-      if (!apple) return send(res, 200, await credits.credits(caller.owner));
+      if (!apple) {
+        req.resume();
+        return send(res, 200, await credits.credits(caller.owner));
+      }
       let signed: unknown;
       try {
         signed = (JSON.parse(await readBody(req, 64 * 1024)) as { signed_transaction?: unknown })
@@ -304,7 +310,7 @@ export class RestApi {
       return send(res, 200, await credits.purchase(caller.owner, signed));
     } catch (error) {
       if (error instanceof AppleOtherAccount)
-        return send(res, 403, { code: 'bad_request', message: error.message });
+        return send(res, 403, { code: 'forbidden', message: error.message });
       if (error instanceof AppleRejected)
         return send(res, 400, { code: 'bad_request', message: error.message });
       const e = error as { code?: ErrorCode; message?: string; hint?: string };
@@ -570,13 +576,21 @@ const APPLE_PACK = {
 
 /** The phone app's credit routes: account routes, not tools. */
 const CREDITS_PATHS = {
-  '/v1/credits': {
-    get: {
+  '/v1/credits.get': {
+    post: {
       operationId: 'credits_get',
       summary: 'Credits, as the phone app shows them',
       description:
         "Not a tool: for the Cutting Floor AI app. The account's balance (null on a given plan, which has no cap), whether it is low or out, the App Store packs, and the appAccountToken to set on each StoreKit purchase so it lands on this account.",
       tags: ['credits'],
+      requestBody: {
+        required: false,
+        content: {
+          'application/json': {
+            schema: { type: 'object', properties: {}, additionalProperties: false },
+          },
+        },
+      },
       responses: {
         '200': {
           description: "The account's credits",
@@ -610,12 +624,12 @@ const CREDITS_PATHS = {
       },
     },
   },
-  '/v1/credits/apple': {
+  '/v1/credits.apple': {
     post: {
       operationId: 'credits_apple',
       summary: 'Record an App Store purchase',
       description:
-        "Not a tool: for the Cutting Floor AI app. Checks one StoreKit transaction against Apple's certificates and adds its pack's credits once; the same transaction again adds 0. Finish the transaction only after a 200. A transaction made with another account's appAccountToken answers 403.",
+        "Not a tool: for the Cutting Floor AI app. Checks one StoreKit transaction against Apple's certificates and adds its pack's credits once; the same transaction again adds 0. Finish the transaction only after a 200. A transaction made with another account's appAccountToken answers 403 with code forbidden; a payload Apple did not sign, a revoked transaction or a product cuttingfloor doesn't sell answers 400.",
       tags: ['credits'],
       requestBody: {
         required: true,
@@ -648,6 +662,18 @@ const CREDITS_PATHS = {
                 },
                 required: ['credits_added', 'balance'],
                 additionalProperties: false,
+              },
+            },
+          },
+        },
+        '403': {
+          description: "Another account's purchase",
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { code: { const: 'forbidden' }, message: { type: 'string' } },
+                required: ['code', 'message'],
               },
             },
           },
