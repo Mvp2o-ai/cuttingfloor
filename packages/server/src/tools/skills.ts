@@ -12,13 +12,17 @@ import { guard, ok } from '../result.ts';
 // skills.search and skills.get: how to compose the tools for a common job, written down once
 // (skills/*.md). Not editing primitives; discovery of how to use them (AGENTS.md).
 
-/** The skills that fit a request in the user's words, best first (as skills.search finds them). */
+/**
+ * The skills that fit a request in the user's words, best first: at or above `min` (skills.search's
+ * own floor unless a caller asks for a looser one).
+ */
 export async function matchingSkills(
   query: string,
+  min = SKILL_MATCH_MIN,
 ): Promise<Array<{ slug: string; name: string; description: string }>> {
   const { index } = await skills();
   return (await index.search(query, index.list().length))
-    .filter((m) => m.score >= SKILL_MATCH_MIN)
+    .filter((m) => m.score >= min)
     .map((m) => ({ slug: m.slug, name: m.name, description: m.description }));
 }
 

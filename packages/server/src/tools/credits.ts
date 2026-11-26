@@ -153,7 +153,7 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
       });
       // The skills that fit the task, as skills.search would find them: named, so the agent can
       // read the method before it starts. None when nothing fits or the library can't load.
-      const fits = await matchingSkills(use_case).catch((error: Error) => {
+      const fits = await matchingSkills(use_case, RELATED_SKILL_MIN).catch((error: Error) => {
         process.stderr.write(`credits.claim: ${deps.owner()}: skills: ${error.message}\n`);
         return [];
       });
@@ -183,6 +183,14 @@ export function registerCreditTools(server: McpServer, deps: ServerDeps): void {
 
 /** At most this many related skills are named in the claim's answer. */
 const RELATED_SKILLS = 3;
+/**
+ * The score a skill needs to be named as one that may fit: looser than skills.search's, since a
+ * task said once in passing scores lower than a search. Real tasks on the live model: "podcast into
+ * vertical clips with captions" 0.69 for the Shorts skill and "animal shorts from an AI brief" 0.52
+ * for motion graphics (both right); "five AI clips into one film" 0.50 and "trim 3 s and fade in"
+ * 0.47 for the Shorts skill (both wrong) stay out.
+ */
+const RELATED_SKILL_MIN = 0.5;
 
 /** How many calls are refused for the claim before the account's calls run anyway. */
 export const CLAIM_REFUSALS = 2;
