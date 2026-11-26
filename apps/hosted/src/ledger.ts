@@ -60,6 +60,8 @@ export interface CreditEntry {
   payment_intent?: string;
   /** Why, for an adjustment or a carry-over. */
   reason?: string;
+  /** Who made an adjustment: the admin's WorkOS user id. */
+  by?: string;
 }
 
 /** An entry to write: `at` defaults to now. */

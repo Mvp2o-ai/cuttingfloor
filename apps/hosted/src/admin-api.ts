@@ -3,8 +3,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   type AdminAccount,
   AdminAccountListQuery,
+  AdminAdjustInput,
+  type AdminAdjustment,
   type AdminFile,
+  type AdminLedger,
+  type AdminLedgerEntry,
   type AdminMe,
+  type AdminSort,
   adminComponentSchemas,
 } from '@cuttingfloor/schema';
 import {
@@ -25,6 +30,7 @@ import type { AppsSeen } from './apps-seen.ts';
 import { readDownloads } from './downloads.ts';
 import { exportOf } from './expiry-notices.ts';
 import type { KeyKind, ScriptKeys } from './keys.ts';
+import type { CreditEntry, Ledger } from './ledger.ts';
 import type { Lifecycle, WorkosUser } from './lifecycle.ts';
 import { Referrals, referralCode, referralLink } from './referral.ts';
 import { isUser, type Rights } from './rights.ts';
@@ -40,9 +46,15 @@ import { recipientState } from './sequence.ts';
 // - Answers are facts, never segments: who to email and when is the caller's to decide.
 // - The site manages the keys: `GET /account/admin-keys?user=`, `POST /account/admin-keys`
 //   {user, label} and `POST /account/admin-keys/revoke` {user, key_id}, with the site's own key.
+// - The site's admin pages call this API with the site's own key and the signed-in person's WorkOS
+//   user id (`X-Cuttingfloor-Admin: user_…`). The role is checked for that person exactly as for
+//   a key, so the browser never holds a key and the site can do nothing a key of theirs couldn't.
+//   Not in the OpenAPI document: it is the site's door, not a client's.
+// - One write: an adjustment (adjust_credits), an `adjust` entry on the credit ledger carrying the
+//   admin's id and reason, idempotent by the caller's id.
 
 /** The API's version: within v1 it only grows, so every change bumps minor or patch. */
-export const ADMIN_API_VERSION = '1.11.0';
+export const ADMIN_API_VERSION = '1.12.0';
 const BASE = '/admin/v1';
 /** Admin keys: their own prefix and folder, so a script key never opens this API. */
 export const ADMIN_KEYS: KeyKind = { prefix: 'cfa_', dir: 'admin-keys', label: 'Admin key' };
@@ -52,6 +64,10 @@ const PARALLEL = 10;
 const USERS_FRESH_MS = 60_000;
 /** WorkOS pages of 100 read for the list: 50,000 accounts. */
 const USERS_PAGES = 500;
+/** The header naming the signed-in admin on the site's calls. */
+const SITE_ADMIN = 'x-cuttingfloor-admin';
+/** What one account's sorting facts (credits, exports) are kept for. */
+const SUMMARY_FRESH_MS = 60_000;
 
 type Account = AdminAccount;
 type File = AdminFile;
@@ -59,7 +75,9 @@ type File = AdminFile;
 export interface AdminApiOptions {
   runtime: Runtime;
   lifecycle: Pick<Lifecycle, 'usersPage' | 'user'>;
-  access: Pick<AccessCheck, 'balance' | 'payments' | 'opened'>;
+  access: Pick<AccessCheck, 'balance' | 'payments' | 'opened' | 'creditAccount' | 'forget'>;
+  /** The credit ledger: entries to show, and adjustments to write. */
+  ledger: Pick<Ledger, 'get' | 'entries' | 'credit'>;
   /** The apps each account used. */
   apps: Pick<AppsSeen, 'read'>;
   /** Admin keys (cfa_…). */
@@ -76,6 +94,8 @@ export interface AdminApiOptions {
 export class AdminApi {
   readonly #o: AdminApiOptions;
   #users: { at: number; list: WorkosUser[]; referrals: Referrals } | undefined;
+  /** Each account's credits and exports, for sorting by them. */
+  #summaries = new Map<string, { at: number; credits: number | null; exports: number }>();
 
   constructor(options: AdminApiOptions) {
     this.#o = options;
@@ -89,8 +109,14 @@ export class AdminApi {
     }
     if (url.pathname !== BASE && !url.pathname.startsWith(`${BASE}/`)) return false;
     const path = url.pathname.slice(BASE.length) || '/';
-    if (req.method !== 'GET')
-      return fail(res, 405, 'method_not_allowed', 'Every admin API call is a GET');
+    const adjusting = /^\/accounts\/([^/]+)\/adjustments$/.exec(path)?.[1];
+    if (req.method !== (adjusting ? 'POST' : 'GET'))
+      return fail(
+        res,
+        405,
+        'method_not_allowed',
+        adjusting ? 'An adjustment is a POST' : 'Every admin API call but adjust_credits is a GET',
+      );
     if (path === '/openapi.json') {
       json(res, 200, adminOpenApi(this.#o.publicUrl));
       return true;
@@ -98,7 +124,18 @@ export class AdminApi {
     const caller = await this.#caller(req);
     if ('status' in caller) return fail(res, caller.status, caller.code, caller.message);
     try {
+      if (adjusting)
+        return await this.#adjust(req, res, decodeURIComponent(adjusting), caller.owner);
+      const ledgerOf = /^\/accounts\/([^/]+)\/ledger$/.exec(path)?.[1];
+      if (ledgerOf) return await this.#ledger(res, decodeURIComponent(ledgerOf));
       if (path === '/me') {
+        if (!caller.expires_at)
+          return fail(
+            res,
+            400,
+            'bad_request',
+            "/me describes an admin key; the site's calls use none",
+          );
         const user = await this.#o.lifecycle.user(caller.owner);
         const me: AdminMe = {
           user: caller.owner,
@@ -154,14 +191,21 @@ export class AdminApi {
         'bad_request',
         query.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
       );
-    const { cursor, page: asked, limit, email } = query.data;
+    const { cursor, page: asked, limit, email, q, sort } = query.data;
     const everyone = await this.#allUsers();
     const { referrals } = everyone;
-    const all = email
+    let all = email
       ? (await this.#o.lifecycle.usersPage({ limit: 100, email: email.toLowerCase() })).data.filter(
           (u) => isUser(u.id),
         )
       : everyone.list;
+    if (q) {
+      const part = q.toLowerCase();
+      all = all.filter(
+        (u) => u.email.toLowerCase().includes(part) || u.id.toLowerCase().includes(part),
+      );
+    }
+    if (sort !== 'newest') all = await this.#sorted(all, sort);
     const total = all.length;
     const pages = Math.max(1, Math.ceil(total / limit));
     // A cursor is the id of the last account on the page before.
@@ -189,6 +233,8 @@ export class AdminApi {
           limit: String(limit),
           page: String(page + 1),
           ...(email ? { email } : {}),
+          ...(q ? { q } : {}),
+          ...(sort !== 'newest' ? { sort } : {}),
         })}`
       : null;
     json(res, 200, {
@@ -200,6 +246,129 @@ export class AdminApi {
       next_cursor: nextCursor,
       next,
     });
+    return true;
+  }
+
+  /**
+   * The accounts in the order asked, most first; ties stay newest first. Last active is WorkOS's
+   * own field; credits (the ledger balance, accounts without one last) and exports (export.video
+   * jobs that ran, from the meter) are read for every account, at most once a minute each.
+   */
+  async #sorted(users: WorkosUser[], sort: Exclude<AdminSort, 'newest'>): Promise<WorkosUser[]> {
+    const rank = new Map<string, number>();
+    if (sort === 'last_active')
+      for (const u of users)
+        rank.set(u.id, Date.parse(u.metadata?.last_used_at ?? '') || -Infinity);
+    else {
+      for (let i = 0; i < users.length; i += PARALLEL) {
+        const batch = users.slice(i, i + PARALLEL);
+        const facts = await Promise.all(batch.map((u) => this.#summary(u.id)));
+        batch.forEach((u, j) => {
+          const f = facts[j];
+          rank.set(u.id, (sort === 'credits' ? f?.credits : f?.exports) ?? -Infinity);
+        });
+      }
+    }
+    // Array.prototype.sort is stable: equal ranks keep the list's newest-first order.
+    return [...users].sort((a, b) => (rank.get(b.id) ?? 0) - (rank.get(a.id) ?? 0) || 0);
+  }
+
+  async #summary(owner: string): Promise<{ credits: number | null; exports: number }> {
+    const hit = this.#summaries.get(owner);
+    if (hit && Date.now() - hit.at < SUMMARY_FRESH_MS) return hit;
+    const [account, exports] = await Promise.all([
+      this.#o.ledger.get(owner).catch(() => undefined),
+      countExports(this.#o.runtime.ws, owner).catch(() => 0),
+    ]);
+    const facts = { at: Date.now(), credits: account?.balance ?? null, exports };
+    this.#summaries.set(owner, facts);
+    return facts;
+  }
+
+  /** Every ledger entry of an account, newest first. */
+  async #ledger(res: ServerResponse, owner: string): Promise<true> {
+    const user = isUser(owner) ? await this.#o.lifecycle.user(owner) : undefined;
+    if (!user) return fail(res, 404, 'not_found', `No account ${owner}`, 'list_accounts finds ids');
+    const account = await this.#o.ledger.get(owner);
+    const body: AdminLedger = account
+      ? {
+          opened: true,
+          balance: account.balance,
+          entries: (await this.#o.ledger.entries(owner)).reverse().map(ledgerEntry),
+        }
+      : { opened: false, balance: null, entries: [] };
+    json(res, 200, body);
+    return true;
+  }
+
+  /**
+   * Adds or takes away credits by hand: one `adjust` entry under the caller's id, with the
+   * admin's id and reason. The account's ledger account is opened first if it never was, as its
+   * first use would. The same id again answers the first entry; with other credits or another
+   * reason it is refused, so a mistyped retry never passes for the original.
+   */
+  async #adjust(
+    req: IncomingMessage,
+    res: ServerResponse,
+    owner: string,
+    admin: string,
+  ): Promise<true> {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(await readBody(req, 16 * 1024));
+    } catch {
+      return fail(res, 400, 'bad_request', 'The body must be JSON: {id, credits, reason}');
+    }
+    const input = AdminAdjustInput.safeParse(raw);
+    if (!input.success)
+      return fail(
+        res,
+        400,
+        'bad_request',
+        input.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; '),
+      );
+    const user = isUser(owner) ? await this.#o.lifecycle.user(owner) : undefined;
+    if (!user) return fail(res, 404, 'not_found', `No account ${owner}`, 'list_accounts finds ids');
+    const { id, credits, reason } = input.data;
+    const entryId = `adjust:${id}`;
+    const account = await this.#o.access.creditAccount(owner);
+    const prior = (await this.#o.ledger.entries(owner)).find((e) => e.id === entryId);
+    if (!prior && credits < 0 && account.balance + credits < -1e-9)
+      return fail(
+        res,
+        409,
+        'insufficient',
+        `The balance is ${account.balance}; taking ${-credits} would leave it below zero`,
+        'Take away at most the balance',
+      );
+    const done = await this.#o.ledger.credit(owner, {
+      id: entryId,
+      kind: 'adjust',
+      credits,
+      reason,
+      by: admin,
+    });
+    if (
+      done.duplicate &&
+      (done.entry.kind !== 'adjust' ||
+        Math.abs(done.entry.credits - credits) > 1e-6 ||
+        done.entry.reason !== reason)
+    )
+      return fail(
+        res,
+        409,
+        'conflict',
+        `Adjustment ${id} was made before with ${done.entry.credits} credits ("${done.entry.reason ?? ''}")`,
+        'Use a new id for a new adjustment',
+      );
+    this.#o.access.forget(owner);
+    this.#summaries.delete(owner);
+    const body: AdminAdjustment = {
+      entry: ledgerEntry(done.entry),
+      balance: done.account.balance,
+      duplicate: done.duplicate,
+    };
+    json(res, 200, body);
     return true;
   }
 
@@ -377,9 +546,22 @@ export class AdminApi {
   async #caller(
     req: IncomingMessage,
   ): Promise<
-    | { owner: string; key_id: string; expires_at: string }
+    | { owner: string; key_id: string; expires_at: string | null }
     | { status: number; code: string; message: string }
   > {
+    // The site, for the person signed in on it: the same role check as a key.
+    const named = req.headers[SITE_ADMIN];
+    if (typeof named === 'string') {
+      if (!this.#fromSite(req) || !isUser(named))
+        return {
+          status: 401,
+          code: 'unauthorized',
+          message: `${SITE_ADMIN} is for the cuttingfloor site's own calls`,
+        };
+      if (!(await this.#o.rights.has(named, 'admin')))
+        return { status: 403, code: 'forbidden', message: 'This account is not an admin' };
+      return { owner: named, key_id: 'site', expires_at: null };
+    }
     const key = /^Bearer (\S+)$/i.exec(req.headers.authorization ?? '')?.[1] ?? '';
     const found = key ? await this.#o.keys.find(key) : undefined;
     if (!found)
@@ -445,6 +627,13 @@ export class AdminApi {
 export function adminOpenApi(publicUrl: string): Record<string, unknown> {
   const schemas = adminComponentSchemas();
   const ref = (id: string) => ({ $ref: `#/components/schemas/${id}` });
+  const idParam = {
+    name: 'id',
+    in: 'path',
+    required: true,
+    description: 'The account id, user_… as list_accounts gives it',
+    schema: { type: 'string', pattern: '^user_[0-9A-Z]{26}$' },
+  };
   const ok = (id: string, description: string) => ({
     '200': { description, content: { 'application/json': { schema: ref(id) } } },
     '4XX': { $ref: '#/components/responses/Error' },
@@ -457,7 +646,7 @@ export function adminOpenApi(publicUrl: string): Record<string, unknown> {
       version: ADMIN_API_VERSION,
       license: { name: 'AGPL-3.0-only', identifier: 'AGPL-3.0-only' },
       description:
-        "cuttingfloor's admin API: facts about cuttingfloor accounts for its admins and the systems they connect, such as a CRM. Sign in with an admin key: Authorization: Bearer cfa_…, which a cuttingfloor admin makes on the account page. Every answer is JSON; a refusal is an HTTP error status with {error: {code, message, hint}}. Within v1 the API only grows: new fields, endpoints and optional parameters. Ignore fields you don't know.",
+        "cuttingfloor's admin API: facts about cuttingfloor accounts for its admins and the systems they connect, such as a CRM. Sign in with an admin key: Authorization: Bearer cfa_…, which a cuttingfloor admin makes on the account page. Reads are GETs; the one write, adjust_credits, adds or takes away credits on the ledger. Every answer is JSON; a refusal is an HTTP error status with {error: {code, message, hint}}. Within v1 the API only grows: new fields, endpoints and optional parameters. Ignore fields you don't know.",
     },
     servers: [{ url: `${publicUrl}${BASE}` }],
     security: [{ adminKey: [] }],
@@ -512,6 +701,25 @@ export function adminOpenApi(publicUrl: string): Record<string, unknown> {
               description: 'Only the account with exactly this email (any case)',
               schema: { type: 'string', format: 'email' },
             },
+            {
+              name: 'q',
+              in: 'query',
+              required: false,
+              description: 'Only accounts whose email or id contains this (any case)',
+              schema: { type: 'string', minLength: 1, maxLength: 200 },
+            },
+            {
+              name: 'sort',
+              in: 'query',
+              required: false,
+              description:
+                'newest: sign-up, newest first. last_active: last_used_at, latest first. credits: ledger balance, most first. exports: video exports that ran since the account began, most first. Accounts without the fact come last; ties stay newest first',
+              schema: {
+                type: 'string',
+                enum: ['newest', 'last_active', 'credits', 'exports'],
+                default: 'newest',
+              },
+            },
           ],
           responses: ok('AccountList', 'A page of accounts'),
         },
@@ -523,16 +731,34 @@ export function adminOpenApi(publicUrl: string): Record<string, unknown> {
           summary: 'Get one account',
           description:
             'One cuttingfloor account by its id (a WorkOS user id, user_…), as list_accounts gives it, with signed download links for its exports (valid for days).',
-          parameters: [
-            {
-              name: 'id',
-              in: 'path',
-              required: true,
-              description: 'The account id, user_… as list_accounts gives it',
-              schema: { type: 'string', pattern: '^user_[0-9A-Z]{26}$' },
-            },
-          ],
+          parameters: [idParam],
           responses: ok('Account', 'The account'),
+        },
+      },
+      '/accounts/{id}/ledger': {
+        get: {
+          operationId: 'get_ledger',
+          tags: ['accounts'],
+          summary: "An account's credit ledger",
+          description:
+            "Every entry on the account's credit ledger, newest first, each with the balance after it: the activation grant, the carry-over from Kazi, packs bought and refunded, watermarks removed, and adjustments with the admin who made them and why.",
+          parameters: [idParam],
+          responses: ok('Ledger', 'The balance and entries'),
+        },
+      },
+      '/accounts/{id}/adjustments': {
+        post: {
+          operationId: 'adjust_credits',
+          tags: ['accounts'],
+          summary: 'Add or take away credits',
+          description:
+            "Writes one adjust entry on the account's credit ledger: credits plus or minus, the reason, and the admin whose key made it. Idempotent by your id: the same id again changes nothing and answers the first entry (duplicate: true); the same id with other credits or reason is refused (409 conflict). Taking away more than the balance is refused (409 insufficient). An account that never used cuttingfloor gets its ledger account opened first, with its activation grant.",
+          parameters: [idParam],
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: ref('AdjustInput') } },
+          },
+          responses: ok('Adjustment', 'The entry and the balance after it'),
         },
       },
     },
@@ -660,4 +886,28 @@ async function spend(ws: Runtime['ws'], owner: string): Promise<Account['spend']
   return [...tools.values()]
     .map((r) => ({ ...r, credits: Math.round(r.credits * 1000) / 1000 }))
     .sort((a, b) => b.credits - a.credits);
+}
+
+/** Video exports that ran, since the account began, from the server's meter. */
+async function countExports(ws: Runtime['ws'], owner: string): Promise<number> {
+  let n = 0;
+  for await (const entry of meterEntries(ws, owner, new Date(0)))
+    if (entry.tool === 'export.video') n += 1;
+  return n;
+}
+
+/** A ledger entry as the admin API shows it: without the owner, which the path names. */
+function ledgerEntry(e: CreditEntry): AdminLedgerEntry {
+  return {
+    id: e.id,
+    kind: e.kind,
+    credits: e.credits,
+    at: e.at,
+    balance: e.balance,
+    ...(e.tool ? { tool: e.tool } : {}),
+    ...(e.pack ? { pack: e.pack } : {}),
+    ...(e.payment_intent ? { payment_intent: e.payment_intent } : {}),
+    ...(e.reason ? { reason: e.reason } : {}),
+    ...(e.by ? { by: e.by } : {}),
+  };
 }

@@ -2,12 +2,12 @@
   "openapi": "3.1.0",
   "info": {
     "title": "cuttingfloor admin API",
-    "version": "1.11.0",
+    "version": "1.12.0",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
     },
-    "description": "cuttingfloor's admin API: facts about cuttingfloor accounts for its admins and the systems they connect, such as a CRM. Sign in with an admin key: Authorization: Bearer cfa_…, which a cuttingfloor admin makes on the account page. Every answer is JSON; a refusal is an HTTP error status with {error: {code, message, hint}}. Within v1 the API only grows: new fields, endpoints and optional parameters. Ignore fields you don't know."
+    "description": "cuttingfloor's admin API: facts about cuttingfloor accounts for its admins and the systems they connect, such as a CRM. Sign in with an admin key: Authorization: Bearer cfa_…, which a cuttingfloor admin makes on the account page. Reads are GETs; the one write, adjust_credits, adds or takes away credits on the ledger. Every answer is JSON; a refusal is an HTTP error status with {error: {code, message, hint}}. Within v1 the API only grows: new fields, endpoints and optional parameters. Ignore fields you don't know."
   },
   "servers": [
     {
@@ -104,6 +104,28 @@
               "type": "string",
               "format": "email"
             }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Only accounts whose email or id contains this (any case)",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "newest: sign-up, newest first. last_active: last_used_at, latest first. credits: ledger balance, most first. exports: video exports that ran since the account began, most first. Accounts without the fact come last; ties stay newest first",
+            "schema": {
+              "type": "string",
+              "enum": ["newest", "last_active", "credits", "exports"],
+              "default": "newest"
+            }
           }
         ],
         "responses": {
@@ -151,6 +173,92 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/accounts/{id}/ledger": {
+      "get": {
+        "operationId": "get_ledger",
+        "tags": ["accounts"],
+        "summary": "An account's credit ledger",
+        "description": "Every entry on the account's credit ledger, newest first, each with the balance after it: the activation grant, the carry-over from Kazi, packs bought and refunded, watermarks removed, and adjustments with the admin who made them and why.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The account id, user_… as list_accounts gives it",
+            "schema": {
+              "type": "string",
+              "pattern": "^user_[0-9A-Z]{26}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The balance and entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ledger"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/accounts/{id}/adjustments": {
+      "post": {
+        "operationId": "adjust_credits",
+        "tags": ["accounts"],
+        "summary": "Add or take away credits",
+        "description": "Writes one adjust entry on the account's credit ledger: credits plus or minus, the reason, and the admin whose key made it. Idempotent by your id: the same id again changes nothing and answers the first entry (duplicate: true); the same id with other credits or reason is refused (409 conflict). Taking away more than the balance is refused (409 insufficient). An account that never used cuttingfloor gets its ledger account opened first, with its activation grant.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The account id, user_… as list_accounts gives it",
+            "schema": {
+              "type": "string",
+              "pattern": "^user_[0-9A-Z]{26}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The entry and the balance after it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Adjustment"
                 }
               }
             }
@@ -937,7 +1045,7 @@
             "items": {
               "$ref": "#/components/schemas/Account"
             },
-            "description": "Newest accounts first"
+            "description": "In the order sort asks: newest first by default"
           },
           "next_cursor": {
             "description": "Pass as cursor for the next page; null at the end",
@@ -945,7 +1053,7 @@
           },
           "total": {
             "type": "number",
-            "description": "Accounts in the list (with the email filter, 0 or 1)"
+            "description": "Accounts in the list, after email or q (with email, 0 or 1)"
           },
           "page": {
             "type": "number",
@@ -965,6 +1073,112 @@
           }
         },
         "required": ["data", "next_cursor", "total", "page", "pages", "has_more", "next"]
+      },
+      "LedgerEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The entry's id, unique within the account: grant:activation, opening:…, a payment intent (pi_…), a refund (re_…), <job>-release for a spend, adjust:<id> for an admin's adjustment"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["grant", "opening", "purchase", "refund", "spend", "adjust"],
+            "description": "grant: given (the activation grant); opening: carried over at the split from Kazi; purchase and refund: a pack; spend: a watermark removed; adjust: an admin"
+          },
+          "credits": {
+            "type": "number",
+            "description": "Signed: what the entry added to the balance"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC"
+          },
+          "balance": {
+            "type": "number",
+            "description": "The balance after it"
+          },
+          "tool": {
+            "description": "What spent it (a spend)",
+            "type": "string"
+          },
+          "pack": {
+            "description": "The pack (a purchase or refund)",
+            "type": "string"
+          },
+          "payment_intent": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why (an adjustment or a carry-over)",
+            "type": "string"
+          },
+          "by": {
+            "description": "The admin's WorkOS user id (an adjustment)",
+            "type": "string"
+          }
+        },
+        "required": ["id", "kind", "credits", "at", "balance"]
+      },
+      "Ledger": {
+        "type": "object",
+        "properties": {
+          "opened": {
+            "type": "boolean",
+            "description": "False when the account has no ledger account yet (it never used cuttingfloor)"
+          },
+          "balance": {
+            "description": "Credits held now; null when not opened",
+            "type": ["number", "null"]
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LedgerEntry"
+            },
+            "description": "Every entry, newest first"
+          }
+        },
+        "required": ["opened", "balance", "entries"]
+      },
+      "AdjustInput": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$",
+            "description": "Your id for this adjustment (letters, digits, _ . -; up to 100): sending the same id again changes nothing and answers the first one, so a retry never adds twice. Stored as adjust:<id>"
+          },
+          "credits": {
+            "type": "number",
+            "description": "Credits to add (positive) or take away (negative); not zero"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Why, kept on the entry for good"
+          }
+        },
+        "required": ["id", "credits", "reason"]
+      },
+      "Adjustment": {
+        "type": "object",
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/LedgerEntry"
+          },
+          "balance": {
+            "type": "number",
+            "description": "The account's balance now"
+          },
+          "duplicate": {
+            "type": "boolean",
+            "description": "True when this id was written before: nothing changed and entry is the first one"
+          }
+        },
+        "required": ["entry", "balance", "duplicate"]
       }
     }
   }

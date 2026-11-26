@@ -269,6 +269,7 @@ const adminApi =
         runtime,
         lifecycle,
         access,
+        ledger,
         apps,
         keys: adminKeys,
         rights,
