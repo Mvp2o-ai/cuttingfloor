@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "cuttingfloor admin API",
-    "version": "1.10.0",
+    "version": "1.11.0",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -61,7 +61,7 @@
         "operationId": "list_accounts",
         "tags": ["accounts"],
         "summary": "List accounts",
-        "description": "List cuttingfloor accounts, newest first, with what each did and what it holds: sign-up and first-use times (first_tool_at null = never ran a tool), last use, credits, files kept and when they go (next_expiry_at). Filter by exact email. Each page says total and pages; jump with page, or follow next (or cursor with next_cursor) until it is null. Lists up to a minute old. Export download links and purchases are null here; get_account gives them.",
+        "description": "List cuttingfloor accounts, newest first, with what each did and what it holds: sign-up and first-use times (first_tool_at null = never ran a tool), last use, credits, files kept and when they go (next_expiry_at), its referral link and who that link brought. Filter by exact email. Each page says total and pages; jump with page, or follow next (or cursor with next_cursor) until it is null. Lists up to a minute old. Export download links and purchases are null here; get_account gives them.",
         "parameters": [
           {
             "name": "limit",
@@ -390,6 +390,48 @@
           "made_by": {
             "description": "The partner that made the account for its own user (e.g. the Cutting Floor AI app); null when the person signed up here",
             "type": ["string", "null"]
+          },
+          "referral": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "The account's own referral code, made from its id; it never changes and carries nothing personal"
+              },
+              "link": {
+                "type": "string",
+                "description": "The account's link, https://cuttingfloor.ai/r/<code>"
+              },
+              "referred_by": {
+                "description": "The code of the link that brought this account, kept at sign-up (the link's 30-day cookie); null when none did",
+                "type": ["string", "null"]
+              },
+              "referred_by_account": {
+                "description": "The account that code belongs to; null when none, or no account has it",
+                "type": ["string", "null"]
+              },
+              "referred": {
+                "type": "object",
+                "properties": {
+                  "signed_up": {
+                    "type": "number",
+                    "description": "Accounts made through this account's link"
+                  },
+                  "used_a_tool": {
+                    "type": "number",
+                    "description": "Of those, accounts that ran a tool (first_tool_at)"
+                  },
+                  "exported": {
+                    "type": "number",
+                    "description": "Of those, accounts that started an export (first_export_at)"
+                  }
+                },
+                "required": ["signed_up", "used_a_tool", "exported"],
+                "description": "Who this account's link brought, as of the account list (up to a minute old)"
+              }
+            },
+            "required": ["code", "link", "referred_by", "referred_by_account", "referred"],
+            "description": "The account's own link, the link that brought it, and who its link brought"
           },
           "first_call_at": {
             "anyOf": [
@@ -862,6 +904,7 @@
           "email_verified",
           "created_at",
           "made_by",
+          "referral",
           "first_call_at",
           "first_tool_at",
           "first_edit_at",

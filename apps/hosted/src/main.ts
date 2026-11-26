@@ -258,6 +258,7 @@ const adminApi =
         keys: adminKeys,
         rights,
         publicUrl,
+        accountUrl,
         ...(process.env.CUTTINGFLOOR_ACCOUNT_KEY
           ? { accountKey: process.env.CUTTINGFLOOR_ACCOUNT_KEY }
           : {}),

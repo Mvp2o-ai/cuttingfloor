@@ -2,13 +2,15 @@ import { track } from '@vercel/analytics/server';
 import { handleAuth, withAuth } from '@workos-inc/authkit-nextjs';
 import { cookies } from 'next/headers';
 import { setMetadata } from '../lib/billing.ts';
+import { referredBy } from '../referral.ts';
 import { readSource, SOURCE_COOKIE, sourceLabel } from '../source.tsx';
 import { afterUsedCallback } from './used.ts';
 
 // WorkOS sends people back here after sign-in. An account made in the last ten minutes counts
 // as a sign-up in Web Analytics; any other return is a sign-in. A sign-up that arrived by a
 // tagged link (source.tsx) also sends "Sign up from: <source / campaign / content>" and keeps
-// that label as `source` on the account, so its first export can be counted per campaign. None
+// that label as `source` on the account, so its first export can be counted per campaign; one
+// that arrived by a person's link (referral.ts) also keeps their code as `referred_by`. None
 // of it may stop a sign-in. A callback arrived at again (used.ts) goes on instead of failing.
 export const GET = handleAuth({
   returnPathname: '/account',
@@ -23,7 +25,8 @@ export const GET = handleAuth({
       if (!value) return;
       const label = sourceLabel(value);
       await track(`Sign up from: ${label}`, { label, method: authenticationMethod ?? 'unknown' });
-      await setMetadata(user.id, { source: label });
+      const code = referredBy(value);
+      await setMetadata(user.id, { source: label, ...(code ? { referred_by: code } : {}) });
     } catch {}
   },
   onError: async ({ error, request }) => {

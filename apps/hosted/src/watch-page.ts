@@ -25,6 +25,11 @@ export function watchPage(o: {
   /** The file is fetched from a bucket: what plays it asks for it to be shown, not saved. */
   inline?: boolean;
   /**
+   * The owner's own link (cuttingfloor.ai/r/<code>), shown as "Made with cuttingfloor": a
+   * shared page is watched by people who may want to make one. Left out where the owner has none.
+   */
+  madeWith?: string;
+  /**
    * It has a cuttingfloor watermark: what removing it costs, the credits the account has
    * (undefined when that can't be told, null for no cap), and the final-copy link the page's
    * button posts to. Only the button spends: opening the page (a mail scanner checking an emailed
@@ -91,6 +96,7 @@ ${og}
   .meta { color: var(--muted); font-size: 14px; }
   a { color: var(--accent); }
   .mark { color: var(--muted); font-size: 14px; margin: 12px 0 0; }
+  .made { color: var(--muted); font-size: 14px; margin: 16px 0 0; text-align: center; }
   form { margin: 12px 0 0; }
   button { font: inherit; font-weight: 600; padding: 10px 16px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; cursor: pointer; }
 </style>
@@ -103,6 +109,7 @@ ${og}
     <span class="meta"><a href="${href}" download>Download</a> · link works until <time datetime="${o.expiresAt.toISOString()}">${o.expiresAt.toUTCString()}</time></span>
   </footer>
   ${o.mark ? markBlock(o.mark) : ''}
+  ${o.madeWith ? `<p class="made">Made with <a href="${esc(o.madeWith)}">cuttingfloor</a></p>` : ''}
 </main>
 ${o.mark && kind === 'video' ? `<script>${SCRIPT}</script>` : ''}
 </body>

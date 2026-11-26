@@ -26,6 +26,7 @@ import { readDownloads } from './downloads.ts';
 import { exportOf } from './expiry-notices.ts';
 import type { KeyKind, ScriptKeys } from './keys.ts';
 import type { Lifecycle, WorkosUser } from './lifecycle.ts';
+import { Referrals, referralCode, referralLink } from './referral.ts';
 import { isUser, type Rights } from './rights.ts';
 import { recipientState } from './sequence.ts';
 
@@ -41,7 +42,7 @@ import { recipientState } from './sequence.ts';
 //   {user, label} and `POST /account/admin-keys/revoke` {user, key_id}, with the site's own key.
 
 /** The API's version: within v1 it only grows, so every change bumps minor or patch. */
-export const ADMIN_API_VERSION = '1.10.0';
+export const ADMIN_API_VERSION = '1.11.0';
 const BASE = '/admin/v1';
 /** Admin keys: their own prefix and folder, so a script key never opens this API. */
 export const ADMIN_KEYS: KeyKind = { prefix: 'cfa_', dir: 'admin-keys', label: 'Admin key' };
@@ -68,11 +69,13 @@ export interface AdminApiOptions {
   publicUrl: string;
   /** The site's key, for its key management routes. */
   accountKey?: string;
+  /** The site's account page, whose origin serves each account's link (/r/<code>). */
+  accountUrl?: string;
 }
 
 export class AdminApi {
   readonly #o: AdminApiOptions;
-  #users: { at: number; list: WorkosUser[] } | undefined;
+  #users: { at: number; list: WorkosUser[]; referrals: Referrals } | undefined;
 
   constructor(options: AdminApiOptions) {
     this.#o = options;
@@ -113,7 +116,8 @@ export class AdminApi {
         const user = isUser(owner) ? await this.#o.lifecycle.user(owner) : undefined;
         if (!user)
           return fail(res, 404, 'not_found', `No account ${owner}`, 'list_accounts finds ids');
-        json(res, 200, await this.#account(user, { links: true }));
+        const { referrals } = await this.#allUsers();
+        json(res, 200, await this.#account(user, { links: true, referrals }));
         return true;
       }
       return fail(res, 404, 'not_found', `No admin API path ${path}`, `See ${BASE}/openapi.json`);
@@ -123,9 +127,12 @@ export class AdminApi {
     }
   }
 
-  /** Every account, newest first, read from WorkOS at most once a minute. */
-  async #allUsers(): Promise<WorkosUser[]> {
-    if (this.#users && Date.now() - this.#users.at < USERS_FRESH_MS) return this.#users.list;
+  /**
+   * Every account, newest first, and who each one's link brought, read from WorkOS at most once
+   * a minute.
+   */
+  async #allUsers(): Promise<{ list: WorkosUser[]; referrals: Referrals }> {
+    if (this.#users && Date.now() - this.#users.at < USERS_FRESH_MS) return this.#users;
     const list: WorkosUser[] = [];
     let after: string | undefined;
     for (let i = 0; i < USERS_PAGES; i++) {
@@ -134,8 +141,8 @@ export class AdminApi {
       if (!page.after) break;
       after = page.after;
     }
-    this.#users = { at: Date.now(), list };
-    return list;
+    this.#users = { at: Date.now(), list, referrals: new Referrals(list) };
+    return this.#users;
   }
 
   async #list(res: ServerResponse, url: URL): Promise<true> {
@@ -148,11 +155,13 @@ export class AdminApi {
         query.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
       );
     const { cursor, page: asked, limit, email } = query.data;
+    const everyone = await this.#allUsers();
+    const { referrals } = everyone;
     const all = email
       ? (await this.#o.lifecycle.usersPage({ limit: 100, email: email.toLowerCase() })).data.filter(
           (u) => isUser(u.id),
         )
-      : await this.#allUsers();
+      : everyone.list;
     const total = all.length;
     const pages = Math.max(1, Math.ceil(total / limit));
     // A cursor is the id of the last account on the page before.
@@ -168,7 +177,9 @@ export class AdminApi {
     const data: Account[] = [];
     for (let i = 0; i < users.length; i += PARALLEL) {
       const batch = users.slice(i, i + PARALLEL);
-      data.push(...(await Promise.all(batch.map((u) => this.#account(u, { links: false })))));
+      data.push(
+        ...(await Promise.all(batch.map((u) => this.#account(u, { links: false, referrals })))),
+      );
     }
     const more = from + limit < total;
     const nextCursor = more ? (users.at(-1)?.id ?? null) : null;
@@ -193,7 +204,10 @@ export class AdminApi {
   }
 
   /** What the admin API says about one account. */
-  async #account(user: WorkosUser, options: { links: boolean }): Promise<Account> {
+  async #account(
+    user: WorkosUser,
+    options: { links: boolean; referrals: Referrals },
+  ): Promise<Account> {
     const owner = user.id;
     const rt = this.#o.runtime;
     const meta = user.metadata ?? {};
@@ -296,6 +310,13 @@ export class AdminApi {
       email_verified: user.email_verified !== false,
       created_at: user.created_at,
       made_by: meta.plan_reason?.startsWith('made by ') ? meta.plan_reason.slice(8) : null,
+      referral: {
+        code: referralCode(owner),
+        link: referralLink(owner, this.#o.accountUrl ?? 'https://cuttingfloor.ai/account'),
+        referred_by: meta.referred_by ?? null,
+        referred_by_account: meta.referred_by ? options.referrals.owner(meta.referred_by) : null,
+        referred: options.referrals.referred(referralCode(owner)),
+      },
       first_call_at: meta.first_call_at ?? null,
       first_tool_at: meta.first_tool_at ?? null,
       first_edit_at: meta.first_edit_at ?? null,
@@ -464,7 +485,7 @@ export function adminOpenApi(publicUrl: string): Record<string, unknown> {
           tags: ['accounts'],
           summary: 'List accounts',
           description:
-            'List cuttingfloor accounts, newest first, with what each did and what it holds: sign-up and first-use times (first_tool_at null = never ran a tool), last use, credits, files kept and when they go (next_expiry_at). Filter by exact email. Each page says total and pages; jump with page, or follow next (or cursor with next_cursor) until it is null. Lists up to a minute old. Export download links and purchases are null here; get_account gives them.',
+            'List cuttingfloor accounts, newest first, with what each did and what it holds: sign-up and first-use times (first_tool_at null = never ran a tool), last use, credits, files kept and when they go (next_expiry_at), its referral link and who that link brought. Filter by exact email. Each page says total and pages; jump with page, or follow next (or cursor with next_cursor) until it is null. Lists up to a minute old. Export download links and purchases are null here; get_account gives them.',
           parameters: [
             {
               name: 'limit',

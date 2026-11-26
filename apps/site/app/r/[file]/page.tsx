@@ -2,9 +2,22 @@ import { withAuth } from '@workos-inc/authkit-nextjs';
 import { AccountNav } from '../../account/chrome.tsx';
 import { FILE_ID, releaseOf } from '../../lib/release.ts';
 import { credits } from '../../pricing.ts';
+import { REFERRAL_CODE } from '../../referral.ts';
+import { ReferralLanding } from './landing.tsx';
 
 export const dynamic = 'force-dynamic';
-export const metadata = { title: 'Release a clean copy — cuttingfloor', robots: { index: false } };
+
+// /r/ holds two pages: a person's link (/r/<code>, landing.tsx), open to anyone and kept out of
+// search, and a review copy's release page (/r/j_… or /r/m_…), below.
+export async function generateMetadata({ params }: { params: Promise<{ file: string }> }) {
+  const { file } = await params;
+  return {
+    title: REFERRAL_CODE.test(file)
+      ? 'Made with cuttingfloor: AI video editing in your own assistant'
+      : 'Release a clean copy — cuttingfloor',
+    robots: { index: false },
+  };
+}
 
 // What the QR code on a review copy's cards opens. Anyone can see the video, so the page asks the
 // viewer to sign in and finds the file only on their own account: a stranger who scans it can
@@ -17,8 +30,9 @@ export default async function ReleasePage({
   params: Promise<{ file: string }>;
   searchParams: Promise<{ released?: string; short?: string; failed?: string }>;
 }) {
-  const { user } = await withAuth({ ensureSignedIn: true });
   const { file } = await params;
+  if (REFERRAL_CODE.test(file)) return <ReferralLanding />;
+  const { user } = await withAuth({ ensureSignedIn: true });
   const { released, short, failed } = await searchParams;
   const found = FILE_ID.test(file) ? await releaseOf(user.id, file) : undefined;
   const r = found?.ok ? found.release : undefined;
