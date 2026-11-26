@@ -1034,6 +1034,103 @@ const STREAM: Demo = {
   ],
 };
 
+// A creator's money-tips video filmed in a messy, badly lit bedroom (generated footage, edited for
+// real by cuttingfloor): the room swapped for a cinematic black backdrop, with captions.
+const BGSWAP: Demo = {
+  id: 'bgswap',
+  slug: 'replace-the-background-behind-a-person-in-a-video',
+  title: 'Replace the messy background behind you with a cinematic black, and add captions',
+  description:
+    'A creator gives ChatGPT a 28-second money-tips video filmed on his phone in a cluttered, badly lit bedroom. cuttingfloor cuts him out of the room, puts him on a dark backdrop with a soft warm light behind his head, lights him to match, cleans up his voice and adds bold captions that follow his words: a 24-second Short, plus a second version on a deep blue.',
+  steps: [
+    'Wrote down every word he says with its time.',
+    'Cut him out of the room on every frame, hair and hands included, with no green screen, and looked closely at the edge round his hair and hands.',
+    'Put him on a near-black backdrop with a soft warm light behind his head, so his hair stands out against it, and darker corners like a studio portrait.',
+    'Brightened his face a little, added contrast and toned the colour down so he looks lit for the new backdrop, and added a touch of film grain over everything so he and the backdrop look like one picture.',
+    'Cut the long pause after “That one hurt” and the repeated “think about it”, and pushed in closer on every other part so the cuts feel on purpose.',
+    'Put bold captions under his face, two or three words at a time, with the word he is saying in gold and the key words gold: money rules, pay yourself first, twice, automate, payday.',
+    'Kept “3 money rules I wish I knew at 22” at the top the whole time, in the empty dark space above his head.',
+    'Cleaned up the room sound in his voice and made it loud and even for phones, with peaks under −1 dB.',
+    'Made a second version on a deep blue backdrop in a brand colour, with his skin cooled a little to match.',
+  ],
+  uploaded: '2026-11-26',
+  moments: [
+    { name: 'Three money rules I wish I knew at 22', start: 0, end: 3.7 },
+    { name: 'Rule one: pay yourself first', start: 3.7, end: 8.75 },
+    { name: 'Rule two: if you can’t buy it twice', start: 8.75, end: 14.46 },
+    { name: 'Rule three: automate it', start: 14.46, end: 20 },
+    { name: 'Save this for payday', start: 20, end: 23.8 },
+  ],
+  agent: 'ChatGPT',
+  raw: {
+    src: '/demo/bgswap/raw.mp4',
+    poster: '/demo/bgswap/raw.jpg',
+    label: 'messy-room-talk.mp4 · 0:28',
+    seconds: 28.1,
+    captions: '/demo/bgswap/raw.vtt',
+  },
+  extra: [
+    {
+      src: '/demo/bgswap/brand-blue.mp4',
+      poster: '/demo/bgswap/brand-blue.jpg',
+      label: 'money-rules-brand-blue.mp4 · 0:24',
+      seconds: 23.8,
+      captions: '/demo/bgswap/brand-blue.vtt',
+      caption: 'The second version, on a deep blue backdrop',
+    },
+  ],
+  transcript: [
+    { text: 'Three money rules I wish someone told me at 22.' },
+    { text: 'Rule one: pay yourself first. Before rent, before anything.' },
+    { text: 'Rule two: if you can’t buy it twice, you can’t afford it.' },
+    { text: 'Yeah, that one hurt.' },
+    { text: 'Rule three: automate it. Set it up once and you never have to think about it,' },
+    { text: 'think about it', cut: 0 },
+    { text: 'again.' },
+    { text: 'Save this for payday and follow for more money tips.' },
+  ],
+  turns: [
+    {
+      prompt:
+        'I filmed this in my bedroom and the room is a mess. Can you get rid of the background behind me, make it a stylish cinematic black like a studio, and add captions? Keep it looking like me.',
+      reply:
+        'I’ll cut you out of the room, put you on a dark backdrop with a soft light behind your head, light you to match so it looks real, and add bold captions that follow your words. I’ll leave your face and colours natural.',
+      calls: [
+        { fn: 'skills.search', note: 'checked for a method for swapping a background' },
+        { fn: 'media.import', note: 'his video' },
+        { fn: 'media.analyze', note: 'every word, timed' },
+        { fn: 'create.cutout', note: 'him without the room, hair and hands included' },
+        { fn: 'render.frames', note: 'checked the edge round his hair and hands' },
+        {
+          fn: 'create.cutout',
+          note: 'a second try that follows him from one frame: it took the bed too, so kept the first',
+        },
+        { fn: 'create.still', note: 'the dark backdrop with a soft warm light' },
+        { fn: 'timeline.create', note: 'vertical, 24 fps' },
+        { fn: 'edit.batch', note: 'backdrop, him over it, the pauses cut, push-ins' },
+        { fn: 'edit.batch', note: 'matched his light: brighter face, contrast, grain' },
+        { fn: 'edit.batch', note: 'captions with the spoken word in gold, the title on top' },
+        { fn: 'edit.batch', note: 'voice cleaned up, made louder and even' },
+        { fn: 'render.frames', note: 'checked the captions and the title' },
+        { fn: 'qa.check', note: 'loudness, peaks and every cut' },
+        { fn: 'export.video', note: 'vertical, 0:24' },
+        { fn: 'create.still', note: 'a deep blue backdrop' },
+        { fn: 'edit.batch', note: 'the second version, cooler to match the blue' },
+        { fn: 'export.video', note: 'vertical, 0:24' },
+      ],
+      status: 'Cutting you out of the room…',
+      done: 'Your 24-second Short is ready: the room is gone, you’re on a dark backdrop with a soft light behind you, your voice is clean and loud, and the captions follow every word with the key ones in gold. I made a second one on a deep blue too, in case you want a brand colour. Want a version without the title at the top?',
+      video: {
+        src: '/demo/bgswap/cut.mp4',
+        poster: '/demo/bgswap/cut.jpg',
+        label: 'money-rules-cinematic-black.mp4 · 0:24',
+        seconds: 23.8,
+        captions: '/demo/bgswap/cut.vtt',
+      },
+    },
+  ],
+};
+
 // A singer's original song and six phone clips of her singing at home (generated song and footage,
 // edited for real by cuttingfloor), cut into a lyric Short.
 const LYRIC: Demo = {
@@ -1401,6 +1498,7 @@ const CAR: Demo = {
 };
 
 export const DEMOS: Demo[] = [
+  BGSWAP,
   LYRIC,
   PROMO,
   FILM,

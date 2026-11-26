@@ -29,6 +29,8 @@ export const KAZI_LINKS = {
   'demo-promo': 'PsFVYwBiOA',
   // The general demos link until the lyric video demo gets a guest chat of its own.
   'demo-lyric': 'PsFVYwBiOA',
+  // The general demos link until the background swap demo gets a guest chat of its own.
+  'demo-bgswap': 'PsFVYwBiOA',
 } as const satisfies Record<string, string>;
 
 export type KaziPlace = keyof typeof KAZI_LINKS;
