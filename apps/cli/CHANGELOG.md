@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.77.6
+
+### Patch Changes
+
+- 3e951a9: A QA skill, qa-a-video-or-image-edit-before-delivery: the acceptance list written before any output is looked at, the technical envelope measured, frame integrity, speech at every cut, loudness against the delivery target, captions and on-screen text checked, then rendered frames judged, so an edit is only delivered with its evidence.
+
 ## 0.77.5
 
 ### Patch Changes
