@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { PACE_FREE, PACE_STEP_SECONDS } from '../src/result.ts';
 import { call, connect, ok, SEQ_720P25, type TestEnv, testRuntime } from './helpers.ts';
 
 // Jobs that stall or won't stop, through the SDK client. Every engine is a stand-in that never
@@ -108,15 +109,21 @@ describe('jobs that stall or will not stop', () => {
       preset: 'mp4_h264_fast',
       filename: 'second',
     });
-    // The second waits for the only slot, and names what it is for.
-    // A wait answers only when a status changes, so the queue message is read as it is.
-    let queued = await ok<View>(client, 'job.get', { job_id: second.job_id });
-    for (let i = 0; i < 50 && !/^queued/.test(queued.status_message ?? ''); i++) {
+    // The second waits for the only slot, and names what it is for. Read through job.list:
+    // job.get paces a loop like this one.
+    const listed = async () =>
+      (
+        await ok<{ jobs: Array<View & { job_id: string }> }>(client, 'job.list', {
+          tool: 'export.video',
+        })
+      ).jobs.find((j) => j.job_id === second.job_id);
+    let queued = await listed();
+    for (let i = 0; i < 100 && !/^queued/.test(queued?.status_message ?? ''); i++) {
       await new Promise((r) => setTimeout(r, 20));
-      queued = await ok<View>(client, 'job.get', { job_id: second.job_id });
+      queued = await listed();
     }
-    expect(queued.status_message).toMatch(/^queued: next in line/);
-    expect(queued.for).toMatchObject({ timeline_id: timeline, preset: 'mp4_h264_fast' });
+    expect(queued?.status_message).toMatch(/^queued: next in line/);
+    expect(queued?.for).toMatchObject({ timeline_id: timeline, preset: 'mp4_h264_fast' });
     await until(async () => (await enginePids()).length >= 2);
     const [engine, helper] = await enginePids();
 
@@ -307,6 +314,63 @@ describe('waiting on jobs', () => {
     const view = await ok<View>(client, 'job.get', { job_id: job.id, wait_seconds: 20 });
     expect(view.status).toBe('completed');
     expect(Date.now() - started).toBeGreaterThan(1000);
+  }, 30_000);
+
+  it('slows a loop of job.get asks with no wait, and still answers the moment the job ends', async () => {
+    const quiet = await testRuntime({ maxJobs: 1, stallSeconds: 600 });
+    const client = await connect(quiet.runtime);
+    const job = await quiet.runtime.jobs.store.create({ owner: 'local', tool: 'test.long' });
+    let finish: () => void = () => undefined;
+    const done = new Promise<void>((r) => {
+      finish = r;
+    });
+    quiet.runtime.jobs.start(job, async () => {
+      await done;
+      return text('done');
+    });
+    // A few quick repeats answer at once: a client reading a queue message isn't slowed.
+    const quick = Date.now();
+    for (let i = 0; i <= PACE_FREE; i++) await ok<View>(client, 'job.get', { job_id: job.id });
+    expect(Date.now() - quick).toBeLessThan(1000);
+    // Past them, the same ask waits as wait_seconds would.
+    const slowed = Date.now();
+    const view = await ok<View>(client, 'job.get', { job_id: job.id });
+    expect(view.status).toBe('working');
+    expect(Date.now() - slowed).toBeGreaterThanOrEqual(PACE_STEP_SECONDS * 1000 - 100);
+    // A paced ask answers as soon as the job ends.
+    const ending = Date.now();
+    const waiting = ok<View>(client, 'job.get', { job_id: job.id });
+    setTimeout(finish, 300);
+    expect((await waiting).status).toBe('completed');
+    expect(Date.now() - ending).toBeLessThan(PACE_STEP_SECONDS * 2 * 1000 - 500);
+    // A finished job never waits, however often it is read.
+    const after = Date.now();
+    for (let i = 0; i < PACE_FREE + 3; i++) await ok<View>(client, 'job.get', { job_id: job.id });
+    expect(Date.now() - after).toBeLessThan(1000);
+  }, 30_000);
+
+  it('a held job.get answers at the next step of progress, so a progress bar keeps moving', async () => {
+    const quiet = await testRuntime({ maxJobs: 1, stallSeconds: 600 });
+    const client = await connect(quiet.runtime);
+    const job = await quiet.runtime.jobs.store.create({ owner: 'local', tool: 'test.ticks' });
+    quiet.runtime.jobs.start(job, async ({ progress }) => {
+      for (let i = 1; i <= 40; i++) {
+        await new Promise((r) => setTimeout(r, 250));
+        progress(i / 40, `step ${i}`);
+      }
+      return text('done');
+    });
+    const seen = new Set<number>();
+    const started = Date.now();
+    for (let i = 0; i < PACE_FREE + 6; i++) {
+      const at = Date.now();
+      const view = await ok<View>(client, 'job.get', { job_id: job.id });
+      if (view.progress !== undefined) seen.add(view.progress);
+      // Held past the free asks, but never longer than about one step of progress.
+      expect(Date.now() - at).toBeLessThan(1500);
+    }
+    expect(seen.size).toBeGreaterThan(3);
+    expect(Date.now() - started).toBeLessThan(8000);
   }, 30_000);
 
   it('a job waiting on other work gives its slot up meanwhile, then goes on', async () => {

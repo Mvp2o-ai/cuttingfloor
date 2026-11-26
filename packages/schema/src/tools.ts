@@ -2507,3 +2507,51 @@ export const QaCheckResult = z.object({
     .describe(`With speech settings: every cut in the range, in order (up to ${QA_CUTS_LIMIT})`),
   cuts_total: z.number().optional().describe('With speech settings: how many cuts there are'),
 });
+
+type Shape = {
+  type?: string | string[];
+  enum?: unknown[];
+  const?: unknown;
+  anyOf?: Shape[];
+  oneOf?: Shape[];
+  properties?: Record<string, Shape>;
+  required?: string[];
+  items?: Shape;
+};
+const SHAPE_LIMIT = 900;
+const shapes = new Map<string, string>();
+
+/**
+ * An op's arguments in brief, from its own schema: `{range: {from: integer, to: integer}, ...}`,
+ * `?` after a name that can be left out. What an agent writing an op from memory needs when it
+ * guessed a field (seen: range.extract without range, set_animation's in as a string).
+ */
+export function argsShape(tool: keyof typeof EditArgs): string {
+  let shape = shapes.get(tool);
+  if (!shape) {
+    const full = brief(
+      z.toJSONSchema(EditArgs[tool], { io: 'input', unrepresentable: 'any' }) as Shape,
+      0,
+    );
+    shape = full.length > SHAPE_LIMIT ? `${full.slice(0, SHAPE_LIMIT)}…` : full;
+    shapes.set(tool, shape);
+  }
+  return shape;
+}
+
+function brief(s: Shape, depth: number): string {
+  if (s.const !== undefined) return JSON.stringify(s.const);
+  if (s.enum) return s.enum.map((v) => JSON.stringify(v)).join('|');
+  const variants = s.anyOf ?? s.oneOf;
+  if (variants) return variants.map((v) => brief(v, depth)).join(' | ');
+  if (s.type === 'array') return `${s.items ? brief(s.items, depth + 1) : 'any'}[]`;
+  if (s.properties) {
+    if (depth > 2) return 'object';
+    const required = new Set(s.required ?? []);
+    const fields = Object.entries(s.properties).map(
+      ([k, v]) => `${k}${required.has(k) ? '' : '?'}: ${brief(v, depth + 1)}`,
+    );
+    return `{${fields.join(', ')}}`;
+  }
+  return Array.isArray(s.type) ? s.type.join('|') : (s.type ?? 'any');
+}

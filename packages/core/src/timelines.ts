@@ -1,4 +1,5 @@
 import {
+  argsShape,
   CfError,
   EditArgs,
   type EditTool,
@@ -145,6 +146,7 @@ export function runEdits(
       throw new CfError(
         'bad_request',
         `ops[${index}] (${op.tool}): ${parsed.error.issues.map((i) => `${i.path.join('.') || 'args'}: ${i.message}`).join('; ')}`,
+        { hint: `${op.tool} args: ${argsShape(op.tool)}` },
       );
     }
     try {

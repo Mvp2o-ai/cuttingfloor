@@ -611,6 +611,15 @@ describe('timelines', () => {
       ],
     });
     expect(failed.structured).toMatchObject({ code: 'not_found', detail: { op_index: 1 } });
+    // An op written from memory with a field guessed wrong is told the op's whole shape.
+    const guessed = await call(client, 'edit.batch', {
+      timeline_id,
+      ops: [{ tool: 'range.extract', args: { start: 0, end: 25 } }],
+    });
+    expect(guessed.structured).toMatchObject({
+      code: 'bad_request',
+      hint: 'range.extract args: {range: {start: integer, end: integer}, track_ids?: string[]}',
+    });
   });
 });
 
