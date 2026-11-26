@@ -1034,7 +1034,89 @@ const STREAM: Demo = {
   ],
 };
 
+// Five phone clips of a car on a coast road at sunset (generated footage, edited for real by cuttingfloor).
+const CAR: Demo = {
+  id: 'car',
+  slug: 'make-a-cinematic-car-edit',
+  title: 'Make a cinematic car edit from phone clips',
+  description:
+    'A creator gives Claude five flat phone clips of a car on a coast road at sunset. Claude has an original beat made for it, and cuttingfloor cuts on it, slows down on the best moments, grades the colour, adds whooshes and engine sound and slams a title in on the drop: a 20-second Short.',
+  steps: [
+    'Looked at all five clips to find the best moments: the pass in front of the sun, the launch, the corner, the sun through the windscreen.',
+    'Had an original beat made, with a build at the start and a big drop, so there’s no copyright claim.',
+    'Found every beat and the drop, then cut to a new shot on the beat.',
+    'Opened on the car coming round the corner, sped up, so something happens in the first second.',
+    'Sped into each best moment, went slow-motion through it on the quiet part of the beat, then sped back out when the beat came back.',
+    'Made new in-between frames for every slow-motion part, so it plays smooth instead of choppy.',
+    'Made a moody colour grade: warm, golden highlights, cool shadows, more contrast, a dark edge and a little film grain.',
+    'Punched in on the drop with a short shake, and pushed in slowly on the last shot.',
+    'Added whooshes into every slow-motion part, a low boom on the drop, an engine growl at the start, a car speeding away on two passes and the car’s own engine on the launch.',
+    'Made two animated titles: “GOLDEN HOUR” slams in on the drop, and “COAST RUN” ends it.',
+    'Checked every cut and the sound, made it louder with peaks under −1 dB, and exported it vertical.',
+  ],
+  uploaded: '2026-11-26',
+  moments: [
+    { name: 'Round the corner', start: 0, end: 0.9 },
+    { name: 'Golden hour', start: 0.9, end: 3.25 },
+    { name: 'The pass, in slow motion', start: 3.25, end: 5.6 },
+    { name: 'Launch', start: 7, end: 9.8 },
+    { name: 'The corner', start: 10.7, end: 13 },
+    { name: 'Sun through the windscreen', start: 14, end: 15.9 },
+    { name: 'Into the sun', start: 17.1, end: 19.6 },
+  ],
+  agent: 'Claude',
+  raw: {
+    src: '/demo/car/raw.mp4',
+    poster: '/demo/car/raw.jpg',
+    label: 'car-takes.mp4 · 0:36',
+    seconds: 36.2,
+  },
+  transcript: [
+    { text: 'Clip 1: the car drives past in front of the sun' },
+    { text: 'Clip 1: an empty road before it arrives', cut: 0 },
+    { text: 'Clip 2: running alongside the front wheel' },
+    { text: 'Clip 3: parked with the sun behind it, then the launch' },
+    { text: 'Clip 4: driving, hands on the wheel, the sun through the windscreen' },
+    { text: 'Clip 5: the car comes round a corner by the sea' },
+    { text: 'Clip 5: driving away into the sun' },
+    { text: 'Wind and road noise under every clip', cut: 0 },
+  ],
+  turns: [
+    {
+      prompt:
+        'I filmed my car on the coast road at sunset on my phone. Make it a fast cinematic edit for Shorts: speed ramps, cuts on the beat, a moody colour grade, whooshes and some text. No copyrighted music.',
+      reply:
+        'I’ll get an original beat made for you, then cut your clips on it: a strong first second, slow motion through your best moments, a moody grade, whooshes and engine sound, and a title on the drop.',
+      calls: [
+        { fn: 'media.import', note: 'five phone clips' },
+        { fn: 'render.frames', note: 'looked at every clip' },
+        { fn: 'media.import', note: 'an original beat, made for this edit' },
+        { fn: 'media.analyze', note: 'found the beats and the drop' },
+        { fn: 'sounds.list', note: 'whooshes, a boom, engine sounds' },
+        { fn: 'media.import', note: 'a colour grade (LUT) and five sounds' },
+        { fn: 'timeline.create', note: 'vertical, 24 fps' },
+        { fn: 'edit.batch', note: '20 shots on the beat, 5 speed ramps' },
+        { fn: 'edit.batch', note: 'the beat, sound effects, the grade' },
+        { fn: 'create.motion', note: '“GOLDEN HOUR” and “COAST RUN” titles' },
+        { fn: 'edit.batch', note: 'titles, punch-in and shake on the drop' },
+        { fn: 'render.frames', note: 'fixed a title running off the screen' },
+        { fn: 'qa.check', note: 'loudness and peaks' },
+        { fn: 'export.video', note: 'vertical, 0:20' },
+      ],
+      status: 'Cutting your clips to the beat…',
+      done: 'Your 20-second edit is ready: an original 129 BPM beat, a cut on the beat, slow motion through the pass in front of the sun, the launch, the corner and the windscreen, a warm, moody grade, and “GOLDEN HOUR” slamming in on the drop. Want a 9-second version for a story too?',
+      video: {
+        src: '/demo/car/cut.mp4',
+        poster: '/demo/car/cut.jpg',
+        label: 'coast-run.mp4 · 0:20',
+        seconds: 19.6,
+      },
+    },
+  ],
+};
+
 export const DEMOS: Demo[] = [
+  CAR,
   STREAM,
   INTERVIEW,
   EXPLAINER,
