@@ -562,11 +562,15 @@
                 },
                 "message": {
                   "type": "string"
+                },
+                "improvement": {
+                  "description": "The tooling change the assistant says would have helped, when it gave one",
+                  "type": "string"
                 }
               },
               "required": ["at", "message"]
             },
-            "description": "Messages the user's assistant sent the cuttingfloor team (support.contact): failures, things it couldn't do, requests. Newest first; every one kept"
+            "description": "Messages the user's assistant sent the cuttingfloor team (support.contact): failures, things it couldn't do, requests, and the tooling change it asks for. Newest first; every one kept"
           },
           "activity": {
             "type": "object",

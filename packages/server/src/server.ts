@@ -25,7 +25,7 @@ import { registerSearchTools } from './tools/search.ts';
 import { registerSeekTools } from './tools/seek.ts';
 import { QA_SKILL, registerSkillTools } from './tools/skills.ts';
 import { registerSoundTools } from './tools/sounds.ts';
-import { registerSupportTools } from './tools/support.ts';
+import { offerSupportOnRepeatedErrors, registerSupportTools } from './tools/support.ts';
 import { registerTimelineTools } from './tools/timeline.ts';
 import { registerUpload } from './upload.ts';
 import { SERVER_NAME, SERVER_VERSION } from './version.ts';
@@ -118,6 +118,8 @@ export function createServer(deps: ServerDeps): McpServer {
     { instructions: instructions(deps.runtime.config, unclaimed(deps)) },
   );
   logToolCalls(server, (entry) => deps.runtime.logCall(deps.owner(), entry));
+  // Only where support.contact is offered.
+  if (deps.runtime.config.mode === 'hosted') offerSupportOnRepeatedErrors(server, deps);
   gateUntilClaimed(server, deps);
   compactSchemas(server);
   allowTaskReplies(server);
