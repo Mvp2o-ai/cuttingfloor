@@ -29,9 +29,13 @@ import { Lifecycle } from '../src/lifecycle.ts';
 
 const OWNER = 'user_01APPLEBUYER00000000000001';
 const OTHER = 'user_01APPLEOTHER00000000000001';
+// On a given plan, and a listed tester (the live test account is both).
+const LIFE = 'user_01APPLELIFETIME00000000001';
 let base: string;
 let server: Server;
 let key: string;
+let otherKey: string;
+let lifeKey: string;
 let ledger: FileLedger;
 
 const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -69,7 +73,7 @@ beforeAll(async () => {
           email: `${id}@example.com`,
           email_verified: true,
           created_at: '2026-11-25T00:00:00.000Z',
-          metadata: {},
+          metadata: id === LIFE ? { plan: 'lifetime' } : {},
         }),
       );
     }
@@ -94,10 +98,18 @@ beforeAll(async () => {
   const options = { workosKey: 'sk_test_none', stripeKey: 'sk_test_none' };
   const accountUrl = 'https://cuttingfloor.ai/account';
   const access = new AccessCheck({ ...options, ledger, accountUrl, ws: runtime.ws });
-  const apple = new AppleCredits({ ledger, access, verifier });
+  // The buyer is a listed tester; OTHER is not.
+  const apple = new AppleCredits({
+    ledger,
+    access,
+    verifier,
+    sandboxEmails: [`${OWNER.toUpperCase()}@example.com`, `${LIFE}@example.com`],
+  });
   const lifecycle = new Lifecycle({ runtime, access, ledger, apple, ...options, accountUrl });
   const keys = new ScriptKeys(runtime.ws);
   key = (await keys.create(OWNER, 'phone')).key;
+  otherKey = (await keys.create(OTHER, 'phone')).key;
+  lifeKey = (await keys.create(LIFE, 'phone')).key;
   server = createHttpServer({
     runtime,
     credentials: new LocalCredentialStore({}, false),
@@ -116,11 +128,15 @@ afterAll(() => {
 });
 
 const credits = (auth = key) =>
-  fetch(`${base}/v1/credits`, { headers: { authorization: `Bearer ${auth}` } });
-const buy = (signed: string) =>
-  fetch(`${base}/v1/credits/apple`, {
+  fetch(`${base}/v1/credits.get`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${auth}`, 'content-type': 'application/json' },
+    body: '{}',
+  });
+const buy = (signed: string, auth = key) =>
+  fetch(`${base}/v1/credits.apple`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${auth}`, 'content-type': 'application/json' },
     body: JSON.stringify({ signed_transaction: signed }),
   });
 const notify = (type: string, signed: string) =>
@@ -171,7 +187,24 @@ describe('credits in the phone app', () => {
   });
 
   it('refuses a purchase made for another account, a revoked one, a product we don’t sell and a forgery', async () => {
-    expect((await buy(tx('2000000000000003', OTHER))).status).toBe(403);
+    const other = await buy(tx('2000000000000003', OTHER));
+    expect(other.status).toBe(403);
+    expect(await other.json()).toMatchObject({ code: 'forbidden' });
+    const bad = await buy(tx('2000000000000006').replace(/apple$/, 'forged'));
+    expect(await bad.json()).toMatchObject({ code: 'bad_request' });
+    // Only POST, as one-mcp's pass-through sends; the old paths are gone.
+    expect(
+      (await fetch(`${base}/v1/credits.get`, { headers: { authorization: `Bearer ${key}` } }))
+        .status,
+    ).toBe(405);
+    expect(
+      (
+        await fetch(`${base}/v1/credits`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${key}` },
+        })
+      ).status,
+    ).toBe(404);
     expect((await buy(tx('2000000000000004', OWNER, { revocationDate: 1 }))).status).toBe(400);
     expect(
       (await buy(tx('2000000000000005', OWNER, { productId: 'com.other.coins' }))).status,
@@ -193,8 +226,40 @@ describe('credits in the phone app', () => {
     const doc = (await (await fetch(`${base}/openapi.json`)).json()) as {
       paths: Record<string, Record<string, { operationId: string }>>;
     };
-    expect(doc.paths['/v1/credits']?.get?.operationId).toBe('credits_get');
-    expect(doc.paths['/v1/credits/apple']?.post?.operationId).toBe('credits_apple');
+    expect(doc.paths['/v1/credits.get']?.post?.operationId).toBe('credits_get');
+    expect(doc.paths['/v1/credits.apple']?.post?.operationId).toBe('credits_apple');
+    expect(doc.paths['/v1/credits']).toBeUndefined();
+  });
+
+  it('adds nothing for a Sandbox purchase by anyone but staff and the listed testers', async () => {
+    const sandbox = await buy(tx('3000000000000001', OTHER), otherKey);
+    expect(sandbox.status).toBe(200);
+    expect(await sandbox.json()).toEqual({ credits_added: 0, balance: 3 });
+    expect((await notify('ONE_TIME_CHARGE', tx('3000000000000001', OTHER))).status).toBe(200);
+    const paid = await buy(tx('3000000000000002', OTHER, { environment: 'Production' }), otherKey);
+    expect(await paid.json()).toEqual({ credits_added: 55, balance: 58 });
+    expect((await ledger.entries(OTHER)).map((e) => e.id).sort()).toEqual([
+      'apple:3000000000000002',
+      'grant:activation',
+    ]);
+  });
+
+  it('records a purchase on a lifetime account too: the plan only keeps spends off the ledger', async () => {
+    const shown = (await (await credits(lifeKey)).json()) as Record<string, unknown>;
+    expect(shown).toMatchObject({
+      balance: null,
+      unmetered: true,
+      apple_account_token: appleTokenFor(LIFE),
+    });
+    const first = await buy(tx('4000000000000001', LIFE), lifeKey);
+    expect(await first.json()).toEqual({ credits_added: 55, balance: null });
+    expect(await (await buy(tx('4000000000000001', LIFE), lifeKey)).json()).toEqual({
+      credits_added: 0,
+      balance: null,
+    });
+    // Kept for it, beside the grant every ledger account opens with.
+    expect(await ledger.get(LIFE)).toMatchObject({ balance: 58, bought_total: 55 });
+    expect((await ledger.entries(LIFE)).map((e) => e.id)).toContain('apple:4000000000000001');
   });
 
   it('takes a refunded pack back once', async () => {

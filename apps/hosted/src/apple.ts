@@ -10,13 +10,15 @@ import type { AccessCheck } from './access.ts';
 import { APPLE_ROOT_CA_G3 } from './apple-root-ca.ts';
 import type { Ledger } from './ledger.ts';
 
-// Credits in the Cutting Floor AI iPhone app: what it shows (GET /v1/credits) and the packs it
+// Credits in the Cutting Floor AI iPhone app: what it shows (POST /v1/credits.get) and the packs it
 // sells through the App Store, each cuttingfloor's own pack as `ai.cuttingfloor.app.<pack id>`.
-// The app posts each StoreKit transaction (POST /v1/credits/apple) and App Store Server
+// The app posts each StoreKit transaction (POST /v1/credits.apple) and App Store Server
 // Notifications V2 report the same purchase (ONE_TIME_CHARGE) and any refund or revoke
 // (POST /apple/notifications). Every signed payload is checked against Apple's root certificate.
-// The transaction id is the entry's id (`apple:<id>`), so whichever arrives first counts. A
-// purchase names its account by its appAccountToken, the UUID GET /v1/credits hands the app for
+// The transaction id is the entry's id (`apple:<id>`), so whichever arrives first counts.
+// Sandbox purchases (TestFlight, App Review) cost nothing, so they add credits only for staff and
+// the testers CUTTINGFLOOR_APPLE_SANDBOX_EMAILS names; anyone else's is acknowledged with nothing
+// added. A purchase names its account by its appAccountToken, the UUID credits.get hands the app for
 // that account (made from its WorkOS user id, or the one Kazi handed it at the split).
 
 export const APPLE_BUNDLE_ID = 'ai.cuttingfloor.app';
@@ -150,8 +152,20 @@ export class AppleCredits {
   readonly #ledger: Ledger;
   readonly #access: AccessCheck;
   readonly #verify: AppleVerifier;
+  readonly #sandbox: Set<string>;
 
-  constructor(options: { ledger: Ledger; access: AccessCheck; verifier?: AppleVerifier }) {
+  /**
+   * `sandboxEmails`: accounts whose Sandbox purchases (TestFlight, App Review, a tester's
+   * sandbox account) add credits, besides staff. Anyone else's Sandbox purchase is checked and
+   * acknowledged but adds nothing: it cost nobody anything.
+   */
+  constructor(options: {
+    ledger: Ledger;
+    access: AccessCheck;
+    verifier?: AppleVerifier;
+    sandboxEmails?: string[];
+  }) {
+    this.#sandbox = new Set((options.sandboxEmails ?? []).map((e) => e.trim().toLowerCase()));
     this.#ledger = options.ledger;
     this.#access = options.access;
     this.#verify = options.verifier ?? appleVerifier();
@@ -194,10 +208,28 @@ export class AppleCredits {
     const purchase = applePurchase(tx);
     if (purchase.account_token !== (await this.token(owner)))
       throw new AppleOtherAccount('transaction is for another account');
+    if (!(await this.#counts(owner, purchase))) {
+      // 200, so the app finishes the transaction; nothing is added.
+      const { balance } = await this.credits(owner);
+      return { credits_added: 0, balance };
+    }
     const written = await this.#record(owner, purchase);
     this.#access.forget(owner);
     const { balance } = await this.credits(owner);
     return { credits_added: written.duplicate ? 0 : purchase.credits, balance };
+  }
+
+  /** Whether a purchase adds credits: a Production one always; a Sandbox one only for staff and the listed testers. */
+  async #counts(owner: string, purchase: ApplePurchase): Promise<boolean> {
+    if (purchase.environment !== Environment.SANDBOX) return true;
+    const access = await this.#access.get(owner);
+    const ok =
+      access.allowed && (access.plan === 'staff' || this.#sandbox.has(access.email.toLowerCase()));
+    if (!ok)
+      process.stderr.write(
+        `credits: apple ${purchase.transaction_id} (Sandbox) for ${owner}: not a tester, nothing added\n`,
+      );
+    return ok;
   }
 
   async #record(owner: string, purchase: ApplePurchase) {
@@ -237,6 +269,7 @@ export class AppleCredits {
         : undefined;
       // The app's own post records it once it knows the account.
       if (!owner) return `ignored ${type}: no account has its appAccountToken`;
+      if (!(await this.#counts(owner, purchase))) return `ignored ${type}: Sandbox, not a tester`;
       await this.#record(owner, purchase);
       this.#access.forget(owner);
       return `${type} ${purchase.transaction_id}`;

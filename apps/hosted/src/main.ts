@@ -109,7 +109,16 @@ const kazi =
     ? new Kazi(process.env.KAZI_CREDITS_URL, process.env.KAZI_CREDITS_KEY)
     : undefined;
 // The Cutting Floor AI app's credits and App Store purchases.
-const apple = access ? new AppleCredits({ ledger, access }) : undefined;
+// Sandbox purchases add credits only for staff and these testers (comma-separated emails).
+const apple = access
+  ? new AppleCredits({
+      ledger,
+      access,
+      sandboxEmails: (process.env.CUTTINGFLOOR_APPLE_SANDBOX_EMAILS ?? '')
+        .split(',')
+        .filter(Boolean),
+    })
+  : undefined;
 // Keys users make on the account page for scripts: only where accounts are checked.
 const scriptKeys = access ? new ScriptKeys(runtime.ws) : undefined;
 // The admin API's keys and cuttingfloor's own rights table (who is an admin).

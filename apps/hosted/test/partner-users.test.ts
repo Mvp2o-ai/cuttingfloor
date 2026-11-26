@@ -30,6 +30,7 @@ let dataDir: string;
 const users = new Map<string, { id: string; email: string; metadata: Record<string, string> }>();
 const deleted: string[] = [];
 let workosDown = false;
+const ledger = testLedger();
 let deleteFails = false;
 let made = 0;
 
@@ -97,7 +98,7 @@ beforeAll(async () => {
   const lifecycle = new Lifecycle({
     runtime,
     access: { get: async () => free, forget: () => undefined } as unknown as AccessCheck,
-    ledger: testLedger(),
+    ledger,
     workosKey: 'sk_test_none',
     stripeKey: 'sk_test_none',
     accountUrl: 'https://cuttingfloor.ai/account',
@@ -235,12 +236,20 @@ describe('deleting a partner user', () => {
     expect(await res.json()).toEqual({ error: 'account_not_found' });
   });
 
-  it('deletes an account made here directly, found by its email', async () => {
+  it('deletes an account made here directly, found by its email, and closes its credits', async () => {
     await holdings(DIRECT);
+    await ledger.open(DIRECT, async () => ({
+      used_before: 0,
+      entries: [{ id: 'opening:ca_1', kind: 'opening', credits: 12.5 }],
+    }));
+    await ledger.open(OTHER, async () => ({ used_before: 0, entries: [] }));
     const res = await remove({ email: 'signed-up-here@example.com', sub: 'platform-2' });
     expect(res.status).toBe(200);
     expect(users.has(DIRECT)).toBe(false);
     expect(await exists('owners', DIRECT)).toBe(false);
+    expect(await ledger.get(DIRECT)).toBeUndefined();
+    expect(await ledger.entries(DIRECT)).toEqual([]);
+    expect(await ledger.get(OTHER)).toBeDefined();
   });
 
   it('deletes the account tied to the user id when the partner sends a changed email', async () => {
