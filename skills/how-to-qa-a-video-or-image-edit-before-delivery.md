@@ -1,5 +1,5 @@
 ---
-name: qa-a-video-or-image-edit-before-delivery
+name: how-to-qa-a-video-or-image-edit-before-delivery
 description: QA an edit before delivery with cuttingfloor. Check the finished cut against the request in the user's own words: write the acceptance list first, measure the technical envelope, frame integrity, speech at every cut, loudness against the delivery target, captions and on-screen text, then look at rendered frames; for a still image check crop and aspect, resolution, artifacts, upscaling, text legibility and colour. Use when someone asks to QA, check, review or sign off an edit before it goes out, to confirm a delivery is finished, to verify a render matches what was asked, or to find what is wrong with a cut before sending it.
 version: 1
 type: playbook
@@ -8,7 +8,7 @@ author: Ken Wiltshire
 related: cut-pauses-ums-and-restarts:related, pan-and-scan:related
 ---
 
-# QA an edit before delivery
+# How to QA an edit before delivery
 
 An edit is finished when the assistant has checked it against the request and can show the evidence. A render that plays is not a check.
 
