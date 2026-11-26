@@ -64,6 +64,7 @@ import {
   waitForChange,
 } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
+import { QA_SKILL_NOTE } from './skills.ts';
 
 /** QA on a timeline this short answers inline; longer ones become a job. */
 const QA_INLINE_SECONDS = 20;
@@ -384,7 +385,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
           signal,
           onProgress: (f) => progress(f, `checking ${Math.round(f * 100)}%`),
         });
-        return ok(report);
+        return ok(report, [{ type: 'text', text: QA_SKILL_NOTE }]);
       };
       const seconds = (lengthFrames(doc) * ticksPerFrame(doc.sequence.fps)) / 705_600_000;
       if (seconds <= QA_INLINE_SECONDS) {

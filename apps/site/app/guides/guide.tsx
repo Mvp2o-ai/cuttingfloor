@@ -62,7 +62,8 @@ const TEXT: Record<
     copy: 'Copiar',
     demos: 'Ejemplos',
     demosHead: 'Ediciones reales, agentes reales.',
-    demosNote: 'Los ejemplos están en inglés; con un video en español funciona igual.',
+    demosNote:
+      'El primer ejemplo es en español; los demás están en inglés y funcionan igual con un video en español.',
     questions: 'Preguntas',
     asked: 'Preguntas frecuentes.',
     other: 'In English',

@@ -65,9 +65,9 @@ export const GUIDES: Guide[] = [
     prompt:
       'Add big captions to my video, two lines at most, near the bottom, and highlight each word as I say it. Export it vertical for Reels and give me an SRT file too.',
     demos: [
+      'make-a-before-and-after-client-testimonial-reel',
       'remove-pauses-and-restarts-from-a-talking-video',
       'edit-a-product-review-short',
-      'edit-a-dance-short-to-the-beat',
     ],
     faqs: [
       {
@@ -190,9 +190,9 @@ export const GUIDES: Guide[] = [
     prompt:
       'Edita este video para Reels: quita las pausas y los errores, ponle subtítulos grandes que resalten cada palabra, música suave debajo de mi voz y un título al inicio. Que dure menos de 30 segundos.',
     demos: [
+      'make-a-before-and-after-client-testimonial-reel',
       'edit-a-product-review-short',
       'edit-a-dance-short-to-the-beat',
-      'edit-a-two-person-interview',
     ],
     faqs: [
       {

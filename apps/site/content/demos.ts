@@ -1034,6 +1034,196 @@ const STREAM: Demo = {
   ],
 };
 
+// A happy client of a kitchen renovation company talking in Spanish, plus four before and after
+// photos (generated footage and photos, edited for real by cuttingfloor): a testimonial Reel with
+// slider reveals and Spanish subtitles.
+const TESTIMONIAL: Demo = {
+  id: 'testimonial',
+  slug: 'make-a-before-and-after-client-testimonial-reel',
+  title: 'Turn a client testimonial into a before-and-after Reel with Spanish subtitles',
+  description:
+    'A kitchen renovation company gives Claude a 36-second phone video of a happy client talking in Spanish, four before and after photos of her kitchen and a music track. cuttingfloor opens on the finished kitchen, cuts her restart, the long pause and the line she said twice, reveals each before and after with a slider over her voice, adds bold word-by-word Spanish subtitles and ends on the company name and a call to action: a 23-second Reel.',
+  steps: [
+    'Wrote down every word she says with its time, and fixed the company name where it was heard wrong (Seiba to Ceiba).',
+    'Opened on the finished kitchen with her best line, “Ahora la cocina es mi lugar favorito de la casa”, and a headline: “Su cocina, lista en solo 2 semanas”.',
+    'Cut her false start and restart, the long pause while she looks around, and “En solo dos semanas” said twice.',
+    'Put the before photos over her voice while she describes the old kitchen, with a slow push-in and an “ANTES” tag.',
+    'Revealed each before and after with a white slider sweeping across the photo, a soft swoosh under it and the tag turning to “DESPUÉS”.',
+    'Added bold Spanish subtitles, three or four words at a time, with the word she is saying and the key words in yellow.',
+    'Pushed in a little closer on every other shot of her so the cuts feel on purpose, and put her name on screen the first time we see her.',
+    'Ended on the company name, “Pide tu presupuesto gratis” and the WhatsApp number, with the music coming up.',
+    'Put the music bed low under her voice and made her voice loud and even for phones, with peaks under −1 dB. The music is an original track made for this demo.',
+  ],
+  uploaded: '2026-11-26',
+  skill: 'cut-pauses-ums-and-restarts',
+  moments: [
+    { name: 'The finished kitchen', start: 0, end: 2.7 },
+    { name: 'Before: “mi cocina era un desastre”', start: 2.7, end: 10.5 },
+    { name: 'The before and after reveals', start: 10.5, end: 16.6 },
+    { name: '“Si están pensando en remodelar, llámenlos”', start: 16.6, end: 20.3 },
+    { name: 'Name and call to action', start: 20.3, end: 22.8 },
+  ],
+  agent: 'Claude',
+  raw: {
+    src: '/demo/testimonial/raw.mp4',
+    poster: '/demo/testimonial/raw.jpg',
+    label: 'client-testimonial.mp4 · 0:44',
+    seconds: 44.1,
+    captions: '/demo/testimonial/raw.vtt',
+  },
+  transcript: [
+    { text: 'Hola, soy Rosa.', cut: 0 },
+    { text: 'Hace tres meses mi cocina estaba…', cut: 0 },
+    { text: 'Ay, no, perdón. Empiezo otra vez.', cut: 0 },
+    { text: 'Hace tres meses mi cocina era un desastre.' },
+    { text: 'Los gabinetes rotos, la luz horrible… yo no quería ni cocinar.' },
+    { text: '[a long pause while she looks around]', cut: 0 },
+    { text: 'Y el equipo de Ceiba la dejó como nueva en solo dos semanas.' },
+    { text: 'En solo dos semanas.', cut: 0 },
+    { text: 'Limpios, puntuales, todo perfecto.' },
+    { text: 'Ahora la cocina es mi lugar favorito de la casa.' },
+    { text: 'Si están pensando en remodelar, llámenlos. De verdad.' },
+  ],
+  turns: [
+    {
+      prompt:
+        'This is my client Rosa talking about the kitchen we redid, plus the before and after photos and the song we use. Make me a Reel for Instagram: a hook at the start, take out where she starts over, repeats herself and stops, put the before and after photos over her voice, subtitles in Spanish, and end with our name, Remodelaciones Ceiba, and a call to action.',
+      reply:
+        'I’ll open on the finished kitchen with her best line, cut the restart, the pause and the repeat, show each before and after with a slider over her voice, add bold Spanish subtitles and finish on Remodelaciones Ceiba with a free quote offer.',
+      calls: [
+        { fn: 'skills.search', note: 'checked for a method for cutting restarts and pauses' },
+        { fn: 'skills.get', note: 'read it' },
+        { fn: 'media.import', note: 'her video, the four photos and the song' },
+        { fn: 'media.analyze', note: 'every word in Spanish, timed' },
+        { fn: 'media.analyze', note: 'where she speaks and where she stops' },
+        { fn: 'sounds.list', note: 'a soft swoosh for the reveals' },
+        { fn: 'create.still', note: 'the slider line with its handle' },
+        { fn: 'create.still', note: 'the end card: name, offer, WhatsApp' },
+        { fn: 'timeline.create', note: 'vertical, 24 fps' },
+        {
+          fn: 'edit.batch',
+          note: 'the kept lines, photos over her voice, slider reveals, tags, Spanish subtitles, music',
+        },
+        { fn: 'render.frames', note: 'looked at every part' },
+        { fn: 'edit.batch', note: 'lined the reveal up with the slider, split the tags' },
+        { fn: 'qa.check', note: 'loudness, peaks and every cut' },
+        { fn: 'edit.batch', note: 'her voice louder and even' },
+        { fn: 'audio.set_master', note: 'loud for phones, peaks under −1 dB' },
+        { fn: 'audio.set_gain', note: 'music low under her voice, up on the end card' },
+        { fn: 'edit.batch', note: 'the headline on screen from the very first frame' },
+        { fn: 'export.video', note: 'vertical, 0:23' },
+        { fn: 'export.timeline', note: 'the subtitles as a VTT file' },
+      ],
+      status: 'Lining up the before and after photos…',
+      done: 'Your 23-second Reel is ready: it opens on the finished kitchen, her restart, the long pause and the repeated line are gone, each before and after slides open over her voice, the Spanish subtitles follow every word, and it ends on Remodelaciones Ceiba with “Pide tu presupuesto gratis”. I also saved the subtitles as a file. Want a version with the subtitles in English too?',
+      video: {
+        src: '/demo/testimonial/cut.mp4',
+        poster: '/demo/testimonial/cut.jpg',
+        label: 'testimonio-cocina-ceiba.mp4 · 0:23',
+        seconds: 22.8,
+        captions: '/demo/testimonial/cut.vtt',
+      },
+    },
+  ],
+};
+
+// A creator's money-tips video filmed in a messy, badly lit bedroom (generated footage, edited for
+// real by cuttingfloor): the room swapped for a cinematic black backdrop, with captions.
+const BGSWAP: Demo = {
+  id: 'bgswap',
+  slug: 'replace-the-background-behind-a-person-in-a-video',
+  title: 'Replace the messy background behind you with a cinematic black, and add captions',
+  description:
+    'A creator gives ChatGPT a 28-second money-tips video filmed on his phone in a cluttered, badly lit bedroom. cuttingfloor cuts him out of the room, puts him on a dark backdrop with a soft warm light behind his head, lights him to match, cleans up his voice and adds bold captions that follow his words: a 24-second Short, plus a second version on a deep blue.',
+  steps: [
+    'Wrote down every word he says with its time.',
+    'Cut him out of the room on every frame, hair and hands included, with no green screen, and looked closely at the edge round his hair and hands.',
+    'Put him on a near-black backdrop with a soft warm light behind his head, so his hair stands out against it, and darker corners like a studio portrait.',
+    'Brightened his face a little, added contrast and toned the colour down so he looks lit for the new backdrop, and added a touch of film grain over everything so he and the backdrop look like one picture.',
+    'Cut the long pause after “That one hurt” and the repeated “think about it”, and pushed in closer on every other part so the cuts feel on purpose.',
+    'Put bold captions under his face, two or three words at a time, with the word he is saying in gold and the key words gold: money rules, pay yourself first, twice, automate, payday.',
+    'Kept “3 money rules I wish I knew at 22” at the top the whole time, in the empty dark space above his head.',
+    'Cleaned up the room sound in his voice and made it loud and even for phones, with peaks under −1 dB.',
+    'Made a second version on a deep blue backdrop in a brand colour, with his skin cooled a little to match.',
+  ],
+  uploaded: '2026-11-26',
+  moments: [
+    { name: 'Three money rules I wish I knew at 22', start: 0, end: 3.7 },
+    { name: 'Rule one: pay yourself first', start: 3.7, end: 8.75 },
+    { name: 'Rule two: if you can’t buy it twice', start: 8.75, end: 14.46 },
+    { name: 'Rule three: automate it', start: 14.46, end: 20 },
+    { name: 'Save this for payday', start: 20, end: 23.8 },
+  ],
+  agent: 'ChatGPT',
+  raw: {
+    src: '/demo/bgswap/raw.mp4',
+    poster: '/demo/bgswap/raw.jpg',
+    label: 'messy-room-talk.mp4 · 0:28',
+    seconds: 28.1,
+    captions: '/demo/bgswap/raw.vtt',
+  },
+  extra: [
+    {
+      src: '/demo/bgswap/brand-blue.mp4',
+      poster: '/demo/bgswap/brand-blue.jpg',
+      label: 'money-rules-brand-blue.mp4 · 0:24',
+      seconds: 23.8,
+      captions: '/demo/bgswap/brand-blue.vtt',
+      caption: 'The second version, on a deep blue backdrop',
+    },
+  ],
+  transcript: [
+    { text: 'Three money rules I wish someone told me at 22.' },
+    { text: 'Rule one: pay yourself first. Before rent, before anything.' },
+    { text: 'Rule two: if you can’t buy it twice, you can’t afford it.' },
+    { text: 'Yeah, that one hurt.' },
+    { text: 'Rule three: automate it. Set it up once and you never have to think about it,' },
+    { text: 'think about it', cut: 0 },
+    { text: 'again.' },
+    { text: 'Save this for payday and follow for more money tips.' },
+  ],
+  turns: [
+    {
+      prompt:
+        'I filmed this in my bedroom and the room is a mess. Can you get rid of the background behind me, make it a stylish cinematic black like a studio, and add captions? Keep it looking like me.',
+      reply:
+        'I’ll cut you out of the room, put you on a dark backdrop with a soft light behind your head, light you to match so it looks real, and add bold captions that follow your words. I’ll leave your face and colours natural.',
+      calls: [
+        { fn: 'skills.search', note: 'checked for a method for swapping a background' },
+        { fn: 'media.import', note: 'his video' },
+        { fn: 'media.analyze', note: 'every word, timed' },
+        { fn: 'create.cutout', note: 'him without the room, hair and hands included' },
+        { fn: 'render.frames', note: 'checked the edge round his hair and hands' },
+        {
+          fn: 'create.cutout',
+          note: 'a second try that follows him from one frame: it took the bed too, so kept the first',
+        },
+        { fn: 'create.still', note: 'the dark backdrop with a soft warm light' },
+        { fn: 'timeline.create', note: 'vertical, 24 fps' },
+        { fn: 'edit.batch', note: 'backdrop, him over it, the pauses cut, push-ins' },
+        { fn: 'edit.batch', note: 'matched his light: brighter face, contrast, grain' },
+        { fn: 'edit.batch', note: 'captions with the spoken word in gold, the title on top' },
+        { fn: 'edit.batch', note: 'voice cleaned up, made louder and even' },
+        { fn: 'render.frames', note: 'checked the captions and the title' },
+        { fn: 'qa.check', note: 'loudness, peaks and every cut' },
+        { fn: 'export.video', note: 'vertical, 0:24' },
+        { fn: 'create.still', note: 'a deep blue backdrop' },
+        { fn: 'edit.batch', note: 'the second version, cooler to match the blue' },
+        { fn: 'export.video', note: 'vertical, 0:24' },
+      ],
+      status: 'Cutting you out of the room…',
+      done: 'Your 24-second Short is ready: the room is gone, you’re on a dark backdrop with a soft light behind you, your voice is clean and loud, and the captions follow every word with the key ones in gold. I made a second one on a deep blue too, in case you want a brand colour. Want a version without the title at the top?',
+      video: {
+        src: '/demo/bgswap/cut.mp4',
+        poster: '/demo/bgswap/cut.jpg',
+        label: 'money-rules-cinematic-black.mp4 · 0:24',
+        seconds: 23.8,
+        captions: '/demo/bgswap/cut.vtt',
+      },
+    },
+  ],
+};
+
 // A singer's original song and six phone clips of her singing at home (generated song and footage,
 // edited for real by cuttingfloor), cut into a lyric Short.
 const LYRIC: Demo = {
@@ -1401,6 +1591,8 @@ const CAR: Demo = {
 };
 
 export const DEMOS: Demo[] = [
+  TESTIMONIAL,
+  BGSWAP,
   LYRIC,
   PROMO,
   FILM,

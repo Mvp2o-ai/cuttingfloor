@@ -1,5 +1,12 @@
 # cuttingfloor
 
+## 0.77.7
+
+### Patch Changes
+
+- 73d2479: A background swap demo on the site, and a talking-to-camera clip in a messy room in the onboarding samples: tasks about removing or replacing the background behind a person, a green screen without a green screen, a clean studio or black backdrop, or blurring a messy room now start with a creator's own phone video filmed in a cluttered bedroom instead of Big Buck Bunny.
+- 096e6b8: The QA skill names the tools it runs (qa.check and its speech, black and silence settings, render.frames, timeline.diff, audio.set_master), and exports, created files, full-size frames and qa.check results point to it: check the work against the user's request before it goes to them.
+
 ## 0.77.6
 
 ### Patch Changes

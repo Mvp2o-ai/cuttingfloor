@@ -107,6 +107,24 @@ export const SAMPLES: Sample[] = [
       'Make a 30-second lyric Short of this song: every line on screen as she sings it, the key words big, the words moving with the beat, the footage cut to the beat with a warm grade, and the hook line as the big moment.',
   },
   {
+    slug: 'background-swap',
+    file: 'messy-room-talk.mp4',
+    shows:
+      'a 28-second phone video of a creator giving money tips to camera in a cluttered, badly lit bedroom (laundry on the bed, a messy shelf, an open doorway), with clear speech and no captions',
+    fits: 'removing or replacing the background behind a person: green screen without a green screen, a clean studio, black or coloured backdrop, blurring or hiding a messy room, cutting a person out and putting them in front of a new scene or picture, with captions on top',
+    starter:
+      'Swap the messy room behind him for a cinematic black backdrop with a soft light, light him to match so it looks real, and add bold word-by-word captions.',
+  },
+  {
+    slug: 'testimonial',
+    file: 'client-testimonial.mp4',
+    shows:
+      'a 44-second vertical phone video of a happy customer talking to camera in Spanish about her kitchen renovation, with a restart, a long pause and a repeated line, then four before and after photos of the same kitchen shown plainly at the end, with no captions or music',
+    fits: 'client and customer testimonials and reviews for a small local business (salons, barbers, cleaners, painters, renovators, trainers, clinics): before and after transformations and reveals, a happy client talking with before and after photos over their voice, a business Reel with the business name and a call to action, subtitles in Spanish or another language',
+    starter:
+      'Make a 25-second Reel from this testimonial: open on the best after photo with a hook, cut the restart, the pause and the repeated line, reveal each before and after photo with a slider over her voice, bold Spanish subtitles word by word, and end on the business name and a call to action with light music.',
+  },
+  {
     slug: FALLBACK_SAMPLE,
     file: 'big-buck-bunny.mp4',
     shows: 'a 30-second scene from Big Buck Bunny, an open animated film',
