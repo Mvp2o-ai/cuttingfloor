@@ -1034,6 +1034,92 @@ const STREAM: Demo = {
   ],
 };
 
+// Four shaky phone clips from a small coffee roastery with nobody talking (generated footage, edited
+// for real by cuttingfloor): a 15-second "roaster to cup" Reel with a hook, music and an end card.
+const BROLL: Demo = {
+  id: 'broll',
+  slug: 'make-a-small-business-reel-from-phone-clips',
+  title: 'Make a small business Reel from a few phone clips',
+  description:
+    'A small coffee roaster gives ChatGPT four shaky phone clips with nobody talking and a music track. cuttingfloor puts a bold hook on the first frame, cuts the best moments into short shots on the beat, steadies and warms up the footage, keeps the pour and the beans audible under the music and ends on the shop name and a call to action: a 15-second Reel for Instagram.',
+  steps: [
+    'Looked at all four clips and picked the best moments: the beans pouring out of the roaster, the scoop going into the bag, the stamp, and the coffee pouring into the cup.',
+    'Steadied the shaky phone footage, with a slight zoom so no edges show.',
+    'Put “ROASTER TO CUP in 15 seconds” on the very first frame, big and easy to read, over the most eye-catching shot.',
+    'Found every beat in the music and cut to a new shot every two beats, in the order the coffee is made.',
+    'Pushed in slowly on most shots and closer on others, so every cut feels on purpose.',
+    'Slowed the last pour down to half speed so it plays smooth and lingers.',
+    'Gave every shot the same warm look: warmer colour, more contrast, richer colour and a soft dark edge.',
+    'Kept the roaster’s rattle and the beans dropping into the bag under the music, and added a coffee pour and a soft thump where the phone barely caught them.',
+    'Ended on Copper Lane Coffee Roasters, “Roasted fresh every Tuesday” and “Order a bag · link in bio” over the pour.',
+    'Made it loud for phones with peaks under −1 dB and exported it vertical. The music is an original track made for this demo.',
+  ],
+  uploaded: '2026-11-26',
+  moments: [
+    { name: 'Roaster to cup: the beans pour out', start: 0, end: 2.5 },
+    { name: 'Into the bag', start: 2.5, end: 5 },
+    { name: 'The stamp', start: 5, end: 7.5 },
+    { name: 'The pour, in slow motion', start: 7.5, end: 11.9 },
+    { name: 'Name and call to action', start: 11.9, end: 15.6 },
+  ],
+  agent: 'ChatGPT',
+  raw: {
+    src: '/demo/broll/raw.mp4',
+    poster: '/demo/broll/raw.jpg',
+    label: 'shop-broll.mp4 · 0:29',
+    seconds: 29.4,
+  },
+  transcript: [
+    { text: 'Clip 1: coffee poured into a white cup' },
+    { text: 'Clip 1: waiting for the pour to start', cut: 0 },
+    { text: 'Clip 2: the beans pour out of the roaster and the arms stir them' },
+    { text: 'Clip 3: beans scooped and poured into a bag on the scale' },
+    { text: 'Clip 3: standing by the empty bags', cut: 0 },
+    { text: 'Clip 4: a hand stamps the bag' },
+    { text: 'Clip 4: folding the top of the bag', cut: 0 },
+    { text: 'No one talks: the roaster, the beans and the room' },
+  ],
+  turns: [
+    {
+      prompt:
+        'We’re a little coffee roaster. Here are a few clips I took on my phone and the song we use. Can you edit them into a 12–18 second vertical Reel for our Instagram, with some text at the start? Shop’s called Copper Lane Coffee Roasters, and we want people to order a bag from the link in our bio.',
+      reply:
+        'I’ll open on the beans pouring out of the roaster with a bold line on the first frame, cut your best moments into short shots on the beat, steady and warm up the footage, keep the roaster and the pour audible under the music and end on Copper Lane with “Order a bag · link in bio”.',
+      calls: [
+        { fn: 'skills.search', note: 'checked for a method for a Reel from clips' },
+        { fn: 'media.import', note: 'your clips and the song' },
+        { fn: 'media.analyze', note: 'found every beat in the song' },
+        { fn: 'media.analyze', note: 'found where each clip starts' },
+        { fn: 'render.frames', note: 'looked at every clip for the best moments' },
+        { fn: 'create.stabilized', note: 'steadied the shaky footage' },
+        { fn: 'create.still', note: 'the end card: name, offer, link in bio' },
+        { fn: 'timeline.create', note: 'vertical, 30 fps' },
+        {
+          fn: 'edit.batch',
+          note: 'eight shots on the beat, the pour in slow motion, the warm look, the song',
+        },
+        { fn: 'edit.batch', note: 'the hook on the first frame, the end card, slow push-ins' },
+        { fn: 'render.frames', note: 'made the hook bigger so it reads in a second' },
+        { fn: 'qa.check', note: 'loudness and peaks' },
+        { fn: 'export.video', note: 'a quick copy to check the sound' },
+        { fn: 'sounds.list', note: 'a coffee pour and a soft thump' },
+        { fn: 'edit.batch', note: 'the pour and the stamp under the music, levels' },
+        { fn: 'media.analyze', note: 'checked the pour and the roaster can be heard' },
+        { fn: 'qa.check', note: 'loudness, peaks, no black frames' },
+        { fn: 'export.video', note: 'vertical, 0:15' },
+      ],
+      status: 'Cutting your clips to the beat…',
+      done: 'Your 15-second Reel is ready: “ROASTER TO CUP in 15 seconds” on the first frame, the beans, the bag, the stamp and the pour cut on the beat, steadied and warm, the roaster and the pour still there under the music, and Copper Lane with “Order a bag · link in bio” at the end. Want a version that opens on the pour instead, to test which hook does better?',
+      video: {
+        src: '/demo/broll/cut.mp4',
+        poster: '/demo/broll/cut.jpg',
+        label: 'copper-lane-roaster-to-cup.mp4 · 0:15',
+        seconds: 15.7,
+      },
+    },
+  ],
+};
+
 // A happy client of a kitchen renovation company talking in Spanish, plus four before and after
 // photos (generated footage and photos, edited for real by cuttingfloor): a testimonial Reel with
 // slider reveals and Spanish subtitles.
@@ -1591,6 +1677,7 @@ const CAR: Demo = {
 };
 
 export const DEMOS: Demo[] = [
+  BROLL,
   TESTIMONIAL,
   BGSWAP,
   LYRIC,
