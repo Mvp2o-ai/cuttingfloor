@@ -134,6 +134,15 @@ export const SAMPLES: Sample[] = [
       'Make a 15-second Reel from these clips: a bold hook line on the first frame, only the best moments in short shots cut to music, a warm grade, the shaky shots steadied, the pour and the beans still audible under the music, and the shop name with a call to action at the end.',
   },
   {
+    slug: 'kids-story',
+    file: 'cartoon-scenes.mp4',
+    shows:
+      'a 36-second set of six silent vertical 3D cartoon scenes of a short kids’ story, in order: Pip, a small white cloud, floats over a meadow; Rumble, a grumpy storm cloud, rolls in with lightning and shouts; Daisy, a thirsty flower, droops in dry ground; Pip takes a deep breath and flies down; Pip rains on Daisy and she blooms; a rainbow ends it. No voices, sound, music or text',
+    fits: 'kids’ stories and cartoons for children: bedtime and moral stories, fables and fairy tales, animated characters with their own voices and a narrator, nursery and storybook videos, educational videos for kids, adding character voices, sound effects and music to animation',
+    starter:
+      'Make this a 35-second kids’ story Short: a narrator and a different voice for Pip, Rumble and Daisy timed to what they do, a cartoon sound effect on every action, light music under the voices, a title card at the start, big simple captions for early readers and a friendly ending with the lesson.',
+  },
+  {
     slug: FALLBACK_SAMPLE,
     file: 'big-buck-bunny.mp4',
     shows: 'a 30-second scene from Big Buck Bunny, an open animated film',
