@@ -37,6 +37,8 @@ export const KAZI_LINKS = {
   'demo-broll': 'PsFVYwBiOA',
   // The general demos link until the kids' story demo gets a guest chat of its own.
   'demo-kids': 'PsFVYwBiOA',
+  // The general demos link until the sports tribute demo gets a guest chat of its own.
+  'demo-sports': 'PsFVYwBiOA',
 } as const satisfies Record<string, string>;
 
 export type KaziPlace = keyof typeof KAZI_LINKS;

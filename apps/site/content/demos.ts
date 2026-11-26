@@ -1034,6 +1034,94 @@ const STREAM: Demo = {
   ],
 };
 
+// Six sideline phone clips of one player at a local women's football club (generated footage,
+// edited for real by cuttingfloor): a vertical tribute with a quiet start, slow motion on the goal,
+// the music dropping as it goes in, a big-night grade and her name and number at the end.
+const SPORTS: Demo = {
+  id: 'sports',
+  slug: 'make-a-football-player-tribute-edit',
+  title: 'Make a tribute edit of your favourite player from sideline clips',
+  description:
+    'A fan gives ChatGPT six wide phone clips of Zola Mensah, the number 9 at their local women’s football club. cuttingfloor turns them into a 28-second vertical tribute: a quiet start in the changing room, the goal in slow motion with the music dropping as it goes in, a crowd roar, a big-night colour grade and her name and number at the end.',
+  steps: [
+    'Looked at all six clips to find the moments that matter: tying her boots, the shot at training, the nutmeg, the goal, the knee slide and the fans with their sign.',
+    'Had an original music track made that starts quiet on a piano, builds, and drops hard, so there’s no copyright claim.',
+    'Found the drop in the music and timed the edit so the ball goes past the keeper right on it.',
+    'Made it vertical and moved the frame in every shot to keep her in view, since the clips were filmed wide.',
+    'Started quiet: the changing room and training, with “every big night starts in here” on screen.',
+    'Built up through the nutmeg and the run at goal, with “89th minute · 1–1” at the top.',
+    'Went into slow motion on the goal, with new in-between frames so it plays smooth, then a white flash and a punch-in as the music drops.',
+    'Added a riser into the goal, a big hit and a crowd roar on it, and kept the real crowd and the fans’ cheers under the celebration.',
+    'Slowed down her knee slide and froze on her face for the end card: “ZOLA MENSAH”, “No. 9 · Harbour Town FC” and her season in one line.',
+    'Made a big-night colour grade: deeper blacks, cool shadows, warm skin and a dark edge, with a little film grain.',
+    'Painted out the brand logos on the shirts, checked the sound and peaks, and exported it vertical. The music is an original track made for this demo.',
+  ],
+  uploaded: '2026-11-26',
+  moments: [
+    { name: 'Before the match', start: 0, end: 4.4 },
+    { name: 'Training', start: 4.4, end: 6.4 },
+    { name: 'The nutmeg', start: 6.4, end: 8.4 },
+    { name: 'The goal, in slow motion', start: 8.4, end: 13.3 },
+    { name: 'The knee slide', start: 13.3, end: 20.6 },
+    { name: 'The fans', start: 20.6, end: 23.2 },
+    { name: 'Zola Mensah, No. 9', start: 23.2, end: 28 },
+  ],
+  agent: 'ChatGPT',
+  raw: {
+    src: '/demo/sports/raw.mp4',
+    poster: '/demo/sports/raw.jpg',
+    label: 'match-highlights.mp4 · 0:32',
+    seconds: 31.8,
+    wide: true,
+  },
+  transcript: [
+    { text: 'Clip 1: she ties her boots in the changing room and takes a breath' },
+    { text: 'Clip 1: sitting still, looking ahead', cut: 0 },
+    { text: 'Clip 2: training on a grey afternoon, a shot at goal' },
+    { text: 'Clip 3: she nutmegs a defender by the touchline' },
+    { text: 'Clip 3: the defender chasing her', cut: 0 },
+    { text: 'Clip 4: under the floodlights, the run and the goal' },
+    { text: 'Clip 4: teammates passing the ball before the run', cut: 0 },
+    { text: 'Clip 5: the knee slide and her teammates piling on' },
+    { text: 'Clip 6: fans at the fence with a “ZOLA 9” sign' },
+    { text: 'Crowd and pitch sound under every clip' },
+  ],
+  turns: [
+    {
+      prompt:
+        'These are clips I filmed of Zola, our number 9, this season. Can you make her a proper tribute edit for TikTok? Emotional build, slow-mo on the goal, the music dropping when it goes in, crowd noise, her name and number at the end. Make it feel like a big night.',
+      reply:
+        'I’ll get an original track made that builds and drops, make your clips vertical and keep Zola in every shot, start quiet, slow the goal right down so the drop hits as it goes in, add a crowd roar and finish on her name and number, with a big-night grade.',
+      calls: [
+        { fn: 'skills.search', note: 'checked for a method for a tribute edit' },
+        { fn: 'media.import', note: 'your six clips' },
+        { fn: 'render.frames', note: 'looked at every clip for the moments' },
+        { fn: 'media.import', note: 'an original track, made for this edit' },
+        { fn: 'media.analyze', note: 'found the beats and the drop' },
+        { fn: 'sounds.list', note: 'a crowd roar, a big hit, a riser' },
+        { fn: 'media.import', note: 'the sounds and a colour grade (LUT)' },
+        { fn: 'timeline.create', note: 'vertical, 24 fps' },
+        { fn: 'edit.batch', note: 'the shots in order, the goal and the slide slowed down' },
+        { fn: 'edit.batch', note: 'moved the frame in every shot to keep her in view' },
+        { fn: 'edit.batch', note: 'the grade, the flash on the drop, the sounds, the titles' },
+        { fn: 'render.frames', note: 'checked every shot, found brand logos on the shirts' },
+        { fn: 'media.import', note: 'her knee-slide face as a still for the end card' },
+        { fn: 'edit.batch', note: 'painted out the logos, a slow push on the end card' },
+        { fn: 'qa.check', note: 'loudness and peaks' },
+        { fn: 'export.video', note: 'vertical, 0:28' },
+      ],
+      status: 'Timing the drop to the goal…',
+      done: 'Zola’s tribute is ready: 28 seconds, vertical, from a quiet start in the changing room to the goal in slow motion right on the drop, the crowd roaring, and her name and number on the last frame. Want a 15-second cut for Stories too?',
+      video: {
+        src: '/demo/sports/cut.mp4',
+        poster: '/demo/sports/cut.jpg',
+        label: 'zola-tribute.mp4 · 0:28',
+        seconds: 28,
+      },
+    },
+  ],
+};
+
 // Six silent cartoon scenes of a short kids' story (generated animation, edited for real by
 // cuttingfloor): a narrated story Short with a voice for each character, sound effects, music,
 // big captions for early readers and an ending with the lesson.
@@ -1769,6 +1857,7 @@ const CAR: Demo = {
 };
 
 export const DEMOS: Demo[] = [
+  SPORTS,
   KIDS,
   BROLL,
   TESTIMONIAL,
