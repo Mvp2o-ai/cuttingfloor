@@ -6,6 +6,7 @@ export { REVIEW_CARDS } from '@cuttingfloor/engine';
 import { cleanCopyCredits, cleanCopyMinutes, GATE_FROM } from '@cuttingfloor/plans';
 import { CfError } from '@cuttingfloor/schema';
 import type { Runtime } from './runtime.ts';
+import { QA_SKILL_NOTE } from './tools/skills.ts';
 
 // The download gate (hosted): every picture that leaves through a signed link (an export's file,
 // a created or exported media's file, full-size frames) has a cuttingfloor watermark until its
@@ -407,8 +408,8 @@ export function watermarkNote(
   if (final)
     return `url is the review copy, with a cuttingfloor watermark, free. final_url is the final copy without it: opening it uses ${credits(price)} once${has}${
       short ? ', and shows how to get more' : ''
-    }. Give the user both links, with the price and their credits beside final_url.`;
-  return `This copy has a cuttingfloor watermark, for reviewing, which is free. Releasing it removes the watermark for ${credits(price)}${has}. ${
+    }. ${QA_SKILL_NOTE} Give the user both links, with the price and their credits beside final_url.`;
+  return `This copy has a cuttingfloor watermark, for reviewing, which is free. ${QA_SKILL_NOTE} Releasing it removes the watermark for ${credits(price)}${has}. ${
     short
       ? 'The watermarked copy is what downloads until then.'
       : 'Once the user has reviewed it, offer to release it now.'

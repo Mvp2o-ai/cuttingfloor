@@ -12,6 +12,11 @@ import { guard, ok } from '../result.ts';
 // skills.search and skills.get: how to compose the tools for a common job, written down once
 // (skills/*.md). Not editing primitives; discovery of how to use them (AGENTS.md).
 
+/** The skill for checking an edit against the user's request; results met before delivery name it. */
+export const QA_SKILL = 'how-to-qa-a-video-or-image-edit-before-delivery';
+
+export const QA_SKILL_NOTE = `Before it goes to the user, check it against their request with the QA skill: skills.get {slug: "${QA_SKILL}"}.`;
+
 /**
  * The skills that fit a request in the user's words, best first: at or above `min` (skills.search's
  * own floor unless a caller asks for a looser one).
