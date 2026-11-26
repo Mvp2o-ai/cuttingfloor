@@ -10,6 +10,10 @@ Ours (generated footage from the site's demos, apps/site/public/demo/<demo>/raw.
 `promo-stills.mp4`, `song-and-footage.mp4`, `messy-room-talk.mp4`, `client-testimonial.mp4`,
 `shop-broll.mp4`, `cartoon-scenes.mp4`, `match-highlights.mp4`.
 
+Starters with no demo page (footage only, made for the shelf): `app-walkthrough.mp4`, a screen
+recording of a made-up invoicing web app (Fernbill), built in HTML with create.motion and voiced with
+create.voiceover.
+
 `big-buck-bunny.mp4`, the fallback: 30 seconds (2:52 to 3:22) of Big Buck Bunny, 1280×720,
 H.264 and AAC. (c) copyright 2008, Blender Foundation / www.bigbuckbunny.org, licensed under
 Creative Commons Attribution 3.0 (https://creativecommons.org/licenses/by/3.0/). Cut from

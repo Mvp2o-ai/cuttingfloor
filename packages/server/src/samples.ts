@@ -153,6 +153,15 @@ export const SAMPLES: Sample[] = [
       'Make a 28-second vertical tribute to the number 9 from these clips, following her in every shot: a quiet start, slow motion on the goal, the music dropping as it goes in with a crowd roar, her name and number as titles at the end, and a grade that makes it feel like a big night.',
   },
   {
+    slug: 'screen-recording',
+    file: 'app-walkthrough.mp4',
+    shows:
+      'a 49-second screen recording of someone sending an invoice in a made-up web app, the cursor clicking through each step while he explains it out loud, with a long pause and a price he types wrong and fixes',
+    fits: 'screen recordings: app, website and software walkthroughs, how-to and tutorial videos recorded on a computer screen, SaaS and product demos, Loom-style recordings, turning a screen recording into a vertical how-to Short with zooms on the clicks and numbered steps',
+    starter:
+      'Make a 30-second vertical how-to Short from this recording: cut the long pause and the mistake, follow the cursor and zoom in on every click, number the steps on screen and add captions from his voice.',
+  },
+  {
     slug: FALLBACK_SAMPLE,
     file: 'big-buck-bunny.mp4',
     shows: 'a 30-second scene from Big Buck Bunny, an open animated film',
