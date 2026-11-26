@@ -1034,6 +1034,91 @@ const STREAM: Demo = {
   ],
 };
 
+// A singer's original song and six phone clips of her singing at home (generated song and footage,
+// edited for real by cuttingfloor), cut into a lyric Short.
+const LYRIC: Demo = {
+  id: 'lyric',
+  slug: 'make-a-lyric-video-for-your-song',
+  title: 'Make a lyric video for your song, with every word on screen as it’s sung',
+  description:
+    'A singer gives Kazi her original song and six phone clips of her singing at home. cuttingfloor finds every sung word and its time, then makes a 28-second lyric Short for TikTok and Reels: each word on screen as she sings it, the key words big and gold, the words moving with the beat, the clips cut to the beat and the hook line as the big moment.',
+  steps: [
+    'Pulled her voice out of the music and wrote down every sung word with its time.',
+    'Fixed the words it misheard: “ain’t all my hands” was “Paint on my hands”, “window blow” was “window glow”, “the wall starts” was “the walls start”.',
+    'Took the strongest 28 seconds, from “Everybody told me slow down” through the chorus, so it opens on a line, not the slow intro.',
+    'Put every word on screen on the frame she sings it: a line at a time in the verse, a few huge words at a time in the chorus.',
+    'Made the key words gold and bigger: slow down, heart, up, shaking, waking, spotlight, spark.',
+    'Made the words pulse on every beat after the drop, shake on “shaking” and stretch out with the long note on “spotlight”.',
+    'Cut her six clips to the beat: a shot a bar in the verse, faster into the chorus, a zoom-in and a white flash on the drop.',
+    'Made “I’m the spark tonight” the big moment: a flash, sparks and the biggest words, on her closest shot.',
+    'Gave the footage a warm, moodier look and darkened the middle of the picture behind the words so they read on every shot.',
+    'Kept the song loud for phones, with peaks under −1 dB.',
+  ],
+  uploaded: '2026-11-26',
+  moments: [
+    { name: 'Everybody told me slow down', start: 0, end: 3.4 },
+    { name: 'But my heart don’t know how', start: 3.4, end: 8.6 },
+    { name: 'Turn it up', start: 8.6, end: 15.4 },
+    { name: 'Every street is waking', start: 15.4, end: 17.5 },
+    { name: 'I don’t need a spotlight', start: 17.5, end: 21 },
+    { name: 'I’m the spark tonight', start: 21, end: 28.1 },
+  ],
+  agent: 'Kazi',
+  raw: {
+    src: '/demo/lyric/raw.mp4',
+    poster: '/demo/lyric/raw.jpg',
+    label: 'song-and-footage.mp4 · 0:38',
+    seconds: 37.6,
+    captions: '/demo/lyric/raw.vtt',
+  },
+  transcript: [
+    { text: 'Paint on my hands and the radio low', cut: 0 },
+    { text: 'Counting the cracks in the window glow', cut: 0 },
+    { text: 'Everybody told me slow down, slow down' },
+    { text: 'But my heart don’t know how' },
+    { text: 'Turn it up, till the walls start shaking' },
+    { text: 'Turn it up, turn it up' },
+    { text: 'Every street is waking' },
+    { text: 'I don’t need a spotlight' },
+    { text: 'I’m the spark tonight' },
+    { text: 'I’m the spark, till the walls start shaking' },
+    { text: 'I’m the spark' },
+  ],
+  turns: [
+    {
+      prompt:
+        'I wrote and recorded this song and filmed a few clips of me singing at home. Make me a lyric video for TikTok and Reels: the words on screen as I sing them, and make the chorus hit.',
+      reply:
+        'I’ll take the strongest 28 seconds, from “Everybody told me slow down” through the chorus, put every word on screen as you sing it, cut your clips to the beat and make “I’m the spark tonight” the big moment.',
+      calls: [
+        { fn: 'skills.search', note: 'checked for a method for lyric videos' },
+        { fn: 'media.import', note: 'the song and six clips' },
+        { fn: 'create.stems', note: 'her voice on its own' },
+        { fn: 'media.analyze', note: 'every sung word, timed' },
+        { fn: 'media.analyze', note: 'the beats of the song' },
+        { fn: 'create.motion', note: 'the words, timed to her singing and the beat' },
+        { fn: 'timeline.create', note: 'vertical, 30 fps' },
+        { fn: 'edit.batch', note: '18 shots on the beat, the song under them' },
+        { fn: 'edit.batch', note: 'warm look, zoom-ins, a flash on the drop' },
+        { fn: 'render.frames', note: 'checked each word lands on its frame' },
+        { fn: 'create.motion', note: 'bigger verse words, one frame earlier' },
+        { fn: 'qa.check', note: 'loudness and peaks' },
+        { fn: 'audio.set_master', note: 'peaks under −1 dB once encoded' },
+        { fn: 'export.video', note: 'vertical, 0:28' },
+      ],
+      status: 'Timing every word to your singing…',
+      done: 'Your 28-second lyric Short is ready: every word lands as you sing it, the chorus hits with big gold words on the beat, and “I’m the spark tonight” gets the flash and the sparks. Want a version that opens straight on the hook?',
+      video: {
+        src: '/demo/lyric/cut.mp4',
+        poster: '/demo/lyric/cut.jpg',
+        label: 'the-spark-lyric-short.mp4 · 0:28',
+        seconds: 28.1,
+        captions: '/demo/lyric/cut.vtt',
+      },
+    },
+  ],
+};
+
 // A small pottery studio's six product photos of a new mug collection, a recorded voiceover and an
 // original music track (generated, edited for real by cuttingfloor), cut into a promo in two versions.
 const PROMO: Demo = {
@@ -1316,6 +1401,7 @@ const CAR: Demo = {
 };
 
 export const DEMOS: Demo[] = [
+  LYRIC,
   PROMO,
   FILM,
   CAR,
