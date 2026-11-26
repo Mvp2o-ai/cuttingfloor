@@ -1034,6 +1034,105 @@ const STREAM: Demo = {
   ],
 };
 
+// Six AI-generated clips of a lighthouse keeper on a stormy night, out of order (generated footage,
+// edited for real by cuttingfloor).
+const FILM: Demo = {
+  id: 'film',
+  slug: 'edit-ai-video-clips-into-a-short-film',
+  title: 'Edit AI video clips into a short film',
+  description:
+    'A creator gives ChatGPT six AI-generated clips of a lighthouse keeper on a stormy night, out of order, each a different colour and loudness. cuttingfloor puts them in story order, trims the dead starts, gives every shot one film look and adds an original score, storm sounds, footsteps and titles: a 43-second short film and a vertical trailer.',
+  steps: [
+    'Looked at all six clips and found where each one starts, ends and goes wrong.',
+    'Put the shots in story order: the storm, the run up the cliff, the stairs, the lamp, the boat, the dawn.',
+    'Cut the dead starts and frozen ends, and the frame of the reference photo that flashes at the start of two clips.',
+    'Kept only the best seconds of each clip, so no shot runs the same length.',
+    'Measured the colour of every shot, fixed each one’s tint and brightness, then put one film look over all of them, with grain, a dark edge and wide-screen bars.',
+    'Had an original score made, then cut to it: the music drops out when the light dies, the thunder fills the silence, and the big swell lands as the lamp lights up.',
+    'Added the sound the clips didn’t have: wind and waves, rain that goes quiet indoors, footsteps on the stairs, the match strike, a deep hit on the lamp, a far-off ship’s horn and gulls at dawn.',
+    'Evened out the clips’ own sound, from the silent stairs clip to the very loud boat clip.',
+    'Faded in from black on the wind, dissolved from the night into the dawn and faded out to the end title.',
+    'Made an opening title and an end title in the same thin, wide lettering.',
+    'Checked every cut, the loudness and the peaks, exported it wide-screen and cut an 18-second vertical trailer.',
+  ],
+  uploaded: '2026-11-26',
+  moments: [
+    { name: 'Title: The Keeper', start: 0, end: 7.6 },
+    { name: 'The light goes out', start: 7.6, end: 9 },
+    { name: 'Running through the storm', start: 9, end: 14 },
+    { name: 'Up the stairs', start: 14, end: 20.6 },
+    { name: 'Lighting the lamp', start: 20.6, end: 26.2 },
+    { name: 'The boat turns away', start: 26.2, end: 32.7 },
+    { name: 'Dawn', start: 32.7, end: 40 },
+  ],
+  agent: 'ChatGPT',
+  raw: {
+    src: '/demo/film/raw.mp4',
+    poster: '/demo/film/raw.jpg',
+    label: 'ai-film-clips.mp4 · 0:53',
+    seconds: 52.8,
+    wide: true,
+  },
+  extra: [
+    {
+      src: '/demo/film/trailer.mp4',
+      poster: '/demo/film/trailer.jpg',
+      label: 'the-keeper-trailer.mp4 · 0:18',
+      seconds: 18.6,
+      caption: 'The vertical trailer',
+    },
+  ],
+  transcript: [
+    { text: 'Clip 1: the reference photo flashes up first', cut: 0 },
+    { text: 'Clip 1: the tower in the rain, then she lights the lamp' },
+    { text: 'Clip 1: a frozen frame at the end', cut: 0 },
+    { text: 'Clip 2: a frozen start, then dawn, tea, the boat sails home' },
+    { text: 'Clip 3: she runs up the cliff with a lantern, lightning (green, cool colour)' },
+    { text: 'Clip 4: a frozen start, then the lighthouse in the storm, the light dies (too dark)' },
+    { text: 'Clip 5: she climbs the spiral stairs, no sound at all (pink tint)' },
+    { text: 'Clip 6: a fishing boat heads for the rocks, the beam sweeps (very loud)' },
+  ],
+  turns: [
+    {
+      prompt:
+        'I made six clips for a short film with an AI video tool. They’re out of order, the colours don’t match, some start frozen and one has no sound. Cut them into one proper short film with music, sound effects and titles.',
+      reply:
+        'I’ll look at every clip, put them in story order, trim the frozen and broken bits, make all the shots match with one film look, then build the sound: an original score, the storm, footsteps and the big moments. Titles at both ends.',
+      calls: [
+        { fn: 'media.upload', note: 'six AI clips in one file' },
+        { fn: 'media.import', note: 'the clips, and an original score made for this film' },
+        { fn: 'media.analyze', note: 'where each clip starts and ends' },
+        { fn: 'render.frames', note: 'found the flashes of the reference photo' },
+        { fn: 'media.analyze', note: 'the beats and the quiet part of the score' },
+        { fn: 'media.analyze', note: 'measured the colour of every shot' },
+        {
+          fn: 'sounds.list',
+          note: 'wind, waves, rain, thunder, footsteps, a match, a hit, a horn, gulls',
+        },
+        { fn: 'media.import', note: 'nine sounds and seven colour fixes (LUTs)' },
+        { fn: 'timeline.create', note: 'wide-screen, 24 fps' },
+        { fn: 'edit.batch', note: 'seven shots in story order, best seconds only' },
+        { fn: 'create.motion', note: 'opening and end titles' },
+        { fn: 'create.still', note: 'wide-screen bars' },
+        { fn: 'edit.batch', note: 'colour fixes, one film look, grain, titles' },
+        { fn: 'edit.batch', note: 'score, sound effects, levels, fades' },
+        { fn: 'render.frames', note: 'cut a shot where the lamp was already lit' },
+        { fn: 'qa.check', note: 'loudness and peaks' },
+        { fn: 'export.video', note: 'wide-screen, 0:43, and a vertical trailer' },
+      ],
+      status: 'Putting your shots in story order…',
+      done: 'Your short film is ready: 43 seconds, the six clips in story order with the frozen starts cut, one film look over every shot, an original score that drops out when the light dies and swells as she lights the lamp, and the storm, the stairs and the dawn all with their own sound. I also cut an 18-second vertical trailer. Want a version without the bars for Shorts?',
+      video: {
+        src: '/demo/film/cut.mp4',
+        poster: '/demo/film/cut.jpg',
+        label: 'the-keeper.mp4 · 0:43',
+        seconds: 43.5,
+        wide: true,
+      },
+    },
+  ],
+};
+
 // Five phone clips of a car on a coast road at sunset (generated footage, edited for real by cuttingfloor).
 const CAR: Demo = {
   id: 'car',
@@ -1116,6 +1215,7 @@ const CAR: Demo = {
 };
 
 export const DEMOS: Demo[] = [
+  FILM,
   CAR,
   STREAM,
   INTERVIEW,
