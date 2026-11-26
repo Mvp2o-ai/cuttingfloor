@@ -1,5 +1,12 @@
 # cuttingfloor
 
+## 0.77.8
+
+### Patch Changes
+
+- 827b2d4: A copy exported for the user to review carries qa_note: check it against their request with the QA skill before it goes to them (not on mp4_h264_fast, the assistant's own preview). The server instructions and export.video's description say the same. The watermark note no longer carries it, so the nudge does not depend on the download gate.
+- e1bb479: A before-and-after client testimonial demo on the site, in Spanish with Spanish subtitles, shown first on the Spanish guides, and a client testimonial clip in the onboarding samples: tasks about customer testimonials and reviews for a small business, before and after reveals, or photos over a client's voice now start with a happy customer's phone video and the before and after photos of her kitchen instead of Big Buck Bunny.
+
 ## 0.77.7
 
 ### Patch Changes

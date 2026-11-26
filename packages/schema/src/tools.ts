@@ -2383,6 +2383,10 @@ export const ExportResult = z.object({
     .string()
     .optional()
     .describe('The fingerprint media.get gives the file once imported'),
+  qa_note: z
+    .string()
+    .optional()
+    .describe('On a copy for the user to review: check it against their request first, and how'),
 });
 
 export const ExportReleaseInput = z

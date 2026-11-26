@@ -131,7 +131,7 @@ describe('the download gate', () => {
       credits_left: 3,
     });
     expect(before.result.watermark_note).toBe(
-      'url is the review copy, with a cuttingfloor watermark, free. final_url is the final copy without it: opening it uses 0.75 credits once; this account has 3 credits, enough. Before it goes to the user, check it against their request with the QA skill: skills.get {slug: "how-to-qa-a-video-or-image-edit-before-delivery"}. Give the user both links, with the price and their credits beside final_url.',
+      'url is the review copy, with a cuttingfloor watermark, free. final_url is the final copy without it: opening it uses 0.75 credits once; this account has 3 credits, enough. Give the user both links, with the price and their credits beside final_url.',
     );
     // Both links, in the text a client reads as well as the structured result.
     const finalUrl = (before.result as unknown as { final_url: string }).final_url;
@@ -186,7 +186,7 @@ describe('the download gate', () => {
     };
     expect(told.result.credits_left).toBe(0.5);
     expect(told.result.watermark_note).toBe(
-      'url is the review copy, with a cuttingfloor watermark, free. final_url is the final copy without it: opening it uses 1.25 credits once; this account has 0.5 credits, too few, and shows how to get more. Before it goes to the user, check it against their request with the QA skill: skills.get {slug: "how-to-qa-a-video-or-image-edit-before-delivery"}. Give the user both links, with the price and their credits beside final_url.',
+      'url is the review copy, with a cuttingfloor watermark, free. final_url is the final copy without it: opening it uses 1.25 credits once; this account has 0.5 credits, too few, and shows how to get more. Give the user both links, with the price and their credits beside final_url.',
     );
     expect(told.result.watermark_note).not.toMatch(/https?:|buy/i);
     const refused = await call(poor, 'export.release', { job_id: jobId });

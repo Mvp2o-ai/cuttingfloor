@@ -64,7 +64,7 @@ import {
   waitForChange,
 } from '../result.ts';
 import type { ServerDeps } from '../server.ts';
-import { QA_SKILL_NOTE } from './skills.ts';
+import { QA_SKILL, QA_SKILL_NOTE } from './skills.ts';
 
 /** QA on a timeline this short answers inline; longer ones become a job. */
 const QA_INLINE_SECONDS = 20;
@@ -166,7 +166,7 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
             ]
           : []),
         'The server keeps the file 7 days, as a working copy: when the user has a finished piece to keep, offer to save it from the url where they keep their files, and media.import it to use it again.',
-        'qa.check measures a render (gaps, frames, loudness) before you export. sha256 and fingerprint tell two renders apart without downloading them (fingerprint matches media.get of the file once imported).',
+        `Before a copy goes to the user to review, check it against their request with the QA skill (skills.get {slug: "${QA_SKILL}"}); qa.check measures the timeline (gaps, frames, loudness) before you export. sha256 and fingerprint tell two renders apart without downloading them (fingerprint matches media.get of the file once imported).`,
       ].join(' '),
       inputSchema: ExportVideoInput,
       outputSchema: withJob(ExportResult),
@@ -292,6 +292,8 @@ export function registerRenderTools(server: McpServer, deps: ServerDeps): void {
             duration_seconds: Math.round((span / rate) * 1000) / 1000,
             preset: args.preset,
             mime_type: spec.mime,
+            // A quick review render is the assistant's own look; any other copy goes to the user.
+            ...(args.preset === 'mp4_h264_fast' ? {} : { qa_note: QA_SKILL_NOTE }),
           };
           // A review is for the model to watch; any other render is for the person. The https link
           // lets a host that can show video to its model fetch it without reading MCP resources.

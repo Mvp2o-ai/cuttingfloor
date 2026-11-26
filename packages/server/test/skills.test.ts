@@ -2,7 +2,6 @@ import { readFile } from 'node:fs/promises';
 import { SkillsGetResult, SkillsSearchResult } from '@cuttingfloor/schema';
 import { skills } from '@cuttingfloor/skills';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { watermarkNote } from '../src/gate.ts';
 import { QA_SKILL, QA_SKILL_NOTE } from '../src/tools/skills.ts';
 import { call, connect, ok, type TestEnv, testRuntime } from './helpers.ts';
 
@@ -77,8 +76,6 @@ describe('skills', () => {
     const client = await connect(env.runtime);
     await ok(client, 'skills.get', { slug: QA_SKILL });
     expect(QA_SKILL_NOTE).toContain(QA_SKILL);
-    expect(watermarkNote(2, 10)).toContain(QA_SKILL_NOTE);
-    expect(watermarkNote(2, 10, true)).toContain(QA_SKILL_NOTE);
   });
 
   it('answers an unknown slug with where to look', async () => {
