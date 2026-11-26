@@ -110,7 +110,11 @@ export interface Ledger {
   open(owner: string, opening: () => Promise<Opening>): Promise<CreditAccount>;
   /** Spends `credits` once under `id`. Throws Insufficient when the balance can't cover it. */
   spend(owner: string, entry: { id: string; credits: number; tool: string }): Promise<Spend>;
-  /** Writes any other entry once (grant, opening, purchase, refund, adjust). */
+  /**
+   * Writes an entry once, as it is: a grant, opening, purchase, refund or adjustment, or a spend
+   * that already happened elsewhere (a release Kazi's ledger took before the split), which no
+   * balance can refuse. A release here spends through spend(), which can.
+   */
   credit(
     owner: string,
     entry: NewEntry,
@@ -335,7 +339,6 @@ export class MongoLedger implements Ledger {
     entry: NewEntry,
   ): Promise<{ account: CreditAccount; duplicate: boolean; entry: CreditEntry }> {
     check(owner, entry);
-    if (entry.kind === 'spend') throw new Error('spend through spend()');
     try {
       return await this.#transaction(async (session) => {
         const { accounts, entries } = await this.#cols();
@@ -606,7 +609,6 @@ export class FileLedger implements Ledger {
     entry: NewEntry,
   ): Promise<{ account: CreditAccount; duplicate: boolean; entry: CreditEntry }> {
     check(owner, entry);
-    if (entry.kind === 'spend') throw new Error('spend through spend()');
     return this.#alone(owner, async () => {
       const account = await this.get(owner);
       if (!account) throw new NoCreditAccount(owner);
