@@ -109,13 +109,23 @@ describe('jobs that stall or will not stop', () => {
       preset: 'mp4_h264_fast',
       filename: 'second',
     });
-    // The second waits for the only slot, and names what it is for. Asked once the first is
-    // rendering (its engine and helper running), not polled: job.get paces a polling loop.
+    // The second waits for the only slot, and names what it is for. Read through job.list:
+    // job.get paces a loop like this one.
+    const listed = async () =>
+      (
+        await ok<{ jobs: Array<View & { job_id: string }> }>(client, 'job.list', {
+          tool: 'export.video',
+        })
+      ).jobs.find((j) => j.job_id === second.job_id);
+    let queued = await listed();
+    for (let i = 0; i < 100 && !/^queued/.test(queued?.status_message ?? ''); i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      queued = await listed();
+    }
+    expect(queued?.status_message).toMatch(/^queued: next in line/);
+    expect(queued?.for).toMatchObject({ timeline_id: timeline, preset: 'mp4_h264_fast' });
     await until(async () => (await enginePids()).length >= 2);
     const [engine, helper] = await enginePids();
-    const queued = await ok<View>(client, 'job.get', { job_id: second.job_id });
-    expect(queued.status_message).toMatch(/^queued: next in line/);
-    expect(queued.for).toMatchObject({ timeline_id: timeline, preset: 'mp4_h264_fast' });
 
     // One wait answers when the stalled job ends.
     let view = await ok<View>(client, 'job.get', { job_id: first.job_id, wait_seconds: 20 });
