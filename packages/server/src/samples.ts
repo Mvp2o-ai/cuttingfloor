@@ -26,7 +26,7 @@ export const SAMPLES: Sample[] = [
     slug: 'gaming-stream',
     file: 'gaming-stream.mp4',
     shows: 'a 2-minute gaming stream with the streamer’s facecam and commentary',
-    fits: 'gaming, game streams and Twitch or YouTube gameplay, esports, kill highlights, montages, meme and reaction edits, facecam videos',
+    fits: 'gaming videos with a facecam or commentary: Twitch, Kick and YouTube streams and VODs, stream highlights and funny moments, gaming memes, meme and reaction edits, kill highlights with memes, esports casts, facecam on top and gameplay below',
     starter:
       'Find the best moment in this stream and make a 30-second vertical Short: facecam on top, gameplay below, big word-by-word captions and a zoom on the big play.',
   },
@@ -160,6 +160,15 @@ export const SAMPLES: Sample[] = [
     fits: 'screen recordings: app, website and software walkthroughs, how-to and tutorial videos recorded on a computer screen, SaaS and product demos, Loom-style recordings, turning a screen recording into a vertical how-to Short with zooms on the clicks and numbered steps',
     starter:
       'Make a 30-second vertical how-to Short from this recording: cut the long pause and the mistake, follow the cursor and zoom in on every click, number the steps on screen and add captions from his voice.',
+  },
+  {
+    slug: 'gameplay-montage',
+    file: 'gameplay-clips.mp4',
+    shows:
+      'a 39-second set of six gameplay clips from a made-up fantasy action game, with no facecam, commentary or music: a jump across a chasm, a fight with stone golems, a glide from a tower, a shockwave spell, a crystal boss kill and a last fight, with game sound only',
+    fits: 'gameplay montages and edits with no facecam: game clips cut to a song or soundtrack, epic and cinematic game edits, boss fights, best plays and clutch moments with slow motion and impacts, game trailers and highlight reels made from recorded gameplay',
+    starter:
+      'Cut these clips into a 30-second gameplay montage on the beat of a track: open on the boss kill, slow motion into the big hits with a flash and a hit sound on each impact, and a title at the end.',
   },
   {
     slug: FALLBACK_SAMPLE,
