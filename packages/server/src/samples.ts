@@ -42,7 +42,7 @@ export const SAMPLES: Sample[] = [
     slug: 'product-review',
     file: 'product-review.mp4',
     shows: 'a 24-second beauty product review by a creator, filmed in takes',
-    fits: 'product reviews, ads, e-commerce, beauty and fashion, UGC, app, brand or product promos, marketing videos',
+    fits: 'product reviews, unboxings and try-ons by a person on camera, UGC ads, beauty and fashion creators, app, brand or product promos filmed with a person, marketing videos',
     starter:
       'Make this review a 15-second Short: open on the best line, speed through the demo, pop up callouts as she says them and end on a card with the price.',
   },
@@ -87,6 +87,15 @@ export const SAMPLES: Sample[] = [
     fits: 'AI-generated clips from Kling, Runway, Sora, Veo or Midjourney video: putting AI shots in story order, matching colour across shots, AI short films and animal shorts, trailers, cinematic scenes, sound design and a score for AI video',
     starter:
       'Cut these AI clips into a 40-second short film: put them in story order, trim the dead starts, give every shot the same look, add a score, storm and footstep sounds, an opening title and an end title.',
+  },
+  {
+    slug: 'promo-stills',
+    file: 'promo-stills.mp4',
+    shows:
+      'a 22-second set of six product photos of a small studio’s handmade mugs, shown one after another with no motion, under the seller’s own recorded voiceover with the price and offer, and no music',
+    fits: 'promos and ads made from photos or product images with no filming: book, product and shop launches, slideshows with a voiceover, photo promos with music, WhatsApp Status and Instagram promos, sale and offer videos, A/B versions with different hooks',
+    starter:
+      'Make a 20-second promo for Reels from these photos: open on a hook, move every photo, put the key words on screen as they are said, end on the price and a call to action, then make a second version that opens with the offer.',
   },
   {
     slug: FALLBACK_SAMPLE,
