@@ -1,5 +1,12 @@
 # cuttingfloor
 
+## 0.77.9
+
+### Patch Changes
+
+- ddcd315: A small business Reel demo on the site, made from a coffee roaster's phone clips with nobody talking, and a b-roll clip in the onboarding samples: tasks about Reels and TikToks from b-roll, behind the scenes and how it's made videos for a shop, or short cuts of a few clips to music now start with four shaky phone clips from a small coffee roastery instead of Big Buck Bunny.
+- 5689dc4: On the 3rd, 9th and 27th tool error in a row (a success starts the count again), the error offers support.contact: it's not the assistant's fault, and cuttingfloor wants to hear the tooling change that would have made it work, improved the experience, or given it the context to decide more efficiently. support.contact takes that as improvement, and the admin API returns it with each message.
+
 ## 0.77.8
 
 ### Patch Changes
