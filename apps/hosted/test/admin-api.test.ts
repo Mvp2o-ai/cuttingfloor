@@ -162,6 +162,7 @@ beforeAll(async () => {
     runtime,
     lifecycle,
     access,
+    ledger: testLedger(),
     apps,
     keys: new ScriptKeys(runtime.ws, ADMIN_KEYS),
     rights,

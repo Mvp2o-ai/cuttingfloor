@@ -113,6 +113,7 @@ beforeAll(async () => {
     runtime,
     lifecycle,
     access,
+    ledger: testLedger(),
     apps: new AppsSeen(runtime.ws),
     keys,
     rights,
