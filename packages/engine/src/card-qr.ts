@@ -13,9 +13,9 @@ export type CardShape = 'landscape' | 'portrait' | 'square';
  * warm white tile around it and the caption under it): the square's left, top and side.
  */
 export const CARD_QR: Record<CardShape, { x: number; y: number; size: number }> = {
-  landscape: { x: 1384, y: 380, size: 320 },
-  portrait: { x: 380, y: 1400, size: 320 },
-  square: { x: 776, y: 744, size: 220 },
+  landscape: { x: 1460, y: 520, size: 280 },
+  portrait: { x: 660, y: 1440, size: 300 },
+  square: { x: 820, y: 790, size: 180 },
 };
 
 const BG = [0x08, 0x0a, 0x09] as const;
