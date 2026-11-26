@@ -107,6 +107,15 @@ export const SAMPLES: Sample[] = [
       'Make a 30-second lyric Short of this song: every line on screen as she sings it, the key words big, the words moving with the beat, the footage cut to the beat with a warm grade, and the hook line as the big moment.',
   },
   {
+    slug: 'background-swap',
+    file: 'messy-room-talk.mp4',
+    shows:
+      'a 28-second phone video of a creator giving money tips to camera in a cluttered, badly lit bedroom (laundry on the bed, a messy shelf, an open doorway), with clear speech and no captions',
+    fits: 'removing or replacing the background behind a person: green screen without a green screen, a clean studio, black or coloured backdrop, blurring or hiding a messy room, cutting a person out and putting them in front of a new scene or picture, with captions on top',
+    starter:
+      'Swap the messy room behind him for a cinematic black backdrop with a soft light, light him to match so it looks real, and add bold word-by-word captions.',
+  },
+  {
     slug: FALLBACK_SAMPLE,
     file: 'big-buck-bunny.mp4',
     shows: 'a 30-second scene from Big Buck Bunny, an open animated film',
