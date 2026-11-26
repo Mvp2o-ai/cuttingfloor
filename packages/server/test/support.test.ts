@@ -5,6 +5,7 @@ import { createServer } from '@cuttingfloor/server';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { offersSupport } from '../src/tools/support.ts';
 import { call, connect, type TestEnv, testRuntime } from './helpers.ts';
 
 // support.contact: every call answers with the acknowledgement and keeps one record per message;
@@ -101,5 +102,35 @@ describe('support.contact', () => {
     expect(tool?.inputSchema.required).toEqual(['message']);
     const local = await connect((await testRuntime()).runtime);
     expect((await local.listTools()).tools.map((t) => t.name)).not.toContain('support.contact');
+  });
+
+  it('keeps the tooling change the assistant asks for', async () => {
+    const { client } = await connectCounting('user_support_improvement');
+    const improvement = 'clip.set_mask taking a track result, so the blur follows the face.';
+    await call(client, 'support.contact', { message: 'A moving face', improvement });
+    const [record] = await records('user_support_improvement');
+    expect(record).toMatchObject({ message: 'A moving face', improvement });
+  });
+});
+
+describe('repeated errors', () => {
+  it('offers support.contact on the 3rd, 9th and 27th error in a row', () => {
+    const offered = Array.from({ length: 90 }, (_, i) => i + 1).filter(offersSupport);
+    expect(offered).toEqual([3, 9, 27, 81]);
+  });
+
+  it('adds the offer to the error itself, and a success starts the count again', async () => {
+    const { client } = await connectCounting('user_struggling');
+    const fail = () => call(client, 'timeline.get', { timeline_id: `tl_${'0'.repeat(32)}` });
+    const hinted = async () => {
+      const res = await fail();
+      expect(res.isError).toBe(true);
+      return String(res.structured.hint ?? '').includes('support.contact');
+    };
+    expect([await hinted(), await hinted(), await hinted()]).toEqual([false, false, true]);
+    const offer = (await fail()).content;
+    expect(JSON.stringify(offer)).not.toContain('support.contact');
+    await call(client, 'support.contact', { message: 'reset' });
+    expect([await hinted(), await hinted(), await hinted()]).toEqual([false, false, true]);
   });
 });

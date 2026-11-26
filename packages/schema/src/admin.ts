@@ -162,9 +162,18 @@ export const AdminAccount = z.object({
       'Credits remove watermarks (export.release, priced by finished length); making is free. Before 2026-11-23 a credit was one minute of a server job or 200 visual judgments, so earlier use counts that way. From the credit ledger; null when the account has no ledger account yet (it never used cuttingfloor) or the ledger did not answer',
     ),
   support_messages: z
-    .array(z.object({ at: time, message: z.string() }))
+    .array(
+      z.object({
+        at: time,
+        message: z.string(),
+        improvement: z
+          .string()
+          .optional()
+          .describe('The tooling change the assistant says would have helped, when it gave one'),
+      }),
+    )
     .describe(
-      "Messages the user's assistant sent the cuttingfloor team (support.contact): failures, things it couldn't do, requests. Newest first; every one kept",
+      "Messages the user's assistant sent the cuttingfloor team (support.contact): failures, things it couldn't do, requests, and the tooling change it asks for. Newest first; every one kept",
     ),
   activity: z
     .object({
