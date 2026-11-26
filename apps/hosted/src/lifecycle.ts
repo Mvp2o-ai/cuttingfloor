@@ -1109,6 +1109,9 @@ export class Lifecycle {
       await links.delete(sha256(sub));
       // Last: while the WorkOS user is there, a retry finds the account and finishes the rest.
       for (const account of accounts) if (account.user) await this.#deleteUser(account.id);
+      // A request in flight while the account went may have opened its ledger account again;
+      // with the WorkOS user gone, none can now.
+      for (const account of accounts) await this.#o.ledger.forget(account.id);
     } catch (error) {
       process.stderr.write(`partner ${partner}: delete: ${(error as Error).message}\n`);
       return json(res, 503, { error: 'the account could not be deleted just now; call again' });
@@ -1148,8 +1151,9 @@ export class Lifecycle {
     await runtime.uploads.forget(owner);
     await ws.blobs.forget(owner);
     await ws.records.forget(owner);
-    await this.#o.ledger.forget(owner);
+    // Caches first, so a request in flight reads the ledger again rather than a stale account.
     this.#o.access.forget(owner);
+    await this.#o.ledger.forget(owner);
     this.#seen.delete(owner);
     this.#apps.delete(owner);
     this.#usedOn.delete(owner);

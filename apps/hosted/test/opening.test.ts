@@ -21,6 +21,9 @@ const A = 'user_01HANDEDOVERAAAAAAAAAAAAA1';
 const B = 'user_01HANDEDOVERBBBBBBBBBBBBB2';
 const RACED = 'user_01SIGNEDINFIRSTEEEEEEEEEE5';
 const LINKED = 'user_01KAZIOPENEDDDDDDDDDDDDDD4';
+// Signed up between run 1 and our deploy: one never used, one that spent in Kazi's ledger.
+const WINDOW = 'user_01SIGNEDUPINWINDOWWWWWWWW6';
+const SPENT = 'user_01SIGNEDUPANDSPENTTTTTTTT7';
 
 type Row = { kind: string; source: string; credits: number; ref: string; at?: string };
 type Account = {
@@ -110,6 +113,8 @@ const users: Record<
   },
   [RACED]: { email: 'e@example.com', created_at: '2026-11-25T00:00:00Z', metadata: {} },
   [LINKED]: { email: 'd@example.com', created_at: '2026-11-25T00:00:00Z', metadata: {} },
+  [WINDOW]: { email: 'w@example.com', created_at: '2026-12-01T11:00:00Z', metadata: {} },
+  [SPENT]: { email: 's@example.com', created_at: '2026-12-01T11:00:00Z', metadata: {} },
 };
 
 let ws: Workspace;
@@ -263,6 +268,7 @@ describe('the split from Kazi’s ledger', () => {
     expect(await reconcile({ handoff: parseHandoff(run1), ledger, records: ws.records })).toEqual({
       checked: 2,
       differences: [],
+      notes: [],
     });
   });
 
@@ -280,24 +286,37 @@ describe('the split from Kazi’s ledger', () => {
         { kind: 'usage', source: 'cuttingfloor', credits: -1, ref: 'j_4-release' },
       ],
     };
+    // B is also a Kazi user: its Kazi use since run 1 moved its balance, and that is Kazi's.
     const b2 = { ...b1, balance: 2 };
-    const { report } = await run(handoff(2, [a2, b2, kaziOnly]), true);
+    const { report, lines } = await run(handoff(2, [a2, b2, kaziOnly]), true);
     expect(report.added).toBe(2);
-    expect(report.mismatches).toEqual([
-      `${B}: Kazi's balance is 2, its opening and rows here come to -1.0234`,
-    ]);
+    expect(report.mismatches).toEqual([]);
+    expect(lines).toContain(
+      `${B}: Kazi's balance is 2, its opening and rows here come to -1.0234 (Kazi user: Kazi's own use, not checked)`,
+    );
     // opening 48 + 55 - 8 (run 1) + 55 - 2 - 1 (run 2): j_4 once, not twice.
     expect(await ledger.get(A)).toMatchObject({ balance: 147, used_total: 11 });
     expect((await ledger.entries(A)).filter((e) => e.id === 'j_4-release')).toHaveLength(1);
     expect((await ledger.get(B))?.balance).toBe(-1.0234);
-    const { differences } = await reconcile({
+    const checked = await reconcile({
       handoff: parseHandoff(handoff(2, [a2, b2, kaziOnly])),
       ledger,
       records: ws.records,
     });
-    expect(differences).toEqual([
+    expect(checked.differences).toEqual([]);
+    expect(checked.notes).toEqual([
       { owner: B, what: 'Kazi’s balance is 2, its opening and rows here come to -1.0234' },
     ]);
+    // Even for a Kazi user, a row by ref that isn't here is a difference.
+    const b3 = {
+      ...b2,
+      rows: [
+        ...b2.rows,
+        { kind: 'usage', source: 'cuttingfloor', credits: -1, ref: 'j_9-release' },
+      ],
+    };
+    const missing = await reconcile({ handoff: parseHandoff(handoff(2, [a2, b3])), ledger });
+    expect(missing.differences).toEqual([{ owner: B, what: 'j_9-release is not carried' }]);
     // A release Kazi took that the balance doesn't show is a mismatch too.
     const off = {
       ...a2,
@@ -310,6 +329,40 @@ describe('the split from Kazi’s ledger', () => {
     expect(again.mismatches).toContain(
       `${A}: Kazi's balance is 147, its opening and rows here come to 144`,
     );
+  });
+
+  it('lets a sign-up between the runs be, and flags one that spent in Kazi’s ledger meanwhile', async () => {
+    await access.balance(WINDOW);
+    await access.balance(SPENT);
+    const grant = { kind: 'grant', source: 'kazi', credits: 3, ref: 'grant' };
+    const window: Account = {
+      ...kaziOnly,
+      account_id: 'ca_w',
+      workos_user_id: WINDOW,
+      balance: 3,
+      rows: [grant],
+    };
+    const spent: Account = {
+      ...kaziOnly,
+      account_id: 'ca_s',
+      workos_user_id: SPENT,
+      balance: 2,
+      rows: [grant, { kind: 'usage', source: 'cuttingfloor', credits: -1, ref: 'j_s-release' }],
+    };
+    const file = handoff(2, [window, spent]);
+    const { report, lines } = await run(file, true);
+    expect(lines).toContain(
+      `${WINDOW}: signed up between the runs; open here with our grant, nothing carried`,
+    );
+    expect(report.mismatches).toContain(
+      `${SPENT}: already open here without opening:ca_s (grant:activation); not carried`,
+    );
+    expect(report.mismatches.some((m) => m.startsWith(WINDOW))).toBe(false);
+    const { differences, notes } = await reconcile({ handoff: parseHandoff(file), ledger });
+    expect(notes).toEqual([
+      { owner: WINDOW, what: 'signed up between the runs; open here with our grant' },
+    ]);
+    expect(differences).toEqual([{ owner: SPENT, what: 'has no opening:ca_s' }]);
   });
 
   it('leaves an account a sign-in opened first, an unhanded link and stray App Store money for Ken', async () => {
