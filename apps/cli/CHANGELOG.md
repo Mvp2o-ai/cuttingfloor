@@ -1,5 +1,17 @@
 # cuttingfloor
 
+## 0.77.11
+
+### Patch Changes
+
+- b9fb2db: Inside ChatGPT, the player's link for a user short of credits is "See pricing" to the pricing page instead of "Get credits" to the account page, as ChatGPT's plugin rules ask; other apps keep "Get credits". The privacy policy names the task given when an account starts, messages to the team and the tool call records, with how long each is kept.
+
+## 0.77.10
+
+### Patch Changes
+
+- 73b182d: A kids' story demo on the site, made from six silent cartoon scenes with a narrator, a voice for each character, sound effects, light music and big captions for early readers, and a cartoon clip in the onboarding samples: tasks about kids' stories and cartoons, bedtime and moral stories, storybook and educational videos for children, or adding character voices and sound effects to animation now start with six silent cartoon scenes of a little cloud who is scared of thunder instead of Big Buck Bunny.
+
 ## 0.77.9
 
 ### Patch Changes

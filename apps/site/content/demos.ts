@@ -1034,6 +1034,98 @@ const STREAM: Demo = {
   ],
 };
 
+// Six silent cartoon scenes of a short kids' story (generated animation, edited for real by
+// cuttingfloor): a narrated story Short with a voice for each character, sound effects, music,
+// big captions for early readers and an ending with the lesson.
+const KIDS: Demo = {
+  id: 'kids',
+  slug: 'add-voices-and-sound-effects-to-a-kids-cartoon',
+  title: 'Turn silent cartoon scenes into a kids’ story with voices and sound effects',
+  description:
+    'A parent gives Claude six silent cartoon scenes and a short script about Pip, a little cloud who is scared of thunder. cuttingfloor gives the narrator and each character their own voice, times every line to the action, adds a cartoon sound on every action and light music under the voices, and puts a title card, big captions for early readers and a friendly ending with the lesson on a 35-second Short.',
+  steps: [
+    'Looked at all six scenes to find when each thing happens: Rumble rolling in, the lightning, his shout, Daisy drooping, Pip’s deep breath, the rain and the rainbow.',
+    'Made a warm storyteller voice for the narrator and a different voice for each character: a small bright voice for Pip, a big deep one for Rumble and a soft one for Daisy.',
+    'Put the scenes in story order and trimmed the slow starts, with Rumble’s “BOOM!” landing just as his mouth opens.',
+    'Added a sound on every action: a sparkle on the title, a swish when Pip waves, rumbles and thunder cracks for the storm, a slide when Pip hides and Daisy droops, a rising sound as Pip gets brave, a whoosh as she flies, rain, drips, a pop and chimes as Daisy blooms, and a giggle.',
+    'Put an original light music track under the whole story, quiet under the voices and up a little at the end.',
+    'Opened on a big friendly “Pip and the Thunder” title that pops in over Pip, read out by the narrator.',
+    'Added big, simple captions at the top, a short phrase at a time, with the word being said lit up in each character’s colour so early readers can follow along.',
+    'Held the last frame on the rainbow for a “The End” card with the lesson: being brave means helping, even when you’re scared.',
+    'Made the voices loud and clear over the music with peaks under −1 dB. The music is an original track made for this demo.',
+  ],
+  uploaded: '2026-11-26',
+  moments: [
+    { name: 'Title: Pip and the Thunder', start: 0, end: 2 },
+    { name: 'Pip, the smallest cloud', start: 2, end: 7 },
+    { name: 'Rumble rolls in: “BOOM!”', start: 7, end: 14.4 },
+    { name: 'Daisy is thirsty', start: 14.4, end: 17 },
+    { name: 'Pip is brave', start: 17, end: 21.9 },
+    { name: 'Rain, and Daisy blooms', start: 21.9, end: 27.4 },
+    { name: 'The rainbow and the lesson', start: 27.4, end: 34.9 },
+  ],
+  agent: 'Claude',
+  raw: {
+    src: '/demo/kids/raw.mp4',
+    poster: '/demo/kids/raw.jpg',
+    label: 'cartoon-scenes.mp4 · 0:36',
+    seconds: 36,
+  },
+  transcript: [
+    { text: 'Scene 1: Pip floats over the meadow and waves' },
+    { text: 'Scene 2: the first moment, before Rumble moves', cut: 0 },
+    { text: 'Scene 2: Rumble rolls in, lightning flashes, Pip shakes, Rumble shouts' },
+    { text: 'Scene 3: the wide shot it opens on', cut: 0 },
+    { text: 'Scene 3: Daisy droops in the dry ground, then Rumble crackles' },
+    { text: 'Scene 4: Pip looks down, takes a deep breath and flies off' },
+    { text: 'Scene 5: Pip rains on Daisy and she blooms' },
+    { text: 'Scene 6: the wide shot it opens on', cut: 0 },
+    { text: 'Scene 6: new flowers grow, a rainbow appears and Rumble smiles' },
+    { text: 'No voices, sound or music' },
+  ],
+  turns: [
+    {
+      prompt:
+        'I made these cartoon scenes for my kids’ channel but they have no sound. Can you make it a proper story Short? A narrator, a voice for each character (Pip is the little cloud, Rumble is the grumpy storm cloud, Daisy is the flower), sound effects, some light music, a title at the start and the lesson at the end. Here’s my script.',
+      reply:
+        'I’ll give the narrator a warm storytelling voice and Pip, Rumble and Daisy voices of their own, time each line to what they do on screen, add a cartoon sound on every action and light music underneath, then open on a “Pip and the Thunder” title and end on the lesson, with big captions kids can read along with.',
+      calls: [
+        { fn: 'skills.search', note: 'checked for a method for a kids’ story' },
+        { fn: 'media.import', note: 'your six scenes' },
+        { fn: 'render.frames', note: 'found when each thing happens in every scene' },
+        { fn: 'create.voiceover', note: 'the narrator, Pip, Rumble and Daisy, one voice each' },
+        { fn: 'media.get', note: 'when each word is said' },
+        { fn: 'sounds.list', note: 'thunder, swishes, rain, drips, a pop, chimes, a giggle' },
+        { fn: 'media.import', note: 'the sounds and the music' },
+        { fn: 'create.still', note: 'the title card and the “The End” card' },
+        { fn: 'timeline.create', note: 'vertical, 24 fps like the scenes' },
+        { fn: 'edit.batch', note: 'scenes in story order, every line timed to the action' },
+        { fn: 'clip.freeze', note: 'held the rainbow for the end card' },
+        { fn: 'edit.batch', note: 'a sound on every action, the music, the title and end card' },
+        { fn: 'render.frames', note: 'moved “BOOM!” to where Rumble opens his mouth' },
+        { fn: 'edit.batch', note: 'deeper voice for Rumble, brighter for Pip, the levels' },
+        { fn: 'edit.batch', note: 'big captions, a phrase at a time, in each character’s colour' },
+        { fn: 'render.frames', note: 'moved the captions to the top, clear of Daisy' },
+        { fn: 'qa.check', note: 'loudness and peaks' },
+        { fn: 'export.video', note: 'a copy to check the voices over the music' },
+        { fn: 'edit.batch', note: 'music and rain down under the voices, up at the end' },
+        { fn: 'qa.check', note: 'loudness, peaks, no black or silent gaps' },
+        { fn: 'export.video', note: 'vertical, 0:35' },
+        { fn: 'export.timeline', note: 'the captions as a subtitle file' },
+      ],
+      status: 'Giving everyone a voice…',
+      done: 'Your story is ready: “Pip and the Thunder” in 35 seconds, with a narrator, a voice for Pip, Rumble and Daisy, a sound on every action, light music, big captions for early readers and “The End” with the lesson. Want a widescreen version for your long-form channel too?',
+      video: {
+        src: '/demo/kids/cut.mp4',
+        poster: '/demo/kids/cut.jpg',
+        label: 'pip-and-the-thunder.mp4 · 0:35',
+        seconds: 34.9,
+        captions: '/demo/kids/cut.vtt',
+      },
+    },
+  ],
+};
+
 // Four shaky phone clips from a small coffee roastery with nobody talking (generated footage, edited
 // for real by cuttingfloor): a 15-second "roaster to cup" Reel with a hook, music and an end card.
 const BROLL: Demo = {
@@ -1677,6 +1769,7 @@ const CAR: Demo = {
 };
 
 export const DEMOS: Demo[] = [
+  KIDS,
   BROLL,
   TESTIMONIAL,
   BGSWAP,

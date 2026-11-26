@@ -31,6 +31,11 @@
 
   const CARET = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
   const ACCOUNT = 'https://cuttingfloor.ai/account';
+  // ChatGPT's plugin rules allow an information page about plans, never a page that buys.
+  const IN_CHATGPT = typeof window !== 'undefined' && Boolean(window.openai);
+  const GET_MORE = IN_CHATGPT
+    ? { label: 'See pricing', url: 'https://cuttingfloor.ai/pricing' }
+    : { label: 'Get credits', url: ACCOUNT };
 
   const n = (x) => String(Math.round(x * 100) / 100);
   const credits = (x) => `${n(x)} credit${x === 1 ? '' : 's'}`;
@@ -114,7 +119,7 @@
       menu.innerHTML = `
         <label class="fc-opt${short ? ' off' : ''}"><input type="radio" name="fc-copy" value="final"${choice === 'final' ? ' checked' : ''}${short ? ' disabled' : ''}>
           <b>Final copy</b><span>No watermark · ${cost}</span>
-          ${short ? '<button class="fc-buy" type="button">Get credits</button>' : ''}</label>
+          ${short ? `<button class="fc-buy" type="button">${GET_MORE.label}</button>` : ''}</label>
         <label class="fc-opt"><input type="radio" name="fc-copy" value="review"${choice === 'review' ? ' checked' : ''}>
           <b>Review copy</b><span>Watermarked · free</span></label>
         <details class="fc-why"><summary>What's the difference?</summary>
@@ -131,7 +136,7 @@
       if (buy)
         buy.onclick = (e) => {
           e.preventDefault();
-          o.openLink(ACCOUNT);
+          o.openLink(GET_MORE.url);
         };
     }
 

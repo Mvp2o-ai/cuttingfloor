@@ -38,7 +38,8 @@ export default function Privacy() {
             'Billing data: your payment history (held by Stripe; we never see your card number) and your credits: the free ones, the packs you bought and the watermarks you removed with them.',
             'Your content: the files you upload or import, the exports and timelines you make, and what your agent sends each tool: its instructions for that step and any file you attach. We never see your chat.',
             'Data worked out from your content: transcripts, beats, scenes, where faces and speakers are, and a search index of each video’s and picture’s frames (small pictures and number summaries of what they show). Faces and voices are used only to make the edit you asked for, never to identify anyone.',
-            'Usage data: job records (which job ran, for how long), downloads (which export, the day, whether from its page or its link, and the app), which app you first connected from, which link or ad first brought you (when it was tagged) and when you first edited and exported, and sign-in steps (the time and the app’s name when an app asks how to sign in, without its address).',
+            'What you or your agent tell us: the task you said you wanted to make when your account started, and messages your agent sends the cuttingfloor team (what went wrong, and what would have helped).',
+            'Usage data: a record of each tool call (which tool, when, how long it took, and an error’s code and message, never its arguments or result), job records (which job ran, for how long), downloads (which export, the day, whether from its page or its link, and the app), which app you first connected from, which link or ad first brought you (when it was tagged) and when you first edited and exported, and sign-in steps (the time and the app’s name when an app asks how to sign in, without its address).',
             'Technical data: server logs of the IP address a request came from, its time and what it asked for; on the website, visits, pages and the links and buttons clicked, and cookies: one that keeps you signed in and, for 30 days after a tagged link or ad, one that remembers which it was.',
             'Keys you save: a provider key (your sync. labs key), kept encrypted, and keys you make for scripts.',
           ]}
@@ -49,6 +50,7 @@ export default function Privacy() {
           items={[
             'To run the editor: import, analyse, search, edit, render and export your media as your agent asks.',
             'To run your account: sign you in, keep your credits and bill you.',
+            'To start you off with a sample that fits what you want to make, and to fix and improve cuttingfloor from what you and your agent tell us.',
             'To send account email: welcome, credits running low, payment problems, and a reminder before your files are deleted.',
             'To keep the service working and safe, and to see which apps people use where they stop while connecting, and which links and ads bring people who sign up.',
           ]}
@@ -76,6 +78,8 @@ export default function Privacy() {
             'Account data and account records: for as long as you have an account.',
             'Billing records: as long as the law asks.',
             'Job records and sign-in steps: 13 months.',
+            'Tool call records: 30 days.',
+            'The task you started with, and messages to the team: for as long as you have an account.',
             'Server logs: a few weeks.',
             'Keys you make for scripts: as long as they last. A saved provider key: until you remove it.',
           ]}
