@@ -1,5 +1,5 @@
 import { withAuth } from '@workos-inc/authkit-nextjs';
-import { accountStatus, workos } from '../lib/billing.ts';
+import { accountStatus, creditPayment, workos } from '../lib/billing.ts';
 import { filesOf } from '../lib/files.ts';
 import { keysOf } from '../lib/keys.ts';
 import { providerKeysOf } from '../lib/provider-keys.ts';
@@ -12,10 +12,14 @@ export const metadata = { title: 'Account — cuttingfloor', robots: { index: fa
 export default async function AccountPage({
   searchParams,
 }: {
-  searchParams: Promise<{ bought?: string }>;
+  searchParams: Promise<{ bought?: string; session?: string }>;
 }) {
   const { user } = await withAuth({ ensureSignedIn: true });
-  const { bought } = await searchParams;
+  const { bought, session } = await searchParams;
+  // Back from checkout: credited now, before the balance is read (the server takes only the
+  // signed-in user's own payment, once).
+  if (session && /^cs_[A-Za-z0-9_]{1,250}$/.test(session))
+    await creditPayment(user.id, { checkout_session: session });
   const [status, found, files, keys, adminKeys, providerKeys] = await Promise.all([
     accountStatus(user.id, Boolean(bought)),
     workos(`/user_management/users/${encodeURIComponent(user.id)}`).catch(() => ({})),

@@ -64,7 +64,8 @@ export default function Privacy() {
           items={[
             'The app you connected (ChatGPT, Claude, Kazi or another) gets tool results, under its own privacy policy: the names, sizes and details of your media, transcripts and measurements of it, timelines, previews, download links that expire, and the ids that tie one step to the next. Never your email, payment details or keys.',
             'Hosting: Hetzner runs the editor and holds your media, in Ashburn, Virginia (USA); transcripts, voiceovers, cutouts and the search index are made there too. Vercel runs this website and its analytics.',
-            'Accounts and payments: WorkOS (sign-in and accounts), Stripe (payments and invoices), Kazi (the credit ledger, which keeps your balance by your email and account, so credits work on both).',
+            'Accounts and payments: WorkOS (sign-in and accounts), Stripe (payments and invoices), Apple (credits bought in the Cutting Floor AI iPhone app). Your credit balance is kept by us, with your other account records.',
+            'Kazi, our sister product: your name and email, only when you go on from our site into Kazi.',
             'Email: Resend sends account email.',
             'Judgment model: TypeSafe gets the frames and text your agent asks a question about (judge.ask, media.seek, media.search, or a look through a video), only to answer it.',
             'Lip sync, only with your own key: sync. labs gets the stretch of video and the speech your agent names, under your account with them.',
