@@ -9,7 +9,7 @@ export const metadata = { title: 'Release a clean copy — cuttingfloor', robots
 // What the QR code on a review copy's cards opens. Anyone can see the video, so the page asks the
 // viewer to sign in and finds the file only on their own account: a stranger who scans it can
 // neither spend the owner's credits nor take the clean copy. The owner sees the price and their
-// credits, removes the watermark here, and downloads the clean copy.
+// credits, removes the watermark here, and the clean copy plays with its download beside it.
 export default async function ReleasePage({
   params,
   searchParams,
@@ -47,6 +47,12 @@ export default async function ReleasePage({
           {released && r.spent ? ` · ${credits(r.spent)} credits used` : ''}. Every link to it is
           now clean.
         </p>
+        {/\.(?:png|jpe?g|webp|gif)$/i.test(r.name) ? (
+          <img className="release-view" src={r.url} alt={r.name} />
+        ) : (
+          // Muted so phones let it start on its own; its controls turn the sound on.
+          <video className="release-view" src={r.url} autoPlay muted playsInline controls />
+        )}
         <div className="actions">
           <a className="buy" href={r.url} download={r.name}>
             Download

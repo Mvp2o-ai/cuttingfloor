@@ -4325,6 +4325,14 @@ html[data-from="claude"] .dm-add-apps [data-app="claude"] h3 {
 .acct-top .lede {
   max-width: 46ch;
 }
+.release-view {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0 0 24px;
+  background: #000;
+}
 .acct-head {
   font-size: clamp(40px, 6vw, 84px);
   line-height: 0.98;
