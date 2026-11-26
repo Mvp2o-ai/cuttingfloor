@@ -16,9 +16,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { AccessCheck } from '../apps/hosted/src/access.ts';
-import { Ledger } from '../apps/hosted/src/ledger.ts';
+import { FileLedger } from '../apps/hosted/src/ledger.ts';
 import { Workspace } from '../packages/core/src/index.ts';
-import { FREE_CREDITS, PACKS } from '../packages/plans/src/index.ts';
+import { FREE_CREDITS, LOW_CREDITS, PACKS } from '../packages/plans/src/index.ts';
 
 const site = (process.argv[2] ?? 'https://cuttingfloor-site.vercel.app').replace(/\/$/, '');
 const chrome = process.env.CHROME_PATH;
@@ -26,8 +26,9 @@ if (!chrome) throw new Error('Set CHROME_PATH to a Chrome or Chromium binary');
 const env = await readFile(new URL('../deploy/hetzner/cuttingfloor.env', import.meta.url), 'utf8');
 const read = (name: string) => new RegExp(`^${name}=(\\S+)`, 'm').exec(env)?.[1] ?? '';
 const workosKey = read('WORKOS_API_KEY');
-const ledger = new Ledger(read('KAZI_CREDITS_URL'), read('KAZI_CREDITS_KEY'));
 const ws = new Workspace(await mkdtemp(join(tmpdir(), 'cf-smoke-account-')));
+// A throwaway credit ledger of this run's own: the account rules, not production's balances.
+const ledger = new FileLedger({ records: ws.records, low: LOW_CREDITS });
 const stripeKey = read('STRIPE_SECRET_KEY');
 const bypass = process.env.VERCEL_BYPASS ?? read('VERCEL_BYPASS');
 
