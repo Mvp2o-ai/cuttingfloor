@@ -5,7 +5,7 @@
 // untagged visit leaves the cookie as it was.
 
 export const SOURCE_COOKIE = 'cf-src';
-const MAX_AGE = 30 * 24 * 60 * 60;
+export const SOURCE_MAX_AGE = 30 * 24 * 60 * 60;
 const PART = 40;
 
 /** One tag reduced to lowercase letters, digits, `_` and `-`, so it is safe in a cookie and a name. */
@@ -47,7 +47,7 @@ var p=new URLSearchParams(location.search),s=(p.get('utm_source')||'').toLowerCa
 if(!s)return;
 var c=function(k){return(p.get(k)||'').toLowerCase().replace(/[^a-z0-9_-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,${PART})};
 var v=[c('utm_source'),c('utm_campaign'),c('utm_content')].join('~');
-document.cookie='${SOURCE_COOKIE}='+v+'; max-age=${MAX_AGE}; path=/; samesite=lax'+(location.protocol==='https:'?'; secure':'');
+document.cookie='${SOURCE_COOKIE}='+v+'; max-age=${SOURCE_MAX_AGE}; path=/; samesite=lax'+(location.protocol==='https:'?'; secure':'');
 }catch(e){}})()`;
 
 export function SourceScript() {

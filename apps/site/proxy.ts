@@ -1,10 +1,13 @@
 import { authkitProxy } from '@workos-inc/authkit-nextjs';
 import { type NextFetchEvent, type NextRequest, NextResponse } from 'next/server';
 import { markdownRoute, prefersMarkdown, sectionTwinRoute } from './app/lib/negotiate.ts';
+import { referralCookie, referralPath } from './app/referral.ts';
 
-// Two jobs, and the matcher keeps both narrow so every public page stays a static file:
+// Three jobs, and the matcher keeps them narrow so every public page stays a static file:
 // - Sessions for the signed-in pages. Signed-out visitors to /account, /upload, /welcome, /kazi, /r/<file> and the billing
 //   routes go to the WorkOS sign-in first; /start sends them to the sign-up screen itself.
+// - A person's link, /r/<code> (referral.ts): no sign-in; it leaves the tagged links' cookie,
+//   naming the code, and the page shows what cuttingfloor makes.
 // - Markdown for agents. A request whose Accept header names text/markdown (and likes it at least
 //   as much as HTML) gets the page's Markdown twin; /demos/<slug>.md and the like reach their twin.
 //   It runs only when the header asks, decided on the header and never the user agent, and before
@@ -18,6 +21,12 @@ const AUTH = /^\/(account|upload|welcome|kazi|start|callback)$|^\/api\/|^\/r\/[^
 
 export default function proxy(request: NextRequest, event: NextFetchEvent) {
   const { pathname } = request.nextUrl;
+  const code = referralPath(pathname);
+  if (code) {
+    const next = NextResponse.next();
+    next.cookies.set(referralCookie(code, request.nextUrl.protocol === 'https:'));
+    return next;
+  }
   if (AUTH.test(pathname)) return auth(request, event);
   const twin =
     sectionTwinRoute(pathname) ??
