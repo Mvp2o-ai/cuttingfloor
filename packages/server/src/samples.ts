@@ -125,6 +125,15 @@ export const SAMPLES: Sample[] = [
       'Make a 25-second Reel from this testimonial: open on the best after photo with a hook, cut the restart, the pause and the repeated line, reveal each before and after photo with a slider over her voice, bold Spanish subtitles word by word, and end on the business name and a call to action with light music.',
   },
   {
+    slug: 'broll-reel',
+    file: 'shop-broll.mp4',
+    shows:
+      'a 29-second set of four shaky, ungraded vertical phone clips from a small coffee roastery with nobody talking: a coffee being poured into a cup, beans tumbling out of the roaster, beans scooped into a bag, and a hand stamping the bag, with natural room sound and no text or music',
+    fits: 'Reels and TikToks from b-roll or clips with nobody talking: small business and brand Reels (food, coffee, bakeries, crafts, farms, shops), behind the scenes and how it’s made videos, opening text hooks, short 10–20 second cuts of a few clips to music',
+    starter:
+      'Make a 15-second Reel from these clips: a bold hook line on the first frame, only the best moments in short shots cut to music, a warm grade, the shaky shots steadied, the pour and the beans still audible under the music, and the shop name with a call to action at the end.',
+  },
+  {
     slug: FALLBACK_SAMPLE,
     file: 'big-buck-bunny.mp4',
     shows: 'a 30-second scene from Big Buck Bunny, an open animated film',
