@@ -14,7 +14,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AccessCheck } from '../apps/hosted/src/access.ts';
-import { Ledger } from '../apps/hosted/src/ledger.ts';
+import { ledgerFromEnv } from '../apps/hosted/src/ledger-store.ts';
 import { Workspace } from '../packages/core/src/index.ts';
 import { FREE_CREDITS, PACKS } from '../packages/plans/src/index.ts';
 import type { AccountGetResult } from '../packages/schema/src/index.ts';
@@ -32,7 +32,8 @@ const server = (process.env.CUTTINGFLOOR_PUBLIC_URL ?? 'https://api.cuttingfloor
   '',
 );
 const accountUrl = process.env.CUTTINGFLOOR_ACCOUNT_URL ?? 'https://cuttingfloor.ai/account';
-const ledger = new Ledger(need('KAZI_CREDITS_URL'), need('KAZI_CREDITS_KEY'));
+// The server's own credit ledger (in its record database), read with the server's environment.
+const { ledger } = ledgerFromEnv();
 const ws = new Workspace(await mkdtemp(join(tmpdir(), 'cf-smoke-paid-')));
 
 const step = (label: string) => process.stdout.write(`• ${label}\n`);

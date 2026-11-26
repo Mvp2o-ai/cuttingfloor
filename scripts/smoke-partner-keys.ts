@@ -15,10 +15,11 @@ import { join } from 'node:path';
 import { AccessCheck } from '../apps/hosted/src/access.ts';
 import { createHttpServer } from '../apps/hosted/src/http.ts';
 import { ScriptKeys } from '../apps/hosted/src/keys.ts';
-import { Ledger } from '../apps/hosted/src/ledger.ts';
+import { FileLedger } from '../apps/hosted/src/ledger.ts';
 import { Lifecycle, madeByPartner } from '../apps/hosted/src/lifecycle.ts';
 import { WorkosSubscribers } from '../apps/hosted/src/sequence.ts';
 import { LocalCredentialStore } from '../packages/credentials/src/index.ts';
+import { LOW_CREDITS } from '../packages/plans/src/index.ts';
 import { Runtime } from '../packages/server/src/index.ts';
 
 const env = await readFile(new URL('../deploy/hetzner/cuttingfloor.env', import.meta.url), 'utf8');
@@ -60,7 +61,7 @@ const runtime = new Runtime({
 });
 await runtime.start({ sweep: false });
 const accountUrl = 'https://cuttingfloor.ai/account';
-const ledger = new Ledger(read('KAZI_CREDITS_URL'), read('KAZI_CREDITS_KEY'));
+const ledger = new FileLedger({ records: runtime.ws.records, low: LOW_CREDITS });
 const access = new AccessCheck({ workosKey, stripeKey, ledger, accountUrl, ws: runtime.ws });
 const keys = new ScriptKeys(runtime.ws);
 const lifecycle = new Lifecycle({
