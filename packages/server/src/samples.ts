@@ -80,6 +80,15 @@ export const SAMPLES: Sample[] = [
       'Make a 20-second cinematic Short from these clips: a hook in the first second, speed ramps on the best moments, cuts on the beat, a moody colour grade, whooshes and a title.',
   },
   {
+    slug: 'ai-film-clips',
+    file: 'ai-film-clips.mp4',
+    shows:
+      'a 53-second set of six AI-generated clips of a lighthouse keeper on a stormy night, out of story order, each with its own colour and loudness, slow starts and one clip with no sound',
+    fits: 'AI-generated clips from Kling, Runway, Sora, Veo or Midjourney video: putting AI shots in story order, matching colour across shots, AI short films and animal shorts, trailers, cinematic scenes, sound design and a score for AI video',
+    starter:
+      'Cut these AI clips into a 40-second short film: put them in story order, trim the dead starts, give every shot the same look, add a score, storm and footstep sounds, an opening title and an end title.',
+  },
+  {
     slug: FALLBACK_SAMPLE,
     file: 'big-buck-bunny.mp4',
     shows: 'a 30-second scene from Big Buck Bunny, an open animated film',
