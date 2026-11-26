@@ -13,7 +13,8 @@ Ours (generated footage from the site's demos, apps/site/public/demo/<demo>/raw.
 Starters with no demo page (footage only, made for the shelf): `app-walkthrough.mp4`, a screen
 recording of a made-up invoicing web app (Fernbill), built in HTML with create.motion and voiced with
 create.voiceover. `gameplay-clips.mp4`, six clips of a made-up fantasy action game (generated with
-Gemini Omni), with no facecam or commentary.
+Gemini Omni), with no facecam or commentary. `award-night.mp4`, seven phone clips of a made-up community awards
+night (Gemini Omni), with the host's announcement and the winner's thank-you speech.
 
 `big-buck-bunny.mp4`, the fallback: 30 seconds (2:52 to 3:22) of Big Buck Bunny, 1280×720,
 H.264 and AAC. (c) copyright 2008, Blender Foundation / www.bigbuckbunny.org, licensed under

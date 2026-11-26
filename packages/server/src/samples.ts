@@ -171,6 +171,15 @@ export const SAMPLES: Sample[] = [
       'Cut these clips into a 30-second gameplay montage on the beat of a track: open on the boss kill, slow motion into the big hits with a flash and a hit sound on each impact, and a title at the end.',
   },
   {
+    slug: 'event-highlights',
+    file: 'award-night.mp4',
+    shows:
+      'a 50-second set of seven phone clips from a community awards night in a local hall: the room filling up, the host announcing the Volunteer of the Year, the winner’s surprised reaction and walk to the stage, the award handed over, her short thank-you speech, a standing ovation and dancing later, with room sound and no music or text',
+    fits: 'event highlight videos and recaps: award nights, galas and fundraisers, weddings and receptions, toasts, birthdays and parties, graduations, church and community events, turning a night of event footage into a short highlight reel with the cheers, the toasts and the best moments of the night',
+    starter:
+      'Make a 40-second highlight reel of this awards night: open on the crowd cheering, keep the announcement and the best line of her thank-you speech with captions, cut the rest to music with a warm grade, and end on the standing ovation with a title for the night.',
+  },
+  {
     slug: FALLBACK_SAMPLE,
     file: 'big-buck-bunny.mp4',
     shows: 'a 30-second scene from Big Buck Bunny, an open animated film',
