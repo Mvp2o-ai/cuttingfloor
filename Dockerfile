@@ -8,7 +8,7 @@
 
 # whisper.cpp for local transcripts, built from a pinned commit (v1.9.5) for any CPU of the
 # target architecture. Its models download on first use, checked against pinned SHA-256s.
-FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS whisper
+FROM node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS whisper
 ARG WHISPER_COMMIT=d2a764c648779feb36d44363f212a29b00aad1af
 RUN apt-get update \
  && apt-get install -y --no-install-recommends build-essential cmake git ca-certificates \
@@ -21,7 +21,7 @@ RUN apt-get update \
 
 # cf-vision (tools/vision): face detection and region tracking for media.analyze, built
 # against the OpenCV the MLT packages already bring, plus the YuNet face model (MIT), pinned.
-FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS vision
+FROM node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS vision
 ARG YUNET_URL=https://media.githubusercontent.com/media/opencv/opencv_zoo/47534e27c9851bb1128ccc0102f1145e27f23f98/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
 ARG YUNET_SHA256=8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4
 # MODNet (Apache-2.0) for create.cutout, pinned, then fixed to three working sizes for OpenCV DNN.
@@ -68,7 +68,7 @@ RUN g++ -O2 -std=c++17 /src/segment.cpp -o /cf-segment -I/opt/onnxruntime/includ
 # its pitch kept. Each is fetched at a pinned commit and checked against it; one patch
 # (tools/music/tracktion-offline-render.patch) takes the real-time sleeps out of offline renders.
 # JUCE's GUI modules compile in (Tracktion needs them) but no window or display is ever used.
-FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS music-engine
+FROM node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS music-engine
 ARG TE_COMMIT=691df2a80294ac331a3e09c0a4b6db1d53ef8d72
 ARG JUCE_COMMIT=7ff644f65d7daa1428c34b9738ebb5c449dc9172
 ARG STRETCH_COMMIT=88061fd4eda56a2353c5d65c74aa3f4ccf76f9da
@@ -110,7 +110,7 @@ RUN cmake -S /src/cf-music -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DTE_RO
 # lossless package, pinned by version and the file's SHA-256), kit_909 is synthesised by the
 # script, kit_lofi is the acoustic kit through its lo-fi chain. FLAC files are the same on every
 # architecture, so this runs on the build machine's own.
-FROM --platform=$BUILDPLATFORM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS music-content
+FROM --platform=$BUILDPLATFORM node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS music-content
 ARG MUSESCORE_SF_VERSION=0.2.1-1
 RUN apt-get update \
  && apt-get install -y --no-install-recommends fluidsynth \
@@ -130,7 +130,7 @@ RUN cd /tmp && python3 -I /src/build_content.py /src/music-content.json /music \
 #   FlexSED (MIT; arXiv 2509.18606): sounds described in words, per 40 ms.
 #   Demucs v4 htdemucs (MIT): drums, bass, other and vocals.
 # Code at pinned commits, checkpoints checked against pinned SHA-256s.
-FROM --platform=$BUILDPLATFORM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS sound-models
+FROM --platform=$BUILDPLATFORM node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS sound-models
 ARG PRETRAINEDSED_COMMIT=1aa47e482f7e89904cba2338999345025d8b4e36
 ARG SED_MN10_SHA256=4a0fe320d5369987b772394c51881fb20a602967e6842f72f3e5c8181065ece7
 ARG FLEXSED_COMMIT=89aac3351e807de57c4fe3148d982922a3318e46
@@ -210,7 +210,7 @@ RUN mkdir -p /ckpt /picture/upscale \
 # built in) and its offline speaker diarisation for media.analyze speakers, the prebuilt release
 # for each architecture, checked against pinned SHA-256s. The Kokoro model downloads on first
 # use, like the whisper models; the diarisation models ship in the image (speech-models below).
-FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS tts
+FROM node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS tts
 ARG TARGETARCH
 ARG SHERPA_VERSION=v1.13.8
 ARG SHERPA_AMD64_SHA256=c0bdb7907d3a74bba1d55d22bf4d9fa75586cf1530614ebe88a27b9118e015c4
@@ -233,7 +233,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 # all-MiniLM-L6-v2 (Apache-2.0) for skills.search: sentence embeddings on the CPU, int8 (about
 # 23 MB), in the Transformers.js layout. It ships in the image; nothing downloads at run time, and
 # without it search is keywords only. Pinned to a commit, every file checked against its SHA-256.
-FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS skills-model
+FROM node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS skills-model
 ARG MINILM_REVISION=751bff37182d3f1213fa05d7196b954e230abad9
 ARG MINILM_CONFIG_SHA256=7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7
 ARG MINILM_TOKENIZER_SHA256=da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0
@@ -254,7 +254,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 # media.search: the vision tower embeds each media's frames to pick keyframes, the text tower embeds
 # criteria for local similarity. Full-precision vision and fp16 text: their int8 builds move
 # embeddings too far (cosine 0.73 and as low as 0.77 to the originals). Pinned by revision and SHA-256.
-FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS search-models
+FROM node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS search-models
 ARG SIGLIP2_REVISION=ba1f3b0843f24bc5417d38e19c37b287d719b2f4
 ARG SIGLIP2_CONFIG_SHA256=e43a9f7692d3819886a82cb2097048258d444f123c67d37ec825f9345b019cf2
 ARG SIGLIP2_PREPROCESSOR_SHA256=9b36b57ebaf20f09bf4c22100ccc21877ea6bfe5aead0c00c59f8af8ccefacfc
@@ -281,7 +281,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 # RNNoise models for the voice_denoise effect (FFmpeg arnndn), pinned by commit and SHA-256:
 # beguiling-drafter keeps voice (laughs, breaths), somnolent-hogwash keeps speech only.
 # GregorR/rnnoise-models: the models are not subject to copyright; RNNoise itself is BSD.
-FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS denoise-models
+FROM node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS denoise-models
 ARG RNNOISE_MODELS=https://raw.githubusercontent.com/GregorR/rnnoise-models/3eee541a283fd3b8f81b85b1748e3b9ccbefa04d
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/* && mkdir -p /models/rnnoise \
@@ -299,7 +299,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 # pyannote/segmentation-3.0 (MIT, CNRS) and 3D-Speaker ERes2Net trained on VoxCeleb (Apache-2.0,
 # Alibaba), both as sherpa-onnx's own ONNX exports from its GitHub releases. They ship in the
 # image; each file pinned and checked.
-FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS speech-models
+FROM node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS speech-models
 ARG SILERO_COMMIT=5cd7945676eb32225748052e2e6a0580e4686a08
 ARG SILERO_SHA256=1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3
 ARG W2V_REVISION=a19f851b3d42865797e410752b4c570c871e4825
@@ -335,7 +335,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 # (or never ended). Only libmltavformat.so is built and replaces Debian's; the rest of MLT stays
 # Debian's. The release tarball is pinned by SHA-256. Also the test-only thread-delay shim
 # (tools/mlt/thread-delay.c) that makes the race happen on demand.
-FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS mlt-avformat
+FROM node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS mlt-avformat
 ARG MLT_VERSION=7.30.0
 ARG MLT_SHA256=c802a5fdc16324f6c69273d0bb9718d30c2f635422e171ee01c0e7745e0e793c
 RUN apt-get update \
@@ -363,7 +363,7 @@ RUN cd /src && patch -p1 < /patches/consumer-start-race.patch \
 #   checkpoint they were exported from, yonigozlan/EdgeTAM-hf (Apache-2.0).
 #   LaMa big-lama (Apache-2.0, advimman/lama) as Carve/LaMa-ONNX (Apache-2.0), 512 x 512, for
 #   clip.set_mask mode fill.
-FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS select-models
+FROM node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS select-models
 ARG EDGETAM_ONNX_REVISION=8ca3d3e4169938e65b552cdf14542fde25e8badb
 ARG EDGETAM_ENCODER_SHA256=57fe1a2b3d500813fe4987c4209b856920f187ab0b7723d81586b607ea2cffc1
 ARG EDGETAM_DECODER_SHA256=ee24ee1cae6ecc71889912c1893e08b09f645bb63875108ccd180f7218a3647d
@@ -392,7 +392,7 @@ RUN dir=/models/edgetam && mkdir -p "$dir" \
  && curl -fsSL -o /models/lama-512.onnx "https://huggingface.co/Carve/LaMa-ONNX/resolve/$LAMA_REVISION/lama_fp32.onnx" \
  && echo "$LAMA_SHA256  /models/lama-512.onnx" | sha256sum -c -
 
-FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS base
+FROM node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS base
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt frei0r-plugins tini fontconfig \
       fonts-dejavu-core fonts-inter fonts-montserrat fonts-open-sans fonts-lato fonts-bebas-neue \
@@ -455,7 +455,7 @@ RUN node packages/skills/scripts/write-vectors.ts
 
 # Test-only and quick: the music engine's tests alone, without the rest of the image
 # (`docker build --target music-test .`). `--target test` runs them as well, with everything else.
-FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS music-test
+FROM node:24-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS music-test
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libatomic1 libfreetype6 libfontconfig1 \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=music-engine /cf-music /usr/local/bin/cf-music
