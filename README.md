@@ -6,7 +6,7 @@ A headless video editor for agents, as an MCP server. An agent imports footage, 
 - **Nothing is stored for you.** Timelines, media and outputs live in a cache with a time limit (24 hours for timelines, 7 days for media and exports). Export to keep work.
 - **One Docker image** runs locally (free, unmarked, no limits) and hosted. Engines (FFmpeg, MLT) ship inside it; Docker is the only thing you install.
 
-> What it covers: import, cutting on words, timing, transitions, titles and captions, audio, effects, analysis (transcripts, beats, faces, tracking, scenes), compositing, motion graphics and stills from HTML, voiceover, cut-outs, stems, stabilizing, upscaling, lip-sync, previews, QA checks, and export to MP4, ProRes, GIF and audio or to Final Cut, Premiere and Resolve (FCPXML, OTIO, EDL). Every tool: [cuttingfloor.ai/features](https://cuttingfloor.ai/features). Use it from [Kazi](https://cuttingfloor.ai/agents/kazi), [Claude](https://cuttingfloor.ai/agents/claude), [ChatGPT](https://cuttingfloor.ai/agents/chatgpt) or [any MCP app](https://cuttingfloor.ai/connect).
+> What it covers: import, cutting on words, timing, transitions, titles and captions, audio, effects, analysis (transcripts, beats, faces, tracking, scenes), compositing, motion graphics and stills from HTML, voiceover, music made in layers for the picture, cut-outs, stems, stabilizing, upscaling, lip-sync, previews, QA checks, and export to MP4, ProRes, GIF and audio or to Final Cut, Premiere and Resolve (FCPXML, OTIO, EDL). Every tool: [cuttingfloor.ai/features](https://cuttingfloor.ai/features). Use it from [Kazi](https://cuttingfloor.ai/agents/kazi), [Claude](https://cuttingfloor.ai/agents/claude), [ChatGPT](https://cuttingfloor.ai/agents/chatgpt) or [any MCP app](https://cuttingfloor.ai/connect).
 
 ## Use it hosted
 
@@ -52,6 +52,8 @@ Provider keys are yours (bring your own) and go in the same `.env`, or in Docker
 
 The image includes `/samples/sample.mp4` (10 s test pattern with a tone) and `/samples/card.png` to try things with nothing mounted.
 
+The music engine and its instruments add about 284 MB to the image.
+
 On Docker Desktop for Mac, raise the memory limit for long 4K timelines; bind-mounted footage reads go through VirtioFS. On Linux, create the exports folder before the first start so it belongs to you.
 
 ## How an agent uses it
@@ -67,10 +69,11 @@ On Docker Desktop for Mac, raise the memory limit for long 4K timelines; bind-mo
 9. Effects: `filter.add` on a clip, every clip on a track, or the whole timeline: colour (brightness, contrast, saturation, exposure, temperature, curves, LUTs imported as `.cube`), blur, sharpen, vignette, grain, glitch, pixelate, chroma key; for sound EQ, compressor, noise reduction, de-esser, dialogue enhance, reverb, echo, pitch. `adjustment.add` adds a clip whose effects change everything below it while it runs. The list with params is at `video://catalog/effects`.
 10. Composite: put a clip on a higher video track, then `clip.set_transform` (position, scale, rotation, opacity, crop, flip, fit; any number can take keyframes with easing), `clip.set_mask` (rectangle, ellipse, linear, mirror, heart, star, polygon), `clip.set_blend` and `clip.set_animation` (entrance, exit and loop presets). The accepted names are resources at `video://catalog/{name}`.
 11. Create: `create.motion` renders any animated HTML to a video with alpha, frame-exactly: CSS animations and transitions, the Web Animations API, SVG, canvas or WebGL drawn in `requestAnimationFrame`, timers, or a `window.__seek(seconds)` the page defines all run on a virtual clock the renderer steps one frame at a time. anime.js, three.js, Lottie and D3 load from `lib/` (`<script src="lib/anime.umd.min.js">`). `create.still` renders an HTML page to a PNG, and `create.matte` makes a solid or gradient picture. Each returns a `media_id` for `clip.add`; the same recipe returns the same media. Pages can't reach the network, so images and fonts go in as `assets` (imported media) and are referred to as `assets/<name>`. `create.voiceover` speaks English text in one of 28 Kokoro voices on the CPU (the model, about 350 MB, downloads once) and times every word, so `caption.add {in_clip}` can caption it exactly. `create.cutout` removes the background behind a subject: `any` (BiRefNet; products, animals, objects, people; the default for pictures; needs about 3 GB of memory free for Docker) or `people` (MODNet; fast enough for video, the default there), keeping the sound. `create.lipsync` makes someone on camera say new words: give the video, the new speech (a re-recorded line or a voiceover) and the span of the video to change, and their mouth is redrawn to match by sync. labs on your own key (`SYNC_API_KEY` locally, the `X-Cuttingfloor-Key-Sync` header hosted). Only the span is sent; the result is that span, to place over the original.
-12. Look: `preview: "inline"` on any edit returns the image; `render.frames` returns up to 16 frames as a contact sheet, or up to 4 at full size (`size: "full"`) for thumbnails.
-13. `qa.check` measures the render: gaps, offline media, frame count, loudness and true peak, plus black and silent stretches with the settings you give. Facts, no verdicts.
-14. `export.video` in a format: `mp4_h264`, `mp4_h264_fast`, `mp4_av1`, `mov_prores_422hq`, `gif`, `wav` or `mp3`, at the sequence size, and `overrides` for another size, frame rate, bitrate or quality (`video://catalog/presets`). The result has a signed download URL and, locally, the file in your exports folder.
-15. `export.timeline` hands the edit to another editor as FCPXML (Final Cut Pro, Resolve), OTIO (Premiere, Resolve) or a CMX 3600 EDL, or writes the captions as SRT or VTT, with `warnings` for what the format can't carry. `media: "collect"` zips the media alongside. `timeline.get` stays the lossless copy.
+12. Music: `score.create` starts a piece of music beside the timeline (tempo, meter and sample rate, all required), built from parts (layers), each with instruments and effects (`score.add_device`: 18 named instruments, 4 drum kits, a synth, a sampler that plays any media, and 9 effects) and regions of notes or audio on a grid of beats (`score.add_region`, `score.add_notes`). `score.set_markers` names the picture's cuts and moments so the music lands on them; `score.set_tempo`, `score.set_automation` and sends shape it. Scores are immutable like timelines: every edit returns a new `score_id`, and `score.batch` applies many edits at once. `score.render` renders it, or chosen parts, to audio media for `clip.add`. `media.analyze` reads `notes` (a hummed tune, a bass line), `key`, `onsets` and `spectrum`; `render.notes` draws a piano roll and `render.spectrogram` any sound on the same axes. It builds music from instruments and notes; it does not generate songs or singing.
+13. Look: `preview: "inline"` on any edit returns the image; `render.frames` returns up to 16 frames as a contact sheet, or up to 4 at full size (`size: "full"`) for thumbnails.
+14. `qa.check` measures the render: gaps, offline media, frame count, loudness and true peak, plus black and silent stretches with the settings you give. Facts, no verdicts.
+15. `export.video` in a format: `mp4_h264`, `mp4_h264_fast`, `mp4_av1`, `mov_prores_422hq`, `gif`, `wav` or `mp3`, at the sequence size, and `overrides` for another size, frame rate, bitrate or quality (`video://catalog/presets`). The result has a signed download URL and, locally, the file in your exports folder.
+16. `export.timeline` hands the edit to another editor as FCPXML (Final Cut Pro, Resolve), OTIO (Premiere, Resolve) or a CMX 3600 EDL, or writes the captions as SRT or VTT, with `warnings` for what the format can't carry. `media: "collect"` zips the media alongside. `timeline.get` stays the lossless copy.
 
 Time is integer frames at the sequence rate, end-exclusive. `timeline.get` returns the whole timeline as JSON; `timeline.load` restores it after it expires. `video://server/health` reports engine versions and limits.
 
@@ -119,9 +122,13 @@ node scripts/smoke-motion.ts cuttingfloor:dev   # the sandbox in compose, attack
 | `packages/core` | Timeline document, edit math, content hashing, storage with TTLs |
 | `packages/engine` | FFmpeg and MLT as subprocesses: probe, conform, proxies, frames, export, QA |
 | `packages/motion` | The sandbox worker: pages rendered frame by frame on a virtual clock, one at a time |
-| `tools/` | Native helpers built into the image (`cf-vision`, `cf-segment`) and the sandbox's Chromium wrapper and seccomp profile |
+| `tools/` | Native helpers built into the image (`cf-vision`, `cf-segment`, `cf-music`) and the sandbox's Chromium wrapper and seccomp profile |
 | `packages/jobs` | File-backed job store and runner behind MCP Tasks and `job.*` |
 | `packages/credentials` | Bring-your-own provider keys |
+
+## Credits
+
+The music engine (`tools/music`) is built on [Tracktion Engine](https://github.com/Tracktion/tracktion_engine) (GPL-3.0) and [JUCE](https://github.com/juce-framework/JUCE) (AGPL-3.0), with [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) and [Signalsmith Linear](https://github.com/Signalsmith-Audio/linear) (both MIT). Its instruments are rendered with FluidSynth from the MuseScore General SoundFont 0.2.1 (MIT; MuseScore General by S. Christian Collins, its Fluid R3 parts by Frank Wen), whose piano is Public Domain (Splendid Grand) and whose ensemble strings and drumline samples are CC0 (VSCO, VCSL). The image ships their licence texts under `/usr/share/cuttingfloor/music/licences/`.
 
 ## Licence
 
