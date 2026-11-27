@@ -248,6 +248,10 @@ ARG W2V_VOCAB_SHA256=4178db26b3c7570f6a47f14ac6a1c7b32950b8c2800fb097287e5377693
 ARG SHERPA_MODELS=https://github.com/k2-fsa/sherpa-onnx/releases/download
 ARG PYANNOTE_TAR_SHA256=24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488
 ARG PYANNOTE_SHA256=220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079
+# The speaker model comes from its Hugging Face repository at a fixed revision: the copy on the
+# sherpa-onnx release page was replaced in place on 2026-11-19 (a different file under the same
+# name), which a release asset allows and a revision does not.
+ARG ERES2NET_REVISION=0743f301363dec56491a490f6d6cbc9d67f9a3bf
 ARG ERES2NET_SHA256=c59158379255ad66e161679cca6af8d52d51e389e3224ab7d7a7baae295c2db5
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates bzip2 \
  && curl -fsSL -o /pyannote.tar.bz2 "$SHERPA_MODELS/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2" \
@@ -255,7 +259,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
  && mkdir -p /models /pyannote && tar -xjf /pyannote.tar.bz2 -C /pyannote --strip-components=1 \
  && cp /pyannote/model.onnx /models/pyannote-segmentation-3.0.onnx \
  && echo "$PYANNOTE_SHA256  /models/pyannote-segmentation-3.0.onnx" | sha256sum -c - \
- && curl -fsSL -o /models/3dspeaker-eres2net-sv-en-voxceleb-16k.onnx "$SHERPA_MODELS/speaker-recongition-models/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx" \
+ && curl -fsSL -o /models/3dspeaker-eres2net-sv-en-voxceleb-16k.onnx "https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/$ERES2NET_REVISION/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx" \
  && echo "$ERES2NET_SHA256  /models/3dspeaker-eres2net-sv-en-voxceleb-16k.onnx" | sha256sum -c - \
  && mkdir -p /models/wav2vec2-base-960h \
  && curl -fsSL -o /models/silero-vad-v6.2.3.onnx "https://raw.githubusercontent.com/snakers4/silero-vad/$SILERO_COMMIT/src/silero_vad/data/silero_vad.onnx" \
