@@ -1,6 +1,7 @@
 export * from './account.ts';
 export * from './admin.ts';
 export * from './compositing.ts';
+export * from './devices.ts';
 export * from './effects.ts';
 export * from './errors.ts';
 export * from './ids.ts';
@@ -9,6 +10,7 @@ export * from './keeping.ts';
 export * from './lipsync.ts';
 export * from './measure.ts';
 export * from './motion.ts';
+export * from './score.ts';
 export * from './search.ts';
 export * from './sequence.ts';
 export * from './skills.ts';

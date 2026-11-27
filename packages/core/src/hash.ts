@@ -24,6 +24,11 @@ export async function timelineIdOf(doc: unknown): Promise<string> {
   return `tl_${(await blake3(canonicalJson(doc))).slice(0, 32)}`;
 }
 
+/** Content address of a score document, made the same way as a timeline's. */
+export async function scoreIdOf(doc: unknown): Promise<string> {
+  return `sc_${(await blake3(canonicalJson(doc))).slice(0, 32)}`;
+}
+
 const BASE32 = 'abcdefghijklmnopqrstuvwxyz234567';
 
 /** 130 random bits as 26 base32 characters, behind a prefix (`m_`, `j_`). */

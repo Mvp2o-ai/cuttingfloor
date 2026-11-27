@@ -27,7 +27,7 @@ export {
   transitionHalves,
 } from './edit.ts';
 export { floorChanged, floorCursor, waitForFloor } from './floor.ts';
-export { canonicalJson, randomId, timelineIdOf } from './hash.ts';
+export { canonicalJson, randomId, scoreIdOf, timelineIdOf } from './hash.ts';
 export {
   cueTime,
   fcpTime,
@@ -47,6 +47,19 @@ export {
   writeInterchange,
   xmlEscape,
 } from './interchange/index.ts';
+export {
+  barLength,
+  barsBetween,
+  barToBeats,
+  beatsToBar,
+  beatsToSeconds,
+  type Position,
+  positionAt,
+  positionAtSeconds,
+  secondsToBeats,
+  secondsToFrames,
+  tempoAt,
+} from './score/time.ts';
 export {
   frameSource,
   type InBetween,
