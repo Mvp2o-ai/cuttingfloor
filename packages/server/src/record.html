@@ -428,6 +428,8 @@
       ? `${n} tap${n === 1 ? '' : 's'}. Listen back, redo it, or send it.`
       : S.take.wav ? 'Listen back, redo it, or send it.' : 'Nothing was recorded. Redo it.');
     setControls();
+    // Played without the pads' own sound: the take is played back now, so it is heard once.
+    if (S.session.input === 'pads' && !S.own && n) listen();
   }
 
   // ---------- the microphone: raw PCM on the audio clock ----------
