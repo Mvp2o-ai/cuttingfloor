@@ -154,15 +154,18 @@ describe.skipIf(!ffmpeg)('the cuttingfloor mark', { timeout: 120_000 }, () => {
       audio: 'aac',
     });
     expect(Math.abs(after.duration - before.duration)).toBeLessThan(0.1);
-    // The first frame starts on a piece fully in.
+    // The card is on the first frame.
     expect(changed(await frame(input, 0), await frame(output, 0))).toBeGreaterThan(0.005);
-    // The same seed marks the same way; another seed starts elsewhere in the loop.
+    // The same seed flies the same path; another seed another one.
     const again = join(dir, 'wide-again.mp4');
     await burnMark(input, again, { seed: 'media_wide' });
     expect(changed(await frame(output, 1), await frame(again, 1))).toBeLessThan(0.001);
+    const other = join(dir, 'wide-other.mp4');
+    await burnMark(input, other, { seed: 'media_other' });
+    expect(changed(await frame(output, 1), await frame(other, 1))).toBeGreaterThan(0.005);
   });
 
-  it('marks a 9:16 clip with no sound, pieces scaled to its short side', async () => {
+  it('marks a 9:16 clip with no sound, the card scaled to its short side', async () => {
     const input = await make('tall.mp4', [
       ...flat('360x640', 30, 10),
       '-c:v',
@@ -181,12 +184,12 @@ describe.skipIf(!ffmpeg)('the cuttingfloor mark', { timeout: 120_000 }, () => {
       audio: null,
     });
     const share = changed(await frame(input, 0.5), await frame(output, 0.5));
-    // A piece is ~15–35% of the short side: a visible patch, not the whole frame.
+    // The card is half to nine tenths of the short side wide: a visible patch, not the frame.
     expect(share).toBeGreaterThan(0.005);
     expect(share).toBeLessThan(0.4);
   });
 
-  it('repeats the loop over a clip longer than a minute', async () => {
+  it('keeps the card moving over a clip longer than a minute, its size changing at bounces', async () => {
     const input = await make('long.mp4', [
       ...flat('320x180', 10, 70),
       ...tone(70),
@@ -205,10 +208,17 @@ describe.skipIf(!ffmpeg)('the cuttingfloor mark', { timeout: 120_000 }, () => {
     const after = await facts(output);
     expect(after.frames).toBe(700);
     expect(after.audio).toBe('aac');
-    // Pieces come every 4–6 s, so past the first minute some second carries one.
+    // The card is always on the picture, and it bounces into other sizes as it goes.
     const plain = await frame(input, 65);
-    const late = await Promise.all([61, 63, 65, 67, 69].map((t) => frame(output, t)));
-    expect(Math.max(...late.map((f) => changed(plain, f)))).toBeGreaterThan(0.005);
+    const areas = await Promise.all(
+      Array.from({ length: 14 }, (_, i) => i * 5).map(async (t) =>
+        changed(plain, await frame(output, t)),
+      ),
+    );
+    expect(Math.min(...areas)).toBeGreaterThan(0.05);
+    expect(Math.max(...areas) / Math.min(...areas)).toBeGreaterThan(1.2);
+    // It moves: two seconds apart, it is somewhere else.
+    expect(changed(await frame(output, 61), await frame(output, 63))).toBeGreaterThan(0.01);
   });
 
   it('marks an animated GIF as a GIF, every frame kept', async () => {

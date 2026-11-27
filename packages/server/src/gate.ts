@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { type BlobKey, defineCollection, floorChanged, OUTPUTS } from '@cuttingfloor/core';
 import { burnMark, type MediaRecord } from '@cuttingfloor/engine';
 
@@ -73,8 +74,8 @@ interface Gated {
 
 const PICTURE = /^(?:video|image)\//;
 const MARKED_PREFIX = 'cf-marked--';
-/** Marked copies made with the opening and end cards; older ones (without) are made again. */
-const CARDS_VERSION = 'cards4--';
+/** Marked copies made with the opening and end cards and the bouncing card; older ones are made again. */
+const CARDS_VERSION = 'cards5--';
 
 export class DownloadGate {
   readonly #rt: Runtime;
@@ -193,7 +194,8 @@ export class DownloadGate {
     if (await this.#rt.ws.blobs.head(key)) return { blob: key, marked: true };
     let making = this.#making.get(key);
     if (!making) {
-      making = this.#markCopy(key, source, `${owner}/${id}`, id).finally(() =>
+      // A fresh seed: the card's path is the engine's open code, so a file's id must not give it away.
+      making = this.#markCopy(key, source, `${owner}/${id}/${randomUUID()}`, id).finally(() =>
         this.#making.delete(key),
       );
       this.#making.set(key, making);
