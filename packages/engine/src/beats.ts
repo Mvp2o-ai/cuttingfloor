@@ -5,7 +5,8 @@ import { BIN, KILL_SETTLE_MS, killTree, spawnEngine } from './exec.ts';
 // autocorrelation (weighted towards 120 BPM), and beat times by dynamic programming (Ellis,
 // "Beat tracking by dynamic programming", 2007). All deterministic, all in this process.
 
-const RATE = 22_050;
+export const BEATS_RATE = 22_050;
+const RATE = BEATS_RATE;
 const FRAME = 1024;
 const HOP = 512;
 const FPS = RATE / HOP;
@@ -19,6 +20,17 @@ export interface Beats {
   downbeats: number[];
   /** Per beat, in order: the onset strength there, as a share of the strongest onset (0–1). */
   strengths: number[];
+  /** Every tempo the onsets repeat at (a peak of the tempo strength), strongest first, 0–1. */
+  tempo_candidates: Array<{ bpm: number; strength: number }>;
+  /** 60 over the slope of a straight line through the beat times: the tempo they keep. */
+  fitted_bpm: number | null;
+  /** For bars of 2 to 7 beats, each beat a bar could start on and the accent behind it. */
+  bar_candidates: Array<{
+    beats_in_bar: number;
+    beat: number;
+    seconds: number;
+    accent: number;
+  }>;
 }
 
 /** Mono samples at 22.05 kHz. */
@@ -163,13 +175,17 @@ function correlation(env: Float64Array, lag: number): number {
  * Tempo in BPM: a comb over the onset envelope's autocorrelation at 1–4 beat periods (sharper
  * than one lag), weighted towards 120 BPM, searched coarsely then refined to 0.1 BPM.
  */
+/** The onset envelope's comb strength at a tempo: autocorrelation at 1–4 beat periods. */
+function combStrength(env: Float64Array, bpm: number): number {
+  const lag = (60 * FPS) / bpm;
+  let comb = 0;
+  for (let k = 1; k <= 4; k++) comb += correlation(env, k * lag) / k;
+  return comb;
+}
+
 export function estimateTempo(env: Float64Array): number {
-  const strength = (bpm: number) => {
-    const lag = (60 * FPS) / bpm;
-    let comb = 0;
-    for (let k = 1; k <= 4; k++) comb += correlation(env, k * lag) / k;
-    return comb * Math.exp(-0.5 * Math.log2(bpm / 120) ** 2);
-  };
+  const strength = (bpm: number) =>
+    combStrength(env, bpm) * Math.exp(-0.5 * Math.log2(bpm / 120) ** 2);
   let best = 120;
   let score = -Infinity;
   for (let bpm = 60; bpm <= 200; bpm += 1) {
@@ -187,6 +203,86 @@ export function estimateTempo(env: Float64Array): number {
     }
   }
   return Math.round(best * 10) / 10;
+}
+
+/** Tempos searched for candidates, BPM. */
+const CANDIDATE_BPM = { from: 30, to: 300 } as const;
+
+/**
+ * Every tempo from 30 to 300 BPM where the comb strength peaks, with no lean towards any tempo,
+ * refined to 0.1 BPM, strongest first, each as a share of the strongest (half and double time
+ * show as their own peaks).
+ */
+export function tempoCandidates(env: Float64Array): Array<{ bpm: number; strength: number }> {
+  const scan: number[] = [];
+  for (let bpm = CANDIDATE_BPM.from; bpm <= CANDIDATE_BPM.to; bpm += 1) {
+    scan.push(combStrength(env, bpm));
+  }
+  const peaks: Array<{ bpm: number; strength: number }> = [];
+  for (let i = 1; i + 1 < scan.length; i++) {
+    const s = scan[i] as number;
+    if (s <= 0 || s < (scan[i - 1] as number) || s <= (scan[i + 1] as number)) continue;
+    let best = CANDIDATE_BPM.from + i;
+    let top = s;
+    for (let bpm = best - 1; bpm <= best + 1 + 1e-9; bpm += 0.1) {
+      const v = combStrength(env, bpm);
+      if (v > top) {
+        top = v;
+        best = bpm;
+      }
+    }
+    peaks.push({ bpm: Math.round(best * 10) / 10, strength: top });
+  }
+  const max = Math.max(0, ...peaks.map((p) => p.strength));
+  return peaks
+    .map((p) => ({ bpm: p.bpm, strength: max ? Math.round((p.strength / max) * 1000) / 1000 : 0 }))
+    .sort((a, b) => b.strength - a.strength || a.bpm - b.bpm);
+}
+
+/** 60 over the least-squares slope of beat time against beat number; null under 2 beats. */
+export function fittedBpm(beats: number[]): number | null {
+  const n = beats.length;
+  if (n < 2) return null;
+  const mi = (n - 1) / 2;
+  const mt = beats.reduce((s, t) => s + t, 0) / n;
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < n; i++) {
+    num += (i - mi) * ((beats[i] as number) - mt);
+    den += (i - mi) ** 2;
+  }
+  const slope = num / den;
+  return slope > 0 ? Math.round((60 / slope) * 100) / 100 : null;
+}
+
+/** Bar lengths, in beats, that bar candidates are given for. */
+const BAR_BEATS = [2, 3, 4, 5, 6, 7] as const;
+
+/**
+ * For each bar length from 2 to 7 beats, each of its first beats a bar could start on (beat
+ * number and time), with the accent: the mean onset strength of every beat at that place in
+ * the bar (a share of the strongest onset, as strengths).
+ */
+export function barCandidates(beats: number[], strengths: number[]): Beats['bar_candidates'] {
+  const out: Beats['bar_candidates'] = [];
+  for (const n of BAR_BEATS) {
+    if (beats.length < n) continue;
+    for (let p = 0; p < n; p++) {
+      let sum = 0;
+      let count = 0;
+      for (let i = p; i < strengths.length; i += n) {
+        sum += strengths[i] as number;
+        count += 1;
+      }
+      out.push({
+        beats_in_bar: n,
+        beat: p,
+        seconds: beats[p] as number,
+        accent: count ? Math.round((sum / count) * 1000) / 1000 : 0,
+      });
+    }
+  }
+  return out;
 }
 
 /** Beat frames by dynamic programming: strong onsets, spaced close to the period. */
@@ -232,7 +328,11 @@ export function trackBeats(env: Float64Array, bpm: number): number[] {
 
 /** Tempo and beats of a media file's sound. */
 export async function analyseBeats(file: string, signal?: AbortSignal): Promise<Beats> {
-  const samples = await decode(file, signal);
+  return beatsOf(await decode(file, signal));
+}
+
+/** Tempo and beats of mono samples at 22.05 kHz. */
+export function beatsOf(samples: Float32Array): Beats {
   if (samples.length < FRAME * 4) {
     throw new CfError('bad_request', 'The sound is too short to find a beat in');
   }
@@ -259,10 +359,14 @@ export async function analyseBeats(file: string, signal?: AbortSignal): Promise<
     for (let k = f - 2; k <= f + 2; k++) m = Math.max(m, env[k] ?? 0);
     return m;
   };
+  const strengths = frames.map((f) => (peak ? Math.round((near(f) / peak) * 1000) / 1000 : 0));
   return {
     bpm: Math.round(bpm * 10) / 10,
     beats,
     downbeats: beats.filter((_, i) => i % 4 === phase),
-    strengths: frames.map((f) => (peak ? Math.round((near(f) / peak) * 1000) / 1000 : 0)),
+    strengths,
+    tempo_candidates: tempoCandidates(env),
+    fitted_bpm: fittedBpm(beats),
+    bar_candidates: barCandidates(beats, strengths),
   };
 }
