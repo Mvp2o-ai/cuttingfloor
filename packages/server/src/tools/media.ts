@@ -821,6 +821,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               `Files the user drops on their upload page, ${rt.config.uploadPage}, are staged too: many at once, after signing in to the same account.`,
             ]
           : []),
+        'The box and the page also record from the microphone (a hum, a tapped rhythm, a spoken note), sent the same way as a file. It records in free time, with nothing playing under it.',
       ].join(' '),
       inputSchema: MediaUploadInput,
       outputSchema: MediaUploadResult,

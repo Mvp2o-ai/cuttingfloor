@@ -1,7 +1,10 @@
+import { RECORDER_JS } from '@cuttingfloor/server';
+
 /**
  * The page a signed upload URL shows in a browser: drop or pick the file, and it goes up in
- * parts to the same URL, resuming from what the server already has. For people whose agent
- * can't send files itself; the agent then imports the upload_id.
+ * parts to the same URL, resuming from what the server already has. Or record one from the
+ * microphone (the upload box's Record, where the chat app keeps the microphone from the box, sends
+ * people here). For people whose agent can't send files itself; the agent then imports the upload_id.
  */
 export function uploadPage(uploadId: string): string {
   return `<!doctype html>
@@ -17,6 +20,8 @@ export function uploadPage(uploadId: string): string {
     :root { --bg: #111312; --fg: #eceeea; --muted: #a2a6a0; --line: #2d312e; --accent: #2bd665; --bar: #222623; }
   }
   * { box-sizing: border-box; }
+  /* hidden wins over every display rule below (the drop, the share fields, Record). */
+  [hidden] { display: none !important; }
   body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg);
     font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 16px; }
   main { width: 100%; max-width: 520px; }
@@ -54,6 +59,14 @@ export function uploadPage(uploadId: string): string {
   #fields textarea { min-height: 60px; }
   #fields button { justify-self: start; font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 10px 18px; background: var(--accent); color: #04170a; cursor: pointer; }
   .fine { color: var(--muted); font-size: 14px; margin: 0; }
+  /* Record: under the drop, as big as a thumb on a phone. */
+  .also { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 12px; margin-top: 12px; color: var(--muted); font-size: 14px; }
+  .rec, .again { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 20px; border-radius: 10px; border: 2px solid var(--line);
+    background: transparent; color: var(--fg); font: inherit; font-weight: 600; cursor: pointer; }
+  .rec:hover, .rec:focus-visible { border-color: var(--accent); }
+  .rec i { width: 10px; height: 10px; border-radius: 50%; background: #e0573f; }
+  #recorder { margin-top: 12px; }
+  .again { margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -65,8 +78,14 @@ export function uploadPage(uploadId: string): string {
     <span class="on-phone"><strong>Tap to choose a video, audio file or photo</strong><span>From your gallery or files</span></span>
     <input id="pick" type="file">
   </label>
+  <div class="also" id="also">
+    <button type="button" class="rec" id="record"><i aria-hidden="true"></i>Record a sound</button>
+    <span>A hum, a beat, your voice, a song playing nearby</span>
+  </div>
+  <div id="recorder" hidden></div>
   <div class="bar" hidden><div></div></div>
   <div id="status" role="status" aria-live="polite"></div>
+  <button type="button" class="again" id="resend" hidden>Send the recording again</button>
   <form id="share" hidden novalidate>
     <label class="on"><input type="checkbox" id="share-on"><span><strong>Share as a community sound</strong><small>A small way to give back: other creators can find it and use it in their edits, free.</small></span></label>
     <div id="fields" hidden>
@@ -83,8 +102,9 @@ export function uploadPage(uploadId: string): string {
   </form>
 </main>
 <script>
+${RECORDER_JS}
 (() => {
-  const url = location.href;
+  const url = location.href.split('#')[0];
   const id = ${JSON.stringify(uploadId)};
   const PART = 16 * 1024 * 1024;
   const drop = document.getElementById('drop');
@@ -187,9 +207,14 @@ export function uploadPage(uploadId: string): string {
     }
   }
 
+  const also = document.getElementById('also');
+  const resend = document.getElementById('resend');
+  let recording = null;
+  let sent = false;
   async function send(file) {
     if (busy) return;
     busy = true;
+    resend.hidden = true;
     bar.hidden = false;
     if (navigator.wakeLock) lock = await navigator.wakeLock.request('screen').catch(() => undefined);
     try {
@@ -226,10 +251,14 @@ export function uploadPage(uploadId: string): string {
       }
       fill.style.width = '100%';
       say('Sent. Go back to the chat and say it’s in. (Upload ' + id + ')', true);
+      sent = true;
       drop.hidden = true;
+      also.hidden = true;
       if (file.type.startsWith('audio/') || AUDIO.test(file.name)) offerShare(file.name);
     } catch (error) {
       say(error.message || String(error));
+      // A recording is not on the device to choose again: it stays here to be sent again.
+      resend.hidden = !(file === recording && !error.final);
     } finally {
       busy = false;
       cut = undefined;
@@ -280,6 +309,14 @@ export function uploadPage(uploadId: string): string {
   });
 
   pick.addEventListener('change', () => pick.files[0] && send(pick.files[0]));
+  const recorder = window.cfRecorder(document.getElementById('recorder'), {
+    send: (file) => { recording = file; send(file); },
+    shown: (on) => { drop.hidden = on || sent; also.hidden = on || sent; },
+  });
+  document.getElementById('record').addEventListener('click', () => recorder.start());
+  resend.addEventListener('click', () => recording && send(recording));
+  // Sent here from the upload box to record: Record is the next tap.
+  if (location.hash === '#record') document.getElementById('record').focus();
   drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
   drop.addEventListener('dragleave', () => drop.classList.remove('over'));
   drop.addEventListener('drop', (e) => {
@@ -289,7 +326,7 @@ export function uploadPage(uploadId: string): string {
     if (file) send(file);
   });
   offset().then(({ at, complete }) => {
-    if (complete) { drop.hidden = true; say('This file is already here. Go back to the chat and say it’s in. (Upload ' + id + ')', true); }
+    if (complete) { sent = true; drop.hidden = true; also.hidden = true; say('This file is already here. Go back to the chat and say it’s in. (Upload ' + id + ')', true); }
     else if (at > 0) say(mb(at) + ' of your file is already here. Choose the same file again and the rest is sent.');
   }, (error) => say(error.message));
 })();

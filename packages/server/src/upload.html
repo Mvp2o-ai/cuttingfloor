@@ -54,6 +54,11 @@
   .pill { display: inline-flex; align-items: center; height: 34px; padding: 0 16px; border-radius: 9px; background: var(--key); color: #04170a; font-weight: 700; }
   .pill { cursor: pointer; }
   .pill:hover { background: var(--key-hi); }
+  /* Choose a file and Record side by side, one under the other where the panel is narrow. */
+  .picks { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  .rec { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 16px; border-radius: 9px; border: 1.5px solid var(--rule-2); font-weight: 700; }
+  .rec:hover { border-color: var(--key); }
+  .rec i { width: 9px; height: 9px; border-radius: 50%; background: var(--red); }
   .other { color: var(--mute); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
   .other:hover { color: var(--ink); }
 
@@ -107,14 +112,20 @@
         <b>Add a video or a photo</b>
         <span id="limit">Drop it here, or choose it from this device.</span>
         <!-- Video and pictures only, so a phone offers its camera roll first. -->
-        <label class="pill">Choose a video or photo<input type="file" id="pick" accept="video/*,image/*"></label>
+        <div class="picks">
+          <label class="pill">Choose a video or photo<input type="file" id="pick" accept="video/*,image/*"></label>
+          <!-- A hum, a tapped rhythm, a voice, a song playing nearby: sent like a file, after Send. -->
+          <button type="button" class="rec" id="record"><i aria-hidden="true"></i>Record</button>
+        </div>
         <!-- No filter: anything else is taken too (music, a recording, a font, a LUT, a document). -->
         <label class="other">Or a sound, or any other file<input type="file" id="other"></label>
       </div>
+      <div id="recorder" hidden></div>
       <div class="going" id="going" hidden>
         <div class="name" id="name"></div>
         <div class="bar"><i id="fill"></i></div>
         <div class="line"><span class="state" id="state"></span><span class="mono" id="count"></span></div>
+        <button type="button" class="other" id="resend" hidden>Send the recording again</button>
       </div>
       <form class="share" id="share" hidden novalidate>
         <label class="switch">
@@ -144,6 +155,7 @@
   </div>
 </div>
 <script>
+__RECORDER__
 (() => {
   const VERSION = '__VERSION__';
   const $ = (s) => document.querySelector(s);
@@ -166,7 +178,7 @@
   const openLink = (url) => request('ui/open-link', { url }).catch(() => window.open(url, '_blank', 'noopener'));
 
   // ---------- the upload ----------
-  const S = { upload: null, busy: false, sent: false, audio: false, shared: null };
+  const S = { upload: null, busy: false, sent: false, audio: false, shared: null, recording: null };
   const AUDIO = /\.(mp3|wav|m4a|aac|flac|ogg|opus)$/i;
   const size = (n) => n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${(n / 1e6).toFixed(1)} MB`;
   const note = (text) => { $('#note').textContent = text; };
@@ -201,6 +213,7 @@
       return again(`${file.name} is ${size(file.size)}; this takes up to ${size(up.max_bytes)}.`);
     }
     S.busy = true;
+    $('#resend').hidden = true;
     S.audio = /^audio\//.test(file.type) || AUDIO.test(file.name);
     going(file.name, 'Sending…');
     progress(0, file.size);
@@ -238,7 +251,10 @@
       going(file.name, error.message || String(error), 'bad');
       // The page behind the url sends the same file from outside the chat app's frame.
       $('#page').hidden = false;
-      again(error.final ? 'This upload can no longer be used.' : 'It did not go through. Choose the file again to carry on, or open the upload page.');
+      // A recording is not on the device to choose again: it stays here to be sent again.
+      const recorded = file === S.recording && !error.final;
+      $('#resend').hidden = !recorded;
+      again(error.final ? 'This upload can no longer be used.' : recorded ? 'It did not go through. Send the recording again to carry on, or open the upload page.' : 'It did not go through. Choose the file again to carry on, or open the upload page.');
     } finally {
       S.busy = false;
     }
@@ -363,6 +379,21 @@
     if (f) sendFile(f);
   });
   $('#page').addEventListener('click', () => S.upload && openLink(S.upload.url));
+
+  // ---------- recording (the shared recorder; sent as a file once the person taps Send) ----------
+  const recorder = window.cfRecorder($('#recorder'), {
+    send: (file) => { S.recording = file; sendFile(file); },
+    shown: (on) => { $('#drop').hidden = on || !S.upload || S.sent; },
+    // Where the chat app keeps the microphone from the box: the upload page records, in the browser.
+    fallback: {
+      label: 'Record on the upload page',
+      say: 'This chat app does not let the box use the microphone. The upload page can: it opens in your browser and sends to this same upload.',
+      open: () => S.upload && openLink(`${S.upload.url}#record`),
+    },
+    maxBytes: () => S.upload?.max_bytes || 0,
+  });
+  $('#record').addEventListener('click', () => recorder.start());
+  $('#resend').addEventListener('click', () => S.recording && sendFile(S.recording));
 
   window.addEventListener('message', (event) => {
     if (event.source !== window.parent) return;

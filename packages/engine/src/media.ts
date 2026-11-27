@@ -802,6 +802,23 @@ export class MediaLibrary {
         }
         await this.save(owner, record);
       }
+      if (p.kind === 'audio' && record.conform.length) {
+        // Sound whose file states no length (a browser's recording): edits and exports read a
+        // copy that does, the same PCM a video's mezzanine carries.
+        progress(0.35, `conforming (${record.conform.join(', ')})`);
+        record.mezzanine = own('mezzanine.mov');
+        const mezzanine = await scratch.reserve(record.mezzanine);
+        await conformAudio(file, mezzanine, p, signal, (f) =>
+          progress(0.35 + 0.5 * f, `conforming ${Math.round(f * 100)}%`),
+        );
+        await scratch.publish(mezzanine, record.mezzanine);
+        made = mezzanine;
+        const conformed = await probe(mezzanine, signal);
+        if (p.duration !== null && conformed.duration !== null) {
+          p.duration = Math.min(p.duration, conformed.duration);
+        }
+        await this.save(owner, record);
+      }
       if (p.kind === 'video' || p.kind === 'audio') {
         progress(0.9, 'analysing');
         record.analysis = await analyse(made ?? file, p, signal);
@@ -1420,6 +1437,35 @@ async function conform(
     signal,
     onLine: timeProgress(p.duration, onFraction),
   });
+}
+
+/** A sound's mezzanine: its first audio stream as 24-bit PCM at 48 kHz in a MOV that states its length. */
+async function conformAudio(
+  src: string,
+  dest: string,
+  p: Probe,
+  signal: AbortSignal,
+  onFraction: (f: number) => void,
+) {
+  await run(
+    BIN.ffmpeg,
+    [
+      ...INPUT,
+      '-y',
+      '-i',
+      `file:${src}`,
+      '-map',
+      '0:a:0',
+      '-c:a',
+      'pcm_s24le',
+      '-ar',
+      '48000',
+      '-f',
+      'mov',
+      `file:${dest}`,
+    ],
+    { heavy: true, signal, onLine: timeProgress(p.duration, onFraction) },
+  );
 }
 
 /** 540p all-intra MJPEG proxy (every frame a keyframe) with PCM audio. */

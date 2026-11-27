@@ -20,6 +20,33 @@ import { createHttpServer } from '../src/http.ts';
 // each in a sandboxed frame under a small MCP Apps host, against the real upload url.
 
 const exec = promisify(execFile);
+const ffmpegFound = await exec('ffmpeg', ['-version']).then(
+  () => true,
+  () => false,
+);
+
+/** A mono 48 kHz WAV of a steady tone: what Chromium's fake microphone plays, over and over. */
+function toneWav(hz: number, seconds: number): Buffer {
+  const rate = 48_000;
+  const n = rate * seconds;
+  const b = Buffer.alloc(44 + n * 2);
+  b.write('RIFF', 0);
+  b.writeUInt32LE(36 + n * 2, 4);
+  b.write('WAVEfmt ', 8);
+  b.writeUInt32LE(16, 16);
+  b.writeUInt16LE(1, 20);
+  b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(rate, 24);
+  b.writeUInt32LE(rate * 2, 28);
+  b.writeUInt16LE(2, 32);
+  b.writeUInt16LE(16, 34);
+  b.write('data', 36);
+  b.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) {
+    b.writeInt16LE(Math.round(0.25 * 32_767 * Math.sin((2 * Math.PI * hz * i) / rate)), 44 + 2 * i);
+  }
+  return b;
+}
 // Docker has Chromium at /usr/bin/chromium; elsewhere CHROME_PATH names a Chrome to use.
 const chrome = process.env.CHROME_PATH ?? '/usr/bin/chromium';
 const browserFound = await exec(chrome, ['--version']).then(
@@ -32,10 +59,18 @@ if (!browserFound && process.env.CUTTINGFLOOR_REQUIRE_ENGINES) {
 
 type Rec = Record<string, unknown>;
 
-/** A host page: the view in a sandboxed frame, and the MCP Apps host side of the protocol. */
-const HOST_PAGE = `<!doctype html><html><body style="margin:0"><iframe id="v" sandbox="allow-scripts" style="width:720px;height:700px;border:0"></iframe>
+/**
+ * A host page: the view in a sandboxed frame, and the MCP Apps host side of the protocol. `allow`
+ * is the frame's permissions policy: a host that grants the view the microphone it declares sets
+ * `microphone` there, and serves the view from an origin of its own (here the host's: an opaque
+ * origin is refused the microphone whatever the policy says); one that does not leaves it out.
+ */
+const hostPage = (
+  allow = '',
+  own = Boolean(allow),
+) => `<!doctype html><html><body style="margin:0"><iframe id="v" sandbox="allow-scripts${own ? ' allow-same-origin' : ''}" allow="${allow}" style="width:100%;height:700px;border:0"></iframe>
 <script>
-window.__msgs = []; window.__calls = [];
+window.__msgs = []; window.__calls = []; window.__links = [];
 const f = document.getElementById('v');
 window.addEventListener('message', async (e) => {
   if (e.source !== f.contentWindow) return;
@@ -48,9 +83,11 @@ window.addEventListener('message', async (e) => {
   }
   if (m.method === 'tools/call') { window.__calls.push(m.params.name); return reply(await window.mcpCall(m.params.name, m.params.arguments)); }
   if (m.method === 'ui/message') { window.__msgs.push(m.params); return reply({}); }
+  if (m.method === 'ui/open-link') { window.__links.push(m.params.url); return reply({}); }
   if (m.id !== undefined) reply({});
 });
 </script></body></html>`;
+const HOST_PAGE = hostPage();
 
 describe.skipIf(!browserFound)('sending a file from a view', () => {
   let runtime: Runtime;
@@ -58,6 +95,9 @@ describe.skipIf(!browserFound)('sending a file from a view', () => {
   let client: Client;
   let browser: Browser;
   let file: string;
+  /** A second Chromium whose microphone is the tone. */
+  let mic: Browser;
+  let base: string;
   const bytes = 300_000;
 
   async function call(name: string, args: Rec): Promise<Rec> {
@@ -90,7 +130,7 @@ describe.skipIf(!browserFound)('sending a file from a view', () => {
     await runtime.start({ sweep: false });
     http = createHttpServer({ runtime, credentials: new LocalCredentialStore({}, false) });
     await new Promise<void>((r) => http.listen(0, '127.0.0.1', r));
-    const base = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
+    base = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
     (runtime.config as { publicUrl: string }).publicUrl = base;
     client = new Client({ name: 'upload-view', version: '0' });
     await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`)));
@@ -101,24 +141,46 @@ describe.skipIf(!browserFound)('sending a file from a view', () => {
       // Tests run as root inside docker build, where Chromium's sandbox has no user namespaces.
       args: ['--no-sandbox'],
     });
+    const wav = join(dir, 'tone440.wav');
+    await writeFile(wav, toneWav(440, 10));
+    mic = await puppeteer.launch({
+      executablePath: chrome,
+      headless: true,
+      // The fake microphone reads its file from inside Chromium's sandbox only without one.
+      args: [
+        '--no-sandbox',
+        '--use-fake-device-for-media-stream',
+        '--use-fake-ui-for-media-stream',
+        `--use-file-for-fake-audio-capture=${wav}`,
+      ],
+    });
   }, 120_000);
 
   afterAll(async () => {
+    await mic?.close();
     await browser?.close();
     await client?.close();
     http?.close();
   });
 
-  async function open(uri: string, caps: Rec, result: Rec): Promise<{ page: Page; view: Frame }> {
+  async function open(
+    uri: string,
+    caps: Rec,
+    result: Rec,
+    host: { browser?: Browser; page?: string; width?: number } = {},
+  ): Promise<{ page: Page; view: Frame }> {
     const html = ((await client.readResource({ uri })).contents[0] as { text: string }).text;
-    const page = await browser.newPage();
-    await page.setViewport({ width: 720, height: 700 });
+    const page = await (host.browser ?? browser).newPage();
+    await page.setViewport({ width: host.width ?? 720, height: 700 });
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e instanceof Error ? e.message : String(e)));
     await page.exposeFunction('mcpCall', (name: string, args: Rec) =>
       client.callTool({ name, arguments: args }),
     );
-    await page.setContent(HOST_PAGE);
+    // A chat app's page is a secure context (https), which the microphone needs: this server's
+    // own origin (loopback) is one; a blank page is not.
+    if (host.browser) await page.goto(`${base}/healthz`);
+    await page.setContent(host.page ?? HOST_PAGE);
     await page.evaluate(
       (c, r, h) => {
         Object.assign(window, { CAPS: c, RESULT: r });
@@ -239,5 +301,166 @@ describe.skipIf(!browserFound)('sending a file from a view', () => {
       `I sent “Beach Day.mov” to cuttingfloor (upload_id ${added[0]?.upload_id}). Import it.`,
     ]);
     await page.close();
+  }, 60_000);
+
+  /** Records `seconds` in a view or page showing the recorder, listens back, and sends it. */
+  async function recordAndSend(view: Frame, seconds: number): Promise<void> {
+    await view.click('#record');
+    await view.waitForSelector('.cfr[data-state="recording"]', { timeout: 10_000 });
+    // The level meter moves: the tone is reaching the recorder.
+    await view.waitForFunction(
+      () =>
+        Number.parseFloat((document.querySelector('.cfr-level i') as HTMLElement)?.style.width) >
+        20,
+      { timeout: 5_000 },
+    );
+    await new Promise((r) => setTimeout(r, seconds * 1000));
+    await view.click('.cfr button.stop');
+    await view.waitForSelector('.cfr[data-state="review"]');
+    // Listen back decodes it in the browser: the length it shows is the recording's.
+    await view.waitForFunction(
+      () => !(document.querySelector('.cfr-row button') as HTMLButtonElement)?.disabled,
+    );
+    await view.click('.cfr button.go');
+  }
+
+  /** Imports a staged upload and measures it: kind, length, and the pitch of its middle second. */
+  async function measure(uploadId: string) {
+    const started = await call('media.import', { source: { upload_id: uploadId } });
+    for (let i = 0; i < 200; i++) {
+      const job = await call('job.get', { job_id: started.job_id as string });
+      if (job.status === 'failed') throw new Error(JSON.stringify(job.error));
+      if (job.status !== 'working') break;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    const media = await call('media.get', { media_id: started.media_id as string });
+    const res = await fetch(media.url as string);
+    const dir = await mkdtemp(join(tmpdir(), 'cf-recorded-'));
+    const got = join(dir, 'got');
+    await writeFile(got, Buffer.from(await res.arrayBuffer()));
+    const { stdout } = await exec(
+      'ffmpeg',
+      ['-v', 'error', '-i', got, '-ac', '1', '-ar', '48000', '-f', 's16le', '-'],
+      { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 },
+    );
+    const pcm = new Int16Array(stdout.buffer, stdout.byteOffset, stdout.length >> 1);
+    const mid = pcm.subarray(
+      Math.floor(pcm.length / 2) - 24_000,
+      Math.floor(pcm.length / 2) + 24_000,
+    );
+    let crossings = 0;
+    for (let i = 1; i < mid.length; i++)
+      if ((mid[i - 1] ?? 0) < 0 !== (mid[i] ?? 0) < 0) crossings++;
+    return { media, hz: crossings / 2 / (mid.length / 48_000) };
+  }
+
+  it('records the microphone where the host grants it, and stages it as a picked file is', async () => {
+    const upload = await call('media.upload', {});
+    const { page, view } = await open(
+      'ui://cuttingfloor/upload',
+      { message: { text: {} } },
+      upload,
+      { browser: mic, page: hostPage('microphone'), width: 360 },
+    );
+    await view.waitForSelector('#drop:not([hidden])');
+    // Record sits beside Choose a file; choosing a file is untouched.
+    expect(await view.$eval('#pick', (el) => (el as HTMLInputElement).accept)).toBe(
+      'video/*,image/*',
+    );
+    await recordAndSend(view, 3);
+    await view.waitForFunction(() => document.querySelector('#state')?.textContent === 'Sent', {
+      timeout: 30_000,
+    });
+    const mine = (await staged()).find((u) => u.upload_id === upload.upload_id);
+    expect(mine?.complete).toBe(true);
+    expect(mine?.name).toMatch(/^recording-\d{4}-\d\d-\d\d-\d{4}\.webm$/);
+    expect(said((await host(page)).msgs)).toEqual([
+      `I sent “${mine?.name}” to cuttingfloor (upload_id ${upload.upload_id}). Import it.`,
+    ]);
+    await page.close();
+    if (!ffmpegFound) return;
+    // What arrives is the tone the microphone heard, for as long as it was recorded.
+    const { media, hz } = await measure(upload.upload_id as string);
+    expect(media).toMatchObject({ kind: 'audio', status: 'ready' });
+    expect(media.duration_seconds as number).toBeGreaterThan(2.5);
+    expect(media.duration_seconds as number).toBeLessThan(4.5);
+    expect(hz).toBeGreaterThan(430);
+    expect(hz).toBeLessThan(450);
+  }, 90_000);
+
+  it('where the host keeps the microphone from the box, opens the upload page, which records to the same upload', async () => {
+    const upload = await call('media.upload', {});
+    // No `allow` on the frame: the host did not grant the microphone.
+    const { page, view } = await open(
+      'ui://cuttingfloor/upload',
+      { message: { text: {} } },
+      upload,
+      { browser: mic, width: 360 },
+    );
+    await view.waitForSelector('#drop:not([hidden])');
+    await view.click('#record');
+    await view.waitForSelector('.cfr[data-state="refused"]');
+    expect(await view.$eval('.cfr-say', (el) => el.textContent)).toContain('The upload page can');
+    await view.click('.cfr button.go');
+    await page.waitForFunction(
+      () => (window as unknown as { __links: string[] }).__links.length === 1,
+    );
+    const [link] = (await host(page).then(() =>
+      page.evaluate(() => (window as unknown as { __links: string[] }).__links),
+    )) as string[];
+    expect(link).toBe(`${upload.url}#record`);
+    await page.close();
+    // A host that allows the microphone but frames the view without an origin of its own: the
+    // browser refuses it all the same, and the box says so the same way.
+    const opaque = await open('ui://cuttingfloor/upload', {}, upload, {
+      browser: mic,
+      page: hostPage('microphone', false),
+      width: 360,
+    });
+    await opaque.view.waitForSelector('#drop:not([hidden])');
+    await opaque.view.click('#record');
+    await opaque.view.waitForSelector('.cfr[data-state="refused"]');
+    expect(await opaque.view.$eval('.cfr button.go', (el) => el.textContent)).toBe(
+      'Record on the upload page',
+    );
+    await opaque.page.close();
+
+    // The link, in the browser: the same upload, and the microphone works there.
+    const tab = await mic.newPage();
+    await tab.setViewport({ width: 390, height: 800 });
+    await tab.goto(link as string);
+    expect(await tab.evaluate(() => document.activeElement?.id)).toBe('record');
+    await recordAndSend(tab.mainFrame(), 3);
+    await tab.waitForFunction(() => document.getElementById('status')?.className === 'done', {
+      timeout: 30_000,
+    });
+    const mine = (await staged()).find((u) => u.upload_id === upload.upload_id);
+    expect(mine?.complete).toBe(true);
+    expect(mine?.name).toMatch(/^recording-.*\.webm$/);
+    await tab.close();
+    if (!ffmpegFound) return;
+    const { media, hz } = await measure(upload.upload_id as string);
+    expect(media).toMatchObject({ kind: 'audio', status: 'ready' });
+    expect(hz).toBeGreaterThan(430);
+    expect(hz).toBeLessThan(450);
+  }, 90_000);
+
+  it('on the upload page, a refused microphone says how to allow it and sends nothing', async () => {
+    const upload = await call('media.upload', {});
+    const origin = new URL(upload.url as string).origin;
+    const context = await mic.createBrowserContext();
+    await context.setPermission(origin, { permission: { name: 'microphone' }, state: 'denied' });
+    const tab = await context.newPage();
+    await tab.goto(upload.url as string);
+    await tab.click('#record');
+    await tab.waitForSelector('.cfr[data-state="refused"]');
+    expect(await tab.$eval('.cfr-say', (el) => el.textContent)).toContain('Allow it for this page');
+    expect(await tab.$eval('.cfr button.go', (el) => el.textContent)).toBe('Try again');
+    // Back: the drop and Record, as they were; nothing was sent.
+    await tab.click('.cfr button.quiet');
+    expect(await tab.$eval('#drop', (el) => (el as HTMLElement).hidden)).toBe(false);
+    const mine = (await staged()).find((u) => u.upload_id === upload.upload_id);
+    expect(mine?.complete).toBe(false);
+    await context.close();
   }, 60_000);
 });

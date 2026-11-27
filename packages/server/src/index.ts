@@ -70,5 +70,6 @@ export {
   ONBOARDING,
 } from './tools/credits.ts';
 export { readSupportMessages, type SupportMessage } from './tools/support.ts';
+export { RECORDER_JS } from './upload.ts';
 export { UPLOADS, UploadRefused, type UploadState, Uploads } from './uploads.ts';
 export { SERVER_NAME, SERVER_VERSION } from './version.ts';

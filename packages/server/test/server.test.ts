@@ -122,6 +122,11 @@ describe('protocol surface', () => {
     for (const name of ['media.upload', 'media.list']) {
       expect(described(name), name).toContain(page);
     }
+    // Recording is part of sending a file, said last, where a cut costs least; inside every cut.
+    expect(described('media.upload')).toMatch(
+      /also record from the microphone \(a hum, a tapped rhythm, a spoken note\), sent the same way as a file\. It records in free time, with nothing playing under it\.$/,
+    );
+    expect(described('media.upload').length).toBeLessThanOrEqual(4096);
     // One way to stage a file: media.upload. media.import only ingests.
     expect(described('media.import')).toContain('must be staged first');
     expect(described('media.import')).not.toContain('{upload');
@@ -386,8 +391,12 @@ describe('protocol surface', () => {
         { resourceDomains: [origin], connectDomains: [origin] },
         clipboard,
       ],
-      // The upload box only sends the file.
-      ['ui://cuttingfloor/upload', { connectDomains: [origin] }, {}],
+      // The upload box sends the file; the microphone backs its Record.
+      [
+        'ui://cuttingfloor/upload',
+        { connectDomains: [origin] },
+        { permissions: { microphone: {} } },
+      ],
       // The sounds play, and their waveforms are read, from the library's bucket.
       [
         'ui://cuttingfloor/sounds',

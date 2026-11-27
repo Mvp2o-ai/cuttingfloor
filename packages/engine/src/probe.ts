@@ -220,9 +220,14 @@ export async function probe(path: string, signal?: AbortSignal): Promise<Probe> 
       ['png', 'mjpeg', 'webp', 'tiff', 'bmp'].includes(v.codec_name ?? '') &&
       Number(v.nb_frames ?? 1) <= 1 &&
       formatNames.some((f) => IMAGE_FORMATS.has(f)));
+  const stated = Number(json.format?.duration ?? v?.duration ?? a?.duration ?? Number.NaN);
+  // A recording a browser makes as it goes (MediaRecorder's WebM) never writes its length:
+  // the length is where its last packet ends.
   const duration = isImage
     ? null
-    : Number(json.format?.duration ?? v?.duration ?? a?.duration ?? Number.NaN);
+    : stated > 0
+      ? stated
+      : await packetSeconds(path, v ? 'v:0' : 'a:0', signal);
   if (duration !== null && !(duration > 0))
     throw new CfError('bad_request', 'Could not read the media duration');
   if (duration !== null && duration > MAX_DURATION)
@@ -293,6 +298,44 @@ export async function probe(path: string, signal?: AbortSignal): Promise<Probe> 
     video,
     audio,
   };
+}
+
+/**
+ * Where a stream's last packet ends, in seconds, read packet by packet (no decoding), for a
+ * file whose header states no length. NaN when there are none.
+ */
+async function packetSeconds(path: string, stream: string, signal?: AbortSignal): Promise<number> {
+  const { stdout } = await run(
+    BIN.ffprobe,
+    [
+      '-v',
+      'error',
+      '-protocol_whitelist',
+      'file',
+      '-select_streams',
+      stream,
+      '-show_entries',
+      'packet=pts_time,duration_time',
+      '-of',
+      'csv=p=0',
+      '-i',
+      `file:${path}`,
+    ],
+    { timeoutMs: 120_000, ...(signal ? { signal } : {}) },
+  ).catch(() => ({ stdout: '' }));
+  let end = Number.NaN;
+  for (const line of stdout.split('\n')) {
+    const [pts, length] = line.split(',');
+    const at = Number(pts) + (Number(length) || 0);
+    if (pts && Number.isFinite(at) && !(at <= end)) end = at;
+  }
+  return Math.round(end * 1e6) / 1e6;
+}
+
+/** Whether the file's header states its length (a browser's recording as it goes does not). */
+export function statesDuration(p: Probe): boolean {
+  if (!p.raw) return true;
+  return p.raw.format.duration !== undefined || p.raw.streams.some((s) => s.duration !== undefined);
 }
 
 /** The extension and MIME type a probed file's format takes. */
@@ -380,9 +423,11 @@ export function standardRate(r: { num: number; den: number }): { num: number; de
 
 /** Why a file needs a mezzanine before MLT reads it frame-accurately. */
 export function conformReasons(p: Probe): string[] {
+  if (p.kind !== 'video' && p.kind !== 'audio') return [];
+  // Without a stated length a file can't be cut by frame: MLT reads its length from the header.
+  const reasons: string[] = statesDuration(p) ? [] : ['duration'];
   const v = p.video;
-  if (!v || p.kind === 'image') return [];
-  const reasons: string[] = [];
+  if (!v) return reasons;
   if (v.vfr) reasons.push('vfr');
   if (v.rotation !== 0) reasons.push('rotation');
   if (v.transfer === 'smpte2084' || v.transfer === 'arib-std-b67') reasons.push('hdr');

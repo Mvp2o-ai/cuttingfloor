@@ -3,6 +3,7 @@
 import { track } from '@vercel/analytics';
 import { useEffect, useRef, useState } from 'react';
 import type { Files, Started } from '../lib/files.ts';
+import { Record } from './record.tsx';
 import { Final, sendFile, uploadOffset } from './send-file.ts';
 import { SHAREABLE, ShareSound } from './share-sound.tsx';
 
@@ -140,7 +141,7 @@ export function FilesPanel({ initial }: { initial: Files }) {
     queue.current = queue.current.then(() => send(file, key, resume));
   };
 
-  const add = (list: FileList | null) => {
+  const add = (list: FileList | File[] | null) => {
     for (const file of Array.from(list ?? [])) {
       const key = `${file.name}-${file.size}-${Math.random()}`;
       setSending((all) => [
@@ -230,6 +231,9 @@ export function FilesPanel({ initial }: { initial: Files }) {
           }}
         />
       </label>
+
+      {/* Or record one: sent like a dropped file once the person taps Send. */}
+      <Record onSend={(file) => add([file])} />
 
       {busy ? (
         <p className="meter-note files-keep">
