@@ -451,6 +451,12 @@ export const TOOLS: ToolEntry[] = [
     longRunning: 'never',
   },
   {
+    name: 'score.record',
+    title: 'Record a take',
+    readOnly: false,
+    longRunning: 'never',
+  },
+  {
     name: 'media.import',
     title: 'Import media',
     readOnly: false,

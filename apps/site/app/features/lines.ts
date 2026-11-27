@@ -265,6 +265,10 @@ export const LINES: Record<string, Line> = {
   'score.set_send': { group: 'music', say: 'Change how much a layer sends.' },
   'score.remove_send': { group: 'music', say: 'Stop a layer sending.' },
   'score.batch': { group: 'music', say: 'Make many changes to a piece of music in one go.' },
+  'score.record': {
+    group: 'music',
+    say: 'Add your own layer: tap pads or hum into the microphone while the music loops.',
+  },
   // Review
   'render.frames': {
     group: 'review',
