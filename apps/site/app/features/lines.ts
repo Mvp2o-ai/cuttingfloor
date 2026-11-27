@@ -9,6 +9,7 @@ export type GroupId =
   | 'audio'
   | 'look'
   | 'create'
+  | 'music'
   | 'analyze'
   | 'review'
   | 'export'
@@ -180,6 +181,90 @@ export const LINES: Record<string, Line> = {
     group: 'analyze',
     say: 'Get typed answers (yes/no, a choice, a score, a box) about frames and text.',
   },
+  // Music
+  'score.create': {
+    group: 'music',
+    say: 'Start a new piece of music at a tempo and a time signature.',
+  },
+  'score.get': {
+    group: 'music',
+    say: 'Read the whole piece: its layers, instruments, notes and changes.',
+  },
+  'score.load': { group: 'music', say: 'Bring back a saved piece of music.' },
+  'score.diff': { group: 'music', say: 'Show what changed between two versions of a piece.' },
+  'score.history': {
+    group: 'music',
+    say: 'List the edits that made this version of a piece, to step back to any of them.',
+  },
+  'score.set_tempo': {
+    group: 'music',
+    say: 'Set how fast the music goes, or speed it up and slow it down along the way.',
+  },
+  'score.set_meter': {
+    group: 'music',
+    say: 'Set the beats in a bar (4/4, 3/4, 6/8), from any bar on.',
+  },
+  'score.set_markers': {
+    group: 'music',
+    say: 'Mark moments in the music, such as where the picture cuts, by beat or by time.',
+  },
+  'score.add_part': {
+    group: 'music',
+    say: 'Add a layer to the music: drums, bass, a pad, a recording.',
+  },
+  'score.set_part': {
+    group: 'music',
+    say: 'Set a layer’s volume, left and right, mute or solo.',
+  },
+  'score.remove_part': { group: 'music', say: 'Take a layer out.' },
+  'score.add_device': {
+    group: 'music',
+    say: 'Give a layer an instrument (piano, synth, drum kit, any sound as a sampler) or an effect (reverb, echo, EQ and more).',
+  },
+  'score.set_device': {
+    group: 'music',
+    say: 'Change an instrument’s or effect’s settings, or switch it off.',
+  },
+  'score.remove_device': { group: 'music', say: 'Take an instrument or effect off.' },
+  'score.add_notes': {
+    group: 'music',
+    say: 'Write notes: pitch, timing, length and how hard each is played.',
+  },
+  'score.set_notes': { group: 'music', say: 'Change notes.' },
+  'score.remove_notes': { group: 'music', say: 'Delete notes.' },
+  'score.add_region': {
+    group: 'music',
+    say: 'Place a stretch of notes or a sound (a loop, a recording) on a layer.',
+  },
+  'score.move_region': {
+    group: 'music',
+    say: 'Move a stretch of music to another beat or layer.',
+  },
+  'score.trim_region': {
+    group: 'music',
+    say: 'Shorten or lengthen a stretch of music from either end.',
+  },
+  'score.split_region': { group: 'music', say: 'Cut a stretch of music in two.' },
+  'score.alias_region': {
+    group: 'music',
+    say: 'Repeat a pattern as a linked copy: change one and every copy changes.',
+  },
+  'score.unique_region': {
+    group: 'music',
+    say: 'Unlink a copy so it can change on its own.',
+  },
+  'score.remove_region': { group: 'music', say: 'Take a stretch of music out.' },
+  'score.set_automation': {
+    group: 'music',
+    say: 'Make a volume, a pan or any effect setting move over time.',
+  },
+  'score.add_send': {
+    group: 'music',
+    say: 'Send some of a layer’s sound to another, such as a shared reverb.',
+  },
+  'score.set_send': { group: 'music', say: 'Change how much a layer sends.' },
+  'score.remove_send': { group: 'music', say: 'Stop a layer sending.' },
+  'score.batch': { group: 'music', say: 'Make many changes to a piece of music in one go.' },
   // Review
   'render.frames': {
     group: 'review',

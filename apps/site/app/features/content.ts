@@ -236,6 +236,27 @@ export const GROUPS: Group[] = [
     ],
   },
   {
+    id: 'music',
+    name: 'Music',
+    title: 'Music made in layers.',
+    intro:
+      'Your agent can write music for the edit: layers of instruments, notes and loops on beats, with effects and a mix, timed to the picture.',
+    items: [
+      {
+        say: 'Layers with instruments and effects: pianos, synths, drum kits, any sound as a sampler; reverb, echo, EQ and compression.',
+        tools: ['score.add_part', 'score.add_device'],
+      },
+      {
+        say: 'Notes and loops placed on beats, repeated as linked copies, moved, trimmed and split.',
+        tools: ['score.add_notes', 'score.add_region', 'score.alias_region'],
+      },
+      {
+        say: 'Tempo and time signature changes, markers at the picture’s cuts, and levels that move over time.',
+        tools: ['score.set_tempo', 'score.set_markers', 'score.set_automation'],
+      },
+    ],
+  },
+  {
     id: 'analyze',
     name: 'Analyze and judge',
     title: 'Footage turned into facts.',
