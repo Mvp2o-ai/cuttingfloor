@@ -21,6 +21,11 @@ import { registerJudgeTools } from './tools/judge.ts';
 import { registerListenTools } from './tools/listen.ts';
 import { registerMediaTools } from './tools/media.ts';
 import { registerRenderTools } from './tools/render.ts';
+import {
+  type LoadScore,
+  type RenderScoreSound,
+  registerRenderSoundTools,
+} from './tools/render-sound.ts';
 import { registerSearchTools } from './tools/search.ts';
 import { registerSeekTools } from './tools/seek.ts';
 import { QA_SKILL, registerSkillTools } from './tools/skills.ts';
@@ -59,6 +64,10 @@ export interface ServerDeps {
    * account counts as claimed only once this process has seen its claim.
    */
   claimed?: boolean;
+  /** The score store: a score document by id (render.notes, render.spectrogram). Absent: a score_id is refused. */
+  loadScore?: LoadScore;
+  /** A score's sound over a range, rendered to a WAV (render.spectrogram). Absent: a score_id is refused. */
+  renderScoreSound?: RenderScoreSound;
 }
 
 /**
@@ -142,6 +151,7 @@ export function createServer(deps: ServerDeps): McpServer {
   registerJudgeTools(server, deps);
   registerCreateTools(server, deps);
   registerRenderTools(server, deps);
+  registerRenderSoundTools(server, deps);
   registerInterchangeTools(server, deps);
   registerSkillTools(server);
   // credits.claim and support.contact only on the hosted service: a server you run yourself

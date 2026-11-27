@@ -94,6 +94,18 @@ export {
 } from './media.ts';
 export { compileMlt, lengthFrames, type MltSource, scaledSize } from './mlt.ts';
 export {
+  drawPianoRoll,
+  hex,
+  PART_COLOURS,
+  type PianoRoll,
+  partColour,
+  playedNotes,
+  type RollNote,
+  scoreEndBeats,
+  scoreGrid,
+  velocityAlpha,
+} from './piano-roll.ts';
+export {
   type Box,
   type ChannelStats,
   type ColourStats,
@@ -134,6 +146,15 @@ export {
   qaCheck,
 } from './qa.ts';
 export {
+  drawText,
+  encodePng,
+  fillRect,
+  newRaster,
+  pixelAt,
+  type Raster,
+  type Rgb,
+} from './raster.ts';
+export {
   exportTimeline,
   type ImageFormat,
   imageExtension,
@@ -165,6 +186,18 @@ export {
   selectedPicture,
   selectionPass,
 } from './selection.ts';
+export {
+  type Grid,
+  HIGH_PITCH,
+  LOW_PITCH,
+  noteName,
+  PITCH_ROWS,
+  pitchHz,
+  type SoundLayout,
+  soundLayout,
+  xOf,
+  yOf,
+} from './sound-axes.ts';
 export { soundLevels } from './sound-levels.ts';
 export {
   CLAP_DIMENSIONS,
@@ -206,6 +239,21 @@ export {
   type SpeakerTurn,
   wordSpeakers,
 } from './speakers.ts';
+export {
+  CYCLES,
+  colourLevel,
+  decodeMono,
+  drawSpectrogram,
+  FLOOR_DB,
+  levelColour,
+  pitchLevels,
+  renderSpectrogram,
+  SPECTROGRAM_RATE,
+  type Spectrogram,
+  type SpectrogramSummary,
+  spectrogramPad,
+  windowSeconds,
+} from './spectrogram.ts';
 export {
   ALIGN_LANGUAGES,
   type AlignedWord,
