@@ -48,6 +48,35 @@ export {
   xmlEscape,
 } from './interchange/index.ts';
 export {
+  applyScoreEdit,
+  checkScore,
+  newScore,
+  type ScoreMedia,
+  type ScoreMediaResolver,
+  type ScoreOutcome,
+  scoreEnd,
+} from './score/edit.ts';
+export {
+  PERFORM_TOLERANCE,
+  type Performance,
+  type PerformedAudio,
+  type PerformedDevice,
+  type PerformedLane,
+  type PerformedNote,
+  type PerformedPart,
+  type PerformedSend,
+  type PerformOptions,
+  performScore,
+} from './score/perform.ts';
+export {
+  runScoreEdits,
+  SCORE_TTL_MS,
+  type ScoreBatchOp,
+  type ScoreEditOutcome,
+  type ScoreOpResult,
+  ScoreStore,
+} from './score/store.ts';
+export {
   barLength,
   barsBetween,
   barToBeats,
@@ -60,6 +89,14 @@ export {
   secondsToFrames,
   tempoAt,
 } from './score/time.ts';
+export {
+  barsOf,
+  fromScoreView,
+  markerView,
+  regionPlace,
+  scoreDiff,
+  toScoreView,
+} from './score/view.ts';
 export {
   frameSource,
   type InBetween,
@@ -75,6 +112,8 @@ export {
   GONE_TTL_MS,
   OUTPUTS,
   type OutputRecord,
+  SCORES,
+  SCORES_GONE,
   TIMELINES,
   TIMELINES_GONE,
 } from './storage/collections.ts';
