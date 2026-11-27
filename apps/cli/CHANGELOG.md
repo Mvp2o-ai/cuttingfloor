@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.79.1
+
+### Patch Changes
+
+- 59af523: The football tribute demo and its onboarding clips no longer show any sportswear or sponsor logos: the sideline clips were made again in a plain kit and the tribute re-cut from them.
+
 ## 0.79.0
 
 ### Minor Changes
