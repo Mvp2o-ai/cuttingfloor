@@ -444,9 +444,19 @@ describe.skipIf(!ready)('speech and sound facts', () => {
     });
     expect(past.structured.code).toBe('no_audio');
     expect(String(past.structured.message)).toContain(`timeline ${tl}`);
-    // Words read imported media only; an edit's picture and mix take the other kinds.
-    const words = await call(client, 'media.analyze', { timeline_id: tl, kind: 'transcript' });
-    expect(words.structured.code).toBe('bad_request');
+    // The words of the edit's mix, in timeline seconds, returned and not kept.
+    const words = await job('media.analyze', { timeline_id: tl, kind: 'transcript' });
+    expect(words.isError).toBe(false);
+    const heard = words.structured.transcript as {
+      text: string;
+      from: number;
+      words: Array<{ text: string; start: number }>;
+    };
+    expect(heard.text.toLowerCase()).toContain('hello');
+    expect(heard.text.toLowerCase()).toContain('quick');
+    expect(heard.from).toBe(0);
+    expect(Math.abs((heard.words[0]?.start ?? 0) - ((truth[0]?.start ?? 0) + 1))).toBeLessThan(0.3);
+    expect(words.structured).not.toHaveProperty('summary');
 
     const qa = await job('qa.check', { timeline_id: tl, speech: { min_probability: 0.5 } });
     expect(qa.isError).toBe(false);

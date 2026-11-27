@@ -482,6 +482,10 @@ export const ANALYSES = [
   'voice',
   'colour',
   'picture',
+  'onsets',
+  'notes',
+  'key',
+  'spectrum',
 ];
 export const EXPORT_PRESETS = [
   'mp4_h264',

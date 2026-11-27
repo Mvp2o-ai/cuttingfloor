@@ -3,6 +3,7 @@ export * from './admin.ts';
 export * from './compositing.ts';
 export * from './effects.ts';
 export * from './errors.ts';
+export * from './hearing.ts';
 export * from './ids.ts';
 export * from './judge.ts';
 export * from './keeping.ts';
