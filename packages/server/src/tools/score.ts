@@ -15,6 +15,7 @@ import {
   toScoreView,
 } from '@cuttingfloor/core';
 import {
+  deviceRosterText,
   KEEP_MS,
   SCORE_EDIT_TOOLS,
   ScoreBatchInput,
@@ -49,7 +50,7 @@ const EDIT_DESCRIPTIONS: Record<ScoreEditTool, { title: string; description: str
   'score.set_tempo': {
     title: 'Set score tempo',
     description:
-      "The tempo of a score in beats per minute: one value for all of it (tempo), or changes at beats (changes; one or the other). A change at beat 0 sets the opening tempo; ramp true glides from the change before and arrives at this one's tempo on its beat. Notes and notes regions keep their beats, so their times in seconds move; audio regions keep their length in seconds unless they were placed with fit_beats. Returns the new score_id (edit that one next), the score's length, and where each bar now starts in seconds and frames.",
+      "The tempo of a score in beats per minute: one value for all of it (tempo), or changes at beats (changes; one or the other). A change at beat 0 sets the opening tempo; ramp true glides from the change before and arrives at this one's tempo on its beat. A stretch of n beats at tempo T lasts 60 × n / T seconds, so a change of tempo can put any moment of the picture exactly on a beat. Notes and notes regions keep their beats, so their times in seconds move; audio regions keep their length in seconds unless they were placed with fit_beats. Returns the new score_id (edit that one next), the score's length, and where each bar now starts in seconds and frames.",
   },
   'score.set_meter': {
     title: 'Set score meter',
@@ -78,8 +79,7 @@ const EDIT_DESCRIPTIONS: Record<ScoreEditTool, { title: string; description: str
   },
   'score.add_device': {
     title: 'Add device',
-    description:
-      "Put an instrument or an effect on a part of a score, or an effect on the whole score (master). A part sounds through its devices in order: its instruments first, every one of them playing every note of the part (two or more sound together as one layered sound), then its effects in the order added. Instruments: sampler (plays any media, or a time range of it, at each note's pitch, from its start for the note's length, then release_ms; one_shot plays it to its end whatever the length; root_note is the pitch that plays it unchanged; with slices, each pitch plays its own range of the media, as a drum kit does, and a pitch with no slice is silent), synth (oscillators, a filter, envelopes) and named instruments (pianos, basses, strings, bells, drum kits). Effects: eq, filter, compressor, limiter, reverb, delay, chorus, saturation, gain. A wrong name or param is refused with the full list, ranges, units and defaults (also at video://catalog/devices); score.get shows every param applied. Returns the new score_id (edit that one next) and the device_id.",
+    description: `Put an instrument or an effect on a part of a score, or an effect on the whole score (master). A part sounds through its devices in order: its instruments first, every one of them playing every note of the part (two or more sound together as one layered sound), then its effects in the order added. ${deviceRosterText()}. sampler plays any media (media_id), or a time range of it, at each note's pitch, from its start for the note's length, then release_ms; one_shot plays it to its end whatever the length; root_note is the pitch that plays it unchanged; with slices, each pitch plays its own range of the media, as a drum kit does, and a pitch with no slice is silent. synth is oscillators, a filter and envelopes. A wrong name or param is refused with the full list, ranges, units and defaults (also at video://catalog/devices); score.get shows every param applied. Returns the new score_id (edit that one next) and the device_id.`,
   },
   'score.set_device': {
     title: 'Set device',
@@ -94,7 +94,7 @@ const EDIT_DESCRIPTIONS: Record<ScoreEditTool, { title: string; description: str
   'score.add_notes': {
     title: 'Add notes',
     description:
-      'Add notes to a region of a score, up to 2,000 a call. Each note: pitch (a MIDI number 0–127, decimals allowed: 60.5 is a quarter-tone above middle C; or a name such as C3 or F#4; C4 is 60, middle C), at_beats (from the region’s start), length_beats and velocity (1–127, how hard it is struck). On a drum kit or a sliced sampler a pitch selects a sound, not a height (score.get lists which pitch plays what). at_seconds and length_seconds may be given in place of the beats. Exactly what is passed is stored: nothing is moved to a grid or a scale. Returns the new score_id (edit that one next) and note_ids in the order given.',
+      'Add notes to a region of a score, up to 2,000 a call. Each note: pitch (a MIDI number 0–127, decimals allowed: 60.5 is a quarter-tone above middle C; or a name such as C3 or F#4; C4 is 60, middle C), at_beats (from the region’s start), length_beats and velocity (1–127, how hard it is struck). On a drum kit or a sliced sampler a pitch selects a sound, not a height (score.get lists which pitch plays what). at_seconds and length_seconds may be given in place of the beats, which puts a note on an exact moment, on the grid or off it. Exactly what is passed is stored: nothing is moved to a grid or a scale. Returns the new score_id (edit that one next) and note_ids in the order given.',
   },
   'score.set_notes': {
     title: 'Set notes',

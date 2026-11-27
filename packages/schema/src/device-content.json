@@ -1,6 +1,7 @@
 {
-  "about": "The named instruments and drum kits of the music engine. tools/music/content/build_content.py renders them at image build into /usr/share/cuttingfloor/music (one folder each: zones.json and FLAC files), and fails the build if a listed kit pitch comes out silent. packages/engine/src/music.ts reads this file for the device catalog. Sources: MuseScore General SF2 0.2.1 (MIT; its piano Public Domain, its strings and drumline samples CC0), via Debian trixie's musescore-general-soundfont-lossless 0.2.1-1, rendered by FluidSynth; kit_909 is synthesised by the build script itself; kit_lofi is kit_acoustic through the script's lo-fi chain; pluck and sub_bass are presets of the engine's own synth.",
+  "about": "The named instruments and drum kits of the music engine. tools/music/content/build_content.py renders them at image build into /usr/share/cuttingfloor/music (one folder each: zones.json and FLAC files), and fails the build if a listed kit pitch comes out silent. packages/schema/src/device-catalog.ts reads this file for the device catalog; peak_db is the level each one's loudest note is recorded at. Sources: MuseScore General SF2 0.2.1 (MIT; its piano Public Domain, its strings and drumline samples CC0), via Debian trixie's musescore-general-soundfont-lossless 0.2.1-1, rendered by FluidSynth; kit_909 is synthesised by the build script itself; kit_lofi is kit_acoustic through the script's lo-fi chain; pluck and sub_bass are presets of the engine's own synth.",
   "sample_rate": 48000,
+  "peak_db": -12,
   "soundfont": {
     "package": "musescore-general-soundfont-lossless",
     "version": "0.2.1-1",

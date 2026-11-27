@@ -49,6 +49,8 @@ export interface DeviceDef {
 }
 
 interface ContentSpec {
+  /** dBFS the loudest note of every named instrument and kit is recorded at, at gain_db 0. */
+  peak_db: number;
   instruments: Record<
     string,
     { description: string; attack_ms: number; release_ms: number; synth?: unknown }

@@ -154,9 +154,17 @@ def write_flac(path, x):
     return 1 if mono else 2
 
 
-def normalise(zones, peak_db=-3.0):
+# The content file's peak_db: the level every instrument's and kit's loudest note is recorded at.
+# -12 dBFS leaves room for chords and for several parts at gain 0 before anything goes over full
+# scale: an agent cannot hear clipping, and a render that clipped cannot be turned back down.
+PEAK_DB = -12.0
+
+
+def normalise(zones, peak_db=None):
     """One gain for the whole instrument so that its loudest zone peaks at peak_db: instruments
     sit at comparable levels and keep the SoundFont's balance between their own notes."""
+    if peak_db is None:
+        peak_db = PEAK_DB
     peak = max(float(np.max(np.abs(z["audio"]))) for z in zones if len(z["audio"]))
     gain = 10 ** (peak_db / 20) / peak
     for z in zones:
@@ -368,6 +376,8 @@ def lofi(x):
 def main():
     content_path, out_dir = sys.argv[1], sys.argv[2]
     content = json.load(open(content_path))
+    global PEAK_DB
+    PEAK_DB = float(content["peak_db"])
     sf = content["soundfont"]
     sf2 = sf["file"]
     digest = hashlib.sha256(open(sf2, "rb").read()).hexdigest()

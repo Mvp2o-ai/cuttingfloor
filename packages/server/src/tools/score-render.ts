@@ -14,6 +14,13 @@ import { guard } from '../result.ts';
 import { renderScoreSound } from '../score-render.ts';
 import type { ServerDeps } from '../server.ts';
 import { mediaCreator } from './create.ts';
+import { QA_SKILL } from './skills.ts';
+
+/**
+ * Said with every render: three first-run agents delivered music they had not checked, each
+ * saying it could not listen (blind tests, 2026-11-27). The QA skill says how it is read back.
+ */
+const SCORE_QA_NOTE = `This cannot be heard from here, but it can be read back with measurements before the user gets it: the QA skill says how (skills.get {slug: "${QA_SKILL}"}).`;
 
 /** Where a render's facts are kept with the media it made, so a repeat of the same render has them. */
 const FACTS = 'score-render.json';
@@ -26,7 +33,7 @@ export function registerScoreRenderTools(server: McpServer, deps: ServerDeps): v
     'score.render',
     {
       title: 'Render score',
-      description: `Hear a score: render it, or a range of it, to audio media. parts renders only those (the rest silent), to hear one layer or a few on their own. Returns a media_id (usable once complete: for clip.add, media.analyze and media.listen; media.get has its download url) and render: the loudness (integrated LUFS and true peak dBTP), clipped_samples (over full scale: above 0 the mix is too loud), the part_ids that sounded (after mute, solo and parts), and bars: where each bar starts in beats, seconds and frames. The render stops at until_beats; with tail_db it runs on until the sound falls under that level (notes and reverb ring on after the last beat; up to ${MUSIC_LIMITS.tailSeconds} s more) and returns ends_seconds, when it did. Rendered at the score's sample_rate, stereo, as 24-bit WAV (default) or MP3; never watermarked. The same score and range give the same audio. Long-running: a task, or {job_id, media_id} for job.get.`,
+      description: `Hear a score: render it, or a range of it, to audio media. parts renders only those (the rest silent), to hear one layer or a few on their own. Returns a media_id (usable once complete: for clip.add, media.analyze and media.listen; media.get has its download url) and render: the loudness (integrated LUFS and true peak dBTP), clipped_samples (samples over full scale, cut off in the file for good: above 0 the parts are too loud together, and turning the render down afterwards does not undo it), the part_ids that sounded (after mute, solo and parts), and bars: where each bar starts in beats, seconds and frames. The render stops at until_beats; with tail_db it runs on until the sound falls under that level (notes and reverb ring on after the last beat; up to ${MUSIC_LIMITS.tailSeconds} s more) and returns ends_seconds, when it did. Rendered at the score's sample_rate, stereo, as 24-bit WAV (default) or MP3; never watermarked. The same score and range give the same audio. Long-running: a task, or {job_id, media_id} for job.get.`,
       inputSchema: ScoreRenderInput,
       outputSchema: withJob(ScoreRenderResult),
       annotations: {
@@ -131,7 +138,11 @@ export function registerScoreRenderTools(server: McpServer, deps: ServerDeps): v
         'engine',
         Object.keys(doc.media),
         positionAt(doc, until).seconds,
-        async (record) => ({ ...mediaInfo(record), render: await read(record) }),
+        async (record) => ({
+          ...mediaInfo(record),
+          render: await read(record),
+          qa_note: SCORE_QA_NOTE,
+        }),
       );
     }),
   );

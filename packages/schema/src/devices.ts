@@ -1,5 +1,5 @@
 import * as z from 'zod/v4';
-import { type DeviceDef, musicDevices, type ParamDef } from './device-catalog.ts';
+import { type DeviceDef, musicContent, musicDevices, type ParamDef } from './device-catalog.ts';
 import { MediaId } from './ids.ts';
 import { PitchInput, pitchName } from './score.ts';
 
@@ -229,6 +229,26 @@ const spec = (name: string): DeviceSpec | undefined => devices()[name];
 /** Whether a device makes sound from notes (an instrument) or changes sound (an effect). */
 export function deviceKind(name: string): DeviceSpec['kind'] | undefined {
   return spec(name)?.kind;
+}
+
+/**
+ * The devices as a tool description names them: every instrument by its name, and every effect
+ * with the params it has to be given. First-run agents asked for "piano" and for a reverb with
+ * no params (blind tests, 2026-11-27): the names and the musts are said where they are read.
+ */
+export function deviceRosterText(): string {
+  const all = Object.entries(devices());
+  const instruments = all.filter(([, d]) => d.kind === 'instrument' && !d.sounds).map(([n]) => n);
+  const kits = all.filter(([, d]) => d.sounds).map(([n]) => n);
+  const musts = (name: string, d: DeviceSpec) => {
+    const need = Object.entries(d.params)
+      .filter(([, p]) => 'required' in p && p.required)
+      .map(([k]) => k);
+    if (name === 'delay') need.push('time_beats or time_ms');
+    return need.length ? `${name} {${need.join(', ')}}` : name;
+  };
+  const effects = all.filter(([, d]) => d.kind === 'effect').map(([n, d]) => musts(n, d));
+  return `Instruments, by name: ${instruments.join(', ')}; drum kits, where a pitch selects a drum: ${kits.join(', ')}. Each named instrument and kit is recorded so its loudest note peaks at ${musicContent().peak_db} dBFS at gain_db 0, which leaves room for chords and several parts. Effects, each with the params it has to be given (no value is assumed for them; the rest have defaults): ${effects.join(', ')}`;
 }
 
 /** Every device name, by kind: what an error about an unknown device lists. */

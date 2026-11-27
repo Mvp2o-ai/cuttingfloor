@@ -74,7 +74,7 @@ export const ScoreRenderFacts = z.object({
     .number()
     .int()
     .describe(
-      'Samples over full scale, cut off in the file: more than 0 means the mix is too loud',
+      'Samples over full scale, cut off in this file for good: turning the file down afterwards does not bring them back',
     ),
   parts_sounded: z
     .array(z.string())
@@ -96,7 +96,10 @@ export const ScoreRenderFacts = z.object({
 });
 export type ScoreRenderFacts = z.infer<typeof ScoreRenderFacts>;
 
-export const ScoreRenderResult = MediaInfo.extend({ render: ScoreRenderFacts });
+export const ScoreRenderResult = MediaInfo.extend({
+  render: ScoreRenderFacts,
+  qa_note: z.string().optional().describe('How to check music that cannot be heard from here'),
+});
 export type ScoreRenderResult = z.infer<typeof ScoreRenderResult>;
 
 /** Bars a render lists: a limit on the size of a result, not on the render. */
