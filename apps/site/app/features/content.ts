@@ -23,7 +23,7 @@ import {
 import { type GroupId, LINES } from './lines.ts';
 
 export const TITLE = `Features: every video editing tool your agent gets (${TOOL_COUNT} tools)`;
-export const DESCRIPTION = `Everything cuttingfloor can do, in plain words: cut by transcript, captions, voiceover, stems, mixing and loudness, effects, motion graphics, background removal, checks and export to MP4, FCPXML, OTIO and EDL. All ${TOOL_COUNT} MCP tools listed.`;
+export const DESCRIPTION = `Everything cuttingfloor can do, in plain words: cut by transcript, captions, voiceover, stems, music made for the video, mixing and loudness, effects, motion graphics, background removal, checks and export to MP4, FCPXML, OTIO and EDL. All ${TOOL_COUNT} MCP tools listed.`;
 export const UPDATED = '2026-11-01';
 
 export type Item = { say: string; tools: string[] };
@@ -240,10 +240,10 @@ export const GROUPS: Group[] = [
     name: 'Music',
     title: 'Music made in layers.',
     intro:
-      'Your agent can write music for the edit: layers of instruments, notes and loops on beats, with effects and a mix, timed to the picture.',
+      'Your agent can write music for the edit: layers of instruments, notes and loops on beats, with effects and a mix, timed to the picture. Every layer stays changeable, so “darker”, “less busy” or “more bass” is one more ask. No singing, no lyrics: it is built from instruments, not generated as a song.',
     items: [
       {
-        say: 'Layers with instruments and effects: pianos, synths, drum kits, any sound as a sampler; reverb, echo, EQ and compression.',
+        say: 'Layers with instruments and effects: pianos, strings, basses, pads, synths, drum kits, or a sound from your own recording played as an instrument; reverb, echo, EQ and compression.',
         tools: ['score.add_part', 'score.add_device'],
       },
       {
@@ -251,8 +251,12 @@ export const GROUPS: Group[] = [
         tools: ['score.add_notes', 'score.add_region', 'score.alias_region'],
       },
       {
-        say: 'Tempo and time signature changes, markers at the picture’s cuts, and levels that move over time.',
+        say: 'Music fitted to the picture: the beat on the cuts, a hit on the moment, the last note on the last frame. Tempo changes and levels that move over time.',
         tools: ['score.set_tempo', 'score.set_markers', 'score.set_automation'],
+      },
+      {
+        say: 'Hum or whistle a tune and hear it on any instrument. The finished music comes out as sound to lay under the video.',
+        tools: ['media.analyze', 'score.add_notes', 'score.render'],
       },
     ],
   },

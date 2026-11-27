@@ -54,8 +54,8 @@ export default function Features() {
           <p className="lede wt-answer">
             cuttingfloor is an open-source video editing MCP server: connect Claude, ChatGPT, Cursor
             or Kazi and your agent gets {TOOL_COUNT} editing tools. It cuts by what was said,
-            captions, mixes and levels the sound, makes graphics and voiceovers, checks its own work
-            and exports an MP4 or the edit for your editing app.{' '}
+            captions, mixes and levels the sound, makes music, graphics and voiceovers, checks its
+            own work and exports an MP4 or the edit for your editing app.{' '}
             <em>Here is all of it, in plain words first and tool names second.</em>
           </p>
           <LiveCard />
