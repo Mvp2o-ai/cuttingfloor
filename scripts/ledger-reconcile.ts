@@ -1,6 +1,7 @@
 // Compares our credit ledger with Kazi's hand-off (`kazi-handoff/1`): the file against its own
 // totals, each account's opening and carried payments against Kazi's balance, accounts missing
-// either way (and linked to Kazi but not handed over), no grant or carry-over beside an opening,
+// either way (and linked to Kazi but not handed over), no carry-over beside an opening (our grant
+// counts in the balance where an opening took it in),
 // and every account's stored balance and totals against its entries summed again. Prints each
 // difference; exits 1 when there is any (a difference stops the cutover and goes to Ken).
 //

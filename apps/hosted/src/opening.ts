@@ -17,8 +17,9 @@ import { type Ledger, type NewEntry, totals } from './ledger.ts';
 //
 // An account the import opens never gets the activation grant or the carry-over from before any
 // ledger: those come only when the server opens an account itself, and an open account is never
-// opened again. An account already open here before the import (a sign-in raced it) is not
-// touched; it is reported.
+// opened again. An account a request opened here between our deploy and the import holds only our
+// grant (and releases spent here since): its opening takes the grant in, so it holds Kazi's
+// balance less what it spent here. Open here with anything more, it is reported.
 //
 // A later export (run 2, after our deploy) adds every row with a ref of its own that run 1 didn't
 // have: payments, and releases our old server reported to Kazi between run 1 and the deploy (a
@@ -321,8 +322,29 @@ export async function importHandoff(o: ImportOptions): Promise<ImportReport> {
         o.log(`${owner}: signed up between the runs; open here with our grant, nothing carried`);
         continue;
       }
-      // Opened here first (a sign-in got in before the import): its grant would stack on Kazi's
-      // balance, so it is left for Ken.
+      if (openedAtSwitch(have, a)) {
+        // Opened here by a request between our deploy and the import: only our grant, and maybe
+        // releases spent here since. The opening takes Kazi's balance with the grant carved out,
+        // so it holds Kazi's balance less what it spent here.
+        const grant = sum(have.filter((e) => e.id === ACTIVATION));
+        const opening = round(a.balance - sum(a.payments) - grant);
+        o.log(
+          `${verb}open ${owner} at ${a.balance} over our grant: ${openingId} ${opening}${a.payments.length ? ` + ${a.payments.length} rows by ref` : ''}`,
+        );
+        if (o.apply) {
+          await o.ledger.credit(owner, {
+            id: openingId,
+            kind: 'opening',
+            credits: opening,
+            at: o.handoff.exported_at,
+            reason: `balance in Kazi's ledger at the split (${a.balance}), less our grant and the rows entered beside it`,
+          });
+          for (const e of a.payments) await o.ledger.credit(owner, e);
+        }
+        report.opened++;
+        continue;
+      }
+      // Opened here first with more than our grant: it is left for Ken.
       mismatch(
         `${owner}: already open here without ${openingId} (${have.map((e) => e.id).join(', ')}); not carried`,
       );
@@ -370,12 +392,24 @@ function signedUpInWindow(entries: readonly { id: string }[], a: HandedAccount):
 }
 
 /** What the hand-off's own entries come to here: the opening and the rows it carried by ref. */
+const ACTIVATION = 'grant:activation';
+
+/** Open here with only our grant, and releases spent here since: a request got in at the switch. */
+function openedAtSwitch(entries: readonly { id: string }[], a: HandedAccount): boolean {
+  const own = new Set(a.payments.map((e) => e.id));
+  return (
+    entries.some((e) => e.id === ACTIVATION) &&
+    entries.every((e) => e.id === ACTIVATION || (e.id.endsWith('-release') && !own.has(e.id)))
+  );
+}
+
 function carriedBalance(
   entries: readonly { id: string; credits: number }[],
   openingId: string,
   a: HandedAccount,
 ): number {
-  const ids = new Set([openingId, ...a.payments.map((e) => e.id)]);
+  // Our grant counts when an account opened at the switch took it into its opening.
+  const ids = new Set([openingId, ACTIVATION, ...a.payments.map((e) => e.id)]);
   return sum(entries.filter((e) => ids.has(e.id)));
 }
 
@@ -430,8 +464,10 @@ export async function reconcile(o: {
     const ids = new Set(entries.map((e) => e.id));
     for (const e of a.payments)
       if (!ids.has(e.id)) differences.push({ owner, what: `${e.id} is not carried` });
-    if (entries.some((e) => e.id === 'grant:activation' || e.id === 'opening:carry'))
-      differences.push({ owner, what: 'carries Kazi’s balance and a grant or carry-over of ours' });
+    // Our grant may sit under an opening that took it in (opened at the switch): the balance check
+    // below counts it, so a grant stacked on Kazi's balance shows there. A carry-over never may.
+    if (entries.some((e) => e.id === 'opening:carry'))
+      differences.push({ owner, what: 'carries Kazi’s balance and a carry-over of ours' });
     const carried = round(carriedBalance(entries, openingId, a));
     if (Math.abs(carried - a.balance) > 1e-6)
       (a.kazi_user && o.handoff.run >= 2 ? notes : differences).push({
