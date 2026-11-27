@@ -9,9 +9,9 @@ import {
   HIGH_PITCH,
   hex,
   LOW_PITCH,
-  noteName,
   partColour,
   pitchHz,
+  pitchRowName,
   playedNotes,
   renderSpectrogram,
   type SoundLayout,
@@ -70,8 +70,8 @@ function axes(l: SoundLayout) {
     seconds_per_pixel: round((l.until - l.from) / l.plotWidth, 6),
     plot: { left: l.left, top: l.top, width: l.plotWidth, height: l.plotHeight },
     pitch: {
-      lowest: noteName(LOW_PITCH),
-      highest: noteName(HIGH_PITCH),
+      lowest: pitchRowName(LOW_PITCH),
+      highest: pitchRowName(HIGH_PITCH),
       lowest_midi: LOW_PITCH,
       highest_midi: HIGH_PITCH,
       lowest_hz: round(pitchHz(LOW_PITCH), 2),
@@ -407,7 +407,7 @@ function spectrogramResult(
 ): z.infer<typeof RenderSpectrogramResult> {
   const windows: Record<string, number> = {};
   for (let p = LOW_PITCH; p <= HIGH_PITCH; p += 12)
-    windows[noteName(p)] = round(windowSeconds(p), 4);
+    windows[pitchRowName(p)] = round(windowSeconds(p), 4);
   return {
     ...source,
     image,

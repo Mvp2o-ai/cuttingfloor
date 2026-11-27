@@ -21,7 +21,7 @@ export const PITCH_ROWS = HIGH_PITCH - LOW_PITCH + 1;
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 /** The note name of a whole MIDI number (60 is C4). */
-export function noteName(pitch: number): string {
+export function pitchRowName(pitch: number): string {
   const p = Math.round(pitch);
   return `${NAMES[((p % 12) + 12) % 12]}${Math.floor(p / 12) - 1}`;
 }
@@ -145,7 +145,7 @@ function drawPitchSide(img: Raster, l: SoundLayout): void {
   for (let p = LOW_PITCH; p <= HIGH_PITCH; p++) {
     const n = ((p % 12) + 12) % 12;
     if (!named(n)) continue;
-    const name = noteName(p);
+    const name = pitchRowName(p);
     const y = yOf(l, p) + l.rowPx / 2 - th / 2;
     const x = kx - 3 * s - textWidth(name, s);
     drawText(
