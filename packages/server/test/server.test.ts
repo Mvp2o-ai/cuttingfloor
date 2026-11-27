@@ -80,6 +80,16 @@ describe('protocol surface', () => {
     expect(text).not.toContain('/account');
   });
 
+  it('media.upload says an app may show its own upload view, and passes on a request to record', async () => {
+    const client = await connect(env.runtime, 'recorder');
+    const plain = await ok<Record<string, unknown>>(client, 'media.upload', {});
+    expect(plain.native_view).toEqual({ component: 'upload', version: 1 });
+    expect(plain).not.toHaveProperty('record');
+    const asked = await ok<Record<string, unknown>>(client, 'media.upload', { record: true });
+    expect(asked).toMatchObject({ record: true, native_view: { component: 'upload', version: 1 } });
+    expect(asked.upload_id).toMatch(/^u_/);
+  });
+
   it('finds media and uploads by part of a name, in any case', async () => {
     const client = await connect(env.runtime, 'finder');
     await ok(client, 'media.upload', { name: 'Beach Day.mov' });

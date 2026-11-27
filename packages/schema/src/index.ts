@@ -11,6 +11,7 @@ export * from './keeping.ts';
 export * from './lipsync.ts';
 export * from './measure.ts';
 export * from './motion.ts';
+export * from './native-view.ts';
 export * from './render-sound.ts';
 export * from './score.ts';
 export * from './score-tools.ts';

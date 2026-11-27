@@ -54,6 +54,7 @@ import {
   MediaRefInput,
   MediaUploadInput,
   MediaUploadResult,
+  nativeView,
   span,
   TIMELINE_ANALYSES,
   TIMELINE_PICTURE_ANALYSES,
@@ -857,6 +858,8 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       );
       return ok({
         ...upload,
+        ...(args.record ? { record: true } : {}),
+        native_view: nativeView('upload'),
         how: `Where the chat app displays views, the user sees an upload box with this result to pick the file and send it. Opened in a browser, ${upload.url} is a page that does the same. This upload id can be used to import this asset to the cutting floor, where all editing occurs.`,
       });
     }),

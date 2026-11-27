@@ -38,6 +38,7 @@ import {
   VoiceAnalysis,
 } from './measure.ts';
 import { ASSET_NAME, MOTION_LIMITS } from './motion.ts';
+import { NativeView } from './native-view.ts';
 import { Sequence } from './sequence.ts';
 import { STEMS } from './sounds.ts';
 import { Colour, TextSpans, TextStyle } from './text.ts';
@@ -757,10 +758,18 @@ export const MediaUploadInput = z.object({
     .positive()
     .optional()
     .describe('The file size, to be refused now rather than part way if it is too big'),
+  record: z
+    .boolean()
+    .optional()
+    .describe(
+      'true when the file wanted is a recording the user makes now (a hum, a tapped rhythm, a spoken line): the box leads with Record. They can still pick a file',
+    ),
 });
 
 export const MediaUploadResult = z.object({
   upload_id: UploadId,
+  record: z.boolean().optional().describe('true when a recording was asked for'),
+  native_view: NativeView.optional(),
   url: z.string().describe('The staging url; no other credentials needed'),
   expires_at: z.string(),
   expiry: z

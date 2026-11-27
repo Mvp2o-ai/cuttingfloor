@@ -58,6 +58,9 @@
   .picks { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
   .rec { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 16px; border-radius: 9px; border: 1.5px solid var(--rule-2); font-weight: 700; }
   .rec:hover { border-color: var(--key); }
+  .rec.lead { background: var(--key); border-color: var(--key); color: #04170a; }
+  .rec.lead:hover { background: var(--key-hi); }
+  .rec.lead i { background: #04170a; }
   .rec i { width: 9px; height: 9px; border-radius: 50%; background: var(--red); }
   .other { color: var(--mute); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
   .other:hover { color: var(--ink); }
@@ -109,7 +112,7 @@
     <div class="body">
       <div class="drop" id="drop" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
-        <b>Add a video or a photo</b>
+        <b id="ask">Add a video or a photo</b>
         <span id="limit">Drop it here, or choose it from this device.</span>
         <!-- Video and pictures only, so a phone offers its camera roll first. -->
         <div class="picks">
@@ -345,6 +348,13 @@ __RECORDER__
     }
     S.upload = data;
     $('#limit').textContent = `Drop it here, or choose it from this device. Up to ${size(data.max_bytes)}.`;
+    // A recording was asked for: Record leads, and picking a file stays beside it.
+    if (data.record) {
+      $('#ask').textContent = 'Record a sound';
+      $('#limit').textContent = `Record it here, or choose a file from this device. Up to ${size(data.max_bytes)}.`;
+      $('#record').classList.add('lead');
+      $('.picks').prepend($('#record'));
+    }
     $('#page').hidden = false;
     $('#drop').hidden = false;
     const days = Math.round((Date.parse(data.expires_at) - Date.now()) / 86_400_000);

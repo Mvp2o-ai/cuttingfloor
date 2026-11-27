@@ -388,6 +388,26 @@ describe.skipIf(!browserFound)('sending a file from a view', () => {
     expect(hz).toBeLessThan(450);
   }, 90_000);
 
+  it('leads with Record when a recording was asked for, and still takes a file', async () => {
+    const upload = await call('media.upload', { record: true });
+    expect(upload.record).toBe(true);
+    const { page, view } = await open(
+      'ui://cuttingfloor/upload',
+      { message: { text: {} } },
+      upload,
+      { browser: mic, page: hostPage('microphone'), width: 360 },
+    );
+    await view.waitForSelector('#drop:not([hidden])');
+    expect(await view.$eval('#ask', (el) => el.textContent)).toBe('Record a sound');
+    // Record comes first and is the filled button; choosing a file is still there.
+    expect(await view.$eval('.picks', (el) => el.firstElementChild?.id)).toBe('record');
+    expect(await view.$eval('#record', (el) => el.classList.contains('lead'))).toBe(true);
+    expect(await view.$('#pick')).not.toBeNull();
+    // Nothing is recorded until they tap it.
+    expect(await view.$eval('#recorder', (el) => (el as HTMLElement).hidden)).toBe(true);
+    await page.close();
+  }, 60_000);
+
   it('where the host keeps the microphone from the box, opens the upload page, which records to the same upload', async () => {
     const upload = await call('media.upload', {});
     // No `allow` on the frame: the host did not grant the microphone.
