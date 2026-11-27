@@ -1,0 +1,419 @@
+{
+  "about": "The named instruments and drum kits of the music engine. tools/music/content/build_content.py renders them at image build into /usr/share/cuttingfloor/music (one folder each: zones.json and FLAC files), and fails the build if a listed kit pitch comes out silent. packages/engine/src/music.ts reads this file for the device catalog. Sources: MuseScore General SF2 0.2.1 (MIT; its piano Public Domain, its strings and drumline samples CC0), via Debian trixie's musescore-general-soundfont-lossless 0.2.1-1, rendered by FluidSynth; kit_909 is synthesised by the build script itself; kit_lofi is kit_acoustic through the script's lo-fi chain; pluck and sub_bass are presets of the engine's own synth.",
+  "sample_rate": 48000,
+  "soundfont": {
+    "package": "musescore-general-soundfont-lossless",
+    "version": "0.2.1-1",
+    "file": "/usr/share/sounds/sf2/MuseScore_General_Full.sf2",
+    "sha256": "59287cbb0f424ec76d1bc269eee40dfe0b02252588d72eb016b5d2382e710a8f",
+    "licence": "MIT (MuseScore General, S. Christian Collins; Fluid R3 parts Frank Wen), piano Public Domain (Splendid Grand), ensemble strings and drumline CC0 (VSCO, VCSL)"
+  },
+  "instruments": {
+    "grand_piano": {
+      "description": "Acoustic grand piano (Splendid Grand, public domain)",
+      "source": {
+        "bank": 0,
+        "program": 0
+      },
+      "low": 21,
+      "high": 108,
+      "step": 3,
+      "velocities": [40, 80, 120],
+      "sustain": false,
+      "max_seconds": 9,
+      "attack_ms": 0,
+      "release_ms": 250
+    },
+    "electric_piano": {
+      "description": "Tine electric piano (Rhodes-style)",
+      "source": {
+        "bank": 0,
+        "program": 4
+      },
+      "low": 28,
+      "high": 103,
+      "step": 3,
+      "velocities": [40, 80, 120],
+      "sustain": false,
+      "max_seconds": 7,
+      "attack_ms": 0,
+      "release_ms": 200
+    },
+    "organ": {
+      "description": "Drawbar organ (Hammond-style)",
+      "source": {
+        "bank": 0,
+        "program": 16
+      },
+      "low": 24,
+      "high": 96,
+      "step": 3,
+      "velocities": [100],
+      "sustain": true,
+      "max_seconds": 5,
+      "attack_ms": 0,
+      "release_ms": 40
+    },
+    "acoustic_bass": {
+      "description": "Upright acoustic bass",
+      "source": {
+        "bank": 0,
+        "program": 32
+      },
+      "low": 28,
+      "high": 67,
+      "step": 3,
+      "velocities": [50, 100],
+      "sustain": false,
+      "max_seconds": 5,
+      "attack_ms": 0,
+      "release_ms": 120
+    },
+    "electric_bass": {
+      "description": "Electric bass, played with the fingers",
+      "source": {
+        "bank": 0,
+        "program": 33
+      },
+      "low": 28,
+      "high": 67,
+      "step": 3,
+      "velocities": [50, 100],
+      "sustain": false,
+      "max_seconds": 6,
+      "attack_ms": 0,
+      "release_ms": 100
+    },
+    "synth_bass": {
+      "description": "Analogue-style synth bass",
+      "source": {
+        "bank": 0,
+        "program": 38
+      },
+      "low": 24,
+      "high": 72,
+      "step": 3,
+      "velocities": [50, 110],
+      "sustain": true,
+      "max_seconds": 4,
+      "attack_ms": 0,
+      "release_ms": 60
+    },
+    "sub_bass": {
+      "description": "Sub bass: a sine with a quiet triangle an octave up (the engine's synth)",
+      "synth": {
+        "oscillators": [
+          {
+            "wave": "sine",
+            "octave": 0,
+            "detune_cents": 0,
+            "level": 0.9
+          },
+          {
+            "wave": "triangle",
+            "octave": 1,
+            "detune_cents": 0,
+            "level": 0.12
+          }
+        ],
+        "amp_envelope": {
+          "attack_ms": 5,
+          "decay_ms": 0,
+          "sustain": 1,
+          "release_ms": 80
+        },
+        "glide_ms": 0
+      },
+      "attack_ms": 5,
+      "release_ms": 80
+    },
+    "strings": {
+      "description": "String ensemble (VSCO 2 samples, CC0)",
+      "source": {
+        "bank": 0,
+        "program": 48
+      },
+      "low": 28,
+      "high": 96,
+      "step": 3,
+      "velocities": [60, 110],
+      "sustain": true,
+      "max_seconds": 6,
+      "attack_ms": 0,
+      "release_ms": 400
+    },
+    "pad_warm": {
+      "description": "Warm synth pad",
+      "source": {
+        "bank": 0,
+        "program": 89
+      },
+      "low": 28,
+      "high": 96,
+      "step": 3,
+      "velocities": [100],
+      "sustain": true,
+      "max_seconds": 7,
+      "attack_ms": 0,
+      "release_ms": 900
+    },
+    "brass": {
+      "description": "Brass section",
+      "source": {
+        "bank": 0,
+        "program": 61
+      },
+      "low": 34,
+      "high": 84,
+      "step": 3,
+      "velocities": [60, 110],
+      "sustain": true,
+      "max_seconds": 5,
+      "attack_ms": 0,
+      "release_ms": 150
+    },
+    "flute": {
+      "description": "Concert flute",
+      "source": {
+        "bank": 0,
+        "program": 73
+      },
+      "low": 59,
+      "high": 98,
+      "step": 3,
+      "velocities": [60, 110],
+      "sustain": true,
+      "max_seconds": 5,
+      "attack_ms": 0,
+      "release_ms": 120
+    },
+    "bells": {
+      "description": "Glockenspiel (orchestra bells)",
+      "source": {
+        "bank": 0,
+        "program": 9
+      },
+      "low": 72,
+      "high": 108,
+      "step": 3,
+      "velocities": [60, 110],
+      "sustain": false,
+      "max_seconds": 5,
+      "attack_ms": 0,
+      "release_ms": 600
+    },
+    "music_box": {
+      "description": "Music box",
+      "source": {
+        "bank": 0,
+        "program": 10
+      },
+      "low": 60,
+      "high": 108,
+      "step": 3,
+      "velocities": [60, 110],
+      "sustain": false,
+      "max_seconds": 4,
+      "attack_ms": 0,
+      "release_ms": 500
+    },
+    "marimba": {
+      "description": "Marimba",
+      "source": {
+        "bank": 0,
+        "program": 12
+      },
+      "low": 45,
+      "high": 96,
+      "step": 3,
+      "velocities": [50, 110],
+      "sustain": false,
+      "max_seconds": 3,
+      "attack_ms": 0,
+      "release_ms": 300
+    },
+    "acoustic_guitar": {
+      "description": "Steel-string acoustic guitar",
+      "source": {
+        "bank": 0,
+        "program": 25
+      },
+      "low": 40,
+      "high": 88,
+      "step": 3,
+      "velocities": [50, 110],
+      "sustain": false,
+      "max_seconds": 6,
+      "attack_ms": 0,
+      "release_ms": 200
+    },
+    "electric_guitar": {
+      "description": "Clean electric guitar",
+      "source": {
+        "bank": 0,
+        "program": 27
+      },
+      "low": 40,
+      "high": 88,
+      "step": 3,
+      "velocities": [50, 110],
+      "sustain": false,
+      "max_seconds": 6,
+      "attack_ms": 0,
+      "release_ms": 150
+    },
+    "pluck": {
+      "description": "Synth pluck: two detuned saws through a low-pass that closes fast (the engine's synth)",
+      "synth": {
+        "oscillators": [
+          {
+            "wave": "saw",
+            "octave": 0,
+            "detune_cents": -6,
+            "level": 0.5
+          },
+          {
+            "wave": "saw",
+            "octave": 0,
+            "detune_cents": 6,
+            "level": 0.5
+          }
+        ],
+        "filter": {
+          "type": "lowpass",
+          "cutoff_hz": 600,
+          "resonance": 1.2,
+          "slope_db_per_octave": 24
+        },
+        "amp_envelope": {
+          "attack_ms": 1,
+          "decay_ms": 350,
+          "sustain": 0,
+          "release_ms": 120
+        },
+        "filter_envelope": {
+          "attack_ms": 0,
+          "decay_ms": 180,
+          "sustain": 0,
+          "release_ms": 120,
+          "amount_octaves": 3.5
+        },
+        "glide_ms": 0
+      },
+      "attack_ms": 1,
+      "release_ms": 120
+    },
+    "choir": {
+      "description": "Choir singing 'aah'",
+      "source": {
+        "bank": 0,
+        "program": 52
+      },
+      "low": 40,
+      "high": 84,
+      "step": 3,
+      "velocities": [100],
+      "sustain": true,
+      "max_seconds": 6,
+      "attack_ms": 0,
+      "release_ms": 400
+    }
+  },
+  "kits": {
+    "kit_acoustic": {
+      "description": "Acoustic drum kit (MuseScore General standard kit)",
+      "source": {
+        "bank": 128,
+        "program": 0
+      },
+      "velocities": [40, 80, 120],
+      "max_seconds": 5,
+      "pitches": [
+        35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+        58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80,
+        81
+      ]
+    },
+    "kit_808": {
+      "description": "TR-808-style electronic kit (MuseScore General TR-808 kit)",
+      "source": {
+        "bank": 128,
+        "program": 25
+      },
+      "velocities": [60, 120],
+      "max_seconds": 5,
+      "pitches": [
+        35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+        59, 60, 61, 62, 63, 64, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81
+      ]
+    },
+    "kit_909": {
+      "description": "TR-909-style kit, synthesised by the image build (analogue-model kick, snare, toms and clap; metallic-noise hats and cymbals)",
+      "synthesised": true,
+      "velocities": [127],
+      "max_seconds": 5,
+      "pitches": [35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 57, 59]
+    },
+    "kit_lofi": {
+      "description": "Lo-fi kit: the acoustic kit at 26 kHz and 12 bits through tape-style saturation and a 9 kHz low-pass",
+      "derived_from": "kit_acoustic",
+      "velocities": [40, 80, 120],
+      "max_seconds": 5,
+      "pitches": [
+        35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+        58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80,
+        81
+      ]
+    }
+  },
+  "drum_names": {
+    "35": "acoustic bass drum",
+    "36": "kick",
+    "37": "side stick",
+    "38": "snare",
+    "39": "clap",
+    "40": "electric snare",
+    "41": "low floor tom",
+    "42": "closed hi-hat",
+    "43": "high floor tom",
+    "44": "pedal hi-hat",
+    "45": "low tom",
+    "46": "open hi-hat",
+    "47": "low-mid tom",
+    "48": "high-mid tom",
+    "49": "crash cymbal",
+    "50": "high tom",
+    "51": "ride cymbal",
+    "52": "china cymbal",
+    "53": "ride bell",
+    "54": "tambourine",
+    "55": "splash cymbal",
+    "56": "cowbell",
+    "57": "crash cymbal 2",
+    "58": "vibraslap",
+    "59": "ride cymbal 2",
+    "60": "high bongo",
+    "61": "low bongo",
+    "62": "muted high conga",
+    "63": "open high conga",
+    "64": "low conga",
+    "65": "high timbale",
+    "66": "low timbale",
+    "67": "high agogo",
+    "68": "low agogo",
+    "69": "cabasa",
+    "70": "maracas",
+    "71": "short whistle",
+    "72": "long whistle",
+    "73": "short guiro",
+    "74": "long guiro",
+    "75": "claves",
+    "76": "high wood block",
+    "77": "low wood block",
+    "78": "muted cuica",
+    "79": "open cuica",
+    "80": "muted triangle",
+    "81": "open triangle"
+  },
+  "choke_groups": [[42, 44, 46]]
+}
