@@ -1352,7 +1352,9 @@ export const MediaInfo = z.object({
     .describe('How long the picture runs; under duration_seconds, the end has no picture'),
   conform: z
     .array(z.string())
-    .describe('Why a mezzanine was made (vfr, rotation, hdr, codec); empty when not needed'),
+    .describe(
+      'Why a mezzanine was made (vfr, rotation, hdr, codec, duration: the file states no length); empty when not needed',
+    ),
   analysis: z
     .object({
       loudness_lufs: z.number().nullable().describe('Integrated loudness at import'),
