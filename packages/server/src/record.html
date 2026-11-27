@@ -53,6 +53,12 @@
   .pad { min-height: 66px; border-radius: 10px; background: var(--bg-3); border: 1.5px solid var(--rule-2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px; touch-action: none; }
   .pad b { font-size: 13px; }
   .pad small { color: var(--mute); font-size: 10.5px; line-height: 1.2; text-align: center; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  /* A chat app's small panel: smaller pads, so more of them show at once. */
+  @media (max-width: 360px), (max-height: 480px) {
+    .pads { grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 5px; }
+    .pad { min-height: 50px; }
+    .pad b { font-size: 12px; }
+  }
   .pad.hit { background: var(--key); border-color: var(--key); color: #04170a; }
   .pad.hit small { color: #04170a; }
   .mic { min-height: 96px; border-radius: 12px; border: 1.5px solid var(--rule-2); background: var(--bg-2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
@@ -98,12 +104,18 @@
     <div class="body">
       <p id="say" role="status">Waiting for the chat app…</p>
       <div class="meter" id="meter" aria-hidden="true" hidden></div>
-      <div class="pads" id="pads" hidden></div>
-      <button type="button" class="mic" id="mic" hidden><span class="dot"></span><b id="micsay">Record over the loop</b><span class="level"><i id="level"></i></span></button>
       <div class="row">
         <button type="button" class="btn go" id="go" disabled>Start</button>
         <span class="fine mono" id="pos"></span>
       </div>
+      <div class="cal" id="cal" hidden>
+        <span id="calsay">Tap along with the 8 clicks.</span>
+        <button type="button" class="tap" id="caltap">Tap here on each click</button>
+        <button type="button" class="btn quiet" id="calback">Cancel</button>
+      </div>
+      <div class="pads" id="pads" hidden></div>
+      <button type="button" class="mic" id="mic" hidden><span class="dot"></span><b id="micsay">Record over the loop</b><span class="level"><i id="level"></i></span></button>
+      <p class="fine" id="latmic" hidden>The delay is read when you start</p>
       <div class="row" id="review" hidden>
         <button type="button" class="btn" id="listen">Listen back</button>
         <button type="button" class="btn" id="redo">Redo</button>
@@ -113,13 +125,8 @@
         <label class="field" for="speed">Speed <input type="range" id="speed" min="0.5" max="1.5" step="0.05" value="1"> <span class="mono" id="speedv">1.00×</span></label>
       </div>
       <div class="row spread">
-        <label class="switch" id="ownrow"><input type="checkbox" id="own"><i aria-hidden="true"></i><span><b>Hear the pads as I tap</b><small id="lat">Delay not measured yet</small></span></label>
+        <label class="switch" id="ownrow" hidden><input type="checkbox" id="own"><i aria-hidden="true"></i><span><b>Hear the pads as I tap</b><small id="lat">The delay is read when you start</small></span></label>
         <button type="button" class="btn quiet" id="measure">Measure the delay</button>
-      </div>
-      <div class="cal" id="cal" hidden>
-        <span id="calsay">Tap along with the 8 clicks.</span>
-        <button type="button" class="tap" id="caltap">Tap here on each click</button>
-        <button type="button" class="btn quiet" id="calback">Cancel</button>
       </div>
     </div>
     <div class="foot">
@@ -218,10 +225,11 @@
   let ownTouched = false;
   function showDelay() {
     const a = S.applied;
-    const what = !a ? 'Delay not measured yet'
+    const what = !a ? 'The delay is read when you start'
       : a.source === 'measured' ? `Delay ${ms(a.s)}, measured by tapping along`
       : S.known ? `Delay ${ms(a.s)}, as this browser reports it` : 'This browser does not report its delay: measure it';
     $('#lat').textContent = what;
+    $('#latmic').textContent = what;
     if (!ownTouched) {
       S.own = Boolean(a) && (a.source === 'measured' || S.known) && a.s * 1000 <= FEEL_MS;
       $('#own').checked = S.own;
@@ -243,6 +251,8 @@
       ]);
       S.session = session;
       S.speed = session.speed;
+      $('#speed').value = String(session.speed);
+      $('#speedv').textContent = `${session.speed.toFixed(2)}×`;
       S.bufs = { loop, click, accent, pads: new Map(session.pads.map((p, i) => [p.pitch, pads[i]])) };
       S.state = 'ready';
       buildMeter();
@@ -258,7 +268,7 @@
     const lead = c ? `${c} count-in click${c === 1 ? '' : 's'}, then the loop. ` : '';
     return S.session.input === 'pads'
       ? `${lead}Tap Start, then play the pads over the loop. Stop when you are done.`
-      : `${lead}Tap Start to record over the loop. Headphones keep the loop out of the recording.`;
+      : `${lead}Tap Record over the loop, and again to stop. Headphones keep the loop out of the recording.`;
   };
 
   function buildMeter() {
@@ -279,8 +289,9 @@
       b.type = 'button';
       b.className = 'pad';
       b.dataset.pitch = String(p.pitch);
-      b.append(Object.assign(document.createElement('b'), { textContent: p.name }));
-      if (p.plays) b.append(Object.assign(document.createElement('small'), { textContent: p.plays.replace(/ \([^)]*\)$/, '') }));
+      const sound = p.plays ? p.plays.replace(/ \([^)]*\)$/, '') : '';
+      b.append(Object.assign(document.createElement('b'), { textContent: sound ? sound[0].toUpperCase() + sound.slice(1) : p.name }));
+      if (sound) b.append(Object.assign(document.createElement('small'), { textContent: p.name }));
       b.addEventListener('pointerdown', (e) => onPad(e, p.pitch, b));
       box.append(b);
     }
@@ -365,11 +376,10 @@
     if (pos < -S.session.count_in.seconds) return null;
     let pass = pos < 0 ? 0 : Math.floor(pos / t.L);
     let at = pos - pass * t.L;
-    // The loop as rendered is session.loop.seconds long; one played back to back at the
-    // context's rate may differ by a fraction of a sample.
+    // The loop as rendered is session.loop.seconds long; decoded at the context's rate (48 kHz)
+    // its period can be longer by under one sample: a touch in that sliver is the next pass's start.
     const seconds = S.session.loop.seconds;
-    if (at >= seconds) { pass += 1; at -= t.L; }
-    if (at < 0 && pass > 0) at = 0;
+    if (at >= seconds) { pass += 1; at = Math.max(0, at - t.L); }
     return { pass, at_seconds: at };
   }
 
@@ -409,6 +419,8 @@
   function stop() {
     if (S.state !== 'playing') return;
     halt(S.t);
+    for (const c of $('#meter').children) c.classList.remove('on');
+    $('#pos').textContent = '';
     if (S.mic) closeMic();
     S.state = 'review';
     const n = S.take.taps?.length;
@@ -420,7 +432,7 @@
 
   // ---------- the microphone: raw PCM on the audio clock ----------
   const WORKLET = `class Tap extends AudioWorkletProcessor {
-    process(inputs) { const ch = inputs[0] && inputs[0][0]; if (ch) this.port.postMessage({ frame: currentFrame, data: ch.slice(0) }); return true; }
+    process(inputs) { const ch = inputs[0] && inputs[0][0]; this.port.postMessage(ch ? { frame: currentFrame, data: ch.slice(0) } : { frame: currentFrame, none: 128 }); return true; }
   }
   registerProcessor('cf-tap', Tap);`;
 
@@ -435,10 +447,16 @@
     const mute = ctx.createGain();
     mute.gain.value = 0;
     mute.connect(ctx.destination);
-    const mic = { stream, source, mute, chunks: [], first: null, settings, node: null, peak: 0 };
-    const take = (frame, data) => {
+    const mic = { stream, source, mute, chunks: [], first: null, settings, node: null, peak: 0, none: 0 };
+    // Every block is kept with the audio frame it was taken at, so the recording is laid out on
+    // the clock: a block the browser delivered nothing for is silence in its place, not a gap.
+    const take = (frame, data, none) => {
       if (mic.first === null) mic.first = frame;
-      mic.chunks.push(data);
+      if (!data) {
+        mic.none += none;
+        return;
+      }
+      mic.chunks.push({ frame, data });
       let p = 0;
       for (let i = 0; i < data.length; i += 16) p = Math.max(p, Math.abs(data[i]));
       mic.peak = Math.max(p, mic.peak * 0.9);
@@ -448,7 +466,7 @@
       const url = URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' }));
       await ctx.audioWorklet.addModule(url);
       const node = new AudioWorkletNode(ctx, 'cf-tap', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit' });
-      node.port.onmessage = (m) => take(m.data.frame, m.data.data);
+      node.port.onmessage = (m) => take(m.data.frame, m.data.data, m.data.none);
       source.connect(node).connect(mute);
       mic.node = node;
       mic.how = 'worklet';
@@ -481,10 +499,10 @@
     for (const t of mic.stream.getTracks()) t.stop();
     if (mic.first === null) return;
     const rate = S.ctx.sampleRate;
-    const total = mic.chunks.reduce((n, c) => n + c.length, 0);
-    const all = new Float32Array(total);
-    let at = 0;
-    for (const c of mic.chunks) { all.set(c, at); at += c.length; }
+    const last = mic.chunks.at(-1);
+    const total = last ? last.frame + last.data.length - mic.first : 0;
+    const all = new Float32Array(Math.max(0, total));
+    for (const c of mic.chunks) all.set(c.data, c.frame - mic.first);
     // The recording's first sample on the audio clock, less the input delay the device reports
     // and the output delay: the loop position the person was hearing as it was recorded.
     const inS = typeof mic.settings.latency === 'number' ? mic.settings.latency : 0;
@@ -504,6 +522,7 @@
     S.take.input_s = inS;
     S.take.echo = mic.settings.echoCancellation === true;
     S.take.how = mic.how;
+    S.take.silent_blocks = mic.none / 128;
     S.take.pcm = pcm;
   }
 
@@ -626,13 +645,14 @@
     await measureReported();
     S.state = 'calibrating';
     setControls();
-    $('#cal').hidden = false;
+    setControls();
     const beats = S.session.loop.beats;
     const gap = beats.length > 1 ? beats[1] - beats[0] : 0.5;
     const n = 8;
     const t0 = S.ctx.currentTime + 0.6;
     const clicks = Array.from({ length: n }, (_, k) => t0 + k * gap);
     const nodes = clicks.map((c, k) => play(k % 4 === 0 ? S.bufs.accent : S.bufs.click, c));
+    S.cal = { clicks };
     const offsets = [];
     const tapBtn = $('#caltap');
     const onTap = (e) => {
@@ -651,7 +671,6 @@
     });
     tapBtn.removeEventListener('pointerdown', onTap);
     for (const x of nodes) try { x.stop(); } catch {}
-    $('#cal').hidden = true;
     S.state = 'ready';
     if (done && offsets.length >= 4) {
       const mean = offsets.reduce((a, b) => a + b, 0) / offsets.length;
@@ -670,10 +689,21 @@
     const st = S.state;
     const ready = st === 'ready';
     const go = $('#go');
+    const after = st === 'review' || st === 'sending' || st === 'sent';
+    const isMic = S.data?.input === 'microphone';
     go.disabled = !(ready || st === 'playing') || S.sent;
     go.textContent = st === 'playing' ? 'Stop' : 'Start';
     go.className = `btn ${st === 'playing' ? 'stop' : 'go'}`;
-    $('#review').hidden = !(st === 'review' || st === 'sending' || st === 'sent');
+    // The microphone's own button starts and stops it; the pads have Start.
+    go.hidden = after || isMic;
+    $('#micsay').textContent = st === 'playing' ? 'Stop' : after ? 'Recorded' : 'Record over the loop';
+    $('#pos').hidden = after;
+    $('#review').hidden = !after;
+    $('#ownrow').hidden = isMic || !S.data;
+    $('#latmic').hidden = !isMic;
+    $('#cal').hidden = st !== 'calibrating';
+    $('#pads').hidden = !S.data || isMic || st === 'calibrating';
+    $('#mic').hidden = !S.data || !isMic || st === 'calibrating';
     for (const b of ['#listen', '#redo', '#send']) $(b).disabled = st !== 'review';
     if (st === 'review' && S.session?.input === 'microphone' && !S.take?.wav) { $('#listen').disabled = true; $('#send').disabled = true; }
     $('#speed').disabled = !(ready || st === 'review');
@@ -690,10 +720,9 @@
     S.data = data;
     $('#sub').textContent = data.input === 'pads' ? 'Play the pads' : 'Record over the loop';
     if (data.input === 'pads') {
-      $('#pads').hidden = false;
       if (!data.pads) data.pads = [];
       buildPads();
-    } else $('#mic').hidden = false;
+    }
     if (!PAGE) $('#page').hidden = true;
     load(1);
   }
@@ -720,16 +749,8 @@
 
   if (PAGE) {
     document.body.classList.add('page');
-    // The session as the page was opened with it; pads come with the session.
-    window.addEventListener('DOMContentLoaded', () => {});
-    (async () => {
-      S.data = PAGE;
-      try {
-        const first = await call('record.session', { job_id: PAGE.job_id, speed: 1 });
-        PAGE.pads = first.pads.map((p) => ({ pitch: p.pitch, name: p.name }));
-      } catch {}
-      onResult(PAGE);
-    })();
+    // The session as the page was opened with it, pads and all.
+    onResult(PAGE);
     return;
   }
 

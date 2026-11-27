@@ -64,6 +64,7 @@ export function recordHtml(page?: { session: RecordSession; link: string }): str
     input: s.input,
     url: page.link,
     expires_at: s.expires_at,
+    ...(s.input === 'pads' ? { pads: s.pads } : {}),
     ...(s.upload ? { upload: s.upload } : {}),
   };
   // As JSON inside a script: "<" escaped so no value can close the tag.
