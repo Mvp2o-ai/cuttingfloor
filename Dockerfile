@@ -104,7 +104,7 @@ RUN cmake -S /src/cf-music -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DTE_RO
  && cp /src/stretch/LICENSE.txt /licences/signalsmith-stretch-LICENSE.txt \
  && cp /src/linear/LICENSE.txt /licences/signalsmith-linear-LICENSE.txt
 
-# The music engine's named instruments and drum kits (packages/engine/src/music-content.json),
+# The music engine's named instruments and drum kits (packages/schema/src/device-content.json),
 # rendered into multisample sets by tools/music/content/build_content.py: FluidSynth plays the
 # MuseScore General SoundFont (MIT; its piano Public Domain, strings and drumline CC0; Debian's
 # lossless package, pinned by version and the file's SHA-256), kit_909 is synthesised by the
@@ -116,7 +116,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends fluidsynth \
       "musescore-general-soundfont-lossless=$MUSESCORE_SF_VERSION" python3 python3-numpy python3-scipy flac \
  && rm -rf /var/lib/apt/lists/*
-COPY packages/engine/src/music-content.json /src/music-content.json
+COPY packages/schema/src/device-content.json /src/music-content.json
 COPY tools/music/content/build_content.py /src/build_content.py
 RUN cd /tmp && python3 -I /src/build_content.py /src/music-content.json /music \
  && mkdir -p /music/licences \

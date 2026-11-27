@@ -1,20 +1,28 @@
 import * as z from 'zod/v4';
+import { type DeviceDef, musicDevices, type ParamDef } from './device-catalog.ts';
 import { MediaId } from './ids.ts';
-import { PitchInput } from './score.ts';
+import { PitchInput, pitchName } from './score.ts';
 
 // The device registry: every instrument and effect a part of a score can sound through, with
-// typed parameters. score.add_device takes a name and a params object checked against this at
-// run time (so tool definitions stay small); video://catalog/devices lists it, and errors list
-// the names and params inline. A param is required, or has the default published here (which
-// score.get shows applied), or has none (null: the instrument's own, or off). Numbers marked
-// automatable can be moved over time with score.set_automation, named by their path.
+// typed parameters, as a score's tools take them and show them. score.add_device takes a name and
+// a params object checked against this at run time (so tool definitions stay small);
+// video://catalog/devices lists it, and errors list the names and params inline.
+//
+// It is made from the engine's own catalog (device-catalog.ts), so a param, range or default can
+// never differ from what the engine does. Three things differ on purpose, all listed below:
+// - a sampler names media (media_id), not a file, and its pitches take note names;
+// - a delay's time can be given in beats;
+// - a param the engine gives a default that is a matter of taste, not a neutral value, is
+//   required here: a tool holds no opinion, so the agent says how long a room rings.
+// Numbers marked automatable can be moved over time with score.set_automation, by their path.
 
 type Num = {
   kind: 'number';
   min: number;
   max: number;
-  /** null: no value unless given (the instrument's own behaviour, or the feature off). */
+  /** null: no value unless given (off, or required). */
   default: number | null;
+  unit?: string;
   required?: true;
   integer?: true;
   automatable?: true;
@@ -22,16 +30,23 @@ type Num = {
 };
 type Choice = {
   kind: 'choice';
-  values: readonly string[];
-  default: string | null;
+  values: readonly (string | number)[];
+  default: string | number | null;
   required?: true;
   about: string;
 };
-type Bool = { kind: 'boolean'; default: boolean; about: string };
+type Bool = { kind: 'boolean'; default: boolean | null; required?: true; about: string };
 type Media = { kind: 'media'; required?: true; about: string };
 type Pitch = { kind: 'pitch'; required?: true; about: string };
 /** A nested object of params (filter.cutoff_hz). Left out, the whole feature is off. */
-type Group = { kind: 'group'; required?: true; params: Record<string, DeviceParam>; about: string };
+type Group = {
+  kind: 'group';
+  required?: true;
+  /** Always there: left out, it is its params' defaults (none of them has to be given). */
+  filled?: true;
+  params: Record<string, DeviceParam>;
+  about: string;
+};
 /** A list of objects (bands[0].gain_db). */
 type List = {
   kind: 'list';
@@ -49,315 +64,167 @@ export interface DeviceSpec {
   params: Record<string, DeviceParam>;
   /** A rule across params; returns what is wrong, in words, or nothing. */
   check?: (params: Record<string, unknown>) => string | undefined;
-  /** Drum kits and other instruments where a pitch selects a sound: which pitch plays what. */
+  /** Drum kits: which pitch plays what (a pitch selects a sound, not a height). */
   sounds?: Record<number, string>;
 }
 
-const num = (
-  min: number,
-  max: number,
-  def: number | null,
-  about: string,
-  flags: { required?: true; automatable?: true; integer?: true } = {},
-): Num => ({ kind: 'number', min, max, default: def, about, ...flags });
-const auto = (min: number, max: number, def: number | null, about: string): Num =>
-  num(min, max, def, about, { automatable: true });
-const need = (min: number, max: number, about: string): Num =>
-  num(min, max, null, about, { required: true, automatable: true });
+/**
+ * Params the engine defaults to a value that is a choice of taste. Here they must be given.
+ * Paths are device.param, with [] for a list's items.
+ */
+const NO_DEFAULT = new Set([
+  'reverb.decay_seconds',
+  'reverb.wet',
+  'delay.wet',
+  'chorus.rate_hz',
+  'chorus.depth',
+  'chorus.wet',
+  'compressor.attack_ms',
+  'compressor.release_ms',
+]);
 
-const GAIN = auto(-60, 24, 0, 'Level in dB');
+/** Engine numbers that are pitches: here they also take a note name. */
+const PITCHES = new Set(['sampler.root_note', 'sampler.slices[].note']);
 
-/** What each pitch of a drum kit plays: the standard drum map, with C4 as 60. */
-export const KIT_SOUNDS: Record<number, string> = {
-  36: 'kick (C2)',
-  38: 'snare (D2)',
-  39: 'clap (D#2)',
-  41: 'low floor tom (F2)',
-  42: 'closed hat (F#2)',
-  43: 'high floor tom (G2)',
-  45: 'low tom (A2)',
-  46: 'open hat (A#2)',
-  47: 'low-mid tom (B2)',
-  48: 'high-mid tom (C3)',
-  49: 'crash (C#3)',
-  50: 'high tom (D3)',
-  51: 'ride (D#3)',
-};
+const must = (required: boolean) => (required ? { required: true as const } : {});
 
-const named = (about: string): DeviceSpec => ({
-  kind: 'instrument',
-  about,
-  params: {
-    gain_db: GAIN,
-    attack_ms: num(0, 10_000, null, "Fade-in of each note; left out, the instrument's own"),
-    release_ms: num(
-      0,
-      30_000,
-      null,
-      "Fade-out after each note ends; left out, the instrument's own",
-    ),
-  },
-});
+function fromEngine(def: ParamDef, path: string): DeviceParam {
+  const about = def.description;
+  if (def.kind === 'object') {
+    const params = shapeFromEngine(def.fields, `${path}.`);
+    // The engine always has it; where every param in it has a default, an agent may leave it out.
+    const needs = Object.values(params).some((p) => 'required' in p && p.required);
+    return {
+      kind: 'group',
+      about,
+      params,
+      ...(def.optional ? {} : needs ? { required: true as const } : { filled: true as const }),
+    };
+  }
+  if (def.kind === 'list') {
+    return {
+      kind: 'list',
+      about,
+      min: def.min_items,
+      max: def.max_items,
+      item: shapeFromEngine(def.fields, `${path}[].`),
+      ...must(!def.optional),
+    };
+  }
+  if (def.kind === 'file') return { kind: 'media', about, required: true };
+  if (PITCHES.has(path)) {
+    return { kind: 'pitch', about, ...must(path === 'sampler.slices[].note') };
+  }
+  const strip = NO_DEFAULT.has(path);
+  if (def.kind === 'boolean') {
+    const given = strip ? undefined : def.default;
+    return { kind: 'boolean', about, default: given ?? null, ...must(given === undefined) };
+  }
+  if (def.kind === 'choice') {
+    const given = strip ? undefined : def.default;
+    return {
+      kind: 'choice',
+      about,
+      values: def.choices,
+      default: given ?? null,
+      ...must(given === undefined),
+    };
+  }
+  const given = strip ? undefined : def.default;
+  const optional = def.kind === 'number' && def.optional === true;
+  return {
+    kind: 'number',
+    about,
+    min: def.min,
+    max: def.max,
+    default: given ?? null,
+    ...(def.kind === 'number' && def.unit ? { unit: def.unit } : {}),
+    ...(def.kind === 'integer' ? { integer: true as const } : {}),
+    ...(def.kind === 'number' && def.automatable ? { automatable: true as const } : {}),
+    ...must(given === undefined && !optional),
+  };
+}
 
-const kit = (about: string): DeviceSpec => ({
-  kind: 'instrument',
-  about: `${about}. A pitch selects a sound (the standard drum map, C4 as 60)`,
-  params: { gain_db: GAIN },
-  sounds: KIT_SOUNDS,
-});
+function shapeFromEngine(
+  fields: Record<string, ParamDef>,
+  prefix: string,
+): Record<string, DeviceParam> {
+  return Object.fromEntries(
+    Object.entries(fields).map(([key, def]) => [key, fromEngine(def, `${prefix}${key}`)]),
+  );
+}
 
-const envelope = (about: string, extra: Record<string, DeviceParam> = {}): Group => ({
-  kind: 'group',
-  about,
-  params: {
-    attack_ms: num(0, 10_000, 0, 'Time to reach full'),
-    decay_ms: num(0, 10_000, 0, 'Time to fall to sustain'),
-    sustain: num(0, 1, 1, 'Level held while the note lasts, 0 to 1'),
-    release_ms: num(0, 30_000, 10, 'Time to fall away after the note ends'),
-    ...extra,
-  },
-});
-
-const SLOPE: Choice = {
-  kind: 'choice',
-  values: ['12', '24', '48'],
-  default: '12',
-  about: 'Steepness in dB per octave (lowpass, highpass)',
-};
-
-export const DEVICES = {
-  // Instruments
-  sampler: {
-    kind: 'instrument',
-    about:
-      "Plays any media's sound, or a time range of it, at each note's pitch: from its start for the note's length, then release_ms. With slices, each pitch plays its own range unchanged (as a drum kit does) and a pitch with no slice is silent",
-    params: {
-      media_id: { kind: 'media', required: true, about: 'The media whose sound it plays' },
-      from_seconds: num(0, 86_400, null, 'Start of the range played; left out, the start'),
-      until_seconds: num(0, 86_400, null, 'End of the range played; left out, the end'),
-      root_note: {
-        kind: 'pitch',
-        about: 'The pitch that plays the sound unchanged. Required without slices',
+function specFromEngine(def: DeviceDef): DeviceSpec {
+  const params = shapeFromEngine(def.params, `${def.name}.`);
+  const spec: DeviceSpec = { kind: def.kind, about: def.description, params };
+  if (def.pitches) {
+    spec.sounds = Object.fromEntries(
+      def.pitches.map((p) => [p.pitch, `${p.name} (${pitchName(p.pitch).name})`]),
+    );
+  }
+  if (def.name === 'sampler') {
+    // A score names media, which the server turns into the file the engine reads.
+    const { file, ...rest } = params;
+    spec.params = {
+      media_id: {
+        kind: 'media',
+        required: true,
+        about: file?.about ?? 'The media whose sound it plays',
       },
-      one_shot: {
-        kind: 'boolean',
-        default: false,
-        about: 'true plays the sound to its end whatever the note length',
-      },
-      loop: {
-        kind: 'boolean',
-        default: false,
-        about: 'true repeats the range for as long as the note lasts',
-      },
-      slices: {
-        kind: 'list',
-        min: 1,
-        max: 128,
-        about: 'One sound per pitch: each note plays its own range of the media, unchanged',
-        item: {
-          note: { kind: 'pitch', required: true, about: 'The pitch that plays this slice' },
-          from_seconds: num(0, 86_400, null, 'Start of the slice', { required: true }),
-          until_seconds: num(0, 86_400, null, 'End of the slice', { required: true }),
-        },
-      },
-      attack_ms: num(0, 10_000, 0, 'Fade-in of each note'),
-      release_ms: num(0, 30_000, 10, 'Fade-out after each note ends'),
-      gain_db: GAIN,
-    },
-    check: (p) =>
+      ...rest,
+    };
+    spec.check = (p) =>
       p.slices === undefined && p.root_note === undefined
         ? 'sampler needs root_note (the pitch that plays the sound unchanged) or slices'
-        : undefined,
-  },
-  synth: {
-    kind: 'instrument',
-    about: 'Oscillators through a filter, shaped by envelopes',
-    params: {
-      oscillators: {
-        kind: 'list',
-        min: 1,
-        max: 4,
-        required: true,
-        about: 'The waves that sound together for each note',
-        item: {
-          wave: {
-            kind: 'choice',
-            values: ['sine', 'saw', 'square', 'triangle', 'noise'],
-            default: null,
-            required: true,
-            about: 'The wave shape',
-          },
-          octave: num(-4, 4, 0, 'Octaves above or below the note', { integer: true }),
-          detune_cents: auto(-1200, 1200, 0, 'Cents above or below the note'),
-          level: auto(0, 1, 1, 'How much of this wave, 0 to 1'),
-        },
-      },
-      filter: {
-        kind: 'group',
-        about: 'A filter after the oscillators; left out, none',
-        params: {
-          type: {
-            kind: 'choice',
-            values: ['lowpass', 'highpass', 'bandpass'],
-            default: null,
-            required: true,
-            about: 'What it lets through',
-          },
-          cutoff_hz: need(20, 20_000, 'Where it cuts'),
-          resonance: auto(0, 1, 0, 'Emphasis at the cutoff, 0 to 1'),
-        },
-      },
-      amp_envelope: envelope(
-        "The level of each note over its life; left out, on for the note's length",
-      ),
-      filter_envelope: envelope('Moves the filter cutoff over each note; left out, none', {
-        octaves: num(-8, 8, null, 'How far the cutoff moves at full, in octaves', {
-          required: true,
-        }),
-      }),
-      glide_ms: num(0, 5000, 0, 'Time to slide from the note before'),
-      gain_db: GAIN,
-    },
-  },
-  grand_piano: named('Acoustic grand piano'),
-  electric_piano: named('Electric piano'),
-  organ: named('Organ'),
-  acoustic_bass: named('Upright bass, plucked'),
-  electric_bass: named('Electric bass guitar'),
-  synth_bass: named('Synthesiser bass'),
-  sub_bass: named('Low sine bass'),
-  strings: named('String section'),
-  pad_warm: named('Soft sustained pad'),
-  brass: named('Brass section'),
-  flute: named('Flute'),
-  bells: named('Tuned bells'),
-  music_box: named('Music box'),
-  marimba: named('Marimba'),
-  acoustic_guitar: named('Acoustic guitar'),
-  electric_guitar: named('Clean electric guitar'),
-  pluck: named('Short plucked synth'),
-  choir: named('Choir singing aah'),
-  kit_acoustic: kit('Acoustic drum kit'),
-  kit_808: kit('TR-808 style electronic kit'),
-  kit_909: kit('TR-909 style electronic kit'),
-  kit_lofi: kit('Soft, dusty kit'),
-
-  // Effects
-  eq: {
-    kind: 'effect',
-    about: 'Equaliser: bands that boost, cut or remove ranges of frequency',
-    params: {
-      bands: {
-        kind: 'list',
-        min: 1,
-        max: 8,
-        required: true,
-        about: 'The bands, applied together',
-        item: {
-          type: {
-            kind: 'choice',
-            values: ['peak', 'low_shelf', 'high_shelf', 'lowpass', 'highpass'],
-            default: null,
-            required: true,
-            about: 'The shape of the band',
-          },
-          hz: need(20, 20_000, 'Its frequency'),
-          gain_db: auto(-24, 24, 0, 'Boost or cut (peak and shelves)'),
-          q: auto(0.1, 18, 0.71, 'Width: higher is narrower'),
-          slope_db_per_octave: SLOPE,
-        },
-      },
-    },
-  },
-  filter: {
-    kind: 'effect',
-    about: 'One filter with a movable cutoff',
-    params: {
-      type: {
-        kind: 'choice',
-        values: ['lowpass', 'highpass', 'bandpass'],
+        : undefined;
+  }
+  if (def.name === 'delay') {
+    const ms = params.time_ms as Num;
+    spec.params = {
+      time_beats: {
+        kind: 'number',
+        min: 0.001,
+        max: 64,
         default: null,
-        required: true,
-        about: 'What it lets through',
+        unit: 'beats',
+        about: `Time between echoes in beats, at the tempo where the render starts (it becomes time_ms, ${ms.min} to ${ms.max})`,
       },
-      cutoff_hz: need(20, 20_000, 'Where it cuts'),
-      resonance: auto(0, 1, 0, 'Emphasis at the cutoff, 0 to 1'),
-      slope_db_per_octave: SLOPE,
-    },
-  },
-  compressor: {
-    kind: 'effect',
-    about: 'Turns down what is louder than a threshold',
-    params: {
-      threshold_db: need(-60, 0, 'Level above which it turns down'),
-      ratio: need(1, 20, 'How hard: 4 lets 1 dB out for every 4 over'),
-      attack_ms: num(0.1, 500, null, 'How fast it turns down', { required: true }),
-      release_ms: num(1, 5000, null, 'How fast it lets go', { required: true }),
-      makeup_db: auto(-24, 24, 0, 'Gain after it'),
-    },
-  },
-  limiter: {
-    kind: 'effect',
-    about: 'Holds the true peak under a ceiling',
-    params: {
-      ceiling_dbtp: need(-24, 0, 'The true peak it never passes, in dBTP'),
-      release_ms: num(1, 2000, 100, 'How fast it lets go'),
-    },
-  },
-  reverb: {
-    kind: 'effect',
-    about: 'The sound of a room',
-    params: {
-      decay_seconds: need(0.1, 20, 'How long the room rings'),
-      wet: need(0, 1, 'How much room, 0 to 1'),
-      dry: auto(0, 1, 1, 'How much of the sound itself, 0 to 1'),
-      size: num(0, 1, 0.5, 'Room size, 0 to 1'),
-      damping: num(0, 1, 0.5, 'How fast the highs die, 0 to 1'),
-    },
-  },
-  delay: {
-    kind: 'effect',
-    about: 'Echoes',
-    params: {
-      time_beats: num(0.01, 16, null, 'Time between echoes in beats (follows the tempo)'),
-      time_ms: num(1, 5000, null, 'Time between echoes in milliseconds'),
-      feedback: auto(0, 0.95, 0, 'How much of each echo feeds the next, 0 to 0.95'),
-      wet: need(0, 1, 'How much echo, 0 to 1'),
-    },
-    check: (p) =>
+      ...params,
+      time_ms: { ...ms, default: null, required: undefined as never },
+    };
+    delete (spec.params.time_ms as { required?: true }).required;
+    spec.check = (p) =>
       (p.time_beats === undefined) === (p.time_ms === undefined)
         ? 'delay takes exactly one of time_beats or time_ms'
-        : undefined,
-  },
-  chorus: {
-    kind: 'effect',
-    about: 'Thickens a sound with moving copies of it',
-    params: {
-      rate_hz: need(0.01, 20, 'How fast the copies move'),
-      depth: need(0, 1, 'How far they move, 0 to 1'),
-      wet: need(0, 1, 'How much of them, 0 to 1'),
-    },
-  },
-  saturation: {
-    kind: 'effect',
-    about: 'Warmth to distortion by overdriving',
-    params: {
-      drive_db: need(0, 48, 'How hard it is driven'),
-      wet: auto(0, 1, 1, 'How much of the driven sound, 0 to 1'),
-    },
-  },
-  gain: {
-    kind: 'effect',
-    about: 'A level change at this point in the chain',
-    params: { gain_db: need(-60, 24, 'Level in dB') },
-  },
-} satisfies Record<string, DeviceSpec>;
+        : undefined;
+  }
+  return spec;
+}
 
-export type DeviceName = keyof typeof DEVICES;
-export const DEVICE_NAMES = Object.keys(DEVICES) as DeviceName[];
+let registry: Record<string, DeviceSpec> | undefined;
 
-const spec = (name: string): DeviceSpec | undefined =>
-  (DEVICES as Record<string, DeviceSpec>)[name];
+/** Every device, by name, in the engine's order: instruments, then effects. */
+export function devices(): Record<string, DeviceSpec> {
+  registry ??= Object.fromEntries(
+    [...musicDevices().values()].map((def) => [def.name, specFromEngine(def)]),
+  );
+  return registry;
+}
+
+/** Every device by name (read when first used: the named instruments come from a file). */
+export const DEVICES: Record<string, DeviceSpec> = new Proxy(
+  {},
+  {
+    get: (_t, key) => devices()[key as string],
+    has: (_t, key) => (key as string) in devices(),
+    ownKeys: () => Reflect.ownKeys(devices()),
+    getOwnPropertyDescriptor: (_t, key) => Object.getOwnPropertyDescriptor(devices(), key),
+  },
+);
+
+export const deviceNames = (): string[] => Object.keys(devices());
+
+const spec = (name: string): DeviceSpec | undefined => devices()[name];
 
 /** Whether a device makes sound from notes (an instrument) or changes sound (an effect). */
 export function deviceKind(name: string): DeviceSpec['kind'] | undefined {
@@ -367,7 +234,9 @@ export function deviceKind(name: string): DeviceSpec['kind'] | undefined {
 /** Every device name, by kind: what an error about an unknown device lists. */
 export function deviceNamesText(): string {
   const of = (kind: DeviceSpec['kind']) =>
-    DEVICE_NAMES.filter((n) => spec(n)?.kind === kind).join(', ');
+    deviceNames()
+      .filter((n) => spec(n)?.kind === kind)
+      .join(', ');
   return `Instruments: ${of('instrument')}. Effects: ${of('effect')}`;
 }
 
@@ -375,13 +244,17 @@ function paramText(key: string, p: DeviceParam): string {
   const must = 'required' in p && p.required ? ', required' : '';
   if (p.kind === 'number') {
     const def = p.required ? '' : p.default === null ? ', no default' : `, default ${p.default}`;
-    return `${key}: ${p.min} to ${p.max}${def}${must} (${p.about}${p.automatable ? '; automatable' : ''})`;
+    const unit = p.unit ? ` ${p.unit}` : '';
+    return `${key}: ${p.min} to ${p.max}${unit}${def}${must} (${p.about}${p.automatable ? '; automatable' : ''})`;
   }
   if (p.kind === 'choice') {
     const def = p.required || p.default === null ? '' : `, default ${p.default}`;
     return `${key}: one of ${p.values.join(', ')}${def}${must} (${p.about})`;
   }
-  if (p.kind === 'boolean') return `${key}: true or false, default ${p.default} (${p.about})`;
+  if (p.kind === 'boolean') {
+    const def = p.default === null ? '' : `, default ${p.default}`;
+    return `${key}: true or false${def}${must} (${p.about})`;
+  }
   if (p.kind === 'media') return `${key}: a media_id${must} (${p.about})`;
   if (p.kind === 'pitch')
     return `${key}: a pitch, a number or a name such as C3${must} (${p.about})`;
@@ -415,8 +288,16 @@ function paramSchema(p: DeviceParam): z.ZodType {
     const n = z.number().min(p.min).max(p.max);
     return opt(p.integer ? n.int() : n);
   }
-  if (p.kind === 'choice') return opt(z.enum(p.values as [string, ...string[]]));
-  if (p.kind === 'boolean') return z.boolean().optional();
+  if (p.kind === 'choice') {
+    const [first, ...rest] = p.values.map((v) => z.literal(v));
+    if (!first) return z.never();
+    return opt(
+      rest.length
+        ? z.union([first, ...rest] as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]])
+        : first,
+    );
+  }
+  if (p.kind === 'boolean') return opt(z.boolean());
   if (p.kind === 'media') return opt(MediaId);
   if (p.kind === 'pitch') return opt(PitchInput);
   if (p.kind === 'group') return opt(shapeSchema(p.params));
@@ -451,7 +332,8 @@ function applied(
   for (const [key, p] of Object.entries(params)) {
     const v = given[key];
     if (p.kind === 'group') {
-      if (v !== undefined) out[key] = applied(p.params, v as Record<string, unknown>);
+      if (v !== undefined || p.filled)
+        out[key] = applied(p.params, (v ?? {}) as Record<string, unknown>);
     } else if (p.kind === 'list') {
       if (v !== undefined) {
         out[key] = (v as Array<Record<string, unknown>>).map((item) => applied(p.item, item));

@@ -104,7 +104,6 @@ export {
   type MusicRender,
   renderMusic,
 } from './music.ts';
-export { type DeviceDef, musicContent, musicDevices, type ParamDef } from './music-catalog.ts';
 export {
   drawPianoRoll,
   hex,

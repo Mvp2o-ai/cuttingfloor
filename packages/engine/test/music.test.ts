@@ -4,7 +4,7 @@ import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { availableParallelism, cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { CfError } from '@cuttingfloor/schema';
+import { CfError, musicDevices, type ParamDef } from '@cuttingfloor/schema';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   BIN,
@@ -13,7 +13,6 @@ import {
   MUSIC_CONTENT,
   MUSIC_LIMITS,
   type MusicProjectInput,
-  musicDevices,
   renderMusic,
 } from '../src/index.ts';
 
@@ -1090,7 +1089,7 @@ describe.skipIf(!ready)('music engine', () => {
     expect([...devices.keys()].sort()).toEqual(Object.keys(engine).sort());
     const compare = (
       path: string,
-      ts: Record<string, import('../src/index.ts').ParamDef>,
+      ts: Record<string, ParamDef>,
       cpp: Record<string, EngineSpec>,
     ) => {
       expect(Object.keys(ts).sort(), path).toEqual(Object.keys(cpp).sort());

@@ -490,11 +490,11 @@ describe('score.set_automation', () => {
           'score.set_automation',
           {
             target: { device_id: 'd5', param: 'bands[0].gain_db' },
-            points: [{ at_beats: 0, value: 40, curve: 'linear' }],
+            points: [{ at_beats: 0, value: 60, curve: 'linear' }],
           },
         ]),
       ).message,
-    ).toMatch(/-24 to 24/);
+    ).toMatch(/-48 to 48/);
     expect(
       refused(() =>
         edit(doc, [

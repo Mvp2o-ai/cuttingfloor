@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
 
 // The music engine's devices: every instrument and effect cf-music (tools/music) has, with each
-// param's kind, range, unit and default. It is the catalog a score shows agents
-// (video://catalog/devices) and what renderMusic checks a project against before the engine
-// sees it; the engine checks the same ranges itself (a test compares the two). Defaults fill
-// params a device is given without; a param with no default must be given.
+// param's kind, range, unit and default, as the engine takes them. renderMusic (packages/engine)
+// checks a project against it before the engine sees it, and the engine checks the same ranges
+// itself (a test compares the two). Defaults fill params a device is given without; a param with
+// no default must be given. What a score's tools take and show agents is devices.ts, which is
+// made from this, so the two cannot drift.
 
 export type ParamDef =
   | {
@@ -61,10 +62,10 @@ type NumberParam = Extract<ParamDef, { kind: 'number' }>;
 
 let content: ContentSpec | undefined;
 
-/** packages/engine/src/music-content.json: the named instruments and kits the image renders. */
+/** packages/schema/src/device-content.json: the named instruments and kits the image renders. */
 export function musicContent(): ContentSpec {
   content ??= JSON.parse(
-    readFileSync(new URL('./music-content.json', import.meta.url), 'utf8'),
+    readFileSync(new URL('./device-content.json', import.meta.url), 'utf8'),
   ) as ContentSpec;
   return content;
 }

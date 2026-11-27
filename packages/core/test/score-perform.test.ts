@@ -209,11 +209,12 @@ describe('performScore', () => {
     expect(devices.map((d) => d.name)).toEqual(['sampler', 'delay']);
     expect(devices[0]?.params).toEqual({
       media_id: LOOP,
+      from_seconds: 0,
       slices: [{ note: 38, from_seconds: 0, until_seconds: 1 }],
       one_shot: false,
       loop: false,
       attack_ms: 0,
-      release_ms: 10,
+      release_ms: 0,
       gain_db: 0,
     });
     // Half a beat at 90 bpm is 333.3 ms; from beat 2 the tempo is 120: 250 ms.

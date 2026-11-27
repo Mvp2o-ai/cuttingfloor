@@ -1,16 +1,15 @@
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
-import { CfError } from '@cuttingfloor/schema';
+import { CfError, type DeviceDef, musicDevices, type ParamDef } from '@cuttingfloor/schema';
 import * as z from 'zod/v4';
 import { BIN, run } from './exec.ts';
-import { type DeviceDef, musicDevices, type ParamDef } from './music-catalog.ts';
 import { probe } from './probe.ts';
 import { type LoudnessFacts, measureLoudness } from './speech.ts';
 
 // The music engine, cf-music (tools/music): a render project (JSON, every time in seconds; the
 // caller converts beats) in, a 24-bit WAV (or an MP3 made from it) and its facts out. The project
-// is checked here against its schema, the device catalog (music-catalog.ts) and the limits below;
+// is checked here against its schema, the device catalog (packages/schema device-catalog.ts) and the limits below;
 // the engine checks it again with the files in hand (references, routing loops, ranges against
 // file lengths) and fails before rendering, so a wrong project never comes back as silence.
 // Nothing is chosen for the caller: no tempo, key, loudness target, quantising or tidying.

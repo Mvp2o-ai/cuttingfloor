@@ -122,6 +122,7 @@ function deviceParam(p: DeviceParam): Record<string, unknown> {
   if (p.kind === 'number') {
     return {
       range: [p.min, p.max],
+      ...(p.unit ? { unit: p.unit } : {}),
       ...(p.required ? {} : { default: p.default }),
       ...required,
       ...(p.integer ? { integer: true } : {}),
@@ -137,7 +138,14 @@ function deviceParam(p: DeviceParam): Record<string, unknown> {
       about: p.about,
     };
   }
-  if (p.kind === 'boolean') return { boolean: true, default: p.default, about: p.about };
+  if (p.kind === 'boolean') {
+    return {
+      boolean: true,
+      ...(p.required ? {} : { default: p.default }),
+      ...required,
+      about: p.about,
+    };
+  }
   if (p.kind === 'media') return { media_id: true, ...required, about: p.about };
   if (p.kind === 'pitch') return { pitch: true, ...required, about: p.about };
   if (p.kind === 'group') {
@@ -155,7 +163,7 @@ const deviceEntry = (spec: DeviceSpec) => ({
   ...(spec.sounds ? { pitches: spec.sounds } : {}),
 });
 
-const DEVICE_LIST = Object.entries(DEVICES as Record<string, DeviceSpec>);
+const DEVICE_LIST = Object.entries(DEVICES);
 
 const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<unknown>) }> = {
   presets: {

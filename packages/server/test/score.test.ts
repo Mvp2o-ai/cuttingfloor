@@ -246,7 +246,7 @@ describe('score tools', () => {
     const kit = view.parts?.[0]?.devices?.[0];
     expect(kit?.pitches?.find((p) => p.pitch === 38)?.plays).toBe('snare (D2)');
     expect(view.parts?.[1]?.devices?.[0]?.applied).toMatchObject({
-      filter: { type: 'lowpass', cutoff_hz: 1200, resonance: 0 },
+      filter: { type: 'lowpass', cutoff_hz: 1200, resonance: Math.SQRT1_2 },
       glide_ms: 0,
     });
     const lead2 = view.parts?.find((p) => p.part_id === lead?.part_id);
@@ -448,7 +448,7 @@ describe('score tools', () => {
       score_id: part.score_id,
       part_id: 'p1',
       name: 'reverb',
-      params: { decay_seconds: 50, wet: 0.5 },
+      params: { decay_seconds: 500, wet: 0.5 },
     });
     expect(bad.message).toMatch(/^reverb: decay_seconds:/);
     expect(bad.hint).toBe(deviceParamsText('reverb'));
@@ -546,7 +546,8 @@ describe('score tools', () => {
       expect.arrayContaining(['sampler', 'synth', 'kit_808']),
     );
     expect(body.effects.delay.params.time_beats).toMatchObject({
-      range: [0.01, 16],
+      range: [0.001, 64],
+      unit: 'beats',
       automatable: false,
     });
     expect(body.effects.eq.params.bands.list.gain_db).toMatchObject({
