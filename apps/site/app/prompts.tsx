@@ -36,6 +36,7 @@ const GROUPS = [
       'Export for YouTube and hand me an FCPXML so my editor can finish it.',
       'Take our footage library and cut a sixty-second product film.',
       'Write and voice a 20-second intro, then animate the title.',
+      'Make music for it that hits on every cut, then make it darker.',
     ],
   },
 ] as const;

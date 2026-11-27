@@ -24,7 +24,7 @@ export function GET() {
 
 > ${DESCRIPTION}
 
-cuttingfloor is video editing tools for your agent, not an editor with an AI inside. It is an open-source MCP server: your own agent (Kazi, Claude, ChatGPT, Codex, Cursor or any MCP client) calls its granular tools to import footage, transcribe it, cut on words, caption, mix to a loudness target, make graphics and voiceovers, check its work with previews and export an MP4, FCPXML, OTIO or EDL. The judgment is the agent's; cuttingfloor makes the edits and reports facts (transcripts, speech edges, frames, loudness). Connected agents find step-by-step methods with \`skills.search\` and \`skills.get\`.
+cuttingfloor is video editing tools for your agent, not an editor with an AI inside. It is an open-source MCP server: your own agent (Kazi, Claude, ChatGPT, Codex, Cursor or any MCP client) calls its granular tools to import footage, transcribe it, cut on words, caption, mix to a loudness target, make music for the picture (built in layers from instruments and notes, not a song generator), make graphics and voiceovers, check its work with previews and export an MP4, FCPXML, OTIO or EDL. The judgment is the agent's; cuttingfloor makes the edits and reports facts (transcripts, speech edges, frames, loudness). Connected agents find step-by-step methods with \`skills.search\` and \`skills.get\`.
 
 ## ${TOOLKIT_HEADLINE}
 

@@ -60,6 +60,20 @@ export const CAPS = [
     note: 'measured on every preview',
   },
   {
+    title: 'Music made for the picture.',
+    body: 'Music built layer by layer from instruments and notes, with the beat on the cuts and the last note on the last frame. Every part stays changeable: darker, less busy, more bass. No singing and no lyrics; it is not a song generator.',
+    code: [
+      ['score.create', '{ tempo: 96, meter: { beats: 4, unit: 4 }, sample_rate: 48000 }'],
+      [
+        'score.set_markers',
+        '{ score_id: "sc_01…",\n  markers: [ { name: "logo", at_seconds: 14.2 } ] }',
+      ],
+      ['score.add_device', '{ score_id: "sc_02…", part_id: "p_1", name: "grand_piano" }'],
+      ['score.render', '{ score_id: "sc_09…" }'],
+    ],
+    note: 'Tracktion Engine, MuseScore General instruments',
+  },
+  {
     title: 'Make what you don’t have.',
     body: 'Animated titles and graphics from HTML, stills, mattes, a voiceover with timed words, a subject without its background.',
     code: [

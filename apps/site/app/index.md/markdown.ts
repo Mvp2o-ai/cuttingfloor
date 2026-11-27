@@ -31,7 +31,7 @@ export function markdown(): string {
     body: `
 ## What it is
 
-cuttingfloor is an open-source MCP server of video editing tools. Connect the agent you already use (Kazi, Claude, Claude Cowork, Claude Code, ChatGPT, ChatGPT Work, Codex or Cursor) and say what you want cut. It imports your footage, reads the transcript, trims, captions, mixes, makes the graphics and hands back a finished file.
+cuttingfloor is an open-source MCP server of video editing tools. Connect the agent you already use (Kazi, Claude, Claude Cowork, Claude Code, ChatGPT, ChatGPT Work, Codex or Cursor) and say what you want cut. It imports your footage, reads the transcript, trims, captions, mixes, makes the music and graphics and hands back a finished file.
 
 ## ${TOOLKIT_HEADLINE}
 
