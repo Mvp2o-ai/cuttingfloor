@@ -27,6 +27,7 @@ const SPENT = 'user_01SIGNEDUPANDSPENTTTTTTTT7';
 // Open here with our grant but no opening, and in Kazi's ledger with Kazi's 25 or a bigger grant.
 const NOROWS = 'user_01NOCUTTINGFLOORROWSSSSSS8';
 const FORGIVEN = 'user_01FORGIVENESSGRANTTTTTTTT9';
+const SWITCH = 'user_01OPENEDATTHESWITCHHHHHHH0';
 
 type Row = { kind: string; source: string; credits: number; ref: string; at?: string };
 type Account = {
@@ -120,6 +121,7 @@ const users: Record<
   [SPENT]: { email: 's@example.com', created_at: '2026-12-01T11:00:00Z', metadata: {} },
   [NOROWS]: { email: 'n@example.com', created_at: '2026-12-01T11:00:00Z', metadata: {} },
   [FORGIVEN]: { email: 'f@example.com', created_at: '2026-12-01T11:00:00Z', metadata: {} },
+  [SWITCH]: { email: 'x@example.com', created_at: '2026-12-01T11:00:00Z', metadata: {} },
 };
 
 let ws: Workspace;
@@ -336,7 +338,7 @@ describe('the split from Kazi’s ledger', () => {
     );
   });
 
-  it('lets a sign-up between the runs be, and flags one that spent in Kazi’s ledger meanwhile', async () => {
+  it('lets a sign-up between the runs be, and carries one that spent in Kazi’s ledger meanwhile', async () => {
     await access.balance(WINDOW);
     await access.balance(SPENT);
     const grant = { kind: 'grant', source: 'kazi', credits: 3, ref: 'grant' };
@@ -359,18 +361,18 @@ describe('the split from Kazi’s ledger', () => {
     expect(lines).toContain(
       `${WINDOW}: signed up between the runs; open here with our grant, nothing carried`,
     );
-    expect(report.mismatches).toContain(
-      `${SPENT}: already open here without opening:ca_s (grant:activation); not carried`,
-    );
+    // It spent in Kazi's ledger before our deploy: carried at Kazi's balance over our grant.
+    expect(report.mismatches.filter((m) => m.startsWith(SPENT))).toEqual([]);
+    expect((await ledger.get(SPENT))?.balance).toBe(2);
     expect(report.mismatches.some((m) => m.startsWith(WINDOW))).toBe(false);
     const { differences, notes } = await reconcile({ handoff: parseHandoff(file), ledger });
     expect(notes).toEqual([
       { owner: WINDOW, what: 'signed up between the runs; open here with our grant' },
     ]);
-    expect(differences).toEqual([{ owner: SPENT, what: 'has no opening:ca_s' }]);
+    expect(differences).toEqual([]);
   });
 
-  it('never takes an account with no rows or a bigger grant for a sign-up between the runs', async () => {
+  it("carries an account with no rows or a bigger grant at Kazi's balance, not as a window sign-up", async () => {
     await access.balance(NOROWS);
     await access.balance(FORGIVEN);
     const norows: Account = {
@@ -387,13 +389,13 @@ describe('the split from Kazi’s ledger', () => {
       balance: 93.9,
       rows: [{ kind: 'grant', source: 'cuttingfloor', credits: 93.9, ref: 'admin:forgive' }],
     };
-    const { report } = await run(handoff(2, [norows, forgiven]), true);
-    expect(report.mismatches).toContain(
-      `${NOROWS}: already open here without opening:ca_n (grant:activation); not carried`,
+    const { report, lines } = await run(handoff(2, [norows, forgiven]), true);
+    expect(report.mismatches.filter((m) => m.startsWith(NOROWS) || m.startsWith(FORGIVEN))).toEqual(
+      [],
     );
-    expect(report.mismatches).toContain(
-      `${FORGIVEN}: already open here without opening:ca_f (grant:activation); not carried`,
-    );
+    expect(lines.some((l) => l.startsWith(`${NOROWS}: signed up between the runs`))).toBe(false);
+    expect((await ledger.get(NOROWS))?.balance).toBe(25);
+    expect((await ledger.get(FORGIVEN))?.balance).toBe(93.9);
   });
 
   it('leaves an account a sign-in opened first, an unhanded link and stray App Store money for Ken', async () => {
@@ -413,11 +415,31 @@ describe('the split from Kazi’s ledger', () => {
     const { report } = await run(handoff(1, [raced, stray]), true);
     // A is linked too, and this file (another export) leaves it out.
     expect(report.mismatches).toEqual([
-      `${RACED}: already open here without opening:ca_5 (grant:activation); not carried`,
       'ca_6: no WorkOS user id, but 0 App Store rows and an App Store token',
       `${A}: linked to Kazi's ledger but not in the hand-off`,
       `${LINKED}: linked to Kazi's ledger but not in the hand-off`,
     ]);
-    expect((await ledger.get(RACED))?.balance).toBe(3);
+    // A request opened it at the switch with our grant: the opening takes the grant in.
+    expect((await ledger.get(RACED))?.balance).toBe(7);
+    const { differences } = await reconcile({ handoff: parseHandoff(handoff(1, [raced])), ledger });
+    expect(differences.filter((d) => d.owner === RACED)).toEqual([]);
+  });
+
+  it('carries an account opened at the switch that spent here before the import', async () => {
+    await access.balance(SWITCH);
+    await ledger.spend(SWITCH, { id: 'j_sw-release', credits: 1, tool: 'export.release' });
+    const at: Account = {
+      ...kaziOnly,
+      account_id: 'ca_sw',
+      workos_user_id: SWITCH,
+      balance: 25,
+      rows: [],
+    };
+    const { report } = await run(handoff(1, [at]), true);
+    expect(report.mismatches.filter((m) => m.startsWith(SWITCH))).toEqual([]);
+    // Kazi's 25, less the clean copy it bought here meanwhile.
+    expect((await ledger.get(SWITCH))?.balance).toBe(24);
+    const { differences } = await reconcile({ handoff: parseHandoff(handoff(1, [at])), ledger });
+    expect(differences.filter((d) => d.owner === SWITCH)).toEqual([]);
   });
 });
