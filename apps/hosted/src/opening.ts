@@ -1,5 +1,5 @@
 import { defineCollection, type Records } from '@cuttingfloor/core';
-import { packOf, taggedPlan } from '@cuttingfloor/plans';
+import { FREE_CREDITS, packOf, taggedPlan } from '@cuttingfloor/plans';
 import * as z from 'zod/v4';
 import { appleEntryId, appleRefundId } from './apple.ts';
 import { type Ledger, type NewEntry, totals } from './ledger.ts';
@@ -95,7 +95,11 @@ export interface HandedAccount {
    * are not in the file), so only its rows by ref are checked.
    */
   kazi_user: boolean;
-  /** Its rows are only grants, nothing spent: an account opened in Kazi's ledger and never used. */
+  /**
+   * Its one row is the free grant and nothing was spent: an account opened in Kazi's ledger by
+   * our old server and never used. Not an account with no rows or a larger grant (Kazi's 25, a
+   * forgiveness grant), whose balance would otherwise be dropped unseen.
+   */
   grant_only: boolean;
 }
 
@@ -159,7 +163,7 @@ export function parseHandoff(json: unknown): Handoff {
         payments,
         counted,
         kazi_user: Boolean(a.kazi_user_id),
-        grant_only: a.rows.every((row) => row.kind === 'grant'),
+        grant_only: a.rows.length === 1 && a.rows[0]?.kind === 'grant' && a.balance <= FREE_CREDITS,
       };
     }),
   };

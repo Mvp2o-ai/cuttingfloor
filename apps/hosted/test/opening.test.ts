@@ -24,6 +24,9 @@ const LINKED = 'user_01KAZIOPENEDDDDDDDDDDDDDD4';
 // Signed up between run 1 and our deploy: one never used, one that spent in Kazi's ledger.
 const WINDOW = 'user_01SIGNEDUPINWINDOWWWWWWWW6';
 const SPENT = 'user_01SIGNEDUPANDSPENTTTTTTTT7';
+// Open here with our grant but no opening, and in Kazi's ledger with Kazi's 25 or a bigger grant.
+const NOROWS = 'user_01NOCUTTINGFLOORROWSSSSSS8';
+const FORGIVEN = 'user_01FORGIVENESSGRANTTTTTTTT9';
 
 type Row = { kind: string; source: string; credits: number; ref: string; at?: string };
 type Account = {
@@ -115,6 +118,8 @@ const users: Record<
   [LINKED]: { email: 'd@example.com', created_at: '2026-11-25T00:00:00Z', metadata: {} },
   [WINDOW]: { email: 'w@example.com', created_at: '2026-12-01T11:00:00Z', metadata: {} },
   [SPENT]: { email: 's@example.com', created_at: '2026-12-01T11:00:00Z', metadata: {} },
+  [NOROWS]: { email: 'n@example.com', created_at: '2026-12-01T11:00:00Z', metadata: {} },
+  [FORGIVEN]: { email: 'f@example.com', created_at: '2026-12-01T11:00:00Z', metadata: {} },
 };
 
 let ws: Workspace;
@@ -363,6 +368,32 @@ describe('the split from Kazi’s ledger', () => {
       { owner: WINDOW, what: 'signed up between the runs; open here with our grant' },
     ]);
     expect(differences).toEqual([{ owner: SPENT, what: 'has no opening:ca_s' }]);
+  });
+
+  it('never takes an account with no rows or a bigger grant for a sign-up between the runs', async () => {
+    await access.balance(NOROWS);
+    await access.balance(FORGIVEN);
+    const norows: Account = {
+      ...kaziOnly,
+      account_id: 'ca_n',
+      workos_user_id: NOROWS,
+      balance: 25,
+      rows: [],
+    };
+    const forgiven: Account = {
+      ...kaziOnly,
+      account_id: 'ca_f',
+      workos_user_id: FORGIVEN,
+      balance: 93.9,
+      rows: [{ kind: 'grant', source: 'cuttingfloor', credits: 93.9, ref: 'admin:forgive' }],
+    };
+    const { report } = await run(handoff(2, [norows, forgiven]), true);
+    expect(report.mismatches).toContain(
+      `${NOROWS}: already open here without opening:ca_n (grant:activation); not carried`,
+    );
+    expect(report.mismatches).toContain(
+      `${FORGIVEN}: already open here without opening:ca_f (grant:activation); not carried`,
+    );
   });
 
   it('leaves an account a sign-in opened first, an unhanded link and stray App Store money for Ken', async () => {
