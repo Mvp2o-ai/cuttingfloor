@@ -185,6 +185,14 @@ export const LINES: Record<string, Line> = {
     group: 'review',
     say: 'See frames of the edit or a file, as a contact sheet or full-size stills.',
   },
+  'render.notes': {
+    group: 'review',
+    say: "See a score's notes as a piano roll, one colour per part, with bars and beats.",
+  },
+  'render.spectrogram': {
+    group: 'review',
+    say: 'See sound as a picture: notes by pitch, hits and hiss, with bar lines.',
+  },
   'qa.check': {
     group: 'review',
     say: 'Measure the render: gaps, missing media, loudness, true peak, black and silent stretches, cuts mid-word.',

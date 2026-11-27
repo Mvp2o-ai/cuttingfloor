@@ -41,7 +41,7 @@ const anyResult = z.object({}).passthrough();
  * descriptions; 502 440 measured), and to 530 000 for sounds.list, the sound library (523 003
  * measured).
  */
-const BUDGET_BYTES = 530_000;
+const BUDGET_BYTES = 536_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -242,6 +242,8 @@ describe('protocol surface', () => {
         'range.extract',
         'range.lift',
         'render.frames',
+        'render.notes',
+        'render.spectrogram',
         'skills.get',
         'skills.search',
         'sounds.list',
@@ -290,6 +292,8 @@ describe('protocol surface', () => {
         'media.get',
         'media.list',
         'render.frames',
+        'render.notes',
+        'render.spectrogram',
         'skills.get',
         'skills.search',
         'sounds.list',

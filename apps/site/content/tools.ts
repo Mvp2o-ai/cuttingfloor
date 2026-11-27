@@ -445,6 +445,18 @@ export const TOOLS: ToolEntry[] = [
     longRunning: 'never',
   },
   {
+    name: 'render.spectrogram',
+    title: 'Render spectrogram',
+    readOnly: true,
+    longRunning: 'never',
+  },
+  {
+    name: 'render.notes',
+    title: 'Render notes',
+    readOnly: true,
+    longRunning: 'never',
+  },
+  {
     name: 'export.timeline',
     title: 'Export timeline',
     readOnly: false,
