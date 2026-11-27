@@ -26,7 +26,7 @@ export type Fix = {
   tools?: ToolCall[];
 };
 
-export const FIXES_UPDATED = '2026-11-23';
+export const FIXES_UPDATED = '2026-11-27';
 
 const AI_GUIDE = {
   label: 'How to turn AI video clips into a film',
@@ -116,9 +116,16 @@ export const FIXES: Fix[] = [
     id: 'add-music',
     problem: 'How do I add music to a video?',
     answer:
-      'Give it a song, or ask for music made for the video. The agent lays it under the video, lowers it while someone is talking, fades it in and out, and cuts to its beats. Made music is built in layers you can change, with the beat on the cuts.',
+      'Give it a song, or ask for music made for the video. With a song, the agent lays it under the video, lowers it while someone talks, fades it out and cuts the video to its beat. Made music goes the other way: it’s built in layers to fit your cuts, with a hit on the big moment and the last note on the last frame.',
     prompt: 'Add this song under the video, quieter when I talk, and fade it out at the end.',
-    see: { label: 'Edit a dance Short to the beat', href: '/demos/edit-a-dance-short-to-the-beat' },
+    see: {
+      label: 'How to make background music for a video with AI',
+      href: '/guides/make-background-music-for-a-video',
+    },
+    watch: {
+      label: 'Edit a dance Short to the beat',
+      href: '/demos/edit-a-dance-short-to-the-beat',
+    },
     related: ['make-a-video-louder', 'remove-background-noise', 'add-a-voiceover'],
   },
   {
