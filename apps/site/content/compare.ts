@@ -47,7 +47,7 @@ export const SERVERS: ServerRow[] = [
       sees: 'Yes: a preview comes back with every edit (frames, or a waveform with loudness measured), plus qa.check for exact checks and media.seek to find a moment in plain words',
       words: 'Yes, cut by word timings',
       audio:
-        'Gain and pan keyframes, fades, EQ, compressor, voice denoise, master limiter, stems, voiceover with timed words, lip-sync',
+        'Gain and pan keyframes, fades, EQ, compressor, voice denoise, master limiter, stems, voiceover with timed words, lip-sync. Music made for the edit in layers from instruments and notes, fitted to the cuts, every part changeable; not a song generator (no singing or lyrics)',
       keys: 'Only for lip-sync (your sync. labs key). Self-hosted, the visual-judgment tools also need a TypeSafe key',
       export: 'FCPXML, OTIO and EDL, plus SRT and VTT captions',
       price:

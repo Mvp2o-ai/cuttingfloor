@@ -58,6 +58,7 @@ const JOBS: { job: string; say: string; demo?: string }[] = [
   { job: 'Look and color', say: 'Warmer, with a soft vignette.' },
   { job: 'Shaky footage', say: 'Steady the handheld shot.' },
   { job: 'Voice and music', say: 'Pull my voice off the music and bring the music down under it.' },
+  { job: 'Music', say: 'Make music for it, with a hit when the logo lands. Less busy.' },
   { job: 'Every size', say: 'A vertical one for Reels and a square one for LinkedIn.' },
 ];
 

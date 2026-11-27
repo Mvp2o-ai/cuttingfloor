@@ -35,7 +35,7 @@ export const VERSUS: Versus[] = [
       {
         name: 'cuttingfloor',
         is: 'An open-source MCP server of video editing tools for the agent you already use.',
-        wins: 'Your agent makes the edit and sees a preview with every change, so it can check its own work. Cuts by word timings, exports FCPXML, OTIO and EDL your editing app opens. Self-hostable, one Docker image.',
+        wins: 'Your agent makes the edit and sees a preview with every change, so it can check its own work. Cuts by word timings, exports FCPXML, OTIO and EDL your editing app opens. It can make the music too, built in layers you can change and timed to your cuts. Self-hostable, one Docker image.',
       },
       {
         name: 'CapCut',
@@ -211,7 +211,7 @@ export const VERSUS: Versus[] = [
       {
         name: 'cuttingfloor',
         is: 'An open-source MCP server of editing tools for your own footage.',
-        wins: 'Your own footage, cut properly: word-timed trims, captions, a real mix, reframes, and a timeline that exports to your editing app. The agent checks its own output. Open source and self-hostable.',
+        wins: 'Your own footage, cut properly: word-timed trims, captions, a real mix, music made to fit the cuts in layers you can change, reframes, and a timeline that exports to your editing app. The agent checks its own output. Open source and self-hostable.',
       },
       {
         name: 'Invideo AI',
@@ -229,7 +229,7 @@ export const VERSUS: Versus[] = [
     faqs: [
       {
         q: 'Can cuttingfloor generate footage that does not exist?',
-        a: 'No. It edits the video, audio and images you give it, and can build motion graphics from HTML, but it does not source stock or generate live-action footage. That is a deliberate limit: it is an editor, not a generator.',
+        a: 'No. It edits the video, audio and images you give it, and can build motion graphics from HTML and music from instruments and notes, but it does not source stock or generate live-action footage. That is a deliberate limit: it is an editor, not a generator.',
       },
       {
         q: 'Does Invideo AI edit footage I shot?',
