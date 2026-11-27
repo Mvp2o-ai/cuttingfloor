@@ -812,14 +812,19 @@ export class MediaLibrary {
       this.config.onReady?.(owner, record);
       return record;
     } catch (error) {
-      record.status = 'failed';
-      record.error =
-        error instanceof CfError
-          ? error.toJSON()
-          : { code: 'engine_error', message: (error as Error).message };
-      await this.save(owner, record);
+      await this.fail(owner, record, error);
       throw error;
     }
+  }
+
+  /** Marks media failed with what went wrong, so it never waits as importing for a job that ended. */
+  async fail(owner: string, record: MediaRecord, error: unknown): Promise<void> {
+    record.status = 'failed';
+    record.error =
+      error instanceof CfError
+        ? error.toJSON()
+        : { code: 'engine_error', message: (error as Error).message };
+    await this.save(owner, record);
   }
 
   /**

@@ -185,22 +185,32 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       async ({ signal, progress }) => {
         const say = (f: number, m: string) => progress(f, `${record.media_id}: ${m}`);
         const share = finish ? 0.6 : 0.85;
-        const made = await make(
-          await rt.media.derivedDir(owner, record.media_id),
-          (f, m) => say(share * f, m),
-          signal,
-        );
-        record.file = await rt.media.own(
-          owner,
-          record.media_id,
-          typeof made === 'string' ? made : made.file,
-        );
-        if (typeof made !== 'string' && made.warnings.length) record.warnings = made.warnings;
-        let done = await rt.media.ingest(owner, record, (f, m) => say(share + 0.1 * f, m), signal);
-        if (finish)
-          done = await finish(done, (f, m) => say(share + 0.1 + (0.9 - share) * f, m), signal);
-        await rt.media.rememberRecipe(owner, hash, done.media_id);
-        return ok(mediaInfo(done)) as never;
+        try {
+          const made = await make(
+            await rt.media.derivedDir(owner, record.media_id),
+            (f, m) => say(share * f, m),
+            signal,
+          );
+          record.file = await rt.media.own(
+            owner,
+            record.media_id,
+            typeof made === 'string' ? made : made.file,
+          );
+          if (typeof made !== 'string' && made.warnings.length) record.warnings = made.warnings;
+          let done = await rt.media.ingest(
+            owner,
+            record,
+            (f, m) => say(share + 0.1 * f, m),
+            signal,
+          );
+          if (finish)
+            done = await finish(done, (f, m) => say(share + 0.1 + (0.9 - share) * f, m), signal);
+          await rt.media.rememberRecipe(owner, hash, done.media_id);
+          return ok(mediaInfo(done)) as never;
+        } catch (error) {
+          await rt.media.fail(owner, record, error);
+          throw error;
+        }
       },
       { lane, ...admit, ...(work ? { work } : {}) },
     );
@@ -772,11 +782,16 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
           for (const [stem, r] of fresh) {
             outputs[stem] = join(await rt.media.derivedDir(owner, r.media_id), 'source.wav');
           }
-          await splitStems(await rt.media.sourceFile(source, 'export'), outputs, {
-            workDir: await rt.media.derivedDir(owner, first.media_id),
-            signal,
-            onProgress: (f) => progress(0.9 * f, 'stems: separating'),
-          });
+          try {
+            await splitStems(await rt.media.sourceFile(source, 'export'), outputs, {
+              workDir: await rt.media.derivedDir(owner, first.media_id),
+              signal,
+              onProgress: (f) => progress(0.9 * f, 'stems: separating'),
+            });
+          } catch (error) {
+            for (const record of fresh.values()) await rt.media.fail(owner, record, error);
+            throw error;
+          }
           const done = new Map(known);
           let i = 0;
           for (const [stem, record] of fresh) {
