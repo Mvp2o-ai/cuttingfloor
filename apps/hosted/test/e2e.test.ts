@@ -623,7 +623,7 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
       const cut = await ok<{ timeline_id: string }>(client, 'edit.batch', {
         timeline_id,
         preview: 'none',
-        ops: [{ tool: 'clip.add', args: { track_id: 't4', media_id: got.media_id } }],
+        ops: [{ tool: 'clip.add', args: { track_id: 't2', media_id: got.media_id } }],
       });
       const started = await ok<{ job_id: string }>(client, 'export.video', {
         timeline_id: cut.timeline_id,
