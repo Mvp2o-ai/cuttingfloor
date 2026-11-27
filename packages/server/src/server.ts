@@ -12,6 +12,7 @@ import { registerPlayer } from './player.ts';
 import { registerResources } from './resources.ts';
 import { toErrorResult } from './result.ts';
 import type { Runtime } from './runtime.ts';
+import { beatsOf, renderScoreSound } from './score-render.ts';
 import { registerSoundsView } from './sounds-view.ts';
 import { registerTasks } from './tasks.ts';
 import { registerCreateTools } from './tools/create.ts';
@@ -27,6 +28,7 @@ import {
   registerRenderSoundTools,
 } from './tools/render-sound.ts';
 import { registerScoreTools } from './tools/score.ts';
+import { registerScoreRenderTools } from './tools/score-render.ts';
 import { registerSearchTools } from './tools/search.ts';
 import { registerSeekTools } from './tools/seek.ts';
 import { QA_SKILL, registerSkillTools } from './tools/skills.ts';
@@ -88,7 +90,7 @@ Credits: making is free (edits, jobs, judgments). Exports, created media and ful
     : '';
   return `${welcome ? `${WELCOME}\n` : ''}cuttingfloor is a headless video editor: media comes in, is cut and finished, and leaves as a download. Work, not storage: ${KEEPING}; links work ${span(config.outputUrlTtlMs)} (re-read for fresh ones). Download finished or approved work (or have the user); if they count on keeping it, say it's temporary. To go on later, keep timeline.get's document (timeline.load) and the files (media.import again). media.delete drops unwanted media.
 Two ways in, often both:
-- Make new: create.motion (animated HTML, alpha), .still (HTML to PNG), .matte (solid, gradient), .voiceover (speech, timed words); a picture the user shows is a reference to rebuild in HTML, not import. Remake: create.cutout, .stabilized, .upscaled, .lipsync (user's provider key). Music isn't made (it's the user's files). Sound effects to add (footsteps, impacts, ambiences, whooshes, meme hits…): sounds.list finds them by description.
+- Make new: create.motion (animated HTML, alpha), .still (HTML to PNG), .matte (solid, gradient), .voiceover (speech, timed words); a picture the user shows is a reference to rebuild in HTML, not import. Remake: create.cutout, .stabilized, .upscaled, .lipsync (user's provider key). Music: their files, or made here in layers: score.* (score.render to audio media, score.record takes their hum or taps); render.spectrogram and render.notes show sound. Sound effects (footsteps, impacts, whooshes, meme hits…): sounds.list finds them by description.
 - Edit theirs: media.import a URL${roots.length ? `, a path under ${roots.join(', ')}` : ''}, an upload_id or a small data: URI${samples}. A file on their device, or attached but not handed to you: media.upload, an upload box in the chat (or a link)${config.uploadPage ? `, or they drop it on their upload page, ${config.uploadPage}` : ''}. Sent files: media.list.
 ${INSTRUCTIONS_BODY}${credits}`;
 }
@@ -99,12 +101,12 @@ const INSTRUCTIONS_BODY = `Tools are primitives doing exactly what their argumen
 1. create.* and media.import run long (a task, or a job_id; job.get can wait). Edits, previews and render.frames take a media_id once processing (imported) or complete (created); analysis, judge.ask and create.* need it ready; export waits for it.
 2. timeline.create {width, height, fps:{num,den}}, then clip.*, track.*, or edit.batch (many edits, one call). Each edit returns a NEW timeline_id: use the latest; older stay valid (undo).
  Timing: set_speed (ramp, reverse), freeze, roll, slip, slide, replace; range.lift / extract cut a span from all tracks. Nest a same-shape timeline (clip.add nested_timeline_id); else export and import its job.
- transition.add at a cut: dissolve, wipe, push, zoom… (linked audio crossfades).
- Text on a video track: title.add, caption.add (segments, SRT, VTT; word timings highlight), text.set restyles many.
+ transition.add at a cut: dissolve, wipe, push, zoom… (audio crossfades).
+ Text on a video track: title.add, caption.add (segments, SRT, VTT; word timings highlight), text.set.
  Audio: set_gain (keyframes), set_pan, fade, set_master (gain, limiter); inline previews measure loudness.
  filter.add on a clip, track or timeline: picture and sound effects (colour, LUT, key, EQ…). adjustment.add covers all below for a stretch.
- Overlays: a higher video track, then set_transform, set_mask, set_blend, set_animation. Names: video://catalog/{name}; a wrong one is refused with the list.
- Facts: media.analyze (transcript, beats, faces, track…) to cut by words (clip.add source {words}) or beats, caption (caption.add in_clip), reframe, pin to a tracked object; judge.ask answers typed questions (yes/no, choice, score, box) on text, JSON and pictures, look across sampled frames; media.seek finds a moment from plain words.
+ Overlays: a higher video track, then set_transform, set_mask, set_blend, set_animation. Names: video://catalog/{name}.
+ Facts: media.analyze (transcript, beats, faces, track…) to cut by words (clip.add source {words}) or beats, caption (caption.add in_clip), reframe, pin to a tracked object; judge.ask answers typed questions on text, JSON and pictures, look across sampled frames; media.seek finds a moment from plain words.
 3. Look: preview "inline", render.frames; for motion and sound, export a range with mp4_h264_fast.
 4. Before anything goes to the user to review, check it against their request with the QA skill (skills.get ${QA_SKILL}), which measures with qa.check. Then export.video: a download url and a browser page_url for the user (MP4, ProRes, GIF, WAV, MP3; sequence size unless overridden). export.timeline: FCPXML, OTIO, EDL, SRT, VTT.
 Skills: methods for common jobs; skills.search in the user's words, then skills.get.
@@ -119,6 +121,28 @@ function unclaimed(deps: ServerDeps): boolean {
   if (deps.claimed !== undefined) return !deps.claimed;
   if (deps.runtime.config.records) return !claimSeen(deps.runtime, deps.owner());
   return !existsSync(claimFile(deps, deps.owner()));
+}
+
+/**
+ * The pictures of sound read a score from this server's own store and render it with its own
+ * engine, unless the caller gave them another way (tests do).
+ */
+function withScores(deps: ServerDeps): ServerDeps {
+  const rt = deps.runtime;
+  return {
+    ...deps,
+    loadScore: deps.loadScore ?? ((owner, scoreId) => rt.scores.get(owner, scoreId)),
+    renderScoreSound:
+      deps.renderScoreSound ??
+      (async (owner, scoreId, range, signal) => {
+        const doc = await rt.scores.get(owner, scoreId);
+        const sound = await renderScoreSound(rt, owner, doc, {
+          ...beatsOf(doc, range),
+          ...(signal ? { signal } : {}),
+        });
+        return { wav: sound.file, doc, done: sound.done };
+      }),
+  };
 }
 
 /** Builds one MCP server instance over the shared runtime. Transports live in apps/. */
@@ -153,7 +177,8 @@ export function createServer(deps: ServerDeps): McpServer {
   registerJudgeTools(server, deps);
   registerCreateTools(server, deps);
   registerRenderTools(server, deps);
-  registerRenderSoundTools(server, deps);
+  registerRenderSoundTools(server, withScores(deps));
+  registerScoreRenderTools(server, deps);
   registerInterchangeTools(server, deps);
   registerSkillTools(server);
   // credits.claim and support.contact only on the hosted service: a server you run yourself

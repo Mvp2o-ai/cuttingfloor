@@ -41,10 +41,11 @@ const anyResult = z.object({}).passthrough();
  * descriptions; 502 440 measured), and to 530 000 for sounds.list, the sound library (523 003
  * measured), and to 550 000 for the sound facts (media.analyze onsets, notes, key, spectrum, the
  * level on steps, beat candidates, a timeline's transcript) and the result filters on
- * media.listen and media.seek (545 873 measured), and to 660 000 for music: the two pictures of
- * sound (render.spectrogram, render.notes) and the score tools, music made in layers (29 tools).
+ * media.listen and media.seek (545 873 measured), and for music: the two pictures of
+ * sound (render.spectrogram, render.notes) and the score tools, music made in layers (30 tools,
+ * score.render among them; 675 327 measured before it), 690 000.
  */
-const BUDGET_BYTES = 660_000;
+const BUDGET_BYTES = 690_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -291,6 +292,7 @@ describe('protocol surface', () => {
         'score.set_send',
         'score.remove_send',
         'score.batch',
+        'score.render',
         'skills.get',
         'skills.search',
         'sounds.list',

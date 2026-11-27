@@ -187,7 +187,7 @@ function specFromEngine(def: DeviceDef): DeviceSpec {
         max: 64,
         default: null,
         unit: 'beats',
-        about: `Time between echoes in beats, at the tempo where the render starts (it becomes time_ms, ${ms.min} to ${ms.max})`,
+        about: `Time between echoes in beats at the score's opening tempo: one time for the whole render, it does not follow tempo changes (it becomes time_ms, ${ms.min} to ${ms.max})`,
       },
       ...params,
       time_ms: { ...ms, default: null, required: undefined as never },

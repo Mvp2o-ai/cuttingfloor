@@ -175,11 +175,11 @@ describe('render.spectrogram and render.notes: arguments and limits', () => {
     expect(missing.structured.code).toBe('not_found');
   });
 
-  it('refuses a score until the score store is wired', async () => {
+  it("reads a score from the server's own store: one it never had is not found", async () => {
     const notes = await call(c, 'render.notes', { score_id: SCORE });
-    expect(notes.structured.code).toBe('service_unavailable');
+    expect(notes.structured.code).toBe('not_found');
     const sound = await call(c, 'render.spectrogram', { score_id: SCORE });
-    expect(sound.structured.code).toBe('service_unavailable');
+    expect(sound.structured.code).toBe('not_found');
   });
 });
 

@@ -631,6 +631,12 @@ export const TOOLS: ToolEntry[] = [
     longRunning: 'never',
   },
   {
+    name: 'score.render',
+    title: 'Render score',
+    readOnly: false,
+    longRunning: 'always',
+  },
+  {
     name: 'export.timeline',
     title: 'Export timeline',
     readOnly: false,

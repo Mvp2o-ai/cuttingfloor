@@ -15,6 +15,7 @@ export * from './motion.ts';
 export * from './native-view.ts';
 export * from './render-sound.ts';
 export * from './score.ts';
+export * from './score-render.ts';
 export * from './score-tools.ts';
 export * from './search.ts';
 export * from './sequence.ts';
