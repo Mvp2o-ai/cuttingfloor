@@ -14,7 +14,7 @@ import { BIN, heavyThreads, run } from './exec.ts';
 // exactly. A still gets the card once, somewhere.
 
 const ASSETS = fileURLToPath(new URL('../assets/mark/', import.meta.url));
-const CARD = { file: `${ASSETS}card.png`, width: 1200, height: 420 };
+const CARD = { file: `${ASSETS}card.png`, width: 1200, height: 440 };
 /** The sizes and tilts a file's card takes, one at a time, a different one after each bounce. */
 const LOOKS = 5;
 
