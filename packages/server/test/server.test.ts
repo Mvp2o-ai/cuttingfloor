@@ -281,6 +281,7 @@ describe('protocol surface', () => {
         'score.remove_notes',
         'score.add_region',
         'score.move_region',
+        'score.record',
         'score.trim_region',
         'score.split_region',
         'score.alias_region',
@@ -407,6 +408,7 @@ describe('protocol surface', () => {
       'media.import': 'ui://cuttingfloor/player',
       'media.list': 'ui://cuttingfloor/library',
       'media.upload': 'ui://cuttingfloor/upload',
+      'score.record': 'ui://cuttingfloor/record',
       'sounds.list': 'ui://cuttingfloor/sounds',
     });
     // Everything the views call stays callable from a view (no visibility limits it to the model).

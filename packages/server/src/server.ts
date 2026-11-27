@@ -9,6 +9,8 @@ import { registerEditor } from './editor.ts';
 import { registerLibrary } from './library.ts';
 import type { OwnerLimits } from './meter.ts';
 import { registerPlayer } from './player.ts';
+import type { RenderScoreDoc } from './record.ts';
+import { registerRecordView } from './record-view.ts';
 import { registerResources } from './resources.ts';
 import { toErrorResult } from './result.ts';
 import type { Runtime } from './runtime.ts';
@@ -27,6 +29,7 @@ import {
   registerRenderSoundTools,
 } from './tools/render-sound.ts';
 import { registerScoreTools } from './tools/score.ts';
+import { registerScoreRecordTool } from './tools/score-record.ts';
 import { registerSearchTools } from './tools/search.ts';
 import { registerSeekTools } from './tools/seek.ts';
 import { QA_SKILL, registerSkillTools } from './tools/skills.ts';
@@ -69,6 +72,11 @@ export interface ServerDeps {
   loadScore?: LoadScore;
   /** A score's sound over a range, rendered to a WAV (render.spectrogram). Absent: a score_id is refused. */
   renderScoreSound?: RenderScoreSound;
+  /**
+   * A score document's sound over a range, rendered to a WAV (score.record's loop and pad sounds,
+   * at tempo × speed). Absent: score.record and its two calls answer service_unavailable.
+   */
+  renderScoreDoc?: RenderScoreDoc;
 }
 
 /**
@@ -143,8 +151,10 @@ export function createServer(deps: ServerDeps): McpServer {
   registerLibrary(server, deps);
   registerSoundsView(server, deps);
   registerUpload(server, deps);
+  registerRecordView(server, deps);
   registerTimelineTools(server, deps);
   registerScoreTools(server, deps);
+  registerScoreRecordTool(server, deps);
   registerMediaTools(server, deps);
   registerSeekTools(server, deps);
   registerSearchTools(server, deps);

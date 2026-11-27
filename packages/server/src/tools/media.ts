@@ -1695,6 +1695,28 @@ export async function importBundled(
   return { record, job };
 }
 
+/**
+ * Imports a complete staged upload as media (a take score.record placed): the upload becomes the
+ * media's file, as media.import does it, and its processing job starts.
+ */
+export async function importUpload(
+  rt: ServerDeps['runtime'],
+  owner: string,
+  uploadId: string,
+): Promise<{ record: MediaRecord; job: Job }> {
+  const upload = await rt.uploads.take(owner, uploadId);
+  const record = await rt.media.create(
+    owner,
+    { upload: uploadId, file_name: upload.name, ...(upload.via ? { via: upload.via } : {}) },
+    upload.name,
+  );
+  record.file = await rt.media.adopt(owner, record, { blob: upload.blob }, { move: true });
+  await rt.media.save(owner, record);
+  await rt.uploads.remove(owner, uploadId, record.file === upload.blob ? { taken: true } : {});
+  const job = await startIngest(rt, owner, record, {});
+  return { record, job };
+}
+
 /** The MIME type a data: URI declares, or '' for none. */
 function dataUriType(uri: string): string {
   return /^data:([^;,]*)/i.exec(uri)?.[1]?.toLowerCase() ?? '';

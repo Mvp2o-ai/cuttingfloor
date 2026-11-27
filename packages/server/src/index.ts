@@ -27,6 +27,18 @@ export {
   type OwnerLimits,
 } from './meter.ts';
 export { outputMime } from './mime.ts';
+export {
+  RECORD_SESSIONS,
+  RECORD_TAKES,
+  type RecordDeps,
+  type RecordSession,
+  type RenderScoreDoc,
+  recordPageSession,
+  recordSessionCall,
+  recordTakeCall,
+  verifyRecordLink,
+} from './record.ts';
+export { RECORD_URI, recordHtml, recordPageCsp } from './record-view.ts';
 export { HEALTH_URI } from './resources.ts';
 export {
   configFromEnv,
