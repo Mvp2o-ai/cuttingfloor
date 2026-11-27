@@ -1,9 +1,26 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { waitForFloor } from '@cuttingfloor/core';
-import { ErrorCode, type ToolError } from '@cuttingfloor/schema';
-import { type Runtime, SERVER_VERSION } from '@cuttingfloor/server';
+import { ownerKey, waitForFloor } from '@cuttingfloor/core';
+import {
+  CfError,
+  ErrorCode,
+  RecordSessionInput,
+  RecordSessionResult,
+  RecordTakeInput,
+  RecordTakeResult,
+  type ToolError,
+} from '@cuttingfloor/schema';
+import {
+  type RecordDeps,
+  type RenderScoreDoc,
+  type Runtime,
+  recordSessionCall,
+  recordTakeCall,
+  SERVER_VERSION,
+  verifyRecordLink,
+} from '@cuttingfloor/server';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, type McpServer } from '@modelcontextprotocol/server';
+import * as z from 'zod/v4';
 import { type AppCredits, AppleOtherAccount, AppleRejected } from './apple.ts';
 
 // The tools as plain HTTP for code that doesn't speak MCP: POST /v1/<tool> with the arguments as
@@ -66,7 +83,8 @@ const STATUS: Record<ErrorCode, number> = {
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
-  'access-control-allow-headers': 'authorization, content-type, x-cuttingfloor-key-*',
+  'access-control-allow-headers':
+    'authorization, content-type, x-cuttingfloor-key-*, x-cuttingfloor-record',
   'access-control-max-age': '86400',
 };
 
@@ -78,16 +96,19 @@ export class RestApi {
     headers?: Headers,
   ) => McpServer | Promise<McpServer>;
   readonly #credits: AppCreditsRoutes | undefined;
+  readonly #renderScoreDoc: RenderScoreDoc | undefined;
   #tools: Promise<ToolInfo[]> | undefined;
 
   constructor(
     runtime: Runtime,
     serverFor: (owner: string, via: string, headers?: Headers) => McpServer | Promise<McpServer>,
     credits?: AppCreditsRoutes,
+    record: { renderScoreDoc?: RenderScoreDoc | undefined } = {},
   ) {
     this.#runtime = runtime;
     this.#serverFor = serverFor;
     this.#credits = credits;
+    this.#renderScoreDoc = record.renderScoreDoc;
   }
 
   handles(url: URL): boolean {
@@ -138,6 +159,8 @@ export class RestApi {
       return this.#floorChanges(req, res, url, authenticate);
     if (url.pathname === '/v1/credits.get' || url.pathname === '/v1/credits.apple')
       return this.#appCredits(req, res, url, authenticate);
+    if (url.pathname === '/v1/record.session' || url.pathname === '/v1/record.take')
+      return this.#record(req, res, url, authenticate);
     const name = decodeURIComponent(url.pathname.slice('/v1/'.length));
     const tool = (await this.#listTools()).find((t) => t.name === name);
     if (!tool) {
@@ -329,6 +352,92 @@ export class RestApi {
     }
   }
 
+  /**
+   * POST /v1/record.session {job_id, speed?} and POST /v1/record.take: the two calls a take of
+   * score.record is played through (contract v1.1 with the phone app). Not tools: a view's or an
+   * app's steps, not the agent's. Signed in as /v1 is, or with the session's own signed url in
+   * X-Cuttingfloor-Record (the view and its page carry no sign-in), which reaches that session only.
+   */
+  async #record(
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    authenticate: (request: Request) => Promise<Caller | undefined>,
+  ): Promise<void> {
+    if (req.method !== 'POST') return refuse(req, res, 'POST');
+    const link = req.headers['x-cuttingfloor-record'];
+    let key: string;
+    let only: string | undefined;
+    if (typeof link === 'string' && link) {
+      const found = await verifyRecordLink(this.#runtime, link);
+      if (!found) {
+        req.resume();
+        return send(res, 403, {
+          code: 'bad_request',
+          message: 'This record link is not valid, or the session has ended',
+          hint: 'score.record opens a new session, with a new url',
+        });
+      }
+      key = found.key;
+      only = found.job_id;
+    } else {
+      const headers = new Headers();
+      for (const [k, v] of Object.entries(req.headers))
+        if (typeof v === 'string') headers.set(k, v);
+        else if (Array.isArray(v)) headers.set(k, v.join(', '));
+      const caller = await authenticate(
+        new Request(new URL(url.pathname, this.#runtime.config.publicUrl), {
+          method: 'POST',
+          headers,
+        }),
+      );
+      if (!caller) {
+        req.resume();
+        return;
+      }
+      key = ownerKey(caller.owner);
+    }
+    let body: unknown;
+    try {
+      const text = await readBody(req, RECORD_BODY_BYTES);
+      body = text.trim() ? JSON.parse(text) : {};
+    } catch (error) {
+      return send(res, error instanceof TooLarge ? 413 : 400, {
+        code: 'bad_request',
+        message:
+          error instanceof TooLarge
+            ? `The body is over ${RECORD_BODY_BYTES} bytes`
+            : 'The body must be JSON',
+      });
+    }
+    const jobId = (body as { job_id?: unknown } | null)?.job_id;
+    if (only && jobId !== only) {
+      return send(res, 403, {
+        code: 'bad_request',
+        message: `This record link is for session ${only}, not ${String(jobId)}`,
+      });
+    }
+    const gone = new AbortController();
+    res.on('close', () => gone.abort());
+    const deps: RecordDeps = { runtime: this.#runtime, renderScoreDoc: this.#renderScoreDoc };
+    try {
+      const answer =
+        url.pathname === '/v1/record.session'
+          ? await recordSessionCall(deps, key, body, gone.signal)
+          : await recordTakeCall(deps, key, body);
+      if (!res.writableEnded && !res.destroyed) send(res, 200, answer);
+    } catch (error) {
+      if (!(error instanceof CfError)) {
+        process.stderr.write(`rest: ${url.pathname}: ${(error as Error).stack ?? error}\n`);
+      }
+      const e =
+        error instanceof CfError
+          ? error
+          : new CfError('engine_error', (error as Error).message ?? String(error));
+      send(res, STATUS[e.code] ?? 500, e.toJSON());
+    }
+  }
+
   /** A data: URI import is the largest body a call takes. */
   #bodyLimit(): number {
     return Math.ceil(this.#runtime.config.inlineMaxBytes * 1.4) + 1024 ** 2;
@@ -388,6 +497,9 @@ export class RestApi {
 }
 
 class TooLarge extends Error {}
+
+/** The largest record.take body: every tap a take may have, with room. */
+const RECORD_BODY_BYTES = 1024 ** 2;
 
 function readBody(req: IncomingMessage, limit: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -520,6 +632,7 @@ export function openApi(
     },
   };
   if (credits) Object.assign(paths, CREDITS_PATHS);
+  Object.assign(paths, recordPaths(schemas));
   return {
     openapi: '3.1.0',
     info: {
@@ -536,6 +649,7 @@ Long work (imports, analysis, renders, exports) answers at once with a job_id: P
       ...new Set([
         ...tools.map((t) => t.name.split('.')[0]),
         'floor',
+        'record',
         ...(credits ? ['credits'] : []),
       ]),
     ].map((name) => ({
@@ -684,6 +798,65 @@ const CREDITS_PATHS = {
     },
   },
 };
+
+/** POST /v1/record.session and /v1/record.take, from their schemas (contract v1.1). */
+function recordPaths(schemas: Record<string, unknown>): Record<string, unknown> {
+  const json = (schema: z.ZodType, io: 'input' | 'output') =>
+    z.toJSONSchema(schema, { io, unrepresentable: 'any' }) as Record<string, unknown>;
+  const op = (
+    name: string,
+    summary: string,
+    description: string,
+    input: z.ZodType,
+    output: z.ZodType,
+  ) => {
+    const id = name.replaceAll('.', '_');
+    return {
+      post: {
+        operationId: id,
+        summary,
+        description,
+        tags: ['record'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: hoist(json(input, 'input'), `${id}_args`, schemas) },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'The answer',
+            content: {
+              'application/json': {
+                schema: hoist(json(output, 'output'), `${id}_result`, schemas),
+              },
+            },
+          },
+          '4XX': { $ref: '#/components/responses/Error' },
+          '5XX': { $ref: '#/components/responses/Error' },
+        },
+      },
+    };
+  };
+  const auth =
+    'Signed in as every /v1 call is, or with the session’s url (score.record’s result) in the X-Cuttingfloor-Record header, which reaches that session only.';
+  return {
+    '/v1/record.session': op(
+      'record.session',
+      'What a take plays over',
+      `Not a tool: for a view or an app playing a take of score.record (its job_id). The loop at tempo × speed (WAV, PCM 16-bit stereo, one pass, no click in it, its exact frames, and when each beat of the meter and each bar falls in it), the click and its accent, the count-in's click times (negative seconds before the loop) and one WAV per pad. Ask again at another speed for the tempo slider; the score's own tempo does not change. ${auth}`,
+      RecordSessionInput,
+      RecordSessionResult,
+    ),
+    '/v1/record.take': op(
+      'record.take',
+      'Send the take',
+      `Not a tool: what the user played, in seconds of the loop as rendered at speed (record.session at that speed first). Pads: taps [{pitch, at_seconds, pass, velocity?}], at_seconds in [0, loop.seconds) and on pass 0 down to -count_in.seconds, velocity only where the device measured it. Microphone: the recording staged as an upload first (WAV, PCM), then {upload_id, starts_at_seconds, passes}. delay says what the device took off each position. Taps are stored where they were played: nothing is moved to a grid, dropped or wrapped. One take a session: the same body again answers {ok: true}; another body after a take answers 409. ${auth}`,
+      RecordTakeInput,
+      RecordTakeResult,
+    ),
+  };
+}
 
 const ERROR_SCHEMA = {
   type: 'object',

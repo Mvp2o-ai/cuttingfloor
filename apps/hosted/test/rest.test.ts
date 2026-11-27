@@ -87,9 +87,15 @@ describe('REST', () => {
     await mcp.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`)));
     const { tools } = await mcp.listTools();
     await mcp.close();
-    // Every tool, plus /v1/floor.changes (an app's signal, not a tool).
+    // Every tool, plus /v1/floor.changes (an app's signal, not a tool) and the two calls a
+    // take of score.record is played through (a view's or an app's steps, not tools).
     expect(Object.keys(spec.paths).sort()).toEqual(
-      [...tools.map((t) => `/v1/${t.name}`), '/v1/floor.changes'].sort(),
+      [
+        ...tools.map((t) => `/v1/${t.name}`),
+        '/v1/floor.changes',
+        '/v1/record.session',
+        '/v1/record.take',
+      ].sort(),
     );
 
     const add = spec.paths['/v1/clip.add']?.post as {

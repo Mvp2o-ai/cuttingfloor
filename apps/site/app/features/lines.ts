@@ -269,6 +269,10 @@ export const LINES: Record<string, Line> = {
     group: 'music',
     say: 'Turn the music, or any part of it, into sound you can hear and put under your video.',
   },
+  'score.record': {
+    group: 'music',
+    say: 'Add your own layer: tap pads or hum into the microphone while the music loops.',
+  },
   // Review
   'render.frames': {
     group: 'review',

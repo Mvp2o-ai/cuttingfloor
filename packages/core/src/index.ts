@@ -50,6 +50,7 @@ export {
 export {
   applyScoreEdit,
   checkScore,
+  findPart,
   newScore,
   type ScoreMedia,
   type ScoreMediaResolver,
@@ -76,6 +77,24 @@ export {
   type ScoreOpResult,
   ScoreStore,
 } from './score/store.ts';
+export {
+  applyMicrophoneTake,
+  applyPadsTake,
+  type LoopGrid,
+  loopBeat,
+  loopGrid,
+  type MicrophoneTakeArgs,
+  meterBeatsBefore,
+  meterBeatsBetween,
+  type PadsTakeArgs,
+  type PlacedRecording,
+  type PlacedTap,
+  partPads,
+  scoreAtSpeed,
+  takeAgain,
+  takeDigest,
+  tempoAtSpeed,
+} from './score/take.ts';
 export {
   barLength,
   barsBetween,
