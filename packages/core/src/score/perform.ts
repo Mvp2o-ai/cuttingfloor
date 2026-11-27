@@ -228,6 +228,8 @@ export function performScore(doc: ScoreDoc, options: PerformOptions): Performanc
     const known = reach.get(id);
     if (known !== undefined) return known;
     const p = byId.get(id);
+    // Routing never loops (every edit and load refuses one); false meanwhile makes sure of it.
+    reach.set(id, false);
     let r = false;
     if (p && !p.mute) {
       r = p.output === 'master' || reaches(p.output) || p.sends.some((s) => reaches(s.to));
