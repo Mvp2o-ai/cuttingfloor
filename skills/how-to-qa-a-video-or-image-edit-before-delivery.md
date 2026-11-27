@@ -1,7 +1,7 @@
 ---
 name: how-to-qa-a-video-or-image-edit-before-delivery
-description: QA an edit before delivery with cuttingfloor. Check the finished cut against the request in the user's own words: write the acceptance list first, measure it with qa.check (gaps, offline media, frame count, loudness, true peak, black and silent stretches, speech at every cut), check captions and on-screen text, look at rendered frames, and confirm nothing else changed with timeline.diff; for a still image check crop and aspect, resolution, artifacts, upscaling, text legibility and colour. Use when someone asks to QA, check, review or sign off an edit before it goes out, to confirm a delivery is finished, to verify a render matches what was asked, or to find what is wrong with a cut before sending it.
-version: 2
+description: QA an edit before delivery with cuttingfloor. Check the finished cut against the request in the user's own words: write the acceptance list first, measure it with qa.check (gaps, offline media, frame count, loudness, true peak, black and silent stretches, speech at every cut), check captions and on-screen text, look at rendered frames, and confirm nothing else changed with timeline.diff; for a still image check crop and aspect, resolution, artifacts, upscaling, text legibility and colour. For music made in a score, which cannot be heard from here, read it back with measurements: clipping, the tune's notes, its hits against the picture's moments, the words under it. Use when someone asks to QA, check, review or sign off an edit before it goes out, to confirm a delivery is finished, to verify a render matches what was asked, or to find what is wrong with a cut before sending it.
+version: 3
 type: playbook
 source: system
 author: Ken Wiltshire
@@ -14,6 +14,7 @@ An edit is finished when the assistant has checked it against the request and ca
 
 ## When to use
 - An edit is about to be exported and given to the user, and it has to be checked against what they asked for.
+- Music was made in a score and is about to be given to the user, alone or under a video: it cannot be heard from here and has to be read back.
 - Someone asks to QA, check, review, verify or sign off a video or a still image, to confirm a delivery is finished, or to find what is wrong with a cut before it goes out.
 - A delivery has to show its evidence: the number, frame or quotation that decided each item on the list.
 
@@ -32,7 +33,8 @@ An edit is finished when the assistant has checked it against the request and ca
 7. The assistant should confirm the requested changes are present. Mark each acceptance item from the evidence just gathered, never from memory of having made the change.
 8. The assistant should confirm nothing else moved: `timeline.diff {from, to}` between the starting timeline and the delivered one lists every clip, track and setting that differs. A change to something the user asked to keep (other scenes, other speakers, the source audio) is a failure.
 9. The assistant should branch for a still image. For an image, skip the timeline checks and verify with `media.get` and `render.frames` at full size: crop and aspect for the stated placement; resolution adequate for that placement; no compression artifacts or banding in flat areas; no upscaling beyond source detail; text legible at final display size; colour consistent with the rest of the set.
-10. The assistant should report the verdict with evidence. One line per acceptance item, yes or no, with the measurement or the frame that decided it, then the failures and the specific fix proposed for each. Ask before delivering anything with an open failure. Then `export.video`, and give the user the links.
+10. The assistant should branch for music it made. Music from a score cannot be heard from here, so it is read back with measurements, and "I could not listen" is not a check. First, `score.render`'s `clipped_samples` has to be 0: samples over full scale are cut off in that file for good, so turning the render down afterwards on the timeline does not undo it; lower the parts (`score.set_part {gain_db}`) or put a `limiter` on the master, and render again. Then read the tune back: render the part that carries it alone (`score.render {parts}`), run `media.analyze {kind: "notes"}` on that media, and set its pitches and times against what was meant (the notes that were written, or the notes of what the user hummed or played). Where the music has to land on moments of the picture, `media.analyze {kind: "onsets"}` on the render says when its hits fall, to set against the times of those moments. `render.spectrogram` and `render.notes` show the same things as pictures. Under a voice, `media.analyze {kind: "transcript", timeline_id}` gives the words of the finished mix, which have to be the words of the voice alone, and `media.analyze {kind: "loudness"}` over a stretch with speech and a stretch without says how far under the voice the music sits.
+11. The assistant should report the verdict with evidence. One line per acceptance item, yes or no, with the measurement or the frame that decided it, then the failures and the specific fix proposed for each. Ask before delivering anything with an open failure. Then `export.video`, and give the user the links.
 
 ## Decision table
 | Situation | The assistant should |
@@ -45,6 +47,8 @@ An edit is finished when the assistant has checked it against the request and ca
 | The request is ambiguous | Ask before editing. |
 | A long timeline (`qa.check` returns a job) | `job.get {job_id, wait_seconds}` for the report. |
 | The deliverable is a still image | Take step 9 in place of steps 2 to 6. |
+| The work includes music made in a score | Take step 10 as well, before the report. |
+| `clipped_samples` above 0 on a render | Lower the parts or limit the master, `score.render` again, and use the new media. |
 
 ## Required behavior
 - The assistant writes the acceptance list before it looks at any output.

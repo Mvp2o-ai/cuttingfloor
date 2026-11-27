@@ -785,6 +785,17 @@ describe('media helpers', () => {
         video: { ...v, vfr: true, rotation: 90, transfer: 'arib-std-b67', codec: 'theora' },
       }),
     ).toEqual(['vfr', 'rotation', 'hdr', 'codec']);
+    // A browser's recording states no length anywhere (MediaRecorder's WebM): sound too.
+    const unstated = {
+      format: { format_name: 'matroska,webm' },
+      streams: [{ codec_type: 'audio' }],
+    };
+    const recording: Probe = { ...base, kind: 'audio', video: null, raw: unstated };
+    expect(conformReasons(recording)).toEqual(['duration']);
+    expect(
+      conformReasons({ ...recording, raw: { ...unstated, format: { duration: '3.0' } } }),
+    ).toEqual([]);
+    expect(conformReasons({ ...base, raw: unstated })).toEqual(['duration']);
   });
 });
 

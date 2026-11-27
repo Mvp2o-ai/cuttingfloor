@@ -24,7 +24,11 @@ import {
   type OwnerLimits,
   outputMime,
   REVIEW_CARDS,
+  type RenderScoreDoc,
   type Runtime,
+  recordHtml,
+  recordPageCsp,
+  recordPageSession,
   UploadRefused,
 } from '@cuttingfloor/server';
 import { toWebRequest } from '@modelcontextprotocol/node';
@@ -102,6 +106,11 @@ export interface HttpOptions {
   openaiChallenge?: string;
   /** The site's account page, where credits are bought (the final-copy link's short page). */
   accountUrl?: string;
+  /**
+   * Renders a score document's range to a WAV: score.record's loop and pad sounds. Absent,
+   * score.record and its two calls answer service_unavailable.
+   */
+  renderScoreDoc?: RenderScoreDoc;
 }
 
 export type SignInStep = 'challenged' | 'metadata';
@@ -243,6 +252,7 @@ export function createHttpServer(options: HttpOptions): Server {
       ...(account ? { account: () => account(owner) } : {}),
       // Apps call /v1 for their users: no assistant there can claim.
       ...(channel === 'rest' || activeBefore ? { claimGate: false } : {}),
+      ...(options.renderScoreDoc ? { renderScoreDoc: options.renderScoreDoc } : {}),
     });
   };
   const handler = createMcpHandler(
@@ -258,6 +268,7 @@ export function createHttpServer(options: HttpOptions): Server {
     runtime,
     (owner, via, headers) => serverFor(owner, via, headers, 'rest'),
     options.credits,
+    { renderScoreDoc: options.renderScoreDoc },
   );
   const hashedKeys = [...(options.apiKeys ?? new Map()).entries()].map(([key, owner]) => ({
     digest: createHash('sha256').update(key).digest(),
@@ -597,6 +608,38 @@ export function createHttpServer(options: HttpOptions): Server {
       }
       if (url.pathname.startsWith('/uploads/')) {
         await handleUpload(runtime, req, res, url);
+        return;
+      }
+      // A take of score.record, opened in a browser: the same pads or record button as the view.
+      if (url.pathname.startsWith('/record/') && (req.method === 'GET' || req.method === 'HEAD')) {
+        const session = await recordPageSession(runtime, `${url.pathname}${url.search}`);
+        if (!session) {
+          res
+            .writeHead(403, {
+              'content-type': 'text/plain; charset=utf-8',
+              'cache-control': 'no-store',
+            })
+            .end(
+              'This link is not valid, or the session has ended. Ask in the chat for a new one.',
+            );
+          return;
+        }
+        res.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'no-store',
+          'referrer-policy': 'no-referrer',
+          'x-frame-options': 'DENY',
+          'permissions-policy': 'microphone=(self)',
+          'content-security-policy': recordPageCsp(runtime),
+        });
+        res.end(
+          req.method === 'HEAD'
+            ? undefined
+            : recordHtml({
+                session,
+                link: `${runtime.config.publicUrl}${url.pathname}${url.search}`,
+              }),
+        );
         return;
       }
       // The sound library, public: what sounds.list reads on servers with no library of their own.

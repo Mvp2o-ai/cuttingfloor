@@ -1,4 +1,4 @@
-import type { TimelineDoc } from '@cuttingfloor/schema';
+import type { ScoreDoc, TimelineDoc } from '@cuttingfloor/schema';
 import { defineCollection } from './records.ts';
 
 // The collections core itself keeps. Each package defines its own beside the code that owns them.
@@ -21,6 +21,22 @@ export const TIMELINES_GONE = defineCollection<{ at: string }>({
   kind: 'timeline',
   scope: 'owner',
   fs: { dir: 'timelines-gone' },
+  db: { ttlMs: GONE_TTL_MS },
+});
+
+/** Immutable scores by id; a read counts as a use. */
+export const SCORES = defineCollection<ScoreDoc>({
+  name: 'scores',
+  scope: 'owner',
+  fs: { dir: 'scores' },
+});
+
+/** That a score expired, and when, so a later lookup can say so. */
+export const SCORES_GONE = defineCollection<{ at: string }>({
+  name: 'gone',
+  kind: 'score',
+  scope: 'owner',
+  fs: { dir: 'scores-gone' },
   db: { ttlMs: GONE_TTL_MS },
 });
 

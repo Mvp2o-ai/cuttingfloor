@@ -4,6 +4,7 @@ import {
   EditArgs,
   type EditTool,
   KEEP_MS,
+  span,
   type TimelineDoc,
   type TimelineOp,
 } from '@cuttingfloor/schema';
@@ -56,7 +57,7 @@ export class TimelineStore {
     if (gone) {
       throw new CfError(
         'expired',
-        `Timeline ${id} expired at ${gone.at}, 24 hours after its last use`,
+        `Timeline ${id} expired at ${gone.at}, ${span(TIMELINE_TTL_MS)} after its last use`,
         {
           hint: 'Pass the JSON from an earlier timeline.get to timeline.load to bring it back',
           detail: { timeline_id: id, at: gone.at },

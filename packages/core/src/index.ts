@@ -27,7 +27,7 @@ export {
   transitionHalves,
 } from './edit.ts';
 export { floorChanged, floorCursor, waitForFloor } from './floor.ts';
-export { canonicalJson, randomId, timelineIdOf } from './hash.ts';
+export { canonicalJson, randomId, scoreIdOf, timelineIdOf } from './hash.ts';
 export {
   cueTime,
   fcpTime,
@@ -48,6 +48,75 @@ export {
   xmlEscape,
 } from './interchange/index.ts';
 export {
+  applyScoreEdit,
+  checkScore,
+  findPart,
+  newScore,
+  type ScoreMedia,
+  type ScoreMediaResolver,
+  type ScoreOutcome,
+  scoreEnd,
+} from './score/edit.ts';
+export {
+  PERFORM_TOLERANCE,
+  type Performance,
+  type PerformedAudio,
+  type PerformedDevice,
+  type PerformedLane,
+  type PerformedNote,
+  type PerformedPart,
+  type PerformedSend,
+  type PerformOptions,
+  performScore,
+} from './score/perform.ts';
+export {
+  runScoreEdits,
+  SCORE_TTL_MS,
+  type ScoreBatchOp,
+  type ScoreEditOutcome,
+  type ScoreOpResult,
+  ScoreStore,
+} from './score/store.ts';
+export {
+  applyMicrophoneTake,
+  applyPadsTake,
+  type LoopGrid,
+  loopBeat,
+  loopGrid,
+  type MicrophoneTakeArgs,
+  meterBeatsBefore,
+  meterBeatsBetween,
+  type PadsTakeArgs,
+  type PlacedRecording,
+  type PlacedTap,
+  partPads,
+  scoreAtSpeed,
+  takeAgain,
+  takeDigest,
+  tempoAtSpeed,
+} from './score/take.ts';
+export {
+  barLength,
+  barsBetween,
+  barToBeats,
+  beatsToBar,
+  beatsToSeconds,
+  type Position,
+  positionAt,
+  positionAtSeconds,
+  secondsToBeats,
+  secondsToFrames,
+  tempoAt,
+} from './score/time.ts';
+export {
+  barsOf,
+  fromScoreView,
+  markerView,
+  regionPlace,
+  scoreDiff,
+  toScoreView,
+} from './score/view.ts';
+export {
   frameSource,
   type InBetween,
   inBetween,
@@ -62,6 +131,8 @@ export {
   GONE_TTL_MS,
   OUTPUTS,
   type OutputRecord,
+  SCORES,
+  SCORES_GONE,
   TIMELINES,
   TIMELINES_GONE,
 } from './storage/collections.ts';

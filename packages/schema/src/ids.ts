@@ -5,6 +5,10 @@ export const TimelineId = z
   .string()
   .regex(/^tl_[0-9a-f]{32}$/)
   .describe('Timeline handle; every edit returns a new one');
+export const ScoreId = z
+  .string()
+  .regex(/^sc_[0-9a-f]{32}$/)
+  .describe('Score handle; every edit returns a new one');
 export const MediaId = z
   .string()
   .regex(/^m_[0-9a-z]{26}$/)

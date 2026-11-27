@@ -2,6 +2,9 @@ import { installedFonts, presetCatalog } from '@cuttingfloor/engine';
 import {
   BLEND_MODES,
   type BlendMode,
+  DEVICES,
+  type DeviceParam,
+  type DeviceSpec,
   EASES,
   EFFECTS,
   type HIGHLIGHTS,
@@ -113,6 +116,55 @@ const REVEAL_TEXT: Record<(typeof TEXT_REVEALS)[number], string> = {
   word_pop: 'Word by word, each popping up from nothing',
 };
 
+/** A device param as the catalogue gives it: its range or values, default and what it does. */
+function deviceParam(p: DeviceParam): Record<string, unknown> {
+  const required = 'required' in p && p.required ? { required: true } : {};
+  if (p.kind === 'number') {
+    return {
+      range: [p.min, p.max],
+      ...(p.unit ? { unit: p.unit } : {}),
+      ...(p.required ? {} : { default: p.default }),
+      ...required,
+      ...(p.integer ? { integer: true } : {}),
+      automatable: Boolean(p.automatable),
+      about: p.about,
+    };
+  }
+  if (p.kind === 'choice') {
+    return {
+      one_of: p.values,
+      ...(p.required ? {} : { default: p.default }),
+      ...required,
+      about: p.about,
+    };
+  }
+  if (p.kind === 'boolean') {
+    return {
+      boolean: true,
+      ...(p.required ? {} : { default: p.default }),
+      ...required,
+      about: p.about,
+    };
+  }
+  if (p.kind === 'media') return { media_id: true, ...required, about: p.about };
+  if (p.kind === 'pitch') return { pitch: true, ...required, about: p.about };
+  if (p.kind === 'group') {
+    return { group: deviceParams(p.params), ...required, about: p.about };
+  }
+  return { list: deviceParams(p.item), items: [p.min, p.max], ...required, about: p.about };
+}
+
+const deviceParams = (params: Record<string, DeviceParam>) =>
+  Object.fromEntries(Object.entries(params).map(([k, p]) => [k, deviceParam(p)]));
+
+const deviceEntry = (spec: DeviceSpec) => ({
+  about: spec.about,
+  params: deviceParams(spec.params),
+  ...(spec.sounds ? { pitches: spec.sounds } : {}),
+});
+
+const DEVICE_LIST = Object.entries(DEVICES);
+
 const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<unknown>) }> = {
   presets: {
     title: 'Export presets',
@@ -150,6 +202,18 @@ const CATALOGS: Record<string, { title: string; body: unknown | (() => Promise<u
             ),
           },
         ]),
+      ),
+    },
+  },
+  devices: {
+    title: 'Score devices',
+    body: {
+      note: "score.add_device {part_id | master: true, name, params}. A part sounds through its devices in order: its instruments first (every one plays every note of the part), then its effects in the order added; the master takes effects only. A param left out takes its default (score.get shows every param applied); one with no default is off, or the instrument's own. A pitch is a MIDI number (decimals allowed) or a name such as C3 (C4 is 60). Numbers marked automatable move over time with score.set_automation, named by their path (filter.cutoff_hz, bands[0].gain_db). On a drum kit, pitches says which pitch plays what; any other pitch is silent.",
+      instruments: Object.fromEntries(
+        DEVICE_LIST.filter(([, s]) => s.kind === 'instrument').map(([n, s]) => [n, deviceEntry(s)]),
+      ),
+      effects: Object.fromEntries(
+        DEVICE_LIST.filter(([, s]) => s.kind === 'effect').map(([n, s]) => [n, deviceEntry(s)]),
       ),
     },
   },

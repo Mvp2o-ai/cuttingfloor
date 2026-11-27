@@ -3,8 +3,9 @@
 // reads `progress <fraction>` lines from stderr. Inputs are raw float32 files FFmpeg decoded;
 // outputs are files too, so nothing large crosses a pipe.
 //
-//   sed:    PretrainedSED frame_mn10 over 10 s windows of 16 kHz mono: one byte (probability
-//           × 255) per 40 ms frame per AudioSet-strong class, frame-major.
+//   sed:    PretrainedSED frame_mn10 over 10 s windows of 16 kHz mono, overlapping by half,
+//           each giving the middle half of its frames (sound-windows.ts): one byte
+//           (probability × 255) per 40 ms frame per AudioSet-strong class, frame-major.
 //   listen: FlexSED over the same windows, for query embeddings from the CLAP text encoder:
 //           one byte per frame per query, frame-major.
 //   embed:  CLAP embeddings (512 floats each) of texts, or of sounds (48 kHz mono, at most
@@ -17,6 +18,7 @@
 
 import { closeSync, fstatSync, openSync, readSync, writeSync } from 'node:fs';
 import { InferenceSession, Tensor } from 'onnxruntime-node';
+import { SED_FRAME, SED_WINDOW, windowPlan } from './sound-windows.ts';
 
 type Job =
   | { mode: 'sed'; model: string; input: string; output: string; threads: number }
@@ -49,8 +51,7 @@ type Job =
       threads: number;
     };
 
-const WINDOW = 160_000; // 10 s at 16 kHz
-const FRAME = 640; // 40 ms at 16 kHz
+const WINDOW = SED_WINDOW;
 
 function say(fraction: number): void {
   process.stderr.write(`progress ${Math.min(1, Math.max(0, fraction)).toFixed(4)}\n`);
@@ -94,7 +95,11 @@ function sampleCount(path: string, channels: number): number {
   }
 }
 
-/** Frame-level probabilities over 10 s windows, written as bytes, frame-major. */
+/**
+ * Frame-level probabilities over 10 s windows that overlap by half, each giving the middle of
+ * its frames, so a sound carrying across a window's edge is scored where the window has sound
+ * around it (MVP-321). Written as bytes, frame-major.
+ */
 async function windows(
   input: string,
   output: string,
@@ -104,20 +109,20 @@ async function windows(
   const fd = openSync(input, 'r');
   const out = openSync(output, 'w');
   try {
-    const count = Math.max(1, Math.ceil(total / WINDOW));
-    for (let w = 0; w < count; w++) {
-      const wave = readFloats(fd, total, w * WINDOW, WINDOW);
+    const plan = windowPlan(total);
+    for (const [w, part] of plan.entries()) {
+      const wave = readFloats(fd, total, part.at, WINDOW);
       const { data, classes, frames } = await run(wave);
-      // Frames that cover real audio: the last window is padded with silence.
-      const real = Math.min(frames, Math.ceil(Math.max(1, total - w * WINDOW) / FRAME));
-      const bytes = Buffer.alloc(real * classes);
-      for (let f = 0; f < real; f++) {
+      const first = part.at / SED_FRAME;
+      const bytes = Buffer.alloc((part.to - part.from) * classes);
+      for (let f = part.from; f < part.to; f++) {
+        const local = f - first;
         for (let c = 0; c < classes; c++) {
-          bytes[f * classes + c] = Math.round((data[c * frames + f] ?? 0) * 255);
+          bytes[(f - part.from) * classes + c] = Math.round((data[c * frames + local] ?? 0) * 255);
         }
       }
       writeSync(out, bytes);
-      say((w + 1) / count);
+      say((w + 1) / plan.length);
     }
   } finally {
     closeSync(fd);

@@ -109,11 +109,14 @@ const annotations = (title: string) => ({
   openWorldHint: false,
 });
 
-export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
+/**
+ * The flow every tool that makes media shares: idempotency, the recipe cache (the same recipe
+ * gives the media made before), then a job that makes the file and imports it.
+ */
+export function mediaCreator(deps: ServerDeps) {
   const rt = deps.runtime;
-
   /** Shared flow: idempotency, the recipe cache, then a job that makes the file and imports it. */
-  async function create(
+  return async function create(
     ctx: unknown,
     tool: string,
     args: { name?: string | undefined; idempotency_key?: string | undefined },
@@ -139,6 +142,8 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
     from: string[] = [],
     /** Seconds of media it reads, when known (short work, and its stall limit). */
     work?: number,
+    /** The result for a made media, when it is more than the media's info (score.render). */
+    shape: (record: MediaRecord) => unknown | Promise<unknown> = (record) => mediaInfo(record),
   ) {
     const owner = deps.owner();
     const store = rt.jobs.store;
@@ -159,7 +164,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
           status: 'completed',
           progress: 1,
           statusMessage: 'made before from the same recipe',
-          result: ok(mediaInfo(known)) as never,
+          result: ok((await shape(known)) as never) as never,
         }),
         ctx,
       );
@@ -206,7 +211,7 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
           if (finish)
             done = await finish(done, (f, m) => say(share + 0.1 + (0.9 - share) * f, m), signal);
           await rt.media.rememberRecipe(owner, hash, done.media_id);
-          return ok(mediaInfo(done)) as never;
+          return ok((await shape(done)) as never) as never;
         } catch (error) {
           await rt.media.fail(owner, record, error);
           throw error;
@@ -215,7 +220,13 @@ export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
       { lane, ...admit, ...(work ? { work } : {}) },
     );
     return jobReply(job, ctx);
-  }
+  };
+}
+
+export function registerCreateTools(server: McpServer, deps: ServerDeps): void {
+  const rt = deps.runtime;
+
+  const create = mediaCreator(deps);
 
   /** Images and fonts the page uses, read from their imports, with fingerprints for the recipe. */
   async function assets(list: Array<{ name: string; media_id: string }>) {

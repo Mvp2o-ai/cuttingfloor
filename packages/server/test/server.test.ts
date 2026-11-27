@@ -39,9 +39,13 @@ const anyResult = z.object({}).passthrough();
  * also names its {upload} answer, the media with no job yet (497 737 measured), and to 520 000
  * for when each file goes (kept_until and expiry on media and exports, the keeping policy in the
  * descriptions; 502 440 measured), and to 530 000 for sounds.list, the sound library (523 003
- * measured).
+ * measured), and to 550 000 for the sound facts (media.analyze onsets, notes, key, spectrum, the
+ * level on steps, beat candidates, a timeline's transcript) and the result filters on
+ * media.listen and media.seek (545 873 measured), and for music: the two pictures of
+ * sound (render.spectrogram, render.notes) and the score tools, music made in layers (30 tools,
+ * score.render among them; 675 327 measured before it), 690 000.
  */
-const BUDGET_BYTES = 530_000;
+const BUDGET_BYTES = 690_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -75,6 +79,16 @@ describe('protocol surface', () => {
     expect(text).toContain('export.release');
     expect(text.length).toBeLessThanOrEqual(4096);
     expect(text).not.toContain('/account');
+  });
+
+  it('media.upload says an app may show its own upload view, and passes on a request to record', async () => {
+    const client = await connect(env.runtime, 'recorder');
+    const plain = await ok<Record<string, unknown>>(client, 'media.upload', {});
+    expect(plain.native_view).toEqual({ component: 'upload', version: 1 });
+    expect(plain).not.toHaveProperty('record');
+    const asked = await ok<Record<string, unknown>>(client, 'media.upload', { record: true });
+    expect(asked).toMatchObject({ record: true, native_view: { component: 'upload', version: 1 } });
+    expect(asked.upload_id).toMatch(/^u_/);
   });
 
   it('finds media and uploads by part of a name, in any case', async () => {
@@ -122,6 +136,11 @@ describe('protocol surface', () => {
     for (const name of ['media.upload', 'media.list']) {
       expect(described(name), name).toContain(page);
     }
+    // Recording is part of sending a file, said last, where a cut costs least; inside every cut.
+    expect(described('media.upload')).toMatch(
+      /also record from the microphone \(a hum, a tapped rhythm, a spoken note\), sent the same way as a file\. It records in free time, with nothing playing under it\.$/,
+    );
+    expect(described('media.upload').length).toBeLessThanOrEqual(4096);
     // One way to stage a file: media.upload. media.import only ingests.
     expect(described('media.import')).toContain('must be staged first');
     expect(described('media.import')).not.toContain('{upload');
@@ -242,6 +261,39 @@ describe('protocol surface', () => {
         'range.extract',
         'range.lift',
         'render.frames',
+        'render.notes',
+        'render.spectrogram',
+        'score.create',
+        'score.get',
+        'score.load',
+        'score.diff',
+        'score.history',
+        'score.set_tempo',
+        'score.set_meter',
+        'score.set_markers',
+        'score.add_part',
+        'score.set_part',
+        'score.remove_part',
+        'score.add_device',
+        'score.set_device',
+        'score.remove_device',
+        'score.add_notes',
+        'score.set_notes',
+        'score.remove_notes',
+        'score.add_region',
+        'score.move_region',
+        'score.record',
+        'score.trim_region',
+        'score.split_region',
+        'score.alias_region',
+        'score.unique_region',
+        'score.remove_region',
+        'score.set_automation',
+        'score.add_send',
+        'score.set_send',
+        'score.remove_send',
+        'score.batch',
+        'score.render',
         'skills.get',
         'skills.search',
         'sounds.list',
@@ -290,6 +342,11 @@ describe('protocol surface', () => {
         'media.get',
         'media.list',
         'render.frames',
+        'render.notes',
+        'render.spectrogram',
+        'score.diff',
+        'score.get',
+        'score.history',
         'skills.get',
         'skills.search',
         'sounds.list',
@@ -353,6 +410,7 @@ describe('protocol surface', () => {
       'media.import': 'ui://cuttingfloor/player',
       'media.list': 'ui://cuttingfloor/library',
       'media.upload': 'ui://cuttingfloor/upload',
+      'score.record': 'ui://cuttingfloor/record',
       'sounds.list': 'ui://cuttingfloor/sounds',
     });
     // Everything the views call stays callable from a view (no visibility limits it to the model).
@@ -386,8 +444,12 @@ describe('protocol surface', () => {
         { resourceDomains: [origin], connectDomains: [origin] },
         clipboard,
       ],
-      // The upload box only sends the file.
-      ['ui://cuttingfloor/upload', { connectDomains: [origin] }, {}],
+      // The upload box sends the file; the microphone backs its Record.
+      [
+        'ui://cuttingfloor/upload',
+        { connectDomains: [origin] },
+        { permissions: { microphone: {} } },
+      ],
       // The sounds play, and their waveforms are read, from the library's bucket.
       [
         'ui://cuttingfloor/sounds',

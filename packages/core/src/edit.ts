@@ -10,6 +10,8 @@ import {
   effectNamesText,
   effectParamsSchema,
   effectParamsText,
+  span as inWords,
+  KEEP_MS,
   MASK_DEFAULTS,
   MASK_LIMITS,
   MASK_NUMBERS,
@@ -566,7 +568,7 @@ function nest(doc: TimelineDoc, id: string, resolveTimeline: TimelineResolver): 
   const source = resolveTimeline(id);
   if (!source) {
     throw new CfError('not_found', `No timeline ${id} to nest`, {
-      hint: 'Timelines expire 24 hours after last use; timeline.load brings one back',
+      hint: `Timelines expire ${inWords(KEEP_MS.timeline)} after last use; timeline.load brings one back`,
     });
   }
   // A nested timeline keeps its own effects; its master belongs to it as a top level only.

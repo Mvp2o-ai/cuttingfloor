@@ -573,6 +573,81 @@ describe.skipIf(!engines)('end to end with FFmpeg and MLT', () => {
     expect(dup.media_id).toBe(media.av);
   }, 120_000);
 
+  it('imports a recording sent as the upload box sends it, in each browser format', async () => {
+    // What MediaRecorder makes: WebM/Opus (Chrome; written as it goes, so it states no length),
+    // MP4/AAC in fragments (Safari, iOS) and Ogg/Opus (Firefox). Written to a pipe, FFmpeg can't
+    // go back to fill in a length either.
+    const tone = ['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=3'];
+    const formats = [
+      { name: 'recording.webm', args: ['-c:a', 'libopus', '-f', 'webm'], conform: ['duration'] },
+      {
+        name: 'recording.m4a',
+        args: [
+          '-c:a',
+          'aac',
+          '-movflags',
+          'frag_keyframe+empty_moov+default_base_moof',
+          '-f',
+          'mp4',
+        ],
+        conform: [],
+      },
+      { name: 'recording.ogg', args: ['-c:a', 'libopus', '-f', 'ogg'], conform: [] },
+    ];
+    for (const format of formats) {
+      const { stdout } = await exec('ffmpeg', ['-v', 'error', ...tone, ...format.args, 'pipe:1'], {
+        encoding: 'buffer',
+        maxBuffer: 16 * 1024 * 1024,
+      });
+      const bytes = Buffer.from(stdout);
+      const up = await ok<{ upload_id: string; url: string }>(client, 'media.upload', {});
+      // The box sends the recording's own name with its bytes, as it does a picked file's.
+      const sent = await fetch(up.url, {
+        method: 'PUT',
+        headers: {
+          'content-range': `bytes 0-${bytes.length - 1}/${bytes.length}`,
+          'upload-name': encodeURIComponent(format.name),
+        },
+        body: bytes,
+      });
+      expect(sent.headers.get('upload-complete'), format.name).toBe('true');
+      const got = await importMedia({ upload_id: up.upload_id });
+      expect(got, format.name).toMatchObject({ status: 'ready', kind: 'audio', name: format.name });
+      expect(got.duration_seconds as number, format.name).toBeCloseTo(3, 1);
+      expect(got.conform, format.name).toEqual(format.conform);
+      // Cut and exported, it is the tone it was, for as long as it was.
+      const { timeline_id } = await ok<{ timeline_id: string }>(client, 'timeline.create', {
+        name: 'recording',
+        sequence: { width: 320, height: 180, fps: { num: 25, den: 1 } },
+      });
+      const cut = await ok<{ timeline_id: string }>(client, 'edit.batch', {
+        timeline_id,
+        preview: 'none',
+        ops: [{ tool: 'clip.add', args: { track_id: 't2', media_id: got.media_id } }],
+      });
+      const started = await ok<{ job_id: string }>(client, 'export.video', {
+        timeline_id: cut.timeline_id,
+        preset: 'wav',
+      });
+      const done = (await waitJob(started.job_id)) as { result?: { file: string } };
+      if (!done.result) throw new Error(JSON.stringify(done));
+      const { stdout: raw } = await exec(
+        'ffmpeg',
+        ['-v', 'error', '-i', done.result.file, '-ac', '1', '-ar', '48000', '-f', 's16le', '-'],
+        { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 },
+      );
+      const pcm = new Int16Array(raw.buffer, raw.byteOffset, raw.length >> 1);
+      expect(pcm.length / 48_000, format.name).toBeCloseTo(3, 0);
+      // The middle second, away from the codecs' edges: 440 crossings each way.
+      const mid = pcm.subarray(48_000, 96_000);
+      let crossings = 0;
+      for (let i = 1; i < mid.length; i++)
+        if ((mid[i - 1] ?? 0) < 0 !== (mid[i] ?? 0) < 0) crossings++;
+      expect(crossings / 2, format.name).toBeGreaterThan(430);
+      expect(crossings / 2, format.name).toBeLessThan(450);
+    }
+  }, 240_000);
+
   it('names a file for what it is, gives every probed fact, and shows transparency as checks', async () => {
     const m = env.mediaDir;
     // Left half opaque red, right half see-through; and a logo with its black background baked in.

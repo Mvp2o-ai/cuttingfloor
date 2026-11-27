@@ -5,7 +5,18 @@
  */
 
 export { type Loudness, measureMix, renderMix, renderWaveform } from './audio.ts';
-export { analyseBeats, type Beats, estimateTempo, onsetEnvelope, trackBeats } from './beats.ts';
+export {
+  analyseBeats,
+  BEATS_RATE,
+  type Beats,
+  barCandidates,
+  beatsOf,
+  estimateTempo,
+  fittedBpm,
+  onsetEnvelope,
+  tempoCandidates,
+  trackBeats,
+} from './beats.ts';
 export { CARD_QR, type CardShape } from './card-qr.ts';
 export { compositeFor, rotoFilters } from './composite.ts';
 export { crossCorrelate, fft, type Offset } from './correlate.ts';
@@ -34,6 +45,35 @@ export {
 export { directDownloadUrl, download, isBlockedAddress, readableSize } from './fetch.ts';
 export { fontMeasure, loadFace, type Measure } from './fontmetrics.ts';
 export { type ClipPlacement, clipPlacements, type PixelBox } from './geometry.ts';
+export {
+  findNotes,
+  KEY_RATE,
+  type KeyFacts,
+  keyMeter,
+  keyScores,
+  LEVEL_RATE,
+  levelsDb,
+  measureKey,
+  measureSpectrum,
+  measureSteps,
+  NOTE_NAMES,
+  NOTES_METHOD,
+  NOTES_RATE,
+  type Note,
+  type NoteRules,
+  noteName,
+  notesOf,
+  ONSET_BANDS,
+  type Onset,
+  onsetsOf,
+  pitchLine,
+  type Spectrum,
+  type StepLevels,
+  spectrumMeter,
+  stepMeter,
+  streamSound,
+  THIRD_OCTAVE_HZ,
+} from './hearing.ts';
 export { burnMark, type MarkOptions, REVIEW_CARDS } from './mark.ts';
 export {
   fingerprint,
@@ -53,6 +93,29 @@ export {
   sourceRef,
 } from './media.ts';
 export { compileMlt, lengthFrames, type MltSource, scaledSize } from './mlt.ts';
+export {
+  checkMusicProject,
+  describeDevice,
+  MUSIC_CONTENT,
+  MUSIC_LIMITS,
+  type MusicLimits,
+  MusicProject,
+  type MusicProjectInput,
+  type MusicRender,
+  renderMusic,
+} from './music.ts';
+export {
+  drawPianoRoll,
+  hex,
+  PART_COLOURS,
+  type PianoRoll,
+  partColour,
+  playedNotes,
+  type RollNote,
+  scoreEndBeats,
+  scoreGrid,
+  velocityAlpha,
+} from './piano-roll.ts';
 export {
   type Box,
   type ChannelStats,
@@ -94,6 +157,15 @@ export {
   qaCheck,
 } from './qa.ts';
 export {
+  drawText,
+  encodePng,
+  fillRect,
+  newRaster,
+  pixelAt,
+  type Raster,
+  type Rgb,
+} from './raster.ts';
+export {
   exportTimeline,
   type ImageFormat,
   imageExtension,
@@ -125,6 +197,18 @@ export {
   selectedPicture,
   selectionPass,
 } from './selection.ts';
+export {
+  type Grid,
+  HIGH_PITCH,
+  LOW_PITCH,
+  PITCH_ROWS,
+  pitchHz,
+  pitchRowName,
+  type SoundLayout,
+  soundLayout,
+  xOf,
+  yOf,
+} from './sound-axes.ts';
 export { soundLevels } from './sound-levels.ts';
 export {
   CLAP_DIMENSIONS,
@@ -166,6 +250,21 @@ export {
   type SpeakerTurn,
   wordSpeakers,
 } from './speakers.ts';
+export {
+  CYCLES,
+  colourLevel,
+  decodeMono,
+  drawSpectrogram,
+  FLOOR_DB,
+  levelColour,
+  pitchLevels,
+  renderSpectrogram,
+  SPECTROGRAM_RATE,
+  type Spectrogram,
+  type SpectrogramSummary,
+  spectrogramPad,
+  windowSeconds,
+} from './spectrogram.ts';
 export {
   ALIGN_LANGUAGES,
   type AlignedWord,
