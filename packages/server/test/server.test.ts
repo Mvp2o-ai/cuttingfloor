@@ -1195,7 +1195,7 @@ describe('a busy or restarting sandbox', () => {
       process.env.CUTTINGFLOOR_MODE = mode;
       try {
         const client = await connect(down.runtime, `busy-${mode}`);
-        const started = await ok<{ job_id: string }>(client, 'create.still', {
+        const started = await ok<{ job_id: string; media_id: string }>(client, 'create.still', {
           html: `<b>${mode}</b>`,
         });
         const view = await settled<{ error: { code: string; hint: string } }>(
@@ -1203,6 +1203,11 @@ describe('a busy or restarting sandbox', () => {
           started.job_id,
         );
         expect(view).toMatchObject({ status: 'failed', error: { code: 'server_busy' } });
+        // The media it was making says it failed, rather than importing for good.
+        const media = await ok<{ status: string; error?: { code: string } }>(client, 'media.get', {
+          media_id: started.media_id,
+        });
+        expect(media).toMatchObject({ status: 'failed', error: { code: 'server_busy' } });
         expect(view.error.hint).toMatch(/again in about a minute/);
         if (mode === 'local') expect(view.error.hint).toMatch(/docker compose ps/);
         else expect(view.error.hint).not.toMatch(/docker/i);
