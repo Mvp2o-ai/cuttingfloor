@@ -41,10 +41,10 @@ const anyResult = z.object({}).passthrough();
  * descriptions; 502 440 measured), and to 530 000 for sounds.list, the sound library (523 003
  * measured), and to 550 000 for the sound facts (media.analyze onsets, notes, key, spectrum, the
  * level on steps, beat candidates, a timeline's transcript) and the result filters on
- * media.listen and media.seek (545 873 measured), and to 560 000 for the two pictures of sound,
- * render.spectrogram and render.notes.
+ * media.listen and media.seek (545 873 measured), and to 660 000 for music: the two pictures of
+ * sound (render.spectrogram, render.notes) and the score tools, music made in layers (29 tools).
  */
-const BUDGET_BYTES = 560_000;
+const BUDGET_BYTES = 660_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -252,6 +252,35 @@ describe('protocol surface', () => {
         'render.frames',
         'render.notes',
         'render.spectrogram',
+        'score.create',
+        'score.get',
+        'score.load',
+        'score.diff',
+        'score.history',
+        'score.set_tempo',
+        'score.set_meter',
+        'score.set_markers',
+        'score.add_part',
+        'score.set_part',
+        'score.remove_part',
+        'score.add_device',
+        'score.set_device',
+        'score.remove_device',
+        'score.add_notes',
+        'score.set_notes',
+        'score.remove_notes',
+        'score.add_region',
+        'score.move_region',
+        'score.trim_region',
+        'score.split_region',
+        'score.alias_region',
+        'score.unique_region',
+        'score.remove_region',
+        'score.set_automation',
+        'score.add_send',
+        'score.set_send',
+        'score.remove_send',
+        'score.batch',
         'skills.get',
         'skills.search',
         'sounds.list',
@@ -302,6 +331,9 @@ describe('protocol surface', () => {
         'render.frames',
         'render.notes',
         'render.spectrogram',
+        'score.diff',
+        'score.get',
+        'score.history',
         'skills.get',
         'skills.search',
         'sounds.list',

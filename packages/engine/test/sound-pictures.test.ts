@@ -182,6 +182,7 @@ function score(): ScoreDoc {
   return {
     version: 1,
     name: 'test',
+    next_id: 100,
     sample_rate: 48_000,
     tempo: [{ at: 0, bpm: 120 }],
     meter: [{ bar: 1, beats: 4, unit: 4 }],

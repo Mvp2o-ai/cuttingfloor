@@ -11,6 +11,8 @@ export const KEEP = 7 * DAY;
 export const KEEP_MS = {
   /** A timeline, after it was last used. */
   timeline: KEEP,
+  /** A score, after it was last used. */
+  score: KEEP,
   /** Imported and created media, after it was last used (any read or edit is a use). */
   media: KEEP,
   /** A finished job and its output (an export), after it finished. */

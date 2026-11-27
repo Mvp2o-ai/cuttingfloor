@@ -226,6 +226,8 @@ export const ScoreDoc = z.object({
   automation: z.array(StoredAutomation),
   /** Media used by samplers and audio regions, copied in so the document stands alone. */
   media: z.record(z.string(), ScoreMediaRef),
+  /** The next number for an id (p1, d2, r3, n4…), as a timeline numbers its clips. */
+  next_id: z.number().int().positive(),
   /** The score this one was edited from. */
   parent: z.string().nullable(),
   /** The call that made it, for score.history. */
