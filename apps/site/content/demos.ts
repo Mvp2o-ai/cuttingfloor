@@ -12,6 +12,8 @@ export type DemoVideo = {
   captions?: string;
   /** 16:9 rather than the default 9:16. */
   wide?: boolean;
+  /** Its sound is the point (a voice with no music yet, a hum): sound controls wherever it plays. */
+  sound?: boolean;
 };
 
 export type DemoTurn = {
