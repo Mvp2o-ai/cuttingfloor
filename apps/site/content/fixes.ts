@@ -116,7 +116,7 @@ export const FIXES: Fix[] = [
     id: 'add-music',
     problem: 'How do I add music to a video?',
     answer:
-      'Give it the song. The agent lays it under the video, lowers it while someone is talking, fades it in and out, and can cut the video to its beats.',
+      'Give it a song, or ask for music made for the video. The agent lays it under the video, lowers it while someone is talking, fades it in and out, and cuts to its beats. Made music is built in layers you can change, with the beat on the cuts.',
     prompt: 'Add this song under the video, quieter when I talk, and fade it out at the end.',
     see: { label: 'Edit a dance Short to the beat', href: '/demos/edit-a-dance-short-to-the-beat' },
     related: ['make-a-video-louder', 'remove-background-noise', 'add-a-voiceover'],
@@ -263,7 +263,7 @@ export const FIXES: Fix[] = [
   {
     id: 'make-a-short-film-from-ai-clips',
     problem: 'How do I make a short film from Kling, Veo or Sora clips?',
-    answer: `Tell your agent the story and give it the clips, from ${GENERATORS_LINE}. It puts the shots in story order, cuts each on its strongest moment, adds titles and credits, a voiceover if you want one, sound effects and your music, then checks the film and exports it.`,
+    answer: `Tell your agent the story and give it the clips, from ${GENERATORS_LINE}. It puts the shots in story order, cuts each on its strongest moment, adds titles and credits, a voiceover if you want one, sound effects, and music made for it or your own, then checks the film and exports it.`,
     prompt:
       'Make a short film from these clips. The story: a lost robot finds its way home. Put the shots in story order, add a title at the start and credits at the end, add sound effects and my music, and export it in 16:9.',
     see: AI_GUIDE,
@@ -530,7 +530,7 @@ export const FIXES: Fix[] = [
     id: 'turn-gaming-clips-into-shorts',
     problem: 'How do I turn gaming clips into Shorts, TikToks and Reels?',
     answer:
-      'Give your agent your clips (GTA, Fortnite, Call of Duty, Valorant, Minecraft or anything else) and say what to keep. It finds the plays worth showing, cuts each Short, reframes the wide gameplay to vertical, adds captions, sound effects and your music, and exports one MP4 per Short.',
+      'Give your agent your clips (GTA, Fortnite, Call of Duty, Valorant, Minecraft or anything else) and say what to keep. It finds the plays worth showing, cuts each Short, reframes the wide gameplay to vertical, adds captions, sound effects, and music made for it or your own, and exports one MP4 per Short.',
     prompt:
       'Turn these gaming clips into three vertical Shorts of the best plays, with captions, a boom on each kill and an airhorn on the win.',
     see: SHORTS_GUIDE,
@@ -611,7 +611,7 @@ export const FIXES: Fix[] = [
     id: 'add-a-song-to-gaming-clips',
     problem: 'How do I add a song to my gaming clips?',
     answer:
-      'Send the song with your clips. Your agent finds its beats, cuts the clips on them, lowers or mutes the game sound under the music, and fades the song out at the end. Songs you bring are yours to clear for where you post; cuttingfloor doesn’t make music.',
+      'Send the song with your clips. Your agent finds its beats, cuts the clips on them, lowers or mutes the game sound under the music, and fades the song out at the end. Songs you bring are yours to clear for where you post; with no song, ask for music made for the clips.',
     prompt:
       'Put this song under my clips, cut on the beat, keep the game sound quiet underneath, and fade out at the end.',
     watch: {
@@ -696,7 +696,7 @@ export const FIXES: Fix[] = [
     id: 'make-a-product-promo-with-voiceover-and-music',
     problem: 'How do I make a product promo with a voiceover and music?',
     answer:
-      'Send your product clips or photos, your music and the script. Your agent makes the voiceover from the script in an American or British English voice, or uses your own recording in any language, times the shots to the words, adds captions, lowers the music under the voice and ends on a card.',
+      'Send your product clips or photos, the script and your music, or ask for music made to fit. Your agent makes the voiceover from the script in an American or British English voice, or uses your own recording in any language, times the shots to the words, adds captions, lowers the music under the voice and ends on a card.',
     prompt:
       'Make a 30-second promo from these product shots with this music. Voiceover reading my script, captions, and end on my logo.',
     watch: { label: 'Edit a product review Short', href: '/demos/edit-a-product-review-short' },

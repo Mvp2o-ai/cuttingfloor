@@ -353,7 +353,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: 'Is there music in the library?',
-        a: 'No, it’s sound effects only. For music, send your own song and your agent fits it under the video.',
+        a: 'No, it’s sound effects only. For music, your agent can make some for the video from instruments, fitted to the cuts, or fit your own song under it.',
       },
       {
         q: 'Can I use my own sound files?',
@@ -382,7 +382,7 @@ export const GUIDES: Guide[] = [
       },
       {
         title: 'Ask for the finish',
-        body: 'Transitions, matching colour, sound effects, your music, a voiceover, titles and credits. Short clips leave little footage for a blend, so when a transition is too long the server says the longest that fits and your agent uses it.',
+        body: 'Transitions, matching colour, sound effects, music made for it or your own, a voiceover, titles and credits. Short clips leave little footage for a blend, so when a transition is too long the server says the longest that fits and your agent uses it.',
       },
       {
         title: 'Check it, then take the film',
@@ -430,7 +430,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: 'My clips have no sound. What can I add?',
-        a: 'Your music, a voiceover made from your script, and sound effects. Describe a sound (“footsteps on gravel”, “wind through trees”, “a deep boom”) and your agent finds it in a free library of about 20,000 sound effects, which you can hear in the chat before it goes in. Your own sound files work too.',
+        a: 'Music made for the film or your own, a voiceover made from your script, and sound effects. Describe a sound (“footsteps on gravel”, “wind through trees”, “a deep boom”) and your agent finds it in a free library of about 20,000 sound effects, which you can hear in the chat before it goes in. Your own sound files work too.',
       },
       {
         q: 'How long can a transition be on a 5-second clip?',
