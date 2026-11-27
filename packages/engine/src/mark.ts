@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CfError } from '@cuttingfloor/schema';
@@ -8,38 +7,16 @@ import { CARD_QR, writeCardQr } from './card-qr.ts';
 import { BIN, heavyThreads, run } from './exec.ts';
 
 // The cuttingfloor mark: what every exported picture carries until its clean copy is paid for.
-// Pieces of the brand (wordmark, badge, ribbon, tiles, seal, stacked lockup) fade in and out at
-// 25–35% opacity in a new spot every 4–6 s. They come from a 60-second alpha loop per canvas
-// shape, built once from a fixed seed (scripts/build-mark.ts), so marking any length is one
-// overlay pass; a still, a GIF or a clip too short for the loop gets one piece, held.
+// One translucent card (scripts/build-mark.ts) drifts slowly across the picture and bounces off
+// its edges. Its path is simulated per file from the seed: at each bounce the card takes another
+// size and tilt, its speed changes and its angle is knocked off true, so no formula or other file
+// predicts where it goes, and a grain that changes every frame keeps its pixels from being known
+// exactly. A still gets the card once, somewhere.
 
 const ASSETS = fileURLToPath(new URL('../assets/mark/', import.meta.url));
-
-interface Placement {
-  piece: string;
-  start: number;
-  end: number;
-  angle: number;
-  size: number;
-  opacity: number;
-  zone: number;
-}
-interface Manifest {
-  loop: number;
-  fps: number;
-  fade: number;
-  pieces: Array<{ name: string; width: number; height: number; angles: number[] }>;
-  loops: Record<string, { file: string; width: number; height: number; placements: Placement[] }>;
-}
-
-let manifest: Manifest | undefined;
-function markAssets(): Manifest {
-  manifest ??= JSON.parse(readFileSync(`${ASSETS}mark.json`, 'utf8')) as Manifest;
-  return manifest;
-}
-
-/** Clips shorter than this get one held piece: the loop has gaps between its pieces. */
-const SHORTEST_LOOPED = 8;
+const CARD = { file: `${ASSETS}card.png`, width: 1200, height: 420 };
+/** The sizes and tilts a file's card takes, one at a time, a different one after each bounce. */
+const LOOKS = 5;
 
 // The review copy's cards (scripts/build-cards.ts): before the video, that it is a review copy
 // and making is free; after it, how to get the clean copy. Seconds each, and their fade.
@@ -133,44 +110,47 @@ export async function burnMark(input: string, output: string, opts: MarkOptions)
   const alphaWebm = codec === 'vp9' || codec === 'vp8' ? v.tags?.alpha_mode === '1' : false;
 
   const rand = seeded(opts.seed);
-  const looped = !still && !gif && duration >= SHORTEST_LOOPED;
   const args = ['-v', 'error', '-nostdin', '-y'];
   if (alphaWebm) args.push('-c:v', codec === 'vp9' ? 'libvpx-vp9' : 'libvpx');
   args.push('-i', `file:${input}`);
 
-  let graph: string;
-  if (looped) {
-    const m = markAssets();
-    const loop = m.loops[shapeOf(width, height)] as Manifest['loops'][string];
-    // Start where a piece is fully in, so the first frame carries the mark.
-    const first = loop.placements[Math.floor(rand() * loop.placements.length)] as Placement;
-    const offset = first.start + m.fade;
-    // Cover the frame: the loop's short side spans the frame's, so pieces keep their size.
-    const k = Math.max(width / loop.width, height / loop.height);
-    const sw = Math.max(width, even(Math.ceil(loop.width * k)));
-    const sh = Math.max(height, even(Math.ceil(loop.height * k)));
-    args.push(
-      '-stream_loop',
-      '-1',
-      '-ss',
-      offset.toFixed(3),
-      '-c:v',
-      'libvpx-vp9',
-      '-i',
-      `file:${ASSETS}${loop.file}`,
-    );
-    graph =
-      `[1:v]setpts=PTS-STARTPTS,scale=${sw}:${sh}:flags=bicubic,crop=${width}:${height}[m];` +
-      `[0:v][m]overlay=0:0:shortest=1:eof_action=pass${overlayFormat(v.pix_fmt)}`;
-  } else {
-    const piece = onePiece(rand, width, height);
-    args.push('-loop', '1', '-i', `file:${ASSETS}pieces/${piece.name}.png`);
-    graph =
-      `[1:v]format=rgba,scale=${piece.w}:${piece.h}:flags=lanczos,` +
-      `rotate=${piece.a}:ow=rotw(${piece.a}):oh=roth(${piece.a}):c=none,` +
-      `colorchannelmixer=aa=${piece.opacity}[m];` +
-      `[0:v][m]overlay=${piece.x}:${piece.y}:shortest=1${overlayFormat(v.pix_fmt)}`;
+  const moving = !still && Number.isFinite(duration) && duration > 0;
+  const looks = cardLooks(rand, width, height);
+  const path = moving
+    ? bounces(rand, width, height, duration, looks)
+    : [still1(rand, width, height, looks)];
+  const used = [...new Set(path.map((s) => s.look))];
+  const rate = v.r_frame_rate && !v.r_frame_rate.startsWith('0') ? v.r_frame_rate : '25';
+  args.push('-loop', '1', '-framerate', rate, '-i', `file:${CARD.file}`);
+  // Grain on the card's colour, new every frame; its alpha stays clean.
+  let graph =
+    `[1:v]format=gbrap,noise=c0s=14:c1s=14:c2s=14:c0f=t:c1f=t:c2f=t:all_seed=${Math.floor(rand() * 1e6)}` +
+    `,split=${used.length}${used.map((i) => `[c${i}]`).join('')};`;
+  for (const i of used) {
+    const l = looks[i] as Look;
+    graph +=
+      `[c${i}]scale=${l.w}:${l.h}:flags=bicubic,` +
+      `rotate=${l.angle.toFixed(5)}:ow=${l.bw}:oh=${l.bh}:c=none,colorchannelmixer=aa=${l.opacity}[m${i}];`;
   }
+  let last = '0:v';
+  used.forEach((i, n) => {
+    const mine = path.filter((s) => s.look === i);
+    const on = mine.map((s) => `gte(t,${s.t0})*lt(t,${s.t1})`).join('+');
+    const at = (p: 'x' | 'y') =>
+      mine
+        .map((s) => {
+          const v0 = p === 'x' ? s.x : s.y;
+          const dv = p === 'x' ? s.vx : s.vy;
+          return `gte(t,${s.t0})*lt(t,${s.t1})*(${v0}${dv ? `+${dv}*(t-${s.t0})` : ''})`;
+        })
+        .join('+');
+    const out = n === used.length - 1 ? '' : `[o${n}]`;
+    graph +=
+      `[${last}][m${i}]overlay=x='${at('x')}':y='${at('y')}'` +
+      `${moving ? `:enable='${on}'` : ''}:shortest=1:eof_action=pass${overlayFormat(v.pix_fmt)}${out}` +
+      (out ? ';' : '');
+    last = `o${n}`;
+  });
 
   const ext = extname(output).toLowerCase();
   const enc = encoder(codec, v, ext, alphaWebm);
@@ -186,7 +166,6 @@ export async function burnMark(input: string, output: string, opts: MarkOptions)
     const shape = shapeOf(width, height);
     const box = CARD_QR[shape];
     if (qrFile && opts.qr) await writeCardQr(opts.qr, box.size, qrFile);
-    const rate = v.r_frame_rate && !v.r_frame_rate.startsWith('0') ? v.r_frame_rate : '25';
     const sar = /^[1-9]\d*:[1-9]\d*$/.test(v.sample_aspect_ratio ?? '')
       ? v.sample_aspect_ratio
       : '1';
@@ -228,7 +207,10 @@ export async function burnMark(input: string, output: string, opts: MarkOptions)
   } else {
     graph += enc.tail ? `,${enc.tail}[v]` : '[v]';
   }
-  args.push('-filter_complex', graph, '-map', '[v]');
+  // A long file's path is a long graph: it goes in a file, past the limit on one argument.
+  const graphFile = `${output}.graph.txt`;
+  await writeFile(graphFile, graph);
+  args.push('-/filter_complex', graphFile, '-map', '[v]');
   if (still) {
     args.push('-frames:v', '1', '-update', '1');
   } else if (cards) {
@@ -251,6 +233,7 @@ export async function burnMark(input: string, output: string, opts: MarkOptions)
       ...(signal ? { signal } : {}),
     });
   } finally {
+    await rm(graphFile, { force: true });
     if (qrFile) await rm(qrFile, { force: true });
   }
 }
@@ -268,28 +251,120 @@ function audioCodec(codec: string, ext: string): string[] {
   return ['-c:a', 'aac', '-b:a', '256k'];
 }
 
-/** One piece for a still, a GIF or a short clip: which, how big, at what angle, where. */
-function onePiece(rand: () => number, width: number, height: number) {
-  const m = markAssets();
-  const def = m.pieces[Math.floor(rand() * m.pieces.length)] as Manifest['pieces'][number];
+interface Look {
+  /** The card's size, then the box it takes up tilted. */
+  w: number;
+  h: number;
+  bw: number;
+  bh: number;
+  /** Radians. */
+  angle: number;
+  opacity: string;
+}
+
+/** The card's sizes and tilts for this file: its width about half to nine tenths of the short side. */
+function cardLooks(rand: () => number, width: number, height: number): Look[] {
   const short = Math.min(width, height);
-  const size = 0.22 + rand() * 0.12;
-  const k = (size * short) / Math.sqrt(def.width * def.height);
-  const w = even(def.width * k);
-  const h = even(def.height * k);
-  const angle = def.angles[Math.floor(rand() * def.angles.length)] ?? 0;
-  const a = (angle * Math.PI) / 180;
-  const bw = Math.abs(w * Math.cos(a)) + Math.abs(h * Math.sin(a));
-  const bh = Math.abs(w * Math.sin(a)) + Math.abs(h * Math.cos(a));
-  const zone = Math.floor(rand() * 9);
-  const mx = width * 0.06;
-  const my = height * 0.06;
-  const cx = mx + ((width - 2 * mx) * ((zone % 3) + 0.5)) / 3;
-  const cy = my + ((height - 2 * my) * (Math.floor(zone / 3) + 0.5)) / 3;
-  const x = Math.round(clamp(cx - bw / 2, Math.min(mx, width - bw), width - mx - bw));
-  const y = Math.round(clamp(cy - bh / 2, Math.min(my, height - bh), height - my - bh));
-  const opacity = (0.25 + rand() * 0.1).toFixed(3);
-  return { name: def.name, w, h, a: a.toFixed(5), x: Math.max(0, x), y: Math.max(0, y), opacity };
+  return Array.from({ length: LOOKS }, (_, i) => {
+    // Spread over the range, so a bounce visibly changes the size.
+    const share = 0.42 + ((i + rand()) / LOOKS) * 0.36;
+    const w = even(Math.min(share * short * 1.15, width * 0.86));
+    const h = even((w * CARD.height) / CARD.width);
+    const angle = ((rand() < 0.5 ? -1 : 1) * (1.5 + rand() * 6.5) * Math.PI) / 180;
+    const bw = even(Math.abs(w * Math.cos(angle)) + Math.abs(h * Math.sin(angle)) + 2);
+    const bh = even(Math.abs(w * Math.sin(angle)) + Math.abs(h * Math.cos(angle)) + 2);
+    return { w, h, bw, bh, angle, opacity: (0.55 + rand() * 0.12).toFixed(3) };
+  });
+}
+
+interface Segment {
+  t0: number;
+  t1: number;
+  look: number;
+  /** Top left at t0, and pixels a second. */
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+}
+
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/**
+ * The card's flight over `duration` seconds: straight runs between bounces. It crosses the frame
+ * in 18–30 s; at each wall it turns back, takes another look (kept against that wall), a new
+ * speed, and an angle knocked up to 18° off the mirror, never flatter than 20° to an edge.
+ */
+function bounces(
+  rand: () => number,
+  width: number,
+  height: number,
+  duration: number,
+  looks: Look[],
+): Segment[] {
+  const diag = Math.hypot(width, height);
+  const speed = () => diag / (18 + rand() * 12);
+  let look = Math.floor(rand() * looks.length);
+  let l = looks[look] as Look;
+  let x = rand() * Math.max(0, width - l.bw);
+  let y = rand() * Math.max(0, height - l.bh);
+  let theta = ((20 + rand() * 50) * Math.PI) / 180;
+  let sx = rand() < 0.5 ? -1 : 1;
+  let sy = rand() < 0.5 ? -1 : 1;
+  let s = speed();
+  const out: Segment[] = [];
+  let t = 0;
+  // A run is at least a frame or so; the cap only guards a degenerate frame.
+  while (t < duration && out.length < 20_000) {
+    const vx = sx * s * Math.cos(theta);
+    const vy = sy * s * Math.sin(theta);
+    const room = { x: Math.max(0, width - l.bw), y: Math.max(0, height - l.bh) };
+    const tx = vx > 0 ? (room.x - x) / vx : x / -vx;
+    const ty = vy > 0 ? (room.y - y) / vy : y / -vy;
+    const dt = Math.max(0.05, Math.min(tx, ty));
+    const end = t + dt >= duration ? duration + 1 : t + dt;
+    out.push({
+      t0: round3(t),
+      t1: round3(end),
+      look,
+      x: Math.round(x),
+      y: Math.round(y),
+      vx: round3(vx),
+      vy: round3(vy),
+    });
+    if (end > duration) break;
+    x += vx * dt;
+    y += vy * dt;
+    const hitX = tx <= ty + 1e-6;
+    const hitY = ty <= tx + 1e-6;
+    if (hitX) sx = -sx;
+    if (hitY) sy = -sy;
+    let next = look;
+    while (next === look) next = Math.floor(rand() * looks.length);
+    look = next;
+    l = looks[look] as Look;
+    const rx = Math.max(0, width - l.bw);
+    const ry = Math.max(0, height - l.bh);
+    // Kept against the wall it hit; the other way, where it was, inside the frame.
+    x = hitX ? (sx > 0 ? 0 : rx) : clamp(x, 0, rx);
+    y = hitY ? (sy > 0 ? 0 : ry) : clamp(y, 0, ry);
+    const nudge = ((rand() - 0.5) * 36 * Math.PI) / 180;
+    theta = clamp(theta + nudge, (20 * Math.PI) / 180, (70 * Math.PI) / 180);
+    s = speed();
+    t += dt;
+  }
+  return out;
+}
+
+/** A still's card: one look, somewhere inside a 6% margin. */
+function still1(rand: () => number, width: number, height: number, looks: Look[]): Segment {
+  const look = Math.floor(rand() * looks.length);
+  const l = looks[look] as Look;
+  const spot = (side: number, box: number) => {
+    const m = Math.min(side * 0.06, Math.max(0, (side - box) / 2));
+    return Math.round(m + rand() * Math.max(0, side - box - 2 * m));
+  };
+  return { t0: 0, t1: 1, look, x: spot(width, l.bw), y: spot(height, l.bh), vx: 0, vy: 0 };
 }
 
 /** Overlay in the main picture's own family: RGB for RGB, else its YUV layout. */
