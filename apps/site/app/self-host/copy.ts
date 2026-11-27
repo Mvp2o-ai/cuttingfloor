@@ -123,6 +123,10 @@ export const AGPL = [
   },
 ] as const;
 
+/** Third-party software and sounds whose licences ask for credit, as the image ships them. */
+export const CREDITS =
+  'Music is made with Tracktion Engine (GPL-3.0) on JUCE (AGPL-3.0), with Signalsmith Stretch and Signalsmith Linear (both MIT). Its instruments come from the MuseScore General SoundFont 0.2.1 (MIT; its piano Public Domain, its strings and drumline samples CC0), played by FluidSynth. The image includes their licence texts.';
+
 export const REQUIREMENTS = [
   'Docker (Docker Desktop, or Docker Engine on Linux). It’s the only thing you install: the editing engines and models are inside the image.',
   'A copy of the repository, from git clone. Compose needs the sandbox’s security profile that comes with it (tools/motion/seccomp.json).',
