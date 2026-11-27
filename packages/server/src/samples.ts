@@ -147,10 +147,10 @@ export const SAMPLES: Sample[] = [
     slug: 'sports-tribute',
     file: 'match-highlights.mp4',
     shows:
-      'a 32-second set of six wide phone clips from the sideline of a local women’s football (soccer) club, all of one player, a young Black woman striker, number 9 in sky blue: tying her boots in the changing room, a shot at training, a nutmeg past a defender, a goal under the floodlights, a knee-slide celebration with her teammates, and fans at the fence with a “ZOLA 9” sign. Crowd and pitch sound, no music or text',
+      'a 22-second set of six wide phone clips from the sideline of a local women’s football (soccer) club, all of one player, a young Black woman striker, number 9 in sky blue: tying her boots in the changing room, jogging back after a shot at training, a nutmeg past a defender, a goal under the floodlights, a knee slide with her teammates running in, and fans at the fence with a “ZOLA 9” sign. Crowd and pitch sound, no music or text',
     fits: 'sports highlights and tributes: a player or team montage, fan edits of a favourite or retiring player, goals, plays and game-winners in slow motion, a season recap, highlight reels for scouts and recruiting, football, soccer, basketball and other team sports filmed from the sideline',
     starter:
-      'Make a 28-second vertical tribute to the number 9 from these clips, following her in every shot: a quiet start, slow motion on the goal, the music dropping as it goes in with a crowd roar, her name and number as titles at the end, and a grade that makes it feel like a big night.',
+      'Make a 27-second vertical tribute to the number 9 from these clips, following her in every shot: a quiet start, slow motion on the goal, the music dropping as it goes in with a crowd roar, her name and number as titles at the end, and a grade that makes it feel like a big night.',
   },
   {
     slug: 'screen-recording',
