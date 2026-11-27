@@ -237,8 +237,10 @@ describe.skipIf(!engine)('score.render through the engine', () => {
     expect(drums.media_id).not.toBe(full.media_id);
     expect(drums.render.parts_sounded).toEqual([p.drums]);
     const tail = await render({ score_id: p.score_id, tail_db: -60 });
+    // How far past the end depends on how loud the piece is against tail_db: only that it runs on.
     expect(tail.render.ends_seconds).toBeGreaterThan(4);
-    expect(tail.render.length_seconds).toBeGreaterThan(4.2);
+    expect(tail.render.length_seconds).toBeGreaterThan(4);
+    expect(tail.render.length_seconds).toBeCloseTo(tail.render.ends_seconds as number, 1);
     const mp3 = await render({ score_id: p.score_id, format: 'mp3', from_seconds: 2 });
     expect(mp3.render.from).toMatchObject({ beats: 4, seconds: 2, frames: 60 });
     expect(mp3.render.length_seconds).toBeCloseTo(2, 1);

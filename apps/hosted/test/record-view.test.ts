@@ -334,6 +334,8 @@ describe.skipIf(!browserFound)('the play-along view', () => {
       targets.map((t) => [t.pitch, t.pass]),
     );
     for (const e of errors) expect(Math.abs(e)).toBeLessThan(TAP_TOLERANCE_MS);
+    const sorted = errors.map(Math.abs).sort((a, b) => a - b);
+    expect(sorted[Math.floor(sorted.length / 2)]).toBeLessThan(TAP_TYPICAL_MS);
     expect(result.outside?.length).toBe(3);
     await page.close();
   }, 90_000);
@@ -604,10 +606,15 @@ describe.skipIf(!browserFound)('the play-along view', () => {
 /**
  * How close a tap lands to where it was dispatched, in ms. The tap's time is its event's own
  * timestamp (CDP sets it exactly); what remains is how the browser's output timestamp moves
- * between the moment the test reads it and the moment the view does (render quanta of 2.7 ms at
- * 48 kHz, and the fake output device's own clock).
+ * between the moment the test reads it (before the taps) and the moment the view does (at each
+ * tap). On a quiet machine that is about 0.1 ms. When the output slips one render quantum in
+ * between (128 frames, 2.67 ms at 48 kHz), the view follows the slip and the test's earlier
+ * reading does not: CI measured 0.074, 0.104, -0.080, 0.112, -2.538, 0.005 ms on one run. So
+ * any one tap may be a quantum out against the test's reference, and the middle one may not.
  */
-const TAP_TOLERANCE_MS = 2;
+const TAP_TOLERANCE_MS = (128 / 48_000) * 1000 + 0.5;
+/** The middle tap of a take: no slip explains this one being out. */
+const TAP_TYPICAL_MS = 0.5;
 /**
  * How far a recorded sound may sit from where it was played, in ms: the delay of the media stream
  * the test plays into (a destination node of the view's own context, then its microphone input),
