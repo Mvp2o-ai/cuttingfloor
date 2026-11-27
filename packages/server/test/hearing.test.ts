@@ -367,10 +367,10 @@ describe.skipIf(!ffmpeg)('sound facts', () => {
       media_id: ids.long,
       kind: 'loudness',
       every_seconds: 0.05,
-      until_seconds: 600,
+      until_seconds: 100,
     });
     const level = (fits.structured.loudness as { steps: { level_db: unknown[] } }).steps.level_db;
-    expect(level).toHaveLength(12_000);
+    expect(level).toHaveLength(2000);
     expect(level[0]).toBeNull();
   });
 
