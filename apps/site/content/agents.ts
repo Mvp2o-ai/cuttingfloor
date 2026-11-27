@@ -55,7 +55,7 @@ export const AGENTS: Agent[] = [
       },
       {
         q: 'What can Kazi do to my video?',
-        a: 'The same as any agent on cuttingfloor: cut by what you said, remove pauses and restarts, cut to the beat, add captions and titles, music and voiceover, remove a background, steady shaky footage, and export for Reels, TikTok, Shorts or YouTube.',
+        a: 'The same as any agent on cuttingfloor: cut by what you said, remove pauses and restarts, cut to the beat, add captions and titles, voiceover, and music made for the video or your own song, remove a background, steady shaky footage, and export for Reels, TikTok, Shorts or YouTube.',
       },
       {
         q: 'What does it cost?',
@@ -78,7 +78,7 @@ export const AGENTS: Agent[] = [
     faqs: [
       {
         q: 'Can Claude edit videos?',
-        a: 'Not by itself: Claude reads and writes, it doesn’t cut video. With cuttingfloor connected it can, because it gets the editing tools: import, cut, caption, mix, preview and export.',
+        a: 'Not by itself: Claude reads and writes, it doesn’t cut video. With cuttingfloor connected it can, because it gets the editing tools: import, cut, caption, mix, make music, preview and export.',
       },
       {
         q: 'Does it work in Claude Code?',
@@ -113,7 +113,7 @@ export const AGENTS: Agent[] = [
     faqs: [
       {
         q: 'Can ChatGPT edit videos?',
-        a: 'Not by itself: ChatGPT can plan an edit and write the script, but it doesn’t cut video. With cuttingfloor added as a plugin it can, because it gets the editing tools: import, cut, caption, mix, preview and export.',
+        a: 'Not by itself: ChatGPT can plan an edit and write the script, but it doesn’t cut video. With cuttingfloor added as a plugin it can, because it gets the editing tools: import, cut, caption, mix, make music, preview and export.',
       },
       {
         q: 'Can I attach my video in the chat?',

@@ -17,7 +17,7 @@ export const HOW = [
   },
   {
     title: 'It calls the tools.',
-    text: 'Your agent imports the footage, reads the transcript and makes each cut, caption and mix with cuttingfloor’s editing tools.',
+    text: 'Your agent imports the footage, reads the transcript and makes each cut, caption and mix, even the music, with cuttingfloor’s editing tools.',
   },
   {
     title: 'Every edit comes back with a preview.',

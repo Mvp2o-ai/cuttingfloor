@@ -22,8 +22,9 @@ export default function Agents() {
           <h1 className="display">Edit from the agent you already use.</h1>
           <p className="lede wt-answer">
             Kazi, Claude and ChatGPT can’t cut video on their own. Connect cuttingfloor and they
-            can: your agent cuts your footage, adds captions and music, checks a preview and gives
-            you the finished video. Each page has the setup and real edits made in that agent.
+            can: your agent cuts your footage, adds captions, makes music to fit, checks a preview
+            and gives you the finished video. Each page has the setup and real edits made in that
+            agent.
           </p>
           <LiveCard />
         </section>
