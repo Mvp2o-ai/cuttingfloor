@@ -10,6 +10,7 @@ export * from './keeping.ts';
 export * from './lipsync.ts';
 export * from './measure.ts';
 export * from './motion.ts';
+export * from './render-sound.ts';
 export * from './score.ts';
 export * from './search.ts';
 export * from './sequence.ts';
