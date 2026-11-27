@@ -213,14 +213,36 @@ describe.skipIf(!browserFound)('the play-along view', () => {
    * The performance time at which the browser is playing out a given context time, by its own
    * getOutputTimestamp, sampled now (the clock the view's taps are placed on).
    */
-  const perfFor = (view: Frame, contextTimes: number[]) =>
-    view.evaluate((times) => {
-      const ctx = (window as unknown as CfWin).cfRecord.S.ctx;
-      const ts = ctx.getOutputTimestamp();
-      return times.map(
-        (c) => (ts.performanceTime as number) + (c - (ts.contextTime as number)) * 1000,
-      );
-    }, contextTimes);
+  /**
+   * Presses when the audio clock reads `contextTime`. The performance time for it is worked out
+   * from the output timestamp read just before the press, not once for a whole take: on a busy
+   * machine the output slips whole render quanta against the performance clock while a take
+   * plays, the view follows the slip (it reads the timestamp at each tap), and a time worked out
+   * seconds earlier does not. CI measured a tap 10.539 ms from a time predicted that way (four
+   * quanta of 2.667 ms), with every other tap within 0.1 ms.
+   */
+  async function pressWhen(
+    view: Frame,
+    cdp: CDPSession,
+    selector: string,
+    contextTime: number,
+  ): Promise<void> {
+    for (;;) {
+      const [at, now] = (await view.evaluate((c) => {
+        const ts = (window as unknown as CfWin).cfRecord.S.ctx.getOutputTimestamp();
+        return [
+          (ts.performanceTime as number) + (c - (ts.contextTime as number)) * 1000,
+          performance.now(),
+        ];
+      }, contextTime)) as [number, number];
+      if (at - now > 40) {
+        await new Promise((r) => setTimeout(r, at - now - 30));
+        continue;
+      }
+      await press(view, cdp, selector, at);
+      return;
+    }
+  }
 
   /**
    * Presses at a pad at performance time `at` (ms), stamped with that time: CDP's event timestamp
@@ -300,12 +322,8 @@ describe.skipIf(!browserFound)('the play-along view', () => {
       { pitch: 39, pass: 1, at: 0.003 },
       { pitch: 42, pass: 1, at: 2.75 },
     ];
-    const times = await perfFor(
-      view,
-      targets.map((t) => T0 + t.pass * L + t.at),
-    );
     for (const [i, t] of targets.entries()) {
-      await press(view, cdp, `.pad[data-pitch="${t.pitch}"]`, times[i] as number);
+      await pressWhen(view, cdp, `.pad[data-pitch="${t.pitch}"]`, T0 + t.pass * L + t.at);
       if (i === 2) await shot(page, '2-pads-playing');
     }
     await view.click('#go');
@@ -368,11 +386,7 @@ describe.skipIf(!browserFound)('the play-along view', () => {
     expect(clicks).toHaveLength(8);
     // A person who hears every click 120 ms after the browser says it plays out (Bluetooth),
     // tapping right on what they hear.
-    const times = await perfFor(
-      view,
-      clicks.map((c) => c + injected),
-    );
-    for (const t of times) await press(view, cdp, '#caltap', t);
+    for (const c of clicks) await pressWhen(view, cdp, '#caltap', c + injected);
     await view.waitForFunction(() => (window as unknown as CfWin).cfRecord.S.state === 'ready', {
       timeout: 10_000,
     });
@@ -389,11 +403,9 @@ describe.skipIf(!browserFound)('the play-along view', () => {
     await view.waitForFunction(() => (window as unknown as CfWin).cfRecord.S.state === 'playing');
     const { T0, L } = await view.evaluate(() => (window as unknown as CfWin).cfRecord.S.t);
     const targets = [0.5, 1.75, 3.0];
-    const at = await perfFor(
-      view,
-      targets.map((x) => T0 + x + injected),
-    );
-    for (const t of at) await press(view, cdp, '.pad[data-pitch="36"]', t);
+    for (const x of targets) {
+      await pressWhen(view, cdp, '.pad[data-pitch="36"]', T0 + x + injected);
+    }
     expect(L).toBeCloseTo(4, 6);
     await view.click('#go');
     await view.click('#send');
