@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.80.1
+
+### Patch Changes
+
+- a691cf5: The watermark card's cuttingfloor.ai is larger; the MCP address moves beside the apps it works in.
+
 ## 0.80.0
 
 ### Minor Changes
