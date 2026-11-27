@@ -3101,6 +3101,108 @@ a.buy {
     background: color-mix(in srgb, var(--key) 18%, var(--bg-2));
   }
 }
+/* Record, under the drop: a thumb-sized button, then its panel in the drop's place in the flow. */
+.rec-also {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 12px;
+  margin-top: 12px;
+  color: var(--mute);
+  text-align: center;
+}
+.rec-also button,
+.rec-panel button:not(.link) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 20px;
+  border: 2px solid var(--rule-2, var(--rule));
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rec-also button:hover,
+.rec-also button:focus-visible {
+  border-color: var(--key);
+}
+.rec-also i,
+.rec-live i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e0573f;
+}
+.rec-panel {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 20px 16px;
+  border: 2px solid var(--rule-2, var(--rule));
+  text-align: center;
+}
+.rec-panel p {
+  margin: 0;
+  color: var(--mute);
+}
+.rec-panel audio {
+  width: min(360px, 100%);
+}
+.rec-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.rec-live i {
+  animation: rec-blink 1s steps(2, start) infinite;
+}
+@keyframes rec-blink {
+  to {
+    visibility: hidden;
+  }
+}
+.rec-time {
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+.rec-level {
+  width: min(260px, 100%);
+  height: 6px;
+  border-radius: 6px;
+  background: var(--rule);
+  overflow: hidden;
+}
+.rec-level span {
+  display: block;
+  height: 100%;
+  background: var(--key);
+}
+.rec-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.rec-panel button.rec-stop {
+  border-color: #e0573f;
+  background: #e0573f;
+  color: #fff;
+}
+.rec-panel button.rec-send {
+  border-color: var(--key);
+  background: var(--key);
+  color: #04170a;
+}
+.rec-panel button[disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
 /* Sending stops when the page closes, so this line reads as an instruction, not a footnote. */
 .files-keep {
   color: var(--ink);
