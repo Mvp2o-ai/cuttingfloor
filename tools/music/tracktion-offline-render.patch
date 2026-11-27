@@ -1,0 +1,29 @@
+--- a/modules/tracktion_engine/playback/graph/tracktion_NodeRenderContext.cpp
++++ b/modules/tracktion_engine/playback/graph/tracktion_NodeRenderContext.cpp
+@@ -217,11 +217,7 @@
+     CRASH_TRACER
+     jassert (! r.edit->getTransport().isPlayContextActive());
+ 
+-    if (--sleepCounter <= 0)
+-    {
+-        sleepCounter = sleepCounterMax;
+-        juce::Thread::sleep (1);
+-    }
++    // cf-music: no 1 ms sleep every few blocks; an offline render runs flat out.
+ 
+     if (owner.shouldCancel())
+     {
+@@ -389,11 +385,8 @@
+                 return true;
+         }
+     }
+-    else
+-    {
+-        // for the pre-count blocks, sleep to give things a chance to get going
+-        juce::Thread::sleep ((int) (blockLength.inSeconds() * 1000));
+-    }
++    // cf-music: the pre-count blocks still run (plugins see them) but without a real-time sleep
++    // each, which held every render for half a second.
+ 
+     if (streamTime > r.time.getEnd() + r.endAllowance)
+     {
