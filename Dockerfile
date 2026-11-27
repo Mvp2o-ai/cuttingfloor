@@ -63,6 +63,66 @@ RUN g++ -O2 -std=c++17 /src/segment.cpp -o /cf-segment -I/opt/onnxruntime/includ
       -Wl,-rpath,/opt/onnxruntime/lib \
  && strip /cf-segment
 
+# cf-music (tools/music): the music engine that renders scores, on Tracktion Engine (GPL-3.0)
+# and JUCE (AGPL-3.0), with Signalsmith Stretch and Signalsmith Linear (MIT) to stretch audio with
+# its pitch kept. Each is fetched at a pinned commit and checked against it; one patch
+# (tools/music/tracktion-offline-render.patch) takes the real-time sleeps out of offline renders.
+# JUCE's GUI modules compile in (Tracktion needs them) but no window or display is ever used.
+FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS music-engine
+ARG TE_COMMIT=691df2a80294ac331a3e09c0a4b6db1d53ef8d72
+ARG JUCE_COMMIT=7ff644f65d7daa1428c34b9738ebb5c449dc9172
+ARG STRETCH_COMMIT=88061fd4eda56a2353c5d65c74aa3f4ccf76f9da
+ARG LINEAR_COMMIT=7bb1c8f36794d6980080ce817c91f8da8fe56a66
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential cmake ninja-build git ca-certificates \
+      pkg-config libx11-dev libfreetype-dev libfontconfig-dev \
+ && rm -rf /var/lib/apt/lists/*
+RUN fetch() { \
+      git init -q "$1" && git -C "$1" remote add origin "$2" \
+      && git -C "$1" fetch -q --depth 1 origin "$3" && git -C "$1" checkout -q FETCH_HEAD \
+      && test "$(git -C "$1" rev-parse HEAD)" = "$3"; \
+    } \
+ && git config --global url."https://github.com/".insteadOf "git@github.com:" \
+ && fetch /src/tracktion_engine https://github.com/Tracktion/tracktion_engine.git "$TE_COMMIT" \
+ && git -C /src/tracktion_engine submodule update -q --init --depth 1 modules/juce \
+ && test "$(git -C /src/tracktion_engine/modules/juce rev-parse HEAD)" = "$JUCE_COMMIT" \
+ && fetch /src/stretch https://github.com/Signalsmith-Audio/signalsmith-stretch.git "$STRETCH_COMMIT" \
+ && fetch /src/linear https://github.com/Signalsmith-Audio/linear.git "$LINEAR_COMMIT"
+COPY tools/music/tracktion-offline-render.patch /src/
+RUN git -C /src/tracktion_engine apply /src/tracktion-offline-render.patch
+COPY tools/music/CMakeLists.txt /src/cf-music/CMakeLists.txt
+COPY tools/music/src /src/cf-music/src
+RUN cmake -S /src/cf-music -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DTE_ROOT=/src/tracktion_engine \
+      -DSTRETCH_ROOT=/src/stretch -DLINEAR_ROOT=/src/linear -DCF_TE_COMMIT="$TE_COMMIT" \
+      -DCF_JUCE_COMMIT="$JUCE_COMMIT" -DCF_STRETCH_COMMIT="$STRETCH_COMMIT" \
+ && cmake --build /build --target cf-music \
+ && cp "$(find /build -name cf-music -type f -perm -u+x | head -1)" /cf-music \
+ && strip /cf-music && /cf-music version \
+ && mkdir /licences \
+ && cp /src/tracktion_engine/LICENSE.md /licences/tracktion_engine-LICENSE.md \
+ && cp /src/tracktion_engine/modules/juce/LICENSE.md /licences/juce-LICENSE.md \
+ && cp /src/stretch/LICENSE.txt /licences/signalsmith-stretch-LICENSE.txt \
+ && cp /src/linear/LICENSE.txt /licences/signalsmith-linear-LICENSE.txt
+
+# The music engine's named instruments and drum kits (packages/engine/src/music-content.json),
+# rendered into multisample sets by tools/music/content/build_content.py: FluidSynth plays the
+# MuseScore General SoundFont (MIT; its piano Public Domain, strings and drumline CC0; Debian's
+# lossless package, pinned by version and the file's SHA-256), kit_909 is synthesised by the
+# script, kit_lofi is the acoustic kit through its lo-fi chain. FLAC files are the same on every
+# architecture, so this runs on the build machine's own.
+FROM --platform=$BUILDPLATFORM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS music-content
+ARG MUSESCORE_SF_VERSION=0.2.1-1
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends fluidsynth \
+      "musescore-general-soundfont-lossless=$MUSESCORE_SF_VERSION" python3 python3-numpy python3-scipy flac \
+ && rm -rf /var/lib/apt/lists/*
+COPY packages/engine/src/music-content.json /src/music-content.json
+COPY tools/music/content/build_content.py /src/build_content.py
+RUN cd /tmp && python3 -I /src/build_content.py /src/music-content.json /music \
+ && mkdir -p /music/licences \
+ && cp /usr/share/doc/musescore-general-soundfont-lossless/copyright /music/licences/musescore-general-soundfont-copyright.txt \
+ && du -sh /music
+
 # Sound models for media.analyze sounds, media.listen and create.stems, exported to ONNX from
 # their PyTorch checkpoints (tools/sounds/export-*.py) and checked against the originals there.
 # ONNX files are the same on every architecture, so this stage runs on the build machine's own.
@@ -336,7 +396,7 @@ FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg melt frei0r-plugins tini fontconfig \
       fonts-dejavu-core fonts-inter fonts-montserrat fonts-open-sans fonts-lato fonts-bebas-neue \
-      fonts-lobster fonts-comic-neue fonts-firacode fonts-noto-core chromium bzip2 zip \
+      fonts-lobster fonts-comic-neue fonts-firacode fonts-noto-core chromium bzip2 zip libatomic1 \
  && rm -rf /var/lib/apt/lists/* \
  # Web font copies are useless to libass, and Montserrat ships twice; one TrueType set stays.
  && find /usr/share/fonts -name '*.woff*' -delete && rm -rf /usr/share/fonts/opentype/montserrat \
@@ -369,10 +429,13 @@ RUN dest="$(dirname "$(find /usr/lib -path '*/mlt-7/libmltavformat.so' | head -1
  && test -n "$dest" && mv /tmp/libmltavformat.so "$dest/libmltavformat.so" \
  && melt -query consumers | grep -q avformat && melt -query producers | grep -q avformat
 COPY --from=select-models /models/ /usr/share/cuttingfloor/models/
+COPY --from=music-engine /cf-music /usr/local/bin/cf-music
+COPY --from=music-content /music/ /usr/share/cuttingfloor/music/
+COPY --from=music-engine /licences/ /usr/share/cuttingfloor/music/licences/
 # Chromium for the sandbox (create.motion, create.still), only ever started by the
 # motion-worker role through this wrapper, which keeps its sandbox on and its network off.
 COPY tools/motion/cf-chromium /usr/local/bin/cf-chromium
-RUN cf-vision 2>&1 | grep -q usage && cf-segment 2>&1 | grep -q usage
+RUN cf-vision 2>&1 | grep -q usage && cf-segment 2>&1 | grep -q usage && cf-music version | grep -q tracktion_engine
 # MLT's Qt modules (qtblend) need a display variable to load; Qt itself renders offscreen.
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true QT_QPA_PLATFORM=offscreen DISPLAY=:0 \
     PUPPETEER_SKIP_DOWNLOAD=1
@@ -389,6 +452,24 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prefer-offline 
 # Every skill's vector, from the model above, so the server embeds only the query. Fails without
 # the model; the server re-embeds any skill whose text no longer matches its stored hash.
 RUN node packages/skills/scripts/write-vectors.ts
+
+# Test-only and quick: the music engine's tests alone, without the rest of the image
+# (`docker build --target music-test .`). `--target test` runs them as well, with everything else.
+FROM node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS music-test
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libatomic1 libfreetype6 libfontconfig1 \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=music-engine /cf-music /usr/local/bin/cf-music
+COPY --from=music-content /music/ /usr/share/cuttingfloor/music/
+COPY --from=music-engine /licences/ /usr/share/cuttingfloor/music/licences/
+ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true PUPPETEER_SKIP_DOWNLOAD=1
+RUN corepack enable
+WORKDIR /app
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm fetch
+COPY . .
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prefer-offline --frozen-lockfile
+ENV CUTTINGFLOOR_REQUIRE_ENGINES=1
+RUN pnpm exec vitest run packages/engine/test/music
 
 # Test-only: the tiny whisper model, the Kokoro voice model and a laughter recording, from our own
 # image (tools/testmodels), pinned by digest. Fetching them from Hugging Face, GitHub releases and
