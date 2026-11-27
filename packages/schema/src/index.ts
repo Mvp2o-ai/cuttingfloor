@@ -11,6 +11,7 @@ export * from './lipsync.ts';
 export * from './measure.ts';
 export * from './motion.ts';
 export * from './score.ts';
+export * from './score-tools.ts';
 export * from './search.ts';
 export * from './sequence.ts';
 export * from './skills.ts';
