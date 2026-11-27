@@ -1818,6 +1818,21 @@ export const MediaSeekInput = z
       .max(1)
       .default(0.5)
       .describe('A frame matches a criterion when its probability is at least this'),
+    min_seconds: z
+      .number()
+      .min(0)
+      .max(86_400)
+      .optional()
+      .describe(
+        'matches: only runs at least this long, end less start (a run of one sample is 0). Default: every run',
+      ),
+    include: z
+      .array(z.enum(['matches', 'samples']))
+      .min(1)
+      .optional()
+      .describe(
+        'Which parts come back: matches, samples (every criterion on every frame, most of a long result). Default both',
+      ),
     idempotency_key: z.string().min(1).max(200).optional(),
   })
   .refine((v) => Boolean(v.media_id) !== Boolean(v.timeline_id), {
@@ -1846,8 +1861,9 @@ export const MediaSeekResult = z.object({
         }),
       ),
     )
+    .optional()
     .describe(
-      'Per criterion: runs of consecutive samples that match, in time order; empty when none do',
+      'Per criterion: runs of consecutive samples that match (at least min_seconds long), in time order; empty when none do. Left out when include leaves it out',
     ),
   samples: z
     .array(
@@ -1856,7 +1872,10 @@ export const MediaSeekResult = z.object({
         probabilities: z.record(z.string(), z.number()).describe('Per criterion, 0 to 1'),
       }),
     )
-    .describe('Every judged sample, for your own cut-off or arithmetic'),
+    .optional()
+    .describe(
+      'Every judged sample, for your own cut-off or arithmetic. Left out when include leaves it out',
+    ),
 });
 
 export const MediaListenInput = z
@@ -1890,6 +1909,19 @@ export const MediaListenInput = z
       .describe(
         'scores: one value per this many seconds (the highest in each). Default 0.04, every frame, coarser when that would be too many',
       ),
+    min_seconds: z
+      .number()
+      .min(0)
+      .max(86_400)
+      .optional()
+      .describe('matches: only runs at least this long. Default: every run'),
+    include: z
+      .array(z.enum(['matches', 'peaks', 'scores']))
+      .min(1)
+      .optional()
+      .describe(
+        'Which parts come back: matches, peaks, scores (every probability, most of a long result). Default all',
+      ),
     idempotency_key: z.string().min(1).max(200).optional(),
   })
   .refine((v) => Boolean(v.media_id) !== Boolean(v.timeline_id), {
@@ -1914,13 +1946,21 @@ export const MediaListenResult = z.object({
         }),
       ),
     )
-    .describe('Per sound: runs of 40 ms frames that match, in time order; empty when none do'),
-  peaks: z.record(z.string(), z.number()).describe('Per sound: the highest probability anywhere'),
-  scores: SoundScores,
+    .optional()
+    .describe(
+      'Per sound: runs of 40 ms frames that match (at least min_seconds long), in time order; empty when none do. Left out when include leaves it out',
+    ),
+  peaks: z
+    .record(z.string(), z.number())
+    .optional()
+    .describe('Per sound: the highest probability anywhere. Left out when include leaves it out'),
+  scores: SoundScores.optional(),
   note: z
     .string()
     .optional()
-    .describe('What the model can and cannot hear, to read a peak near 0 by'),
+    .describe(
+      'What the model can and cannot hear, to read a peak near 0 by; and, when most runs of a sound are very short, how many',
+    ),
 });
 
 // Create: new media from a recipe. Always a job; the result is a media_id for clip.add.

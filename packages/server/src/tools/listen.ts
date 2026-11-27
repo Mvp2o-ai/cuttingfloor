@@ -4,6 +4,8 @@ import {
   listenText,
   peakOf,
   SOUND_MODELS,
+  type SoundSpan,
+  scoreAt,
   scoreSeries,
   seriesStep,
   soundSpans,
@@ -65,6 +67,39 @@ type Analysis = z.infer<typeof SoundsAnalysis>;
 const LISTEN_NOTE =
   'The model knows everyday sound events (AudioSet). Inside music it hears "music" as a whole, not instruments, drums or single hits: a drum query over a drum bed peaks near 0. For hits in music use media.analyze beats; create.stems separates the drums.';
 
+/** Runs shorter than this are "very short" in the fact a result states about them. */
+const SHORT_RUN_SECONDS = 0.2;
+/** How close to the cut-off a probability counts as near it, for that fact. */
+const NEAR_CUTOFF = 0.1;
+
+/**
+ * Per sound whose runs are mostly very short (at least 10 runs, more than half under 0.2 s):
+ * how many, and how much of the sound sits near the cut-off. A sound that is there most of the
+ * time breaks into many short runs around the cut-off.
+ */
+export function shortRunsFact(
+  scores: FrameScores,
+  names: string[],
+  runs: SoundSpan[][],
+  min: number,
+): string | null {
+  const facts: string[] = [];
+  names.forEach((name, i) => {
+    const all = runs[i] ?? [];
+    const short = all.filter((r) => r.end - r.start < SHORT_RUN_SECONDS).length;
+    if (all.length < 10 || short * 2 <= all.length) return;
+    let near = 0;
+    for (let f = 0; f < scores.frames; f++) {
+      if (Math.abs(scoreAt(scores, i, f) - min) <= NEAR_CUTOFF) near += 1;
+    }
+    const share = scores.frames ? Math.round((100 * near) / scores.frames) : 0;
+    facts.push(
+      `${name}: ${short} of ${all.length} runs are under ${SHORT_RUN_SECONDS} s, and its probability is within ${NEAR_CUTOFF} of min_probability in ${share}% of the frames`,
+    );
+  });
+  return facts.length ? `${facts.join('; ')}.` : null;
+}
+
 /**
  * The stored analysis (every frame) and the result (scores coarsened only if they would pass
  * the result's limit), for `columns` or, without them, every column that reaches `min`.
@@ -116,7 +151,7 @@ export function registerListenTools(server: McpServer, deps: ServerDeps): void {
         '',
         `HOW IT WORKS. FlexSED, an open-vocabulary sound detection model (local, on the CPU; about 15 to 20 times faster than real time), listens to every 40 ms of the sound and gives each description the probability that it can be heard there. Describe the sound itself, briefly, as you would caption it ("laughter", "a crowd cheering", "glass breaking"), not the scene or a judgment; it is asked as "The sound of <your words>". Short, common sound names work best; put each sound you want in its own entry, up to ${SOUNDS_LIMITS.queries} a call, all listened for at once.`,
         'LIMITS. Inside music it hears "music", not drums, instruments or single hits (for hits in music, media.analyze beats). Inside speech it hears "speech", not what is said: words and fillers such as um sound alike to it. A short sound can score higher over a short from_seconds to until_seconds around it.',
-        'READING THE RESULT. matches gives, per sound, each run of frames at or above min_probability (default 0.5) with its start, end, peak_seconds and frame (for render.frames; media frames for video, timeline frames for an edit). peaks gives the highest probability each sound reaches, and scores every probability (step_seconds apart), for your own cut-off. A sound whose peak stays well under your cut-off is most likely not there; one hovering near it is worth a listen or a lower cut-off.',
+        'READING THE RESULT. matches gives, per sound, each run of frames at or above min_probability (default 0.5) with its start, end, peak_seconds and frame (for render.frames; media frames for video, timeline frames for an edit); min_seconds keeps only runs at least that long. peaks gives the highest probability each sound reaches, and scores every probability (step_seconds apart), for your own cut-off; include returns only the parts you name (scores are most of a long result). A sound whose peak stays well under your cut-off is most likely not there; one hovering near it is worth a listen or a lower cut-off. A sound that is there most of the time (a crowd, rain, an engine) comes back as many short runs with its probability near the cut-off throughout: when it is there is not the question, and where its level jumps is media.analyze onsets.',
         "Media or an edit: with media_id, times are the file's own seconds; with timeline_id, it listens to the edit's mix as it plays (cuts, gaps, levels and effects included), over from_seconds to until_seconds, and times are timeline seconds, so a match is where that sound now sits in the edit. A source or range with no sound fails with no_audio, naming it.",
         'For the 447 sounds with names (Laughter, Applause, Cough, Speech, Music…) as stored data, media.analyze kind sounds. Long-running: returns a task, or a job_id for job.get.',
       ].join('\n'),
@@ -203,28 +238,48 @@ export function registerListenTools(server: McpServer, deps: ServerDeps): void {
           );
           const frameAt = (seconds: number) =>
             fps ? { frame: Math.floor((seconds * fps.num) / fps.den + 1e-6) } : {};
+          const runs = names.map((_, i) => soundSpans(scores, i, args.min_probability));
+          const wants = (part: 'matches' | 'peaks' | 'scores') =>
+            !args.include || args.include.includes(part);
+          const fact = shortRunsFact(scores, names, runs, args.min_probability);
           return ok({
             ...(args.media_id ? { media_id: args.media_id } : { timeline_id: args.timeline_id }),
             model: SOUND_MODELS.listen,
             asked,
-            matches: Object.fromEntries(
-              names.map((n, i) => [
-                n,
-                soundSpans(scores, i, args.min_probability).map((s) => ({
-                  ...s,
-                  ...frameAt(s.peak_seconds),
-                })),
-              ]),
-            ),
-            peaks: Object.fromEntries(
-              names.map((n, i) => [n, Math.round(peakOf(scores, i) * 100) / 100]),
-            ),
-            scores: {
-              start_seconds: scores.start,
-              step_seconds: step,
-              values: Object.fromEntries(names.map((n, i) => [n, scoreSeries(scores, i, step)])),
-            },
-            note: LISTEN_NOTE,
+            ...(wants('matches')
+              ? {
+                  matches: Object.fromEntries(
+                    names.map((n, i) => [
+                      n,
+                      (runs[i] ?? [])
+                        .filter(
+                          (s) =>
+                            args.min_seconds === undefined || s.end - s.start >= args.min_seconds,
+                        )
+                        .map((s) => ({ ...s, ...frameAt(s.peak_seconds) })),
+                    ]),
+                  ),
+                }
+              : {}),
+            ...(wants('peaks')
+              ? {
+                  peaks: Object.fromEntries(
+                    names.map((n, i) => [n, Math.round(peakOf(scores, i) * 100) / 100]),
+                  ),
+                }
+              : {}),
+            ...(wants('scores')
+              ? {
+                  scores: {
+                    start_seconds: scores.start,
+                    step_seconds: step,
+                    values: Object.fromEntries(
+                      names.map((n, i) => [n, scoreSeries(scores, i, step)]),
+                    ),
+                  },
+                }
+              : {}),
+            note: fact ? `${fact} ${LISTEN_NOTE}` : LISTEN_NOTE,
           }) as never;
         },
         { ...admit, work: seconds },
