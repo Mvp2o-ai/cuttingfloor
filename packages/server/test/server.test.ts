@@ -386,8 +386,12 @@ describe('protocol surface', () => {
         { resourceDomains: [origin], connectDomains: [origin] },
         clipboard,
       ],
-      // The upload box only sends the file.
-      ['ui://cuttingfloor/upload', { connectDomains: [origin] }, {}],
+      // The upload box sends the file; the microphone backs its Record.
+      [
+        'ui://cuttingfloor/upload',
+        { connectDomains: [origin] },
+        { permissions: { microphone: {} } },
+      ],
       // The sounds play, and their waveforms are read, from the library's bucket.
       [
         'ui://cuttingfloor/sounds',
