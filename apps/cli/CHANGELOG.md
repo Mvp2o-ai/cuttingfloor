@@ -1,5 +1,24 @@
 # cuttingfloor
 
+## 0.79.1
+
+### Patch Changes
+
+- 59af523: The football tribute demo and its onboarding clips no longer show any sportswear or sponsor logos: the sideline clips were made again in a plain kit and the tribute re-cut from them.
+
+## 0.79.0
+
+### Minor Changes
+
+- 563502d: cuttingfloor has its own staff admin. `/admin` on the site lists every account with search (email or id) and sort (newest, last active, credits, exports); `/admin/<account id>` shows the balance and every ledger entry, purchases, exports and releases, recent tool calls and errors, clients, referral and what we know of Kazi, with a form that adds or takes away credits with a reason. Staff are the accounts the server's rights table makes admins; anyone else gets a 404. The admin API (1.12.0) gains `POST /admin/v1/accounts/{id}/adjustments` (an `adjust` entry with the admin's id and reason, idempotent by the caller's id, never below zero), `GET /admin/v1/accounts/{id}/ledger`, and `q` and `sort` on `list_accounts`. The site calls it server-side with its own key for the signed-in admin; no key reaches the browser.
+- 4567194: cuttingfloor keeps its own credits. Balances move from Kazi's shared ledger into cuttingfloor's own credit ledger (`credit_accounts` and `credit_entries` in the record database): every change is an entry written once by its id, a clean copy is spent once and never past zero, and the balance always equals its entries. Our Stripe webhook credits packs and takes back refunds (only `metadata.app = cuttingfloor` payments), the account page credits a checkout as it returns, and automatic top-up runs here again. The Cutting Floor AI app's credits and App Store purchases are served on `POST /v1/credits.get` and `POST /v1/credits.apple`, with App Store Server Notifications at `/apple/notifications`. Tool activity is no longer sent to Kazi. `scripts/ledger-opening.ts` carries Kazi's hand-off over at the cutover and `scripts/ledger-reconcile.ts` checks it. The privacy policy names who keeps credits now.
+
+### Patch Changes
+
+- 64118d5: The dance demo is new: one routine filmed from six angles in a parking garage at night, cut on the hits of an original beat, and the dance onboarding sample is its six takes.
+- 24ce700: Three new onboarding samples: tasks about screen recordings (app and website walkthroughs, tutorials recorded on screen, SaaS demos) now start with a screen recording of a made-up app, gameplay montages and game edits with no facecam start with six clips of a made-up action game, and event highlights (award nights, galas, weddings, toasts, parties, graduations) start with phone clips of a community awards night, instead of Big Buck Bunny or the gaming stream.
+- 9c01825: A sports tribute demo on the site, made from six sideline phone clips of a local club's number 9 into a vertical tribute with slow motion on the goal, the music dropping as it goes in, a crowd roar, a big-night grade and her name and number, and a match clip in the onboarding samples: tasks about sports highlights and tributes, player or team montages, fan edits, season recaps, goals and game-winners in slow motion or highlight reels for scouts now start with six sideline clips of a women's football striker instead of Big Buck Bunny.
+
 ## 0.78.0
 
 ### Minor Changes

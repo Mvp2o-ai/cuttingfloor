@@ -77,8 +77,9 @@ export const AccountGetResult = z.object({
 export type AccountGetResult = z.infer<typeof AccountGetResult>;
 
 // credits.claim: activates the account (once, with the use case in the user's words), adds the
-// onboarding sample to the library and returns the balance. Its starting credits come from the
-// ledger when the account is first linked; the claim itself grants and spends nothing.
+// onboarding sample to the library and returns the balance. Its starting credits are granted when
+// its credit ledger account opens (its first signed-in call); the claim itself grants and spends
+// nothing.
 
 export const ClaimFreeCreditsInput = z.object({
   use_case: z

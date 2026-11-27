@@ -8,8 +8,8 @@ import { Runtime } from '@cuttingfloor/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AccessCheck } from '../src/access.ts';
 import { createHttpServer } from '../src/http.ts';
-import { Ledger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
+import { testLedger } from './test-ledger.ts';
 
 // The account page's drop zone: the site asks for an upload with its key, the browser sends the
 // file straight to the signed URL, and the account's files and storage come back as media.list
@@ -45,7 +45,7 @@ beforeAll(async () => {
   const lifecycle = new Lifecycle({
     runtime,
     access,
-    ledger: new Ledger('http://127.0.0.1:9', 'none'),
+    ledger: testLedger(),
     workosKey: 'sk_test_none',
     stripeKey: 'sk_test_none',
     accountUrl: 'https://cuttingfloor.ai/account',

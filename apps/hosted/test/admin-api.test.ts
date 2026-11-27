@@ -7,15 +7,15 @@ import { LocalCredentialStore } from '@cuttingfloor/credentials';
 import type { Job } from '@cuttingfloor/jobs';
 import { Runtime } from '@cuttingfloor/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { type AccessCheck, linkPath } from '../src/access.ts';
+import type { AccessCheck } from '../src/access.ts';
 import { ADMIN_KEYS, AdminApi, adminOpenApi } from '../src/admin-api.ts';
 import { AppsSeen } from '../src/apps-seen.ts';
 import { recordDownload } from '../src/downloads.ts';
 import { createHttpServer } from '../src/http.ts';
 import { ScriptKeys } from '../src/keys.ts';
-import { Ledger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
 import { Rights } from '../src/rights.ts';
+import { testLedger } from './test-ledger.ts';
 
 // The admin API: an admin makes a key on the site, the key reads accounts, and the role is
 // checked from cuttingfloor's own rights table on every call. WorkOS is a stand-in answering the
@@ -108,6 +108,8 @@ beforeAll(async () => {
   rights = new Rights(runtime.ws);
   scriptKeys = new ScriptKeys(runtime.ws);
   const access = {
+    // The active account is on the credit ledger; the others never opened one.
+    opened: async (owner: string) => (owner === ACTIVE ? { owner } : undefined),
     balance: async () => ({
       plan: 'credits',
       left: 12.5,
@@ -133,7 +135,7 @@ beforeAll(async () => {
   const lifecycle = new Lifecycle({
     runtime,
     access,
-    ledger: new Ledger('http://127.0.0.1:9', 'none'),
+    ledger: testLedger(),
     workosKey: 'sk_test_none',
     stripeKey: 'sk_test_none',
     accountUrl: 'https://cuttingfloor.ai/account',
@@ -160,6 +162,7 @@ beforeAll(async () => {
     runtime,
     lifecycle,
     access,
+    ledger: testLedger(),
     apps,
     keys: new ScriptKeys(runtime.ws, ADMIN_KEYS),
     rights,
@@ -189,7 +192,6 @@ beforeAll(async () => {
           } as unknown as Job,
         ]
       : jobs(owner, query)) as typeof runtime.jobs.store.list;
-  await runtime.ws.writeJson(linkPath(runtime.ws, ACTIVE), { account_id: 'acct_1' });
   await runtime.ws.writeJson(runtime.ws.ownerDir(ACTIVE, 'free-credits.json'), {
     claimed: true,
     use_case: 'cut a podcast into Shorts',

@@ -300,9 +300,9 @@ export const AdminAccount = z.object({
 });
 
 export const AdminAccountList = z.object({
-  data: z.array(AdminAccount).describe('Newest accounts first'),
+  data: z.array(AdminAccount).describe('In the order sort asks: newest first by default'),
   next_cursor: z.string().nullable().describe('Pass as cursor for the next page; null at the end'),
-  total: z.number().describe('Accounts in the list (with the email filter, 0 or 1)'),
+  total: z.number().describe('Accounts in the list, after email or q (with email, 0 or 1)'),
   page: z.number().describe('This page, from 1'),
   pages: z.number().describe('Pages at this limit; at least 1'),
   has_more: z.boolean().describe('True when there is another page'),
@@ -312,11 +312,68 @@ export const AdminAccountList = z.object({
     .describe('The URL of the next page (page and limit), with the same filters; null at the end'),
 });
 
+export const ADMIN_SORTS = ['newest', 'last_active', 'credits', 'exports'] as const;
+
 export const AdminAccountListQuery = z.object({
   cursor: z.string().max(200).optional(),
   page: z.coerce.number().int().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   email: z.email().optional().describe('Only the account with this email'),
+  q: z.string().trim().min(1).max(200).optional().describe('Part of an email or account id'),
+  sort: z.enum(ADMIN_SORTS).default('newest'),
+});
+
+export const AdminLedgerEntry = z.object({
+  id: z
+    .string()
+    .describe(
+      "The entry's id, unique within the account: grant:activation, opening:…, a payment intent (pi_…), a refund (re_…), <job>-release for a spend, adjust:<id> for an admin's adjustment",
+    ),
+  kind: z
+    .enum(['grant', 'opening', 'purchase', 'refund', 'spend', 'adjust'])
+    .describe(
+      'grant: given (the activation grant); opening: carried over at the split from Kazi; purchase and refund: a pack; spend: a watermark removed; adjust: an admin',
+    ),
+  credits: z.number().describe('Signed: what the entry added to the balance'),
+  at: time,
+  balance: z.number().describe('The balance after it'),
+  tool: z.string().optional().describe('What spent it (a spend)'),
+  pack: z.string().optional().describe('The pack (a purchase or refund)'),
+  payment_intent: z.string().optional(),
+  reason: z.string().optional().describe('Why (an adjustment or a carry-over)'),
+  by: z.string().optional().describe("The admin's WorkOS user id (an adjustment)"),
+});
+
+export const AdminLedger = z.object({
+  opened: z
+    .boolean()
+    .describe('False when the account has no ledger account yet (it never used cuttingfloor)'),
+  balance: z.number().nullable().describe('Credits held now; null when not opened'),
+  entries: z.array(AdminLedgerEntry).describe('Every entry, newest first'),
+});
+
+export const AdminAdjustInput = z.object({
+  id: z
+    .string()
+    .regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/)
+    .describe(
+      'Your id for this adjustment (letters, digits, _ . -; up to 100): sending the same id again changes nothing and answers the first one, so a retry never adds twice. Stored as adjust:<id>',
+    ),
+  credits: z
+    .number()
+    .refine((n) => Number.isFinite(n) && n !== 0 && Math.abs(n) <= 100_000, {
+      message: 'credits must be a non-zero number up to 100,000 either way',
+    })
+    .describe('Credits to add (positive) or take away (negative); not zero'),
+  reason: z.string().trim().min(1).max(500).describe('Why, kept on the entry for good'),
+});
+
+export const AdminAdjustment = z.object({
+  entry: AdminLedgerEntry,
+  balance: z.number().describe("The account's balance now"),
+  duplicate: z
+    .boolean()
+    .describe('True when this id was written before: nothing changed and entry is the first one'),
 });
 
 /** The admin API's named schemas: components/schemas in its OpenAPI document. */
@@ -327,11 +384,20 @@ adminSchemas.add(AdminFile, { id: 'File' });
 adminSchemas.add(AdminDownload, { id: 'Download' });
 adminSchemas.add(AdminAccount, { id: 'Account' });
 adminSchemas.add(AdminAccountList, { id: 'AccountList' });
+adminSchemas.add(AdminLedgerEntry, { id: 'LedgerEntry' });
+adminSchemas.add(AdminLedger, { id: 'Ledger' });
+adminSchemas.add(AdminAdjustInput, { id: 'AdjustInput' });
+adminSchemas.add(AdminAdjustment, { id: 'Adjustment' });
 
 export type AdminMe = z.infer<typeof AdminMe>;
 export type AdminFile = z.infer<typeof AdminFile>;
 export type AdminDownload = z.infer<typeof AdminDownload>;
 export type AdminAccount = z.infer<typeof AdminAccount>;
+export type AdminAccountList = z.infer<typeof AdminAccountList>;
+export type AdminLedgerEntry = z.infer<typeof AdminLedgerEntry>;
+export type AdminLedger = z.infer<typeof AdminLedger>;
+export type AdminAdjustment = z.infer<typeof AdminAdjustment>;
+export type AdminSort = (typeof ADMIN_SORTS)[number];
 
 /** The named schemas as OpenAPI 3.1 components, each referring to the others by `$ref`. */
 export function adminComponentSchemas(): Record<string, Record<string, unknown>> {

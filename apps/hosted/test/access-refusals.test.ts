@@ -2,7 +2,7 @@ import { Workspace } from '@cuttingfloor/core';
 import type { CfError } from '@cuttingfloor/schema';
 import { describe, expect, it } from 'vitest';
 import { type Access, AccessCheck, type Balance } from '../src/access.ts';
-import { Ledger } from '../src/ledger.ts';
+import { testLedger } from './test-ledger.ts';
 
 // What a refusal tells the AI, with WorkOS and the ledger answered here: text a ChatGPT user may read
 // says what stopped and links the pricing page at most, never the account page where credits
@@ -17,7 +17,7 @@ class Fixed extends AccessCheck {
     super({
       workosKey: 'sk_test_none',
       stripeKey: 'sk_test_none',
-      ledger: new Ledger('http://127.0.0.1:9', 'none'),
+      ledger: testLedger(),
       accountUrl: ACCOUNT,
       ws: new Workspace('/nonexistent'),
     });

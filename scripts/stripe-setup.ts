@@ -137,16 +137,16 @@ else {
   process.stdout.write(`created portal configuration ${portal}\n`);
 }
 
-// The webhook that tells the MCP server a subscription changed or a payment failed. Stripe gives
-// its signing secret once, when it is made; it is written straight to the env file's
-// STRIPE_WEBHOOK_SECRET (never printed), for up.sh to take to the server.
+// The webhook that credits cuttingfloor's packs in its credit ledger and takes back refunds
+// (lifecycle.ts reads the payment again from Stripe for each). Stripe gives its signing secret
+// once, when it is made; it is written straight to the env file's STRIPE_WEBHOOK_SECRET (never
+// printed), for up.sh to take to the server. Running this again on an existing endpoint replaces
+// its events with these.
 const WEBHOOK_EVENTS = [
-  'checkout.session.completed',
-  'customer.subscription.created',
-  'customer.subscription.updated',
-  'customer.subscription.deleted',
-  'invoice.paid',
-  'invoice.payment_failed',
+  'payment_intent.succeeded',
+  'charge.refunded',
+  'refund.created',
+  'refund.updated',
 ];
 const hooks = await stripe('/v1/webhook_endpoints?limit=100');
 const hookUrl = `${SERVER}/stripe/webhook`;

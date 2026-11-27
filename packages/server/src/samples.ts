@@ -26,7 +26,7 @@ export const SAMPLES: Sample[] = [
     slug: 'gaming-stream',
     file: 'gaming-stream.mp4',
     shows: 'a 2-minute gaming stream with the streamer’s facecam and commentary',
-    fits: 'gaming, game streams and Twitch or YouTube gameplay, esports, kill highlights, montages, meme and reaction edits, facecam videos',
+    fits: 'gaming videos with a facecam or commentary: Twitch, Kick and YouTube streams and VODs, stream highlights and funny moments, gaming memes, meme and reaction edits, kill highlights with memes, esports casts, facecam on top and gameplay below',
     starter:
       'Find the best moment in this stream and make a 30-second vertical Short: facecam on top, gameplay below, big word-by-word captions and a zoom on the big play.',
   },
@@ -65,10 +65,11 @@ export const SAMPLES: Sample[] = [
   {
     slug: 'dance-takes',
     file: 'dance-takes.mp4',
-    shows: 'a 34-second dance routine filmed in several takes',
-    fits: 'dance, choreography, music performances and covers, fitness, cutting a person’s takes together on the beat',
+    shows:
+      'a 60-second dance routine filmed in six takes from different angles (wide, waist-up, low from the floor, side, feet, close-up) in a parking garage at night, with only room sound',
+    fits: 'dance and choreography videos, dance challenges and trends, TikTok and Reels dance edits, cutting one routine filmed from several angles or takes together on the beat, music performances and covers, fitness',
     starter:
-      'Cut these takes together on the beat into one vertical video, switching takes on the big moves.',
+      'Cut these six takes into one vertical dance video: open on the final point, switch angles on the big moves, slow down into the spin and punch in on the hits.',
   },
   {
     slug: 'car-takes',
@@ -141,6 +142,42 @@ export const SAMPLES: Sample[] = [
     fits: 'kids’ stories and cartoons for children: bedtime and moral stories, fables and fairy tales, animated characters with their own voices and a narrator, nursery and storybook videos, educational videos for kids, adding character voices, sound effects and music to animation',
     starter:
       'Make this a 35-second kids’ story Short: a narrator and a different voice for Pip, Rumble and Daisy timed to what they do, a cartoon sound effect on every action, light music under the voices, a title card at the start, big simple captions for early readers and a friendly ending with the lesson.',
+  },
+  {
+    slug: 'sports-tribute',
+    file: 'match-highlights.mp4',
+    shows:
+      'a 22-second set of six wide phone clips from the sideline of a local women’s football (soccer) club, all of one player, a young Black woman striker, number 9 in sky blue: tying her boots in the changing room, jogging back after a shot at training, a nutmeg past a defender, a goal under the floodlights, a knee slide with her teammates running in, and fans at the fence with a “ZOLA 9” sign. Crowd and pitch sound, no music or text',
+    fits: 'sports highlights and tributes: a player or team montage, fan edits of a favourite or retiring player, goals, plays and game-winners in slow motion, a season recap, highlight reels for scouts and recruiting, football, soccer, basketball and other team sports filmed from the sideline',
+    starter:
+      'Make a 27-second vertical tribute to the number 9 from these clips, following her in every shot: a quiet start, slow motion on the goal, the music dropping as it goes in with a crowd roar, her name and number as titles at the end, and a grade that makes it feel like a big night.',
+  },
+  {
+    slug: 'screen-recording',
+    file: 'app-walkthrough.mp4',
+    shows:
+      'a 49-second screen recording of someone sending an invoice in a made-up web app, the cursor clicking through each step while he explains it out loud, with a long pause and a price he types wrong and fixes',
+    fits: 'screen recordings: app, website and software walkthroughs, how-to and tutorial videos recorded on a computer screen, SaaS and product demos, Loom-style recordings, turning a screen recording into a vertical how-to Short with zooms on the clicks and numbered steps',
+    starter:
+      'Make a 30-second vertical how-to Short from this recording: cut the long pause and the mistake, follow the cursor and zoom in on every click, number the steps on screen and add captions from his voice.',
+  },
+  {
+    slug: 'gameplay-montage',
+    file: 'gameplay-clips.mp4',
+    shows:
+      'a 39-second set of six gameplay clips from a made-up fantasy action game, with no facecam, commentary or music: a jump across a chasm, a fight with stone golems, a glide from a tower, a shockwave spell, a crystal boss kill and a last fight, with game sound only',
+    fits: 'gameplay montages and edits with no facecam: game clips cut to a song or soundtrack, epic and cinematic game edits, boss fights, best plays and clutch moments with slow motion and impacts, game trailers and highlight reels made from recorded gameplay',
+    starter:
+      'Cut these clips into a 30-second gameplay montage on the beat of a track: open on the boss kill, slow motion into the big hits with a flash and a hit sound on each impact, and a title at the end.',
+  },
+  {
+    slug: 'event-highlights',
+    file: 'award-night.mp4',
+    shows:
+      'a 50-second set of seven phone clips from a community awards night in a local hall: the room filling up, the host announcing the Volunteer of the Year, the winner’s surprised reaction and walk to the stage, the award handed over, her short thank-you speech, a standing ovation and dancing later, with room sound and no music or text',
+    fits: 'event highlight videos and recaps: award nights, galas and fundraisers, weddings and receptions, toasts, birthdays and parties, graduations, church and community events, turning a night of event footage into a short highlight reel with the cheers, the toasts and the best moments of the night',
+    starter:
+      'Make a 40-second highlight reel of this awards night: open on the crowd cheering, keep the announcement and the best line of her thank-you speech with captions, cut the rest to music with a warm grade, and end on the standing ovation with a title for the night.',
   },
   {
     slug: FALLBACK_SAMPLE,

@@ -10,8 +10,9 @@ import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AccessCheck } from '../src/access.ts';
 import { createHttpServer } from '../src/http.ts';
-import { Ledger } from '../src/ledger.ts';
+import { Kazi } from '../src/kazi.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
+import { testLedger } from './test-ledger.ts';
 
 // The site's sign-up goes on into Kazi: the server reads the email from WorkOS and asks Kazi for
 // a one-time link with its own key. WorkOS and Kazi are stand-ins here, answering what the server
@@ -86,7 +87,8 @@ beforeAll(async () => {
   const lifecycle = new Lifecycle({
     runtime,
     access: { get: async () => undefined, forget: () => undefined } as unknown as AccessCheck,
-    ledger: new Ledger('https://kazi.test', KAZI_KEY),
+    ledger: testLedger(),
+    kazi: new Kazi('https://kazi.test', KAZI_KEY),
     workosKey: 'sk_test_none',
     stripeKey: 'sk_test_none',
     accountUrl: 'https://cuttingfloor.ai/account',

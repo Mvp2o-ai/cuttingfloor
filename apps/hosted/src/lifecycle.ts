@@ -16,16 +16,25 @@ import {
   startUpload,
 } from '@cuttingfloor/server';
 import type { Access, AccessCheck, Balance } from './access.ts';
+import { type AppleCredits, AppleRejected } from './apple.ts';
 import type { Mailer } from './email.ts';
 import { dueFiles, expiryMessage, exportOf, type Going } from './expiry-notices.ts';
+import type { Kazi } from './kazi.ts';
 import type { ScriptKeys } from './keys.ts';
-import type { Ledger, LedgerUsage } from './ledger.ts';
+import { Insufficient, type Ledger, type Spend } from './ledger.ts';
 import { oneWriteAtATime } from './metadata.ts';
 import { type ProviderKeys, SAVABLE } from './provider-keys.ts';
-import { savedCard } from './purchase.ts';
+import { chargePack, savedCard } from './purchase.ts';
 import type { Rights } from './rights.ts';
 import { forgetRecipient } from './sequence.ts';
 import { jsonBody, share } from './sound-routes.ts';
+import {
+  ourPayment,
+  paymentEntries,
+  paymentIntent,
+  type StripePaymentIntent,
+  stripeGet,
+} from './stripe-credits.ts';
 
 // What happens around an account as it is used, still without a database:
 // - WorkOS metadata records the first signed-in request (`first_call_at`: connecting counts; the
@@ -33,18 +42,22 @@ import { jsonBody, share } from './sound-routes.ts';
 //   export, the first export that succeeded (the sign-up sequence's first edit, sequence.ts) and
 //   the app the first request came from, and the latest day a tool call ran (`last_used_at`,
 //   written at most once a day). Writes go one at a time per user (metadata.ts).
-// - Each job that ends is spent on Kazi's credit ledger (access.ts), once: a marker file
-//   (`owners/{owner}/ledger-spent/{job_id}.json`) says it was taken, and the sweep spends any job
-//   a server missed. Given plans are counted from the meter instead.
-// - Email goes out when the ledger says a spend took the balance low or to zero (for a given plan,
-//   at 80% and 100% of the month's), and with what the ledger's automatic top-up did there, when
-//   the account turned it on (`POST /account/top-up`). The welcome is the sign-up sequence's;
+// - Jobs spend nothing (making is free). Removing a watermark is spent on the credit ledger
+//   (ledger.ts) once under its ref, and never past zero; a marker
+//   (`owners/{owner}/ledger-spent/{ref}.json`) keeps what the spend crossed until it is emailed.
+// - Email goes out when a spend takes the balance below LOW_CREDITS or to zero (for a given plan,
+//   at 80% and 100% of the month's). An account that turned on automatic top-up
+//   (`POST /account/top-up`) instead buys its pack on its saved card at that crossing, once per
+//   spend, and is told what it bought or why it couldn't. The welcome is the sign-up sequence's;
 //   this sends it only while the sequence is off. A notice file under the owner's data claims
 //   each message once, across servers (`owners/{owner}/notices/{name}.json`, kept 400 days).
 // - Once a day from 15:00 UTC, an account with files going in about 3 days or within a day gets
 //   one email naming them (expiry-notices.ts), unless it turned these off on its account page
 //   (`POST /account/notifications`, kept as `expiry_emails: off` in its WorkOS metadata).
-// - Stripe's webhook tells the access check credits were bought, so they show at once.
+// - Stripe's webhook (`POST /stripe/webhook`) credits cuttingfloor's packs and takes back refunds
+//   (stripe-credits.ts), and the site does the same as checkout returns (`POST /account/payments`),
+//   whichever is first. App Store purchases and refunds come through apple.ts
+//   (`POST /apple/notifications` here, the app's own posts on /v1).
 // - Lifetime is not given for using a client, or for being a Kazi member: only the `plan` tag gives
 //   it (access.ts).
 // - A partner whose users never sign in here (the Cutting Floor AI app, through one-mcp) gets a
@@ -59,7 +72,7 @@ import { jsonBody, share } from './sound-routes.ts';
 //   folder (timelines, media, jobs, outputs, uploads, meter, call log, notices, ledger link), its
 //   script keys, partner links, cached frames of its timelines, its lines in the email log, its
 //   address's suppression, and last its WorkOS user, so a retry still finds what a failure left.
-//   The credit ledger is the partner's to delete; Stripe keeps its payments.
+//   Its credit ledger account and entries go too; Stripe keeps its payments.
 
 const NOTICE_TTL_MS = 400 * 24 * 3_600_000;
 // A release spend's marker, kept until what it crossed has been emailed and a while after.
@@ -74,8 +87,12 @@ const EXPIRY_HOUR_UTC = 15;
 export interface LifecycleOptions {
   runtime: Runtime;
   access: AccessCheck;
-  /** Kazi's credit ledger, where jobs on an account without a given plan are spent. */
+  /** The credit ledger, where releases on an account without a given plan are spent. */
   ledger: Ledger;
+  /** Kazi's partner API, for the hand-off into Kazi after a sign-up on our site. */
+  kazi?: Kazi;
+  /** App Store purchases and refunds (`POST /apple/notifications`). */
+  apple?: AppleCredits;
   workosKey: string;
   stripeKey: string;
   accountUrl: string;
@@ -109,7 +126,7 @@ export interface LifecycleOptions {
   /**
    * A standby server (CUTTINGFLOOR_STANDBY=1) on a copy of production's data: nothing it does
    * may cost anyone money, message a person or change what production shares with it. Jobs run
-   * unmetered (no ledger spend, no usage report, no automatic top-up, no notice markers), no
+   * unmetered (no ledger spend, no automatic top-up, no notice markers), no
    * WorkOS metadata is written (first-use markers, last used), and the routes that charge, delete
    * an account or take Stripe's events answer 503. Sign-in and reads work as ever.
    */
@@ -249,11 +266,12 @@ export class Lifecycle {
   }
 
   /**
-   * Spends the credits for removing a watermark on the ledger under `ref` (the ledger takes a ref once, however
-   * often it is sent), then emails what the spend crossed: running low, out, or what the ledger's
-   * automatic top-up did there. A marker keeps the ledger's answer until the email is sent, so a
-   * server that stops in between sends it on the sweep. Fails closed: a ledger that can't be
-   * reached refuses the release, retryable, and nothing is spent.
+   * Spends the credits for removing a watermark on the ledger under `ref` (taken once, however
+   * often it is sent), then emails what the spend crossed: running low, out, or what automatic
+   * top-up bought there. A marker keeps what the spend crossed until the email is sent, so a
+   * server that stops in between buys the pack and sends it on the sweep. Fails closed: a ledger
+   * that can't be reached refuses the release, retryable, and nothing is spent; a balance that no
+   * longer covers it refuses it as the gate does.
    */
   async spendRelease(
     owner: string,
@@ -262,24 +280,23 @@ export class Lifecycle {
     tool: string,
   ): Promise<{ balance: number | null }> {
     const access = await this.#o.access.require(owner);
-    const link = access.ledger;
-    // Every account that isn't on a given plan (exempt before this) has a link; without one
-    // nothing is spent, so nothing is released.
-    if (!link)
-      throw new CfError('service_unavailable', 'The watermark could not be removed just now', {
-        hint: 'Nothing was spent. Call export.release again in a minute',
-        detail: { retry: true, retry_after_seconds: 60 },
-      });
-    let spent: LedgerUsage;
+    let spent: Spend;
     try {
-      spent = await this.#o.ledger.usage({
-        account_id: link.account_id,
-        job_id: ref,
-        credits,
-        tool,
-        finished_at: new Date().toISOString(),
-      });
+      // Opened by the access check already; this read makes sure of it.
+      await this.#o.access.creditAccount(owner);
+      spent = await this.#o.ledger.spend(owner, { id: ref, credits, tool });
     } catch (error) {
+      if (error instanceof Insufficient) {
+        this.#o.access.forget(owner);
+        throw new CfError(
+          'quota_exceeded',
+          `Removing the watermark from this file uses ${credits} credits; this account has ${error.balance}`,
+          {
+            hint: 'The file still downloads with the cuttingfloor watermark, and editing and exports keep working. Tell the user the watermark can be removed once their account has the credits',
+            detail: { price: credits, credits_left: error.balance },
+          },
+        );
+      }
       process.stderr.write(`lifecycle: ${owner}: release ${ref}: ${(error as Error).message}\n`);
       throw new CfError('service_unavailable', 'The watermark could not be removed just now', {
         hint: 'Nothing was spent. Call export.release again in a minute',
@@ -287,20 +304,85 @@ export class Lifecycle {
       });
     }
     this.#o.access.spent(owner, spent.balance);
+    const refill = spent.crossed && !spent.duplicate ? await this.#refillPack(owner) : undefined;
     const mark: Spent = {
       at: new Date().toISOString(),
-      told: spent.duplicate || (!spent.crossed && !spent.top_up),
+      told: spent.duplicate || !spent.crossed,
       crossed: spent.crossed,
-      top_up: spent.top_up,
+      ...(refill ? { refill: refill.id } : {}),
     };
     const marks = this.#o.runtime.ws.records.collection(LEDGER_SPENT, { owner });
+    if (spent.duplicate && (await marks.has(ref))) return { balance: spent.balance };
     await marks.put(ref, mark);
     if (!mark.told) {
-      void this.#tell(owner, access, ref, mark)
-        .then(() => marks.put(ref, { ...mark, told: true }))
-        .catch((error: Error) => process.stderr.write(`lifecycle: ${owner}: ${error.message}\n`));
+      void this.#settle(owner, access, ref, mark).catch((error: Error) =>
+        process.stderr.write(`lifecycle: ${owner}: ${error.message}\n`),
+      );
     }
     return { balance: spent.balance };
+  }
+
+  /** The pack the account buys on its own when it runs low, if it turned that on. */
+  async #refillPack(owner: string) {
+    const account = await this.#o.ledger.get(owner).catch(() => undefined);
+    return packOf(account?.refill?.pack);
+  }
+
+  /**
+   * What a spend's marker still calls for: the top-up its crossing buys (once: the marker keeps
+   * what it did, and Stripe takes the same key as one charge), then the email.
+   */
+  async #settle(owner: string, access: Access & { allowed: true }, ref: string, mark: Spent) {
+    const marks = this.#o.runtime.ws.records.collection(LEDGER_SPENT, { owner });
+    let settled = mark;
+    if (mark.refill && mark.top_up === undefined) {
+      settled = { ...mark, top_up: await this.#topUp(owner, access, ref, mark.refill) };
+      await marks.put(ref, settled);
+    }
+    await this.#tell(owner, access, ref, settled);
+    await marks.put(ref, { ...settled, told: true });
+  }
+
+  /** Buys the account's top-up pack on its saved card, and credits it. */
+  async #topUp(
+    owner: string,
+    access: Access & { allowed: true },
+    ref: string,
+    packId: string,
+  ): Promise<TopUp> {
+    const pack = packOf(packId);
+    if (!pack) return { ok: false, pack: packId, credits: 0, price: 0, message: 'no such pack' };
+    const base = { pack: pack.id, credits: pack.credits, price: pack.price };
+    const account = await this.#o.ledger.get(owner);
+    const customer = access.customer ?? account?.stripe_customer_id ?? undefined;
+    const card = customer
+      ? await savedCard(this.#o.stripeKey, customer).catch(() => undefined)
+      : undefined;
+    if (!customer || !card) return { ok: false, ...base, message: 'no card is saved' };
+    const paid = await chargePack(this.#o.stripeKey, {
+      customer,
+      owner,
+      pack,
+      card,
+      key: `${owner}:top-up:${ref}`,
+      reason: 'automatic top-up',
+    }).catch((error: Error) => ({ ok: false as const, message: error.message }));
+    if (!paid.ok) return { ok: false, ...base, message: paid.message };
+    const written = await this.#o.ledger.credit(owner, {
+      id: paid.id,
+      kind: 'purchase',
+      credits: pack.credits,
+      pack: pack.id,
+      payment_intent: paid.id,
+      reason: 'automatic top-up',
+    });
+    this.#o.access.forget(owner);
+    return {
+      ok: true,
+      ...base,
+      card: { brand: card.brand, last4: card.last4 },
+      balance: written.account.balance,
+    };
   }
 
   /** Emails what a spend crossed, and what automatic top-up did there. */
@@ -355,8 +437,8 @@ export class Lifecycle {
   }
 
   /**
-   * Sends what a release's spend crossed when the server stopped before it could (the marker
-   * kept the ledger's answer), and lets old markers go.
+   * Buys and sends what a release's spend crossed when the server stopped before it could (the
+   * marker kept what it crossed), and lets old markers go.
    */
   async #tellMissed(key: string): Promise<void> {
     const ws = this.#o.runtime.ws;
@@ -366,10 +448,7 @@ export class Lifecycle {
     const waiting = await marks.find({ told: false });
     if (!waiting.length) return;
     const access = await this.#o.access.require(key);
-    for (const { id, value } of waiting) {
-      await this.#tell(key, access, id, value);
-      await marks.put(id, { ...value, told: true });
-    }
+    for (const { id, value } of waiting) await this.#settle(key, access, id, value);
   }
 
   /** The signed-in account's plan and credits, for account.get and the account page. */
@@ -609,7 +688,8 @@ export class Lifecycle {
   }
 
   /**
-   * The routes the site and Stripe call: `POST /stripe/webhook`, `GET /account/usage`,
+   * The routes the site, Stripe and Apple call: `POST /stripe/webhook`,
+   * `POST /apple/notifications`, `POST /account/payments`, `GET /account/usage`,
    * `POST /account/top-up`, `GET /account/media`, `POST /account/uploads`, and `GET`/`POST /account/keys` and
    * `POST /account/keys/revoke`, `POST /account/kazi-handoff`, and partners' `POST /partner/keys`
    * and `DELETE /partner/users`. Returns false for any other path.
@@ -620,6 +700,8 @@ export class Lifecycle {
       this.#o.standby &&
       ((url.pathname === '/partner/users' && req.method === 'DELETE') ||
         url.pathname === '/stripe/webhook' ||
+        url.pathname === '/apple/notifications' ||
+        url.pathname === '/account/payments' ||
         url.pathname === '/account/top-up')
     ) {
       req.resume();
@@ -643,6 +725,14 @@ export class Lifecycle {
     }
     if (url.pathname === '/stripe/webhook' && req.method === 'POST') {
       await this.#webhook(req, res);
+      return true;
+    }
+    if (url.pathname === '/apple/notifications' && req.method === 'POST') {
+      await this.#appleRoute(req, res);
+      return true;
+    }
+    if (url.pathname === '/account/payments' && req.method === 'POST') {
+      await this.#paymentsRoute(req, res);
       return true;
     }
     if (url.pathname === '/account/usage' && req.method === 'GET') {
@@ -807,7 +897,7 @@ export class Lifecycle {
 
   /**
    * Automatic top-up, set on the account page: POST {user, pack} with a pack's id, or pack null
-   * for off. The ledger keeps it and buys the pack when the balance runs low.
+   * for off. The ledger keeps it; a release that takes the balance low buys the pack.
    */
   async #topUpRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
@@ -906,9 +996,14 @@ export class Lifecycle {
       (error: Error) =>
         process.stderr.write(`lifecycle: ${owner}: kazi demo clip: ${error.message}\n`),
     );
+    const kazi = this.#o.kazi;
+    if (!kazi) {
+      await activated;
+      return json(res, 503, { error: 'Kazi is not connected on this server' });
+    }
     try {
       const name = [user.first_name, user.last_name].filter((part) => part?.trim()).join(' ');
-      const link = await this.#o.ledger
+      const link = await kazi
         .handoff({
           email: user.email,
           workos_user_id: owner,
@@ -1014,6 +1109,9 @@ export class Lifecycle {
       await links.delete(sha256(sub));
       // Last: while the WorkOS user is there, a retry finds the account and finishes the rest.
       for (const account of accounts) if (account.user) await this.#deleteUser(account.id);
+      // A request in flight while the account went may have opened its ledger account again;
+      // with the WorkOS user gone, none can now.
+      for (const account of accounts) await this.#o.ledger.forget(account.id);
     } catch (error) {
       process.stderr.write(`partner ${partner}: delete: ${(error as Error).message}\n`);
       return json(res, 503, { error: 'the account could not be deleted just now; call again' });
@@ -1053,7 +1151,9 @@ export class Lifecycle {
     await runtime.uploads.forget(owner);
     await ws.blobs.forget(owner);
     await ws.records.forget(owner);
+    // Caches first, so a request in flight reads the ledger again rather than a stale account.
     this.#o.access.forget(owner);
+    await this.#o.ledger.forget(owner);
     this.#seen.delete(owner);
     this.#apps.delete(owner);
     this.#usedOn.delete(owner);
@@ -1296,6 +1396,13 @@ export class Lifecycle {
     }
   }
 
+  /**
+   * Stripe's events. Any event about a payment intent, its charge or a refund (by the endpoint's
+   * subscription: `payment_intent.succeeded`, `charge.refunded`, `refund.created`,
+   * `refund.updated`) reads that payment from Stripe again and writes what it adds to the ledger:
+   * its pack, and each refund. Only cuttingfloor's payments count (the Stripe account is shared
+   * with Kazi). A replay changes nothing; a failure answers 500 and Stripe sends it again.
+   */
   async #webhook(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const body = await readBody(req, 1024 * 1024);
     const secret = this.#o.stripeWebhookSecret;
@@ -1307,19 +1414,111 @@ export class Lifecycle {
       data: { object: Record<string, unknown> };
     };
     const object = event.data.object;
-    const customerId = typeof object.customer === 'string' ? object.customer : undefined;
-    if (!customerId) return json(res, 200, { ignored: true });
+    const pi =
+      object.object === 'payment_intent'
+        ? String(object.id ?? '')
+        : typeof object.payment_intent === 'string'
+          ? object.payment_intent
+          : '';
+    if (!pi.startsWith('pi_')) return json(res, 200, { ignored: true });
     try {
-      // The Stripe account is shared with other products; only cuttingfloor's customers count.
-      const customer = await this.#stripe(`/v1/customers/${encodeURIComponent(customerId)}`);
-      const meta = (customer.metadata ?? {}) as Record<string, string>;
-      const owner = meta.workos_user_id;
-      if (meta.app !== 'cuttingfloor' || !owner) return json(res, 200, { ignored: true });
-      this.#o.access.forget(owner);
-      return json(res, 200, { received: true });
+      const credited = await this.#syncPayment(await paymentIntent(this.#o.stripeKey, pi));
+      return json(res, 200, credited ? { received: true, ...credited } : { ignored: true });
     } catch (error) {
       process.stderr.write(`stripe webhook ${event.id}: ${(error as Error).message}\n`);
       // Stripe retries a failed delivery.
+      return json(res, 500, { error: 'not handled' });
+    }
+  }
+
+  /**
+   * Writes what a cuttingfloor payment adds to its account (opening the account if need be):
+   * undefined for a payment that isn't ours or didn't go through.
+   */
+  async #syncPayment(
+    pi: StripePaymentIntent,
+  ): Promise<{ owner: string; credited: number; balance: number } | undefined> {
+    const ours = ourPayment(pi);
+    if (!ours) return undefined;
+    await this.#o.access.creditAccount(ours.owner);
+    let credited = 0;
+    let balance = 0;
+    for (const entry of await paymentEntries(this.#o.stripeKey, pi)) {
+      const written = await this.#o.ledger.credit(ours.owner, entry);
+      if (!written.duplicate) credited += entry.credits;
+      balance = written.account.balance;
+    }
+    this.#o.access.forget(ours.owner);
+    return { owner: ours.owner, credited, balance };
+  }
+
+  /**
+   * The site, as checkout returns or a one-click buy goes through: POST {user, payment_intent}
+   * or {user, checkout_session} credits that payment now rather than when Stripe's event comes.
+   * Only the user's own cuttingfloor payment counts.
+   */
+  async #paymentsRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (!this.#fromSite(req)) return json(res, 401, { error: 'unauthorized' });
+    let body: { user?: unknown; payment_intent?: unknown; checkout_session?: unknown };
+    try {
+      body = JSON.parse(await readBody(req, 16 * 1024));
+    } catch {
+      return json(res, 400, {
+        error: 'body must be JSON: {user, payment_intent | checkout_session}',
+      });
+    }
+    const owner = typeof body.user === 'string' ? body.user : '';
+    if (!isUser(owner)) return json(res, 400, { error: 'user must be a WorkOS user id' });
+    const named = (value: unknown, prefix: string) =>
+      typeof value === 'string' && value.startsWith(prefix) && /^[A-Za-z0-9_]{4,255}$/.test(value)
+        ? value
+        : undefined;
+    const session = named(body.checkout_session, 'cs_');
+    let pi = named(body.payment_intent, 'pi_');
+    if (!pi && !session)
+      return json(res, 400, { error: 'name the payment: payment_intent or checkout_session' });
+    try {
+      if (!pi && session) {
+        const found = await stripeGet<{ payment_intent?: string | null }>(
+          this.#o.stripeKey,
+          `/v1/checkout/sessions/${encodeURIComponent(session)}`,
+        );
+        pi = found.payment_intent ?? undefined;
+        if (!pi) return json(res, 404, { error: 'that checkout has no payment yet' });
+      }
+      const payment = await paymentIntent(this.#o.stripeKey, pi as string);
+      if (ourPayment(payment)?.owner !== owner)
+        return json(res, 404, { error: 'no such payment on this account' });
+      const credited = await this.#syncPayment(payment);
+      return json(res, 200, { credited: credited?.credited ?? 0, balance: credited?.balance ?? 0 });
+    } catch (error) {
+      process.stderr.write(`lifecycle: ${owner}: payment: ${(error as Error).message}\n`);
+      return json(res, 503, { error: 'the payment could not be read just now' });
+    }
+  }
+
+  /** App Store Server Notifications V2: {signedPayload}. */
+  async #appleRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const apple = this.#o.apple;
+    let body: { signedPayload?: unknown };
+    try {
+      body = JSON.parse(await readBody(req, 256 * 1024));
+    } catch {
+      return json(res, 400, { error: 'body must be JSON: {signedPayload}' });
+    }
+    if (!apple) return json(res, 503, { error: 'App Store purchases are off on this server' });
+    const signed = typeof body.signedPayload === 'string' ? body.signedPayload : '';
+    if (!signed) return json(res, 400, { error: 'signedPayload is required' });
+    try {
+      process.stderr.write(`apple notifications: ${await apple.notification(signed)}\n`);
+      return json(res, 200, { received: true });
+    } catch (error) {
+      if (error instanceof AppleRejected) {
+        process.stderr.write(`apple notifications: rejected: ${error.message}\n`);
+        return json(res, 400, { error: error.message });
+      }
+      process.stderr.write(`apple notifications: ${(error as Error).message}\n`);
+      // Apple sends it again later.
       return json(res, 500, { error: 'not handled' });
     }
   }
@@ -1340,15 +1539,6 @@ export class Lifecycle {
       ...(body ? { body: JSON.stringify(body) } : {}),
       signal: AbortSignal.timeout(10_000),
     });
-  }
-
-  async #stripe(path: string) {
-    const res = await fetch(`https://api.stripe.com${path}`, {
-      headers: { authorization: `Bearer ${this.#o.stripeKey}` },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) throw new Error(`Stripe ${res.status}`);
-    return (await res.json()) as Record<string, unknown>;
   }
 }
 
@@ -1381,15 +1571,30 @@ function warningName(balance: Balance, kind: 'low' | 'out'): string {
     : `minutes-${balance.since.slice(0, 10)}-${kind === 'low' ? 80 : 100}`;
 }
 
-/** A job spent on the ledger: its answer, kept until the email it calls for is sent. */
+/** What automatic top-up did at a crossing. */
+type TopUp =
+  | {
+      ok: true;
+      pack: string;
+      credits: number;
+      price: number;
+      card: { brand: string; last4: string };
+      balance: number;
+    }
+  | { ok: false; pack: string; credits: number; price: number; message: string };
+
+/** A release spent on the ledger: what it crossed, kept until the email it calls for is sent. */
 interface Spent {
   at: string;
   told: boolean;
-  crossed?: LedgerUsage['crossed'];
-  top_up?: LedgerUsage['top_up'];
+  crossed?: Spend['crossed'];
+  /** The pack automatic top-up buys at this crossing. */
+  refill?: string;
+  /** What it did, once it ran (null from before: nothing ran). */
+  top_up?: TopUp | null;
 }
 
-/** That a job was spent on the ledger, by job id (`owners/{owner}/ledger-spent/`). */
+/** That a release was spent on the ledger, by its ref (`owners/{owner}/ledger-spent/`). */
 export const LEDGER_SPENT = defineCollection<Spent>({
   name: 'ledger_spent',
   scope: 'owner',

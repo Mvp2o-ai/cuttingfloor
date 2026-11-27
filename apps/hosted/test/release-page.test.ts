@@ -8,8 +8,8 @@ import { Runtime } from '@cuttingfloor/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AccessCheck } from '../src/access.ts';
 import { createHttpServer } from '../src/http.ts';
-import { Ledger } from '../src/ledger.ts';
 import { Lifecycle } from '../src/lifecycle.ts';
+import { testLedger } from './test-ledger.ts';
 
 // The QR code on a review copy's cards opens the site's release page, which signs the viewer in
 // and asks the server, with the site's key, for that user's own file: its price and their credits,
@@ -69,7 +69,7 @@ beforeAll(async () => {
   const lifecycle = new Lifecycle({
     runtime,
     access,
-    ledger: new Ledger('http://127.0.0.1:9', 'none'),
+    ledger: testLedger(),
     workosKey: 'sk_test_none',
     stripeKey: 'sk_test_none',
     accountUrl: 'https://cuttingfloor.ai/account',

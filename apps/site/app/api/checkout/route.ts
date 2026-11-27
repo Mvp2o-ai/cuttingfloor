@@ -1,6 +1,7 @@
 import { withAuth } from '@workos-inc/authkit-nextjs';
 import {
   buyOnSavedCard,
+  creditPayment,
   customerFor,
   packFor,
   packMetadata,
@@ -22,8 +23,12 @@ export async function POST(request: Request) {
   const customer = await customerFor(user.id);
   // The form's nonce makes a double click one charge.
   const nonce = String(form.get('nonce') ?? '').slice(0, 64) || crypto.randomUUID();
-  if (form.get('saved') === '1' && (await buyOnSavedCard(user.id, customer, pack, nonce)))
+  const paid =
+    form.get('saved') === '1' ? await buyOnSavedCard(user.id, customer, pack, nonce) : undefined;
+  if (paid) {
+    await creditPayment(user.id, { payment_intent: paid });
     return Response.redirect(`${origin}/account?bought=${pack.credits}#credits`, 303);
+  }
   const session = await stripe('/v1/checkout/sessions', {
     mode: 'payment',
     customer,
@@ -39,7 +44,8 @@ export async function POST(request: Request) {
     'adaptive_pricing[enabled]': 'true',
     allow_promotion_codes: 'true',
     ...(process.env.STRIPE_MANAGED_PAYMENTS === '1' ? { 'managed_payments[enabled]': 'true' } : {}),
-    success_url: `${origin}/account?bought=${pack.credits}#credits`,
+    // Stripe fills in the session, so the page credits it as it opens.
+    success_url: `${origin}/account?bought=${pack.credits}&session={CHECKOUT_SESSION_ID}#credits`,
     cancel_url: `${origin}/account#credits`,
   });
   return Response.redirect(String(session.url), 303);
