@@ -40,7 +40,7 @@ const MARK = `<svg viewBox="0 0 32 32"><path d="M4.4 4.4H24.4L4.4 24.4Z" fill="$
 // Drawn large and scaled down at marking. Its own opacity is the card's: a dark glass the
 // picture shows through, and type a step brighter, so it reads on any footage without hiding it.
 const WIDTH = 1200;
-const HEIGHT = 420;
+const HEIGHT = 440;
 const page = join(work, 'card.html');
 writeFileSync(
   page,
@@ -54,14 +54,13 @@ html, body { margin: 0; width: ${WIDTH}px; height: ${HEIGHT}px; background: tran
 .lockup { display: flex; align-items: center; gap: 14px; font-weight: 800; font-size: 44px; letter-spacing: -0.02em; }
 .lockup svg { width: 52px; height: 52px; }
 h1 { margin: 0; font-weight: 800; font-size: 92px; line-height: 1; letter-spacing: -0.035em; }
-.url { font-weight: 800; font-size: 46px; color: ${GREEN}; letter-spacing: -0.01em; }
-.url span { font-weight: 600; font-size: 34px; color: ${DIM}; letter-spacing: 0; }
-.apps { font-weight: 600; font-size: 32px; color: ${DIM}; letter-spacing: 0.01em; }
+.url { font-weight: 800; font-size: 72px; line-height: 1; color: ${GREEN}; letter-spacing: -0.02em; }
+.apps { font-weight: 600; font-size: 30px; color: ${DIM}; letter-spacing: 0.01em; }
 </style><div class="card">
 <div class="lockup">${MARK}<span>cuttingfloor</span></div>
 <h1>AI video editing, solved.</h1>
-<div class="url">cuttingfloor.ai <span>&nbsp;·&nbsp; MCP api.cuttingfloor.ai/mcp</span></div>
-<div class="apps">Works in ChatGPT · Claude · Kazi</div>
+<div class="url">cuttingfloor.ai</div>
+<div class="apps">MCP api.cuttingfloor.ai/mcp &nbsp;·&nbsp; Works in ChatGPT · Claude · Kazi</div>
 </div>`,
 );
 execFileSync(values.chrome, [
