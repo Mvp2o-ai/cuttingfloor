@@ -21,6 +21,7 @@ import { registerJudgeTools } from './tools/judge.ts';
 import { registerListenTools } from './tools/listen.ts';
 import { registerMediaTools } from './tools/media.ts';
 import { registerRenderTools } from './tools/render.ts';
+import { registerScoreTools } from './tools/score.ts';
 import { registerSearchTools } from './tools/search.ts';
 import { registerSeekTools } from './tools/seek.ts';
 import { QA_SKILL, registerSkillTools } from './tools/skills.ts';
@@ -134,6 +135,7 @@ export function createServer(deps: ServerDeps): McpServer {
   registerSoundsView(server, deps);
   registerUpload(server, deps);
   registerTimelineTools(server, deps);
+  registerScoreTools(server, deps);
   registerMediaTools(server, deps);
   registerSeekTools(server, deps);
   registerSearchTools(server, deps);

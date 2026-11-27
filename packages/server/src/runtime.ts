@@ -11,6 +11,7 @@ import {
   PublicBucket,
   type PublicFiles,
   type S3Settings,
+  ScoreStore,
   s3SettingsFromEnv,
   TimelineStore,
   Workspace,
@@ -340,6 +341,8 @@ export class Runtime {
   readonly config: RuntimeConfig;
   readonly ws: Workspace;
   readonly timelines: TimelineStore;
+  /** Scores: music made in layers, kept as timelines are. */
+  readonly scores: ScoreStore;
   readonly media: MediaLibrary;
   /** media.search's picture index of each ready media. */
   readonly indexer: SearchIndexer;
@@ -438,6 +441,7 @@ export class Runtime {
       this.sharing = undefined;
     }
     this.timelines = new TimelineStore(this.ws);
+    this.scores = new ScoreStore(this.ws);
     this.outputs = new Outputs(this.ws);
     this.media = new MediaLibrary(this.ws, {
       roots: config.mediaRoots,
@@ -611,6 +615,7 @@ export class Runtime {
 
   async sweep(): Promise<void> {
     await this.timelines.sweep();
+    await this.scores.sweep();
     await this.media.sweep(MEDIA_TTL_MS);
     await this.jobs.store.sweep();
     // Frames kept for download (render.frames urls) last as long as their links.

@@ -39,9 +39,9 @@ const anyResult = z.object({}).passthrough();
  * also names its {upload} answer, the media with no job yet (497 737 measured), and to 520 000
  * for when each file goes (kept_until and expiry on media and exports, the keeping policy in the
  * descriptions; 502 440 measured), and to 530 000 for sounds.list, the sound library (523 003
- * measured).
+ * measured), and to 630 000 for the score tools, music made in layers (29 tools; 620 929 measured).
  */
-const BUDGET_BYTES = 530_000;
+const BUDGET_BYTES = 630_000;
 let env: TestEnv;
 
 beforeAll(async () => {
@@ -242,6 +242,35 @@ describe('protocol surface', () => {
         'range.extract',
         'range.lift',
         'render.frames',
+        'score.create',
+        'score.get',
+        'score.load',
+        'score.diff',
+        'score.history',
+        'score.set_tempo',
+        'score.set_meter',
+        'score.set_markers',
+        'score.add_part',
+        'score.set_part',
+        'score.remove_part',
+        'score.add_device',
+        'score.set_device',
+        'score.remove_device',
+        'score.add_notes',
+        'score.set_notes',
+        'score.remove_notes',
+        'score.add_region',
+        'score.move_region',
+        'score.trim_region',
+        'score.split_region',
+        'score.alias_region',
+        'score.unique_region',
+        'score.remove_region',
+        'score.set_automation',
+        'score.add_send',
+        'score.set_send',
+        'score.remove_send',
+        'score.batch',
         'skills.get',
         'skills.search',
         'sounds.list',
@@ -290,6 +319,9 @@ describe('protocol surface', () => {
         'media.get',
         'media.list',
         'render.frames',
+        'score.diff',
+        'score.get',
+        'score.history',
         'skills.get',
         'skills.search',
         'sounds.list',
