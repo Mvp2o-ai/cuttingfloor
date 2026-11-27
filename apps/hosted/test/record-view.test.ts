@@ -273,6 +273,7 @@ describe.skipIf(!browserFound)('the play-along view', () => {
         input: 'pads',
         velocity: 100,
         length_beats: 0.25,
+        pads: ['C2', 'D2', 'D#2', 'F#2'],
         until_beats: 8,
         count_in_beats: 2,
         click: true,
@@ -281,7 +282,7 @@ describe.skipIf(!browserFound)('the play-along view', () => {
     const { page, view, cdp } = await open(opened);
     await ready(view);
     await shot(page, '1-pads-ready');
-    expect(await view.$$eval('.pad', (els) => els.length)).toBe(13);
+    expect(await view.$$eval('.pad', (els) => els.length)).toBe(4);
     await view.click('#go');
     await view.waitForFunction(() => (window as unknown as CfWin).cfRecord.S.state === 'playing');
     const { T0, L, R, applied } = await view.evaluate(() => {
@@ -346,6 +347,7 @@ describe.skipIf(!browserFound)('the play-along view', () => {
         input: 'pads',
         velocity: 100,
         length_beats: 0.25,
+        pads: ['C2', 'D2', 'D#2', 'F#2'],
         until_beats: 8,
       }),
     );
@@ -535,6 +537,7 @@ describe.skipIf(!browserFound)('the play-along view', () => {
         input: 'pads',
         velocity: 100,
         length_beats: 0.25,
+        pads: ['C2', 'D2', 'D#2', 'F#2'],
         until_beats: 8,
       }),
     );
@@ -544,7 +547,7 @@ describe.skipIf(!browserFound)('the play-along view', () => {
     await tab.waitForFunction(() => (window as unknown as CfWin).cfRecord.S.state === 'ready', {
       timeout: 20_000,
     });
-    expect(await tab.$$eval('.pad', (els) => els.length)).toBe(13);
+    expect(await tab.$$eval('.pad', (els) => els.length)).toBe(4);
     // Nothing wider than the phone.
     expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     if (shots) await tab.screenshot({ path: join(shots, '10-page-phone.png'), fullPage: true });
