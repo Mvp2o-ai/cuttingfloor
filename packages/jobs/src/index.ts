@@ -601,9 +601,29 @@ export class JobRunner {
    * restart (`startup`), and any whose heartbeat stopped. Safe to run on every server at once.
    */
   async recover(options: { startup?: boolean } = { startup: true }): Promise<number> {
-    const cutoff = Date.now() - this.#staleMs;
-    const stale = (await this.store.working()).filter(
+    const now = Date.now();
+    const cutoff = now - this.#staleMs;
+    const working = await this.store.working();
+    // A job that waits on a person (meta.waits_until: score.record's take) runs on no server
+    // until they act: it is left alone until then, and ends expired after.
+    const waiting = (j: Job) => j.meta?.waits_until !== undefined;
+    for (const job of working.filter(
+      (j) => waiting(j) && Date.parse(j.meta?.waits_until ?? '') <= now,
+    )) {
+      await this.store.update(job, {
+        status: 'completed',
+        statusMessage: 'expired',
+        result: errorResult(
+          new CfError('expired', `Nothing came before it ended at ${job.meta?.waits_until}`, {
+            hint: 'Call the tool again for a new one',
+            detail: { expired_at: job.meta?.waits_until },
+          }),
+        ),
+      });
+    }
+    const stale = working.filter(
       (j) =>
+        !waiting(j) &&
         !this.#active.has(j.id) &&
         ((options.startup && (j.node ?? this.node) === this.node) ||
           Date.parse(j.lastUpdatedAt) < cutoff),
