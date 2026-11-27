@@ -82,6 +82,11 @@ const NoteInput = z.object({
   velocity: Velocity,
 });
 
+/** A list capped by a platform limit, refused over it with the number. */
+const capped = (limit: number, what: string) => ({
+  message: `up to ${n(limit)} ${what} (a limit of the platform)`,
+});
+
 const notesPerCall = <T extends z.ZodType>(item: T) =>
   z
     .array(item)
@@ -112,7 +117,7 @@ export const ScoreEditArgs = {
         }),
       )
       .min(1)
-      .max(SCORE_LIMITS.changes)
+      .max(SCORE_LIMITS.changes, capped(SCORE_LIMITS.changes, 'changes in a score'))
       .optional()
       .describe('[{at_beats, tempo, ramp}]: each replaces a change on its beat or adds one'),
   }),
@@ -129,7 +134,7 @@ export const ScoreEditArgs = {
           at_seconds: seconds.optional(),
         }),
       )
-      .max(SCORE_LIMITS.markers)
+      .max(SCORE_LIMITS.markers, capped(SCORE_LIMITS.markers, 'markers in a score'))
       .describe('[{name, at_beats}] or [{name, at_seconds}]'),
   }),
   'score.add_part': z.object({
@@ -269,7 +274,10 @@ export const ScoreEditArgs = {
           curve: AutomationCurve.describe('The move from this point to the next'),
         }),
       )
-      .max(SCORE_LIMITS.automationPoints)
+      .max(
+        SCORE_LIMITS.automationPoints,
+        capped(SCORE_LIMITS.automationPoints, 'automation points in a score'),
+      )
       .describe('[{at_beats, value, curve}]'),
     from_beats: atBeats.optional().describe('Start of the range replaced. Default 0'),
     from_seconds: seconds.optional(),
@@ -592,11 +600,11 @@ export const ScoreLoadDoc = z.object({
   tempo: z
     .array(z.object({ at: AtIn, tempo: Bpm, ramp: z.boolean().optional() }))
     .min(1)
-    .max(SCORE_LIMITS.changes),
+    .max(SCORE_LIMITS.changes, capped(SCORE_LIMITS.changes, 'changes in a score')),
   meter: z
     .array(ScoreMeter.extend({ bar: z.number().int().min(1) }))
     .min(1)
-    .max(SCORE_LIMITS.changes),
+    .max(SCORE_LIMITS.changes, capped(SCORE_LIMITS.changes, 'changes in a score')),
   markers: z
     .array(
       z.object({

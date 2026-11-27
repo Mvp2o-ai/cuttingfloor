@@ -679,6 +679,65 @@ describe('platform limits', () => {
     expect(error.code).toBe('limit_exceeded');
     expect(error.message).toMatch(/65 parts; a score holds up to 64/);
   });
+
+  it('cover regions, notes, devices, sends, automation points and markers', () => {
+    const over = (grow: (doc: ScoreDoc) => void, message: RegExp) => {
+      const doc = structuredClone(withRegion());
+      grow(doc);
+      const error = refused(() => edit(doc, ['score.set_part', { part_id: 'p1', gain_db: -1 }]));
+      expect(error.code).toBe('limit_exceeded');
+      expect(error.message).toMatch(message);
+    };
+    const part = (doc: ScoreDoc) => doc.parts[0] as ScoreDoc['parts'][number];
+    over((doc) => {
+      const region = part(doc).regions[0] as ScoreDoc['parts'][number]['regions'][number];
+      part(doc).regions = Array.from({ length: 2001 }, (_, i) => ({
+        ...region,
+        id: `r${100 + i}`,
+      }));
+    }, /2,001 regions; a score holds up to 2,000/);
+    over((doc) => {
+      const source = Object.values(doc.sources)[0] as ScoreDoc['sources'][string];
+      source.notes = Array.from({ length: 50_001 }, (_, i) => ({
+        id: `n${100 + i}`,
+        pitch: 60,
+        at: 0,
+        length: 1,
+        velocity: 1,
+      }));
+    }, /50,001 notes; a score holds up to 50,000/);
+    over((doc) => {
+      part(doc).devices = Array.from({ length: 17 }, (_, i) => ({
+        id: `d${100 + i}`,
+        name: 'organ',
+        params: {},
+      }));
+    }, /17 devices on part p1; a score holds up to 16/);
+    over((doc) => {
+      part(doc).sends = Array.from({ length: 257 }, (_, i) => ({
+        id: `s${100 + i}`,
+        to: 'p1',
+        level_db: 0,
+        before_gain: false,
+      }));
+    }, /257 sends; a score holds up to 256/);
+    over((doc) => {
+      doc.automation = [
+        {
+          target: { part_id: 'p1', param: 'pan' },
+          points: Array.from({ length: 20_001 }, (_, i) => ({
+            at: i,
+            value: 0,
+            curve: 'hold' as const,
+          })),
+        },
+      ];
+    }, /20,001 automation points; a score holds up to 20,000/);
+    const markers = Array.from({ length: 1001 }, (_, i) => ({ name: `m${i}`, at_beats: i }));
+    expect(refused(() => edit(start(), ['score.set_markers', { markers }])).message).toMatch(
+      /up to 1,000 markers in a score \(a limit of the platform\)/,
+    );
+  });
 });
 
 describe('score batch', () => {
