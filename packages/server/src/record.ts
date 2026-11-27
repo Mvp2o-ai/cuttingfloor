@@ -824,7 +824,18 @@ async function placeTake(
   }
   const duration = ticksToSeconds(ref.sound ?? ref.duration ?? 0);
   ctx.progress(0.6, 'measuring where the loop is in the recording');
-  const loopWav = (await storedBytes(rt, owner, session.job_id, loopName(mic.speed))) as Buffer;
+  // The loop as it played: kept since record.session rendered it, or rendered again where its
+  // file has gone (files under a session last as long as their links).
+  const loopWav =
+    (await storedBytes(rt, owner, session.job_id, loopName(mic.speed))) ??
+    (await (async () => {
+      const grid = sessionGrid(base, session, mic.speed);
+      return render(deps, owner, scoreAtSpeed(base, mic.speed), {
+        from_seconds: grid.start_seconds,
+        until_seconds: grid.start_seconds + grid.seconds,
+        signal: ctx.signal,
+      });
+    })());
   const correlation = await withSound(
     rt,
     owner,
