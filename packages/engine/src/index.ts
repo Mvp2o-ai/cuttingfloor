@@ -54,6 +54,18 @@ export {
 } from './media.ts';
 export { compileMlt, lengthFrames, type MltSource, scaledSize } from './mlt.ts';
 export {
+  checkMusicProject,
+  describeDevice,
+  MUSIC_CONTENT,
+  MUSIC_LIMITS,
+  type MusicLimits,
+  MusicProject,
+  type MusicProjectInput,
+  type MusicRender,
+  renderMusic,
+} from './music.ts';
+export { type DeviceDef, musicContent, musicDevices, type ParamDef } from './music-catalog.ts';
+export {
   type Box,
   type ChannelStats,
   type ColourStats,

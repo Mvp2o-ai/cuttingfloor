@@ -17,6 +17,7 @@ export const BIN = {
   whisper: process.env.CUTTINGFLOOR_WHISPER ?? 'whisper-cli',
   vision: process.env.CUTTINGFLOOR_VISION ?? 'cf-vision',
   segment: process.env.CUTTINGFLOOR_SEGMENT ?? 'cf-segment',
+  music: process.env.CUTTINGFLOOR_MUSIC ?? 'cf-music',
   zip: 'zip',
   tts: process.env.CUTTINGFLOOR_TTS ?? 'sherpa-onnx-offline-tts',
   diarize: process.env.CUTTINGFLOOR_DIARIZE ?? 'sherpa-onnx-offline-speaker-diarization',
