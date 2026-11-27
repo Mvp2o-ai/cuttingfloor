@@ -73,6 +73,13 @@ import type { ServerDeps } from '../server.ts';
 import { checkSound, type Sound, withSound } from '../sound.ts';
 import { listHeld, startUpload, storageOf, storageRoom } from '../storage.ts';
 import { UPLOAD_TOOL_META } from '../upload.ts';
+import {
+  checkHearingArgs,
+  checkHearingSize,
+  isHearingKind,
+  levelSteps,
+  measureHearing,
+} from './hearing.ts';
 import { checkQuestions, checkText, jevKeyRequired, PICTURE, pictureSize } from './judge.ts';
 import { soundLabelIndexes, soundsReport } from './listen.ts';
 import {
@@ -294,6 +301,7 @@ type LookFrame = JudgedFrame;
 
 type AnalyzeArgs = {
   kind: string;
+  every_seconds?: number | undefined;
   min_probability?: number | undefined;
   threshold_db?: number | undefined;
   min_seconds?: number | undefined;
@@ -390,12 +398,17 @@ async function measureSound(
   if (args.kind === 'loudness') {
     progress(0.1, 'loudness: measuring');
     const facts = await measureLoudness(sound.file, { ...range, signal });
+    const steps =
+      args.every_seconds !== undefined
+        ? await levelSteps(sound, args.every_seconds, signal)
+        : undefined;
     return {
       result: {
         loudness: {
           ...facts,
           from: args.from_seconds ?? 0,
           until: args.until_seconds ?? null,
+          ...(steps ? { steps } : {}),
         },
       },
     };
@@ -909,9 +922,9 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Analyze media',
       description: [
-        "Find what is in imported media, or in the sound of an edit, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). For English the word edges are then aligned to the sound (wav2vec2 forced alignment): a word starts and ends within about 0.05 s of where its letters sound, and an end on a soft consonant (s, t, k, f) or a breath can ring on up to about 0.1 s more; timing_confidence says how clearly each word was heard. Other languages keep whisper's own times, up to about a second off. Short ums and uhs are often missing from the words, while kind speech still detects them as voice. from_seconds and until_seconds transcribe just that stretch: the words come back in the result and are not stored, so the stored transcript (which edits and captions read) stays the whole media's. file: txt also writes the transcript as a file on the cutting floor, with a download url. beats: tempo, beat and downbeat times, and strengths: each beat's onset strength, 0–1 of the strongest (the hardest hits, the drop). faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on, a box for each sampled time (found false where the subject was lost); to make a title, sticker, arrow or mask follow the subject, turn the boxes into clip.set_transform (or clip.set_mask) keyframes, no tracking of your own needed. look: your own typed questions about what is on screen, answered on every sampled frame (to find where something happens from plain words, media.seek). silence: stretches quieter than threshold_db for at least min_seconds. scenes: times the picture changes by more than threshold (0–100; hard cuts between ordinary shots score about 10 to 30, see threshold), with each cut's score. speech: the probability that someone is speaking, every 32 ms (Silero VAD), and the spans where it is at least your min_probability; it hears speech, not noise or music, so a cough or a door is not speech. loudness: integrated loudness (LUFS), true peak (dBTP), loudness range (LU), RMS level and noise floor (dBFS) over the whole media or from_seconds to until_seconds. To line up two recordings, media.correlate. sounds: what can be heard and when, every 40 ms, for 447 named sounds (video://catalog/sounds: Laughter, Applause, Cough, Sneeze, Music, Speech, Door, Footsteps, Beep…): give labels for the ones you want, or none for every sound that reaches your min_probability; you get each sound's spans and its probability in every frame (a run over the whole media is kept with it; one over from_seconds to until_seconds comes back only). To find a sound you describe in your own words, media.listen. Both find sounds in the media; sound effects to add come from sounds.list. speakers: who speaks when (pyannote and ERes2Net on the CPU, about 10 to 20 s a minute): turns numbered in the order voices are first heard; give speakers (how many) or cluster_threshold. Transcript words then carry their speaker. voice: pitch (YIN, Hz) and level (RMS dBFS) every 0.1 s, and a summary (pitch median and range, level, voiced seconds, words per second from the transcript), e.g. as judge.ask state. colour: per-channel mean and percentiles, luma, white point estimate and clipping (RGB 0–255) of the frame and regions you name, at sampled times. picture: FFmpeg signalstats of every frame over a stretch: luma, chroma, saturation, hue, and ydif, the change from the frame before (a flash or frozen frame shows there).",
+        "Find what is in imported media, or in the sound of an edit, as data for edits. transcript: every word with its time (whisper.cpp on the CPU; the model downloads once). For English the word edges are then aligned to the sound (wav2vec2 forced alignment): a word starts and ends within about 0.05 s of where its letters sound, and an end on a soft consonant (s, t, k, f) or a breath can ring on up to about 0.1 s more; timing_confidence says how clearly each word was heard. Other languages keep whisper's own times, up to about a second off. Short ums and uhs are often missing from the words, while kind speech still detects them as voice. from_seconds and until_seconds transcribe just that stretch: the words come back in the result and are not stored, so the stored transcript (which edits and captions read) stays the whole media's. file: txt also writes the transcript as a file on the cutting floor, with a download url. On a timeline_id, the words of the edit's mix. beats: tempo, beat and downbeat times, and strengths: each beat's onset strength, 0–1 of the strongest (the hardest hits, the drop); also tempo candidates (half and double time show there), a fitted tempo and bar candidates. faces: face boxes over time, e.g. to reframe to 9:16 with clip.set_transform keyframes. track: follow a region you give from a moment on, a box for each sampled time (found false where the subject was lost), as clip.set_transform or clip.set_mask keyframes for a title, sticker or mask to follow. look: your own typed questions about what is on screen, answered on every sampled frame (to find where something happens from plain words, media.seek). silence: stretches quieter than threshold_db for at least min_seconds. scenes: times the picture changes by more than threshold (0–100; hard cuts between ordinary shots score about 10 to 30, see threshold), with each cut's score. speech: the probability that someone is speaking, every 32 ms (Silero VAD), and the spans where it is at least your min_probability; it hears speech, not noise or music, so a cough or a door is not speech. loudness: integrated loudness (LUFS), true peak (dBTP), loudness range (LU), RMS level and noise floor (dBFS) over the whole media or from_seconds to until_seconds; with every_seconds, the level on steps too. To line up two recordings, media.correlate. sounds: what can be heard and when, every 40 ms, for 447 named sounds (video://catalog/sounds: Laughter, Applause, Cough, Sneeze, Music, Speech, Door, Footsteps, Beep…): give labels for the ones you want, or none for every sound that reaches your min_probability; you get each sound's spans and its probability in every frame (a run over the whole media is kept with it; one over from_seconds to until_seconds comes back only). To find a sound you describe in your own words, media.listen. Both find sounds in the media; sound effects to add come from sounds.list. speakers: who speaks when (pyannote and ERes2Net on the CPU, about 10 to 20 s a minute): turns numbered in the order voices are first heard; give speakers (how many) or cluster_threshold. Transcript words then carry their speaker. voice: pitch (YIN, Hz) and level (RMS dBFS) every 0.1 s, and a summary (pitch median and range, level, voiced seconds, words per second from the transcript), e.g. as judge.ask state. colour: per-channel mean and percentiles, luma, white point estimate and clipping (RGB 0–255) of the frame and regions you name, at sampled times. picture: FFmpeg signalstats of every frame over a stretch: luma, chroma, saturation, hue, and ydif, the change from the frame before (a flash or frozen frame shows there). onsets: where the level of any sound jumps (a hit, a clap, a note). notes: the notes one voice or instrument plays or sings (a hum, a bass line). key: a score for each of the 24 keys. spectrum: the level in third-octave bands.",
         `With timeline_id instead of media_id, ${TIMELINE_SOUND_ANALYSES.join(', ')} measure the edit's mix and ${TIMELINE_PICTURE_ANALYSES.join(', ')} its picture as it renders (titles, effects and grades included), over from_seconds to until_seconds (timeline seconds); they come back in the result. A source or range with no sound fails with no_audio, naming it.`,
-        'Times are media seconds (timeline seconds for a timeline); boxes are fractions of the picture, and a box you give takes units "pixels" too (picture_size gives the size). Results stay with the media (media.get include; the latest run of each kind) except track, silence, scenes and loudness, which come back in the result; speech over the whole media is kept (media.get include speech), so asking again with another min_probability or range answers from it. A result too long to return (a long transcript) comes back as its summary and a note: read it in pieces with media.get include and a time range or page.',
+        'Times are media seconds (timeline seconds for a timeline); boxes are fractions of the picture, and a box you give takes units "pixels" too (picture_size gives the size). Results stay with the media (media.get include; the latest run of each kind) except track, silence, scenes, loudness, onsets, notes, key and spectrum, which come back in the result; speech over the whole media is kept (media.get include speech), so asking again with another min_probability or range answers from it. A result too long to return (a long transcript) comes back as its summary and a note: read it in pieces with media.get include and a time range or page.',
         'Long-running: returns a task, or a job_id for job.get.',
         '',
         'HOW LOOK WORKS. A fast judgment model (preview) answers your questions about frames sampled from the media. Each sampled frame is its own request: the judgment model sees that one picture, named `frame`, and with with_previous also the frame sampled just before it, named `previous`, plus any state you give: text or JSON entries by name, the same on every frame (the script, what a term means). Every question is answered on every frame, independently and in parallel (about 0.15 s a frame), as typed data you then combine in your own code.',
@@ -950,12 +963,47 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
         });
       }
       checkMeasureArgs(args);
+      checkHearingArgs(args);
       if (args.idempotency_key) {
         const existing = await store.findIdempotent(owner, 'media.analyze', args.idempotency_key);
         if (existing) return jobReply(existing, ctx);
       }
       if (args.timeline_id) {
         const timelineId = args.timeline_id;
+        // transcript of the edit's mix: words in timeline seconds, returned and never kept.
+        const mixTranscript = async (
+          sound: Sound,
+          jobId: string,
+          signal: AbortSignal,
+          progress: (f: number, m: string) => void,
+        ): Promise<Record<string, unknown>> => {
+          const heard = await transcribe(sound.file, {
+            model: args.model,
+            modelsDir: rt.modelsDir,
+            language: args.language,
+            signal,
+            onProgress: (f, m) => progress(0.05 + 0.95 * f, `transcript: ${m}`),
+          });
+          const shift = (t: number) => r3(t + sound.shift);
+          const transcript = {
+            ...heard,
+            from: args.from_seconds ?? 0,
+            until: args.until_seconds ?? null,
+            words: heard.words.map((w) => ({ ...w, start: shift(w.start), end: shift(w.end) })),
+          };
+          const written = args.file
+            ? await writeTranscript(rt, owner, jobId, `timeline-${timelineId}`, transcript)
+            : undefined;
+          const chars = JSON.stringify(transcript).length;
+          return {
+            ...(chars <= INLINE_CHARS
+              ? { transcript }
+              : {
+                  note: `The edit's transcript is ${chars} characters, too long to return here, and it is not stored: ask again over a shorter from_seconds to until_seconds${written ? ', or read the file' : ''}.`,
+                }),
+            ...(written ? { file: written } : {}),
+          };
+        };
         if (!(TIMELINE_ANALYSES as readonly string[]).includes(args.kind)) {
           throw new CfError(
             'bad_request',
@@ -972,6 +1020,7 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
           from_seconds: args.from_seconds,
           until_seconds: args.until_seconds,
         });
+        checkHearingSize(args, seconds);
         const admit = await admitJob(deps.limits);
         const job = await store.create({
           owner,
@@ -994,6 +1043,12 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
               },
               { signal },
               async (sound) => {
+                if (isHearingKind(args.kind)) {
+                  return { result: await measureHearing(sound, args, signal, progress) };
+                }
+                if (args.kind === 'transcript') {
+                  return { result: await mixTranscript(sound, job.id, signal, progress) };
+                }
                 if (args.kind === 'speakers' || args.kind === 'voice') {
                   const data = await measureVoices(sound, args, signal, progress);
                   return {
@@ -1045,12 +1100,16 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
       if (!p?.audio && !pictureKind) {
         throw noAudio({ label: `media ${mediaId}` }, 'it has no audio stream');
       }
-      if ((TIMELINE_SOUND_ANALYSES as readonly string[]).includes(args.kind)) {
-        await checkSound(rt, owner, {
+      if (
+        args.kind !== 'transcript' &&
+        (TIMELINE_SOUND_ANALYSES as readonly string[]).includes(args.kind)
+      ) {
+        const { seconds } = await checkSound(rt, owner, {
           media_id: mediaId,
           from_seconds: args.from_seconds,
           until_seconds: args.until_seconds,
         });
+        checkHearingSize(args, seconds);
       }
       const needsPicture = args.kind === 'faces' || args.kind === 'track' || args.kind === 'scenes';
       const stillsKind = args.kind === 'look' || args.kind === 'colour' || args.kind === 'picture';
@@ -1345,6 +1404,23 @@ export function registerMediaTools(server: McpServer, deps: ServerDeps): void {
                 ...(latest ? { summary: mediaInfo(latest).analyses?.sounds } : {}),
                 sounds: result,
               }) as never;
+            }
+            case 'onsets':
+            case 'notes':
+            case 'key':
+            case 'spectrum': {
+              const result = await withSound(
+                rt,
+                owner,
+                {
+                  media_id: mediaId,
+                  from_seconds: args.from_seconds,
+                  until_seconds: args.until_seconds,
+                },
+                { signal },
+                (sound) => measureHearing(sound, args, signal, progress),
+              );
+              return ok({ media_id: mediaId, kind: args.kind, ...result }) as never;
             }
             case 'scenes': {
               progress(0.1, 'scenes: looking');

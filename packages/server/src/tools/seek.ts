@@ -53,7 +53,7 @@ export function seekMatches(
   frames: JudgedFrame[],
   min: number,
   locate: (seconds: number) => { frame: number; uri: string },
-): z.infer<typeof MediaSeekResult>['matches'] {
+): NonNullable<z.infer<typeof MediaSeekResult>['matches']> {
   const p = (f: JudgedFrame | undefined, name: string) =>
     ((f?.answers[name] as { noul?: number } | undefined)?.noul ?? 0) as number;
   return Object.fromEntries(
@@ -104,7 +104,7 @@ export function registerSeekTools(server: McpServer, deps: ServerDeps): void {
         '',
         'HOW TO WRITE CRITERIA. A fast judgment model (preview) judges each sampled frame on its own, as a picture named `frame` (about 512 px on its long edge; with with_previous also `previous`, the frame sampled before), and gives each criterion the probability that it is true. A criterion is a statement or a question about how the picture looks. Keep one judgment to a criterion, and say what shows rather than a verdict: not "bad lighting" but "the faces are too dark to make out their eyes"; not "a good thumbnail" but "a person looks straight at the camera with eyes open and mouth closed". Criteria that name no picture or state entry in backticks are asked about `frame` ("In `frame`: <your words>"); name `frame`, `previous` or your state entries yourself to judge them together ("`frame` shows the button `line` talks about"). The judgment model answers most accurately from examples: give {instructions, criteria: {true: "…", false: "…"}} with a case of each ({true: "the face is a dark silhouette against a bright window", false: "the face is evenly lit, a little dim"}). Detail too small to see at that size (fine print, slight softness) answers poorly; check it with render.frames at full size.',
         'READING THE RESULT. matches gives, per criterion, each run of consecutive samples at or above min_probability (default 0.5), with its start, end and best sample: peak_seconds, frame (for render.frames) and uri (a resource to read the picture). samples has every probability, for your own cut-off. A probability near 0.5 means the judgment model cannot tell, not that the thing is half there: reword a criterion that keeps landing there. asked shows the question each criterion became.',
-        `COST. Each frame is one judgment however many criteria it carries, so ask everything you are looking for in one call (up to ${JUDGE_LIMITS.lookQuestions} criteria). Work in passes: every_seconds 2 to 5 over the whole video, then at_seconds around a match to find more exactly where it starts. Sampling sees only the frames it samples, so no match can't prove a one-frame defect (a flash, a black or dropped frame) absent: read every frame of a suspect stretch with render.frames, or measure black frames with qa.check. Up to ${JUDGE_LIMITS.frames} frames a call. Long-running: returns a task, or a job_id for job.get.`,
+        `COST. Each frame is one judgment however many criteria it carries, so ask everything you are looking for in one call (up to ${JUDGE_LIMITS.lookQuestions} criteria); the result then carries every criterion's value for every frame (samples) unless include leaves them out, and min_seconds drops short matches. Work in passes: every_seconds 2 to 5 over the whole video, then at_seconds around a match to find more exactly where it starts. Sampling sees only the frames it samples, so no match can't prove a one-frame defect (a flash, a black or dropped frame) absent: read every frame of a suspect stretch with render.frames, or measure black frames with qa.check. Up to ${JUDGE_LIMITS.frames} frames a call. Long-running: returns a task, or a job_id for job.get.`,
         'media.analyze look asks typed questions (a choice, a score, a box) of every frame when you need measurements rather than moments; judge.ask judges one picture at once.',
       ].join('\n'),
       inputSchema: MediaSeekInput,
@@ -255,18 +255,39 @@ export function registerSeekTools(server: McpServer, deps: ServerDeps): void {
           });
           await rt.meterJudgments(owner, `${job.id}-judgments`, 'media.seek', frames.length);
           const ids = Object.keys(questions);
+          const wants = (part: 'matches' | 'samples') =>
+            !args.include || args.include.includes(part);
+          const least = args.min_seconds;
           return ok({
             ...target,
             model: JEV_MODEL,
             frames: frames.length,
             asked: questions,
-            matches: seekMatches(ids, frames, args.min_probability, locate),
-            samples: frames.map((f) => ({
-              seconds: f.time,
-              probabilities: Object.fromEntries(
-                ids.map((id) => [id, (f.answers[id] as { noul?: number } | undefined)?.noul ?? 0]),
-              ),
-            })),
+            ...(wants('matches')
+              ? {
+                  matches: Object.fromEntries(
+                    Object.entries(seekMatches(ids, frames, args.min_probability, locate)).map(
+                      ([id, runs]) => [
+                        id,
+                        least === undefined ? runs : runs.filter((r) => r.end - r.start >= least),
+                      ],
+                    ),
+                  ),
+                }
+              : {}),
+            ...(wants('samples')
+              ? {
+                  samples: frames.map((f) => ({
+                    seconds: f.time,
+                    probabilities: Object.fromEntries(
+                      ids.map((id) => [
+                        id,
+                        (f.answers[id] as { noul?: number } | undefined)?.noul ?? 0,
+                      ]),
+                    ),
+                  })),
+                }
+              : {}),
           }) as never;
         },
         // Judgment calls do the waiting; its frames take render slots like any render.

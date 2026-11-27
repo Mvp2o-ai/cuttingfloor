@@ -39,9 +39,11 @@ const anyResult = z.object({}).passthrough();
  * also names its {upload} answer, the media with no job yet (497 737 measured), and to 520 000
  * for when each file goes (kept_until and expiry on media and exports, the keeping policy in the
  * descriptions; 502 440 measured), and to 530 000 for sounds.list, the sound library (523 003
- * measured).
+ * measured), and to 550 000 for the sound facts (media.analyze onsets, notes, key, spectrum, the
+ * level on steps, beat candidates, a timeline's transcript) and the result filters on
+ * media.listen and media.seek (545 873 measured).
  */
-const BUDGET_BYTES = 530_000;
+const BUDGET_BYTES = 550_000;
 let env: TestEnv;
 
 beforeAll(async () => {

@@ -18,6 +18,14 @@ import {
 } from './compositing.ts';
 import { EFFECT_NAMES, EFFECTS, type EffectName } from './effects.ts';
 import { ToolError } from './errors.ts';
+import {
+  HEARING_LIMITS,
+  KeyAnalysis,
+  LevelSteps,
+  NotesAnalysis,
+  OnsetsAnalysis,
+  SpectrumAnalysis,
+} from './hearing.ts';
 import { JobId, MediaId, TimelineId, UploadId } from './ids.ts';
 import { JUDGE_LIMITS, JudgeName, JudgeQuestion, JudgeText, NoulFields } from './judge.ts';
 import { KEEP_MS, span } from './keeping.ts';
@@ -888,16 +896,25 @@ export const ANALYZE_KINDS = [
   'voice',
   'colour',
   'picture',
+  'onsets',
+  'notes',
+  'key',
+  'spectrum',
 ] as const;
 
 /** media.analyze kinds that read a timeline's mix (timeline_id). */
 export const TIMELINE_SOUND_ANALYSES = [
+  'transcript',
   'speech',
   'loudness',
   'silence',
   'sounds',
   'speakers',
   'voice',
+  'onsets',
+  'notes',
+  'key',
+  'spectrum',
 ] as const;
 /** media.analyze kinds that read a timeline's picture as it renders (timeline_id). */
 export const TIMELINE_PICTURE_ANALYSES = [
@@ -932,7 +949,7 @@ export const MediaAnalyzeInput = z
     kind: z
       .enum(ANALYZE_KINDS)
       .describe(
-        "transcript: words with times (whisper.cpp, then aligned to the sound); beats: tempo, beat times and the onset strength at each; faces: face boxes over time; track: follow a region; look: your own questions answered on sampled frames; silence: stretches quieter than threshold_db for min_seconds; scenes: times the picture changes by more than threshold; speech: where someone is speaking (Silero VAD probability every 32 ms, spans at or above min_probability); loudness: integrated loudness, true peak, loudness range, RMS and noise floor; sounds: when each of 447 named sounds (laughter, applause, cough, music, speech, door…) can be heard, every 40 ms; speakers: who speaks when; voice: pitch, level and pace over time; colour: colour statistics of frames and regions; picture: every frame's brightness, colour and change from the frame before",
+        `transcript: words with times (whisper.cpp, then aligned to the sound); on a timeline_id, the words of the edit's mix in timeline seconds, not kept. beats: tempo, beat times, the onset strength at each, tempo candidates, a fitted tempo and bar candidates; faces: face boxes over time; track: follow a region; look: your own questions answered on sampled frames; silence: stretches quieter than threshold_db for min_seconds; scenes: times the picture changes by more than threshold; speech: where someone is speaking (Silero VAD probability every 32 ms, spans at or above min_probability); loudness: integrated loudness, true peak, loudness range, RMS and noise floor, and with every_seconds the level on steps; sounds: when each of 447 named sounds (laughter, applause, cough, music, speech, door…) can be heard, every 40 ms; speakers: who speaks when; voice: pitch, level and pace over time; colour: colour statistics of frames and regions; picture: every frame's brightness, colour and change from the frame before. onsets: every step of every_seconds whose level (RMS dBFS) rises by threshold_db or more over the step before, for any sound (a hit, a clap, a note, a shout): its time, the rise, the level reached and its share below 250 Hz (low), 250 Hz to 4 kHz (mid) and above 4 kHz (high). notes: the notes one voice or instrument plays or sings (a hum, a whistle, a bass line), from a YIN pitch line (40 Hz to 2 kHz, every 10 ms, 50 ms median): start, end, Hz, nearest note name (equal temperament, A4 = 440 Hz), cents off it and level; with tempo, in beats too. A new note starts where the pitch moves split_cents from the note's mean so far, or with threshold_db and every_seconds where the level rises that much (a note struck again on one pitch); notes shorter than min_seconds are left out. It follows one line: on several instruments at once, the loudest (create.stems separates them). key: a score 0–1 for each of the 24 major and minor keys, and the strength of each of the 12 note names (C2 to C8), over the range and with every_seconds per step. spectrum: the level in dB of each third-octave band from 20 Hz to 20 kHz (sound mixed to one channel), over the range and with every_seconds per step. onsets, notes, key and spectrum take from_seconds and until_seconds (up to ${HEARING_LIMITS.seconds.onsets} s for onsets, ${HEARING_LIMITS.seconds.notes} for notes, ${HEARING_LIMITS.seconds.key} for key and spectrum) and come back whole in the result, not kept with the media: up to ${HEARING_LIMITS.onsets} onsets, ${HEARING_LIMITS.notes} notes, ${HEARING_LIMITS.steps.key} key and ${HEARING_LIMITS.steps.spectrum} spectrum steps a call`,
       ),
     questions: z
       .record(JudgeName, JudgeQuestion)
@@ -948,10 +965,12 @@ export const MediaAnalyzeInput = z
       ),
     every_seconds: z
       .number()
-      .min(0.04)
+      .min(HEARING_LIMITS.minStep.onsets)
       .max(3600)
       .optional()
-      .describe('look, colour: sample a frame this often. Default 1'),
+      .describe(
+        `look, colour: sample a frame this often (at least 0.04). Default 1. onsets (required): the step whose level each step is compared with the one before; loudness: also the level on steps this long (up to ${HEARING_LIMITS.steps.loudness} steps); notes: the step threshold_db compares levels on; key (at least ${HEARING_LIMITS.minStep.key}), spectrum (at least ${HEARING_LIMITS.minStep.spectrum}): also per step`,
+      ),
     at_seconds: z
       .array(z.number().min(0))
       .min(1)
@@ -1029,15 +1048,38 @@ export const MediaAnalyzeInput = z
     threshold_db: z
       .number()
       .min(-100)
-      .max(0)
+      .max(100)
       .optional()
-      .describe('silence (required): quieter than this counts as silence, dBFS'),
+      .describe(
+        'silence (required): quieter than this counts as silence, dBFS (-100 to 0). onsets (required): a step counts when its level is at least this many dB over the step before (above 0). notes: a new note also starts where the level rises this much over the step before, on steps of every_seconds',
+      ),
     min_seconds: z
       .number()
       .min(0.01)
       .max(3600)
       .optional()
-      .describe('silence (required): only stretches at least this long'),
+      .describe(
+        'silence (required): only stretches at least this long. notes (required): notes shorter than this are left out',
+      ),
+    split_cents: z
+      .number()
+      .min(1)
+      .max(2400)
+      .optional()
+      .describe(
+        "notes (required): a new note starts where the pitch moves this many cents (100 a semitone) from the note's mean so far",
+      ),
+    tempo: z
+      .number()
+      .min(20)
+      .max(400)
+      .optional()
+      .describe('notes: beats per minute, to give each note in beats too'),
+    first_bar_seconds: z
+      .number()
+      .min(0)
+      .optional()
+      .describe('notes, with tempo: where beat 0 is, in seconds. Default 0'),
     threshold: z
       .number()
       .min(0)
@@ -1128,6 +1170,32 @@ export const BeatsAnalysis = z.object({
     .array(z.number())
     .optional()
     .describe('Per beat: its onset strength, 0–1 of the strongest in the sound'),
+  tempo_candidates: z
+    .array(z.object({ bpm: z.number(), strength: z.number() }))
+    .optional()
+    .describe(
+      'Every tempo from 30 to 300 BPM the onsets repeat at (a peak of the tracker’s tempo strength, with no lean to any tempo), strongest first, 0–1 of the strongest: half and double time show here',
+    ),
+  fitted_bpm: z
+    .number()
+    .nullable()
+    .optional()
+    .describe('The tempo the beat times keep: 60 over the slope of a straight line through them'),
+  bar_candidates: z
+    .array(
+      z.object({
+        beats_in_bar: z.number(),
+        beat: z.number().describe('Index in beats of the first beat a bar could start on'),
+        seconds: z.number(),
+        accent: z
+          .number()
+          .describe('Mean onset strength of every beat at that place in the bar, as strengths'),
+      }),
+    )
+    .optional()
+    .describe(
+      'For bars of 2 to 7 beats: each beat a bar could start on, with the accent behind it',
+    ),
 });
 export const FacesAnalysis = z.object({
   rate: z.number(),
@@ -1633,7 +1701,12 @@ export const MediaAnalyzeResult = z.object({
   loudness: LoudnessFacts.extend({
     from: z.number().describe('Seconds measured from'),
     until: z.number().nullable().describe('Seconds measured until; null: the end'),
+    steps: LevelSteps.optional(),
   }).optional(),
+  onsets: OnsetsAnalysis.optional(),
+  notes: NotesAnalysis.optional(),
+  key: KeyAnalysis.optional(),
+  spectrum: SpectrumAnalysis.optional(),
   sounds: SoundsAnalysis.optional(),
   speakers: SpeakersAnalysis.optional(),
   voice: VoiceAnalysis.optional(),
@@ -1747,6 +1820,21 @@ export const MediaSeekInput = z
       .max(1)
       .default(0.5)
       .describe('A frame matches a criterion when its probability is at least this'),
+    min_seconds: z
+      .number()
+      .min(0)
+      .max(86_400)
+      .optional()
+      .describe(
+        'matches: only runs at least this long, end less start (a run of one sample is 0). Default: every run',
+      ),
+    include: z
+      .array(z.enum(['matches', 'samples']))
+      .min(1)
+      .optional()
+      .describe(
+        'Which parts come back: matches, samples (every criterion on every frame, most of a long result). Default both',
+      ),
     idempotency_key: z.string().min(1).max(200).optional(),
   })
   .refine((v) => Boolean(v.media_id) !== Boolean(v.timeline_id), {
@@ -1775,8 +1863,9 @@ export const MediaSeekResult = z.object({
         }),
       ),
     )
+    .optional()
     .describe(
-      'Per criterion: runs of consecutive samples that match, in time order; empty when none do',
+      'Per criterion: runs of consecutive samples that match (at least min_seconds long), in time order; empty when none do. Left out when include leaves it out',
     ),
   samples: z
     .array(
@@ -1785,7 +1874,10 @@ export const MediaSeekResult = z.object({
         probabilities: z.record(z.string(), z.number()).describe('Per criterion, 0 to 1'),
       }),
     )
-    .describe('Every judged sample, for your own cut-off or arithmetic'),
+    .optional()
+    .describe(
+      'Every judged sample, for your own cut-off or arithmetic. Left out when include leaves it out',
+    ),
 });
 
 export const MediaListenInput = z
@@ -1819,6 +1911,19 @@ export const MediaListenInput = z
       .describe(
         'scores: one value per this many seconds (the highest in each). Default 0.04, every frame, coarser when that would be too many',
       ),
+    min_seconds: z
+      .number()
+      .min(0)
+      .max(86_400)
+      .optional()
+      .describe('matches: only runs at least this long. Default: every run'),
+    include: z
+      .array(z.enum(['matches', 'peaks', 'scores']))
+      .min(1)
+      .optional()
+      .describe(
+        'Which parts come back: matches, peaks, scores (every probability, most of a long result). Default all',
+      ),
     idempotency_key: z.string().min(1).max(200).optional(),
   })
   .refine((v) => Boolean(v.media_id) !== Boolean(v.timeline_id), {
@@ -1843,13 +1948,21 @@ export const MediaListenResult = z.object({
         }),
       ),
     )
-    .describe('Per sound: runs of 40 ms frames that match, in time order; empty when none do'),
-  peaks: z.record(z.string(), z.number()).describe('Per sound: the highest probability anywhere'),
-  scores: SoundScores,
+    .optional()
+    .describe(
+      'Per sound: runs of 40 ms frames that match (at least min_seconds long), in time order; empty when none do. Left out when include leaves it out',
+    ),
+  peaks: z
+    .record(z.string(), z.number())
+    .optional()
+    .describe('Per sound: the highest probability anywhere. Left out when include leaves it out'),
+  scores: SoundScores.optional(),
   note: z
     .string()
     .optional()
-    .describe('What the model can and cannot hear, to read a peak near 0 by'),
+    .describe(
+      'What the model can and cannot hear, to read a peak near 0 by; and, when most runs of a sound are very short, how many',
+    ),
 });
 
 // Create: new media from a recipe. Always a job; the result is a media_id for clip.add.
