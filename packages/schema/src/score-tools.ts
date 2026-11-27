@@ -423,12 +423,18 @@ export const ScoreBatchInput = z.object({
       z.object({
         tool: z.enum(SCORE_EDIT_TOOLS as [ScoreEditTool, ...ScoreEditTool[]]),
         args: z.record(z.string(), z.unknown()).describe('The tool’s arguments without score_id'),
+        as: z
+          .string()
+          .regex(/^[a-z][a-z0-9_]*$/)
+          .max(40)
+          .optional()
+          .describe('A name for this op, for later ops to refer to: {"$ref":"drums.part_id"}'),
       }),
     )
     .min(1)
     .max(200)
     .describe(
-      'Score edits applied in order as one change. An arg may be {"$ref":"ops[2].region_id"} (or part_id, device_id, send_id, note_ids[M]) to use an id made by an earlier op',
+      'Score edits applied in order as one change. An arg may be {"$ref":"ops[2].region_id"} (or part_id, device_id, send_id, note_ids[M]) to use an id made by an earlier op, counted from 0, or {"$ref":"drums.part_id"} for an op named with as',
     ),
 });
 

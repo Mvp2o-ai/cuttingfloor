@@ -85,6 +85,8 @@ export class ScoreStore {
 export interface ScoreBatchOp {
   tool: ScoreEditTool;
   args: Record<string, unknown>;
+  /** A name for this op, so a later op can refer to what it made without counting ops. */
+  as?: string | undefined;
 }
 
 export type ScoreOpResult = Pick<
@@ -117,8 +119,9 @@ export function runScoreEdits(
   const results: ScoreOpResult[] = [];
   const warnings: string[] = [];
   let last: ScoreOutcome | undefined;
+  const names = new Map<string, number>();
   ops.forEach((op, index) => {
-    const resolved = resolveRefs(op.args, results, index);
+    const resolved = resolveRefs(op.args, results, index, names);
     const parsed = ScoreEditArgs[op.tool].safeParse(resolved);
     if (!parsed.success) {
       throw new CfError(
@@ -138,6 +141,15 @@ export function runScoreEdits(
       }
       throw error;
     }
+    if (op.as !== undefined) {
+      if (names.has(op.as)) {
+        throw new CfError(
+          'bad_request',
+          `ops[${index}] is named "${op.as}", and so is ops[${names.get(op.as)}]`,
+        );
+      }
+      names.set(op.as, index);
+    }
     warnings.push(...last.warnings);
     results.push({
       tool: op.tool,
@@ -151,38 +163,72 @@ export function runScoreEdits(
   return { doc, outcome: { ...last, warnings }, results };
 }
 
-function resolveRefs(value: unknown, results: ScoreOpResult[], index: number): unknown {
-  if (Array.isArray(value)) return value.map((v) => resolveRefs(v, results, index));
+function resolveRefs(
+  value: unknown,
+  results: ScoreOpResult[],
+  index: number,
+  names: Map<string, number>,
+): unknown {
+  if (Array.isArray(value)) return value.map((v) => resolveRefs(v, results, index, names));
   if (value && typeof value === 'object') {
     const ref = (value as { $ref?: unknown }).$ref;
     if (typeof ref === 'string' && Object.keys(value).length === 1) {
-      return lookupRef(ref, results, index);
+      return lookupRef(ref, results, index, names);
     }
     return Object.fromEntries(
-      Object.entries(value).map(([k, v]) => [k, resolveRefs(v, results, index)]),
+      Object.entries(value).map(([k, v]) => [k, resolveRefs(v, results, index, names)]),
     );
   }
   return value;
 }
 
-function lookupRef(ref: string, results: ScoreOpResult[], index: number): string {
-  const m = /^ops\[(\d+)\]\.(part_id|device_id|region_id|send_id|note_ids\[(\d+)\])$/.exec(ref);
+const REF =
+  /^(?:ops\[(\d+)\]|([a-z][a-z0-9_]*))\.(part_id|device_id|region_id|send_id|note_ids\[(\d+)\])$/;
+
+function lookupRef(
+  ref: string,
+  results: ScoreOpResult[],
+  index: number,
+  names: Map<string, number>,
+): string {
+  const m = REF.exec(ref);
   if (!m) {
     throw new CfError('bad_request', `Bad $ref "${ref}" in ops[${index}]`, {
-      hint: 'ops[N].part_id, ops[N].device_id, ops[N].region_id, ops[N].send_id or ops[N].note_ids[M]',
+      hint: 'ops[N].part_id, ops[N].device_id, ops[N].region_id, ops[N].send_id or ops[N].note_ids[M]; or, for an op given a name with as, name.part_id and the rest',
     });
   }
-  const target = Number(m[1]);
-  if (target >= index) {
-    throw new CfError(
-      'bad_request',
-      `ops[${index}] refers to ops[${target}], which has not run yet`,
-    );
+  let target: number;
+  if (m[2] !== undefined) {
+    const named = names.get(m[2]);
+    if (named === undefined) {
+      const known = [...names.keys()];
+      throw new CfError(
+        'bad_request',
+        `ops[${index}] refers to "${m[2]}", and no earlier op is named that`,
+        {
+          hint: known.length
+            ? `Named so far: ${known.join(', ')}. An op is named with as, and can be referred to only by ops after it`
+            : 'An op is named with as: {tool, args, as: "drums"}, and can be referred to only by ops after it',
+        },
+      );
+    }
+    target = named;
+  } else {
+    target = Number(m[1]);
+    if (target >= index) {
+      throw new CfError(
+        'bad_request',
+        `ops[${index}] refers to ops[${target}], which has not run yet`,
+        {
+          hint: 'Ops count from 0. Naming an op with as avoids counting: {tool, args, as: "drums"}, then {"$ref": "drums.part_id"}',
+        },
+      );
+    }
   }
   const r = results[target];
-  const key = m[2] as string;
+  const key = m[3] as string;
   const value =
-    m[3] !== undefined ? r?.note_ids?.[Number(m[3])] : r?.[key as (typeof REF_KEYS)[number]];
+    m[4] !== undefined ? r?.note_ids?.[Number(m[4])] : r?.[key as (typeof REF_KEYS)[number]];
   if (!value) {
     throw new CfError(
       'bad_request',

@@ -802,6 +802,59 @@ describe('score batch', () => {
       ),
     ).toThrow(/has not run yet/);
   });
+
+  // Two of seven first-run agents miscounted an op's index in a long batch (2026-11-27).
+  it('takes ids from an op by its name, with no counting', () => {
+    const run = (ops: ScoreBatchOp[]) =>
+      runScoreEdits(start(), 'sc_0', ops, media, { tool: 'score.batch', args: null });
+    const { doc, results } = run([
+      { tool: 'score.add_part', args: { name: 'Drums' }, as: 'drums' },
+      { tool: 'score.add_part', args: { name: 'Bass' }, as: 'bass' },
+      { tool: 'score.add_device', args: { part_id: { $ref: 'bass.part_id' }, name: 'sub_bass' } },
+      {
+        tool: 'score.add_region',
+        as: 'groove',
+        args: {
+          part_id: { $ref: 'drums.part_id' },
+          at_beats: 0,
+          length_beats: 4,
+          notes: [{ pitch: 'C2', at_beats: 0, length_beats: 0.5, velocity: 120 }],
+        },
+      },
+      {
+        tool: 'score.alias_region',
+        args: { region_id: { $ref: 'groove.region_id' }, at_beats: 4 },
+      },
+      {
+        tool: 'score.set_notes',
+        args: { notes: [{ note_id: { $ref: 'groove.note_ids[0]' }, velocity: 90 }] },
+      },
+    ]);
+    expect(doc.parts.map((p) => [p.name, p.devices.map((d) => d.name)])).toEqual([
+      ['Drums', []],
+      ['Bass', ['sub_bass']],
+    ]);
+    expect(results[4]?.region_id).toBeTruthy();
+    expect(notesOf(doc, results[4]?.region_id as string)[0]?.velocity).toBe(90);
+    // A name nobody has, a name used twice, and a name used before its op: each says which.
+    expect(() =>
+      run([
+        { tool: 'score.add_device', args: { part_id: { $ref: 'drumz.part_id' }, name: 'kit_909' } },
+      ]),
+    ).toThrow(/refers to "drumz", and no earlier op is named that/);
+    expect(() =>
+      run([
+        { tool: 'score.add_part', args: {}, as: 'a' },
+        { tool: 'score.add_part', args: {}, as: 'a' },
+      ]),
+    ).toThrow(/ops\[1\] is named "a", and so is ops\[0\]/);
+    expect(() =>
+      run([
+        { tool: 'score.add_device', args: { part_id: { $ref: 'later.part_id' }, name: 'kit_909' } },
+        { tool: 'score.add_part', args: {}, as: 'later' },
+      ]),
+    ).toThrow(/no earlier op is named that/);
+  });
 });
 
 describe('score.load', () => {

@@ -386,7 +386,7 @@ export function registerScoreTools(server: McpServer, deps: ServerDeps): void {
     {
       title: 'Batch score edit',
       description:
-        'A pipeline of score edits in one call: each op runs on the result of the one before, and a later op takes an id an earlier op made with {"$ref":"ops[N].region_id"} (or part_id, device_id, send_id, note_ids[M]). Each op is a score.* edit by name with its own args, less score_id. All apply or none do, and one new score_id comes back. Returns the new score_id, what changed, warnings, and results: [{tool, part_id?, device_id?, region_id?, send_id?, note_ids?}] per op.',
+        'A pipeline of score edits in one call: each op runs on the result of the one before, and a later op takes an id an earlier op made with {"$ref":"ops[N].region_id"} (or part_id, device_id, send_id, note_ids[M]; N counts from 0), or, where the earlier op has a name (as: "drums"), with {"$ref":"drums.part_id"}, which needs no counting. Each op is a score.* edit by name with its own args, less score_id. All apply or none do, and one new score_id comes back. Returns the new score_id, what changed, warnings, and results: [{tool, part_id?, device_id?, region_id?, send_id?, note_ids?}] per op.',
       inputSchema: ScoreBatchInput,
       outputSchema: ScoreBatchResult,
       annotations: { ...annotations, title: 'Batch score edit' },
