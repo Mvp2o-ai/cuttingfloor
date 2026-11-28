@@ -1045,6 +1045,7 @@ const SPORTS: Demo = {
     'Checked the sound and peaks and exported it vertical. The music is an original track made for this demo.',
   ],
   uploaded: '2026-11-26',
+  guide: 'make-a-highlight-reel',
   moments: [
     { name: 'Before the match', start: 0, end: 4.4 },
     { name: 'Training', start: 4.4, end: 6.4 },

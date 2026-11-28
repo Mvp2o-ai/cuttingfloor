@@ -119,8 +119,8 @@ export const FIXES: Fix[] = [
       'Give it a song, or ask for music made for the video. With a song, the agent lays it under the video, lowers it while someone talks, fades it out and cuts the video to its beat. Made music goes the other way: it’s built in layers to fit your cuts, with a hit on the big moment and the last note on the last frame.',
     prompt: 'Add this song under the video, quieter when I talk, and fade it out at the end.',
     see: {
-      label: 'How to make background music for a video with AI',
-      href: '/guides/make-background-music-for-a-video',
+      label: 'How to add music to a video or Short with AI',
+      href: '/guides/add-music-to-a-video',
     },
     watch: {
       label: 'Edit a dance Short to the beat',
