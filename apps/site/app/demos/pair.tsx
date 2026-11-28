@@ -5,8 +5,9 @@ import { type DemoVideo, length } from '../../content/demos.ts';
 
 // The demo's result before anything else: the finished video, bigger and playing, with the clip
 // it came from beside it, so the first thing a visitor sees is what the agent made, not the raw
-// footage. Both play muted on a loop; the finished one has controls for sound. Reduced motion
-// keeps the posters.
+// footage. Both play muted on a loop; the finished one has controls for sound, and so does the
+// clip it came from when its sound is the point (a demo about music). Reduced motion keeps the
+// posters.
 
 export function BeforeAfter({ before, after }: { before: DemoVideo; after: DemoVideo }) {
   return (
@@ -18,7 +19,7 @@ export function BeforeAfter({ before, after }: { before: DemoVideo; after: DemoV
         </figcaption>
       </figure>
       <figure className="dm-pair-before">
-        <Loop v={before} />
+        <Loop v={before} controls={before.sound} />
         <figcaption>
           <span className="label">Before</span>As it came in · {length(before)}
         </figcaption>

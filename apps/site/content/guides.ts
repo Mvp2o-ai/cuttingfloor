@@ -353,7 +353,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: 'Is there music in the library?',
-        a: 'No, it’s sound effects only. For music, send your own song and your agent fits it under the video.',
+        a: 'No, it’s sound effects only. For music, your agent can make some for the video from instruments, fitted to the cuts, or fit your own song under it.',
       },
       {
         q: 'Can I use my own sound files?',
@@ -382,7 +382,7 @@ export const GUIDES: Guide[] = [
       },
       {
         title: 'Ask for the finish',
-        body: 'Transitions, matching colour, sound effects, your music, a voiceover, titles and credits. Short clips leave little footage for a blend, so when a transition is too long the server says the longest that fits and your agent uses it.',
+        body: 'Transitions, matching colour, sound effects, music made for it or your own, a voiceover, titles and credits. Short clips leave little footage for a blend, so when a transition is too long the server says the longest that fits and your agent uses it.',
       },
       {
         title: 'Check it, then take the film',
@@ -430,7 +430,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: 'My clips have no sound. What can I add?',
-        a: 'Your music, a voiceover made from your script, and sound effects. Describe a sound (“footsteps on gravel”, “wind through trees”, “a deep boom”) and your agent finds it in a free library of about 20,000 sound effects, which you can hear in the chat before it goes in. Your own sound files work too.',
+        a: 'Music made for the film or your own, a voiceover made from your script, and sound effects. Describe a sound (“footsteps on gravel”, “wind through trees”, “a deep boom”) and your agent finds it in a free library of about 20,000 sound effects, which you can hear in the chat before it goes in. Your own sound files work too.',
       },
       {
         q: 'How long can a transition be on a 5-second clip?',
@@ -451,6 +451,496 @@ export const GUIDES: Guide[] = [
       {
         q: 'What does it cost?',
         a: `Making is free, no card: every edit and export, as many times as you like. Exports download free with a cuttingfloor watermark; removing the watermark costs credits, priced by the video's length, and a new account gets ${FREE_CREDITS} credits when you activate it. After that, credit packs that never expire, on the pricing page.`,
+      },
+    ],
+  },
+  // Music made for a video. The music is built from instruments and notes, layer by layer, and
+  // fitted to the picture; it is not a song generator (no singer, no lyrics, no artist's style).
+  // Recording is on the upload page, which always works; nothing here promises the microphone
+  // inside a chat app. No price is stated for made music.
+  {
+    slug: 'make-background-music-for-a-video',
+    lang: 'en',
+    title: 'How to make background music for a video with AI',
+    metaTitle: 'Make background music for a video with AI, fitted to your cuts | cuttingfloor',
+    metaDescription:
+      'Ask ChatGPT, Claude or Kazi for music made for your video: built from instruments layer by layer, the beat on your cuts, steady under your voice, and every part changeable in words.',
+    answer:
+      'Connect cuttingfloor to the AI you already use (ChatGPT, Claude or Kazi), send your video and say the mood. Your agent builds the music from instruments and notes, layer by layer, fitted to the picture: the beat on your cuts, a hit on the big moment, the last note on the last frame. Then change any part in words.',
+    updated: '2026-11-27',
+    alternate: '/es/musica-de-fondo-para-videos',
+    steps: [
+      {
+        title: 'Connect your agent once',
+        body: 'Add cuttingfloor to ChatGPT, Claude or Kazi (below). It takes a minute, and you sign in the first time.',
+      },
+      {
+        title: 'Send your video',
+        body: 'Attach it in the chat, send a link, or drop it on your upload page. A talking video, a reel of clips or silent footage all work.',
+      },
+      {
+        title: 'Say the mood and the moments',
+        body: 'How it should feel (“calm piano”, “dark and tense”, “upbeat, building to the end”) and anything it should hit (“a big hit when the logo appears”). Your agent picks a speed so the beats fall on your cuts, then builds the music in layers: drums, bass, chords and a tune on top.',
+      },
+      {
+        title: 'Listen, change it, then get the file',
+        body: 'Your agent measures the mix before it hands it over; then you listen. Ask for changes in words (“darker”, “less busy”, “more bass”, “swap the piano for strings”) and it changes that part. Get the finished video as an MP4, or the music on its own as a WAV or MP3.',
+      },
+    ],
+    prompt:
+      'Make some background music for my video: warm and calm, piano and soft strings, building a little toward the end. Keep it quiet under my voice and end it on the last frame.',
+    demos: [
+      'add-background-music-to-a-talking-video',
+      'make-music-for-a-travel-video',
+      'make-a-basketball-highlight-reel-with-music',
+    ],
+    faqs: [
+      {
+        q: 'Is this a song generator?',
+        a: 'No. Your agent writes the music note by note on instruments (piano, strings, basses, guitars, brass, drum kits and more) and puts it together in layers. There’s no singer and no lyrics, and it doesn’t copy an artist’s style. Because every note is there to change, asking for “less busy” gets you exactly that.',
+      },
+      {
+        q: 'Can I put music under a talking video?',
+        a: 'Yes. The music sits at one steady level under your voice, low enough that every word stays whole. Your agent can read back the words of the finished mix to check none were lost under the music.',
+      },
+      {
+        q: 'Will the music fit my cuts?',
+        a: 'Yes. Your agent finds where your cuts and big moments fall, picks a speed so beats land on them, and puts the biggest hit on the moment you name. The last note can end with the last frame.',
+      },
+      {
+        q: 'What can I change afterwards?',
+        a: 'Anything, in words: the mood, the speed, one instrument for another, a layer louder, quieter or gone, a busier beat, a different ending. Each change makes a new version and the old ones stay, so you can go back.',
+      },
+      {
+        q: 'Which instruments are there?',
+        a: 'Grand and electric piano, organ, upright, electric, synth and sub basses, strings, a warm synth, brass, flute, glockenspiel, music box, marimba, acoustic and electric guitars, a plucked synth and a choir singing “aah”, plus acoustic, 808, 909 and lo-fi drum kits, a synth to shape your own sound, and effects like reverb and delay.',
+      },
+      {
+        q: 'Who listens to it?',
+        a: 'You do. Your agent checks the music by measuring it (how loud it is, where the hits land, that your voice comes through) and by looking at a picture of the notes. Then you listen and say what to change.',
+      },
+      {
+        q: 'Can I use my own song instead?',
+        a: 'Yes. Send it and your agent fits it: it cuts the video to the song’s beat, lowers it under your voice and fades it out. A song you bring is yours to clear for where you post.',
+      },
+    ],
+  },
+  {
+    slug: 'can-chatgpt-make-music-for-a-video',
+    lang: 'en',
+    title: 'Can ChatGPT make music for a video?',
+    metaTitle: 'Can ChatGPT make music? Yes, for your video, with cuttingfloor | cuttingfloor',
+    metaDescription:
+      'With cuttingfloor connected, ChatGPT, Claude or Kazi make instrumental music for your video from instruments and notes, fitted to your cuts. Not a song generator: no singing, no lyrics.',
+    answer:
+      'Yes, for your video, once cuttingfloor is connected. ChatGPT (or Claude, or Kazi) then makes instrumental music from instruments and notes, layer by layer, fitted to your cuts, and changes any part when you ask. It is not a song generator: it doesn’t sing, write lyrics or copy an artist’s style.',
+    updated: '2026-11-27',
+    steps: [
+      {
+        title: 'Connect cuttingfloor to ChatGPT',
+        body: 'Add it once (below); the same works in Claude and Kazi. It takes a minute, and you sign in the first time.',
+      },
+      {
+        title: 'Send the video it’s for',
+        body: 'Attach it in the chat, send a link, or drop it on your upload page. With no video, say how long the music should be.',
+      },
+      {
+        title: 'Describe the music',
+        body: 'The mood, the instruments and how it should move: “a lo-fi beat with soft piano”, “tense strings that build”, “a big brass hit when the title lands”.',
+      },
+      {
+        title: 'Listen and change it in words',
+        body: '“Slower.” “Fewer drums.” “Swap the guitar for piano.” Each change is a new version and the old ones stay. Then get the video with the music in it, or the music alone as a WAV or MP3.',
+      },
+    ],
+    prompt:
+      'Make 30 seconds of music for this video: a chill lo-fi beat with soft piano, the beat on my cuts, fading out on the last shot.',
+    demos: ['add-background-music-to-a-talking-video', 'make-music-for-a-travel-video'],
+    faqs: [
+      {
+        q: 'Can ChatGPT make music on its own?',
+        a: 'On its own, ChatGPT can describe music or suggest chords, but it has no instruments to play them on and no way to fit them to your video. cuttingfloor gives it both, and hands you a sound file at the end.',
+      },
+      {
+        q: 'Can it make a song with singing and lyrics?',
+        a: 'No. It makes instrumental music: piano, strings, basses, guitars, brass, drums and more. The closest thing to a voice is a choir singing “aah” as one of the instruments. For a sung song, use a song generator or a recording you have, and your agent fits your video to it.',
+      },
+      {
+        q: 'Can it make music in the style of an artist?',
+        a: 'Not by name. Describe the sound instead: the mood, the speed and the instruments (“slow, moody piano over a deep bass”, “fast, hard 808 drums”), and your agent builds that.',
+      },
+      {
+        q: 'What is it good for?',
+        a: 'Music made to fit a video: background music under a talking video, a beat for a montage or highlight reel with the cuts on it, a short jingle that ends on your logo, a theme from a tune you hum, and music for footage with no sound.',
+      },
+      {
+        q: 'What should I use something else for?',
+        a: 'A full song with a singer, a cover or remix of a famous song, or a track meant to sound like a particular artist. For those, bring a song or recording you have the rights to, and your agent cuts your video to it.',
+      },
+      {
+        q: 'Can I change the music after it’s made?',
+        a: 'Yes, any part of it. The music is built from separate layers, so “darker”, “less busy”, “more bass” or “swap the piano for strings” changes just that, and your earlier versions stay.',
+      },
+      {
+        q: 'Does it work in Claude and Kazi too?',
+        a: 'Yes. The same music works from ChatGPT, Claude, Kazi or any app that speaks MCP.',
+      },
+    ],
+  },
+  {
+    slug: 'turn-a-hummed-melody-into-music',
+    lang: 'en',
+    title: 'How to turn a hummed melody into music with AI',
+    metaTitle: 'Hum to music: turn a hummed tune into music with AI | cuttingfloor',
+    metaDescription:
+      'Hum or whistle a tune on your upload page and your agent turns it into notes, then plays it on any instrument, with drums, bass and chords under it. From ChatGPT, Claude or Kazi.',
+    answer:
+      'Record yourself humming or whistling the tune on your upload page at cuttingfloor.ai/upload, then ask your agent in ChatGPT, Claude or Kazi to turn it into music. It finds the notes you hummed, plays them on any instrument you choose, and can build drums, bass and chords under them, fitted to your video.',
+    updated: '2026-11-27',
+    steps: [
+      {
+        title: 'Connect your agent once',
+        body: 'Add cuttingfloor to ChatGPT, Claude or Kazi (below). It takes a minute, and you sign in the first time.',
+      },
+      {
+        title: 'Record the tune',
+        body: 'Open your upload page (cuttingfloor.ai/upload) on your phone or computer and press Record. Hum it, whistle it or sing it on “la”, listen back, record again if you like, then send it. A voice memo you already have works too.',
+      },
+      {
+        title: 'Say what it should become',
+        body: '“Play my tune on piano.” “Make it the intro theme for my podcast, with strings and a soft beat.” Your agent finds the notes and their timing in your recording and builds the music around them.',
+      },
+      {
+        title: 'Listen and change it',
+        body: 'Ask for another instrument, a different speed, tidier timing or a wrong note fixed (“the third note should be higher”). Then get the music as a WAV or MP3, or in your video.',
+      },
+    ],
+    prompt:
+      'I just recorded a hummed tune on my upload page. Turn it into a 10-second intro theme for my channel: the tune on piano, with soft strings and a light beat under it.',
+    demos: ['turn-a-hummed-tune-into-a-podcast-intro'],
+    faqs: [
+      {
+        q: 'Do I need to sing well?',
+        a: 'No. Hum, whistle or sing it on “la”, one note at a time. If a note comes out wrong, say which one and your agent changes it.',
+      },
+      {
+        q: 'Where do I record it?',
+        a: 'On your upload page at cuttingfloor.ai/upload, in any browser on a phone or computer. Press Record, listen back, and send it; it reaches your agent like any file you send.',
+      },
+      {
+        q: 'Which instruments can play my tune?',
+        a: 'Any of them: piano, electric piano, organ, strings, brass, flute, glockenspiel, music box, marimba, acoustic or electric guitar, a plucked synth, a choir singing “aah”, or several at once as one sound.',
+      },
+      {
+        q: 'Does it keep my timing?',
+        a: 'Yes, the notes keep the timing you hummed them with. If you’d rather they sat neatly on the beat, ask your agent to straighten the timing.',
+      },
+      {
+        q: 'Can I see the notes it heard?',
+        a: 'Yes. Your agent can show a picture of the notes, one row per note like a piano roll, and a picture of your recording drawn the same way, so you can see where they match.',
+      },
+      {
+        q: 'Can a sound I record become an instrument?',
+        a: 'Yes. Record a clap, a knock or a finger snap of your own, and your agent can cut it out of the recording and play it as a drum in the beat.',
+      },
+      {
+        q: 'Can it fit my video?',
+        a: 'Yes. Send the video too and the music is fitted to it: the tune starting where you want, the beat on your cuts and the last note ending on the last frame.',
+      },
+    ],
+  },
+  {
+    slug: 'make-a-jingle-for-a-video',
+    lang: 'en',
+    title: 'How to make a jingle for a video or an ad with AI',
+    metaTitle: 'Jingle maker: make a jingle for your video or ad with AI | cuttingfloor',
+    metaDescription:
+      'Ask ChatGPT, Claude or Kazi for a short tune made for your ad or intro: a few seconds of instruments that ends exactly as your logo appears, built note by note and changeable in words.',
+    answer:
+      'Connect cuttingfloor to ChatGPT, Claude or Kazi, send your ad or intro and describe the jingle. Your agent writes a short tune on the instruments you want, times it to the picture, and lands the last note exactly as your logo appears. Change the tune, the instruments or the ending in words.',
+    updated: '2026-11-27',
+    steps: [
+      {
+        title: 'Connect your agent once',
+        body: 'Add cuttingfloor to ChatGPT, Claude or Kazi (below). It takes a minute, and you sign in the first time.',
+      },
+      {
+        title: 'Send the video, or just your logo',
+        body: 'Attach the ad, intro or outro in the chat, send a link, or drop it on your upload page. With only a logo, your agent can animate it for you too.',
+      },
+      {
+        title: 'Describe the jingle',
+        body: 'How long, how it feels and what it ends on: “four seconds, bright and happy, bells and piano, ending on a big chord as the logo pops in.” Or hum the tune you have in mind on your upload page.',
+      },
+      {
+        title: 'Listen, change it, then use it everywhere',
+        body: 'Ask for changes in words (“higher”, “one note shorter”, “end on a drum hit”). Get the video with the jingle in it, or the jingle alone as a WAV or MP3 for the start or end of every video.',
+      },
+    ],
+    prompt:
+      'Make a 5-second jingle for the end of my ad: bright and friendly, bells and piano, with the last note landing exactly when my logo appears.',
+    demos: ['make-a-jingle-for-a-product-ad'],
+    faqs: [
+      {
+        q: 'How does the last note land on the logo?',
+        a: 'Your agent finds the frame your logo appears on, marks that moment in the music and writes the tune so its last note starts there. Then it checks where the note really lands in the finished video.',
+      },
+      {
+        q: 'Can it sing my brand name?',
+        a: 'No. Jingles here are instrumental: there’s no singer and no lyrics. For words, add a voiceover over the tune, recorded by you or made from your script.',
+      },
+      {
+        q: 'Can I hum the tune I have in mind?',
+        a: 'Yes. Record it on your upload page and your agent turns your hum into notes, then plays it on the instruments you pick.',
+      },
+      {
+        q: 'Can I get the jingle on its own?',
+        a: 'Yes, as a WAV or MP3, to use at the start or end of every video, or in a podcast.',
+      },
+      {
+        q: 'Can I try a few versions?',
+        a: 'Yes. Ask for two or three (“one with piano, one with brass”). Each is its own version and the earlier ones stay, so you can pick or go back.',
+      },
+      {
+        q: 'Can it sound like another brand’s jingle?',
+        a: 'Describe the feel you want instead (“short, warm and confident, like a sign-off”). Your agent writes an original tune from that.',
+      },
+    ],
+  },
+  {
+    slug: 'make-a-beat-for-a-montage',
+    lang: 'en',
+    title: 'How to make a beat for a gaming montage or highlight reel',
+    metaTitle: 'AI beat maker for gaming montages and highlight reels | cuttingfloor',
+    metaDescription:
+      'Your agent makes a beat for your clips: drums, bass and hits on an acoustic, 808, 909 or lo-fi kit, with the cuts on the beat and the biggest hit on the big play. From ChatGPT, Claude or Kazi.',
+    answer:
+      'Connect cuttingfloor to ChatGPT, Claude or Kazi, send your clips and say the feel. Your agent builds a beat for them: it picks a speed so the beats fall on your cuts, lays drums, bass and hits in layers, puts the biggest hit on the big play, and keeps the commentary or game sound coming through.',
+    updated: '2026-11-27',
+    steps: [
+      {
+        title: 'Connect your agent once',
+        body: 'Add cuttingfloor to ChatGPT, Claude or Kazi (below). It takes a minute, and you sign in the first time.',
+      },
+      {
+        title: 'Send your clips',
+        body: 'Gameplay, sports clips or a stream: attach them in the chat, send links, or drop them on your upload page.',
+      },
+      {
+        title: 'Say the feel and the big moment',
+        body: '“Hard and fast, building to the end, the biggest hit on the last kill.” Your agent finds each play, cuts on the beat and writes the beat around them: a drum kit and a heavy bass first, then strings or brass on top as it builds.',
+      },
+      {
+        title: 'Check it, change it, get the file',
+        body: 'Your agent measures the mix (how loud it is, where the hits land) before it hands it over. Ask for changes in words (“harder drums”, “drop the bass in the slow motion”, “try the 909 kit”), then get the MP4, wide for YouTube or vertical for Shorts.',
+      },
+    ],
+    prompt:
+      'Make a 30-second montage of these clips with a beat made for it: hard 808 drums and heavy bass that build, cuts on the beat, and slow motion on the last kill with the biggest hit right there.',
+    demos: ['make-a-beat-from-your-dogs-bark', 'make-a-basketball-highlight-reel-with-music'],
+    faqs: [
+      {
+        q: 'Which drum kits are there?',
+        a: 'Four: an acoustic kit, an 808-style electronic kit, a 909-style kit and a lo-fi kit (the acoustic kit made crunchy and warm). Under them go basses from a deep sub bass to synth and electric bass, and on top anything from strings to brass.',
+      },
+      {
+        q: 'How do the cuts land on the beat?',
+        a: 'Your agent picks a speed for the beat so each beat falls exactly on a frame, then cuts your clips on beats. The beat is made for your clips, so the big play never has to wait for a song’s drop.',
+      },
+      {
+        q: 'Can the commentary or game sound come through?',
+        a: 'Yes. Your agent lowers the music under the commentator’s calls, or keeps the game sound underneath, and can read back the words of the finished mix to check the calls made it.',
+      },
+      {
+        q: 'Can I add sound effects too?',
+        a: 'Yes: booms, airhorns, whooshes and crowd cheers from a library of about 20,000 sound effects, each placed on its moment.',
+      },
+      {
+        q: 'Can I change the beat afterwards?',
+        a: 'Yes, any layer of it: busier or simpler drums, another kit, more or less bass, a bigger build, a different ending. Each change is a new version and the old ones stay.',
+      },
+      {
+        q: 'Can I use a song instead?',
+        a: 'Yes. Send it and your agent cuts your clips to its beat instead. A song you bring is yours to clear for where you post.',
+      },
+    ],
+  },
+  {
+    slug: 'record-a-voiceover-for-a-video',
+    lang: 'en',
+    title: 'How to record a voiceover for your video',
+    metaTitle: 'How to record a voiceover for your video, then edit to it with AI | cuttingfloor',
+    metaDescription:
+      'Record your voiceover on your cuttingfloor upload page, or have one made from your script. Your agent lays it in, times the shots to your words, captions it and puts music under it.',
+    answer:
+      'Record it on your upload page at cuttingfloor.ai/upload: press Record, read your script, listen back, send. Then ask your agent in ChatGPT, Claude or Kazi to use it. It lays the voiceover in, times the shots to your words, captions them and keeps music under your voice. No microphone? It can make a voiceover from your script.',
+    updated: '2026-11-27',
+    steps: [
+      {
+        title: 'Connect your agent once',
+        body: 'Add cuttingfloor to ChatGPT, Claude or Kazi (below). It takes a minute, and you sign in the first time.',
+      },
+      {
+        title: 'Record on your upload page',
+        body: 'Open cuttingfloor.ai/upload on your phone or computer, press Record and read your script. Listen back, record again until it’s right, then send it. A recording you already have works too.',
+      },
+      {
+        title: 'Tell your agent what it’s for',
+        body: '“Use my voiceover on these clips, change shots as I talk, add captions and quiet music under it.” Your agent transcribes the recording with the time of every word, so it can cut and caption by what you said.',
+      },
+      {
+        title: 'Check it, then get the file',
+        body: 'Your agent checks your voice stays clear over the music before it hands the video over. Ask for changes in words (“cut the first sentence”, “music quieter”), then get the MP4.',
+      },
+    ],
+    prompt:
+      'I recorded a voiceover on my upload page. Put it over these clips, change shots as I talk, add big captions from my words and quiet piano music under my voice.',
+    demos: [],
+    faqs: [
+      {
+        q: 'How do I get a good recording?',
+        a: 'A quiet room with soft things around you (a closet full of clothes works), the phone a hand’s width from your mouth and the same distance the whole way. Record a couple of takes and send the one you like.',
+      },
+      {
+        q: 'Can it make a voiceover from my script instead?',
+        a: 'Yes. Paste the script and your agent makes the voiceover in a natural American or British English voice, with a time for every word, so shots and captions line up with it.',
+      },
+      {
+        q: 'Can I record in another language?',
+        a: 'Yes. Your own recording can be in any language your agent transcribes, Spanish included, and the captions come out in it. Voiceovers made from a script are in English.',
+      },
+      {
+        q: 'Can it cut my pauses and restarts?',
+        a: 'Yes. Ask it to take out the pauses and the lines you started over; it cuts by the time of each word.',
+      },
+      {
+        q: 'Will music drown out my voice?',
+        a: 'No. The music sits at one steady level under your voice, and your agent can read back the words of the finished mix to check every word came through.',
+      },
+      {
+        q: 'Can the music be made for the video?',
+        a: 'Yes. Ask for music made to fit, built from instruments in layers and changeable in words (“softer”, “no drums”), or send your own song.',
+      },
+    ],
+  },
+  {
+    slug: 'musica-de-fondo-para-videos',
+    lang: 'es',
+    title: 'Música de fondo para videos, hecha a la medida con IA',
+    metaTitle: 'Música de fondo para videos, hecha a la medida de tus cortes | cuttingfloor',
+    metaDescription:
+      'Pídele a ChatGPT, Claude o Kazi música de fondo hecha para tu video: con instrumentos, capa por capa, el ritmo en tus cortes y pareja bajo tu voz. O tu propia canción, ajustada al video.',
+    answer:
+      'Pídele música de fondo a tu agente (Kazi, Claude o ChatGPT, con cuttingfloor conectado). La arma con instrumentos y notas, capa por capa, a la medida de tu video: el ritmo en tus cortes, un golpe en el momento clave y la última nota en el último cuadro. ¿Ya tienes una canción? La ajusta a tu video.',
+    updated: '2026-11-27',
+    alternate: '/guides/make-background-music-for-a-video',
+    steps: [
+      {
+        title: 'Conecta tu agente una vez',
+        body: 'Agrega cuttingfloor a Kazi, Claude o ChatGPT (abajo). Toma un minuto y solo inicias sesión la primera vez.',
+      },
+      {
+        title: 'Dale el video',
+        body: 'Adjúntalo en el chat, envía un enlace o súbelo a tu página de subida. Sirve un video donde hablas, un video de clips o tomas sin sonido.',
+      },
+      {
+        title: 'Di cómo debe sonar',
+        body: '“Piano tranquilo”, “oscura y con tensión”, “alegre y que crezca al final”, y qué momento debe marcar. Tu agente elige una velocidad para que los tiempos caigan en tus cortes y arma la música por capas: batería, bajo, acordes y una melodía encima.',
+      },
+      {
+        title: 'Escúchala, cámbiala y descárgala',
+        body: 'Pide cambios con palabras (“más oscura”, “menos cargada”, “más bajo”, “cambia el piano por cuerdas”) y cambia esa parte. Descarga el video en MP4, o la música sola en WAV o MP3.',
+      },
+    ],
+    prompt:
+      'Hazle música de fondo a mi video: tranquila, con piano y cuerdas suaves, que crezca un poco al final. Que quede bajita debajo de mi voz y que termine en el último cuadro.',
+    demos: ['add-background-music-to-a-talking-video', 'make-music-for-a-travel-video'],
+    faqs: [
+      {
+        q: '¿Es un generador de canciones?',
+        a: 'No. Tu agente escribe la música nota por nota con instrumentos (piano, cuerdas, bajos, guitarras, metales, baterías y más) y la arma por capas. No hay voz cantando ni letra, y no imita a ningún artista. Como cada nota se puede cambiar, pedir “menos cargada” da justo eso.',
+      },
+      {
+        q: '¿Puedo poner música debajo de un video donde hablo?',
+        a: 'Sí. La música queda a un volumen parejo debajo de tu voz y tu voz se oye completa. Tu agente puede transcribir la mezcla final para comprobar que no se perdió ninguna palabra.',
+      },
+      {
+        q: '¿Puedo usar mi propia canción?',
+        a: 'Sí. Envíala con el video y tu agente la ajusta: corta el video al ritmo, la baja cuando hablas y la desvanece al final. Si la canción es de alguien más, asegúrate de tener permiso para usarla donde publiques.',
+      },
+      {
+        q: '¿Qué instrumentos hay?',
+        a: 'Piano de cola y eléctrico, órgano, contrabajo, bajo eléctrico, bajo de sintetizador y sub bajo, cuerdas, metales, flauta, glockenspiel, caja de música, marimba, guitarra acústica y eléctrica, sintetizadores y un coro que canta “aah”, además de baterías acústica, 808, 909 y lo-fi, y efectos como reverb y eco.',
+      },
+      {
+        q: '¿Quién la escucha?',
+        a: 'Tú. Tu agente revisa la música midiéndola (qué tan fuerte suena, dónde caen los golpes, que tu voz se oiga) y mirando una imagen de las notas; tú la escuchas y dices qué cambiar.',
+      },
+      {
+        q: '¿Funciona con videos en español?',
+        a: 'Sí. La música no tiene idioma, y si hablas en el video, tu agente transcribe tu español para cuidar tu voz y ponerte subtítulos.',
+      },
+    ],
+  },
+  {
+    slug: 'poner-musica-a-un-video',
+    lang: 'es',
+    title: 'Cómo poner música a un video con IA',
+    metaTitle:
+      'Cómo poner música a un video con IA: tu canción o música hecha para él | cuttingfloor',
+    metaDescription:
+      'Pídele a ChatGPT, Claude o Kazi que le ponga música a tu video: tu propia canción, cortada al ritmo y más bajita cuando hablas, o música hecha a la medida de tus cortes.',
+    answer:
+      'Conecta cuttingfloor al agente que ya usas (Kazi, Claude o ChatGPT), envía tu video y di qué música quieres: tu propia canción o música hecha para el video. Tu agente la coloca, la baja cuando hablas, corta al ritmo de tu canción o arma el ritmo sobre tus cortes, la desvanece al final y te entrega el MP4.',
+    updated: '2026-11-27',
+    steps: [
+      {
+        title: 'Conecta tu agente una vez',
+        body: 'Agrega cuttingfloor a Kazi, Claude o ChatGPT (abajo). Toma un minuto y solo inicias sesión la primera vez.',
+      },
+      {
+        title: 'Dale el video y, si tienes, la canción',
+        body: 'Adjúntalos en el chat, envía un enlace o súbelos a tu página de subida. Sin canción, tu agente hace la música para el video.',
+      },
+      {
+        title: 'Di cómo va la música',
+        body: 'Con tu canción: “corta el video al ritmo”, “que empiece en el coro”, “más bajita cuando hablo”. Sin canción: cómo debe sonar (“alegre, con guitarra y un ritmo suave”) y qué momento debe marcar.',
+      },
+      {
+        title: 'Revisa y descarga',
+        body: 'Tu agente mide la mezcla antes de entregártela. Pide cambios con palabras (“más fuerte al final”, “sin batería”) y descarga el MP4, en vertical para Reels y TikTok o en horizontal para YouTube.',
+      },
+    ],
+    prompt:
+      'Ponle música a mi video: usa esta canción, corta las tomas al ritmo, bájala cuando hablo y desvanécela al final.',
+    demos: [
+      'add-background-music-to-a-talking-video',
+      'make-a-basketball-highlight-reel-with-music',
+    ],
+    faqs: [
+      {
+        q: '¿Puedo usar una canción que ya tengo?',
+        a: 'Sí. Envía el archivo de audio con tu video. Tu agente encuentra sus tiempos, corta el video al ritmo, la baja cuando hablas y la desvanece al final. Si la canción es de alguien más, asegúrate de tener permiso para usarla donde publiques.',
+      },
+      {
+        q: '¿Y si no tengo música?',
+        a: 'Tu agente la hace para tu video con instrumentos y notas, capa por capa: el ritmo en tus cortes, un golpe en el momento clave y la última nota en el último cuadro. No es un generador de canciones: no hay voz cantando ni letra.',
+      },
+      {
+        q: '¿Puedo pegar un enlace de YouTube o Spotify?',
+        a: 'No: hace falta el archivo. Envía una canción que tengas como archivo (MP3 o WAV), o un enlace directo al archivo.',
+      },
+      {
+        q: '¿Se va a oír mi voz sobre la música?',
+        a: 'Sí. Tu agente baja la música debajo de tu voz y puede transcribir la mezcla final para comprobar que se entiende cada palabra.',
+      },
+      {
+        q: '¿Puedo cambiar la música después?',
+        a: 'Sí. Cada cambio crea una versión nueva y las anteriores se guardan. Con música hecha para el video también cambias cada parte: “más lenta”, “sin batería”, “cambia el piano por guitarra”.',
+      },
+      {
+        q: '¿Funciona con videos en español?',
+        a: 'Sí. Tu agente transcribe lo que dices en español, así que puede bajar la música donde hablas y ponerte subtítulos en español.',
       },
     ],
   },

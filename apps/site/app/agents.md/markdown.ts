@@ -8,7 +8,7 @@ export function markdown(): string {
     path: '/agents',
     title: 'Edit videos with your AI agent: Kazi, Claude and ChatGPT',
     summary:
-      'Kazi, Claude and ChatGPT can’t cut video on their own. Connected to cuttingfloor, they cut your footage, add captions and music, check a preview and give you the finished video.',
+      'Kazi, Claude and ChatGPT can’t cut video on their own. Connected to cuttingfloor, they cut your footage, add captions, make music to fit, check a preview and give you the finished video.',
     updated: AGENTS_UPDATED,
     body: `## Agents\n\n${list(AGENTS.map((a) => `${pageLink(a.title, `/agents/${a.slug}`)}: ${a.answer}`))}\n\nEvery other app: ${pageLink('Connect', '/connect')}`,
   });

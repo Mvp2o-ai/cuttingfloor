@@ -180,6 +180,24 @@ export const SAMPLES: Sample[] = [
       'Make a 40-second highlight reel of this awards night: open on the crowd cheering, keep the announcement and the best line of her thank-you speech with captions, cut the rest to music with a warm grade, and end on the standing ovation with a title for the night.',
   },
   {
+    slug: 'music-for-video',
+    file: 'silent-trip.mp4',
+    shows:
+      'a 43-second set of seven travel clips with no sound at all, in order: a harbour before dawn, a street waking up, a woman with a backpack climbing stone steps out of town, a drone rise over terraced hills, her reaching a cliff top as the sun breaks over the sea (the best shot), her face in the warm light, and the same harbour at golden hour. Flat, ungraded colour, no music or text',
+    fits: 'making music for a video: background music, a soundtrack or original music made to fit the footage, music for a video that has no sound or no song, piano, strings or an instrumental that builds and swells on the best shot, copyright-free music made for the video, AI music for a video',
+    starter:
+      'Make music for these clips: quiet piano to start, strings coming in, a swell when she reaches the top and the sun comes up, then settling for the last shot. Grade the picture warm and give me one finished video.',
+  },
+  {
+    slug: 'hummed-tune',
+    file: 'hummed-tune.mp4',
+    shows:
+      'an 8-second recording of someone humming a short tune of their own: twelve notes, no words and nothing else. The picture is only the sound’s wave on a dark card',
+    fits: 'turning a hummed, sung or whistled tune into music: a melody idea played on piano or any instrument, a theme, intro or jingle built from a tune the user hums, podcast and channel intro music from a hum, hum to music, hum to MIDI, a voice memo of a melody',
+    starter:
+      'Turn this hummed tune into a 10-second intro theme: keep the melody, play it on a warm piano with a soft bass and light drums, and put it on a title card with my show’s name.',
+  },
+  {
     slug: FALLBACK_SAMPLE,
     file: 'big-buck-bunny.mp4',
     shows: 'a 30-second scene from Big Buck Bunny, an open animated film',

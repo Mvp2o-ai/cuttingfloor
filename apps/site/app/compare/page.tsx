@@ -105,8 +105,8 @@ export default function Compare() {
               <h3>Editing tools for your agent</h3>
               <p>
                 cuttingfloor. Your agent, the one you already talk to, gets the editing itself: cut,
-                trim, caption, mix, add effects, export. It makes each edit, looks at the result,
-                and decides the next one.
+                trim, caption, mix, make music, add effects, export. It makes each edit, looks at
+                the result, and decides the next one.
               </p>
             </div>
           </div>

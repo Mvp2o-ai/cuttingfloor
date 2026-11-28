@@ -19,7 +19,7 @@ export const PROFILES = [
   'https://glama.ai/mcp/connectors/io.github.Mvp2o-ai/cuttingfloor',
   'https://lobehub.com/mcp/mvp2o-ai-cuttingfloor',
 ];
-export const DESCRIPTION = `The video editing MCP server for ChatGPT, Claude, Codex, Cursor and Kazi. The most complete video and motion graphics toolkit for your agent: paste one MCP address and your AI agent gets ${TOOL_COUNT} editing tools. It cuts by transcript, captions, mixes, makes graphics and exports real video, checking its work as it goes. Watch a free live demo, no sign-up. Open source: run it yourself free, or hosted.`;
+export const DESCRIPTION = `The video editing MCP server for ChatGPT, Claude, Codex, Cursor and Kazi. The most complete video and motion graphics toolkit for your agent: paste one MCP address and your AI agent gets ${TOOL_COUNT} editing tools. It cuts by transcript, captions, mixes, makes music and graphics, and exports real video, checking its work as it goes. Watch a free live demo, no sign-up. Open source: run it yourself free, or hosted.`;
 
 // Questions in the words people search them with.
 export const FAQS = [
@@ -57,7 +57,7 @@ export const FAQS = [
   },
   {
     q: 'Can AI edit video like CapCut or Premiere?',
-    a: `Yes, with cuttingfloor connected. Your agent gets the tools a desktop editor has: ripple, roll, slip and slide trims, speed ramps, keyframes, masks, blend modes, adjustment layers, nested sequences, colour and LUTs, green screen, captions, motion graphics and a full mix, ${TOOL_COUNT} tools in all. ChatGPT, Claude or Kazi decides the edit and makes it, one tool call at a time, and can hand the timeline to Premiere, Final Cut or Resolve.`,
+    a: `Yes, with cuttingfloor connected. Your agent gets the tools a desktop editor has: ripple, roll, slip and slide trims, speed ramps, keyframes, masks, blend modes, adjustment layers, nested sequences, colour and LUTs, green screen, captions, motion graphics, a full mix and music made in layers to fit the cuts, ${TOOL_COUNT} tools in all. ChatGPT, Claude or Kazi decides the edit and makes it, one tool call at a time, and can hand the timeline to Premiere, Final Cut or Resolve.`,
   },
   {
     q: 'Is there an MCP for motion graphics?',

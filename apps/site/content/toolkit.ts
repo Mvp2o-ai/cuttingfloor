@@ -39,6 +39,10 @@ export const DESKTOP_TOOLS: { does: string; tools: string[] }[] = [
     does: 'A full mix: gain rides, EQ, compressor, stems, limiter',
     tools: ['audio.set_gain', 'filter.add', 'create.stems', 'audio.set_master'],
   },
+  {
+    does: 'Music made in layers: instruments, drum kits, notes and effects',
+    tools: ['score.add_part', 'score.add_device', 'score.add_notes', 'score.render'],
+  },
   { does: 'Tracking faces and objects, finding beats and scenes', tools: ['media.analyze'] },
   { does: 'Hand-off to Premiere, Final Cut or Resolve', tools: ['export.timeline'] },
 ];

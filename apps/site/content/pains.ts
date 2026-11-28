@@ -45,8 +45,8 @@ export const EDITING_PAINS: Pain[] = [
   {
     pain: 'Music, sound effects and levels',
     answer:
-      'Finds sound effects you describe in a free library, lowers the music under speech, splits a voice from its music, rides levels with keyframes and masters to a measured loudness.',
-    tools: ['audio.set_gain', 'create.stems', 'audio.set_master', 'qa.check'],
+      'Makes music for the video in layers, with the beat on the cuts, and changes any part of it on request. Finds sound effects you describe in a free library, lowers the music under speech, splits a voice from its music, rides levels with keyframes and masters to a measured loudness.',
+    tools: ['score.add_part', 'audio.set_gain', 'create.stems', 'audio.set_master', 'qa.check'],
   },
   {
     pain: 'Zooms, punch-ins and motion graphics',
@@ -57,7 +57,7 @@ export const EDITING_PAINS: Pain[] = [
   {
     pain: 'Stitching AI-generated clips into a film',
     answer:
-      'Orders the shots, matches their colour, covers the seams, adds a voiceover, lip-sync and a score.',
+      'Orders the shots, matches their colour, covers the seams, adds a voiceover, lip-sync and music made for it.',
     tools: ['filter.add', 'transition.add', 'create.voiceover', 'create.lipsync'],
   },
   {

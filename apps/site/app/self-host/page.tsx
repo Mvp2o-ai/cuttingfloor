@@ -15,6 +15,7 @@ import {
   AGPL,
   COMPARE,
   CONTRIBUTING_URL,
+  CREDITS,
   LICENCE_URL,
   LOCAL_CONNECT,
   LOCAL_NOTES,
@@ -209,6 +210,7 @@ export default function SelfHostPage() {
               </div>
             ))}
           </dl>
+          <p className="wt-links">Credits: {CREDITS}</p>
           <p className="wt-links">
             <a href={LICENCE_URL}>Read the licence</a>
           </p>

@@ -36,6 +36,7 @@ export default function Mcp() {
             'Open your footage and read what’s said in it.',
             'Cut out pauses, ums and retakes, add captions, mix the sound.',
             'Add titles, graphics and a voiceover, or reframe for vertical Shorts.',
+            'Make music for the video, layer by layer, with the beat on the cuts.',
             'Look at previews of its own work and fix what’s off.',
             'Hand back a real MP4, or a timeline for Premiere, Final Cut or Resolve.',
           ]}

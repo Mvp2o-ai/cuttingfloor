@@ -167,7 +167,7 @@ export const LINES: Record<string, Line> = {
   // Analyze and judge
   'media.analyze': {
     group: 'analyze',
-    say: 'Read footage as data: transcript, beats, faces, tracking, silences, scenes, speech, loudness, sounds.',
+    say: 'Read footage as data: transcript, beats, faces, tracking, silences, scenes, speech, loudness, sounds, a song’s key, the notes of a hummed tune, the moment each hit lands.',
   },
   'media.search': {
     group: 'analyze',
@@ -184,7 +184,7 @@ export const LINES: Record<string, Line> = {
   // Music
   'score.create': {
     group: 'music',
-    say: 'Start a new piece of music at a tempo and a time signature.',
+    say: 'Start a new piece of music: how fast it goes and how many beats to a bar.',
   },
   'score.get': {
     group: 'music',
@@ -219,7 +219,7 @@ export const LINES: Record<string, Line> = {
   'score.remove_part': { group: 'music', say: 'Take a layer out.' },
   'score.add_device': {
     group: 'music',
-    say: 'Give a layer an instrument (piano, synth, drum kit, any sound as a sampler) or an effect (reverb, echo, EQ and more).',
+    say: 'Give a layer an instrument (piano, strings, a synth, a drum kit, or a sound from your own recording) or an effect (reverb, echo, EQ and more).',
   },
   'score.set_device': {
     group: 'music',
@@ -262,8 +262,8 @@ export const LINES: Record<string, Line> = {
     group: 'music',
     say: 'Send some of a layer’s sound to another, such as a shared reverb.',
   },
-  'score.set_send': { group: 'music', say: 'Change how much a layer sends.' },
-  'score.remove_send': { group: 'music', say: 'Stop a layer sending.' },
+  'score.set_send': { group: 'music', say: 'Change how much of a layer’s sound goes to another.' },
+  'score.remove_send': { group: 'music', say: 'Stop sending a layer’s sound to another.' },
   'score.batch': { group: 'music', say: 'Make many changes to a piece of music in one go.' },
   'score.render': {
     group: 'music',
@@ -280,7 +280,7 @@ export const LINES: Record<string, Line> = {
   },
   'render.notes': {
     group: 'review',
-    say: "See a score's notes as a piano roll, one colour per part, with bars and beats.",
+    say: 'See the music’s notes as a picture, one colour per layer, with bars and beats.',
   },
   'render.spectrogram': {
     group: 'review',
@@ -313,7 +313,10 @@ export const LINES: Record<string, Line> = {
     group: 'basics',
     say: 'Bring in your video, audio, image or font from a link, an upload or a path.',
   },
-  'media.upload': { group: 'basics', say: 'Get a link to send a file from your computer.' },
+  'media.upload': {
+    group: 'basics',
+    say: 'Get a link to send a file from your phone or computer, or to record a hum, a tapped beat or your voice.',
+  },
   'media.list': { group: 'basics', say: 'List your media and uploads, with storage used.' },
   'media.get': {
     group: 'basics',
