@@ -372,9 +372,14 @@
     const k = S.session.loop.beats.findLastIndex((b) => b <= into);
     cells[ci.length + Math.max(0, k)]?.classList.add('on');
     $('#pos').textContent = `pass ${pass + 1}`;
-    if (S.state === 'playing' && pass >= MAX_PASSES) stop();
+    if (S.state === 'playing') {
+      if (pass >= MAX_PASSES) stop(`${MAX_PASSES} passes`);
+      else if (S.mic && now + S.session.count_in.seconds >= MAX_MIC_SECONDS) stop(`${MAX_MIC_SECONDS} seconds`);
+    }
   }
-  const MAX_PASSES = 64;
+  // Where a take ends by itself: what the server takes (a take over either is refused whole).
+  const MAX_PASSES = __MAX_PASSES__;
+  const MAX_MIC_SECONDS = __MAX_MIC_SECONDS__;
 
   /** Where a performance-clock time sits in the take: { pass, at_seconds } or null before it. */
   function place(p) {
@@ -401,7 +406,8 @@
     setTimeout(() => el.classList.remove('hit'), 90);
     if (S.state !== 'playing') return;
     const at = place(p);
-    if (at) S.take.taps.push({ pitch, ...at });
+    // A touch after the last pass has ended is not part of the take.
+    if (at && at.pass < MAX_PASSES) S.take.taps.push({ pitch, ...at });
   }
 
   async function start() {
@@ -423,7 +429,8 @@
     setControls();
   }
 
-  function stop() {
+  /** Ends the take. `reached` is set when it ended by itself: the limit it reached, in words. */
+  function stop(reached) {
     if (S.state !== 'playing') return;
     halt(S.t);
     for (const c of $('#meter').children) c.classList.remove('on');
@@ -431,9 +438,10 @@
     if (S.mic) closeMic();
     S.state = 'review';
     const n = S.take.taps?.length;
+    const end = typeof reached === 'string' ? `The take reached its end (${reached}). ` : '';
     say(S.session.input === 'pads'
-      ? `${n} tap${n === 1 ? '' : 's'}. Listen back, redo it, or send it.`
-      : S.take.wav ? 'Listen back, redo it, or send it.' : 'Nothing was recorded. Redo it.');
+      ? `${end}${n} tap${n === 1 ? '' : 's'}. Listen back, redo it, or send it.`
+      : S.take.wav ? `${end}Listen back, redo it, or send it.` : 'Nothing was recorded. Redo it.');
     setControls();
     // Played without the pads' own sound: the take is played back now, so it is heard once.
     if (S.session.input === 'pads' && !S.own && n) listen();
@@ -522,7 +530,11 @@
     let i0 = Math.max(0, Math.ceil((mic.from + inS + d - first) * rate));
     const startsAt = (i) => first + i / rate - inS - d - T0;
     while (startsAt(i0) < -S.session.count_in.seconds) i0 += 1;
-    const pcm = all.subarray(i0);
+    // And it ends no later than where the server stops taking it: the end of the last pass, or
+    // the longest a recording may be. The view stops a moment after that point, and a recording
+    // even one sample into another pass would be refused whole.
+    const most = Math.floor(Math.min(MAX_MIC_SECONDS, MAX_PASSES * S.t.L - startsAt(i0)) * rate);
+    const pcm = all.subarray(i0, i0 + Math.max(0, most));
     if (!pcm.length) return;
     S.take.wav = wav(pcm, rate);
     S.take.starts_at_seconds = startsAt(i0);

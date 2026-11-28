@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { LocalCredentialStore } from '@cuttingfloor/credentials';
-import { ScoreRecordResult, ScoreRecordTake } from '@cuttingfloor/schema';
+import { RECORD_LIMITS, ScoreRecordResult, ScoreRecordTake } from '@cuttingfloor/schema';
 import { Runtime } from '@cuttingfloor/server';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import type { Browser, CDPSession, Frame, Page } from 'puppeteer-core';
@@ -569,6 +569,50 @@ describe.skipIf(!browserFound)('the play-along view', () => {
     expect(late.filter((d) => Math.abs(d) <= 1).length).toBeGreaterThanOrEqual(gaps.length - 2);
     await page.close();
   }, 90_000);
+
+  it('a microphone take left running ends on the last pass the server takes, and is sent', async () => {
+    if (!ffmpegFound) return;
+    const { score_id, part_id } = await drums();
+    // A short loop, so the 64 passes a take may span go by in seconds.
+    const opened = ScoreRecordResult.parse(
+      await call('score.record', { score_id, part_id, input: 'microphone', until_beats: 0.25 }),
+    );
+    const { page, view } = await open(opened, { browser: mic });
+    await ready(view);
+    await view.click('#mic');
+    // Nobody stops it: the view does, when the take has reached its end.
+    await view.waitForFunction(() => (window as unknown as CfWin).cfRecord.S.state === 'review', {
+      timeout: 60_000,
+    });
+    const ended = await view.evaluate(() => {
+      const S = (window as unknown as CfWin).cfRecord.S;
+      const t = S.take as unknown as { passes: number; starts_at_seconds: number; seconds: number };
+      return {
+        passes: t.passes,
+        ends: t.starts_at_seconds + t.seconds,
+        L: S.t.L,
+        said: document.querySelector('#say')?.textContent,
+      };
+    });
+    process.stdout.write(
+      `take end: ${ended.passes} passes, ends ${ended.ends.toFixed(6)} s of ${(64 * ended.L).toFixed(6)} s; "${ended.said}"\n`,
+    );
+    // The server takes up to 64 passes. The view stops a moment after the 64th has ended, and
+    // the recording had run into a 65th (measured: ends 8.000002 s of 8.000000, 65 passes), so
+    // the take was refused whole. It is cut at the boundary now: never past it, and short of it
+    // only by the blocks the microphone had not yet delivered when the view stopped (8 ms here).
+    expect(ended.passes).toBe(RECORD_LIMITS.passes);
+    expect(ended.ends).toBeLessThanOrEqual(RECORD_LIMITS.passes * ended.L);
+    expect(ended.ends).toBeGreaterThan(RECORD_LIMITS.passes * ended.L - 0.1);
+    expect(ended.said).toMatch(/64 passes/);
+    await view.click('#send');
+    await view.waitForFunction(() => (window as unknown as CfWin).cfRecord.S.state === 'sent', {
+      timeout: 20_000,
+    });
+    const result = await take(opened.job_id);
+    expect(result.input).toBe('microphone');
+    await page.close();
+  }, 120_000);
 
   it('the page behind the url works the same, at a phone’s width', async () => {
     const { score_id, part_id } = await drums();
