@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.81.3
+
+### Patch Changes
+
+- 92b7d8f: Two new starter clips for new accounts: travel clips with no sound, for a task about making music for a video, and a hummed tune, for a task about turning a tune into music.
+
 ## 0.81.2
 
 ### Patch Changes
