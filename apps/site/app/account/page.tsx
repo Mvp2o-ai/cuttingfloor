@@ -1,9 +1,9 @@
 import { withAuth } from '@workos-inc/authkit-nextjs';
+import { AppNav, accountLinks } from '../app-ui.tsx';
 import { accountStatus, creditPayment, workos } from '../lib/billing.ts';
 import { filesOf } from '../lib/files.ts';
 import { keysOf } from '../lib/keys.ts';
 import { providerKeysOf } from '../lib/provider-keys.ts';
-import { AccountNav } from './chrome.tsx';
 import { AccountView } from './view.tsx';
 
 export const dynamic = 'force-dynamic';
@@ -31,25 +31,25 @@ export default async function AccountPage({
   const metadata = ((found as { metadata?: unknown }).metadata ?? {}) as Record<string, string>;
 
   return (
-    <>
-      <AccountNav email={user.email} />
-      <AccountView
-        email={user.email}
-        firstName={user.firstName}
-        {...status}
-        progress={{
-          first_call_at: metadata.first_call_at,
-          first_edit_at: metadata.first_edit_at,
-          first_export_at: metadata.first_export_at,
-        }}
-        bought={bought && /^\d+$/.test(bought) ? bought : undefined}
-        files={files}
-        keys={keys}
-        adminKeys={adminKeys}
-        providerKeys={providerKeys}
-        expiryEmails={metadata.expiry_emails !== 'off'}
-        server={process.env.CUTTINGFLOOR_SERVER_URL ?? 'https://api.cuttingfloor.ai'}
-      />
-    </>
+    <AccountView
+      nav={
+        <AppNav email={user.email} links={accountLinks(Boolean(adminKeys))} current="/account" />
+      }
+      email={user.email}
+      firstName={user.firstName}
+      {...status}
+      progress={{
+        first_call_at: metadata.first_call_at,
+        first_edit_at: metadata.first_edit_at,
+        first_export_at: metadata.first_export_at,
+      }}
+      bought={bought && /^\d+$/.test(bought) ? bought : undefined}
+      files={files}
+      keys={keys}
+      adminKeys={adminKeys}
+      providerKeys={providerKeys}
+      expiryEmails={metadata.expiry_emails !== 'off'}
+      server={process.env.CUTTINGFLOOR_SERVER_URL ?? 'https://api.cuttingfloor.ai'}
+    />
   );
 }

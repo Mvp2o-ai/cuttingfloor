@@ -21,12 +21,10 @@ export default async function AdminAccountPage({ params }: { params: Promise<{ i
     throw new Error(`The account could not be read: ${account.message}`);
   }
   return (
-    <>
-      <AdminNav email={user.email} />
-      <AccountDetail
-        account={account.body}
-        {...(ledger.ok ? { ledger: ledger.body } : { ledgerError: ledger.message })}
-      />
-    </>
+    <AccountDetail
+      nav={<AdminNav email={user.email} />}
+      account={account.body}
+      {...(ledger.ok ? { ledger: ledger.body } : { ledgerError: ledger.message })}
+    />
   );
 }

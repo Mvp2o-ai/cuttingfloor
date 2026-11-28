@@ -219,13 +219,14 @@ export default async function AdminPreview({
 }) {
   if (process.env.NODE_ENV === 'production') notFound();
   const { view } = await searchParams;
+  const nav = <AdminNav email="ken@example.com" />;
   return (
     <>
-      <AdminNav email="ken@example.com" />
       {view === 'account' ? (
-        <AccountDetail account={base} ledger={ledger} />
+        <AccountDetail nav={nav} account={base} ledger={ledger} />
       ) : (
         <AccountsView
+          nav={nav}
           q=""
           sort="newest"
           list={{

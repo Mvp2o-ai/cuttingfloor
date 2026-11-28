@@ -5497,3 +5497,809 @@ figure.allow-access {
   font-size: 15px;
 }
 /* ---------- end blog posts ---------- */
+
+/* ---------- the app look (app-ui.tsx): signed-in pages where work is done ----------
+   Compact UI type, a slim bar, cards with a header row. Scoped to .app, so the public pages keep
+   the landing look. */
+.app {
+  --app-bg: #121110;
+  --app-card: #1b1a18;
+  --app-raise: #24221f;
+  --app-line: #2e2b27;
+  --app-text: #ece7dd;
+  --app-mute: #9c968b;
+  --app-btn: #34312c;
+  --app-btn-hover: #403c36;
+  --app-ok: #2fc26b;
+  --app-ok-bg: rgba(47, 194, 107, 0.12);
+  --app-warn: #e0a83e;
+  --app-warn-bg: rgba(224, 168, 62, 0.12);
+  --app-bad: #ef6a5b;
+  --app-bad-bg: rgba(239, 106, 91, 0.12);
+  min-height: 100vh;
+  background: var(--app-bg);
+  color: var(--app-text);
+  font-family:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  font-variation-settings: normal;
+}
+.app a {
+  color: var(--app-ok);
+  text-decoration: none;
+}
+.app a:hover {
+  text-decoration: underline;
+}
+.app code {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  background: var(--app-raise);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.app-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(18, 17, 16, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--app-line);
+}
+.app-nav-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  height: 56px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+.app .app-wordmark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--app-text);
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+.app .app-wordmark:hover {
+  text-decoration: none;
+}
+.app-links {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+.app .app-links a {
+  color: var(--app-mute);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+.app .app-links a:hover {
+  color: var(--app-text);
+  background: var(--app-raise);
+  text-decoration: none;
+}
+.app .app-links a[aria-current="page"] {
+  color: var(--app-text);
+  background: var(--app-raise);
+}
+.app-email {
+  color: var(--app-mute);
+  font-size: 13px;
+}
+
+.app-main {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 28px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.app .app-back {
+  color: var(--app-mute);
+  font-size: 13px;
+  margin-bottom: -8px;
+}
+.app-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 4px;
+}
+.app-head h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+.app-sub {
+  margin: 6px 0 0;
+  color: var(--app-mute);
+  max-width: 72ch;
+}
+.app-head-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.app-card {
+  background: var(--app-card);
+  border: 1px solid var(--app-line);
+  border-radius: 10px;
+  padding: 22px 28px;
+}
+.app-card-key {
+  border-color: rgba(47, 194, 107, 0.45);
+  background:
+    linear-gradient(100deg, rgba(47, 194, 107, 0.08), rgba(47, 194, 107, 0) 60%), var(--app-card);
+}
+.app-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.app-card-head h2 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.3;
+  font-weight: 600;
+}
+.app-card-desc {
+  margin: 0 0 16px;
+  color: var(--app-mute);
+  max-width: 80ch;
+}
+.app-card > :last-child {
+  margin-bottom: 0;
+}
+
+.app .app-btn,
+.app button.buy,
+.app a.buy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--app-btn);
+  color: var(--app-text);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+}
+.app .app-btn:hover,
+.app button.buy:hover,
+.app a.buy:hover {
+  background: var(--app-btn-hover);
+  text-decoration: none;
+}
+.app .app-btn-primary,
+.app button.buy:not(.quiet) {
+  background: var(--key);
+  color: #04140a;
+}
+.app .app-btn-primary:hover,
+.app button.buy:not(.quiet):hover {
+  background: #14c455;
+}
+
+.app-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 5px;
+  background: var(--app-raise);
+  color: var(--app-text);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.app-badge-ok {
+  background: var(--app-ok-bg);
+  color: var(--app-ok);
+}
+.app-badge-warn {
+  background: var(--app-warn-bg);
+  color: var(--app-warn);
+}
+.app-badge-bad {
+  background: var(--app-bad-bg);
+  color: var(--app-bad);
+}
+
+.app-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px 28px;
+  margin: 8px 0 0;
+}
+.app-details dt {
+  color: var(--app-mute);
+  font-size: 12.5px;
+}
+.app-details dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+/* Rows: a title and a line under it on the left, pills and actions on the right. */
+.app-rows {
+  list-style: none;
+  margin: 0 -28px;
+  padding: 0;
+}
+.app-rows > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 28px;
+  border-top: 1px solid var(--app-line);
+}
+.app-row-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+.app-row-meta {
+  color: var(--app-mute);
+  font-size: 12.5px;
+}
+.app-row-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Tables (staff pages). */
+.app .adm-scroll {
+  overflow-x: auto;
+  margin: 12px -28px 0;
+}
+.app .adm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.app .adm-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--app-mute);
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--app-line);
+  white-space: nowrap;
+}
+.app .adm-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--app-line);
+  vertical-align: top;
+}
+.app .adm-table th:first-child,
+.app .adm-table td:first-child {
+  padding-left: 28px;
+}
+.app .adm-table th:last-child,
+.app .adm-table td:last-child {
+  padding-right: 28px;
+}
+.app .adm-table tbody tr:hover {
+  background: var(--app-raise);
+}
+.app .adm-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.app .adm-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.app .adm-table .neg {
+  color: var(--app-bad);
+}
+.app .adm-table .pos {
+  color: var(--app-ok);
+}
+.app .adm-search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.app input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.app select,
+.app textarea {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--app-line);
+  border-radius: 6px;
+  background: var(--app-bg);
+  color: var(--app-text);
+  font: inherit;
+  font-size: 13.5px;
+}
+.app textarea {
+  height: auto;
+  padding: 8px 10px;
+}
+.app input:focus,
+.app select:focus,
+.app textarea:focus {
+  outline: none;
+  border-color: var(--app-ok);
+}
+.app .adm-search input {
+  flex: 1;
+  max-width: 420px;
+}
+.app .adm-sorts {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--app-mute);
+  font-size: 13px;
+  margin-top: 12px;
+}
+.app .adm-sorts a {
+  color: var(--app-mute);
+  padding: 4px 8px;
+  border-radius: 5px;
+}
+.app .adm-sorts a[aria-current="true"] {
+  color: var(--app-text);
+  background: var(--app-raise);
+}
+.app .adm-count,
+.app .adm-none,
+.app .adm-note {
+  color: var(--app-mute);
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+.app .adm-error {
+  color: var(--app-bad);
+}
+.app .adm-pages {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+.app .adm-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.app .adm-when {
+  color: var(--app-mute);
+}
+
+/* The account page's own parts, in the app look. */
+.app .acct-steps {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.app .acct-steps > li {
+  display: flex;
+  gap: 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--app-line);
+}
+.app .acct-steps > li:first-child {
+  border-top: 0;
+}
+.app .acct-steps h3 {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.app .acct-steps p {
+  color: var(--app-mute);
+  margin: 6px 0 10px;
+}
+.app .acct-step-n {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--app-raise);
+  color: var(--app-mute);
+  font-size: 13px;
+  font-weight: 600;
+}
+.app .acct-steps li.now .acct-step-n {
+  background: var(--key);
+  color: #04140a;
+}
+.app .acct-steps li.done .acct-step-n {
+  background: var(--app-ok-bg);
+  color: var(--app-ok);
+}
+.app .acct-steps li.done h3 {
+  color: var(--app-mute);
+}
+.app .acct-icon {
+  width: 14px;
+  height: 14px;
+}
+.app-balance {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+.app-balance strong {
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.app-balance span {
+  color: var(--app-mute);
+}
+.app .meter-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--app-raise);
+  overflow: hidden;
+}
+.app .meter-bar span {
+  display: block;
+  height: 100%;
+  background: var(--app-ok);
+}
+.app .meter-bar.high span {
+  background: var(--app-warn);
+}
+.app .meter-bar.full span {
+  background: var(--app-bad);
+}
+.app-split {
+  margin: 8px 0 0;
+  color: var(--app-mute);
+  font-size: 13px;
+}
+.app .acct-packs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+.app .acct-pack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  background: var(--app-bg);
+}
+.app .acct-pack.best {
+  border-color: rgba(47, 194, 107, 0.55);
+}
+.app .acct-badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  left: auto;
+  bottom: auto;
+  width: auto;
+  transform: none;
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 5px;
+  background: var(--app-ok-bg);
+  color: var(--app-ok);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.app .acct-pack p {
+  margin: 0;
+}
+.app .acct-pack-credits {
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 650;
+}
+.app .acct-pack-credits small {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--app-mute);
+}
+.app .acct-pack-price {
+  font-size: 15px;
+}
+.app .acct-pack p.acct-pack-each {
+  color: var(--app-mute);
+  font-size: 12.5px;
+  margin-bottom: 10px;
+}
+.app .acct-pack-buy {
+  margin-top: auto;
+  width: 100%;
+}
+.app .acct-trust {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  color: var(--app-mute);
+  font-size: 12.5px;
+}
+.app .acct-trust li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.app .acct-auto {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--app-line);
+}
+.app .acct-auto .actions,
+.app form.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 0;
+}
+.app .acct-auto p {
+  margin: 0;
+  color: var(--app-mute);
+}
+.app .account-help {
+  color: var(--app-mute);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+
+/* Shared pieces (connect tabs, copy lines, the Kazi link, files) in the app look. */
+.app .connect {
+  max-width: 640px;
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--app-bg);
+}
+.app .connect-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 6px;
+  border-bottom: 1px solid var(--app-line);
+}
+.app .connect-tabs button,
+.app .connect-tabs button.ours,
+.app .connect-tabs button.kazi-word {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--app-mute);
+  cursor: pointer;
+}
+.app .connect-tabs button:hover {
+  color: var(--app-text);
+  background: var(--app-raise);
+}
+.app .connect-tabs button[aria-selected="true"],
+.app .connect-tabs button.ours[aria-selected="true"] {
+  background: var(--app-raise);
+  color: var(--app-text);
+}
+.app .connect-body {
+  padding: 14px 16px 16px;
+}
+.app .connect-body p {
+  margin: 0 0 10px;
+  color: var(--app-mute);
+  font-size: 13.5px;
+}
+.app .code-line {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--app-line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--app-card);
+  margin: 0 0 10px;
+}
+.app .code-line code {
+  flex: 1;
+  background: none;
+  border-radius: 0;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.app .code-line button {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 0 12px;
+  border: 0;
+  border-left: 1px solid var(--app-line);
+  background: var(--app-btn);
+  color: var(--app-text);
+  cursor: pointer;
+}
+.app .code-line button:hover {
+  background: var(--app-btn-hover);
+}
+.app .connect-more {
+  font-size: 12.5px;
+}
+.app .try-kazi {
+  margin: 12px 0 4px;
+}
+.app .adm-adjust {
+  border: 1px solid var(--app-line);
+  border-radius: 8px;
+  background: var(--app-bg);
+}
+.app .try-kazi .link-big {
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  border: 0;
+  padding: 0;
+  color: var(--app-ok);
+}
+.app .try-kazi-how {
+  margin: 2px 0 0;
+  color: var(--app-mute);
+  font-size: 12.5px;
+}
+.app .drop {
+  border: 1px dashed #4a463f;
+  border-radius: 8px;
+  background: var(--app-bg);
+  padding: 22px;
+}
+.app .drop.over {
+  border-color: var(--app-ok);
+  background: var(--app-ok-bg);
+}
+.app .drop strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.app .drop span {
+  color: var(--app-mute);
+  font-size: 13px;
+}
+.app .files-head {
+  margin: 18px 0 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--app-mute);
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.app .file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.app .file-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--app-line);
+  font-size: 13.5px;
+}
+.app .file-name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.app .file-note,
+.app .meter-note,
+.app .meter-renews {
+  color: var(--app-mute);
+  font-size: 12.5px;
+}
+.app .meter {
+  margin-top: 16px;
+}
+.app .meter-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.app .meter-line strong {
+  font-weight: 600;
+}
+.app .first-run,
+.app .prompt-line {
+  max-width: 640px;
+}
+
+@media (max-width: 720px) {
+  .app-nav-inner {
+    gap: 12px;
+    padding: 0 16px;
+  }
+  .app-email {
+    display: none;
+  }
+  .app-main {
+    padding: 20px 16px 48px;
+  }
+  .app-card {
+    padding: 18px 16px;
+  }
+  .app-rows {
+    margin: 0 -16px;
+  }
+  .app-rows > li {
+    padding: 12px 16px;
+  }
+  .app .adm-scroll {
+    margin: 12px -16px 0;
+  }
+  .app .adm-table th:first-child,
+  .app .adm-table td:first-child {
+    padding-left: 16px;
+  }
+  .app-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .app-head h1 {
+    font-size: 24px;
+  }
+}
+/* ---------- end the app look ---------- */
