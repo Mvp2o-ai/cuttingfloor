@@ -1,4 +1,6 @@
 import { FREE_CREDITS } from '@cuttingfloor/plans';
+import { KEPT } from '../app/pricing.ts';
+import { API_URL } from './clients.ts';
 import { GENERATORS_LINE, type ToolCall } from './tool-calls.ts';
 
 // One page per job, in the words people search it with: /guides/<slug> in English, /es/<slug> in
@@ -30,6 +32,11 @@ export type Guide = {
   faqs: { q: string; a: string }[];
   /** The MCP tool calls the job uses, in order. */
   tools?: ToolCall[];
+  /**
+   * Who it is for: people who make videos with their agent (the default), or engineers building
+   * on the REST API, whose page shows the ways to call it instead of the agents.
+   */
+  audience?: 'builder';
 };
 
 export const GUIDES: Guide[] = [
@@ -892,6 +899,186 @@ export const GUIDES: Guide[] = [
       {
         q: 'What does it cost?',
         a: `Making is free, no card: every edit and export, as many times as you like. Exports download free with a cuttingfloor watermark; removing the watermark costs credits, priced by the video’s length, and a new account gets ${FREE_CREDITS} credits when you activate it. After that, credit packs that never expire, on the pricing page.`,
+      },
+    ],
+  },
+  // Engineers building on the REST API. Every step is a real tool and argument; the key stays on
+  // the engineer's server and their users never need an account.
+  {
+    slug: 'add-video-editing-to-your-app',
+    lang: 'en',
+    audience: 'builder',
+    title: 'How to add video editing to your app',
+    metaTitle: 'How to add video editing to your app with a REST API | cuttingfloor',
+    metaDescription:
+      'Add cutting, captions, music and MP4 exports to your web or mobile app with one REST API: your backend calls POST /v1/<tool>, your users upload straight from their browser, and each finished video comes back as a download link.',
+    answer:
+      'Make a cuttingfloor API key, then have your backend call its REST API, one POST /v1/<tool> per edit: import your user’s video, cut it, caption it, add music, export it. Your users upload straight from their browser or phone, your key stays on your server, and each finished video comes back as an MP4 link.',
+    updated: '2026-11-28',
+    steps: [
+      {
+        title: 'Make an API key',
+        body: 'Sign up free and make a key on your account page (it starts with cf_). Keep it on your server: every call acts as your account and uses its credits, so your users never need a cuttingfloor account.',
+      },
+      {
+        title: 'Get your user’s video in',
+        body: 'Your backend calls media.upload for a one-time upload URL, and your user’s browser or app sends the file to it with a PUT, no key needed. Then media.import with {"source": {"upload_id": …}} brings it in. A file already online imports from its URL.',
+      },
+      {
+        title: 'Edit with one call per change',
+        body: 'timeline.create starts a vertical or wide timeline; clip.add, clip.trim, caption.add, audio.set_gain, transition.add and the rest each make one edit and return a new timeline_id, so undo is going back to the old one. media.analyze gives a transcript with word times to cut or caption by, and render.frames shows the result.',
+      },
+      {
+        title: 'Export and hand it back',
+        body: 'export.video answers with a job_id; job.get waits for it and gives a download link and a watch page. The review copy carries a cuttingfloor watermark and is free; the clean copy spends credits once, priced by length. Store the files you keep: links last 7 days.',
+      },
+    ],
+    prompt: `Add video editing to my app with the cuttingfloor REST API (OpenAPI spec: ${API_URL}/openapi.json). Read the key from CUTTINGFLOOR_KEY, on the server only. Let a user upload a video from the browser (media.upload, PUT the file to its url, then media.import with the upload_id), add captions from the transcript, make it vertical, export an MP4 and show them the download link.`,
+    demos: [],
+    faqs: [
+      {
+        q: 'What can my app do with it?',
+        a: 'What a video editor does, one call each: cut, trim, split, speed, captions with highlighted words, titles, overlays, masks, colour, transitions, audio levels and fades, music made for the video, sound effects, voiceovers, background removal and stabilising. Out come MP4, ProRes, GIF, WAV or MP3, and FCPXML, OTIO, EDL, SRT or VTT for other editors.',
+      },
+      {
+        q: 'Do my users need a cuttingfloor account?',
+        a: 'No. Your server calls with your key, so everything runs on your account and its credits. Never put the key in a web page or a phone app: have your backend make the calls and hand your users only upload and download links.',
+      },
+      {
+        q: 'How do I know when an export is done?',
+        a: 'Long work (imports, analysis, renders, exports) answers at once with a job_id. POST /v1/job.get with {"job_id": "…", "wait_seconds": 30} waits up to 30 seconds and gives the result and signed download links when it finishes. A refused call answers with an HTTP error status and {code, message, hint}.',
+      },
+      {
+        q: 'Can my app show the timeline?',
+        a: 'Yes. timeline.get returns the whole timeline as JSON (tracks, clips, times in frames), so your app can draw its own. render.frames returns pictures of any frame, and a short export with the mp4_h264_fast preset plays a range with sound.',
+      },
+      {
+        q: 'How long are files kept?',
+        a: `${KEPT} Download links last 7 days, so store the finished files you want to keep on your side.`,
+      },
+      {
+        q: 'What does it cost?',
+        a: `Editing is free: every import, edit, preview and export, as many times as you like. Each export gives a free review copy with a cuttingfloor watermark and a clean copy that spends credits once, when it is first opened or released with export.release, priced by the video’s length. A new account gets ${FREE_CREDITS} credits when you activate it; after that, credit packs that never expire, on the pricing page.`,
+      },
+      {
+        q: 'Can I run it on my own servers?',
+        a: 'Yes. cuttingfloor is open source and ships as one Docker image, the same server as the hosted one with the same REST API and OpenAPI spec. See Run it yourself (/self-host).',
+      },
+    ],
+  },
+  {
+    slug: 'build-your-own-video-editor',
+    lang: 'en',
+    audience: 'builder',
+    title: 'How to build your own video editor',
+    metaTitle: 'How to build your own video editor on an API | cuttingfloor',
+    metaDescription:
+      'Build the editor your users see and let a REST API be the engine: each button is one call (cut, trim, caption, music, export), every version of the timeline is kept for undo, and frames and MP4s are rendered for you.',
+    answer:
+      'Build the part your users see and let cuttingfloor’s REST API be the engine. Each button in your editor is one call (split, trim, caption, add music, export), the server keeps every version of the timeline and renders the frames and the MP4, and timeline.get hands you the whole edit as JSON to draw.',
+    updated: '2026-11-28',
+    steps: [
+      {
+        title: 'Draw the editor, keep the key on your server',
+        body: 'The player, the timeline and the buttons are yours. A thin backend holds the API key and forwards each action to POST /v1/<tool>; users upload straight to a media.upload URL.',
+      },
+      {
+        title: 'Map each button to one tool',
+        body: 'Split is clip.split, trim is clip.trim, a caption is caption.add, a fade is audio.fade, speed is clip.set_speed, and edit.batch applies many edits in one call. Each returns a new timeline_id: undo and redo move between ids, and timeline.history lists them.',
+      },
+      {
+        title: 'Draw the timeline and the preview',
+        body: 'timeline.get returns tracks and clips with times in frames, to draw as your timeline. render.frames gives pictures for the playhead and thumbnails; a short export with the mp4_h264_fast preset plays a range with sound.',
+      },
+      {
+        title: 'Export',
+        body: 'export.video renders the timeline as MP4, ProRes, GIF, WAV or MP3, and export.timeline writes FCPXML, OTIO, EDL, SRT or VTT. job.get waits for the render and gives the download link.',
+      },
+    ],
+    prompt: `Build me a web video editor on the cuttingfloor REST API (OpenAPI spec: ${API_URL}/openapi.json), with the key in CUTTINGFLOOR_KEY on the server only. Upload a video, draw its timeline from timeline.get, add buttons for split, trim, captions from the transcript and music, show the frame under the playhead with render.frames, undo by going back to the previous timeline_id, and an Export button that shows the download link.`,
+    demos: [],
+    faqs: [
+      {
+        q: 'Do I have to build the rendering myself?',
+        a: 'No. The server decodes, applies effects, mixes and renders, with FFmpeg and MLT inside its Docker image. Your editor sends edits and gets back pictures, sound and finished files.',
+      },
+      {
+        q: 'How does undo work?',
+        a: 'Timelines never change: every edit returns a new timeline_id and the old ones stay valid, so undo is showing the previous id and redo is the next. timeline.history lists the versions and timeline.diff says what changed between two.',
+      },
+      {
+        q: 'Can an AI assistant in my editor make edits too?',
+        a: 'Yes. The assistant’s model can write code that calls the same REST API in a sandbox (code execution), chaining many edits in one run, on the same timelines your buttons edit.',
+      },
+      {
+        q: 'How long are timelines and files kept?',
+        a: `${KEPT} To keep a project longer, store the timeline.get document on your side and bring it back with timeline.load.`,
+      },
+      {
+        q: 'What does it cost?',
+        a: `Editing is free: every import, edit, preview and export, as many times as you like. Each export gives a free review copy with a cuttingfloor watermark and a clean copy that spends credits once, when it is first opened or released with export.release, priced by the video’s length. A new account gets ${FREE_CREDITS} credits when you activate it; after that, credit packs that never expire, on the pricing page.`,
+      },
+      {
+        q: 'Is it open source?',
+        a: 'Yes. cuttingfloor is open source and ships as one Docker image, the same server as the hosted one with the same REST API and OpenAPI spec. See Run it yourself (/self-host).',
+      },
+    ],
+  },
+  {
+    slug: 'vibe-code-a-video-editor',
+    lang: 'en',
+    audience: 'builder',
+    title: 'How to vibe code your own video editor',
+    metaTitle: 'How to vibe code a video editor with Claude Code, Cursor or Codex | cuttingfloor',
+    metaDescription:
+      'Give your coding agent the cuttingfloor OpenAPI spec and an API key, describe the editor you want, and it builds the screens while the REST API does the editing: uploads, cuts, captions, music, previews and MP4 exports.',
+    answer:
+      'Give your coding agent (Claude Code, Cursor or Codex) cuttingfloor’s OpenAPI spec and an API key, and describe the editor you want. It builds the screens; the REST API does the editing: uploads, cuts, captions, music, previews and MP4 exports. You never write a video pipeline, because every edit it needs is already one call.',
+    updated: '2026-11-28',
+    steps: [
+      {
+        title: 'Make an API key',
+        body: 'Sign up free, make a key on your account page and put it in your project’s .env as CUTTINGFLOOR_KEY. Tell your agent it belongs on the server only.',
+      },
+      {
+        title: 'Point your agent at the spec',
+        body: `Paste the prompt below. The spec at ${API_URL}/openapi.json describes every tool with its arguments and results, so your agent writes the calls without guessing.`,
+      },
+      {
+        title: 'Say what the editor should do',
+        body: 'In your words: “a page that turns a long video into three Shorts with captions”, “a trim tool for my team’s clips”. Ask for one feature at a time and try each one.',
+      },
+      {
+        title: 'Try it on a real video',
+        body: 'Upload a clip in your app and export it. Review copies are free, so run it as often as you like while you build.',
+      },
+    ],
+    prompt: `Build a simple video editor web app on the cuttingfloor REST API. Read the OpenAPI spec at ${API_URL}/openapi.json first. Keep the API key in CUTTINGFLOOR_KEY and call the API only from the server. The app should let me upload a video, cut out the pauses using the transcript, add captions, make it vertical, preview a frame, export an MP4 and show me the download link.`,
+    demos: [],
+    faqs: [
+      {
+        q: 'Do I need to know how video editing code works?',
+        a: 'No. Decoding, effects, mixing and rendering run on cuttingfloor’s server. Your agent only writes the screens and the HTTP calls, one per edit.',
+      },
+      {
+        q: 'Which coding agents can do it?',
+        a: 'Any that can read an OpenAPI spec and write HTTP calls: Claude Code, Cursor, Codex, Windsurf and others. The app it builds calls the REST API from its own backend.',
+      },
+      {
+        q: 'Can my coding agent try the edits while it builds?',
+        a: 'Yes. Add cuttingfloor to Claude Code, Cursor or Codex as well (see Connect) and it can make an edit itself and look at the frames before it writes the code for it.',
+      },
+      {
+        q: 'Where does the API key go?',
+        a: 'In your server’s environment, never in the web page or a phone app. The browser gets only upload and download links, which need no key.',
+      },
+      {
+        q: 'What does it cost?',
+        a: `Editing is free: every import, edit, preview and export, as many times as you like. Each export gives a free review copy with a cuttingfloor watermark and a clean copy that spends credits once, when it is first opened or released with export.release, priced by the video’s length. A new account gets ${FREE_CREDITS} credits when you activate it; after that, credit packs that never expire, on the pricing page.`,
+      },
+      {
+        q: 'Can I ship it to my customers?',
+        a: 'Yes. It runs on your account and its credits, and your customers never need a cuttingfloor account. For your own servers, run the open-source Docker image (/self-host).',
       },
     ],
   },

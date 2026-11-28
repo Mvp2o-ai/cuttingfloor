@@ -53,6 +53,7 @@ export function Nav({ cta = 'Start free', strip = true }: { cta?: string; strip?
           <a href="/features">Features</a>
           <a href="/mcp">What is MCP</a>
           <a href="/connect">Connect</a>
+          <a href="/how-to-connect#builders">Developers</a>
           <a href="/pricing">Pricing</a>
           <a href={SIGN_IN}>Sign in</a>
         </nav>
@@ -144,6 +145,7 @@ export function Footer({ cta = 'Start free' }: { cta?: string }) {
           <a href="/mcp">What is MCP</a>
           <a href="/pricing">Pricing</a>
           <a href="/connect">Connect</a>
+          <a href="/how-to-connect#builders">Developers</a>
           <a href="/self-host">Self-host</a>
           <a href="/compare">Compare</a>
           <a href="/alternatives">Alternatives</a>
