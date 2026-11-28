@@ -225,6 +225,16 @@
     showDelay();
   }
 
+  // A delay measured by tapping belongs to the way the sound went out when it was measured
+  // (Bluetooth adds what the browser cannot report). When the devices change it no longer holds:
+  // kept, it would move every tap of a take on the speaker by the headphones' delay.
+  navigator.mediaDevices?.addEventListener?.('devicechange', () => {
+    if (S.applied?.source !== 'measured') return;
+    S.applied = { s: S.R, source: 'reported' };
+    showDelay();
+    if (S.state !== 'playing') say('The sound goes out another way now, so the measured delay no longer holds: measure it again.');
+  });
+
   // The starting rule for the pad's own sound: on when the browser reports its delay and it is
   // at most FEEL_MS; off when it is higher or unknown (the finger on the glass is the feedback,
   // and the take plays back after). The switch is the person's from then on.
@@ -372,14 +382,14 @@
     const k = S.session.loop.beats.findLastIndex((b) => b <= into);
     cells[ci.length + Math.max(0, k)]?.classList.add('on');
     $('#pos').textContent = `pass ${pass + 1}`;
+    // A take ends by itself where the session says the server stops taking it: a take over any
+    // of its limits is refused whole.
+    const most = S.session.limits;
     if (S.state === 'playing') {
-      if (pass >= MAX_PASSES) stop(`${MAX_PASSES} passes`);
-      else if (S.mic && now + S.session.count_in.seconds >= MAX_MIC_SECONDS) stop(`${MAX_MIC_SECONDS} seconds`);
+      if (pass >= most.passes) stop(`${most.passes} passes`);
+      else if (S.mic && now + S.session.count_in.seconds >= most.microphone_seconds) stop(`${most.microphone_seconds} seconds`);
     }
   }
-  // Where a take ends by itself: what the server takes (a take over either is refused whole).
-  const MAX_PASSES = __MAX_PASSES__;
-  const MAX_MIC_SECONDS = __MAX_MIC_SECONDS__;
 
   /** Where a performance-clock time sits in the take: { pass, at_seconds } or null before it. */
   function place(p) {
@@ -407,7 +417,9 @@
     if (S.state !== 'playing') return;
     const at = place(p);
     // A touch after the last pass has ended is not part of the take.
-    if (at && at.pass < MAX_PASSES) S.take.taps.push({ pitch, ...at });
+    if (!at || at.pass >= S.session.limits.passes) return;
+    S.take.taps.push({ pitch, ...at });
+    if (S.take.taps.length >= S.session.limits.taps) stop(`${S.session.limits.taps} taps`);
   }
 
   async function start() {
@@ -533,7 +545,8 @@
     // And it ends no later than where the server stops taking it: the end of the last pass, or
     // the longest a recording may be. The view stops a moment after that point, and a recording
     // even one sample into another pass would be refused whole.
-    const most = Math.floor(Math.min(MAX_MIC_SECONDS, MAX_PASSES * S.t.L - startsAt(i0)) * rate);
+    const { passes, microphone_seconds } = S.session.limits;
+    const most = Math.floor(Math.min(microphone_seconds, passes * S.t.L - startsAt(i0)) * rate);
     const pcm = all.subarray(i0, i0 + Math.max(0, most));
     if (!pcm.length) return;
     S.take.wav = wav(pcm, rate);

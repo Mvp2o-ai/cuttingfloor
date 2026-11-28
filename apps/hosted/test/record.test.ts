@@ -328,6 +328,12 @@ describe('score.record over HTTP', () => {
       (await post('record.session', { job_id: opened.job_id }, { link: opened.url })).body,
     );
     expect(session.pads).toEqual([]);
+    // Where a take ends, for the app and the view to stop at: the limits record.take refuses beyond.
+    expect(session.limits).toEqual({
+      passes: RECORD_LIMITS.passes,
+      taps: RECORD_LIMITS.taps,
+      microphone_seconds: RECORD_LIMITS.microphoneSeconds,
+    });
     // Over a speaker: the recording holds the loop, from 0.3 s into it, for 6 s (into pass 2).
     const loop = readMono(Buffer.from(await (await fetch(session.loop.url)).arrayBuffer()));
     const rate = 48_000;
@@ -374,6 +380,74 @@ describe('score.record over HTTP', () => {
     expect(result.correlation?.starts_at_seconds).toBeCloseTo(0.3, 3);
     expect(result.correlation?.strength).toBeGreaterThan(0.9);
     expect(result.fit_beats).toBeUndefined();
+  }, 120_000);
+
+  it('the loop is found in a microphone take with a louder low sound on top', async () => {
+    if (!ffmpegFound) return;
+    const { score_id, part_id } = await drums();
+    const opened = ScoreRecordResult.parse(
+      await tool('score.record', {
+        score_id,
+        part_id,
+        input: 'microphone',
+        from_beats: 0,
+        until_beats: 8,
+      }),
+    );
+    const session = RecordSessionResult.parse(
+      (await post('record.session', { job_id: opened.job_id }, { link: opened.url })).body,
+    );
+    const loop = readMono(Buffer.from(await (await fetch(session.loop.url)).arrayBuffer()));
+    const rate = 48_000;
+    // A take over a speaker in a room: the loop from 0.3 s into it, quiet, under a sound that is
+    // far louder and all low down (a hum and its overtones, drifting, and rumble). Modelled on a
+    // real take over a laptop's speakers, where the room stood 30 dB over the loop below 1 kHz
+    // and the speech-band measure put the loop 1.97 s from where it was (strength 0.01).
+    const take = new Float32Array(12 * rate);
+    let seed = 12345;
+    const noise = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 2 ** 31 - 1;
+    };
+    let rumble = 0;
+    let phase = 0;
+    for (let i = 0; i < take.length; i++) {
+      const t = i / rate;
+      rumble += 0.02 * (noise() - rumble);
+      phase += (2 * Math.PI * (140 + 25 * Math.sin(2 * Math.PI * 0.31 * t))) / rate;
+      let voice = 0;
+      for (let k = 1; k <= 6; k++) voice += Math.sin(k * phase) / k;
+      take[i] =
+        0.03 * (loop.data[(Math.round(0.3 * rate) + i) % loop.data.length] as number) +
+        0.25 * voice +
+        2 * rumble;
+    }
+    const bytes = stereoWav(take, rate, 1);
+    const put = await fetch(opened.upload?.url as string, {
+      method: 'PUT',
+      headers: { 'content-range': `bytes 0-${bytes.length - 1}/${bytes.length}` },
+      body: new Uint8Array(bytes),
+    });
+    expect(put.status).toBe(200);
+    const sent = await post(
+      'record.take',
+      {
+        job_id: opened.job_id,
+        speed: 1,
+        upload_id: opened.upload?.upload_id,
+        starts_at_seconds: 0.31,
+        passes: 4,
+        delay: { ...delay, route: 'speaker', echo_cancelled: false },
+      },
+      { link: opened.url },
+    );
+    expect(sent).toEqual({ status: 200, body: { ok: true } });
+    const result = ScoreRecordTake.parse((await waitJob(opened.job_id)).result);
+    process.stdout.write(
+      `loop under a louder sound: found at ${result.correlation?.starts_at_seconds} s (0.3 played), strength ${result.correlation?.strength}, next best ${result.correlation?.next_best?.starts_at_seconds} s at ${result.correlation?.next_best?.strength}\n`,
+    );
+    // Compared in the speech band alone, this take put the loop at 0.2313 s: the hum decided it.
+    expect(result.correlation?.starts_at_seconds).toBeCloseTo(0.3, 3);
   }, 120_000);
 
   it('refuses what it cannot take, with the reason and the limit', async () => {

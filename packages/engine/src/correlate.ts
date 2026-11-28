@@ -45,6 +45,92 @@ export function fft(re: Float64Array, im: Float64Array, inverse = false): void {
   }
 }
 
+/** Width of the bands a sound's spectrum is averaged in, for whitening. */
+const WHITEN_BAND_HZ = 50;
+
+/** A sound's average power in bands WHITEN_BAND_HZ wide, from 0 up to half the rate. */
+export function bandPowers(x: Float32Array, rate: number): Float64Array {
+  const bands = new Float64Array(Math.ceil(rate / 2 / WHITEN_BAND_HZ) + 1);
+  const len = x.length;
+  if (!len) return bands;
+  let n = 1;
+  while (n < len) n <<= 1;
+  const mean = x.reduce((s, v) => s + v, 0) / len;
+  const re = new Float64Array(n);
+  const im = new Float64Array(n);
+  for (let i = 0; i < len; i++) re[i] = (x[i] as number) - mean;
+  fft(re, im);
+  const counts = new Float64Array(bands.length);
+  for (let k = 0; k <= n / 2; k++) {
+    const band = Math.min(bands.length - 1, Math.floor((k * rate) / n / WHITEN_BAND_HZ));
+    bands[band] = (bands[band] as number) + (re[k] as number) ** 2 + (im[k] as number) ** 2;
+    counts[band] = (counts[band] as number) + 1;
+  }
+  // Per bin and per sample, so sounds of different lengths give the same figure.
+  for (let i = 0; i < bands.length; i++) {
+    bands[i] = counts[i] ? (bands[i] as number) / (counts[i] as number) / len : 0;
+  }
+  return bands;
+}
+
+/**
+ * A sound with a spectrum divided out of it between `lowHz` and `highHz` (nothing is kept
+ * outside): `powers` is bandPowers of the sound whose spectrum it is. Zero phase, so nothing
+ * moves in time.
+ *
+ * For finding a known sound under a louder one. Both are divided by the spectrum of the
+ * recording: what is loud in it (a voice, a room, low down) is turned down in both, and the
+ * bands where the recording is quiet and the known sound stands clear decide the match. A band
+ * the known sound has nothing in adds nothing, whatever the recording holds there.
+ */
+export function whiten(
+  x: Float32Array,
+  rate: number,
+  band: { lowHz: number; highHz: number },
+  powers: Float64Array,
+): Float32Array {
+  const len = x.length;
+  if (!len) return x;
+  let n = 1;
+  while (n < len) n <<= 1;
+  const mean = x.reduce((s, v) => s + v, 0) / len;
+  const re = new Float64Array(n);
+  const im = new Float64Array(n);
+  for (let i = 0; i < len; i++) re[i] = (x[i] as number) - mean;
+  fft(re, im);
+  const half = n / 2;
+  const lo = Math.ceil((band.lowHz / rate) * n);
+  const hi = Math.min(half, Math.floor((band.highHz / rate) * n));
+  // The spectrum at a frequency: between the centres of the bands either side.
+  const at = (hz: number) => {
+    const p = hz / WHITEN_BAND_HZ - 0.5;
+    const i = Math.max(0, Math.min(powers.length - 2, Math.floor(p)));
+    const f = Math.max(0, Math.min(1, p - i));
+    return (powers[i] as number) * (1 - f) + (powers[i + 1] as number) * f;
+  };
+  let top = 0;
+  for (let k = lo; k <= hi; k++) top = Math.max(top, at((k * rate) / n));
+  // A band with next to nothing in it is not raised without limit.
+  const floor = top * 1e-8;
+  for (let k = 0; k <= half; k++) {
+    const gain =
+      k >= lo && k <= hi && top > 0 ? 1 / Math.sqrt(Math.max(at((k * rate) / n), floor)) : 0;
+    re[k] = (re[k] as number) * gain;
+    im[k] = (im[k] as number) * gain;
+    if (k > 0 && k < half) {
+      re[n - k] = (re[n - k] as number) * gain;
+      im[n - k] = (im[n - k] as number) * gain;
+    }
+  }
+  fft(re, im, true);
+  // Scaled to a level a 32-bit float holds well; the correlation is normalised anyway.
+  const out = new Float32Array(len);
+  let peak = 0;
+  for (let i = 0; i < len; i++) peak = Math.max(peak, Math.abs(re[i] as number));
+  for (let i = 0; i < len; i++) out[i] = peak > 0 ? (re[i] as number) / peak : 0;
+  return out;
+}
+
 export interface Offset {
   /** Seconds: B's moment t lines up with A's moment t + offset_seconds. */
   offset_seconds: number;

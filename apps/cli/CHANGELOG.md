@@ -1,5 +1,12 @@
 # cuttingfloor
 
+## 0.81.4
+
+### Patch Changes
+
+- 8e49b16: Play-along: `record.session` now says where a take ends (`limits`: passes, taps, seconds of microphone), and the view stops at each of them. A pads take over 2,000 taps was refused whole when sent; it now ends by itself at the limit. A delay measured by tapping along is dropped when the sound starts going out another way (headphones unplugged), where it was kept and moved every later tap.
+- 3ea45ff: score.record: the loop is found in a microphone take recorded over a speaker with a voice or room sound on top. The check compared the take and the loop in the speech band, where the performance and the room are loudest, and placed the loop wrongly (1.97 s out on a real take). Both are now divided by the recording's spectrum first, at a higher sample rate, so the bands where the loop stands clear decide the match.
+
 ## 0.81.3
 
 ### Patch Changes

@@ -614,6 +614,83 @@ describe.skipIf(!browserFound)('the play-along view', () => {
     await page.close();
   }, 120_000);
 
+  it('a measured delay is dropped when the sound starts going out another way', async () => {
+    const { score_id, part_id } = await drums();
+    const opened = ScoreRecordResult.parse(
+      await call('score.record', {
+        score_id,
+        part_id,
+        input: 'pads',
+        velocity: 100,
+        length_beats: 0.25,
+        pads: ['C2'],
+        until_beats: 8,
+      }),
+    );
+    const { page, view } = await open(opened);
+    await ready(view);
+    // As after tapping along on Bluetooth headphones: 180 ms the browser does not report.
+    const after = await view.evaluate(() => {
+      const S = (window as unknown as CfWin).cfRecord.S;
+      S.R = 0.03;
+      S.applied = { s: 0.21, source: 'measured' };
+      navigator.mediaDevices.dispatchEvent(new Event('devicechange'));
+      return { applied: S.applied, said: document.querySelector('#say')?.textContent };
+    });
+    // Kept, it would have moved every tap on the speaker 180 ms early.
+    expect(after.applied).toEqual({ s: 0.03, source: 'reported' });
+    expect(after.said).toMatch(/measure it again/);
+    await page.close();
+  }, 60_000);
+
+  it('a pads take ends by itself at the most taps the server takes, and is sent', async () => {
+    const { score_id, part_id } = await drums();
+    const opened = ScoreRecordResult.parse(
+      await call('score.record', {
+        score_id,
+        part_id,
+        input: 'pads',
+        velocity: 100,
+        length_beats: 0.25,
+        pads: ['C2'],
+        until_beats: 8,
+      }),
+    );
+    const { page, view } = await open(opened);
+    await ready(view);
+    await view.click('#go');
+    await view.waitForFunction(() => (window as unknown as CfWin).cfRecord.S.state === 'playing');
+    // Once the loop is sounding (a touch before it starts is not in the take): more touches
+    // than a take may hold, as fast as the page takes them.
+    await view.waitForFunction(() => {
+      const S = (window as unknown as CfWin).cfRecord.S;
+      return S.ctx.currentTime > S.t.T0 + 0.3;
+    });
+    const state = await view.evaluate((n) => {
+      const pad = document.querySelector('.pad') as HTMLElement;
+      for (let i = 0; i < n; i++) {
+        pad.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+      }
+      const S = (window as unknown as CfWin).cfRecord.S;
+      return {
+        state: (S as unknown as { state: string }).state,
+        taps: (S.take.taps as unknown[]).length,
+        said: document.querySelector('#say')?.textContent,
+      };
+    }, RECORD_LIMITS.taps + 25);
+    // One tap more and the server refuses the whole take.
+    expect(state.taps).toBe(RECORD_LIMITS.taps);
+    expect(state.state).toBe('review');
+    expect(state.said).toMatch(new RegExp(`${RECORD_LIMITS.taps} taps`));
+    await view.click('#send');
+    await view.waitForFunction(() => (window as unknown as CfWin).cfRecord.S.state === 'sent', {
+      timeout: 30_000,
+    });
+    const result = await take(opened.job_id);
+    expect(result.taps).toHaveLength(RECORD_LIMITS.taps);
+    await page.close();
+  }, 120_000);
+
   it('the page behind the url works the same, at a phone’s width', async () => {
     const { score_id, part_id } = await drums();
     const opened = ScoreRecordResult.parse(

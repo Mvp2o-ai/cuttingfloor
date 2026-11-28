@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { RECORD_LIMITS } from '@cuttingfloor/schema';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { MCP_APP_MIME, mediaOrigins, viewUi } from './player.ts';
 import type { RecordSession } from './record.ts';
@@ -51,12 +50,10 @@ export function registerRecordView(server: McpServer, deps: ServerDeps): void {
   );
 }
 
-// The view ends a take by itself at the limits record.take refuses beyond, so they are filled
-// in from the same numbers.
-const RECORD_HTML = readFileSync(new URL('./record.html', import.meta.url), 'utf8')
-  .replace('__VERSION__', SERVER_VERSION)
-  .replace('__MAX_PASSES__', String(RECORD_LIMITS.passes))
-  .replace('__MAX_MIC_SECONDS__', String(RECORD_LIMITS.microphoneSeconds));
+const RECORD_HTML = readFileSync(new URL('./record.html', import.meta.url), 'utf8').replace(
+  '__VERSION__',
+  SERVER_VERSION,
+);
 
 /** The view, or the page behind a session's url with that session filled in. */
 export function recordHtml(page?: { session: RecordSession; link: string }): string {
