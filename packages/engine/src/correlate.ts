@@ -108,13 +108,20 @@ export function whiten(
     const f = Math.max(0, Math.min(1, p - i));
     return (powers[i] as number) * (1 - f) + (powers[i + 1] as number) * f;
   };
-  let top = 0;
-  for (let k = lo; k <= hi; k++) top = Math.max(top, at((k * rate) / n));
-  // A band with next to nothing in it is not raised without limit.
-  const floor = top * 1e-8;
+  // No band is raised more than the middle one of the spectrum. A band the recording holds
+  // next to nothing in (above where its microphone stops, say) would otherwise be raised until
+  // its rounding noise matched the rest, and the known sound raised with it: measured on a take
+  // through a microphone that stops at 8 kHz, that drowned the bands that do tell, and the loop
+  // was not found at all (strength 0.012, in the wrong place).
+  const inBand: number[] = [];
+  for (let i = Math.floor(band.lowHz / WHITEN_BAND_HZ); i <= band.highHz / WHITEN_BAND_HZ; i++) {
+    if (i < powers.length) inBand.push(powers[i] as number);
+  }
+  inBand.sort((x, y) => x - y);
+  const floor = inBand[inBand.length >> 1] ?? 0;
   for (let k = 0; k <= half; k++) {
-    const gain =
-      k >= lo && k <= hi && top > 0 ? 1 / Math.sqrt(Math.max(at((k * rate) / n), floor)) : 0;
+    const power = k >= lo && k <= hi ? Math.max(at((k * rate) / n), floor) : 0;
+    const gain = power > 0 ? 1 / Math.sqrt(power) : 0;
     re[k] = (re[k] as number) * gain;
     im[k] = (im[k] as number) * gain;
     if (k > 0 && k < half) {

@@ -24,8 +24,11 @@ export interface WavFormat {
   data: { offset: number; bytes: number };
 }
 
-/** Reads a WAV's header (RIFF/WAVE, PCM integer or IEEE float, extensible or not). */
-export function wavFormat(buf: Buffer, what = 'The file'): WavFormat {
+/**
+ * Reads a WAV's header (RIFF/WAVE, PCM integer or IEEE float, extensible or not). `buf` may be
+ * the file's first bytes alone, with `fileBytes` its whole size.
+ */
+export function wavFormat(buf: Buffer, what = 'The file', fileBytes = buf.length): WavFormat {
   const refuse = (why: string) =>
     new CfError('bad_request', `${what} is not a PCM WAV: ${why}`, {
       hint: 'Send the recording as WAV, PCM (16-bit, 48 kHz, mono as recorded), not a compressed format: an encoder adds silence at the start, which moves the take',
@@ -43,12 +46,14 @@ export function wavFormat(buf: Buffer, what = 'The file'): WavFormat {
     let size = buf.readUInt32LE(at + 4);
     const body = at + 8;
     if (id === 'fmt ') {
+      if (size < 16 || body + 16 > buf.length) throw refuse('a format chunk cut short');
       let tag = buf.readUInt16LE(body);
       const channels = buf.readUInt16LE(body + 2);
       const sample_rate = buf.readUInt32LE(body + 4);
       const bits = buf.readUInt16LE(body + 14);
       // WAVE_FORMAT_EXTENSIBLE: the real format is the first two bytes of the sub-format GUID.
-      if (tag === 0xfffe && size >= 40) tag = buf.readUInt16LE(body + 24);
+      if (tag === 0xfffe && size >= 40 && body + 26 <= buf.length)
+        tag = buf.readUInt16LE(body + 24);
       if (tag !== 1 && tag !== 3) throw refuse(`format tag ${tag}`);
       if (tag === 3 && bits !== 32) throw refuse(`${bits}-bit float`);
       if (tag === 1 && ![16, 24, 32].includes(bits)) throw refuse(`${bits}-bit`);
@@ -57,7 +62,7 @@ export function wavFormat(buf: Buffer, what = 'The file'): WavFormat {
     } else if (id === 'data') {
       if (!fmt) throw refuse('data before fmt');
       // A recorder that never went back to write the size leaves it 0 or 0xffffffff.
-      if (size === 0 || size === 0xffffffff || body + size > buf.length) size = buf.length - body;
+      if (size === 0 || size === 0xffffffff || body + size > fileBytes) size = fileBytes - body;
       const frame = (fmt.bits / 8) * fmt.channels;
       return { ...fmt, frames: Math.floor(size / frame), data: { offset: body, bytes: size } };
     }

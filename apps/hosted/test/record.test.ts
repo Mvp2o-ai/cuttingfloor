@@ -450,6 +450,148 @@ describe('score.record over HTTP', () => {
     expect(result.correlation?.starts_at_seconds).toBeCloseTo(0.3, 3);
   }, 120_000);
 
+  it('a recording redone after a failed send goes up afresh, and is the one that is placed', async () => {
+    if (!ffmpegFound) return;
+    const { score_id, part_id } = await drums();
+    const opened = ScoreRecordResult.parse(
+      await tool('score.record', {
+        score_id,
+        part_id,
+        input: 'microphone',
+        from_beats: 0,
+        until_beats: 8,
+      }),
+    );
+    const link = { link: opened.url };
+    const first = RecordSessionResult.parse(
+      (await post('record.session', { job_id: opened.job_id }, link)).body,
+    );
+    // Nothing sent yet: the upload is the one score.record gave.
+    expect(first.upload?.upload_id).toBe(opened.upload?.upload_id);
+    const rate = 48_000;
+    const tone = (hz: number, seconds: number) => {
+      const d = new Float32Array(seconds * rate);
+      for (let i = 0; i < d.length; i++) d[i] = 0.4 * Math.sin((2 * Math.PI * hz * i) / rate);
+      return stereoWav(d, rate, 1);
+    };
+    const put = (url: string, bytes: Buffer) =>
+      fetch(url, {
+        method: 'PUT',
+        headers: { 'content-range': `bytes 0-${bytes.length - 1}/${bytes.length}` },
+        body: new Uint8Array(bytes),
+      });
+    const body = (upload_id: string, starts_at_seconds: number) => ({
+      job_id: opened.job_id,
+      speed: 1,
+      upload_id,
+      starts_at_seconds,
+      passes: 1,
+      delay: { ...delay, route: 'speaker', echo_cancelled: false },
+    });
+    // Recording A goes up whole, and its take is refused (a body the server does not take):
+    // what a failed send leaves behind.
+    const a = tone(440, 2);
+    expect((await put(first.upload?.url as string, a)).status).toBe(200);
+    const failed = await post(
+      'record.take',
+      { ...body(first.upload?.upload_id as string, 0.5), nonsense: true },
+      link,
+    );
+    expect(failed.status).toBe(400);
+    // Redone: recording B, played somewhere else. Sent to the same upload it is answered
+    // "complete" (which a sender reads as sent), and A would be placed where B was played.
+    const b = tone(880, 3);
+    expect((await put(first.upload?.url as string, b)).status).toBe(409);
+    // So the session gives the next recording an upload of its own, and the old one is gone.
+    const second = RecordSessionResult.parse(
+      (await post('record.session', { job_id: opened.job_id }, link)).body,
+    );
+    expect(second.upload?.upload_id).toMatch(/^u_/);
+    expect(second.upload?.upload_id).not.toBe(first.upload?.upload_id);
+    expect((await put(first.upload?.url as string, b)).status).toBe(404);
+    expect((await put(second.upload?.url as string, b)).status).toBe(200);
+    // The old upload's id is no longer this session's.
+    const old = await post('record.take', body(first.upload?.upload_id as string, 1.25), link);
+    expect(old).toMatchObject({ status: 400, body: { code: 'bad_request' } });
+    expect((old.body as { message: string }).message).toMatch(/is not this session's/);
+    const sent = await post('record.take', body(second.upload?.upload_id as string, 1.25), link);
+    expect(sent).toEqual({ status: 200, body: { ok: true } });
+    const result = ScoreRecordTake.parse((await waitJob(opened.job_id)).result);
+    // B is what is in the score: 3 s long, where B was played.
+    expect(result.starts_at_seconds).toBe(1.25);
+    expect(result.recording?.seconds).toBeCloseTo(3, 6);
+    // The passes are counted from the recording: 1.25 s + 3 s is into the second pass of 4 s.
+    expect(result.passes).toBe(2);
+  }, 120_000);
+
+  it('a recording is refused while the session is open when it cannot be a take', async () => {
+    if (!ffmpegFound) return;
+    const { score_id, part_id } = await drums();
+    const rate = 48_000;
+    const silence = (seconds: number) => stereoWav(new Float32Array(seconds * rate), rate, 1);
+    const open = async (args: Rec) => {
+      const opened = ScoreRecordResult.parse(
+        await tool('score.record', { score_id, part_id, input: 'microphone', ...args }),
+      );
+      return { opened, link: { link: opened.url } };
+    };
+    const send = async (
+      at: { opened: ScoreRecordResult; link: { link: string } },
+      bytes: Buffer,
+      starts_at_seconds: number,
+      upload_id?: string,
+    ) => {
+      // Where this recording goes: the session's upload as it stands now.
+      const session = RecordSessionResult.parse(
+        (await post('record.session', { job_id: at.opened.job_id }, at.link)).body,
+      );
+      const put = await fetch(session.upload?.url as string, {
+        method: 'PUT',
+        headers: { 'content-range': `bytes 0-${bytes.length - 1}/${bytes.length}` },
+        body: new Uint8Array(bytes),
+      });
+      expect(put.status).toBe(200);
+      return post(
+        'record.take',
+        {
+          job_id: at.opened.job_id,
+          speed: 1,
+          upload_id: upload_id ?? session.upload?.upload_id,
+          starts_at_seconds,
+          passes: 1,
+          delay: { ...delay, route: 'speaker', echo_cancelled: false },
+        },
+        at.link,
+      );
+    };
+    // All of it in the count-in: stopped before the loop began. Answered ok, it could only
+    // fail in placing, with the session spent.
+    const early = await open({ from_beats: 0, until_beats: 8, count_in_beats: 4 });
+    const none = await send(early, silence(1), -2);
+    expect(none).toMatchObject({ status: 400, body: { code: 'bad_request' } });
+    expect((none.body as { message: string }).message).toMatch(/ends before the loop starts/);
+    // The session is still open: a recording that reaches into the loop is taken.
+    expect((await send(early, silence(1), -0.5)).status).toBe(200);
+    // Past the last pass: 0.5 s of loop, 33 s of recording, said to be one pass.
+    const short = await open({ from_beats: 0, until_beats: 1 });
+    const over = await send(short, silence(33), 0);
+    expect(over).toMatchObject({
+      status: 422,
+      body: { code: 'limit_exceeded', detail: { limit: RECORD_LIMITS.passes } },
+    });
+    // Another upload of the same account is not this session's recording.
+    const other = await open({ from_beats: 0, until_beats: 8 });
+    const stray = (await tool('media.upload', { name: 'stray.wav' })) as { upload_id: string };
+    const wrong = await send(other, silence(2), 0, stray.upload_id);
+    expect(wrong).toMatchObject({ status: 400, body: { code: 'bad_request' } });
+    // A header cut short is a refused file, not a server error.
+    const cut = await open({ from_beats: 0, until_beats: 8 });
+    const broken = await send(cut, silence(1).subarray(0, 30), 0);
+    expect(broken).toMatchObject({ status: 400, body: { code: 'bad_request' } });
+    // The sessions left open go, so the next test finds none waiting.
+    for (const at of [short, other, cut]) await tool('job.cancel', { job_id: at.opened.job_id });
+  }, 120_000);
+
   it('refuses what it cannot take, with the reason and the limit', async () => {
     const { score_id, part_id, synth } = await drums();
     const refused = async (name: string, args: Rec, at?: string) => {

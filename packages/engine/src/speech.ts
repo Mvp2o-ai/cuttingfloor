@@ -394,8 +394,9 @@ const OFFSET_RATE_WHITENED = 24_000;
  * played in a room with a voice on top: both are divided by the recording's spectrum first, so
  * what is loud in it does not decide the match. Measured on a take over a laptop's speakers (hats and snare,
  * the room 30 dB over them below 1 kHz): the speech band put the loop 1.97 s from where it was,
- * strength 0.01; whitened, at 24 kHz, it was found to the sample at strength 0.11, with the wrong
- * loop at 0.002. A quiet kick drum in the same room was found by neither.
+ * strength 0.01; whitened, at 24 kHz, it was found to the sample at strength 0.07, with the wrong
+ * loop at 0.003 and faint noise at 0.014. The same take through a microphone that stops at 8 kHz
+ * is found too (0.04). A quiet kick drum in the same room was found by neither.
  */
 export async function soundOffset(
   a: { file: string } & Range,

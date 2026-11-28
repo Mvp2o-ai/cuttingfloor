@@ -322,9 +322,32 @@ describe.skipIf(!browserFound)('the play-along view', () => {
       { pitch: 39, pass: 1, at: 0.003 },
       { pitch: 42, pass: 1, at: 2.75 },
     ];
+    // What the view itself saw of each press, for the day one goes missing (once, on a busy
+    // machine, the first three of six did not arrive, with nothing to say why).
+    await view.evaluate(() => {
+      const w = window as unknown as CfWin & { __downs: unknown[] };
+      w.__downs = [];
+      document.addEventListener(
+        'pointerdown',
+        (e) => {
+          const el = e.target as HTMLElement;
+          w.__downs.push({
+            on: el.dataset?.pitch ?? el.id ?? el.tagName,
+            at: Math.round(e.timeStamp),
+            now: Math.round(performance.now()),
+            state: (w.cfRecord.S as unknown as { state: string }).state,
+          });
+        },
+        true,
+      );
+    });
     for (const [i, t] of targets.entries()) {
       await pressWhen(view, cdp, `.pad[data-pitch="${t.pitch}"]`, T0 + t.pass * L + t.at);
       if (i === 2) await shot(page, '2-pads-playing');
+    }
+    const downs = await view.evaluate(() => (window as unknown as { __downs: unknown[] }).__downs);
+    if (downs.length !== targets.length) {
+      process.stdout.write(`taps: the view saw ${JSON.stringify(downs)}\n`);
     }
     await view.click('#go');
     await view.waitForFunction(() => (window as unknown as CfWin).cfRecord.S.state === 'review');

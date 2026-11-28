@@ -170,6 +170,12 @@ export const RecordSessionResult = z.object({
   pads: z
     .array(z.object({ pitch: z.number(), name: z.string(), url: z.string() }))
     .describe('Pads only: one WAV per pad'),
+  upload: z
+    .object({ upload_id: z.string(), url: z.string(), max_bytes: z.number() })
+    .optional()
+    .describe(
+      'Microphone only: where the next recording goes (PUT the WAV to url, send upload_id in record.take). An upload takes one recording: ask again before sending another',
+    ),
   limits: z
     .object({
       passes: z.number().int().describe('Passes of the loop one take spans'),
