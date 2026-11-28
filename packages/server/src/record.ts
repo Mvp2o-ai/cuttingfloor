@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, open, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -462,6 +462,37 @@ function sessionGrid(doc: ScoreDoc, s: RecordSession, speed: number): LoopGrid {
   return grid;
 }
 
+/**
+ * Where a microphone session's next recording goes. An upload takes one file: once bytes have
+ * arrived in it (a recording whose take never got stored, or half of one), another recording
+ * sent to it would be refused as already there, or joined onto the first, and the take would
+ * place the first recording where the second was played. So a session whose upload holds
+ * anything, with no take stored, gets a new one, and the old one goes.
+ */
+async function sessionUpload(
+  deps: RecordDeps,
+  key: string,
+  session: RecordSession,
+): Promise<RecordSession['upload']> {
+  if (!session.upload) return undefined;
+  const rt = deps.runtime;
+  const state = await rt.uploads.state(key, session.upload.upload_id);
+  if (state && state.received === 0 && !state.complete) return session.upload;
+  const made = await startUpload(
+    rt,
+    session.owner,
+    `take-${session.job_id}.wav`,
+    undefined,
+    await deps.limits?.(),
+  );
+  const upload = { upload_id: made.upload_id, url: made.url, max_bytes: made.max_bytes };
+  await rt.ws.records
+    .collection(RECORD_SESSIONS, { owner: key })
+    .put(session.job_id, { ...session, upload });
+  if (state) await rt.uploads.remove(key, session.upload.upload_id).catch(() => undefined);
+  return upload;
+}
+
 /** POST /v1/record.session: what to play and show, rendered at the speed asked. */
 export async function recordSessionCall(
   deps: RecordDeps,
@@ -479,6 +510,7 @@ export async function recordSessionCall(
   }
   const speed = args.speed ?? 1;
   const owner = session.owner;
+  const upload = await sessionUpload(deps, key, session);
   const doc = await rt.scores.get(owner, session.score_id);
   const grid = sessionGrid(doc, session, speed);
   const scaled = scoreAtSpeed(doc, speed);
@@ -563,6 +595,7 @@ export async function recordSessionCall(
     },
     count_in: grid.count_in,
     pads,
+    ...(upload ? { upload } : {}),
     limits: {
       passes: RECORD_LIMITS.passes,
       taps: RECORD_LIMITS.taps,
@@ -646,6 +679,14 @@ export async function recordTakeCall(
   const rt = deps.runtime;
   // Pads or microphone by what the body carries, so a refusal names the field that is wrong.
   const pads = Boolean(body && typeof body === 'object' && 'taps' in body);
+  // A limit like the others (the schema's own refusal of a long list reads as a malformed body).
+  const sent = pads ? (body as { taps?: unknown }).taps : undefined;
+  if (Array.isArray(sent) && sent.length > RECORD_LIMITS.taps) {
+    throw limitError(
+      `${sent.length.toLocaleString('en-US')} taps: up to ${RECORD_LIMITS.taps.toLocaleString('en-US')} taps a take`,
+      RECORD_LIMITS.taps,
+    );
+  }
   const args: RecordTakeInput = parse<RecordTakeInput>(
     pads ? RecordPadsTake : RecordMicrophoneTake,
     body,
@@ -693,21 +734,41 @@ export async function recordTakeCall(
   } else {
     const mic = args as RecordMicrophoneTake;
     checkPosition('starts_at_seconds', mic.starts_at_seconds, 0, loop, grid);
-    if (mic.passes > RECORD_LIMITS.passes) {
-      throw limitError(
-        `passes ${mic.passes}; a take spans up to ${RECORD_LIMITS.passes}`,
-        RECORD_LIMITS.passes,
+    // Only the upload this session gave out for its take: any other complete upload of the
+    // account would be placed, and used up, in its stead.
+    if (mic.upload_id !== session.upload?.upload_id) {
+      throw new CfError(
+        'bad_request',
+        `Upload ${mic.upload_id} is not this session's: its recording goes to ${session.upload?.upload_id}`,
+        { hint: 'record.session answers the upload (upload_id, url) the next recording goes to' },
       );
     }
     const upload = await rt.uploads.take(session.owner, mic.upload_id);
     const file = upload.file ?? (await rt.ws.scratch.materialize(upload.blob));
-    const head = await readFile(file);
-    const f = wavFormat(head, `Upload ${mic.upload_id}`);
+    const f = await wavHeader(file, `Upload ${mic.upload_id}`);
     const seconds = f.frames / f.sample_rate;
     if (seconds > RECORD_LIMITS.microphoneSeconds) {
       throw limitError(
         `The recording lasts ${fmt(seconds)} s; a microphone take lasts up to ${RECORD_LIMITS.microphoneSeconds} s`,
         RECORD_LIMITS.microphoneSeconds,
+      );
+    }
+    // Refused while the session is open, where it could only fail once the session is spent.
+    const ends = mic.starts_at_seconds + seconds;
+    if (!f.frames || ends <= 0) {
+      throw new CfError(
+        'bad_request',
+        `The recording (${fmt(seconds)} s from ${fmt(mic.starts_at_seconds)} s) ends before the loop starts: none of it is in the take`,
+        {
+          hint: "A take holds sound from the loop's start on; what was recorded in the count-in alone is not one",
+        },
+      );
+    }
+    const passes = takePasses(ends, loop.seconds);
+    if (passes > RECORD_LIMITS.passes) {
+      throw limitError(
+        `The recording ends ${fmt(ends)} s into the take, in pass ${passes}; a take spans up to ${RECORD_LIMITS.passes} passes of the loop (${fmt(RECORD_LIMITS.passes * loop.seconds)} s here)`,
+        RECORD_LIMITS.passes,
       );
     }
   }
@@ -729,6 +790,27 @@ export async function recordTakeCall(
   return { ok: true };
 }
 
+/**
+ * The passes of the loop a recording spans, from where it ends in the take. The app cuts a take
+ * on a pass's last frame, so an end a rounding's width past a pass is that pass, not the next.
+ */
+const takePasses = (endsSeconds: number, loopSeconds: number) =>
+  Math.max(1, Math.ceil(endsSeconds / loopSeconds - 1e-9));
+
+/** A WAV's format from its first bytes and its size: the recording itself is not read. */
+async function wavHeader(file: string, what: string) {
+  const handle = await open(file, 'r');
+  try {
+    const { size } = await handle.stat();
+    const head = Buffer.alloc(Math.min(size, 65_536));
+    await handle.read(head, 0, head.length, 0);
+    const f = wavFormat(head, what, size);
+    return f;
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Starts the job's work: placing the take in the score. Once, whoever calls. */
 async function startPlacing(
   deps: RecordDeps,
@@ -738,13 +820,20 @@ async function startPlacing(
 ): Promise<void> {
   const rt = deps.runtime;
   const takes = rt.ws.records.collection(RECORD_TAKES, { owner: key });
-  if (!(await takes.compareAndSet(session.job_id, { started: false }, { started: true }))) return;
-  const take = (await takes.get(session.job_id)) as RecordTakeRecord;
-  const { waits_until: _, ...meta } = job.meta ?? {};
-  const placing = await rt.jobs.store.update(job, {
+  // The job as it stands now, not as it was read before the upload was looked at: a cancel or
+  // the expiry in between is not written over.
+  const now = (await rt.jobs.store.get(job.id, session.owner)) ?? job;
+  if (now.status !== 'working') return;
+  // The job stops waiting on a person before the take is marked started. The other way round,
+  // a failure in between left a take marked started on a job still waiting: a repeat was then
+  // answered ok, nothing placed the take, and the session ran out a day later.
+  const { waits_until: _, ...meta } = now.meta ?? {};
+  const placing = await rt.jobs.store.update(now, {
     meta,
     statusMessage: 'placing the take in the score',
   });
+  if (!(await takes.compareAndSet(session.job_id, { started: false }, { started: true }))) return;
+  const take = (await takes.get(session.job_id)) as RecordTakeRecord;
   rt.jobs.start(placing, (ctx) => placeTake(deps, session, take.body, ctx), { lane: 'engine' });
 }
 
@@ -881,7 +970,11 @@ async function placeTake(
     region: regionPlace(doc, placed.region_id),
     media_id: record.media_id,
     route: mic.delay.route,
-    passes: mic.passes,
+    // The passes the recording spans, counted from the recording (what was sent is not placed by).
+    passes: takePasses(
+      mic.starts_at_seconds + duration,
+      wavFormat(loopWav).frames / wavFormat(loopWav).sample_rate,
+    ),
     starts_at_seconds: mic.starts_at_seconds,
     recording: {
       at: positionAt(doc, placed.at_beats),
