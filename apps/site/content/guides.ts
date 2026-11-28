@@ -824,6 +824,233 @@ export const GUIDES: Guide[] = [
     ],
   },
   {
+    slug: 'add-music-to-a-video',
+    lang: 'en',
+    title: 'How to add music to a video or Short with AI',
+    metaTitle:
+      'How to add music to a video or Short with AI: your song or music made for it | cuttingfloor',
+    metaDescription:
+      'Ask ChatGPT, Claude or Kazi to add music to your video: your own song, cut to its beat and turned down while you talk, or music made for the video, layered under your voice and sound effects.',
+    answer:
+      'Connect cuttingfloor to the AI you already use (ChatGPT, Claude or Kazi), send your video and say what music you want: a song you have, or music made for the video. Your agent lays it under the picture, turns it down while you talk, cuts to your song’s beat or builds the beat on your cuts, fades it out and hands you the MP4.',
+    updated: '2026-11-27',
+    alternate: '/es/poner-musica-a-un-video',
+    steps: [
+      {
+        title: 'Connect your agent once',
+        body: 'Add cuttingfloor to ChatGPT, Claude or Kazi (below). It takes a minute, and you sign in the first time.',
+      },
+      {
+        title: 'Send the video and, if you have one, the song',
+        body: 'Attach them in the chat, send a direct link to each file, or drop them on your upload page. With no song, your agent makes the music for the video.',
+      },
+      {
+        title: 'Say how the music should go',
+        body: 'With your song: “cut the video to the beat”, “start it at the drop”, “quieter while I talk”. With no song: how it should sound (“upbeat, guitar and a light beat”) and any moment it should hit.',
+      },
+      {
+        title: 'Check it, then get the file',
+        body: 'Your agent measures the mix before it hands it over. Ask for changes in words (“louder at the end”, “no drums”), then get the MP4, vertical for Shorts, Reels and TikTok or wide for YouTube.',
+      },
+    ],
+    prompt:
+      'Add music to my video: use this song, cut the shots to its beat, turn it down while I’m talking and fade it out at the end. Make it vertical for Shorts.',
+    demos: [
+      'add-background-music-to-a-talking-video',
+      'make-a-small-business-reel-from-phone-clips',
+      'edit-a-dance-short-to-the-beat',
+    ],
+    faqs: [
+      {
+        q: 'Can I use a song I already have?',
+        a: 'Yes. Send the sound file with your video. Your agent finds its beats, cuts the video to them, turns it down while you talk and fades it out at the end. A song you bring is yours to clear for where you post.',
+      },
+      {
+        q: 'What if I don’t have any music?',
+        a: 'Your agent makes it for the video from instruments and notes, layer by layer: the beat on your cuts, a hit on the big moment and the last note on the last frame. It’s not a song generator: there’s no singer and no lyrics.',
+      },
+      {
+        q: 'Can I layer music with a voiceover and sound effects?',
+        a: 'Yes. Your voice, a voiceover, the music and each sound effect sit on their own layer with their own level, so you can ask for one to be louder, quieter or gone without touching the rest.',
+      },
+      {
+        q: 'Will I still hear my voice over the music?',
+        a: 'Yes. Your agent turns the music down under your voice and can read back the words of the finished mix to check every one came through.',
+      },
+      {
+        q: 'Does it work for Shorts, Reels and TikToks?',
+        a: 'Yes. Ask for vertical and the length you want. A wide video is made vertical with you kept in frame, and the music is fitted to the finished cut, so it ends when the video does.',
+      },
+      {
+        q: 'Can I paste a YouTube or Spotify link?',
+        a: 'No: it needs the file itself. Send a song you have as a file (MP3 or WAV), or a direct link to the file.',
+      },
+      {
+        q: 'Can I change the music afterwards?',
+        a: 'Yes. Each change makes a new version and the old ones stay. With music made for the video you can change any part too: “slower”, “no drums”, “swap the piano for guitar”.',
+      },
+      {
+        q: 'What does it cost?',
+        a: `Making is free, no card: every edit and export, as many times as you like. Exports download free with a cuttingfloor watermark; removing the watermark costs credits, priced by the video’s length, and a new account gets ${FREE_CREDITS} credits when you activate it. After that, credit packs that never expire, on the pricing page.`,
+      },
+    ],
+  },
+  // Sports footage. The agent finds what the person describes and shows frames before cutting;
+  // which plays go in is theirs to say, and nothing here promises every play of a kind found
+  // unasked. Lengths and what coaches look for are common advice, said as advice.
+  {
+    slug: 'make-a-highlight-reel',
+    lang: 'en',
+    title: 'How to make a highlight reel with AI',
+    metaTitle: 'How to make a highlight reel or highlight film with AI | cuttingfloor',
+    metaDescription:
+      'Send your game clips or the whole game and ask ChatGPT, Claude or Kazi for a highlight reel: the plays you name found and cut, slow motion on the big one, names on screen, and music with the cuts on the beat.',
+    answer:
+      'Connect cuttingfloor to the AI you already use (ChatGPT, Claude or Kazi), send your clips or the whole game, and say which plays you want. Your agent finds them, puts them in the order you choose, slows the big one down, adds names and scores on screen and music with the cuts on the beat, and exports the highlight reel wide or vertical.',
+    updated: '2026-11-27',
+    steps: [
+      {
+        title: 'Connect your agent once',
+        body: 'Add cuttingfloor to ChatGPT, Claude or Kazi (below). It takes a minute, and you sign in the first time.',
+      },
+      {
+        title: 'Send your clips, or the whole game',
+        body: 'Attach them in the chat, send direct links to the files, or drop them on your upload page. Phone clips from the sideline, a recording with a commentator or a full game all work.',
+      },
+      {
+        title: 'Say which plays and how it should feel',
+        body: 'Name the plays (“both goals”, “the block in the third quarter”) or describe what to look for, then the length and the feel: “hard and fast”, “a slow build to the winner”. Your agent searches the picture, and the commentary if there is one, and shows you what it found before it cuts.',
+      },
+      {
+        title: 'Ask for the finish',
+        body: 'Slow motion on the big play, a name or the score on each one, a freeze on the last frame, a crowd roar, and music: your own song, or a beat made for the reel so its biggest hit lands on the biggest play.',
+      },
+      {
+        title: 'Check it, then get the file',
+        body: 'Your agent looks at frames from every play and measures the sound before it hands it over. Ask for changes in words (“start with the dunk”, “shorter”, “names bigger”), then get the MP4, wide for YouTube or vertical for Shorts, Reels and TikTok.',
+      },
+    ],
+    prompt:
+      'Here are my clips from Saturday’s game. Make a 45-second highlight reel: the best plays, strongest first, slow motion on the winning goal, each scorer’s name on screen, and a hard beat with the cuts on it. Keep the crowd under the music, and give me a wide version and a vertical one.',
+    demos: [
+      'make-a-basketball-highlight-reel-with-music',
+      'make-a-football-player-tribute-edit',
+      'turn-a-gaming-stream-into-shorts',
+    ],
+    faqs: [
+      {
+        q: 'Can AI find the highlights in a full game?',
+        a: 'It finds what you describe. Name a play or say what to look for (“the three-pointers”, “the save near the end”) and your agent searches the picture, and the commentary if there is one, then shows you frames from each moment before it cuts. Which plays make the reel is your call, and rough times help on a long game.',
+      },
+      {
+        q: 'Can it slow a play down?',
+        a: 'Yes. Any play can run in slow motion, with new in-between frames made so it stays smooth, and the reel can freeze on a frame for the ending.',
+      },
+      {
+        q: 'Can it put names, numbers and the score on screen?',
+        a: 'Yes: a name on each play, the score and the minute at the top, a title at the start and a card at the end. Give your agent the spellings; it looks at the frames so a graphic doesn’t sit on top of the play.',
+      },
+      {
+        q: 'What about the music?',
+        a: 'Bring a song and your agent cuts the plays to its beat. Or ask for a beat made for the reel: it picks a speed so the beats fall on your cuts and puts the biggest hit on the biggest play. Either way the commentator or the crowd can come through underneath.',
+      },
+      {
+        q: 'My clips were filmed wide. Can I get a vertical version?',
+        a: 'Yes. The picture fills a vertical frame, and the frame moves in each shot to keep the player in view. You can have a wide and a vertical version of the same reel.',
+      },
+      {
+        q: 'Does it work for any sport, or for gaming?',
+        a: 'Yes. It works from the picture and the sound, not from a sport’s rules: football, basketball, soccer, hockey, volleyball, skating, dance or gameplay. You say what counts as a highlight.',
+      },
+      {
+        q: 'How long should a highlight reel be?',
+        a: 'For social media, 20 to 60 seconds with the best play in the first few seconds. A season or team highlight film can run a few minutes. Tell your agent the length and it cuts to it.',
+      },
+      {
+        q: 'Is it the same as a recruiting video?',
+        a: 'No. A recruiting video is for a coach or a scout: your details on a card first, your best plays at the top, and a mark showing which player you are before each one. Ask for that instead and your agent makes it from the same footage.',
+      },
+      {
+        q: 'What does it cost?',
+        a: `Making is free, no card: every edit and export, as many times as you like. Exports download free with a cuttingfloor watermark; removing the watermark costs credits, priced by length: a 45-second reel is 0.75 credit. A new account gets ${FREE_CREDITS} credits when you activate it; after that, credit packs that never expire, on the pricing page.`,
+      },
+    ],
+  },
+  {
+    slug: 'make-a-recruiting-highlight-video',
+    lang: 'en',
+    title: 'How to make a recruiting highlight video for coaches and scouts',
+    metaTitle: 'Make a recruiting highlight video from game footage with AI | cuttingfloor',
+    metaDescription:
+      'Turn game footage into a recruiting video from ChatGPT, Claude or Kazi: a card with your details, your best plays first, an arrow on you before each play, and an MP4 to upload for coaches and scouts.',
+    answer:
+      'Connect cuttingfloor to the AI you already use (ChatGPT, Claude or Kazi), send your game footage, and say which player you are. Your agent opens with a card of your details, puts your best plays first, freezes before each play with an arrow on you so a coach or scout knows who to watch, and exports an MP4 for you to upload and send.',
+    updated: '2026-11-27',
+    steps: [
+      {
+        title: 'Connect your agent once',
+        body: 'Add cuttingfloor to ChatGPT, Claude or Kazi (below). It takes a minute, and you sign in the first time.',
+      },
+      {
+        title: 'Send your game footage',
+        body: 'Clips or full games: attach them in the chat, send direct links to the files, or drop them on your upload page. Footage filmed wide is good here, because a coach wants to see what happens around you.',
+      },
+      {
+        title: 'Say who you are and which plays',
+        body: 'Your number, your shirt colour and where you line up, then the plays: name them, give rough times, or describe what to look for. Your agent searches the footage and shows you a frame from each play, so you can check it has the right player, then puts the strongest first.',
+      },
+      {
+        title: 'Ask for the card and the marks',
+        body: 'An opening card with your name, position, graduation year, height, school or club, number, and how to reach you and your coach. Before each play, a freeze with an arrow or a ring on you. A small label with the opponent and the date, if you want one.',
+      },
+      {
+        title: 'Check it, then get the file',
+        body: 'Your agent looks at frames from every play to check the mark is on you. Ask for changes in words (“move the tackle up to second”, “cut the last two”), then download the MP4 and upload it to YouTube, Hudl or wherever coaches ask for it.',
+      },
+    ],
+    prompt:
+      'Make a recruiting highlight video from these game clips. I’m number 14 in the white shirt, a centre midfielder, class of 2028. Open with a card: my name, position, graduation year, height, club, and my email and my coach’s. Put my best plays first, freeze before each one with an arrow on me, then show the play at full speed. Keep the game sound, no music. Under four minutes, wide.',
+    demos: ['make-a-football-player-tribute-edit', 'make-a-basketball-highlight-reel-with-music'],
+    faqs: [
+      {
+        q: 'What should a recruiting video include?',
+        a: 'An opening card (name, position, graduation year, height, school or club, number, and contact details for you and your coach), then your best plays first, each with a mark showing which player you are. Coaches watch a lot of these and may only see the first minute, so the strongest plays go at the top. Check what your sport and the programs you’re writing to ask for.',
+      },
+      {
+        q: 'How does a coach know which player is me?',
+        a: 'Tell your agent your number and shirt colour. Before each play it freezes the frame and puts an arrow or a ring on you, then lets the play run; the mark can also stay on you as you move. It shows you a frame from every play, so you can catch a mark on the wrong player before the video goes anywhere.',
+      },
+      {
+        q: 'Can it find my plays in a full game?',
+        a: 'It finds what you describe: name a play, give a rough time, or say what to look for, and it searches the picture and shows you frames before it cuts. It can’t know which plays show you at your best; you choose them, or your coach does.',
+      },
+      {
+        q: 'How long should it be?',
+        a: 'Most recruiting advice says three to five minutes, with the best plays first. Tell your agent the length and the order and it cuts to them. A one-minute cut for a first email is one more request, made from the same edit.',
+      },
+      {
+        q: 'Should it have music?',
+        a: 'That’s up to you. A coach is watching the play, so many players keep the game sound or use quiet music. Your agent can keep the game sound, turn it down or off, or put music under it: your own song, or music made for the video.',
+      },
+      {
+        q: 'Can I show a play again in slow motion?',
+        a: 'Yes. A play can run at full speed and then again slowed down, with a freeze on the frame that matters. Full speed first lets a coach judge your pace.',
+      },
+      {
+        q: 'Can a coach or scout use it to cut film on a team or a player?',
+        a: 'Yes. Send the game and name what to pull (“their corner kicks”, “each goal they gave up”), with times where you have them. Your agent cuts those moments into one video with a label on each, and shows you frames first so you can check it found the right ones.',
+      },
+      {
+        q: 'How do I send it to coaches?',
+        a: 'Download the MP4 and upload it where a coach can open it: YouTube (unlisted works), Hudl or your recruiting profile, then send that link. Files on cuttingfloor are temporary and go after seven days, so a cuttingfloor link isn’t one to put in an email to a coach.',
+      },
+      {
+        q: 'What does it cost?',
+        a: `Making is free, no card: every edit and export, as many times as you like. Exports download free with a cuttingfloor watermark; removing the watermark costs credits, priced by length: a four-minute video is 4 credits. A new account gets ${FREE_CREDITS} credits when you activate it; after that, credit packs that never expire, on the pricing page.`,
+      },
+    ],
+  },
+  {
     slug: 'musica-de-fondo-para-videos',
     lang: 'es',
     title: 'Música de fondo para videos, hecha a la medida con IA',
@@ -893,6 +1120,7 @@ export const GUIDES: Guide[] = [
     answer:
       'Conecta cuttingfloor al agente que ya usas (Kazi, Claude o ChatGPT), envía tu video y di qué música quieres: tu propia canción o música hecha para el video. Tu agente la coloca, la baja cuando hablas, corta al ritmo de tu canción o arma el ritmo sobre tus cortes, la desvanece al final y te entrega el MP4.',
     updated: '2026-11-27',
+    alternate: '/guides/add-music-to-a-video',
     steps: [
       {
         title: 'Conecta tu agente una vez',
