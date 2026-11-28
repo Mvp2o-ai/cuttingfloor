@@ -563,6 +563,11 @@ export async function recordSessionCall(
     },
     count_in: grid.count_in,
     pads,
+    limits: {
+      passes: RECORD_LIMITS.passes,
+      taps: RECORD_LIMITS.taps,
+      microphone_seconds: RECORD_LIMITS.microphoneSeconds,
+    },
   };
 }
 

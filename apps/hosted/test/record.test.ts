@@ -328,6 +328,12 @@ describe('score.record over HTTP', () => {
       (await post('record.session', { job_id: opened.job_id }, { link: opened.url })).body,
     );
     expect(session.pads).toEqual([]);
+    // Where a take ends, for the app and the view to stop at: the limits record.take refuses beyond.
+    expect(session.limits).toEqual({
+      passes: RECORD_LIMITS.passes,
+      taps: RECORD_LIMITS.taps,
+      microphone_seconds: RECORD_LIMITS.microphoneSeconds,
+    });
     // Over a speaker: the recording holds the loop, from 0.3 s into it, for 6 s (into pass 2).
     const loop = readMono(Buffer.from(await (await fetch(session.loop.url)).arrayBuffer()));
     const rate = 48_000;

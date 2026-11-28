@@ -163,6 +163,11 @@ try {
   );
   const session = await rest('record.session', { job_id: jobId });
   expect(session.status === 200, `record.session 200 (got ${session.status})`);
+  const limits = session.body.limits as Rec | undefined;
+  expect(
+    [limits?.passes, limits?.taps, limits?.microphone_seconds].every((n) => typeof n === 'number'),
+    `it says where a take ends (${JSON.stringify(limits)})`,
+  );
   const loop = session.body.loop as Rec | undefined;
   expect(loop?.frames === 192_000 && loop?.sample_rate === 48_000, 'the loop is 4 s at 48 kHz');
   expect((session.body.pads as unknown[])?.length === 3, 'three pads');

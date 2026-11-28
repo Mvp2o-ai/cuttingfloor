@@ -170,6 +170,13 @@ export const RecordSessionResult = z.object({
   pads: z
     .array(z.object({ pitch: z.number(), name: z.string(), url: z.string() }))
     .describe('Pads only: one WAV per pad'),
+  limits: z
+    .object({
+      passes: z.number().int().describe('Passes of the loop one take spans'),
+      taps: z.number().int().describe('Taps in one take'),
+      microphone_seconds: z.number().describe('Seconds of one microphone take'),
+    })
+    .describe('Where a take ends: one over any of these is refused whole'),
 });
 export type RecordSessionResult = z.infer<typeof RecordSessionResult>;
 
