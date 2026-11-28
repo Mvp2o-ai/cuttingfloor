@@ -120,5 +120,8 @@ describe('first-use marks', () => {
     expect(used.first_call_at).toBeTruthy();
     expect(used.first_tool_at).toBeTruthy();
     await client.close();
-  });
+    // Its own waiting adds up to more than the default 5 s: two polls of up to 2 s each for the
+    // marks, a 200 ms pause, and the server's first tool call from cold (1.5 s on a fast
+    // machine). A slow CI run reached 5,389 ms with every mark written.
+  }, 20_000);
 });

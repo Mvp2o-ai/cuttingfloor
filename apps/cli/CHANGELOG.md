@@ -1,5 +1,11 @@
 # cuttingfloor
 
+## 0.81.1
+
+### Patch Changes
+
+- eecd7c2: score.set_device changes one setting of a sampler without its media being named again: the call was refused with "No media" unless media_id was repeated.
+
 ## 0.81.0
 
 ### Minor Changes

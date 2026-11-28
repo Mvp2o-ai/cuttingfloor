@@ -213,14 +213,36 @@ describe.skipIf(!browserFound)('the play-along view', () => {
    * The performance time at which the browser is playing out a given context time, by its own
    * getOutputTimestamp, sampled now (the clock the view's taps are placed on).
    */
-  const perfFor = (view: Frame, contextTimes: number[]) =>
-    view.evaluate((times) => {
-      const ctx = (window as unknown as CfWin).cfRecord.S.ctx;
-      const ts = ctx.getOutputTimestamp();
-      return times.map(
-        (c) => (ts.performanceTime as number) + (c - (ts.contextTime as number)) * 1000,
-      );
-    }, contextTimes);
+  /**
+   * Presses when the audio clock reads `contextTime`. The performance time for it is worked out
+   * from the output timestamp read just before the press, not once for a whole take: on a busy
+   * machine the output slips whole render quanta against the performance clock while a take
+   * plays, the view follows the slip (it reads the timestamp at each tap), and a time worked out
+   * seconds earlier does not. CI measured a tap 10.539 ms from a time predicted that way (four
+   * quanta of 2.667 ms), with every other tap within 0.1 ms.
+   */
+  async function pressWhen(
+    view: Frame,
+    cdp: CDPSession,
+    selector: string,
+    contextTime: number,
+  ): Promise<void> {
+    for (;;) {
+      const [at, now] = (await view.evaluate((c) => {
+        const ts = (window as unknown as CfWin).cfRecord.S.ctx.getOutputTimestamp();
+        return [
+          (ts.performanceTime as number) + (c - (ts.contextTime as number)) * 1000,
+          performance.now(),
+        ];
+      }, contextTime)) as [number, number];
+      if (at - now > 40) {
+        await new Promise((r) => setTimeout(r, at - now - 30));
+        continue;
+      }
+      await press(view, cdp, selector, at);
+      return;
+    }
+  }
 
   /**
    * Presses at a pad at performance time `at` (ms), stamped with that time: CDP's event timestamp
@@ -300,12 +322,8 @@ describe.skipIf(!browserFound)('the play-along view', () => {
       { pitch: 39, pass: 1, at: 0.003 },
       { pitch: 42, pass: 1, at: 2.75 },
     ];
-    const times = await perfFor(
-      view,
-      targets.map((t) => T0 + t.pass * L + t.at),
-    );
     for (const [i, t] of targets.entries()) {
-      await press(view, cdp, `.pad[data-pitch="${t.pitch}"]`, times[i] as number);
+      await pressWhen(view, cdp, `.pad[data-pitch="${t.pitch}"]`, T0 + t.pass * L + t.at);
       if (i === 2) await shot(page, '2-pads-playing');
     }
     await view.click('#go');
@@ -334,8 +352,7 @@ describe.skipIf(!browserFound)('the play-along view', () => {
       targets.map((t) => [t.pitch, t.pass]),
     );
     for (const e of errors) expect(Math.abs(e)).toBeLessThan(TAP_TOLERANCE_MS);
-    const sorted = errors.map(Math.abs).sort((a, b) => a - b);
-    expect(sorted[Math.floor(sorted.length / 2)]).toBeLessThan(TAP_TYPICAL_MS);
+    expect(middle(errors)).toBeLessThan(TAP_TYPICAL_MS);
     expect(result.outside?.length).toBe(3);
     await page.close();
   }, 90_000);
@@ -368,11 +385,7 @@ describe.skipIf(!browserFound)('the play-along view', () => {
     expect(clicks).toHaveLength(8);
     // A person who hears every click 120 ms after the browser says it plays out (Bluetooth),
     // tapping right on what they hear.
-    const times = await perfFor(
-      view,
-      clicks.map((c) => c + injected),
-    );
-    for (const t of times) await press(view, cdp, '#caltap', t);
+    for (const c of clicks) await pressWhen(view, cdp, '#caltap', c + injected);
     await view.waitForFunction(() => (window as unknown as CfWin).cfRecord.S.state === 'ready', {
       timeout: 10_000,
     });
@@ -382,29 +395,43 @@ describe.skipIf(!browserFound)('the play-along view', () => {
     process.stdout.write(
       `measure: put in ${injected * 1000} ms over the reported ${Math.round(R * 1e4) / 10} ms; measured ${(applied.s * 1000).toFixed(3)} ms, so ${(recovered * 1000).toFixed(3)} ms recovered\n`,
     );
-    expect(Math.abs(recovered - injected) * 1000).toBeLessThan(TAP_TOLERANCE_MS);
+    expect(Math.abs(recovered - injected) * 1000).toBeLessThan(MEASURE_TOLERANCE_MS);
     await shot(page, '6-measured');
     // The same person plays: taps placed with the measured delay land where they heard them.
     await view.click('#go');
     await view.waitForFunction(() => (window as unknown as CfWin).cfRecord.S.state === 'playing');
     const { T0, L } = await view.evaluate(() => (window as unknown as CfWin).cfRecord.S.t);
     const targets = [0.5, 1.75, 3.0];
-    const at = await perfFor(
-      view,
-      targets.map((x) => T0 + x + injected),
-    );
-    for (const t of at) await press(view, cdp, '.pad[data-pitch="36"]', t);
+    for (const x of targets) {
+      await pressWhen(view, cdp, '.pad[data-pitch="36"]', T0 + x + injected);
+    }
     expect(L).toBeCloseTo(4, 6);
     await view.click('#go');
     await view.click('#send');
     const result = await take(opened.job_id);
     expect(result.delay.source).toBe('measured');
-    expect(result.delay.output_ms).toBeCloseTo(applied.s * 1000, 6);
-    for (const [i, tap] of (result.taps ?? []).entries()) {
-      expect(Math.abs(tap.at.seconds - (targets[i] as number)) * 1000).toBeLessThan(
-        TAP_TOLERANCE_MS,
-      );
-    }
+    // What is sent is the delay as applied to this take: the reported delay as read when it
+    // started, plus the part that was measured.
+    const sentWith = await view.evaluate(() => {
+      const S = (window as unknown as CfWin).cfRecord.S;
+      return { s: S.applied.s, R: S.R };
+    });
+    expect(result.delay.output_ms).toBeCloseTo(sentWith.s * 1000, 6);
+    expect(sentWith.s - sentWith.R).toBeCloseTo(recovered, 9);
+    // Each tap is placed with the measured delay, so it carries that measurement's own error:
+    // it lands earlier than it was heard by exactly what the measure came out over. (The view
+    // reads the browser's reported delay again when the take starts and keeps the measured part
+    // on top of it; before it did, a run where the reported delay had moved between the measure
+    // and the take put all three taps 0.956, 0.953 and 0.954 ms out.)
+    const landed = (result.taps ?? []).map(
+      (tap, i) => (tap.at.seconds - ((targets[i] as number) - (recovered - injected))) * 1000,
+    );
+    process.stdout.write(
+      `measure: taps placed with it, errors ms ${landed.map((e) => e.toFixed(3)).join(', ')}\n`,
+    );
+    expect(landed).toHaveLength(targets.length);
+    for (const e of landed) expect(Math.abs(e)).toBeLessThan(TAP_TOLERANCE_MS);
+    expect(middle(landed)).toBeLessThan(TAP_TYPICAL_MS);
     await page.close();
   }, 90_000);
 
@@ -500,7 +527,7 @@ describe.skipIf(!browserFound)('the play-along view', () => {
     await page.close();
   }, 90_000);
 
-  it('a fake microphone device: the recording keeps its clicks exactly half a second apart', async () => {
+  it('a fake microphone device: the recording loses and adds no sample between its clicks', async () => {
     if (!ffmpegFound) return;
     const { score_id, part_id } = await drums();
     const opened = ScoreRecordResult.parse(
@@ -526,7 +553,20 @@ describe.skipIf(!browserFound)('the play-along view', () => {
     process.stdout.write(
       `fake device: click gaps in samples ${gaps.join(', ')} (24000 expected)\n`,
     );
-    for (const g of gaps) expect(Math.abs(g - 24_000)).toBeLessThanOrEqual(1);
+    // The recorder must neither lose nor add a sample: a gap is 24,000 samples. The fake device
+    // itself can stall, though: it plays its file on a timer in 10 ms buffers, and on a busy
+    // runner it resumed one buffer late (CI: 24000, 24000, 24480, 24000, 24000, 24000). That is
+    // the microphone pausing, kept faithfully. So a gap may be longer by whole device buffers
+    // (480 samples), never shorter and never by anything else, and most gaps are exact.
+    const BUFFER = 480;
+    const late = gaps.map((g) => g - 24_000);
+    for (const d of late) {
+      expect(d).toBeGreaterThanOrEqual(-1);
+      const buffers = Math.round(d / BUFFER);
+      expect(Math.abs(d - buffers * BUFFER)).toBeLessThanOrEqual(1);
+      expect(buffers).toBeLessThanOrEqual(5);
+    }
+    expect(late.filter((d) => Math.abs(d) <= 1).length).toBeGreaterThanOrEqual(gaps.length - 2);
     await page.close();
   }, 90_000);
 
@@ -605,16 +645,37 @@ describe.skipIf(!browserFound)('the play-along view', () => {
 
 /**
  * How close a tap lands to where it was dispatched, in ms. The tap's time is its event's own
- * timestamp (CDP sets it exactly); what remains is how the browser's output timestamp moves
- * between the moment the test reads it (before the taps) and the moment the view does (at each
- * tap). On a quiet machine that is about 0.1 ms. When the output slips one render quantum in
- * between (128 frames, 2.67 ms at 48 kHz), the view follows the slip and the test's earlier
- * reading does not: CI measured 0.074, 0.104, -0.080, 0.112, -2.538, 0.005 ms on one run. So
- * any one tap may be a quantum out against the test's reference, and the middle one may not.
+ * timestamp (CDP sets it exactly). What remains is the browser's output timestamp: it moves in
+ * render quanta (128 frames, 2.667 ms at 48 kHz), the view reads it at each tap, and the test
+ * reads it just before each tap. On a quiet machine the two readings agree to about 0.1 ms. On a
+ * busy runner the output slips a quantum between them, and the view follows the slip: that is
+ * right, and it puts that one tap a quantum from where the test expected it. Measured on CI:
+ *   0.074, 0.104, -0.080, 0.112, -2.538, 0.005 ms   (one tap, one quantum)
+ *   one tap 10.539 ms out, when every time was worked out once before the take (four quanta
+ *   over seconds; since then each time is worked out just before its tap)
+ *   one tap 3.177 ms out in the measured-delay test: one quantum, plus the 0.364 ms by which
+ *   that run's measurement differed from the delay put in, which every tap then carries.
+ * So two things are held. The middle tap of a take is within TAP_TYPICAL_MS: no slip explains
+ * that one being out, and it is what a wrong clock mapping would move. And no tap is further
+ * out than two quanta, which a wrong delay or a wrong pass (tens of ms and more) would be.
  */
-const TAP_TOLERANCE_MS = (128 / 48_000) * 1000 + 0.5;
-/** The middle tap of a take: no slip explains this one being out. */
-const TAP_TYPICAL_MS = 0.5;
+const QUANTUM_MS = (128 / 48_000) * 1000;
+const TAP_TOLERANCE_MS = 2 * QUANTUM_MS + 0.5;
+/**
+ * How close the tap-along measure comes to the delay put in. It is taken from eight taps, so a
+ * tap that slipped a quantum moves it by a third of a millisecond. CI has measured it 0.347,
+ * 0.529, 0.443 and 0.364 ms out; this Mac under 0.11.
+ */
+const MEASURE_TOLERANCE_MS = 1;
+/**
+ * The middle tap of a take: no slip explains this one being out. On the image runner the taps
+ * print within 0.2 ms; this is under half a quantum, with room for a runner that is not quiet.
+ */
+const TAP_TYPICAL_MS = 1;
+const middle = (errors: number[]) => {
+  const sorted = errors.map(Math.abs).sort((x, y) => x - y);
+  return sorted[Math.floor(sorted.length / 2)] as number;
+};
 /**
  * How far a recorded sound may sit from where it was played, in ms: the delay of the media stream
  * the test plays into (a destination node of the view's own context, then its microphone input),

@@ -338,7 +338,12 @@ function sourceAt(doc: ScoreDoc, r: AudioRegion, beat: number): number {
 }
 
 function mediaFor(doc: ScoreDoc, resolve: ScoreMediaResolver, id: string): ScoreMedia {
-  const m = resolve(id);
+  // Media the score already uses is known from the copy the document keeps, so changing one
+  // setting of a sampler does not need its media looked up again (the resolver knows only the
+  // media an edit names; a first-run agent's score.set_device {attack_ms} was refused with
+  // "No media", 2026-11-27).
+  const kept = doc.media[id];
+  const m = resolve(id) ?? (kept ? { ...kept, audio: true } : undefined);
   if (!m) {
     throw new CfError('not_found', `No media ${id}`, {
       hint: 'A media_id exactly as media.import, media.list or a create.* tool gave it',

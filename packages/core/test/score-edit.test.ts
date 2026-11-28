@@ -740,6 +740,65 @@ describe('platform limits', () => {
   });
 });
 
+describe('score.set_device on a sampler', () => {
+  it('changes one setting without its media being named or looked up again', () => {
+    const { doc } = edit(
+      start(),
+      ['score.add_part', { name: 'Bark' }],
+      [
+        'score.add_device',
+        { part_id: 'p1', name: 'sampler', params: { media_id: LOOP, root_note: 'C3' } },
+      ],
+    );
+    const deviceId = doc.parts[0]?.devices[0]?.id as string;
+    // The server resolves only the media an edit names: here, none.
+    const knowsNothing: ScoreMediaResolver = () => undefined;
+    const changed = runScoreEdits(
+      doc,
+      'sc_0',
+      [
+        {
+          tool: 'score.set_device',
+          args: { device_id: deviceId, params: { from_seconds: 1.285, attack_ms: 2 } },
+        },
+      ],
+      knowsNothing,
+      { tool: 'score.set_device', args: null },
+    ).doc;
+    expect(changed.parts[0]?.devices[0]?.params).toMatchObject({
+      media_id: LOOP,
+      root_note: 'C3',
+      from_seconds: 1.285,
+      attack_ms: 2,
+    });
+    // Its range is still checked against the media's length, from the copy the score keeps.
+    expect(() =>
+      runScoreEdits(
+        doc,
+        'sc_0',
+        [{ tool: 'score.set_device', args: { device_id: deviceId, params: { from_seconds: 9 } } }],
+        knowsNothing,
+        { tool: 'score.set_device', args: null },
+      ),
+    ).toThrow();
+    // Media the score has never used is still not found.
+    expect(() =>
+      runScoreEdits(
+        doc,
+        'sc_0',
+        [
+          {
+            tool: 'score.set_device',
+            args: { device_id: deviceId, params: { media_id: `m_${'z'.repeat(26)}` } },
+          },
+        ],
+        knowsNothing,
+        { tool: 'score.set_device', args: null },
+      ),
+    ).toThrow(/No media/);
+  });
+});
+
 describe('score batch', () => {
   it('takes ids an earlier op made with $ref, and applies all or none', () => {
     const { doc, results } = runScoreEdits(
