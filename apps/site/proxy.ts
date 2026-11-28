@@ -48,7 +48,7 @@ export const config = {
     '/admin',
     '/admin/:id(user_[0-9A-Z]{26})',
     '/api/:path*',
-    '/:section(demos|walkthroughs|skills|agents|guides|fixes|es|compare)/:slug.md',
+    '/:section(blog|demos|walkthroughs|skills|agents|guides|fixes|es|compare)/:slug.md',
     {
       source: '/((?!_next/|api/|md/|r/|account|upload|welcome|kazi|start|callback|admin|.*\\.).*)',
       has: [{ type: 'header', key: 'accept', value: '.*text/(x-)?markdown.*' }],

@@ -1,4 +1,5 @@
 import { AGENTS } from '../../../../content/agents.ts';
+import { POSTS } from '../../../../content/blog.ts';
 import { DEMOS } from '../../../../content/demos.ts';
 import { FIXES } from '../../../../content/fixes.ts';
 import { GUIDES } from '../../../../content/guides.ts';
@@ -6,6 +7,7 @@ import { SKILLS } from '../../../../content/skills.ts';
 import { VERSUS } from '../../../../content/versus.ts';
 import { WALKTHROUGHS } from '../../../../content/walkthroughs.ts';
 import { agentMarkdown } from '../../../agents.md/markdown.ts';
+import { blogMarkdown } from '../../../blog/markdown.ts';
 import { versusMarkdown } from '../../../compare/markdown.ts';
 import { demoMarkdown } from '../../../demos.md/markdown.ts';
 import { fixMarkdown } from '../../../fixes.md/markdown.ts';
@@ -23,6 +25,7 @@ export const dynamicParams = false;
 
 const BUILD: Record<Section, { slugs: () => string[]; md: (slug: string) => string | undefined }> =
   {
+    blog: { slugs: () => POSTS.map((p) => p.slug), md: blogMarkdown },
     demos: { slugs: () => DEMOS.map((d) => d.slug), md: demoMarkdown },
     walkthroughs: { slugs: () => WALKTHROUGHS.map((w) => w.slug), md: walkthroughMarkdown },
     skills: { slugs: () => SKILLS.map((s) => s.slug), md: skillMarkdown },

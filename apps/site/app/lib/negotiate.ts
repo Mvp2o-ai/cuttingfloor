@@ -7,6 +7,7 @@
 
 /** Top-level pages with a twin at `/<page>.md`. A new page with a twin is added here too. */
 export const TOP_TWINS = [
+  'blog',
   'demos',
   'walkthroughs',
   'skills',
@@ -33,6 +34,7 @@ export const NOT_INDEXED = new Set<string>(['/sign-in-warning']);
 
 /** Sections whose pages have twins at `/<section>/<slug>.md`. */
 export const SECTIONS = [
+  'blog',
   'demos',
   'walkthroughs',
   'skills',
