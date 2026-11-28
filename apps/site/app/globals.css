@@ -5466,3 +5466,34 @@ figure.allow-access {
 .adm-when {
   color: var(--mute);
 }
+
+/* ---------- blog posts (app/blog) ---------- */
+.blog-body {
+  max-width: 68ch;
+}
+.blog-body p,
+.blog-body li {
+  font-size: 19px;
+  line-height: 1.6;
+}
+.blog-body ul {
+  padding-left: 1.2em;
+}
+.blog-body li + li {
+  margin-top: 8px;
+}
+.blog-fig {
+  margin: 28px 0;
+}
+.blog-fig img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
+}
+.blog-fig figcaption {
+  margin-top: 10px;
+  color: var(--mute);
+  font-size: 15px;
+}
+/* ---------- end blog posts ---------- */

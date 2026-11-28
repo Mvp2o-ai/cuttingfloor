@@ -1,4 +1,5 @@
 import { AGENTS, AGENTS_UPDATED } from '../content/agents.ts';
+import { BLOG_UPDATED, blogPath, POSTS } from '../content/blog.ts';
 import { DEMOS } from '../content/demos.ts';
 import { FIXES, FIXES_UPDATED, fixPath } from '../content/fixes.ts';
 import { GUIDES, guidePath } from '../content/guides.ts';
@@ -74,6 +75,8 @@ export const ROUTES: Route[] = [
     title: w.title,
     updated: w.updated,
   })),
+  { path: '/blog', title: 'Blog', updated: BLOG_UPDATED },
+  ...POSTS.map((p) => ({ path: blogPath(p), title: p.title, updated: p.updated })),
   { path: '/skills', title: 'Skills', updated: SKILLS_UPDATED },
   ...SKILLS.map((s) => ({ path: `/skills/${s.slug}`, title: s.title, updated: SKILLS_UPDATED })),
   { path: '/terms', title: 'Terms', updated: '2026-11-23' },

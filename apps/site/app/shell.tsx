@@ -140,6 +140,7 @@ export function Footer({ cta = 'Start free' }: { cta?: string }) {
             En español
           </a>
           <a href="/walkthroughs">Walkthroughs</a>
+          <a href="/blog">Blog</a>
           <a href="/skills">Skills</a>
           <a href="/features">Features</a>
           <a href="/mcp">What is MCP</a>
