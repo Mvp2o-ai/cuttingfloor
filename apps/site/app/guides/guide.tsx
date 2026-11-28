@@ -1,15 +1,20 @@
 import type { Metadata } from 'next';
+import { API_URL } from '../../content/clients.ts';
 import { DEMOS } from '../../content/demos.ts';
 import { type Guide, guidePath, type Lang } from '../../content/guides.ts';
+import { BUILDER_WAYS } from '../../content/ways.ts';
 import { AgentBlock } from '../agents/block.tsx';
 import { DemoCards } from '../demos/cards.tsx';
+import { WayCard } from '../how-to-connect/card.tsx';
 import { LiveCard } from '../live-card.tsx';
 import { Breadcrumbs, Footer, formatDate, JsonLd, Nav, SIGN_UP } from '../shell.tsx';
 import { ToolCalls } from '../tool-calls.tsx';
 import { Copy } from '../walkthroughs/copy.tsx';
 
 // One template for every guide, English (/guides/<slug>) or Spanish (/es/<slug>). Nothing here
-// knows which guide it is showing; the words around the data come in the guide's language.
+// knows which guide it is showing; the words around the data come in the guide's language. An
+// engineers' guide (audience 'builder') shows the ways to call the API where others show the
+// agents, and asks for a key rather than offering the live demo.
 
 const TEXT: Record<
   Lang,
@@ -88,8 +93,37 @@ export function guideMetadata(g: Guide): Metadata {
   };
 }
 
+/** The words an engineers' guide uses in place of the creators' ones (English only). */
+const BUILDER = {
+  stepsHead: 'Four steps.',
+  typed: 'Paste it into your coding agent (Claude Code, Cursor, Codex), or say it your way',
+  ways: 'Call it',
+  waysHead: 'One REST API, two ways in.',
+};
+
+function BuilderWays({ n }: { n: string }) {
+  return (
+    <section className="cell hc-builders">
+      <div className="head">
+        <span className="label">
+          {n} / {BUILDER.ways}
+        </span>
+        <h2 className="display">{BUILDER.waysHead}</h2>
+      </div>
+      <ul className="hc-grid hc-grid-two">
+        {BUILDER_WAYS.map((w) => (
+          <WayCard key={w.id} way={w} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function GuideView({ g }: { g: Guide }) {
-  const t = TEXT[g.lang];
+  const builder = g.audience === 'builder';
+  const t = builder
+    ? { ...TEXT[g.lang], stepsHead: BUILDER.stepsHead, typed: BUILDER.typed }
+    : TEXT[g.lang];
   const path = guidePath(g);
   const demos = g.demos.flatMap((slug) => DEMOS.filter((d) => d.slug === slug));
   // Sections are numbered in the order they show; tool calls and demos only when the guide has them.
@@ -120,7 +154,7 @@ export function GuideView({ g }: { g: Guide }) {
           <span className="label">{t.label}</span>
           <h1 className="display">{g.title}</h1>
           <p className="lede wt-answer">{g.answer}</p>
-          <LiveCard />
+          {!builder && <LiveCard />}
           <p className="wt-byline">
             {t.updated} <time dateTime={g.updated}>{formatDate(g.updated, g.lang)}</time> · Ken
             Wiltshire
@@ -134,12 +168,25 @@ export function GuideView({ g }: { g: Guide }) {
             )}
           </p>
           <div className="actions">
-            <a className="link-big" href={SIGN_UP}>
-              {t.start}
-            </a>
-            <a className="link-big quiet" href="/demos">
-              {t.watch}
-            </a>
+            {builder ? (
+              <>
+                <a className="link-big" href="/account#api-keys">
+                  Make an API key
+                </a>
+                <a className="link-big quiet" href={`${API_URL}/openapi.json`} rel="noopener">
+                  OpenAPI spec
+                </a>
+              </>
+            ) : (
+              <>
+                <a className="link-big" href={SIGN_UP}>
+                  {t.start}
+                </a>
+                <a className="link-big quiet" href="/demos">
+                  {t.watch}
+                </a>
+              </>
+            )}
           </div>
         </section>
 
@@ -175,7 +222,7 @@ export function GuideView({ g }: { g: Guide }) {
 
         {g.tools && <ToolCalls tools={g.tools} lang={g.lang} n={at('tools')} />}
 
-        <AgentBlock lang={g.lang} n={at('agent')} />
+        {builder ? <BuilderWays n={at('agent')} /> : <AgentBlock lang={g.lang} n={at('agent')} />}
 
         {demos.length > 0 && (
           <section className="cell">

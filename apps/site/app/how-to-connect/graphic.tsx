@@ -1,4 +1,4 @@
-// The three ways in, drawn as one picture: an AI app, a REST call and MCP with a key each send
+// The three ways in, drawn as one picture: an AI app, your app's REST calls and an LLM's code each send
 // work along a line into the editor, whose timeline fills while the finished video plays out the
 // other side. Wide screens get it left to right; phones get the same picture top to bottom. The
 // motion is CSS only and stops for anyone who asks for less motion.
@@ -21,13 +21,13 @@ const GLYPHS = {
     'M8 4c-2 0-3 1-3 3v2c0 1.5-1 2.5-2 3 1 .5 2 1.5 2 3v2c0 2 1 3 3 3',
     'M16 4c2 0 3 1 3 3v2c0 1.5 1 2.5 2 3-1 .5-2 1.5-2 3v2c0 2-1 3-3 3',
   ],
-  key: ['M8 15a4 4 0 1 1 3.5-6', 'M11 11h10', 'M18 11v3', 'M15 11v2'],
+  terminal: ['M3 4h18v16H3z', 'M7 9l3 3-3 3', 'M12 15h5'],
 };
 
 const SOURCES = [
   { title: 'AI apps', sub: 'Kazi · ChatGPT · Claude · Codex', glyph: GLYPHS.chat },
-  { title: 'REST API', sub: 'POST /v1/<tool>', glyph: GLYPHS.braces },
-  { title: 'MCP + API key', sub: 'Bearer cf_…', glyph: GLYPHS.key },
+  { title: 'Your app', sub: 'REST · POST /v1/<tool>', glyph: GLYPHS.braces },
+  { title: 'Code execution', sub: 'an LLM’s code, one run', glyph: GLYPHS.terminal },
 ];
 
 function wide(): Layout {
@@ -225,8 +225,8 @@ export function WaysGraphic() {
       <Picture layout={wide()} className="hc-wide" />
       <Picture layout={tall()} className="hc-tall" />
       <figcaption className="sr-only">
-        Three ways in, one editor: an AI app, the REST API or MCP with an API key each send the edit
-        to cuttingfloor, which builds the timeline and gives back the finished video.
+        Three ways in, one editor: an AI app, your app’s REST calls or code an LLM runs each send
+        the edit to cuttingfloor, which builds the timeline and gives back the finished video.
       </figcaption>
     </figure>
   );

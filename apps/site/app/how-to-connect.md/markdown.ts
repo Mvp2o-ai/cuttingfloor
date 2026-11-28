@@ -1,4 +1,6 @@
 import {
+  BUILDER_FAQS,
+  BUILDER_GUIDES,
   BUILDER_WAYS,
   CREATOR_WAYS,
   WAYS_DESCRIPTION,
@@ -37,8 +39,13 @@ export function markdown(): string {
     ...CREATOR_WAYS.flatMap(way),
     '## I build with code (recommended for engineers and builders)',
     '',
-    'One API key from your account page, two ways to use it. It acts as your account and uses its credits.',
+    'One REST API, two ways to call it: from your app’s backend like any web service, or from code an LLM runs in a sandbox. Either way it takes an API key from your account page, acts as your account and uses its credits.',
     '',
     ...BUILDER_WAYS.flatMap(way),
+    `Guides: ${BUILDER_GUIDES.map((l) => `[${l.label}](${link(l.href)})`).join(' · ')}`,
+    '',
+    '## Questions engineers ask',
+    '',
+    ...BUILDER_FAQS.flatMap((f) => [`### ${f.q}`, '', f.a, '']),
   ].join('\n');
 }

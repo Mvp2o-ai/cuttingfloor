@@ -13,7 +13,6 @@ const PATHS: Record<Exclude<WayIcon, 'kazi'>, string[]> = {
     'M16 4c2 0 3 1 3 3v2c0 1.5 1 2.5 2 3-1 .5-2 1.5-2 3v2c0 2-1 3-3 3',
     'M10 12h4',
   ],
-  key: ['M8 15a4 4 0 1 1 3.5-6', 'M11 11h10', 'M18 11v3', 'M15 11v2'],
 };
 
 export function WayIconMark({ icon, size = 40 }: { icon: WayIcon; size?: number }) {
