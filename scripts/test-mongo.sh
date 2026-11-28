@@ -41,7 +41,9 @@ fi
 if [ -z "$(docker ps -q -f "name=^${name}$")" ]; then
   docker rm -f "$name" >/dev/null 2>&1 || true
   # In memory: the suites make and drop a database per test, which is slow on a disk.
-  docker run -d --rm --name "$name" --tmpfs /data/db -p "127.0.0.1:${port}:27017" mongo:8 --replSet rs0 >/dev/null
+  # No --rm: when it does not come up, its log is what says why (it is removed before each
+  # start and by `stop`).
+  docker run -d --name "$name" --tmpfs /data/db -p "127.0.0.1:${port}:27017" mongo:8 --replSet rs0 >/dev/null
 fi
 for _ in $(seq 1 60); do
   if docker exec "$name" mongosh --quiet --eval \
@@ -53,5 +55,14 @@ for _ in $(seq 1 60); do
   fi
   sleep 1
 done
-echo "MongoDB did not become ready" >&2
+# Say why: twice on 2026-11-28 a CI run stopped here with nothing to go on.
+{
+  echo "MongoDB did not become ready"
+  docker ps -a -f "name=^${name}$" --format 'container: {{.Status}} ({{.Image}})'
+  echo "replica set:"
+  docker exec "$name" mongosh --quiet --eval \
+    'try { JSON.stringify(rs.status().members.map((m) => [m.name, m.stateStr])) } catch (e) { String(e) }' 2>&1 | tail -5
+  echo "its log:"
+  docker logs --tail 40 "$name" 2>&1 | cut -c1-400
+} >&2
 exit 1
