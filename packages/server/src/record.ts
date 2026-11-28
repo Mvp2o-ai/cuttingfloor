@@ -910,10 +910,14 @@ async function waitJob(rt: Runtime, owner: string, id: string, signal: AbortSign
   }
 }
 
+/** Seconds of a recording, from its start, the loop is looked for in: the measure's memory. */
+const CORRELATE_SECONDS = 60;
+
 /**
  * Where the loop heard in a recording puts its first sample, by cross-correlation: the loop as
  * it played (pass after pass, from where the recording began) against the recording, searched
- * within half a loop either way of where the device said it began.
+ * within half a loop either way of where the device said it began. Both are whitened first: the
+ * performance and the room sit on top of the loop and are far louder than it low down.
  */
 async function correlate(
   loopWav: Buffer,
@@ -925,7 +929,7 @@ async function correlate(
   const take = wavFormat(await readFile(takeFile));
   const rate = loop.sample_rate;
   const one = mono(loop);
-  const takeSeconds = take.frames / take.sample_rate;
+  const takeSeconds = Math.min(CORRELATE_SECONDS, take.frames / take.sample_rate);
   // What played from the recording's first sample on: the loop's passes, silence before it.
   const s0 = Math.round(mic.starts_at_seconds * rate);
   const length = Math.ceil(takeSeconds * rate) + one.length;
@@ -942,7 +946,11 @@ async function correlate(
       wav16({ sample_rate: rate, channels: 1, frames: heard.length, data: [heard] }),
     );
     const max = loop.frames / rate / 2;
-    const out = await soundOffset({ file: a }, { file: takeFile }, { maxSeconds: max, signal });
+    const out = await soundOffset(
+      { file: a },
+      { file: takeFile, until: takeSeconds },
+      { maxSeconds: max, whiten: true, signal },
+    );
     const at = (x: number) => s0 / rate + x;
     return {
       starts_at_seconds: at(out.offset_seconds),

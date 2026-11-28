@@ -14,7 +14,7 @@
 import { readFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import * as ort from 'onnxruntime-node';
-import { crossCorrelate } from './correlate.ts';
+import { bandPowers, crossCorrelate, whiten } from './correlate.ts';
 import {
   alignGroups,
   FRAME_SECONDS,
@@ -126,7 +126,7 @@ async function align(model: string, sound: Float32Array, words: TimedWord[]) {
 const [op, ...args] = process.argv.slice(2);
 const usage = () => {
   process.stderr.write(
-    'usage: sound-worker.ts vad <model> <sound.f32> | align <model> <sound.f32> <words.json> | offset <a.f32> <b.f32> <rate> <max_seconds>\n',
+    'usage: sound-worker.ts vad <model> <sound.f32> | align <model> <sound.f32> <words.json> | offset <a.f32> <b.f32> <rate> <max_seconds> [whiten]\n',
   );
   process.exit(2);
 };
@@ -139,10 +139,18 @@ if (op === 'vad' && args.length === 2) {
     readSound(args[1] as string),
     JSON.parse(readFileSync(args[2] as string, 'utf8')),
   );
-} else if (op === 'offset' && args.length === 4) {
+} else if (op === 'offset' && (args.length === 4 || (args.length === 5 && args[4] === 'whiten'))) {
   const rate = Number(args[2]);
-  const a = readSound(args[0] as string);
-  const b = readSound(args[1] as string);
+  let a = readSound(args[0] as string);
+  let b = readSound(args[1] as string);
+  if (args[4] === 'whiten') {
+    // Both divided by B's spectrum, from 100 Hz to just under half the rate: A is the known
+    // sound, B the recording it is looked for in.
+    const band = { lowHz: 100, highHz: 0.45 * rate };
+    const powers = bandPowers(b, rate);
+    a = whiten(a, rate, band, powers);
+    b = whiten(b, rate, band, powers);
+  }
   // Digital silence has no timing to find: say which side it is.
   const silent = (x: Float32Array) => x.every((v) => v === 0);
   result = silent(a)

@@ -383,37 +383,54 @@ export function parseLoudness(stderr: string): LoudnessFacts {
 
 /** Sample rate the offset is measured at: fine enough for a fraction of a frame. */
 const OFFSET_RATE = 8000;
+/** And when a known sound is looked for under a louder one: its high end is where it stands clear. */
+const OFFSET_RATE_WHITENED = 24_000;
 
 /**
  * B's sync offset against A by cross-correlation of their sound (each over its own range),
  * searching up to `maxSeconds` either way.
+ *
+ * `whiten` is for a known sound (A) under something louder in a recording (B), such as a loop
+ * played in a room with a voice on top: both are divided by the recording's spectrum first, so
+ * what is loud in it does not decide the match. Measured on a take over a laptop's speakers (hats and snare,
+ * the room 30 dB over them below 1 kHz): the speech band put the loop 1.97 s from where it was,
+ * strength 0.01; whitened, at 24 kHz, it was found to the sample at strength 0.11, with the wrong
+ * loop at 0.002. A quiet kick drum in the same room was found by neither.
  */
 export async function soundOffset(
   a: { file: string } & Range,
   b: { file: string } & Range,
-  options: Common & { maxSeconds: number },
+  options: Common & { maxSeconds: number; whiten?: boolean },
 ): Promise<Offset> {
   const dir = await mkdtemp(join(tmpdir(), 'cf-offset-'));
   try {
+    const rate = options.whiten ? OFFSET_RATE_WHITENED : OFFSET_RATE;
     // Rumble and hiss carry no timing; speech and transients do.
-    const filter = 'highpass=f=100,lowpass=f=3500';
+    const filter = options.whiten ? 'highpass=f=100' : 'highpass=f=100,lowpass=f=3500';
     const sig = options.signal ? { signal: options.signal } : {};
     const fa = await extractSound(a.file, dir, {
       ...a,
-      rate: OFFSET_RATE,
+      rate,
       name: 'a.f32',
       filter,
       ...sig,
     });
     const fb = await extractSound(b.file, dir, {
       ...b,
-      rate: OFFSET_RATE,
+      rate,
       name: 'b.f32',
       filter,
       ...sig,
     });
     const out = (await worker(
-      ['offset', fa, fb, String(OFFSET_RATE), String(options.maxSeconds)],
+      [
+        'offset',
+        fa,
+        fb,
+        String(rate),
+        String(options.maxSeconds),
+        ...(options.whiten ? ['whiten'] : []),
+      ],
       options,
     )) as Offset | { silent: 'a' | 'b' } | null;
     if (out && 'silent' in out) {
