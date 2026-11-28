@@ -27,13 +27,11 @@ export default async function AdminPage({
   const page = Math.max(1, Number.parseInt(params.page ?? '1', 10) || 1);
   const list = await listAccounts(user.id, { q, sort, page });
   return (
-    <>
-      <AdminNav email={user.email} />
-      <AccountsView
-        q={q}
-        sort={sort}
-        {...(list.ok ? { list: list.body } : { error: list.message })}
-      />
-    </>
+    <AccountsView
+      nav={<AdminNav email={user.email} />}
+      q={q}
+      sort={sort}
+      {...(list.ok ? { list: list.body } : { error: list.message })}
+    />
   );
 }

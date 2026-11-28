@@ -1,5 +1,6 @@
 import { ADMIN_SORTS } from '@cuttingfloor/schema';
 import type { ReactNode } from 'react';
+import { AppPage, Badge, Card, Details } from '../app-ui.tsx';
 import {
   type AdminAccount,
   type AdminAccountList,
@@ -12,7 +13,7 @@ import {
 import { AdjustForm } from './adjust-form.tsx';
 
 // The staff pages' views, given what they show (page.tsx files read it from the admin API;
-// preview/ renders fixtures). Plain tables in the site's own look.
+// preview/ renders fixtures), in the app look: a card per part, plain tables inside.
 
 const SORT_NAMES: Record<AdminSort, string> = {
   newest: 'Newest',
@@ -59,20 +60,29 @@ function href(q: string, sort: AdminSort, page = 1) {
 }
 
 export function AccountsView({
+  nav,
   list,
   q,
   sort,
   error,
 }: {
+  nav: ReactNode;
   list?: AdminAccountList;
   q: string;
   sort: AdminSort;
   error?: string;
 }) {
   return (
-    <main className="frame adm">
-      <section className="cell adm-cell">
-        <span className="label">Staff · Accounts</span>
+    <AppPage
+      nav={nav}
+      title="Accounts"
+      sub={
+        list
+          ? `${n(list.total)} account${list.total === 1 ? '' : 's'}${q ? ` matching “${q}”` : ''} · page ${list.page} of ${list.pages}`
+          : undefined
+      }
+    >
+      <Card>
         <form className="adm-search" action="/admin" method="get">
           <input
             name="q"
@@ -97,10 +107,6 @@ export function AccountsView({
         {error ? <p className="adm-error">The accounts could not be read: {error}</p> : null}
         {list ? (
           <>
-            <p className="adm-count">
-              {n(list.total)} account{list.total === 1 ? '' : 's'}
-              {q ? ` matching “${q}”` : ''} · page {list.page} of {list.pages}
-            </p>
             <div className="adm-scroll">
               <table className="adm-table">
                 <thead>
@@ -121,7 +127,12 @@ export function AccountsView({
                     <tr key={a.id}>
                       <td>
                         <a href={`/admin/${a.id}`}>{a.email}</a>
-                        {a.email_verified ? null : <span className="adm-tag">unverified</span>}
+                        {a.email_verified ? null : (
+                          <>
+                            {' '}
+                            <Badge tone="warn">unverified</Badge>
+                          </>
+                        )}
                       </td>
                       <td>{day(a.created_at)}</td>
                       <td>{day(a.last_used_at)}</td>
@@ -150,31 +161,15 @@ export function AccountsView({
             </nav>
           </>
         ) : null}
-      </section>
-    </main>
+      </Card>
+    </AppPage>
   );
 }
 
-function Facts({ rows }: { rows: Array<[string, ReactNode]> }) {
-  return (
-    <dl className="adm-facts">
-      {rows.map(([k, v]) => (
-        <div key={k}>
-          <dt>{k}</dt>
-          <dd>{v}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
+const Facts = Details;
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="cell adm-cell">
-      <span className="label">{title}</span>
-      <div className="adm-body">{children}</div>
-    </section>
-  );
+  return <Card title={title}>{children}</Card>;
 }
 
 function None({ children }: { children: ReactNode }) {
@@ -182,23 +177,25 @@ function None({ children }: { children: ReactNode }) {
 }
 
 export function AccountDetail({
+  nav,
   account: a,
   ledger,
   ledgerError,
 }: {
+  nav: ReactNode;
   account: AdminAccount;
   ledger?: AdminLedger;
   ledgerError?: string;
 }) {
   const exportFiles = a.files.filter((f) => f.kind === 'export');
   return (
-    <main className="frame adm">
-      <section className="cell adm-cell">
-        <a className="adm-back" href="/admin">
-          ← All accounts
-        </a>
-        <span className="label">Staff · Account</span>
-        <h1 className="adm-title">{a.email}</h1>
+    <AppPage
+      nav={nav}
+      back={{ href: '/admin', label: 'All accounts' }}
+      title={a.email}
+      sub={`Signed up ${day(a.created_at)} · last active ${day(a.last_used_at)}`}
+    >
+      <Card title="Profile">
         <Facts
           rows={[
             ['Account', <code key="id">{a.id}</code>],
@@ -228,7 +225,7 @@ export function AccountDetail({
             ],
           ]}
         />
-      </section>
+      </Card>
 
       <Section title="Credits">
         <Facts
@@ -482,6 +479,6 @@ export function AccountDetail({
           </ul>
         </Section>
       ) : null}
-    </main>
+    </AppPage>
   );
 }
