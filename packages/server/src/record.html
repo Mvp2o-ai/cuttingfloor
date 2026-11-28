@@ -199,6 +199,7 @@
   /** The delay the browser reports: what is scheduled now, less what is heard now. */
   async function measureReported() {
     const ctx = S.ctx;
+    const before = S.R;
     const samples = [];
     for (let i = 0; i < 24; i++) {
       await new Promise((r) => setTimeout(r, 8));
@@ -215,6 +216,12 @@
       S.known = out !== undefined;
     }
     if (!S.applied || S.applied.source === 'reported') S.applied = { s: S.R, source: 'reported' };
+    // A delay measured by tapping is what the browser reported then plus what it cannot know
+    // (Bluetooth). Read again, the reported part may differ; the part it cannot know is what
+    // was measured, so that is what is kept. Without this a take was placed with the delay as
+    // it stood at the measure: three taps each 0.95 ms out on a run where the reported delay
+    // had moved by that much.
+    else if (typeof before === 'number') S.applied = { s: S.applied.s + (S.R - before), source: 'measured' };
     showDelay();
   }
 
