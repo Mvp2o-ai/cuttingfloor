@@ -39,6 +39,13 @@ export const KAZI_LINKS = {
   'demo-kids': 'PsFVYwBiOA',
   // The general demos link until the sports tribute demo gets a guest chat of its own.
   'demo-sports': 'PsFVYwBiOA',
+  // The general demos link until the music demos get guest chats of their own.
+  'demo-talk': 'PsFVYwBiOA',
+  'demo-hoops': 'PsFVYwBiOA',
+  'demo-jingle': 'PsFVYwBiOA',
+  'demo-trip': 'PsFVYwBiOA',
+  'demo-hum': 'PsFVYwBiOA',
+  'demo-bark': 'PsFVYwBiOA',
 } as const satisfies Record<string, string>;
 
 export type KaziPlace = keyof typeof KAZI_LINKS;

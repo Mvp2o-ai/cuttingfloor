@@ -489,7 +489,11 @@ export const GUIDES: Guide[] = [
     ],
     prompt:
       'Make some background music for my video: warm and calm, piano and soft strings, building a little toward the end. Keep it quiet under my voice and end it on the last frame.',
-    demos: [],
+    demos: [
+      'add-background-music-to-a-talking-video',
+      'make-music-for-a-travel-video',
+      'make-a-basketball-highlight-reel-with-music',
+    ],
     faqs: [
       {
         q: 'Is this a song generator?',
@@ -551,7 +555,7 @@ export const GUIDES: Guide[] = [
     ],
     prompt:
       'Make 30 seconds of music for this video: a chill lo-fi beat with soft piano, the beat on my cuts, fading out on the last shot.',
-    demos: [],
+    demos: ['add-background-music-to-a-talking-video', 'make-music-for-a-travel-video'],
     faqs: [
       {
         q: 'Can ChatGPT make music on its own?',
@@ -613,7 +617,7 @@ export const GUIDES: Guide[] = [
     ],
     prompt:
       'I just recorded a hummed tune on my upload page. Turn it into a 10-second intro theme for my channel: the tune on piano, with soft strings and a light beat under it.',
-    demos: [],
+    demos: ['turn-a-hummed-tune-into-a-podcast-intro'],
     faqs: [
       {
         q: 'Do I need to sing well?',
@@ -675,7 +679,7 @@ export const GUIDES: Guide[] = [
     ],
     prompt:
       'Make a 5-second jingle for the end of my ad: bright and friendly, bells and piano, with the last note landing exactly when my logo appears.',
-    demos: [],
+    demos: ['make-a-jingle-for-a-product-ad'],
     faqs: [
       {
         q: 'How does the last note land on the logo?',
@@ -733,7 +737,7 @@ export const GUIDES: Guide[] = [
     ],
     prompt:
       'Make a 30-second montage of these clips with a beat made for it: hard 808 drums and heavy bass that build, cuts on the beat, and slow motion on the last kill with the biggest hit right there.',
-    demos: [],
+    demos: ['make-a-beat-from-your-dogs-bark', 'make-a-basketball-highlight-reel-with-music'],
     faqs: [
       {
         q: 'Which drum kits are there?',
@@ -850,7 +854,7 @@ export const GUIDES: Guide[] = [
     ],
     prompt:
       'Hazle música de fondo a mi video: tranquila, con piano y cuerdas suaves, que crezca un poco al final. Que quede bajita debajo de mi voz y que termine en el último cuadro.',
-    demos: [],
+    demos: ['add-background-music-to-a-talking-video', 'make-music-for-a-travel-video'],
     faqs: [
       {
         q: '¿Es un generador de canciones?',
@@ -909,7 +913,10 @@ export const GUIDES: Guide[] = [
     ],
     prompt:
       'Ponle música a mi video: usa esta canción, corta las tomas al ritmo, bájala cuando hablo y desvanécela al final.',
-    demos: [],
+    demos: [
+      'add-background-music-to-a-talking-video',
+      'make-a-basketball-highlight-reel-with-music',
+    ],
     faqs: [
       {
         q: '¿Puedo usar una canción que ya tengo?',
